@@ -142,7 +142,8 @@ jobs:
 
 
   e2e:
-    name: e2e (${{ matrix.runtime.label }})
+    # Each browser runs on its own runner: the suite stays serial within a job, and the jobs run at the same time.
+    name: e2e (${{ matrix.runtime.label }}, ${{ matrix.browser }})
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
     strategy:
@@ -153,6 +154,7 @@ jobs:
             argument: spring-boot
           - label: Docker Tomcat
             argument: docker-tomcat
+        browser: [chromium, firefox, webkit]
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -169,8 +171,10 @@ jobs:
         uses: actions/setup-node@v3
         with:
           node-version: 22
-      - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }})
+      - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }}, ${{ matrix.browser }})
         working-directory: ./e2e
+        env:
+          E2E_BROWSER: ${{ matrix.browser }}
         run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
 
   frontend-unit-tests:

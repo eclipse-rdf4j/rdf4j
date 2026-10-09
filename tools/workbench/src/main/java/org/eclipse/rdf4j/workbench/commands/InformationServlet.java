@@ -20,10 +20,9 @@ import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 public class InformationServlet extends TransformationServlet {
 
 	@Override
-	public void service(final TupleResultBuilder builder, final String xslPath)
+	public void service(final TupleResultBuilder builder)
 			throws RepositoryException, QueryResultHandlerException {
 		// final TupleResultBuilder builder = getTupleResultBuilder(req, resp);
-		builder.transform(xslPath, "information.xsl");
 		builder.start("version", "os", "jvm", "user", "memory-used", "maximum-memory");
 		builder.link(List.of(INFO));
 		final String version = this.appConfig.getVersion().toString();

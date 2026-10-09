@@ -25,54 +25,17 @@ test('template helpers chain loads, parse cookies, and update selected user', ()
         href: 'http://localhost:8080/rdf4j-workbench/create?id=repo-1&title=My+Repo'
     });
     harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
-    const field = harness.registerElement('input', {
-        id: 'flag',
-        type: 'checkbox'
-    });
-    field.checked = true;
-    harness.document.body.appendChild(field);
-
     harness.loadScripts([]);
     const calls = [];
     harness.context.workbench.addLoad(() => calls.push('first'));
     harness.context.workbench.addLoad(() => calls.push('second'));
     harness.runLoadHandlers();
 
-    const params = [];
-    harness.context.workbench.addParam(params, 'flag');
-
     assert.deepEqual(calls, ['first', 'second']);
     assert.equal(harness.context.workbench.getCookie('server-user-password'), Buffer.from('alice:secret').toString('base64'));
     assert.deepEqual(Array.from(harness.context.workbench.getQueryStringElements()), ['id=repo-1', 'title=My+Repo']);
-    assert.deepEqual(params, ['flag=', 'true', '&']);
-    assert.equal(harness.document.getElementById('noscript-message').style.display, 'none');
-    assert.equal(harness.document.getElementById('selected-user').textContent, 'alice');
-    assert.equal(harness.document.getElementById('selected-user').innerHTML, '');
-});
-
-test('template load falls back to unauthenticated user label', () => {
-    const harness = createFormBrowserHarness();
-
-    harness.loadScripts([]);
-    harness.runLoadHandlers();
-
-    const selectedUser = harness.document.getElementById('selected-user');
-    assert.equal(selectedUser.textContent, 'None');
-    assert.equal(selectedUser.children.length, 1);
-    assert.equal(selectedUser.children[0].className, 'disabled');
-});
-
-test('template renders credential-cookie usernames as text instead of HTML', () => {
-    const harness = createFormBrowserHarness();
-    const payload = '<img src=x onerror=globalThis.rdf4jXss=true>';
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(payload + ':secret').toString('base64'));
-
-    harness.loadScripts([]);
-    harness.runLoadHandlers();
-
-    const selectedUser = harness.document.getElementById('selected-user');
-    assert.equal(selectedUser.textContent, payload);
-    assert.equal(selectedUser.innerHTML, '');
+    // The server user is rendered by the shell (workbench.views.contextBarState), not patched into the DOM.
+    assert.equal(harness.document.getElementById('selected-user').textContent, '');
 });
 
 test('add page handles context and source selection branches', () => {
@@ -82,11 +45,6 @@ test('add page handles context and source selection branches', () => {
     const url = harness.registerElement('input', { id: 'url', value: 'https://example.test/data' });
     const baseURI = harness.registerElement('input', { id: 'baseURI', value: 'https://example.test/base' });
     const context = harness.registerElement('input', { id: 'context', value: '' });
-    const useForContext = harness.registerElement('input', {
-        id: 'useForContext',
-        type: 'checkbox',
-        checked: true
-    });
     const sourceText = harness.registerElement('input', { id: 'source-text', type: 'radio' });
     const sourceFile = harness.registerElement('input', { id: 'source-file', type: 'radio' });
     const sourceUrl = harness.registerElement('input', { id: 'source-url', type: 'radio' });
@@ -104,7 +62,6 @@ test('add page handles context and source selection branches', () => {
         url,
         baseURI,
         context,
-        useForContext,
         sourceText,
         sourceFile,
         sourceUrl,
@@ -113,20 +70,9 @@ test('add page handles context and source selection branches', () => {
 
     harness.loadScripts(['add.js']);
 
-    harness.context.workbench.add.handleFormatSelection('application/x-trig');
-    assert.equal(useForContext.checked, false);
-    assert.equal(context.value, '');
-    assert.equal(context.readOnly, false);
-
-    useForContext.checked = true;
-    baseURI.value = 'https://example.test/base';
-    harness.context.workbench.add.handleBaseURIUse();
-    assert.equal(context.value, '<https://example.test/base>');
-    assert.equal(context.readOnly, true);
-
-    useForContext.checked = false;
-    harness.context.workbench.add.handleBaseURIUse();
-    assert.equal(context.readOnly, false);
+    // The target graph is always editable (plan task M5.5): an empty value keeps the data's own graphs.
+    assert.equal(harness.context.workbench.add.handleContextOverride, undefined);
+    assert.equal(context.disabled, false);
 
     harness.context.workbench.add.enabledInput('text');
     assert.equal(text.disabled, false);
@@ -136,19 +82,24 @@ test('add page handles context and source selection branches', () => {
     assert.equal(contentType.getElementsByTagName('option')[0].disabled, true);
     assert.equal(contentType.getElementsByTagName('option')[1].selected, true);
 
-    useForContext.checked = true;
+    context.value = '';
     harness.context.workbench.add.enabledInput('file');
     assert.equal(file.disabled, false);
     assert.equal(baseURI.value, 'file:///tmp/data.ttl');
-    assert.equal(context.value, '<file:///tmp/data.ttl>');
+    assert.equal(context.value, '');
+    assert.equal(context.disabled, false);
 
     harness.context.workbench.add.enabledInput('url');
     assert.equal(url.disabled, false);
     assert.equal(baseURI.value, 'https://example.test/data');
-    assert.equal(context.value, '<https://example.test/data>');
+    assert.equal(context.value, '');
+    assert.equal(context.disabled, false);
   });
 
-test('create page resolves field roles, overwrite checks, and delayed enablement', () => {
+/** Lets promise chains (confirmation dialogs, M6.2) finish. */
+const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('create page resolves field roles, overwrite checks, and delayed enablement', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true, true],
         href: 'http://localhost:8080/rdf4j-workbench/create?id=repo-1&title=My+Repo'
@@ -174,7 +125,7 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.document.body.appendChild(createForm);
 
     harness.loadScripts(['create.js']);
-    harness.runLoadHandlers();
+    harness.workbench.create.mount(harness.document.body);
 
     assert.equal(id.value, 'repo-1');
     assert.equal(title.value, 'My Repo');
@@ -186,18 +137,37 @@ test('create page resolves field roles, overwrite checks, and delayed enablement
     harness.advanceTimers(0);
     assert.equal(createButton.disabled, true);
 
-    id.value = 'invalid id';
+    // The repository list tells whether the id exists (an unknown id's information page would answer 404).
+    id.value = 'Unusual_ID';
     harness.context.checkOverwrite();
-    const infoRequest = harness.ajaxRequests[0];
-    infoRequest.resolve({});
+    const listRequest = harness.ajaxRequests[0];
+    assert.equal(listRequest.options.url, '../NONE/repositories');
+    listRequest.resolve({ results: { bindings: [{ id: { value: 'Unusual_ID' } }] } });
+    await settle();
     assert.equal(createForm.submitCount, 1);
     assert.equal(harness.confirms.length, 2);
+    assert.match(harness.confirms[0], /Replace repository configuration\?/);
+    assert.match(harness.confirms[1], /Use this repository id\?/);
 
     createForm.submitCount = 0;
     id.value = 'new-id';
     harness.context.checkOverwrite();
-    harness.ajaxRequests[1].status(500);
+    harness.ajaxRequests[1].resolve({ results: { bindings: [{ id: { value: 'other' } }] } });
+    await settle();
     assert.equal(createForm.submitCount, 1);
+
+    // Without the list (a policy can hide it) the id's information page answers: 404 since the in-shell not-found
+    // page, 500 on older servers.
+    for (const status of [500, 404]) {
+        createForm.submitCount = 0;
+        const sent = harness.ajaxRequests.length;
+        harness.context.checkOverwrite();
+        harness.ajaxRequests[sent].status(403);
+        assert.equal(harness.ajaxRequests[sent + 1].options.url, '../new-id/info');
+        harness.ajaxRequests[sent + 1].status(status);
+        await settle();
+        assert.equal(createForm.submitCount, 1);
+    }
 });
 
 test('create federate page enables create only for valid member selection', () => {
@@ -236,7 +206,7 @@ test('create federate page enables create only for valid member selection', () =
     ].forEach((element) => harness.document.body.appendChild(element));
 
     harness.loadScripts(['create-federate.js']);
-    harness.runLoadHandlers();
+    harness.workbench.createFederate.mount(harness.document.body);
 
     assert.equal(createButton.disabled, false);
     assert.equal(feedback.style.display, 'none');
@@ -257,7 +227,7 @@ test('create federate page enables create only for valid member selection', () =
     assert.equal(createButton.disabled, true);
 });
 
-test('delete page reports timeout and successful unsafe-delete confirmation', () => {
+test('delete page reports timeout and successful unsafe-delete confirmation', async () => {
     const harness = createFormBrowserHarness({
         confirmResponses: [true]
     });
@@ -286,8 +256,41 @@ test('delete page reports timeout and successful unsafe-delete confirmation', ()
         }
     });
     harness.ajaxRequests[1].resolve({ safe: false });
+    await settle();
     assert.equal(form.submitCount, 1);
+    // Every deletion asks for the typed id (plan task M6.6); a proxied repository adds a warning.
+    assert.match(harness.confirms[0], /Delete repository repo-1\?/);
+    assert.match(harness.confirms[0], /proxies this one/);
     assert.equal(feedback.textContent, '');
+});
+
+test('delete page asks for the typed id for every repository and keeps a cancelled one (M6.6)', async () => {
+    const harness = createFormBrowserHarness({
+        confirmResponses: [true, false]
+    });
+    const form = harness.registerElement('form', { id: 'delete-form' });
+    const button = harness.registerElement('button', { id: 'delete-button' });
+    const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
+    const feedback = harness.registerElement('div', { id: 'delete-feedback' });
+    form.appendChild(button);
+    harness.document.body.appendChild(form);
+    harness.document.body.appendChild(id);
+    harness.document.body.appendChild(feedback);
+    harness.loadScripts(['delete.js']);
+    const event = { target: button, preventDefault() {} };
+
+    harness.context.checkIsSafeToDelete(event);
+    harness.ajaxRequests[0].resolve({ safe: true });
+    await settle();
+    assert.equal(form.submitCount, 1, 'typing the id and confirming deletes the repository');
+    assert.match(harness.confirms[0], /Type repo-1 to confirm/);
+    assert.doesNotMatch(harness.confirms[0], /proxies this one/, 'a repository nothing proxies gets no proxy warning');
+
+    harness.context.checkIsSafeToDelete(event);
+    harness.ajaxRequests[1].resolve({ safe: false });
+    await settle();
+    assert.equal(harness.confirms.length, 2);
+    assert.equal(form.submitCount, 1, 'Cancel keeps the repository');
 });
 
 test('delete page reports generic server errors', () => {
@@ -341,4 +344,56 @@ test('server page rewrites password field when credentials are present', () => {
     });
     assert.equal(password.name, '');
     assert.equal(form.submitCount, 2);
+});
+
+test('confirmation dialog waits for the typed text and resolves false on Cancel (M6.2)', async () => {
+    const harness = createFormBrowserHarness();
+    harness.loadScripts([]);
+    const component = harness.context.workbench.confirmDialog;
+    const pending = component.open({ title: 'Delete repository?', body: 'This deletes bsbm and its data.',
+        confirmLabel: 'Delete repository', danger: true, requireText: 'bsbm' });
+    const dialog = harness.document.querySelectorAll('dialog')[0];
+    assert.equal(dialog.open, true);
+    assert.equal(dialog.querySelectorAll('h2')[0].textContent, 'Delete repository?');
+    const [cancel, confirm] = dialog.querySelectorAll('button');
+    assert.equal(cancel.textContent, 'Cancel');
+    assert.equal(harness.document.activeElement, cancel, 'Cancel has the focus first');
+    assert.equal(confirm.textContent, 'Delete repository');
+    assert.ok(confirm.classList.contains('workbench-action--danger'));
+    assert.equal(confirm.disabled, true);
+    const input = dialog.querySelectorAll('input')[0];
+    input.value = 'bsb';
+    input.trigger('input');
+    assert.equal(confirm.disabled, true);
+    input.value = 'bsbm';
+    input.trigger('input');
+    assert.equal(confirm.disabled, false);
+    cancel.click();
+    assert.equal(await pending, false);
+    assert.equal(dialog.parentNode, null, 'the dialog is removed once it closes');
+
+    const confirmed = component.open({ title: 'Clear graph?', body: 'Clears 3 statements.', confirmLabel: 'Clear graph',
+        danger: true });
+    const second = harness.document.querySelectorAll('dialog')[0];
+    const confirmButton = second.querySelectorAll('button')[1];
+    assert.equal(confirmButton.disabled, false);
+    confirmButton.click();
+    assert.equal(await confirmed, true);
+});
+
+// Plan task M10.1: scripts submit forms through the router when it is there.
+test('submitForm hands a form to the router when there is one, and submits it natively otherwise', () => {
+    const harness = createFormBrowserHarness();
+    harness.loadScripts([]);
+    const form = harness.registerElement('form', { attributes: { action: 'clear', method: 'post' } });
+    harness.document.body.appendChild(form);
+
+    harness.context.workbench.submitForm(form);
+    assert.equal(form.submitCount, 1, 'no router: a native submit');
+
+    const routed = [];
+    harness.context.workbench.router = { submit: (submitted) => routed.push(submitted) };
+    harness.context.workbench.submitForm(form);
+    assert.deepEqual(routed, [form]);
+    assert.equal(form.submitCount, 1);
 });

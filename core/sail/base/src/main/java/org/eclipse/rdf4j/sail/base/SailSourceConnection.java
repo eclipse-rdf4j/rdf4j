@@ -22,6 +22,7 @@ import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -259,13 +260,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			tupleExpr = new QueryRoot(tupleExpr);
 		}
 
-		SailSource branch = null;
 		SailDataset rdfDataset = null;
 		CloseableIteration<BindingSet> iteration = null;
-		boolean allGood = false;
 		try {
-			branch = branch(IncludeInferred.fromBoolean(includeInferred));
-			rdfDataset = acquireDataset(branch, getIsolationLevel());
+			rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
 
 			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
@@ -291,34 +289,20 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			logger.trace("Optimized query model:\n{}", tupleExpr);
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			iteration = qes.evaluate(EmptyBindingSet.getInstance());
-			iteration = interlock(iteration, rdfDataset, branch);
+			iteration = interlock(iteration, rdfDataset);
+			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
 			if (slowQueryLogInfo != null) {
 				iteration = new SlowQueryLoggingIteration<>(iteration, getSailBase(), slowQueryLogInfo,
 						new SlowQueryLogFormatter(), slowQueryStartMillis);
 			}
-			allGood = true;
 			return iteration;
 		} catch (QueryEvaluationException e) {
-			throw new SailException(e);
-		} finally {
-			if (!allGood) {
-
-				try {
-					if (iteration != null) {
-						iteration.close();
-					}
-				} finally {
-					try {
-						if (rdfDataset != null) {
-							rdfDataset.close();
-						}
-					} finally {
-						if (branch != null) {
-							branch.close();
-						}
-					}
-				}
-			}
+			SailException failure = new SailException(e);
+			closeFailedRead(failure, iteration, rdfDataset);
+			throw failure;
+		} catch (RuntimeException | Error failure) {
+			closeFailedRead(failure, iteration, rdfDataset);
+			throw failure;
 		}
 	}
 
@@ -623,35 +607,28 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
-		SailSource branch = branch(IncludeInferred.explicitOnly);
-		SailDataset snapshot = acquireDataset(branch, getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getContextIDs(), snapshot, branch);
+		return readIteration(IncludeInferred.explicitOnly, SailDataset::getContextIDs);
 	}
 
 	@Override
 	protected CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
-		SailDataset snapshot = acquireDataset(branch, getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getStatements(subj, pred, obj, contexts), snapshot, branch);
+		return readIteration(IncludeInferred.fromBoolean(includeInferred),
+				dataset -> dataset.getStatements(subj, pred, obj, contexts));
 	}
 
 	@Override
 	protected CloseableIteration<? extends Statement> getStatementsInternal(StatementOrder order, Resource subj,
 			IRI pred,
 			Value obj, boolean includeInferred, Resource... contexts) throws SailException {
-		SailSource branch = branch(IncludeInferred.fromBoolean(includeInferred));
-		SailDataset snapshot = acquireDataset(branch, getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getStatements(order, subj, pred, obj, contexts), snapshot,
-				branch);
+		return readIteration(IncludeInferred.fromBoolean(includeInferred),
+				dataset -> dataset.getStatements(order, subj, pred, obj, contexts));
 	}
 
 	@Override
 	public Comparator<Value> getComparator() {
-		try (SailSource branch = branch(IncludeInferred.fromBoolean(false))) {
-			try (SailDataset snapshot = acquireDataset(branch, getIsolationLevel())) {
-				return snapshot.getComparator();
-			}
+		try (SailDataset dataset = datasetForRead(IncludeInferred.explicitOnly)) {
+			return dataset.getComparator();
 		}
 	}
 
@@ -664,29 +641,13 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
-		SailSource branch = branch(IncludeInferred.explicitOnly);
-		SailDataset snapshot = acquireDataset(branch, getIsolationLevel());
-		return SailClosingIteration.makeClosable(snapshot.getNamespaces(), snapshot, branch);
+		return readIteration(IncludeInferred.explicitOnly, SailDataset::getNamespaces);
 	}
 
 	@Override
 	protected String getNamespaceInternal(String prefix) throws SailException {
-		SailSource branch = null;
-		SailDataset snapshot = null;
-		try {
-			branch = branch(IncludeInferred.explicitOnly);
-			snapshot = acquireDataset(branch, getIsolationLevel());
-			return snapshot.getNamespace(prefix);
-		} finally {
-			try {
-				if (snapshot != null) {
-					snapshot.close();
-				}
-			} finally {
-				if (branch != null) {
-					branch.close();
-				}
-			}
+		try (SailDataset dataset = datasetForRead(IncludeInferred.explicitOnly)) {
+			return dataset.getNamespace(prefix);
 		}
 	}
 
@@ -1346,6 +1307,53 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			// create a new branch for read operation
 			return getExplicitSailSource().fork();
 		}
+	}
+
+	private SailDataset datasetForRead(IncludeInferred includeInferred) {
+		IsolationLevel level = getIsolationLevel();
+		return withDatasetAcquisition(level, () -> datasetForReadWithinAdmission(includeInferred, level));
+	}
+
+	private SailDataset datasetForReadWithinAdmission(IncludeInferred includeInferred, IsolationLevel level) {
+		// Only owned Snapshot roots can omit observations for a read without an active transaction.
+		// Active transactions and other stores keep their ordinary source selection and dataset semantics.
+		if (useTransactionReadBranch() && !isActive() && store instanceof SnapshotSailStore snapshotStore) {
+			if (includeInferred == IncludeInferred.all) {
+				SailDataset inferred = snapshotStore.datasetForRead(getInferredSailSource(), true, level);
+				SailDataset explicit = null;
+				try {
+					explicit = snapshotStore.datasetForRead(getExplicitSailSource(), false, level);
+					return UnionSailDataset.getInstance(inferred, explicit);
+				} catch (RuntimeException | Error failure) {
+					SourceClosingSailDataset.closeAfterFailure(failure, inferred, explicit);
+					throw failure;
+				}
+			}
+			boolean inferred = includeInferred == IncludeInferred.inferredOnly;
+			SailSource source = inferred ? getInferredSailSource() : getExplicitSailSource();
+			return snapshotStore.datasetForRead(source, inferred, level);
+		}
+		return SourceClosingSailDataset.open(branch(includeInferred), level);
+	}
+
+	private <T> CloseableIteration<T> readIteration(IncludeInferred includeInferred,
+			Function<SailDataset, CloseableIteration<? extends T>> operation) {
+		SailDataset dataset = datasetForRead(includeInferred);
+		CloseableIteration<? extends T> iteration = null;
+		try {
+			iteration = operation.apply(dataset);
+			return SailClosingIteration.makeClosable(iteration, dataset);
+		} catch (RuntimeException | Error failure) {
+			closeFailedRead(failure, iteration, dataset);
+			throw failure;
+		}
+	}
+
+	private static void closeFailedRead(Throwable failure, CloseableIteration<?> iteration, SailDataset dataset) {
+		if (iteration != null) {
+			SourceClosingSailDataset.closeAfterFailure(failure, iteration::close);
+		}
+		SourceClosingSailDataset.closeAfterFailure(failure, dataset);
 	}
 
 	private <T> CloseableIteration<T> interlock(

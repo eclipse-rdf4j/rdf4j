@@ -30,9 +30,11 @@ import org.eclipse.rdf4j.workbench.proxy.CacheFilter;
 import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -181,14 +183,15 @@ public class Rdf4jServerWorkbenchApplication {
 	}
 
 	@Bean
-	ServletRegistrationBean<WorkbenchGateway> rdf4jWorkbenchServlet() {
+	ServletRegistrationBean<WorkbenchGateway> rdf4jWorkbenchServlet(
+			@Value("${server.servlet.context-path:}") String contextPath) {
 		WorkbenchGateway servlet = new WorkbenchGateway();
 		ServletRegistrationBean<WorkbenchGateway> registration = new ServletRegistrationBean<>(servlet,
 				workbenchServletUrlMappings().toArray(new String[0]));
 		registration.setName("rdf4jWorkbench");
 		registration.setLoadOnStartup(2);
 		registration.setAsyncSupported(true);
-		registration.setInitParameters(workbenchInitParameters());
+		registration.setInitParameters(workbenchInitParameters(contextPath));
 		registration.setMultipartConfig(new MultipartConfigElement(""));
 		return registration;
 	}
@@ -293,11 +296,12 @@ public class Rdf4jServerWorkbenchApplication {
 		return registration;
 	}
 
-	private Map<String, String> workbenchInitParameters() {
+	private Map<String, String> workbenchInitParameters(String contextPath) {
 		Map<String, String> params = new LinkedHashMap<>();
-		params.put("transformations", "/rdf4j-workbench/transformations");
-		params.put("default-server", "/rdf4j-server");
-		params.put("accepted-server-prefixes", "/rdf4j-server");
+		params.put("workbenchBasePath", "/rdf4j-workbench");
+		String serverPath = getServerPath(contextPath);
+		params.put("default-server", serverPath);
+		params.put("accepted-server-prefixes", serverPath);
 		params.put("change-server-path", "/NONE/server");
 		params.put("cookie-max-age", "2592000");
 		params.put("no-repository-id", "NONE");
@@ -306,6 +310,7 @@ public class Rdf4jServerWorkbenchApplication {
 		params.put("default-limit", "100");
 		params.put("default-queryLn", "SPARQL");
 		params.put("default-infer", "true");
+		params.put("default-query-timeout", "60");
 		params.put("default-Accept", "application/rdf+xml");
 		params.put("default-Content-Type", "application/rdf+xml");
 		params.put("/summary", "org.eclipse.rdf4j.workbench.commands.SummaryServlet");
@@ -315,6 +320,8 @@ public class Rdf4jServerWorkbenchApplication {
 		params.put("/create", "org.eclipse.rdf4j.workbench.commands.CreateServlet");
 		params.put("/delete", "org.eclipse.rdf4j.workbench.commands.DeleteServlet");
 		params.put("/namespaces", "org.eclipse.rdf4j.workbench.commands.NamespacesServlet");
+		params.put(WorkbenchPolicy.INTERNAL_NAMESPACES_PATH,
+				"org.eclipse.rdf4j.workbench.proxy.config.WorkbenchNamespaceMetadataServlet");
 		params.put("/contexts", "org.eclipse.rdf4j.workbench.commands.ContextsServlet");
 		params.put("/types", "org.eclipse.rdf4j.workbench.commands.TypesServlet");
 		params.put("/explore", "org.eclipse.rdf4j.workbench.commands.ExploreServlet");
@@ -326,6 +333,17 @@ public class Rdf4jServerWorkbenchApplication {
 		params.put("/clear", "org.eclipse.rdf4j.workbench.commands.ClearServlet");
 		params.put("/update", "org.eclipse.rdf4j.workbench.commands.UpdateServlet");
 		return params;
+	}
+
+	private String getServerPath(String contextPath) {
+		String normalized = contextPath == null ? "" : contextPath.trim();
+		while (normalized.startsWith("/")) {
+			normalized = normalized.substring(1);
+		}
+		while (normalized.endsWith("/")) {
+			normalized = normalized.substring(0, normalized.length() - 1);
+		}
+		return normalized.isEmpty() ? "/rdf4j-server" : "/" + normalized + "/rdf4j-server";
 	}
 
 	@Bean

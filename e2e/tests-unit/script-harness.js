@@ -129,6 +129,34 @@ function createScriptHarness(options = {}) {
         return confirmResponses.shift();
     }
 
+    // With confirmResponses, confirmation dialogs (workbench.confirmDialog, M6.2) are answered like
+    // window.confirm(): their text is recorded in confirms and the next response clicks confirm or Cancel.
+    if (options.confirmResponses) {
+        const createElement = document.createElement.bind(document);
+        document.createElement = (tagName) => {
+            const element = createElement(tagName);
+            if (String(tagName).toLowerCase() === 'dialog') {
+                const showModal = element.showModal.bind(element);
+                element.showModal = () => {
+                    showModal();
+                    confirms.push(element.textContent);
+                    const answer = getNextConfirmResponse();
+                    Promise.resolve().then(() => {
+                        const typed = element.querySelectorAll('input').filter((input) =>
+                            input.getAttribute('data-workbench-confirm-text') !== null)[0];
+                        if (answer && typed) {
+                            typed.value = typed.getAttribute('data-workbench-confirm-text');
+                            typed.trigger('input');
+                        }
+                        const buttons = element.querySelectorAll('button');
+                        (answer ? buttons[buttons.length - 1] : buttons[0]).click();
+                    });
+                };
+            }
+            return element;
+        };
+    }
+
     function defaultAjaxHandler(ajaxOptions) {
         const request = createAjaxRequest(ajaxOptions);
         ajaxRequests.push(request);
@@ -141,12 +169,6 @@ function createScriptHarness(options = {}) {
     const workbench = Object.assign({
         addLoad(callback) {
             loadCallbacks.push(callback);
-        },
-        addParam(sb, id) {
-            sb[sb.length] = id + '=';
-            const tag = document.getElementById(id);
-            sb[sb.length] = tag.type === 'checkbox' ? String(tag.checked) : encodeURIComponent(tag.value);
-            sb[sb.length] = '&';
         },
         getCookie(name) {
             const cookies = document.cookie.split(';');
@@ -194,6 +216,14 @@ function createScriptHarness(options = {}) {
                 return `request-${generatedRequestIndex}`;
             }
         },
+        getComputedStyle(element) {
+            const style = element && element.style ? element.style : {};
+            return Object.assign({
+                opacity: style.opacity || '1',
+                transform: style.transform || 'none',
+                direction: style.direction || 'ltr'
+            }, style);
+        },
         document,
         location: document.location,
         localStorage: {
@@ -229,6 +259,16 @@ function createScriptHarness(options = {}) {
             return;
         }
         windowEventHandlers.set(type, windowEventHandlers.get(type).filter((candidate) => candidate !== handler));
+    };
+    defaultWindow.listenerCount = (type) => (windowEventHandlers.get(type) || []).length;
+    defaultWindow.listenerCounts = () => {
+        const counts = {};
+        windowEventHandlers.forEach((handlers, type) => {
+            if (handlers.length) {
+                counts[type] = handlers.length;
+            }
+        });
+        return counts;
     };
     defaultWindow.dispatchEvent = (event) => {
         const normalizedEvent = typeof event === 'string'

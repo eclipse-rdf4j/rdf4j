@@ -79,9 +79,8 @@ class AddServletCoverageTest {
 	void serviceRendersStaticShell() throws Exception {
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 
-		new AddServlet().service(builder, "/transform");
+		new AddServlet().service(builder);
 
-		verify(builder).transform("/transform", "add.xsl");
 		verify(builder).start();
 		verify(builder).link(List.of("info"));
 		verify(builder).end();
@@ -95,7 +94,7 @@ class AddServletCoverageTest {
 		HttpServletResponse response = stubResponse();
 		when(nullRequest.getParameter(ISOLATION_PARAM)).thenReturn(null);
 
-		nullServlet.service(nullRequest, response, "/transform");
+		nullServlet.service(nullRequest, response);
 
 		verify(nullBuilder, never()).result(null, null, null);
 		verify(nullBuilder).result("READ_COMMITTED", "Read Committed", null);
@@ -105,7 +104,7 @@ class AddServletCoverageTest {
 		WorkbenchRequest blankRequest = mock(WorkbenchRequest.class);
 		when(blankRequest.getParameter(ISOLATION_PARAM)).thenReturn(" ");
 
-		blankServlet.service(blankRequest, response, "/transform");
+		blankServlet.service(blankRequest, response);
 
 		verify(blankBuilder, never()).result(" ", " ", " ");
 		verify(blankBuilder).result("READ_COMMITTED", "Read Committed", null);
@@ -119,7 +118,7 @@ class AddServletCoverageTest {
 		HttpServletResponse response = stubResponse();
 		when(request.getParameter(ISOLATION_PARAM)).thenReturn(".");
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(builder).result(".", ".", ".");
 		verify(builder).result("A", "A", null);
@@ -149,7 +148,7 @@ class AddServletCoverageTest {
 		when(request.getUrl("url")).thenReturn(url);
 		when(connection.isActive()).thenReturn(true);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				eq(context));
@@ -185,7 +184,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE), eq(context));
 		doThrow(new RepositoryException("rollback failed")).when(connection).rollback();
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).rollback();
 		verify(builder).result("bad data", "https://example.org/base", "urn:ctx", "text/turtle", "READ_COMMITTED",
@@ -204,7 +203,7 @@ class AddServletCoverageTest {
 		when(request.getParameter("Content-Type")).thenReturn("text/turtle");
 		when(request.getParameter(ISOLATION_PARAM)).thenReturn(".");
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(builder).result("Unknown isolation level: .", "https://example.org/base", null, "text/turtle", ".",
 				null, null);
@@ -234,7 +233,7 @@ class AddServletCoverageTest {
 				.thenReturn(new ByteArrayInputStream("<a/>".getBytes(StandardCharsets.UTF_8)));
 		when(autodetectRequest.getContentFileName()).thenReturn("data.unknown");
 
-		autodetectServlet.doPost(autodetectRequest, response, "/transform");
+		autodetectServlet.doPost(autodetectRequest, response);
 
 		verify(autodetectBuilder).result("Could not automatically determine Content-Type for content: data.unknown",
 				"https://example.org/base", null, "autodetect", "", null, null);
@@ -250,7 +249,7 @@ class AddServletCoverageTest {
 		when(mimeRequest.getContentParameter()).thenReturn(new ByteArrayInputStream(new byte[0]));
 		when(mimeRequest.getContentFileName()).thenReturn("data.ttl");
 
-		mimeServlet.doPost(mimeRequest, response, "/transform");
+		mimeServlet.doPost(mimeRequest, response);
 
 		verify(mimeBuilder).result("Unknown Content-Type: text/not-real", "https://example.org/base", null,
 				"text/not-real", "", null, null);
@@ -281,7 +280,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 						any(Resource[].class));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).begin();
 		verify(connection, never()).begin(any(IsolationLevel.class));
@@ -312,7 +311,7 @@ class AddServletCoverageTest {
 			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(zip(members)));
 			when(request.getContentFileName()).thenReturn("data.zip");
 
-			servlet.doPost(request, response, "/transform");
+			servlet.doPost(request, response);
 
 			try (RepositoryConnection connection = repository.getConnection()) {
 				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI("urn:first"),
@@ -351,7 +350,7 @@ class AddServletCoverageTest {
 		when(request.getUrl("url")).thenReturn(url);
 		when(connection.isActive()).thenReturn(true);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(urlConnection).addRequestProperty("Accept", RDFFormat.TURTLE.getDefaultMIMEType());
 		verify(connection).add(any(InputStream.class), eq("https://example.org/data.ttl?download=data.tar"),
@@ -409,7 +408,7 @@ class AddServletCoverageTest {
 			when(request.isParameterPresent("url")).thenReturn(true);
 			when(request.getUrl("url")).thenReturn(url);
 
-			servlet.doPost(request, response, "/transform");
+			servlet.doPost(request, response);
 
 			assertThat(requestedAccept).containsExactlyInAnyOrderElementsOf(RDFFormat.TURTLE.getMIMETypes());
 			try (RepositoryConnection connection = repository.getConnection()) {
@@ -450,7 +449,7 @@ class AddServletCoverageTest {
 		when(request.getUrl("url")).thenReturn(url);
 		when(connection.isActive()).thenReturn(true);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(urlConnection, atLeastOnce()).addRequestProperty(eq("Accept"),
 				argThat(value -> value.contains(RDFFormat.TURTLE.getDefaultMIMEType())));
@@ -485,7 +484,7 @@ class AddServletCoverageTest {
 		when(request.getUrl("url")).thenReturn(url);
 		when(connection.isActive()).thenReturn(true);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				any(Resource[].class));
@@ -519,7 +518,7 @@ class AddServletCoverageTest {
 		when(request.isParameterPresent("url")).thenReturn(true);
 		when(request.getUrl("url")).thenReturn(url);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				any(Resource[].class));
@@ -551,7 +550,7 @@ class AddServletCoverageTest {
 		when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(zip(members)));
 		when(request.getContentFileName()).thenReturn("data.zip");
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).rollback();
 		verify(builder).result("RDF input decompression limit exceeded: archive entry count 2 exceeds 1",
@@ -579,7 +578,7 @@ class AddServletCoverageTest {
 		when(autodetectRequest.isParameterPresent("url")).thenReturn(true);
 		when(autodetectRequest.getUrl("url")).thenReturn(unknownUrl);
 
-		autodetectServlet.doPost(autodetectRequest, response, "/transform");
+		autodetectServlet.doPost(autodetectRequest, response);
 
 		verify(autodetectBuilder).result("Could not automatically determine Content-Type for content: /data",
 				"https://example.org/base", null, "autodetect", "", null, null);
@@ -595,7 +594,7 @@ class AddServletCoverageTest {
 		when(mimeRequest.isParameterPresent("url")).thenReturn(true);
 		when(mimeRequest.getUrl("url")).thenReturn(turtleUrl);
 
-		mimeServlet.doPost(mimeRequest, response, "/transform");
+		mimeServlet.doPost(mimeRequest, response);
 
 		verify(mimeBuilder).result("Unknown Content-Type: text/not-real", "https://example.org/base", null,
 				"text/not-real", "", null, null);
@@ -620,7 +619,7 @@ class AddServletCoverageTest {
 		when(request.getUrl("url")).thenReturn(url);
 		when(connection.isActive()).thenReturn(true);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				any(Resource[].class));
@@ -644,7 +643,7 @@ class AddServletCoverageTest {
 		when(request.isParameterPresent("url")).thenReturn(true);
 		when(request.getUrl("url")).thenReturn(url);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(builder).result("No Content-Type provided", "https://example.org/base", null, null, null, null, null);
 		verify(response, never()).sendRedirect("summary");
@@ -677,7 +676,7 @@ class AddServletCoverageTest {
 				.when(connection)
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE), eq(context));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).rollback();
 		verify(builder).result("bad payload", "https://example.org/base", "urn:ctx", "text/turtle", "READ_COMMITTED",
@@ -711,7 +710,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 						any(Resource[].class));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(response).sendRedirect("summary");
 	}
@@ -735,7 +734,7 @@ class AddServletCoverageTest {
 			when(request.getContentParameter()).thenReturn(new ByteArrayInputStream(fixture.namedInput()));
 			when(request.getContentFileName()).thenReturn(fixture.sourceName());
 
-			servlet.doPost(request, response, "/transform");
+			servlet.doPost(request, response);
 
 			try (RepositoryConnection connection = repository.getConnection()) {
 				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI(fixture.subjectIri()),
@@ -743,6 +742,90 @@ class AddServletCoverageTest {
 						SimpleValueFactory.getInstance().createIRI("urn:o"), false)).isTrue();
 			}
 			verify(response).sendRedirect("summary");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void doPostPreservesEmbeddedTriGContextsAndUsesTheDefaultGraphWithoutOverride() throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		String trig = "@prefix ex: <http://example.org/> .\n"
+				+ "ex:default ex:p \"default\" .\n"
+				+ "ex:graph { ex:named ex:p \"named\" . }\n";
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn(RDFFormat.TRIG.getDefaultMIMEType());
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(false);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter())
+					.thenReturn(new ByteArrayInputStream(trig.getBytes(StandardCharsets.UTF_8)));
+			when(request.getContentFileName()).thenReturn("data.trig");
+
+			servlet.doPost(request, response);
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/default"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("default"), false, (Resource) null)).isTrue();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/named"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("named"), false,
+						SimpleValueFactory.getInstance().createIRI("http://example.org/graph"))).isTrue();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/named"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("named"), false, (Resource) null)).isFalse();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void doPostExplicitContextReplacesEmbeddedTriGContexts() throws Exception {
+		AddServlet servlet = new AddServlet();
+		SailRepository repository = new SailRepository(new MemoryStore());
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		HttpServletResponse response = stubResponse();
+		Resource override = SimpleValueFactory.getInstance().createIRI("http://example.org/override");
+		String trig = "@prefix ex: <http://example.org/> .\n"
+				+ "ex:default ex:p \"default\" .\n"
+				+ "ex:graph { ex:named ex:p \"named\" . }\n";
+
+		repository.init();
+		try {
+			servlet.setRepository(repository);
+			when(request.getParameter("baseURI")).thenReturn("https://example.org/base");
+			when(request.getParameter("Content-Type")).thenReturn(RDFFormat.TRIG.getDefaultMIMEType());
+			when(request.getParameter(ISOLATION_PARAM)).thenReturn(null);
+			when(request.isParameterPresent("context")).thenReturn(true);
+			when(request.getResource("context")).thenReturn(override);
+			when(request.isParameterPresent("url")).thenReturn(false);
+			when(request.getContentParameter())
+					.thenReturn(new ByteArrayInputStream(trig.getBytes(StandardCharsets.UTF_8)));
+			when(request.getContentFileName()).thenReturn("data.trig");
+
+			servlet.doPost(request, response);
+
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.hasStatement(null, null, null, false, override)).isTrue();
+				assertThat(connection.hasStatement(null, null, null, false,
+						SimpleValueFactory.getInstance().createIRI("http://example.org/graph"))).isFalse();
+				assertThat(connection.hasStatement(
+						SimpleValueFactory.getInstance().createIRI("http://example.org/default"),
+						SimpleValueFactory.getInstance().createIRI("http://example.org/p"),
+						SimpleValueFactory.getInstance().createLiteral("default"), false, override)).isTrue();
+			}
 		} finally {
 			repository.shutDown();
 		}
@@ -771,7 +854,7 @@ class AddServletCoverageTest {
 					zip(Map.of("part#name.ttl.br", fixture.namedInput()))));
 			when(request.getContentFileName()).thenReturn("data.zip");
 
-			servlet.doPost(request, response, "/transform");
+			servlet.doPost(request, response);
 
 			try (RepositoryConnection connection = repository.getConnection()) {
 				assertThat(connection.hasStatement(SimpleValueFactory.getInstance().createIRI(fixture.subjectIri()),
@@ -818,7 +901,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), any(RDFFormat.class),
 						any(Resource[].class));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		assertThat(formats).containsExactly(RDFFormat.TURTLE, RDFFormat.RDFXML);
 		verify(connection).begin((TransactionSetting) IsolationLevels.READ_COMMITTED);
@@ -859,7 +942,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), any(RDFFormat.class),
 						any(Resource[].class));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		assertThat(calls[0]).isEqualTo(2);
 		verify(connection).rollback();
@@ -890,7 +973,7 @@ class AddServletCoverageTest {
 		when(request.getContentFileName()).thenReturn("data.ttl");
 		when(connection.isActive()).thenReturn(false);
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection).add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 				eq(context));
@@ -922,7 +1005,7 @@ class AddServletCoverageTest {
 				.add(any(InputStream.class), eq("https://example.org/base"), eq(RDFFormat.TURTLE),
 						any(Resource[].class));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(connection, never()).rollback();
 		verify(builder).result("bad url", "https://example.org/base", null, "text/turtle", "READ_COMMITTED", null,

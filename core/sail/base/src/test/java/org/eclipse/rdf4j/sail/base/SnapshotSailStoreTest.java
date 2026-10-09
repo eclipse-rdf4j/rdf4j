@@ -14,15 +14,26 @@ package org.eclipse.rdf4j.sail.base;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -37,22 +48,31 @@ import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
+import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UpdateContext;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.AbstractSailConnection;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -123,26 +143,867 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
-	public void testRollbackExceptionDuringCommit() {
-		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink() {
+	public void implicitReadDoesNotObserveAfterSerializableTransaction() {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(
+				observingSinks(subject -> observations.incrementAndGet()));
+		Sail sail = createSail(sailStore);
+		try (SailConnection connection = sail.getConnection()) {
+			connection.begin(IsolationLevels.SERIALIZABLE);
+			try (var statements = connection.getStatements(RDF.TYPE, RDFS.LABEL, null, false)) {
+				assertFalse(statements.hasNext());
+			}
+			connection.rollback();
+			assertTrue(observations.get() > 0, "The preceding serializable read must exercise the observing sink");
+			int beforeImplicitRead = observations.get();
+			try (var statements = connection.getStatements(RDFS.CLASS, RDFS.LABEL, null, false)) {
+				assertFalse(statements.hasNext());
+			}
+			assertEquals(beforeImplicitRead, observations.get(), "An implicit default read must not observe patterns");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> implicitReadVariantsDoNotObserve() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : IsolationLevels.values()) {
+			for (boolean includeInferred : new boolean[] { false, true }) {
+				for (Priming priming : Priming.values()) {
+					for (boolean newConnection : new boolean[] { false, true }) {
+						for (boolean populated : new boolean[] { false, true }) {
+							String name = level + ": inferred=" + includeInferred + ", " + priming
+									+ ", newConnection=" + newConnection + ", populated=" + populated;
+							tests.add(DynamicTest.dynamicTest(name, () -> assertImplicitReadVariantsDoNotObserve(
+									level, includeInferred, priming, newConnection, populated)));
+						}
+					}
+				}
+			}
+		}
+		return tests;
+	}
+
+	private enum Priming {
+		COLD,
+		COMMIT,
+		ROLLBACK
+	}
+
+	private void assertImplicitReadVariantsDoNotObserve(IsolationLevels defaultLevel, boolean includeInferred,
+			Priming priming, boolean newConnection, boolean populated) {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore store = createSnapshotSailStore(observingSinks(subject -> observations.incrementAndGet()));
+		SailRepository repository = new SailRepository(createSail(store, defaultLevel));
+		repository.init();
+		try (RepositoryConnection primer = repository.getConnection()) {
+			if (priming != Priming.COLD) {
+				primer.begin(IsolationLevels.SERIALIZABLE);
+				try (var statements = primer.getStatements(RDF.TYPE, RDFS.LABEL, null, true)) {
+					assertFalse(statements.hasNext());
+				}
+				if (priming == Priming.COMMIT) {
+					primer.commit();
+				} else {
+					primer.rollback();
+				}
+				assertTrue(observations.get() > 0, "The serializable primer must reach the backing observer");
+			}
+			int beforeReads = observations.get();
+			// The no-op backing fixture retains seeded changes while these guards are open.
+			try (SailDataset explicitGuard = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					SailDataset inferredGuard = store.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT)) {
+				if (populated) {
+					Value value = repository.getValueFactory().createLiteral("label");
+					approve(store.getExplicitSailSource(), RDF.TYPE, value);
+					approve(store.getInferredSailSource(), RDFS.CLASS, value);
+				}
+				if (newConnection) {
+					try (RepositoryConnection reader = repository.getConnection()) {
+						assertReadVariants(reader, includeInferred, populated);
+					}
+				} else {
+					assertReadVariants(primer, includeInferred, populated);
+				}
+			}
+			assertEquals(beforeReads, observations.get(),
+					"Observations must remain unchanged after every iterator and guard closes");
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private void assertReadVariants(RepositoryConnection reader, boolean includeInferred, boolean populated) {
+		long expected = populated ? includeInferred ? 2 : 1 : 0;
+		try (var statements = reader.getStatements(null, RDFS.LABEL, null, includeInferred)) {
+			assertEquals(expected, statements.stream().count(), "exhausted statements");
+		}
+		try (var statements = reader.getStatements(null, RDFS.LABEL, null, includeInferred)) {
+			assertEquals(populated, statements.hasNext(), "early-close statements");
+			if (populated) {
+				statements.next();
+			}
+		}
+		assertEquals(populated, reader.hasStatement(RDF.TYPE, RDFS.LABEL, null, includeInferred));
+		var query = reader.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
+		query.setIncludeInferred(includeInferred);
+		try (var rows = query.evaluate()) {
+			long count = 0;
+			while (rows.hasNext()) {
+				rows.next();
+				count++;
+			}
+			assertEquals(expected, count, "exhausted SELECT");
+		}
+		try (var rows = query.evaluate()) {
+			assertEquals(populated, rows.hasNext(), "early-close SELECT");
+			if (populated) {
+				rows.next();
+			}
+		}
+		try (var contexts = reader.getContextIDs(); var namespaces = reader.getNamespaces()) {
+			assertFalse(contexts.hasNext());
+			assertFalse(namespaces.hasNext());
+		}
+		assertNull(reader.getNamespace("missing"));
+		assertEquals(populated ? 1 : 0, reader.size());
+		assertFalse(reader.isActive());
+	}
+
+	private void approve(SailSource source, Resource subject, Value value) {
+		try (SailSink writer = source.sink(IsolationLevels.READ_COMMITTED)) {
+			writer.approve(subject, RDFS.LABEL, value, null);
+			writer.flush();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> implicitReadsRespectIncludeInferredAfterSerializableReads() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : IsolationLevels.values()) {
+			tests.add(
+					DynamicTest.dynamicTest(level.toString(), () -> assertImplicitReadsRespectIncludeInferred(level)));
+		}
+		return tests;
+	}
+
+	private void assertImplicitReadsRespectIncludeInferred(IsolationLevels defaultLevel) {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(
+				observingSinks(subject -> observations.incrementAndGet()));
+		Sail sail = createSail(sailStore, defaultLevel);
+		try {
+			for (SailSource source : List.of(sailStore.getExplicitSailSource(), sailStore.getInferredSailSource())) {
+				int beforeSerializableRead = observations.get();
+				try (SailDataset dataset = source.dataset(IsolationLevels.SERIALIZABLE);
+						var statements = dataset.getStatements(null, RDFS.LABEL, null)) {
+					assertFalse(statements.hasNext());
+				}
+				assertTrue(observations.get() > beforeSerializableRead,
+						"Each root must exercise its serializable observing sink");
+			}
+			int beforeImplicitReads = observations.get();
+			// The no-op backing fixture keeps seeded data in the roots while these datasets remain open.
+			try (SailDataset explicitGuard = sailStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
+					SailDataset inferredGuard = sailStore.getInferredSailSource().dataset(IsolationLevels.SNAPSHOT);
+					SailConnection reader = sail.getConnection()) {
+				ValueFactory vf = sail.getValueFactory();
+				Statement explicit = vf.createStatement(RDF.TYPE, RDFS.LABEL, vf.createLiteral("explicit"));
+				Statement inferred = vf.createStatement(RDFS.CLASS, RDFS.LABEL, vf.createLiteral("inferred"));
+				try (SailSink writer = sailStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+					writer.approve(explicit.getSubject(), explicit.getPredicate(), explicit.getObject(), null);
+					writer.flush();
+				}
+				try (SailSink writer = sailStore.getInferredSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+					writer.approve(inferred.getSubject(), inferred.getPredicate(), inferred.getObject(), null);
+					writer.flush();
+				}
+				for (boolean includeInferred : new boolean[] { false, true }) {
+					List<Statement> expected = includeInferred ? List.of(explicit, inferred) : List.of(explicit);
+					try (var statements = reader.getStatements(null, RDFS.LABEL, null, includeInferred)) {
+						List<Statement> actual = new ArrayList<>();
+						statements.forEachRemaining(actual::add);
+						assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+					}
+					assertEquals(beforeImplicitReads, observations.get(), defaultLevel + ": getStatements");
+					try (var rows = reader.evaluate(new StatementPattern(new Var("s"), new Var("p", RDFS.LABEL),
+							new Var("o")), null, EmptyBindingSet.getInstance(), includeInferred)) {
+						List<Statement> actual = new ArrayList<>();
+						while (rows.hasNext()) {
+							var row = rows.next();
+							actual.add(vf.createStatement((Resource) row.getValue("s"), RDFS.LABEL, row.getValue("o")));
+						}
+						assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
+					}
+					assertEquals(beforeImplicitReads, observations.get(), defaultLevel + ": evaluate");
+					assertFalse(reader.isActive());
+				}
+			}
+			assertEquals(beforeImplicitReads, observations.get(),
+					"Closing the root datasets must not flush implicit read observations: " + defaultLevel);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void implicitReadDoesNotObserveWhileSerializableOwnerIsOpen() {
+		List<Resource> observedSubjects = new ArrayList<>();
+		SnapshotSailStore sailStore = createSnapshotSailStore(observingSinks(observedSubjects::add));
+		Sail sail = createSail(sailStore);
+		try (SailConnection owner = sail.getConnection(); SailConnection reader = sail.getConnection()) {
+			owner.begin(IsolationLevels.SERIALIZABLE);
+			try (var ownerStatements = owner.getStatements(RDF.TYPE, RDFS.LABEL, null, false)) {
+				try (var statements = reader.getStatements(RDFS.CLASS, RDFS.LABEL, null, true)) {
+					assertFalse(statements.hasNext());
+				}
+				assertTrue(owner.isActive());
+				assertFalse(reader.isActive());
+			}
+			owner.rollback();
+			assertTrue(observedSubjects.contains(RDF.TYPE));
+			assertFalse(observedSubjects.contains(RDFS.CLASS), "The unrelated implicit read must not observe");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> explicitTransactionsKeepTheirOwnChanges() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : IsolationLevels.values()) {
+			// NONE writes directly to roots; it has no transaction-local changes to roll back.
+			if (level != IsolationLevels.NONE) {
+				tests.add(DynamicTest.dynamicTest(level.toString(),
+						() -> assertExplicitTransactionKeepsItsOwnChanges(level)));
+			}
+		}
+		return tests;
+	}
+
+	private void assertExplicitTransactionKeepsItsOwnChanges(IsolationLevels level) {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore store = createSnapshotSailStore(observingSinks(subject -> observations.incrementAndGet()));
+		Sail sail = createSail(store);
+		try {
+			try (SailDataset guard = store.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
+					SailConnection connection = sail.getConnection()) {
+				connection.begin(level);
+				Value label = sail.getValueFactory().createLiteral("transaction-local");
+				connection.addStatement((UpdateContext) null, RDFS.CLASS, RDFS.LABEL, label);
+				connection.flush();
+				try (var statements = connection.getStatements(RDFS.CLASS, RDFS.LABEL, null, false)) {
+					assertTrue(statements.hasNext(), level.toString());
+					assertEquals(label, statements.next().getObject());
+					assertFalse(statements.hasNext());
+				}
+				assertTrue(connection.isActive());
+				connection.rollback();
+			}
+			assertTrue(observations.get() > 0,
+					"Explicit transactions must retain the armed root's normal observation behavior: " + level);
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void serializableDefaultImplicitReadsDoNotObserve() {
+		AtomicInteger observations = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(
+				observingSinks(subject -> observations.incrementAndGet()));
+		Sail sail = createSail(sailStore, IsolationLevels.SERIALIZABLE);
+		try (SailConnection connection = sail.getConnection()) {
+			try (var statements = connection.getStatements(RDF.TYPE, RDFS.LABEL, null, true)) {
+				assertFalse(statements.hasNext());
+			}
+			assertEquals(0, observations.get(), "An auto-commit read cannot commit a serializable read set");
+			assertFalse(connection.isActive());
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void implicitReadClosesOwnedForkWhenDatasetAcquisitionFails() {
+		SailException failure = new SailException("dataset acquisition failed");
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenThrow(failure);
+		Sail sail = createSailWithSelectedSource(selected);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)));
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void implicitReadClosesDatasetAndForkWhenStatementIteratorCreationFails() {
+		SailException failure = new SailException("statement iterator creation failed");
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenReturn(dataset);
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+		Sail sail = createSailWithSelectedSource(selected);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)));
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void implicitReadReleasesRootAfterStatementIteratorCreationFails() {
+		AtomicInteger writes = new AtomicInteger();
+		SailException failure = new SailException("root statement iterator creation failed");
+		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(dataset.isSnapshotCurrent()).thenReturn(true);
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
 			@Override
-			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
-				throw new SailException("error during approve");
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+				writes.incrementAndGet();
+			}
+		}, LinkedHashModel::new, level -> dataset);
+		Sail sail = createSail(store);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)));
+			try (SailSink writer = store.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				writer.approve(RDFS.CLASS, RDFS.LABEL, sail.getValueFactory().createLiteral("later write"), null);
+				writer.flush();
+			}
+			assertEquals(1, writes.get(), "A failed read must not retain a root observer that prevents auto-flush");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void inferredReadClosesFirstDatasetAndBothForksWhenSecondAcquisitionFails() {
+		SailException failure = new SailException("explicit acquisition failed");
+		SailException cleanup = new SailException("inferred cleanup failed");
+		SailSource inferred = mock(SailSource.class);
+		SailSource inferredFork = mock(SailSource.class);
+		SailDataset inferredDataset = mock(SailDataset.class);
+		SailSource explicit = mock(SailSource.class);
+		SailSource explicitFork = mock(SailSource.class);
+		when(inferred.fork()).thenReturn(inferredFork);
+		when(inferredFork.dataset(any())).thenReturn(inferredDataset);
+		when(explicit.fork()).thenReturn(explicitFork);
+		when(explicitFork.dataset(any())).thenThrow(failure);
+		doThrow(cleanup).when(inferredDataset).close();
+		Sail sail = createSailWithSelectedSources(explicit, inferred);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class,
+					() -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, true)));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+			verify(inferredDataset).close();
+			verify(inferredFork).close();
+			verify(explicitFork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> readerFailuresReleaseDatasetAndForkAndPreservePrimaryException() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (String operation : List.of("statements", "ordered statements", "contexts", "namespaces", "namespace",
+				"comparator")) {
+			tests.add(DynamicTest.dynamicTest(operation, () -> {
+				SailException failure = new SailException(operation + " failed");
+				SailException datasetCleanup = new SailException("dataset cleanup");
+				SailException sourceCleanup = new SailException("source cleanup");
+				SailSource selected = mock(SailSource.class);
+				SailSource fork = mock(SailSource.class);
+				SailDataset dataset = mock(SailDataset.class);
+				when(selected.fork()).thenReturn(fork);
+				when(fork.dataset(any())).thenReturn(dataset);
+				doThrow(datasetCleanup).when(dataset).close();
+				doThrow(sourceCleanup).when(fork).close();
+				Consumer<SailConnection> read = switch (operation) {
+				case "statements" -> {
+					when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+					yield reader -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false);
+				}
+				case "ordered statements" -> {
+					when(dataset.getStatements(StatementOrder.S, RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
+					yield reader -> reader.getStatements(StatementOrder.S, RDF.TYPE, RDFS.LABEL, null, false);
+				}
+				case "contexts" -> {
+					when(dataset.getContextIDs()).thenThrow(failure);
+					yield SailConnection::getContextIDs;
+				}
+				case "namespaces" -> {
+					when(dataset.getNamespaces()).thenThrow(failure);
+					yield SailConnection::getNamespaces;
+				}
+				case "namespace" -> {
+					when(dataset.getNamespace("prefix")).thenThrow(failure);
+					yield reader -> reader.getNamespace("prefix");
+				}
+				case "comparator" -> {
+					when(dataset.getComparator()).thenThrow(failure);
+					yield SailConnection::getComparator;
+				}
+				default -> throw new AssertionError(operation);
+				};
+				Sail sail = createSailWithSelectedSource(selected);
+				try (SailConnection reader = sail.getConnection()) {
+					assertSame(failure, assertThrows(SailException.class, () -> read.accept(reader)));
+					assertEquals(List.of(datasetCleanup), List.of(failure.getSuppressed()));
+					assertEquals(List.of(sourceCleanup), List.of(datasetCleanup.getSuppressed()));
+					verify(dataset).close();
+					verify(fork).close();
+				} finally {
+					sail.shutDown();
+				}
+			}));
+		}
+		return tests;
+	}
+
+	@Test
+	public void evaluationSetupFailureClosesDatasetAndSource() {
+		SailException failure = new SailException("evaluation setup failed");
+		SailStore store = mock(SailStore.class);
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(store.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		when(store.getEvaluationStatistics()).thenThrow(failure);
+		when(store.getExplicitSailSource()).thenReturn(selected);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenReturn(dataset);
+		Sail sail = createSail(store);
+		try (SailConnection reader = sail.getConnection()) {
+			assertSame(failure, assertThrows(SailException.class, () -> reader.evaluate(
+					new StatementPattern(new Var("s"), new Var("p"), new Var("o")), null,
+					EmptyBindingSet.getInstance(), false)));
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void iterationOwnershipTransferFailureClosesDatasetAndSource() {
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenReturn(dataset);
+		// A malformed iterator result trips IterationWrapper's constructor assertion during ownership transfer.
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(null);
+		Sail sail = createSailWithSelectedSource(selected);
+		try (SailConnection reader = sail.getConnection()) {
+			assertThrows(AssertionError.class, () -> reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false));
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void queryEvaluationFailurePreservesCauseAndSuppressesCleanupFailures() {
+		QueryEvaluationException cause = new QueryEvaluationException("evaluation step failed");
+		SailException datasetCleanup = new SailException("dataset cleanup failed");
+		SailException sourceCleanup = new SailException("source cleanup failed");
+		SailStore store = mock(SailStore.class);
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(store.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		when(store.getExplicitSailSource()).thenReturn(selected);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(any())).thenReturn(dataset);
+		when(strategy.optimize(any(), any(), any())).thenAnswer(call -> call.getArgument(0));
+		when(strategy.precompile(any())).thenReturn(bindings -> {
+			throw cause;
+		});
+		doThrow(datasetCleanup).when(dataset).close();
+		doThrow(sourceCleanup).when(fork).close();
+		Sail sail = createSail(store, IsolationLevels.READ_COMMITTED, strategy);
+		try (SailConnection reader = sail.getConnection()) {
+			SailException failure = assertThrows(SailException.class, () -> reader.evaluate(
+					new StatementPattern(new Var("s"), new Var("p"), new Var("o")), null,
+					EmptyBindingSet.getInstance(), false));
+			assertSame(cause, failure.getCause());
+			assertEquals(List.of(datasetCleanup), List.of(failure.getSuppressed()));
+			assertEquals(List.of(sourceCleanup), List.of(datasetCleanup.getSuppressed()));
+			verify(dataset).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void rootClosePreservesBackingFailureWhenAutoFlushAlsoFails() {
+		SailException failure = new SailException("backing close failed");
+		SailException cleanup = new SailException("root auto-flush failed");
+		SailDataset backing = mock(SailDataset.class);
+		when(backing.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(backing.isSnapshotCurrent()).thenReturn(true);
+		when(backing.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(new EmptyIteration<>());
+		doThrow(failure).when(backing).close();
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
+			@Override
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+				throw cleanup;
+			}
+		}, LinkedHashModel::new, level -> backing);
+		Sail sail = createSail(store);
+		try (SailConnection reader = sail.getConnection()) {
+			var statements = reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false);
+			approve(store.getExplicitSailSource(), RDFS.CLASS, sail.getValueFactory().createLiteral("pending"));
+			assertSame(failure, assertThrows(SailException.class, statements::close));
+			assertEquals(List.of(cleanup), List.of(failure.getSuppressed()));
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	private Sail createSailWithSelectedSource(SailSource selectedSource) {
+		return createSailWithSelectedSources(selectedSource, selectedSource);
+	}
+
+	private Sail createSailWithSelectedSources(SailSource explicit, SailSource inferred) {
+		SnapshotSailStore backingStore = createSnapshotSailStore(level -> new TestSailSink());
+		return createSail(new SnapshotSailStore(backingStore, LinkedHashModel::new) {
+			@Override
+			public SailSource getExplicitSailSource() {
+				return explicit;
+			}
+
+			@Override
+			public SailSource getInferredSailSource() {
+				return inferred;
 			}
 		});
+	}
 
-		Sail sail = createSail(sailStore);
-		SailConnection c = sail.getConnection();
-		c.begin(IsolationLevels.SNAPSHOT);
-		c.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
-		try {
-			// an exception is triggered during commit by sink implementation above
-			c.commit();
-		} catch (Exception e) {
-			c.rollback();
+	@Test
+	public void implicitReadReleasesRootWhenBackingDatasetCloseFails() {
+		AtomicInteger writes = new AtomicInteger();
+		SailException failure = new SailException("backing dataset close failed");
+		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(dataset.isSnapshotCurrent()).thenReturn(true);
+		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(new EmptyIteration<>());
+		doThrow(failure).when(dataset).close();
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
+			@Override
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
+				writes.incrementAndGet();
+			}
+		}, LinkedHashModel::new, level -> dataset);
+		Sail sail = createSail(store);
+		try (SailConnection reader = sail.getConnection()) {
+			var statements = reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false);
+			assertSame(failure, assertThrows(SailException.class, statements::close));
+			try (SailSink writer = store.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				writer.approve(RDFS.CLASS, RDFS.LABEL, sail.getValueFactory().createLiteral("later write"), null);
+				writer.flush();
+			}
+			assertEquals(1, writes.get(), "A failed dataset close must still release the root observer");
 		} finally {
-			c.close();
-			// shutting down the SAIL should not result in an exception
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void implicitReadRespectsOverriddenStoreSources() {
+		AtomicInteger forks = new AtomicInteger();
+		AtomicInteger datasets = new AtomicInteger();
+		AtomicInteger sourceSelections = new AtomicInteger();
+		List<Resource> observedSubjects = new ArrayList<>();
+		SnapshotSailStore backingStore = createSnapshotSailStore(observingSinks(observedSubjects::add));
+		SailSource selectedSource = new DelegatingSailSource(backingStore.getExplicitSailSource(), false) {
+			@Override
+			public SailSource fork() {
+				forks.incrementAndGet();
+				return new DelegatingSailSource(super.fork(), true) {
+					@Override
+					public SailDataset dataset(IsolationLevel level) {
+						datasets.incrementAndGet();
+						return super.dataset(level);
+					}
+				};
+			}
+		};
+		SnapshotSailStore switchedStore = new SnapshotSailStore(backingStore, LinkedHashModel::new) {
+			@Override
+			public SailSource getExplicitSailSource() {
+				sourceSelections.incrementAndGet();
+				return selectedSource;
+			}
+
+			@Override
+			public SailSource getInferredSailSource() {
+				sourceSelections.incrementAndGet();
+				return selectedSource;
+			}
+		};
+		Sail sail = createSail(switchedStore);
+		try {
+			try (SailDataset guard = backingStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
+					SailConnection connection = sail.getConnection()) {
+				try (var statements = connection.getStatements(RDFS.CLASS, RDFS.LABEL, null, true)) {
+					assertFalse(statements.hasNext());
+				}
+				assertEquals(2, forks.get(), "Each decorated source must use its overridden fork");
+				assertEquals(2, datasets.get(), "Each decorated fork must use its overridden dataset");
+				assertEquals(2, sourceSelections.get(), "Choose each overridable source only once per read");
+			}
+			assertTrue(observedSubjects.contains(RDFS.CLASS),
+					"The ordinary decorator fallback deliberately retains its observing backing");
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void selectedNestedBranchRetainsCachedObservingParent() {
+		List<Resource> observedSubjects = new ArrayList<>();
+		SnapshotSailStore backingStore = createSnapshotSailStore(observingSinks(observedSubjects::add));
+		SailSource selected = backingStore.getExplicitSailSource().fork();
+		Sail sail = createSailWithSelectedSource(selected);
+		try {
+			try (SailDataset guard = backingStore.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
+				// This branch caches an observing parent dataset. It is not one of the switched store's roots.
+				try (SailDataset primer = selected.dataset(IsolationLevels.SERIALIZABLE);
+						var statements = primer.getStatements(RDF.TYPE, RDFS.LABEL, null)) {
+					assertFalse(statements.hasNext());
+				}
+				try (SailConnection reader = sail.getConnection();
+						var statements = reader.getStatements(RDFS.CLASS, RDFS.LABEL, null, false)) {
+					assertFalse(statements.hasNext());
+				}
+				selected.close();
+			}
+			assertTrue(observedSubjects.contains(RDFS.CLASS),
+					"A nested branch's cached observing parent must remain intact on the fallback path");
+		} finally {
+			selected.close();
+			backingStore.close();
+			sail.shutDown();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> ordinarySourceRepeatedDatasetsRetainSnapshot() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : List.of(IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE)) {
+			tests.add(DynamicTest.dynamicTest(level.toString(), () -> {
+				SnapshotSailStore store = createSnapshotSailStore(isolation -> new TestSailSink());
+				Value value = store.getValueFactory().createLiteral("label");
+				try (SailDataset guard = store.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT)) {
+					approve(store.getExplicitSailSource(), RDF.TYPE, value);
+					try (SailSource source = store.getExplicitSailSource().fork()) {
+						try (SailDataset first = source.dataset(level);
+								var statements = first.getStatements(null, RDFS.LABEL, null)) {
+							assertEquals(1, statements.stream().count());
+						}
+						approve(store.getExplicitSailSource(), RDFS.CLASS, value);
+						try (SailDataset second = source.dataset(level);
+								var statements = second.getStatements(null, RDFS.LABEL, null)) {
+							assertThat(statements.stream().map(Statement::getSubject).toList())
+									.containsExactly(RDF.TYPE);
+						}
+						try (SailDataset independent = store.datasetForRead(false, level);
+								var statements = independent.getStatements(null, RDFS.LABEL, null)) {
+							assertEquals(2, statements.stream().count(), "A separate read may see later root changes");
+						}
+					}
+				} finally {
+					store.close();
+				}
+			}));
+		}
+		return tests;
+	}
+
+	@Test
+	public void nonSnapshotStoreKeepsOrdinaryObservingDataset() {
+		SailStore store = mock(SailStore.class);
+		when(store.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		SailSource selected = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		SailDataset backing = mock(SailDataset.class);
+		SailSink observer = mock(SailSink.class);
+		when(store.getExplicitSailSource()).thenReturn(selected);
+		when(selected.fork()).thenReturn(fork);
+		when(fork.dataset(IsolationLevels.SERIALIZABLE)).thenReturn(new ObservingSailDataset(backing, observer));
+		when(backing.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(new EmptyIteration<>());
+		Sail sail = createSail(store, IsolationLevels.SERIALIZABLE);
+		try (SailConnection reader = sail.getConnection();
+				var statements = reader.getStatements(RDF.TYPE, RDFS.LABEL, null, false)) {
+			assertFalse(statements.hasNext());
+			verify(selected).fork();
+			verify(fork).dataset(IsolationLevels.SERIALIZABLE);
+			verify(observer).observe(RDF.TYPE, RDFS.LABEL, null);
+			verify(backing).close();
+			verify(fork).close();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@TestFactory
+	public List<DynamicTest> implicitReadRetainsSnapshotAndPendingChangesUntilIteratorCloses() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : List.of(IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT,
+				IsolationLevels.SERIALIZABLE)) {
+			tests.add(DynamicTest.dynamicTest(level.toString(), () -> assertImplicitReadRetainsSnapshot(level)));
+		}
+		return tests;
+	}
+
+	private void assertImplicitReadRetainsSnapshot(IsolationLevels level) {
+		AtomicInteger observations = new AtomicInteger();
+		AtomicInteger datasetCloses = new AtomicInteger();
+		SnapshotSailStore sailStore = createSnapshotSailStore(observingSinks(subject -> observations.incrementAndGet()),
+				LinkedHashModel::new, datasetCloses::incrementAndGet);
+		Sail sail = createSail(sailStore, level);
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			try (SailDataset guard = sailStore.getExplicitSailSource().dataset(IsolationLevels.SERIALIZABLE);
+					SailConnection reader = sail.getConnection()) {
+				Value label = sail.getValueFactory().createLiteral("label");
+				try (SailSink writer = sailStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+					writer.approve(RDF.TYPE, RDFS.LABEL, label, null);
+					writer.approve(RDFS.CLASS, RDFS.LABEL, label, null);
+					writer.flush();
+				}
+				try (var statements = reader.getStatements(null, RDFS.LABEL, null, false)) {
+					assertTrue(statements.hasNext());
+					List<Resource> snapshotSubjects = new ArrayList<>();
+					snapshotSubjects.add(statements.next().getSubject());
+					try (SailSink writer = sailStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+						writer.approve(RDFS.RESOURCE, RDFS.LABEL, label, null);
+						writer.flush();
+					}
+					statements.forEachRemaining(statement -> snapshotSubjects.add(statement.getSubject()));
+					assertThat(snapshotSubjects).containsExactlyInAnyOrder(RDF.TYPE, RDFS.CLASS);
+				}
+				try (var statements = reader.getStatements(null, RDFS.LABEL, null, false)) {
+					assertTrue(statements.hasNext());
+					statements.next();
+				}
+				try (var statements = reader.getStatements(null, RDFS.LABEL, null, false)) {
+					assertEquals(3, statements.stream().count());
+				}
+				try (var rows = reader.evaluate(new StatementPattern(new Var("s"), new Var("p", RDFS.LABEL),
+						new Var("o")), null, EmptyBindingSet.getInstance(), false)) {
+					assertEquals(3, rows.stream().count());
+				}
+				try (RepositoryConnection queryReader = repository.getConnection()) {
+					var query = queryReader.prepareTupleQuery(
+							"SELECT ?s ?label WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?label }");
+					query.setIncludeInferred(false);
+					try (var rows = query.evaluate()) {
+						List<Value> subjects = new ArrayList<>();
+						while (rows.hasNext()) {
+							var row = rows.next();
+							assertEquals(label, row.getValue("label"));
+							subjects.add(row.getValue("s"));
+						}
+						assertThat(subjects).containsExactlyInAnyOrder(RDF.TYPE, RDFS.CLASS, RDFS.RESOURCE);
+					}
+				}
+				assertEquals(0, datasetCloses.get(), "The shared cached snapshot remains alive for other owners");
+			}
+			assertEquals(0, observations.get(), "Closing all read guards must not publish observations");
+		} finally {
+			repository.shutDown();
+		}
+		assertEquals(1, datasetCloses.get(), "The cached backing dataset closes when the store closes");
+	}
+
+	@TestFactory
+	public List<DynamicTest> serializableOwnerStillRejectsConflictingWrites() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (IsolationLevels level : IsolationLevels.values()) {
+			tests.add(DynamicTest.dynamicTest(level.toString(),
+					() -> assertSerializableOwnerRejectsConflictingWrites(level)));
+		}
+		return tests;
+	}
+
+	private void assertSerializableOwnerRejectsConflictingWrites(IsolationLevels defaultLevel) {
+		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createSail(sailStore, defaultLevel);
+		try (SailConnection owner = sail.getConnection(); SailConnection reader = sail.getConnection()) {
+			owner.begin(IsolationLevels.SERIALIZABLE);
+			try (var statements = owner.getStatements(RDF.TYPE, RDFS.LABEL, null, false)) {
+				assertFalse(statements.hasNext());
+			}
+			try (var statements = reader.getStatements(RDFS.CLASS, RDFS.LABEL, null, false)) {
+				assertFalse(statements.hasNext());
+			}
+			try (SailSink writer = sailStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				writer.approve(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("changed"), null);
+				writer.flush();
+			}
+			assertThrows(SailConflictException.class, owner::prepare);
+			owner.rollback();
+		} finally {
+			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void testRollbackExceptionDuringCommit() {
+		assertRollbackExceptionDuringCommit(IsolationLevels.SNAPSHOT);
+	}
+
+	@Test
+	public void testRollbackExceptionDuringSerializableCommit() {
+		assertRollbackExceptionDuringCommit(IsolationLevels.SERIALIZABLE);
+	}
+
+	private void assertRollbackExceptionDuringCommit(IsolationLevels level) {
+		SailException failure = new SailException("error during approve");
+		SnapshotSailStore store = createSnapshotSailStore(isolation -> new TestSailSink() {
+			@Override
+			public void approve(Resource subj, IRI pred, Value obj, Resource ctx) throws SailException {
+				throw failure;
+			}
+		});
+		Sail sail = createSail(store);
+		try {
+			if (level == IsolationLevels.SERIALIZABLE) {
+				// Arm the root's retained serializable sink before the failing owner commit reaches it.
+				try (SailDataset dataset = store.getExplicitSailSource().dataset(level);
+						var statements = dataset.getStatements(RDFS.RESOURCE, RDFS.LABEL, null)) {
+					assertFalse(statements.hasNext());
+				}
+			}
+			try (SailConnection connection = sail.getConnection()) {
+				connection.begin(level);
+				connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
+				assertSame(failure, assertThrows(SailException.class, connection::commit));
+				connection.rollback();
+			}
+		} finally {
+			// Failed changes must not be retried during shutdown.
 			sail.shutDown();
 		}
 	}
@@ -165,13 +1026,22 @@ public class SnapshotSailStoreTest {
 
 	@Test
 	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterCommit() {
+		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.READ_COMMITTED);
+	}
+
+	@Test
+	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterSerializableCommit() {
+		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.SERIALIZABLE);
+	}
+
+	private void assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels level) {
 		AtomicInteger closeCount = new AtomicInteger();
-		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink(),
+		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink(),
 				() -> new CloseCountingModel(closeCount));
 		Sail sail = createSail(sailStore);
 
 		try (SailConnection connection = sail.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.begin(level);
 			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
 			connection.commit();
 
@@ -183,6 +1053,15 @@ public class SnapshotSailStoreTest {
 
 	@Test
 	public void testLogsDataImportMetricsForUpdateStatements() {
+		assertLogsDataImportMetricsForUpdateStatements(IsolationLevels.READ_COMMITTED);
+	}
+
+	@Test
+	public void testLogsDataImportMetricsForSerializableUpdateStatements() {
+		assertLogsDataImportMetricsForUpdateStatements(IsolationLevels.SERIALIZABLE);
+	}
+
+	private void assertLogsDataImportMetricsForUpdateStatements(IsolationLevels level) {
 		Logger logger = (Logger) LoggerFactory.getLogger(AbstractSailConnection.class);
 		Level previousLevel = logger.getLevel();
 		CapturingAppender appender = new CapturingAppender();
@@ -191,13 +1070,13 @@ public class SnapshotSailStoreTest {
 		appender.start();
 		logger.setLevel(Level.INFO);
 
-		SnapshotSailStore sailStore = createSnapshotSailStore(level -> new TestSailSink());
+		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink());
 		Sail sail = createSail(sailStore);
 		try {
 			try (SailConnection connection = sail.getConnection()) {
 				UpdateContext updateContext = new UpdateContext(new InsertData("INSERT DATA {}"), null, null, false);
 				connection.setTransactionSettings(DataImportMetrics.ENABLED);
-				connection.begin();
+				connection.begin(level);
 				connection.startUpdate(updateContext);
 				connection.addStatement(updateContext, RDF.TYPE, RDFS.LABEL,
 						sail.getValueFactory().createLiteral("type"),
@@ -221,7 +1100,20 @@ public class SnapshotSailStoreTest {
 	}
 
 	private Sail createSail(SailStore sailStore) {
+		return createSail(sailStore, IsolationLevels.READ_COMMITTED);
+	}
+
+	private Sail createSail(SailStore sailStore, IsolationLevels defaultLevel) {
+		return createSail(sailStore, defaultLevel, null);
+	}
+
+	private Sail createSail(SailStore sailStore, IsolationLevels defaultLevel, EvaluationStrategy strategy) {
 		return new AbstractNotifyingSail() {
+			{
+				setSupportedIsolationLevels(IsolationLevels.values());
+				setDefaultIsolationLevel(defaultLevel);
+			}
+
 			@Override
 			protected void shutDownInternal() throws SailException {
 				// closing the SailStore tries to flush existing changes again
@@ -231,6 +1123,11 @@ public class SnapshotSailStoreTest {
 			@Override
 			protected NotifyingSailConnection getConnectionInternal() throws SailException {
 				return new SailSourceConnection(this, sailStore, (FederatedServiceResolver) null) {
+					@Override
+					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+						return strategy == null ? super.getEvaluationStrategy(dataset, tripleSource) : strategy;
+					}
+
 					@Override
 					protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
 							throws SailException {
@@ -255,12 +1152,58 @@ public class SnapshotSailStoreTest {
 		};
 	}
 
+	private Function<IsolationLevel, SailSink> observingSinks(Consumer<Resource> onObserve) {
+		return level -> new TestSailSink() {
+			@Override
+			public void observe(Resource subj, IRI pred, Value obj, Resource... contexts) {
+				onObserve.accept(subj);
+			}
+		};
+	}
+
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory) {
 		return createSnapshotSailStore(sinkFactory, LinkedHashModel::new);
 	}
 
 	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
 			ModelFactory modelFactory) {
+		return createSnapshotSailStore(sinkFactory, modelFactory, () -> {
+		});
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory, Runnable onDatasetClose) {
+		return createSnapshotSailStore(sinkFactory, modelFactory, level -> new SailDataset() {
+			@Override
+			public void close() throws SailException {
+				onDatasetClose.run();
+			}
+
+			@Override
+			public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
+				return new EmptyIteration<>();
+			}
+
+			@Override
+			public String getNamespace(String prefix) throws SailException {
+				return null;
+			}
+
+			@Override
+			public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+				return new EmptyIteration<>();
+			}
+
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
+					Resource... contexts) throws SailException {
+				return new EmptyIteration<>();
+			}
+		});
+	}
+
+	private SnapshotSailStore createSnapshotSailStore(Function<IsolationLevel, SailSink> sinkFactory,
+			ModelFactory modelFactory, Function<IsolationLevel, SailDataset> datasetFactory) {
 		BackingSailSource dummySource = new BackingSailSource() {
 			@Override
 			public SailSink sink(IsolationLevel level) throws SailException {
@@ -269,33 +1212,7 @@ public class SnapshotSailStoreTest {
 
 			@Override
 			public SailDataset dataset(IsolationLevel level) throws SailException {
-				return new SailDataset() {
-					@Override
-					public void close() throws SailException {
-					}
-
-					@Override
-					public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
-						return new EmptyIteration<>();
-					}
-
-					@Override
-					public String getNamespace(String prefix) throws SailException {
-						return null;
-					}
-
-					@Override
-					public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
-						return new EmptyIteration<>();
-					}
-
-					@Override
-					public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
-							Value obj,
-							Resource... contexts) throws SailException {
-						return new EmptyIteration<>();
-					}
-				};
+				return datasetFactory.apply(level);
 			}
 		};
 		return new SnapshotSailStore(new SailStore() {

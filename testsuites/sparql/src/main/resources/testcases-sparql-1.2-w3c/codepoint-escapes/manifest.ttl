@@ -106,7 +106,7 @@
    mf:name        "surrogate-esc-03-bad.rq" ;
    rdfs:comment   "Surrogate - lone high escape sequence" ;
    mf:action      <surrogate-esc-03-bad.rq> .
-   
+
 :surrogate-esc-04-bad rdf:type   mf:NegativeSyntaxTest ;
    dawgt:approval dawgt:Proposed ;
    mf:name        "surrogate-esc-04-bad.rq" ;

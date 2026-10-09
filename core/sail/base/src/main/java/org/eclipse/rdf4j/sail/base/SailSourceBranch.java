@@ -587,6 +587,10 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
+		return dataset(level, true);
+	}
+
+	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
 		if (closed) {
 			throw new SailException("SailSourceBranch is closed");
 		}
@@ -596,7 +600,7 @@ class SailSourceBranch implements SailSource {
 			SailDataset result = null;
 			Throwable failure = null;
 			try {
-				result = datasetWithinAdmission(level);
+				result = datasetWithinAdmission(level, observe);
 			} catch (Throwable datasetFailure) {
 				failure = datasetFailure;
 			}
@@ -616,7 +620,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private SailDataset datasetWithinAdmission(IsolationLevel level) throws SailException {
+	private SailDataset datasetWithinAdmission(IsolationLevel level, boolean observe) throws SailException {
 		while (true) {
 			SnapshotAdmission admissionToWaitFor = null;
 			SnapshotAdmission ownedAdmission = null;
@@ -635,11 +639,11 @@ class SailSourceBranch implements SailSource {
 						retireSnapshot();
 					}
 					generation = snapshotGeneration;
-					if (level.isCompatibleWith(IsolationLevels.SERIALIZABLE) && serializable == null) {
+					if (observe && level.isCompatibleWith(IsolationLevels.SERIALIZABLE) && serializable == null) {
 						serializable = backingSource.sink(level);
 					}
 					if (snapshot != null) {
-						cachedObserver = observeDataset(level, snapshot.dataset, snapshot);
+						cachedObserver = observeDataset(level, snapshot.dataset, snapshot, observe);
 					} else {
 						if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 							if (snapshotAdmission == null) {
@@ -700,7 +704,7 @@ class SailSourceBranch implements SailSource {
 									snapshot = new SnapshotLease(admitted);
 									candidateCached = true;
 									try {
-										observer = observeDataset(level, snapshot.dataset, snapshot);
+										observer = observeDataset(level, snapshot.dataset, snapshot, observe);
 									} catch (RuntimeException | Error failure) {
 										observerFailure = failure;
 										snapshot.retired = true;
@@ -710,7 +714,7 @@ class SailSourceBranch implements SailSource {
 									}
 								} else if (snapshot != null && isSnapshotUsable(snapshot.dataset, level)) {
 									try {
-										observer = observeDataset(level, snapshot.dataset, snapshot);
+										observer = observeDataset(level, snapshot.dataset, snapshot, observe);
 									} catch (RuntimeException | Error failure) {
 										observerFailure = failure;
 									}
@@ -791,14 +795,14 @@ class SailSourceBranch implements SailSource {
 							}
 							if (!branchClosed && snapshot != null) {
 								try {
-									observer = observeDataset(level, snapshot.dataset, snapshot);
+									observer = observeDataset(level, snapshot.dataset, snapshot, observe);
 								} catch (RuntimeException | Error failure) {
 									observerFailure = failure;
 								}
 								closeAdmitted = true;
 							} else if (!branchClosed) {
 								try {
-									observer = observeDataset(level, admitted, null);
+									observer = observeDataset(level, admitted, null, observe);
 									admitted = null;
 								} catch (RuntimeException | Error failure) {
 									observerFailure = failure;
@@ -838,7 +842,7 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
-	private SailDataset observeDataset(IsolationLevel level, SailDataset base, SnapshotLease lease)
+	private SailDataset observeDataset(IsolationLevel level, SailDataset base, SnapshotLease lease, boolean observe)
 			throws SailException {
 		SailDataset derivedFrom = base;
 		if (lease != null) {
@@ -858,7 +862,7 @@ class SailSourceBranch implements SailSource {
 		while (iter.hasNext()) {
 			derivedFrom = new SailDatasetImpl(derivedFrom, iter.next());
 		}
-		if (serializable != null) {
+		if (observe && serializable != null) {
 			derivedFrom = new ObservingSailDataset(derivedFrom, sink(level));
 		}
 
@@ -1042,6 +1046,14 @@ class SailSourceBranch implements SailSource {
 	@Override
 	public SailSource fork() {
 		return new SailSourceBranch(this, modelFactory);
+	}
+
+	/**
+	 * Preserves this branch's backing snapshot and changeset overlays while bypassing its own observation layer.
+	 * Observing datasets already retained by a backing source are left intact.
+	 */
+	SailDataset datasetWithoutObservations(IsolationLevel level) {
+		return dataset(level, false);
 	}
 
 	@Override
