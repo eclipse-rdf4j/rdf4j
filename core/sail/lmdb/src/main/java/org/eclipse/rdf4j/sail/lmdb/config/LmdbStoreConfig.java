@@ -155,6 +155,19 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return tripleIndexes;
 	}
 
+	/**
+	 * Sets comma-separated, case-insensitive statement indexes. Full indexes contain all four fields S, P, O and C.
+	 * Auxiliary SP, OP and CS indexes store distinct pairs and resolve through other configured partial indexes and
+	 * ultimately a configured full index. At least one full index is required. For example, {@code "CS,SP,PSOC"}
+	 * resolves context-subject pairs through subject-predicate pairs to complete statements in PSOC. Each intermediate
+	 * hop binds a previously unbound field; already bound fields skip unnecessary hops. Resolution prefers the longest
+	 * bound prefix of a full index, with fewer hops breaking ties, and can fall back to a full-index scan. CS includes
+	 * the default graph as well as named graphs. Partial indexes do not apply to triple-term indexes. Stores with
+	 * partial indexes currently use individual writes rather than the aligned bulk-write optimization.
+	 *
+	 * @param tripleIndexes index specification, or {@code null} to retain an existing store's indexes
+	 * @return this configuration
+	 */
 	public LmdbStoreConfig setTripleIndexes(String tripleIndexes) {
 		this.tripleIndexes = tripleIndexes;
 		return this;

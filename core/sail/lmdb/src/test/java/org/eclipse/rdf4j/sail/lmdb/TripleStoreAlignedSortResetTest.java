@@ -95,10 +95,10 @@ public class TripleStoreAlignedSortResetTest {
 		}
 
 		@Override
-		void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subj,
+		void sortStatementIndicesByLeadingFields(int[] statementIndices, int length, TripleIndex index, long[] subj,
 				long[] pred, long[] obj, long[] context) {
 			sortInputs.put(new String(index.getFieldSeq()), Arrays.copyOf(statementIndices, length));
-			super.sortStatementIndicesByLeadingField(statementIndices, length, index, subj, pred, obj, context);
+			super.sortStatementIndicesByLeadingFields(statementIndices, length, index, subj, pred, obj, context);
 		}
 
 		private int[] getSortInput(String fieldSeq) {

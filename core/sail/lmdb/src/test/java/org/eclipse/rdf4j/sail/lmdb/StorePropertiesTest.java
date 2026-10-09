@@ -65,6 +65,20 @@ class StorePropertiesTest {
 	}
 
 	@Test
+	void unchangedStatementIndexesDoNotDiscardTermIndexChanges(@TempDir File dir) {
+		StoreProperties properties = new StoreProperties(dir)
+				.setTripleIndexes("psoc,posc,sp,op")
+				.setTripleTermIndexes("spoc,cspo");
+		properties.save();
+		properties.setTripleTermIndexes("spoc,cspo,posc");
+		properties.setTripleIndexes("psoc,posc,sp,op");
+		properties.save();
+		StoreProperties loaded = new StoreProperties(dir);
+		assertTrue(loaded.load());
+		assertEquals("spoc,cspo,posc", loaded.getTripleTermIndexes());
+	}
+
+	@Test
 	void exposesTripleTermIndexAccessors() {
 		assertDoesNotThrow(() -> StoreProperties.class.getDeclaredMethod("getTripleTermIndexes"));
 		assertDoesNotThrow(() -> StoreProperties.class.getDeclaredMethod("setTripleTermIndexes", String.class));

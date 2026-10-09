@@ -90,6 +90,27 @@ Repository repo = new SailRepository(new LmdbStore(dataDir));
 
 By default, the store uses the two indexes: `spoc` and `posc`.
 
+Statement indexes can also include auxiliary partial indexes: `sp` (subject–predicate),
+`op` (object–predicate), and `cs` (context–subject). These store distinct pairs in compressed
+two-field chunks rather than complete statements. At least one full statement index must be
+configured, but no specific full companion is required. For example,
+`config.setTripleIndexes("cs,sp,psoc")` enumerates subjects in a graph through `cs`, finds their
+predicates through `sp`, and resolves complete statements through `psoc`. All original constraints,
+including the named or default graph, remain enforced even when an intermediate pair does not
+contain those fields. `cs,scpo` and `cs,scop` also provide direct resolution paths.
+Index specifications are case-insensitive.
+
+Resolution chains add a previously unbound field at every intermediate partial-index hop, so
+they cannot cycle. The store prefers the longest bound prefix on the terminal full index,
+breaking ties with fewer hops. Already-bound fields skip unnecessary intermediate hops. Any
+configured full index can serve as the terminal, though this may require a scan if its leading
+fields are not bound; choose index combinations with useful bound prefixes for efficient reads.
+
+A partial index is selected only when its bound prefix is longer than that of every configured
+full index; full indexes win ties. Enabling a partial index on an existing store backfills its
+explicit and inferred pairs independently. Partial indexes are not supported for triple-term
+indexes, and stores using them currently fall back to individual writes instead of aligned bulk writes.
+
 To configure the indexes and other options an instance of `LmdbStoreConfig` can be used.
 
 ```java
