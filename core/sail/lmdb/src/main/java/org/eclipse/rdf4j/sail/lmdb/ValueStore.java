@@ -208,27 +208,30 @@ class ValueStore extends AbstractValueFactory {
 	private volatile ValueCacheEpoch valueCaches;
 	private final int valueCacheMask;
 	/**
-	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
+	 * Best-effort value-to-ID memo. Immutable entries validate their model's semantic version before reuse.
 	 */
-	private final ConcurrentCache<LmdbValue, CachedValueId> valueIDCache;
+	private final LossyConcurrentCache<LmdbValue, CachedValueId> valueIDCache;
 
 	private record CachedValueId(LmdbValue value, long semanticVersion, long id) {
-		boolean isCurrent() {
-			return semanticVersion != LmdbValue.UNKNOWN_ID && semanticVersion == value.getSemanticVersion();
+		boolean isCurrent(Value requestedValue) {
+			// Equal-key updates retain the original cache key object. That key may subsequently mutate
+			// independently of this entry's model, so its equality alone cannot prove which ID is requested.
+			return semanticVersion != LmdbValue.UNKNOWN_ID && semanticVersion == value.getSemanticVersion()
+					&& (value == requestedValue || value.equals(requestedValue))
+					&& semanticVersion == value.getSemanticVersion();
 		}
 	}
 
 	/** Capacity of the optional positive point-lookup memo owned by each native dictionary read view. */
 	private final int snapshotLookupCacheCapacity;
 	/**
-	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
+	 * Best-effort ID-to-namespace memo, invalidated when dictionary IDs can change.
 	 */
-	private final ConcurrentCache<Long, String> namespaceCache;
+	private final LossyConcurrentCache<Long, String> namespaceCache;
 	/**
-	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by their
-	 * namespace.
+	 * Best-effort namespace-to-ID memo, invalidated when dictionary IDs can change.
 	 */
-	private final ConcurrentCache<String, Long> namespaceIDCache;
+	private final LossyConcurrentCache<String, Long> namespaceIDCache;
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	/**
@@ -360,10 +363,10 @@ class ValueStore extends AbstractValueFactory {
 			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
 			valueCaches = new ValueCacheEpoch(valueIdentity.revision, cacheSize);
 			valueCacheMask = cacheSize - 1;
-			valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+			valueIDCache = new LossyConcurrentCache<>(config.getValueIDCacheSize());
 			snapshotLookupCacheCapacity = Math.max(0, config.getValueIDCacheSize());
-			namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-			namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+			namespaceCache = new LossyConcurrentCache<>(config.getNamespaceCacheSize());
+			namespaceIDCache = new LossyConcurrentCache<>(config.getNamespaceIDCacheSize());
 
 			startTransaction(true);
 			termIndexManifestDbi = openTermIndexManifestDatabase();
@@ -2874,17 +2877,15 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	long estimateWriteBytes(List<Statement> statements) {
-		Set<Value> seen = new HashSet<>();
-		long estimate = 128L;
+		// A single statement needs no distinct-count sketch: counting its few repeated fields is conservative.
+		DictionaryByteEstimate estimate = new DictionaryByteEstimate(statements.size() > 1);
 		for (Statement statement : statements) {
-			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getSubject(), seen));
-			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getPredicate(), seen));
-			estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getObject(), seen));
-			if (statement.getContext() != null) {
-				estimate = saturatedEstimateAdd(estimate, estimateValueBytes(statement.getContext(), seen));
-			}
+			estimate.add(statement.getSubject());
+			estimate.add(statement.getPredicate());
+			estimate.add(statement.getObject());
+			estimate.add(statement.getContext());
 		}
-		return estimate;
+		return saturatedEstimateAdd(128L, estimate.bytes());
 	}
 
 	/** Flat-buffer admission cost; does not allocate a hash set for every ordinary add. */
@@ -2897,17 +2898,42 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private static long estimatedRetainedBytes(Value value) {
+		long bytes = 0L;
+		Value checkpoint = value;
+		long power = 1L;
+		long length = 0L;
+		// Triple terms can nest in object position. Brent's identity check needs no set or model hash.
+		while (value instanceof TripleTerm triple) {
+			bytes = saturatedEstimateAdd(bytes, 64L);
+			bytes = saturatedEstimateAdd(bytes, estimatedRetainedScalarBytes(triple.getSubject()));
+			bytes = saturatedEstimateAdd(bytes, estimatedRetainedScalarBytes(triple.getPredicate()));
+			value = triple.getObject();
+			if (value == checkpoint) {
+				throw new IllegalArgumentException("Cyclic triple term cannot be estimated");
+			}
+			if (++length == power) {
+				checkpoint = value;
+				power = power > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : power * 2L;
+				length = 0L;
+			}
+		}
+		return saturatedEstimateAdd(bytes, estimatedRetainedScalarBytes(value));
+	}
+
+	private static long estimatedRetainedScalarBytes(Value value) {
 		if (value == null) {
 			return 0L;
 		}
-		if (value instanceof TripleTerm triple) {
-			return saturatedEstimateAdd(64L, saturatedEstimateAdd(estimatedRetainedBytes(triple.getSubject()),
-					saturatedEstimateAdd(estimatedRetainedBytes(triple.getPredicate()),
-							estimatedRetainedBytes(triple.getObject()))));
+		if (value instanceof TripleTerm) {
+			throw new IllegalArgumentException("A triple term cannot be a subject, predicate or datatype");
 		}
 		if (value instanceof Literal literal) {
 			long bytes = saturatedEstimateAdd(96L, saturatedEstimateMultiply(literal.getLabel().length(), 2L));
-			bytes = saturatedEstimateAdd(bytes, estimatedRetainedBytes(literal.getDatatype()));
+			IRI datatype = literal.getDatatype();
+			if (datatype != null) {
+				bytes = saturatedEstimateAdd(bytes,
+						saturatedEstimateAdd(64L, saturatedEstimateMultiply(datatype.stringValue().length(), 2L)));
+			}
 			String language = literal.getLanguage().orElse(null);
 			return language == null ? bytes
 					: saturatedEstimateAdd(bytes, saturatedEstimateAdd(32L, language.length() * 2L));
@@ -2918,7 +2944,8 @@ class ValueStore extends AbstractValueFactory {
 	long estimateWriteBytes(SailSource.WritePreflight preflight) {
 		long estimate = estimateWriteBytes(preflight.statements());
 		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
-			long serializedBytes = (long) utf8Length(namespace.prefix()) + utf8Length(namespace.name()) + 32L;
+			long serializedBytes = DictionaryByteEstimate.utf8UpperBound(namespace.prefix())
+					+ DictionaryByteEstimate.utf8UpperBound(namespace.name()) + 32L;
 			estimate = saturatedEstimateAdd(estimate,
 					saturatedEstimateAdd(saturatedEstimateMultiply(serializedBytes, 4L), 256L));
 		}
@@ -2987,43 +3014,6 @@ class ValueStore extends AbstractValueFactory {
 		} finally {
 			lockManager.unlockWrite(stamp);
 		}
-	}
-
-	private long estimateValueBytes(Value value, Set<Value> seen) {
-		if (value == null || !seen.add(value)) {
-			return 0L;
-		}
-		long serializedBytes;
-		if (value instanceof IRI iri) {
-			serializedBytes = utf8Length(iri.getNamespace()) + utf8Length(iri.getLocalName()) + 32L;
-		} else if (value instanceof BNode bNode) {
-			serializedBytes = utf8Length(bNode.getID()) + 16L;
-		} else if (value instanceof Literal literal) {
-			serializedBytes = utf8Length(literal.getLabel()) + 32L;
-			String language = literal.getLanguage().orElse(null);
-			if (language != null) {
-				serializedBytes = saturatedEstimateAdd(serializedBytes, utf8Length(language));
-			}
-			serializedBytes = saturatedEstimateAdd(serializedBytes,
-					estimateValueBytes(literal.getDatatype(), seen));
-		} else if (value instanceof TripleTerm tripleTerm) {
-			serializedBytes = 64L;
-			serializedBytes = saturatedEstimateAdd(serializedBytes,
-					estimateValueBytes(tripleTerm.getSubject(), seen));
-			serializedBytes = saturatedEstimateAdd(serializedBytes,
-					estimateValueBytes(tripleTerm.getPredicate(), seen));
-			serializedBytes = saturatedEstimateAdd(serializedBytes,
-					estimateValueBytes(tripleTerm.getObject(), seen));
-		} else {
-			// Unknown model Value implementations still receive a conservative bounded estimate.
-			serializedBytes = TripleIndex.MAX_KEY_LENGTH + 128L;
-		}
-		// The dictionary stores key/value and reverse-ID records, plus LMDB B-tree split and page overhead.
-		return saturatedEstimateAdd(saturatedEstimateMultiply(serializedBytes, 4L), 256L);
-	}
-
-	private static long utf8Length(String value) {
-		return value.getBytes(StandardCharsets.UTF_8).length;
 	}
 
 	private static long saturatedEstimateAdd(long left, long right) {
@@ -4900,7 +4890,7 @@ class ValueStore extends AbstractValueFactory {
 	private long getIdOnMutationPath(Value value, boolean create, boolean isOwnValue) throws IOException {
 		// Check cache
 		CachedValueId cached = valueIDCache.get(value);
-		Long cachedID = cached != null && cached.isCurrent() ? cached.id() : null;
+		Long cachedID = cached != null && cached.isCurrent(value) ? cached.id() : null;
 		if (cachedID == null) {
 			cachedID = commonVocabulary.get(value);
 		}
@@ -4978,7 +4968,7 @@ class ValueStore extends AbstractValueFactory {
 	private void cacheValueId(LmdbValue value, long id) {
 		long semanticVersion = value.getSemanticVersion();
 		if (semanticVersion != LmdbValue.UNKNOWN_ID) {
-			valueIDCache.put(value, new CachedValueId(value, semanticVersion, id));
+			valueIDCache.offer(value, new CachedValueId(value, semanticVersion, id));
 		}
 	}
 
@@ -5764,7 +5754,7 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 		CachedValueId cached = valueIDCache.get(value);
-		Long id = cached != null && cached.isCurrent() ? Long.valueOf(cached.id()) : null;
+		Long id = cached != null && cached.isCurrent(value) ? Long.valueOf(cached.id()) : null;
 		if (id == null) {
 			id = commonVocabulary.get(value);
 		}
@@ -6459,7 +6449,7 @@ class ValueStore extends AbstractValueFactory {
 
 		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
-			namespaceIDCache.put(namespace, id);
+			namespaceIDCache.offer(namespace, id);
 		}
 
 		return id;
@@ -6482,7 +6472,7 @@ class ValueStore extends AbstractValueFactory {
 			byte[] namespaceData = getData(id);
 			if (namespaceData != null) {
 				namespace = data2namespace(namespaceData);
-				namespaceCache.put(cacheID, namespace);
+				namespaceCache.offer(cacheID, namespace);
 			}
 		}
 

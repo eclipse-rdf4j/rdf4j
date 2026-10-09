@@ -69,9 +69,10 @@ import org.junit.jupiter.params.provider.MethodSource;
  * of each backing map; it is not evidence for the 200-million-row campaign, which requires at least three of each.
  * Select one requested level for a fresh JVM using {@code -Drdf4j.lmdb.largeTransaction.isolation=SNAPSHOT}. Journals
  * are retained in unique directories below {@code work/lmdb-large-transactions}, configurable with
- * {@code rdf4j.lmdb.largeTransaction.artifacts}. Successful test-owned stores are removed by JUnit; failed stores are
- * retained and their locations are recorded in the journals. The generator retains one row; the exhaustive oracle uses
- * one bit per expected row (25 MB for the full case), rather than retaining decoded statements.
+ * {@code rdf4j.lmdb.largeTransaction.artifacts}. Successful test-owned stores are removed by JUnit unless
+ * {@code rdf4j.lmdb.largeTransaction.keepStore=true}; failed stores are retained and their locations are recorded in
+ * the journals. The generator retains one row; the exhaustive oracle uses one bit per expected row (25 MB for the full
+ * case), rather than retaining decoded statements.
  * </p>
  */
 @Execution(ExecutionMode.SAME_THREAD)
@@ -121,7 +122,9 @@ class LmdbLargeTransactionGrowthIT {
 				"work/lmdb-large-transactions")).toAbsolutePath();
 		Files.createDirectories(artifactRoot);
 		Path artifacts = Files.createTempDirectory(artifactRoot, statementCount + "-" + isolation + "-");
-		Path storeDirectory = dataDirectory.resolve("store");
+		Path storeDirectory = Boolean.getBoolean("rdf4j.lmdb.largeTransaction.keepStore")
+				? artifacts.resolve("store")
+				: dataDirectory.resolve("store");
 		Progress progress = new Progress();
 		try (Journal journal = new Journal(artifacts.resolve("journal.log"))) {
 			journal.line("start requested=" + isolation + " expectedStatements=" + statementCount

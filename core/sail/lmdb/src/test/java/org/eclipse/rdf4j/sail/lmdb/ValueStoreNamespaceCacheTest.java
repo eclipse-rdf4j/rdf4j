@@ -12,90 +12,52 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.File;
-import java.lang.invoke.MethodHandle;
-import java.lang.invoke.MethodHandles;
-import java.lang.invoke.MethodType;
-import java.lang.reflect.Field;
-import java.lang.reflect.Method;
-import java.lang.reflect.Modifier;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.io.IOException;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class ValueStoreNamespaceCacheTest {
 
-//	@Test
-//	void legacyProtectedApiRemainsAvailable() throws Exception {
-//		Field cacheField = BoundedConcurrentCache.class.getDeclaredField("cache");
-//		assertNotNull(cacheField);
-//		assertEquals("cache", cacheField.getName());
-//		assertEquals(Modifier.PROTECTED | Modifier.FINAL, cacheField.getModifiers());
-//
-//		Method cleanUp = BoundedConcurrentCache.class.getDeclaredMethod("cleanUp");
-//		assertNotNull(cleanUp);
-//		assertEquals(void.class, cleanUp.getReturnType());
-//		assertEquals(Modifier.PROTECTED, cleanUp.getModifiers());
-//	}
-
 	@Test
-	void getNamespaceUsesLastResult(@TempDir File dataDir) throws Throwable {
-		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
+	void repeatedNamespaceAvoidsDictionaryRead(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setNamespaceCacheSize(1);
+		CountingValueStore valueStore = new CountingValueStore(new File(dataDir, "values"), config);
 		try {
-			MethodHandles.Lookup privateLookup = MethodHandles.privateLookupIn(ValueStore.class,
-					MethodHandles.lookup());
-			TestConcurrentCache cache = new TestConcurrentCache(32);
-			Field namespaceCacheField = ValueStore.class.getDeclaredField("namespaceCache");
-			namespaceCacheField.setAccessible(true);
-			namespaceCacheField.set(valueStore, cache);
+			valueStore.startTransaction(true);
+			long firstId = valueStore.storeValue(Values.iri("http://example.com/first"));
+			long secondId = valueStore.storeValue(Values.iri("http://example.com/second"));
+			valueStore.commit();
+			valueStore.reads = 0;
 
-			MethodHandle getNamespace = privateLookup.findVirtual(ValueStore.class, "getNamespace",
-					MethodType.methodType(String.class, long.class));
-
-			String namespace = "http://example.com/";
-			long id = 123L;
-			cache.put(id, namespace);
-			String first = (String) getNamespace.invoke(valueStore, id);
-			assertEquals(namespace, first);
-			cache.failOnFurtherGets();
-
-			String second = (String) getNamespace.invoke(valueStore, id);
-			assertEquals(namespace, second);
-			assertEquals(1, cache.getInvocations());
+			IRI first = (IRI) valueStore.getValue(firstId);
+			assertEquals("http://example.com/first", first.stringValue());
+			assertEquals(2, valueStore.reads, "The first IRI needs its own record and its namespace record");
+			IRI second = (IRI) valueStore.getValue(secondId);
+			assertEquals("http://example.com/second", second.stringValue());
+			assertEquals(first.getNamespace(), second.getNamespace());
+			assertEquals(3, valueStore.reads, "The next IRI must reuse the namespace without another dictionary read");
 		} finally {
 			valueStore.close();
-			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 
-	private static final class TestConcurrentCache extends ConcurrentCache<Long, String> {
+	private static final class CountingValueStore extends ValueStore {
+		private int reads;
 
-		private final AtomicInteger invocations = new AtomicInteger();
-		private volatile boolean failOnFurtherGets;
-
-		private TestConcurrentCache(int capacity) {
-			super(capacity);
+		CountingValueStore(File dir, LmdbStoreConfig config) throws IOException {
+			super(dir, config);
 		}
 
 		@Override
-		public String get(Object key) {
-			int count = invocations.incrementAndGet();
-			if (failOnFurtherGets && count > 1) {
-				throw new AssertionError("namespaceCache#get must not be invoked after caching last namespace");
-			}
-			return super.get(key);
-		}
-
-		private void failOnFurtherGets() {
-			failOnFurtherGets = true;
-		}
-
-		private int getInvocations() {
-			return invocations.get();
+		protected byte[] getData(long id) throws IOException {
+			reads++;
+			return super.getData(id);
 		}
 	}
 }

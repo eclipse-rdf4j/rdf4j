@@ -193,11 +193,31 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private static long approximateValueBytes(Value value) {
-		if (value instanceof TripleTerm tripleTerm) {
-			long estimate = 64L;
-			estimate = saturatedAdd(estimate, approximateValueBytes(tripleTerm.getSubject()));
-			estimate = saturatedAdd(estimate, approximateValueBytes(tripleTerm.getPredicate()));
-			return saturatedAdd(estimate, approximateValueBytes(tripleTerm.getObject()));
+		long estimate = 0L;
+		Value checkpoint = value;
+		long power = 1L;
+		long length = 0L;
+		// Only object position admits nested triple terms. Iterate it, detecting cycles by identity.
+		while (value instanceof TripleTerm tripleTerm) {
+			estimate = saturatedAdd(estimate, 64L);
+			estimate = saturatedAdd(estimate, approximateScalarBytes(tripleTerm.getSubject()));
+			estimate = saturatedAdd(estimate, approximateScalarBytes(tripleTerm.getPredicate()));
+			value = tripleTerm.getObject();
+			if (value == checkpoint) {
+				throw new IllegalArgumentException("Cyclic triple term cannot be estimated");
+			}
+			if (++length == power) {
+				checkpoint = value;
+				power = power > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : power * 2L;
+				length = 0L;
+			}
+		}
+		return saturatedAdd(estimate, approximateScalarBytes(value));
+	}
+
+	private static long approximateScalarBytes(Value value) {
+		if (value instanceof TripleTerm) {
+			throw new IllegalArgumentException("A triple term cannot be a subject or predicate");
 		}
 		return saturatedAdd(32L, saturatedMultiply(value.stringValue().length(), 4L));
 	}

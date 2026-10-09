@@ -1257,7 +1257,11 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 90, unit = TimeUnit.SECONDS)
 	void oversizedRetainedRowIsIsolatedFromItsNormalSuffix(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = largeMaps();
+		// Roughly 32 Mi UTF-16 units need a 3x UTF-8 bound and 4x dictionary allowance (~384 MiB).
+		// Round up for the other records and page overhead so this test isolates the retained-row checkpoint.
+		long dictionaryAllowance = (RETAINED_CHUNK_LIMIT_BYTES / 2 + 1) * 3L * 4L;
+		long valueMapSize = Long.highestOneBit(dictionaryAllowance) << 1;
+		LmdbStoreConfig config = largeMaps().setValueDBSize(valueMapSize);
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
@@ -1267,6 +1271,9 @@ class LmdbNoneStreamingIngestionTest {
 				VALUE_FACTORY.createIRI("urn:none-streaming:oversized:subject"), predicate, oversized);
 		assertTrue(ValueStore.estimatedRetainedBytes(largeRow) > RETAINED_CHUNK_LIMIT_BYTES,
 				"the fixture must contain one row larger than the retained-byte budget");
+		ValueStore values = sail.values.get();
+		assertFalse(values.requiresResizeForEstimatedWrite(values.estimateWriteBytes(List.of(largeRow))),
+				"the conservative dictionary estimate must fit the configured soft growth threshold");
 		Statement normalRow = VALUE_FACTORY.createStatement(
 				VALUE_FACTORY.createIRI("urn:none-streaming:oversized:normal-suffix"), predicate,
 				VALUE_FACTORY.createLiteral("normal suffix"));
