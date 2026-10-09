@@ -36,15 +36,18 @@ import java.util.concurrent.locks.ReentrantLock;
  * <p>
  * Keys must have stable hash codes and equality while cached. Key callbacks must not mutate this cache. Optimized
  * storage invokes key callbacks outside its writer critical section. Fingerprints filter candidates but never replace
- * key equality. Reads retry when their bucket changes; this is not a wait-free or lock-free data structure, and no
- * fairness bound is promised.
+ * key equality. Reads make one bounded optimistic attempt. An overlapping writer causes a miss instead of a retry.
+ * Non-null results are validated key/value snapshots; fingerprints are not sufficient for a hit. The ordinary put
+ * method retains retrying writes and atomic previous-value semantics. offer is an optional, bounded-attempt admission
+ * operation and never waits for another cache writer. No wall-time bound is promised: user hash/equals code, GC and
+ * scheduling may delay calls.
  *
  * <p>
  * Each optimized table bucket has 128 bytes of declared padding on each side of its entire mutable field group, using
  * separate inheritance layers. This sacrifices metadata density to reduce inter-bucket false sharing without requiring
  * cache-line-aligned object allocation or JVM annotation flags. The included layout test verifies the actual guards on
- * a given VM: Java does not specify object field layout. Same-bucket writers still serialize, and updates still
- * invalidate readers of that bucket. The legacy backend is not padded.
+ * a given VM: Java does not specify object field layout. Successful same-bucket writers still serialize, but offer
+ * never waits for ownership and overlapping reads become misses. The legacy backend is not padded.
  *
  * <p>
  * Four 15-bit fingerprints and four occupancy bits fit in one long. Reference fields use layout-verified Unsafe
@@ -57,7 +60,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * but cannot repopulate the new one. Array allocation is O(capacity), not O(1). Retired storage remains reachable until
  * overlapping operations finish; the slot bound applies to the current table.
  */
-public class ConcurrentCache<K, V> {
+public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 
 	private static final int MAX_CAPACITY = 1 << 30;
 	private final Storage<K, V> storage;
@@ -92,6 +95,7 @@ public class ConcurrentCache<K, V> {
 		}
 	}
 
+	@Override
 	public V get(Object key) {
 		return storage != null ? storage.get(key) : legacy.get(key);
 	}
@@ -100,6 +104,40 @@ public class ConcurrentCache<K, V> {
 		return storage != null ? storage.put(key, value) : legacy.put(key, value);
 	}
 
+	@Override
+	public void admit(K key, V value) {
+		if (storage != null) {
+			offer(key, value);
+		} else {
+			put(key, value);
+		}
+	}
+
+	/**
+	 * Best-effort admission for optional, already-computed cache values.
+	 *
+	 * <p>
+	 * Returns true if this call published a complete mapping or observed the exact value reference already cached.
+	 * Returns false if a competing operation prevented admission. No admission is promised on false. A later eviction
+	 * or concurrent clear can discard even an accepted entry.
+	 *
+	 * <p>
+	 * This is NOT an authoritative update API. Dropping an update can leave an older complete value cached. Use only
+	 * for mappings valid for the cache epoch, or use put / external invalidation when values can become obsolete.
+	 * Mutating an already-cached value and offering the same reference does not republish its fields: use immutable or
+	 * independently synchronized values.
+	 *
+	 * <p>
+	 * Legacy backends do not implement bounded-attempt admission; for them this method checks nulls and returns false
+	 * without invoking hooks or changing data. Call put for authoritative legacy updates.
+	 */
+	public boolean offer(K key, V value) {
+		Objects.requireNonNull(key);
+		Objects.requireNonNull(value);
+		return storage != null && storage.offer(key, value);
+	}
+
+	@Override
 	public void clear() {
 		if (storage != null) {
 			storage.clear();
@@ -163,7 +201,7 @@ public class ConcurrentCache<K, V> {
 				return null;
 			}
 			Object result = bucket.tryGet(key, hash >>> setShift);
-			return (V) (result != RETRY ? result : getSlow(bucket, key, hash >>> setShift));
+			return result == RETRY ? null : (V) result;
 		}
 
 		@SuppressWarnings("unchecked")
@@ -192,14 +230,21 @@ public class ConcurrentCache<K, V> {
 			return winner == null ? null : putSlow(winner, key, value, hash >>> setShift);
 		}
 
-		private static Object getSlow(Bucket bucket, Object key, int hash) {
-			for (int failures = 0;; failures++) {
-				Object result = bucket.tryGet(key, hash);
-				if (result != RETRY) {
-					return result;
-				}
-				pause(failures);
+		boolean offer(K key, V value) {
+			Bucket[] current = table;
+			int hash = key.hashCode();
+			hash ^= hash >>> 16;
+			int index = hash & setMask;
+			Bucket bucket = (Bucket) ELEMENT.getAcquire(current, index);
+			if (bucket == null) {
+				Bucket candidate = new IsolatedBucket();
+				int slot = (hash >>> setShift) & 3;
+				candidate.set(slot, key, value);
+				candidate.tags = Bucket.fingerprint(hash >>> setShift) << (slot * 16);
+				candidate.used = 1 << slot;
+				return ELEMENT.compareAndSet(current, index, null, candidate);
 			}
+			return bucket.tryWrite(key, value, hash >>> setShift, false) != RETRY;
 		}
 
 		private static Object putSlow(Bucket bucket, Object key, Object value, int hash) {
@@ -296,11 +341,13 @@ public class ConcurrentCache<K, V> {
 			}
 
 			Object tryGet(Object key, int suffix) {
-				// An odd snapshot masks to the prior stable version and cannot validate.
-				long stamp = seq & ~1L;
+				long stamp = seq;
+				if ((stamp & 1L) != 0) {
+					return null;
+				}
 				long candidates = matches(tags, fingerprint(suffix));
 				if (candidates == 0) {
-					return validate(stamp) ? null : RETRY;
+					return null;
 				}
 				int slot = Long.numberOfTrailingZeros(candidates) >>> 4;
 				Object k = key(slot), v = value(slot);
@@ -329,7 +376,15 @@ public class ConcurrentCache<K, V> {
 			}
 
 			Object tryPut(Object key, Object value, int suffix) {
-				long stamp = seq & ~1L, tag = fingerprint(suffix);
+				return tryWrite(key, value, suffix, true);
+			}
+
+			Object tryWrite(Object key, Object value, int suffix, boolean publishSameReference) {
+				long stamp = seq;
+				if ((stamp & 1L) != 0) {
+					return RETRY;
+				}
+				long tag = fingerprint(suffix);
 				long candidates = matches(tags, tag);
 				if (candidates == 0) {
 					return insert(key, value, suffix, tag, stamp);
@@ -340,12 +395,14 @@ public class ConcurrentCache<K, V> {
 					return RETRY;
 				}
 				if (key == k || (k != null && key.equals(k))) {
-					return update(slot, value, old, stamp);
+					return update(slot, value, old, stamp, publishSameReference);
 				}
-				return putCollision(key, value, suffix, tag, candidates & (candidates - 1), stamp);
+				return putCollision(key, value, suffix, tag, candidates & (candidates - 1), stamp,
+						publishSameReference);
 			}
 
-			private Object putCollision(Object key, Object value, int suffix, long tag, long candidates, long stamp) {
+			private Object putCollision(Object key, Object value, int suffix, long tag, long candidates, long stamp,
+					boolean publishSameReference) {
 				while (candidates != 0) {
 					int slot = Long.numberOfTrailingZeros(candidates) >>> 4;
 					Object k = key(slot), old = value(slot);
@@ -353,17 +410,20 @@ public class ConcurrentCache<K, V> {
 						return RETRY;
 					}
 					if (key == k || (k != null && key.equals(k))) {
-						return update(slot, value, old, stamp);
+						return update(slot, value, old, stamp, publishSameReference);
 					}
 					candidates &= candidates - 1;
 				}
 				return insert(key, value, suffix, tag, stamp);
 			}
 
-			private Object update(int slot, Object value, Object old, long stamp) {
+			private Object update(int slot, Object value, Object old, long stamp, boolean publishSameReference) {
 				// A same-reference put still publishes preceding caller writes. It does
 				// not invalidate readers, because the cache payload remains unchanged.
 				if (old == value) {
+					if (!publishSameReference) {
+						return old;
+					}
 					return SEQ.compareAndSet(this, stamp, stamp) ? old : RETRY;
 				}
 				if (!SEQ.compareAndSet(this, stamp, stamp + 1)) {
@@ -442,8 +502,9 @@ public class ConcurrentCache<K, V> {
 			}
 
 			private Object key(int slot) {
-				if (U != null)
+				if (U != null) {
 					return U.getObject(this, KEY_BASE + ((long) slot << REF_SHIFT));
+				}
 				return switch (slot) {
 				case 0 -> k0;
 				case 1 -> k1;
@@ -453,8 +514,9 @@ public class ConcurrentCache<K, V> {
 			}
 
 			private Object value(int slot) {
-				if (U != null)
+				if (U != null) {
 					return U.getObject(this, VALUE_BASE + ((long) slot << REF_SHIFT));
+				}
 				return switch (slot) {
 				case 0 -> v0;
 				case 1 -> v1;
@@ -593,9 +655,11 @@ public class ConcurrentCache<K, V> {
 					if (empty < 0) {
 						empty = slot;
 					}
-				} else if (hashes[slot] == hash && (key == candidate || key.equals(candidate))) {
-					// Also handles remove/reinsert through the protected map.
-					return;
+				} else {
+					if (hashes[slot] == hash && (key == candidate || key.equals(candidate))) {
+						// Also handles remove/reinsert through the protected map.
+						return;
+					}
 				}
 			}
 			if (empty >= 0) {

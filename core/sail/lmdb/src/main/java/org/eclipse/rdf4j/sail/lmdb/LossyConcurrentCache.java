@@ -34,18 +34,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * Cold cells are compact and never mutated. Their first changed-reference update promotes them, through a single CAS,
  * to a value cell with 128-byte declared guards on both sides. Only promoted cells are mutated in place. Head
  * references are 32 array elements apart, with a guard group at both ends of the array. Actual physical isolation is
- * VM-specific and must be checked. The API deliberately exposes only get, offer and clear: no previous-value or
- * legacy-hook contract. The current table contains at most the rounded slot budget; in-flight copies, retired snapshots
- * and transient allocations are not counted in it. clear allocates a new O(capacity) sparse head array. Operations
- * already using the old array may finish against it but cannot repopulate the new array. No directory snapshot or cell
- * is recycled, so there is no finite version counter to wrap. Positive capacities are rounded up to a power of two,
- * with a minimum of four and a maximum of 2^30. When the padded head array would exceed Java's array-length limit,
- * heads use lazily allocated segments; an offer may also be rejected if its segment-admission CAS loses. Smaller caches
- * retain the single flat head array. Nonpositive capacity preserves the legacy unbounded-map mode, whose get/offer
- * operations use ConcurrentHashMap synchronization. Clear replaces that map, so overlapping operations cannot
- * repopulate its successor either.
+ * VM-specific and must be checked. The concrete API exposes get, offer and clear; the shared admit method delegates to
+ * offer. There is no previous-value or legacy-hook contract. The current table contains at most the rounded slot
+ * budget; in-flight copies, retired snapshots and transient allocations are not counted in it. clear allocates a new
+ * O(capacity) sparse head array. Operations already using the old array may finish against it but cannot repopulate the
+ * new array. No directory snapshot or cell is recycled, so there is no finite version counter to wrap. Positive
+ * capacities are rounded up to a power of two, with a minimum of four and a maximum of 2^30. When the padded head array
+ * would exceed Java's array-length limit, heads use lazily allocated segments; an offer may also be rejected if its
+ * segment-admission CAS loses. Smaller caches retain the single flat head array. Nonpositive capacity preserves the
+ * legacy unbounded-map mode, whose get/offer operations use ConcurrentHashMap synchronization. Clear replaces that map,
+ * so overlapping operations cannot repopulate its successor either.
  */
-public final class LossyConcurrentCache<K, V> {
+public final class LossyConcurrentCache<K, V> implements LmdbCache<K, V> {
 	private static final int STRIDE = 32;
 	private static final int SEGMENT_SHIFT = 10;
 	private static final int SEGMENT_SETS = 1 << SEGMENT_SHIFT;
@@ -81,6 +81,7 @@ public final class LossyConcurrentCache<K, V> {
 	}
 
 	@SuppressWarnings("unchecked")
+	@Override
 	public V get(Object key) {
 		Objects.requireNonNull(key);
 		if (sets == 0) {
@@ -98,6 +99,11 @@ public final class LossyConcurrentCache<K, V> {
 		}
 		Cell cell = s.find(key, h >>> shift);
 		return cell == null ? null : (V) cell.value();
+	}
+
+	@Override
+	public void admit(K key, V value) {
+		offer(key, value);
 	}
 
 	/**
@@ -157,6 +163,7 @@ public final class LossyConcurrentCache<K, V> {
 		return ELEMENT.compareAndSet(current, index, old, next);
 	}
 
+	@Override
 	public void clear() {
 		if (sets == 0) {
 			unbounded = new ConcurrentHashMap<>();

@@ -13,11 +13,15 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Arrays;
+import java.util.Objects;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.ModelException;
@@ -42,12 +46,12 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default value cache size.
 	 */
-	public static final int VALUE_CACHE_SIZE = 16 * 1024;
+	public static final int VALUE_CACHE_SIZE = 1024;
 
 	/**
 	 * The default value id cache size.
 	 */
-	public static final int VALUE_ID_CACHE_SIZE = 16 * 1024;
+	public static final int VALUE_ID_CACHE_SIZE = 1024;
 
 	/**
 	 * The default namespace cache size.
@@ -98,6 +102,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int valueCacheSize = -1;
 
 	private int valueIDCacheSize = -1;
+
+	private LmdbCacheImplementation cacheImplementation = LmdbCacheImplementation.LOSSY_CONCURRENT;
 
 	private int bulkOperationSize = -1;
 
@@ -470,12 +476,49 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * The backend shared by the generic value-ID, namespace and namespace-ID caches. Specialized value and snapshot
+	 * caches keep their own implementations. The default preserves the existing lossy concurrent cache.
+	 */
+	public LmdbCacheImplementation getCacheImplementation() {
+		return cacheImplementation;
+	}
+
+	/**
+	 * Selects a cache backend. Call {@link #validate()} to check its capacity constraints after configuring sizes;
+	 * opening a store also validates them. See {@link LmdbCacheImplementation} for zero-capacity semantics and limits.
+	 */
+	public LmdbStoreConfig setCacheImplementation(LmdbCacheImplementation cacheImplementation) {
+		this.cacheImplementation = Objects.requireNonNull(cacheImplementation, "cacheImplementation");
+		return this;
+	}
+
+	@Override
+	public void validate() throws SailConfigException {
+		super.validate();
+		validateCacheCapacity(LmdbStoreSchema.VALUE_ID_CACHE_SIZE, getValueIDCacheSize());
+		validateCacheCapacity(LmdbStoreSchema.NAMESPACE_CACHE_SIZE, getNamespaceCacheSize());
+		validateCacheCapacity(LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE, getNamespaceIDCacheSize());
+	}
+
+	private void validateCacheCapacity(IRI property, int capacity) {
+		try {
+			cacheImplementation.validateCapacity(capacity);
+		} catch (IllegalArgumentException e) {
+			throw new SailConfigException("Invalid " + property + " for cacheImplementation " + cacheImplementation
+					+ ": " + e.getMessage(), e);
+		}
+	}
+
 	@Override
 	public Resource export(Model m) {
 		Resource implNode = super.export(m);
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		m.setNamespace("ns", LmdbStoreSchema.NAMESPACE);
+		if (cacheImplementation != LmdbCacheImplementation.LOSSY_CONCURRENT) {
+			m.add(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, vf.createLiteral(cacheImplementation.name()));
+		}
 		if (tripleIndexes != null) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}
@@ -589,6 +632,19 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
+		Set<Value> implementations = m.filter(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, null).objects();
+		if (!implementations.isEmpty()) {
+			if (implementations.size() != 1 || !(implementations.iterator().next() instanceof Literal literal)) {
+				throw new SailConfigException("One literal required for " + LmdbStoreSchema.CACHE_IMPLEMENTATION
+						+ " property, found " + implementations);
+			}
+			try {
+				setCacheImplementation(LmdbCacheImplementation.valueOf(literal.getLabel()));
+			} catch (IllegalArgumentException e) {
+				throw new SailConfigException("Unknown " + LmdbStoreSchema.CACHE_IMPLEMENTATION + " value "
+						+ literal + "; expected one of " + Arrays.toString(LmdbCacheImplementation.values()), e);
+			}
+		}
 
 		try {
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.TRIPLE_INDEXES, null))
@@ -851,6 +907,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
+		validate();
 	}
 
 	private static int parseInt(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {

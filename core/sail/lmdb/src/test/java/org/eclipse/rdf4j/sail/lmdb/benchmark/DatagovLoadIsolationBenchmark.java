@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbCacheImplementation;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -54,16 +55,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 20, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 10, time = 1, timeUnit = TimeUnit.MILLISECONDS)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 2, time = 1, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 3, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
+@Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.MILLISECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	@Param({ "NONE", "READ_COMMITTED" })
+//	@Param({ "NONE", "READ_COMMITTED" })
+	@Param({ "NONE"})
 	public IsolationLevels isolationLevel;
 
 	@Param({ "1024" })
@@ -71,6 +73,10 @@ public class DatagovLoadIsolationBenchmark {
 
 	@Param({ "true" })
 	public boolean automaticEvaluationStrategy;
+
+	@Param({ "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT", "ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
+			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT" })
+	public LmdbCacheImplementation cacheImplementation;
 
 	private Model data;
 	private File temporaryFolder;
@@ -162,18 +168,39 @@ public class DatagovLoadIsolationBenchmark {
 		}
 	}
 
-	private LmdbStoreConfig createBenchmarkConfig() {
+	LmdbStoreConfig createBenchmarkConfig() {
 		return configure(ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize));
 	}
 
-	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
+	LmdbStoreConfig createBenchmarkConfigAllIndexes() {
 		return configure(ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize));
 	}
 
 	private LmdbStoreConfig configure(LmdbStoreConfig config) {
+		config.setCacheImplementation(cacheImplementation);
 		if (!automaticEvaluationStrategy) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
 		return config;
 	}
+
+	final class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+		private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
+
+		static LmdbStoreConfig createConfig() {
+			return createConfig(DEFAULT_TRIPLE_INDEXES);
+		}
+
+		static LmdbStoreConfig createAllIndexesConfig() {
+			return createConfig(ALL_TRIPLE_INDEXES);
+		}
+
+		private static LmdbStoreConfig createConfig(String tripleIndexes) {
+			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+			config.setForceSync(false);
+			return config;
+		}
+	}
+
 }

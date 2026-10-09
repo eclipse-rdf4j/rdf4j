@@ -317,6 +317,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing LmdbStore...");
+		config.validate();
 
 		// Check initialization parameters
 		File dataDir = getDataDir();

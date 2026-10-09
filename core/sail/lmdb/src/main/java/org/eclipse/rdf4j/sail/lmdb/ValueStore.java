@@ -210,7 +210,7 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Best-effort value-to-ID memo. Immutable entries validate their model's semantic version before reuse.
 	 */
-	private final LossyConcurrentCache<LmdbValue, CachedValueId> valueIDCache;
+	private final LmdbCache<LmdbValue, CachedValueId> valueIDCache;
 
 	private record CachedValueId(LmdbValue value, long semanticVersion, long id) {
 		boolean isCurrent(Value requestedValue) {
@@ -227,11 +227,11 @@ class ValueStore extends AbstractValueFactory {
 	/**
 	 * Best-effort ID-to-namespace memo, invalidated when dictionary IDs can change.
 	 */
-	private final LossyConcurrentCache<Long, String> namespaceCache;
+	private final LmdbCache<Long, String> namespaceCache;
 	/**
 	 * Best-effort namespace-to-ID memo, invalidated when dictionary IDs can change.
 	 */
-	private final LossyConcurrentCache<String, Long> namespaceIDCache;
+	private final LmdbCache<String, Long> namespaceIDCache;
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
 	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
 	/**
@@ -357,16 +357,17 @@ class ValueStore extends AbstractValueFactory {
 		this.lazyRevisions = new LazyRevisionTracker(unusedRevisionIds, valueEvictionInterval);
 		this.valueHashCacheEnabled = config.getValueHashCacheEnabled();
 		this.inlineLiterals = config.getInlineLiterals();
+		config.validate();
+		valueIDCache = config.getCacheImplementation().create(config.getValueIDCacheSize());
+		namespaceCache = config.getCacheImplementation().create(config.getNamespaceCacheSize());
+		namespaceIDCache = config.getCacheImplementation().create(config.getNamespaceIDCacheSize());
 		try {
 			open();
 
 			int cacheSize = nextPowerOfTwo(config.getValueCacheSize());
 			valueCaches = new ValueCacheEpoch(valueIdentity.revision, cacheSize);
 			valueCacheMask = cacheSize - 1;
-			valueIDCache = new LossyConcurrentCache<>(config.getValueIDCacheSize());
 			snapshotLookupCacheCapacity = Math.max(0, config.getValueIDCacheSize());
-			namespaceCache = new LossyConcurrentCache<>(config.getNamespaceCacheSize());
-			namespaceIDCache = new LossyConcurrentCache<>(config.getNamespaceIDCacheSize());
 
 			startTransaction(true);
 			termIndexManifestDbi = openTermIndexManifestDatabase();
@@ -4968,7 +4969,7 @@ class ValueStore extends AbstractValueFactory {
 	private void cacheValueId(LmdbValue value, long id) {
 		long semanticVersion = value.getSemanticVersion();
 		if (semanticVersion != LmdbValue.UNKNOWN_ID) {
-			valueIDCache.offer(value, new CachedValueId(value, semanticVersion, id));
+			valueIDCache.admit(value, new CachedValueId(value, semanticVersion, id));
 		}
 	}
 
@@ -6449,7 +6450,7 @@ class ValueStore extends AbstractValueFactory {
 
 		long id = findId(namespaceData, create);
 		if (id != LmdbValue.UNKNOWN_ID) {
-			namespaceIDCache.offer(namespace, id);
+			namespaceIDCache.admit(namespace, id);
 		}
 
 		return id;
@@ -6472,7 +6473,7 @@ class ValueStore extends AbstractValueFactory {
 			byte[] namespaceData = getData(id);
 			if (namespaceData != null) {
 				namespace = data2namespace(namespaceData);
-				namespaceCache.offer(cacheID, namespace);
+				namespaceCache.admit(cacheID, namespace);
 			}
 		}
 

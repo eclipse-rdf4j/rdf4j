@@ -68,6 +68,9 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
+	/** Selects the generic value-ID and namespace cache backend by enum name. */
+	public final static IRI CACHE_IMPLEMENTATION;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#bulkOperationSize</tt>
 	 */
@@ -153,6 +156,7 @@ public class LmdbStoreSchema {
 		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIDCacheSize");
+		CACHE_IMPLEMENTATION = factory.createIRI(NAMESPACE, "cacheImplementation");
 		BULK_OPERATION_SIZE = factory.createIRI(NAMESPACE, "bulkOperationSize");
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");
 		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceIDCacheSize");

@@ -36,7 +36,7 @@ import java.util.concurrent.locks.ReentrantLock;
  * is an opt-in replacement, not a compatible replacement for subclasses using those extension points. Clear allocates
  * arrays proportional to capacity; retired tables remain live until in-flight users release them.
  */
-public class BoundedConcurrentCache<K, V> {
+public class BoundedConcurrentCache<K, V> implements LmdbCache<K, V> {
 
 	private static final int WAYS = 4;
 	private static final int WAY_MASK = WAYS - 1;
@@ -61,6 +61,7 @@ public class BoundedConcurrentCache<K, V> {
 		table = new Table<>(slotCount);
 	}
 
+	@Override
 	public V get(Object key) {
 		Objects.requireNonNull(key);
 		Table<K, V> current = table;
@@ -77,6 +78,11 @@ public class BoundedConcurrentCache<K, V> {
 			}
 		}
 		return null;
+	}
+
+	@Override
+	public void admit(K key, V value) {
+		put(key, value);
 	}
 
 	public V put(K key, V value) {
@@ -124,6 +130,7 @@ public class BoundedConcurrentCache<K, V> {
 		}
 	}
 
+	@Override
 	public void clear() {
 		if (slotCount != 0) {
 			table = new Table<>(slotCount);
