@@ -262,7 +262,12 @@ public class LmdbLiteral extends AbstractLiteral implements LmdbValue {
 					&& revision.equals(otherLmdbLiteral.revision)) {
 				// LmdbLiteral's from the same revision of the same lmdb store,
 				// with both ID's set
-				return internalID == otherLmdbLiteral.internalID;
+				if (internalID == otherLmdbLiteral.internalID) {
+					return true;
+				}
+				if (revision.hasCanonicalIds()) {
+					return false;
+				}
 			}
 		}
 

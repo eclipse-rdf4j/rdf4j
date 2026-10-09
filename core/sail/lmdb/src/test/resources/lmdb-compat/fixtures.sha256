@@ -1,0 +1,54 @@
+b2c6cc07d1abc03294c84115680159177ff9f59438d8c9468b94059a6d8183b0  v2-unpatched-legacy.zip
+  85ef1a9e222e7f9430cdaf44a0ac9079a79122e0084da91560f14d2b0347a28b  17 bytes  namespaces.dat
+  493ec6ade02f4e28565fe9acce525c8a16a7cfc1f58be848623f7bd67519a10d  245760 bytes  triples/data.mdb
+  bf044451139eb2de898c2ea46f98bb92eccb3c8ed8c0b2213b9c9068d72a4817  196608 bytes  values/data.mdb
+4f00e8ab841c1beed3f4fe97e70fa53fe44c20893a80e5efacefb7e740aa1afe  v6-dictionary-legacy-numeric.zip
+  9a541566645bd2164d3a82518fd9e6989f0b0562465c0205629cc424a9186cef  255 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  5d83a8c42a078e67fc05e5302de4b2b42de27a205542451c73bea2aaae3a6992  21758 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  610187b3d32bb981a7747da5e6d7090fc2b8a212f5d8d5e04d8d5dec8464cd00  262144 bytes  triples/data.mdb
+  7c3c18e08b934b7d457a1e319e35a1199ee129257bd58112837c80c3fc3737a9  360448 bytes  values/data.mdb
+c48daf52139b77824b326ff845bc7bc44066b135c04b9e246c73518bfd90228c  v6-dictionary-ordered.zip
+  6e08b1fd8669d0ce4262197fc4253f4fadf1519a41c23c32c809c53ae766a377  286 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  5d83a8c42a078e67fc05e5302de4b2b42de27a205542451c73bea2aaae3a6992  21758 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  610187b3d32bb981a7747da5e6d7090fc2b8a212f5d8d5e04d8d5dec8464cd00  262144 bytes  triples/data.mdb
+  7c3c18e08b934b7d457a1e319e35a1199ee129257bd58112837c80c3fc3737a9  360448 bytes  values/data.mdb
+0eef577e4386eb5447bcd850725caba948944d2a9a1f1e52fc350eeee088b2fe  v6-fresh-aliases.zip
+  a5d67ae32168c9b363cbdec22724ef6016b5d3448fc1fa66f42c7cb87bc26854  285 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  d6d9fcd27e126bbe6971a540804964d15284bd833bff881e610befa4d6618dcd  21948 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  362f7dadb90668b2f7e5cb3851ddfbffaee9d1df5ef7800a140b4bc68da4aafd  262144 bytes  triples/data.mdb
+  3816bdf3d2acbb76da508ec3f6ad173a698b1b3d4b9f5c51a7e5fa1c39e9adea  393216 bytes  values/data.mdb
+49be73f554350ad88557e792c76cb0bd6b335a2ab24142d14e300b4cb759d821  v6-inline-legacy-numeric.zip
+  f10768e758ea662127bf3ae9a82945665b2ccf333672834f583e2e953762cee3  254 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  305eef1ae8011347f4b71b15ce063ee0d832c78a6ad0b4861654b2ced8a6f0e3  21893 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  a3f22aecb3279cd2c08cf67514d5fa2c030777e4b78cdb9b75991f8b8728a775  262144 bytes  triples/data.mdb
+  fad46de308f041e6d97c34df20d8de4bf29f3ccb403bb26e971d70d5159c60a5  360448 bytes  values/data.mdb
+5b105895ccd4b5bf601823585d34a16da4f2a10e31af0634d994a0312feeb1b5  v6-inline-ordered.zip
+  5013d5d1cdb415d0510779ca41e7d5fffd9959cff5f9187464b69e17c17a3f99  285 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  6d383d2195e680ae85b367ca8713d1cea22cfbdc4a9876de7bcacc085a05fce3  21991 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  0811464d3c6c5fe99f35d8ad7d4b6e1bf70a6cd2959ab25ba899735dd924611b  262144 bytes  triples/data.mdb
+  fad46de308f041e6d97c34df20d8de4bf29f3ccb403bb26e971d70d5159c60a5  360448 bytes  values/data.mdb
+7aa30f90a51895c63f5bed3addb7add6550ff8b59c8caab1c3fb31120f85991f  v6-retired.zip
+  43dcb458b1d9dcd19725f0aeb22e712950c59c7e276e29d7d47e61ab388f5dcc  285 bytes  store.properties
+  9b64369d444d5c9d856fe81bcea1044ba93697ec3c3c4600640f36ebfabffea9  37 bytes  lmdbrdf.ver
+  293c0b324ec798b7aab217a36ca8415934c0ba7a35a277aebbf18a05e40a6b99  22041 bytes  producer.properties
+  6dc144d21c7382dbc815bb23dca660534713fb2adc3465982235b04ffc314ec0  17 bytes  namespaces.dat
+  a689e0401ee3dd6866a51f85b33a681eed7024f3ad19a901a0fd2977d1b5cf6c  425984 bytes  triples/data.mdb
+  215005c99cf288ea93ca387dfb9c4d4f422a026a7957406829aa93374c3c0191  360448 bytes  values/data.mdb
+587bfd5e82b71675755e43f82e46f4e697097d65846215a878d2fb38e7fbe6e4  v6-tiny-map-inline-false.zip
+83f7bb339d5bac5a33953f828ccc013bce9c1f689928936cf53abc4751b56fae  v6-tiny-map-inline-true.zip
+9a167a51201a4d63e71b60d3a41ed1d5d0172fb5699947c9b6a20259cfa75030  v2-unpatched-legacy-consistent-indexes.zip
+  85ef1a9e222e7f9430cdaf44a0ac9079a79122e0084da91560f14d2b0347a28b  17 bytes  namespaces.dat
+ 16837d5a6eed6c140da532134d2d5e22f923a79be808ef3b76dba321861cc143  262144 bytes  triples/data.mdb
+ bf044451139eb2de898c2ea46f98bb92eccb3c8ed8c0b2213b9c9068d72a4817  196608 bytes  values/data.mdb
+7e2ced62c34dd8ee87fc75f77ce71ce624a855fbe89e2ae0332890d3baf9403e  v2-empty-inline-false.zip
+b5a7ad930fd468e43e4d7e3b64486565e77b215249e9e2481ae726b6c8bc3591  v2-empty-inline-true.zip

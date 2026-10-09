@@ -42,6 +42,42 @@ import org.junit.jupiter.api.Test;
  */
 public class QueryEvaluationUtilityTest {
 
+	@Test
+	void signedZeroNumericComparisonsAreEqualAcrossDatatypes() {
+		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
+				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };
+		for (CoreDatatype.XSD leftType : types) {
+			for (CoreDatatype.XSD rightType : types) {
+				for (String leftLabel : new String[] { "0", "-0", "+000" }) {
+					for (String rightLabel : new String[] { "0", "-0", "+000" }) {
+						Literal left = f.createLiteral(leftLabel, leftType);
+						Literal right = f.createLiteral(rightLabel, rightType);
+						assertEquals(QueryEvaluationUtility.Order.equal,
+								QueryEvaluationUtility.compareLiterals(left, right, true),
+								left + " compared with " + right);
+						assertEquals(0, new ValueComparator().compare(left, right));
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void floatPromotionUsesTheRoundedFloatValue() {
+		for (String label : new String[] { "1e-45", "1.00000001", "16777217", "-16777217", "3.4028235e38" }) {
+			Literal floatLiteral = f.createLiteral(label, CoreDatatype.XSD.FLOAT);
+			Literal doubleLiteral = f.createLiteral(label, CoreDatatype.XSD.DOUBLE);
+			double promoted = (double) Float.parseFloat(label);
+			double parsed = Double.parseDouble(label);
+			QueryEvaluationUtility.Order expected = QueryEvaluationUtility.Order.from(Double.compare(promoted, parsed));
+			assertEquals(expected, QueryEvaluationUtility.compareLiterals(floatLiteral, doubleLiteral, true), label);
+			assertEquals(QueryEvaluationUtility.Order.from(Double.compare(parsed, promoted)),
+					QueryEvaluationUtility.compareLiterals(doubleLiteral, floatLiteral, true), label);
+			assertEquals(QueryEvaluationUtility.Order.equal,
+					QueryEvaluationUtility.compareLiterals(floatLiteral, f.createLiteral(promoted), true), label);
+		}
+	}
+
 	private final ValueFactory f = SimpleValueFactory.getInstance();
 
 	private Literal arg1simple;

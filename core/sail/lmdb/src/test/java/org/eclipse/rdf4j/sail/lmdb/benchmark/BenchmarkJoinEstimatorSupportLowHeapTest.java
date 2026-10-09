@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,19 +29,23 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 class BenchmarkJoinEstimatorSupportLowHeapTest {
 
 	@Test
-	void awaitEstimatorReadySkipsDisabledEstimator(@TempDir File dataDir) throws Exception {
-		ProcessResult result = runLowHeapProbe(dataDir);
+	void awaitEstimatorReadySkipsDisabledEstimator(
+			@TempDir(cleanup = CleanupMode.ON_SUCCESS) Path tempDirectory) throws Exception {
+		ProcessResult result = runLowHeapProbe(tempDirectory);
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("LOW_HEAP_BENCHMARK_WAIT_OK"), result.output);
 	}
 
-	private static ProcessResult runLowHeapProbe(File dataDir) throws IOException, InterruptedException {
+	private static ProcessResult runLowHeapProbe(Path tempDirectory) throws IOException, InterruptedException {
+		Path outputFile = Files.createTempFile(tempDirectory, "low-heap-benchmark-wait-", ".log");
+		Path dataDir = Files.createTempDirectory(tempDirectory, "low-heap-benchmark-wait-store-");
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		List<String> command = new ArrayList<>();
 		command.add(javaBinary);
@@ -48,18 +53,22 @@ class BenchmarkJoinEstimatorSupportLowHeapTest {
 		command.add("-cp");
 		command.add(System.getProperty("java.class.path"));
 		command.add(LowHeapBenchmarkWaitProbe.class.getName());
-		command.add(dataDir.getAbsolutePath());
+		command.add(dataDir.toFile().getAbsolutePath());
 
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile.toFile())
 				.start();
 		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
 		if (!finished) {
 			process.destroyForcibly();
-			fail("Low-heap benchmark wait probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+			process.waitFor();
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
+		String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+		if (!finished) {
+			fail("Low-heap benchmark wait probe timed out; child output retained at " + outputFile + ":\n" + output);
+		}
+		return new ProcessResult(process.exitValue(), output);
 	}
 
 	public static final class LowHeapBenchmarkWaitProbe {

@@ -22,6 +22,7 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -77,6 +78,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbOptimizerPipelineTest {
@@ -109,8 +111,9 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	@Test
-	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(@TempDir File dataDir) throws Exception {
-		ProcessResult result = runLowHeapProbe(dataDir);
+	void lowHeapAutomaticStoreUsesDefaultFactoryAndPageCardinality(
+			@TempDir(cleanup = CleanupMode.ON_SUCCESS) Path tempDirectory) throws Exception {
+		ProcessResult result = runLowHeapProbe(tempDirectory);
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("LOW_HEAP_SKETCH_GATE_OK"), result.output);
@@ -297,7 +300,9 @@ class LmdbOptimizerPipelineTest {
 		return found[0];
 	}
 
-	private static ProcessResult runLowHeapProbe(File dataDir) throws IOException, InterruptedException {
+	private static ProcessResult runLowHeapProbe(Path tempDirectory) throws IOException, InterruptedException {
+		Path outputFile = Files.createTempFile(tempDirectory, "low-heap-sketch-gate-", ".log");
+		Path dataDir = Files.createTempDirectory(tempDirectory, "low-heap-sketch-gate-store-");
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		List<String> command = new ArrayList<>();
 		command.add(javaBinary);
@@ -305,18 +310,22 @@ class LmdbOptimizerPipelineTest {
 		command.add("-cp");
 		command.add(System.getProperty("java.class.path"));
 		command.add(LowHeapSketchGateProbe.class.getName());
-		command.add(dataDir.getAbsolutePath());
+		command.add(dataDir.toFile().getAbsolutePath());
 
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile.toFile())
 				.start();
 		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
 		if (!finished) {
 			process.destroyForcibly();
-			fail("Low-heap sketch gate probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+			process.waitFor();
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
+		String output = Files.readString(outputFile, StandardCharsets.UTF_8);
+		if (!finished) {
+			fail("Low-heap sketch gate probe timed out; child output retained at " + outputFile + ":\n" + output);
+		}
+		return new ProcessResult(process.exitValue(), output);
 	}
 
 	private static void addSingleStatement(LmdbStore store, String prefix) {
