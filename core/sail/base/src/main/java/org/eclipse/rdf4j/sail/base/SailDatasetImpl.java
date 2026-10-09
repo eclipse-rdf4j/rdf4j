@@ -311,11 +311,14 @@ class SailDatasetImpl implements SailDataset {
 		}
 
 		if (changes.hasApproved() && iter != null) {
-
-			return new DistinctModelReducingUnionIteration(
-					iter,
-					changes::removeApproved,
-					() -> changes.getApprovedStatements(subj, pred, obj, contexts));
+			// Reads must not consume approvals: a later freeze can retain the same generation, including for an
+			// iterator opened before freezing. Membership filtering needs no result-sized distinct set.
+			CloseableIteration<? extends Statement> distinctBacking = difference(iter,
+					statement -> changes.hasApproved(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(), new Resource[] { statement.getContext() }));
+			return DualUnionIteration.getWildcardInstance(distinctBacking,
+					new CloseableIteratorIteration<>(
+							changes.getApprovedStatements(subj, pred, obj, contexts).iterator()));
 
 		} else if (changes.hasApproved()) {
 			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();

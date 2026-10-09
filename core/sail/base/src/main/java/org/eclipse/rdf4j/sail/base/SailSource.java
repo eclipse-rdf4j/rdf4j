@@ -37,6 +37,27 @@ import org.eclipse.rdf4j.sail.SailException;
 public interface SailSource extends SailClosable {
 
 	/**
+	 * Retains an ordered batch of logical changes until the caller confirms native commit. Each flush applies the
+	 * complete batch again; it does not consume the retained input. The caller owns publication and commit.
+	 */
+	@InternalUseOnly
+	default FlushBatch freezeForFlush() throws SailException {
+		throw new UnsupportedOperationException("This source does not support retained flush batches");
+	}
+
+	/** A retained logical batch. Acknowledgement is valid only after confirmed backing commit. */
+	@InternalUseOnly
+	interface FlushBatch extends SailClosable {
+		void flush() throws SailException;
+
+		void unFreezeAndDiscardFlushed() throws SailException;
+
+		/** Cancels freezing without acknowledging the pending logical changes. */
+		@Override
+		void close() throws SailException;
+	}
+
+	/**
 	 * Discards this private source branch as part of replaying an operation whose results have not escaped.
 	 * Implementors may release internal buffered changes without publishing them. This method must not be used for
 	 * ordinary commit, rollback, or close lifecycle handling.

@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author James Leigh
  */
-class DelegatingSailSource implements SailSource {
+class DelegatingSailSource implements SailSource, FrozenFlush {
 
 	private final SailSource delegate;
 
@@ -158,6 +158,23 @@ class DelegatingSailSource implements SailSource {
 	@Override
 	public void flush() throws SailException {
 		delegate.flush();
+	}
+
+	@Override
+	public FlushBatch freezeForFlush() throws SailException {
+		return delegate.freezeForFlush();
+	}
+
+	@Override
+	public void enlistValidationCarriers(FrozenFlush.Context context) {
+		context.discover(delegate);
+	}
+
+	@Override
+	public FrozenFlush.Batch stageFrozen(List<Changeset> incoming, Changeset validationCarrier,
+			FrozenFlush.Context context) {
+		return delegate instanceof FrozenFlush buffered ? buffered.stageFrozen(incoming, validationCarrier, context)
+				: null;
 	}
 
 	@Override

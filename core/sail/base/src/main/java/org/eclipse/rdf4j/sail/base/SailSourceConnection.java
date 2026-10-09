@@ -680,23 +680,32 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	protected void prepareInternal() throws SailException {
 		SailSource toCheckIncludeInferredBranch = includeInferredBranch;
 		if (toCheckIncludeInferredBranch != null) {
-			toCheckIncludeInferredBranch.prepare();
+			prepareTransaction(toCheckIncludeInferredBranch);
 		}
+	}
+
+	/** Prepares the still-attached logical transaction source. */
+	protected void prepareTransaction(SailSource source) throws SailException {
+		source.prepare();
+	}
+
+	/** Flushes the still-attached logical transaction source. */
+	protected void flushTransaction(SailSource source) throws SailException {
+		source.flush();
 	}
 
 	@Override
 	protected void commitInternal() throws SailException {
 		SailSource toCloseInferredBranch = includeInferredBranch;
-		explicitOnlyBranch = null;
-		inferredOnlyBranch = null;
-		includeInferredBranch = null;
-
-		queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 		try {
 			if (toCloseInferredBranch != null) {
-				toCloseInferredBranch.flush();
+				flushTransaction(toCloseInferredBranch);
 			}
 		} finally {
+			explicitOnlyBranch = null;
+			inferredOnlyBranch = null;
+			includeInferredBranch = null;
+			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.close();
 			}

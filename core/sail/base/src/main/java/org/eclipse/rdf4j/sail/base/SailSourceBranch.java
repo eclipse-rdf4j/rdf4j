@@ -50,7 +50,7 @@ import org.slf4j.LoggerFactory;
  *
  * @author James Leigh
  */
-class SailSourceBranch implements SailSource {
+class SailSourceBranch implements SailSource, FrozenFlush {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceBranch.class);
 
@@ -67,6 +67,7 @@ class SailSourceBranch implements SailSource {
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
 	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
+	private BranchFlushBatch frozenBatch;
 	/** Leases transferred with shallow models; pending sinks retain their own leases until merge or close. */
 	private final ArrayDeque<WriteIntent> bufferedWriteIntents = new ArrayDeque<>();
 
@@ -125,11 +126,14 @@ class SailSourceBranch implements SailSource {
 	 * Non-null when in {@link IsolationLevels#SERIALIZABLE} (or higher) mode.
 	 */
 	private SailSink serializable;
+	/** Admission metadata belongs to the persistent validation role, never to an adopted statement generation. */
+	private IsolationLevel serializableIsolationLevel;
 
 	/**
 	 * Non-null after {@link #prepare()}, but before {@link #flush()}.
 	 */
 	private SailSink prepared;
+	private Map<Changeset, Long> preparedObservations;
 
 	private record WritePreflightRegistration(SailSource.WritePreflight estimate, SailClosable scope) {
 	}
@@ -209,6 +213,9 @@ class SailSourceBranch implements SailSource {
 			if (closed) {
 				return;
 			}
+			if (frozenBatch != null) {
+				frozenBatch.close();
+			}
 			closed = true;
 			try {
 				retireSnapshot(abandoned);
@@ -217,8 +224,10 @@ class SailSourceBranch implements SailSource {
 			}
 			toCloseSerializable = serializable;
 			serializable = null;
+			serializableIsolationLevel = null;
 			toClosePrepared = prepared;
 			prepared = null;
+			preparedObservations = null;
 			toClosePreflight = detachWritePreflights();
 			failure = closeBufferedWriteIntents(failure);
 			for (Changeset change : pending) {
@@ -462,14 +471,26 @@ class SailSourceBranch implements SailSource {
 			}
 
 			@Override
+			public void releasePrepared() {
+				if (prepared) {
+					closeChangeset(this);
+					prepared = false;
+				}
+				SailClosable reservation = preparedWrite;
+				preparedWrite = null;
+				if (reservation != null) {
+					reservation.close();
+				}
+			}
+
+			@Override
 			public void close() throws SailException {
 				Throwable failure = null;
 				synchronized (this) {
 					sinkClosed = true;
 				}
 				try {
-					// ´this´ Changeset should have been removed from `pending` already, unless we are rolling back a
-					// transaction in which case we need to remove it when closing the Changeset.
+					// Reusable carriers retain intervening validation history until they close.
 					if (pending.contains(this)) {
 						removeThisFromPendingWithoutCausingDeadlock();
 					}
@@ -641,6 +662,7 @@ class SailSourceBranch implements SailSource {
 					generation = snapshotGeneration;
 					if (observe && level.isCompatibleWith(IsolationLevels.SERIALIZABLE) && serializable == null) {
 						serializable = backingSource.sink(level);
+						serializableIsolationLevel = level;
 					}
 					if (snapshot != null) {
 						cachedObserver = observeDataset(level, snapshot.dataset, snapshot, observe);
@@ -1446,6 +1468,7 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private void prepareLocked() throws SailException {
+		renewSealedSerializableCarrier();
 		if (prepared == null && serializable == null) {
 			prepared = backingSource.sink(backingSinkIsolationLevel());
 		} else if (prepared == null) {
@@ -1453,10 +1476,79 @@ class SailSourceBranch implements SailSource {
 		}
 		prepare(prepared);
 		prepared.prepare();
+		preparedObservations = new IdentityHashMap<>();
+		rememberPreparedObservations(changes);
+	}
+
+	private boolean coversPreparedObservations(Collection<Changeset> generations) {
+		if (preparedObservations == null) {
+			return false;
+		}
+		for (Changeset change : generations) {
+			long revision = change.observationRevision();
+			if (revision >= 0 && !Long.valueOf(revision).equals(preparedObservations.get(change))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private void rememberPreparedObservations(Collection<Changeset> generations) {
+		for (Changeset change : generations) {
+			long revision = change.observationRevision();
+			if (revision >= 0) {
+				preparedObservations.put(change, revision);
+			}
+		}
+	}
+
+	/** Internal validation carriers may move to fresh models; original writer aliases must remain sealed. */
+	private void renewSealedSerializableCarrier() {
+		if (!(serializable instanceof Changeset carrier) || !carrier.hasSealedGeneration()) {
+			return;
+		}
+		SailSink previous = serializable;
+		previous.releasePrepared();
+		SailSink replacement = backingSource.sink(serializableIsolationLevel);
+		try {
+			carrier.copyValidationTo(replacement);
+		} catch (RuntimeException | Error validationFailure) {
+			rethrow(closeResource(validationFailure, replacement));
+		}
+		serializable = replacement;
+		if (prepared == previous) {
+			prepared = null;
+			preparedObservations = null;
+		}
+		previous.close();
+	}
+
+	/** The two roles can share one carrier, but neither role is implied by the other's presence. */
+	private List<SailSink> validationCarriers() {
+		if (prepared == null) {
+			return serializable == null ? List.of() : List.of(serializable);
+		}
+		return serializable == null || prepared == serializable ? List.of(prepared)
+				: List.of(prepared, serializable);
+	}
+
+	private Throwable releaseValidationPreparation(Throwable failure) {
+		for (SailSink carrier : validationCarriers()) {
+			try {
+				carrier.releasePrepared();
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure = addFailure(failure, cleanupFailure);
+			}
+		}
+		return failure;
 	}
 
 	private IsolationLevel backingSinkIsolationLevel() {
-		for (Changeset change : changes) {
+		return backingSinkIsolationLevel(changes);
+	}
+
+	private IsolationLevel backingSinkIsolationLevel(Collection<Changeset> generations) {
+		for (Changeset change : generations) {
 			IsolationLevel level = change.getSinkIsolationLevel();
 			if (!IsolationLevels.NONE.isCompatibleWith(level)) {
 				return level;
@@ -1468,15 +1560,28 @@ class SailSourceBranch implements SailSource {
 	@Override
 	public void flush() throws SailException {
 		checkWriteContinuationAdmission();
+		semaphore.lock();
+		try {
+			if (frozenBatch != null) {
+				throw new IllegalStateException("Use the retained batch while this branch is frozen");
+			}
+		} finally {
+			semaphore.unlock();
+		}
 		boolean startedPreflight = ensureWritePreflight();
 		try {
 			try (SailClosable publication = beginPublication()) {
 				semaphore.lock();
 				try (SailWriteContinuation.Scope continuation = writeContinuation()) {
-					flushLocked();
-				} catch (Throwable failure) {
-					SailSource.failPublication(publication);
-					rethrow(cleanupFailedFlush(failure));
+					if (frozenBatch != null) {
+						throw new IllegalStateException("Use the retained batch while this branch is frozen");
+					}
+					try {
+						flushLocked();
+					} catch (Throwable failure) {
+						SailSource.failPublication(publication);
+						rethrow(cleanupFailedFlush(failure));
+					}
 				} finally {
 					semaphore.unlock();
 				}
@@ -1489,8 +1594,297 @@ class SailSourceBranch implements SailSource {
 		}
 	}
 
+	@Override
+	public FlushBatch freezeForFlush() {
+		semaphore.lock();
+		try {
+			return freezeLocked(List.of());
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	private BranchFlushBatch freezeLocked(List<Changeset> staged) {
+		checkWriteNotSuspended();
+		if (closed || frozenBatch != null) {
+			throw new IllegalStateException("This branch is closed or already frozen");
+		}
+		BranchFlushBatch batch = new BranchFlushBatch(List.copyOf(changes), staged,
+				List.copyOf(bufferedWriteIntents));
+		frozenBatch = batch;
+		return batch;
+	}
+
+	/** Transfers an ordered suffix once, retaining any older parent prefix in the physical replay batch. */
+	@Override
+	public void enlistValidationCarriers(FrozenFlush.Context context) {
+		List<SailSink> carriers;
+		semaphore.lock();
+		try {
+			if (closed || frozenBatch != null && !context.owns(frozenBatch)) {
+				throw new IllegalStateException("The backing branch is closed or independently frozen");
+			}
+			carriers = validationCarriers();
+		} finally {
+			semaphore.unlock();
+		}
+		for (SailSink carrier : carriers) {
+			context.validationCarrier(carrier);
+		}
+		context.discover(backingSource);
+	}
+
+	@Override
+	public FrozenFlush.Batch stageFrozen(List<Changeset> incoming, Changeset validationCarrier,
+			FrozenFlush.Context context) {
+		semaphore.lock();
+		try {
+			checkWriteNotSuspended();
+			if (closed || frozenBatch != null && !context.owns(frozenBatch)) {
+				throw new IllegalStateException("The backing branch is closed or independently frozen");
+			}
+			List<Changeset> staged = new ArrayList<>(incoming.size());
+			for (Changeset change : incoming) {
+				staged.add(change.shallowClone());
+			}
+			changes.addAll(staged);
+			BranchFlushBatch batch = frozenBatch;
+			if (batch == null) {
+				try {
+					batch = freezeLocked(staged);
+				} catch (RuntimeException | Error failure) {
+					changes.removeAll(staged);
+					throw failure;
+				}
+			} else {
+				batch.appendStaged(staged);
+			}
+			batch.enlist(context);
+			for (Changeset change : staged) {
+				for (Changeset other : pending) {
+					if (other != validationCarrier && !context.ownsValidationCarrier(other)) {
+						other.prepend(change);
+					}
+				}
+			}
+			if (!batch.stagedOnce) {
+				batch.stage(context);
+			} else {
+				batch.stageSuffix(staged);
+			}
+			return batch;
+		} finally {
+			semaphore.unlock();
+		}
+	}
+
+	private final class BranchFlushBatch implements FrozenFlush.Batch {
+		private final List<Changeset> captured;
+		private final List<Changeset> staged;
+		private final List<WriteIntent> intents;
+		private final List<SailClosable> models = new ArrayList<>();
+		private FrozenFlush.Context context;
+		private boolean stagedOnce;
+		private boolean released;
+
+		private BranchFlushBatch(List<Changeset> captured, List<Changeset> staged, List<WriteIntent> intents) {
+			this.captured = new ArrayList<>(captured);
+			this.staged = new ArrayList<>(staged);
+			this.intents = intents;
+			try {
+				for (Changeset change : captured) {
+					models.add(change.freezeModel());
+				}
+			} catch (RuntimeException | Error failure) {
+				for (SailClosable model : models) {
+					closeResource(failure, model);
+				}
+				throw failure;
+			}
+		}
+
+		private void appendStaged(List<Changeset> additions) {
+			// Only the common staging context may extend an ancestor, before any physical application.
+			for (Changeset change : additions) {
+				models.add(change.freezeModel());
+				captured.add(change);
+				staged.add(change);
+			}
+		}
+
+		@Override
+		public void enlist(FrozenFlush.Context requested) {
+			semaphore.lock();
+			try {
+				if (released || stagedOnce && context != requested) {
+					throw new IllegalStateException("The retained batch is closed or belongs to another publication");
+				}
+				context = requested;
+				context.register(this);
+			} finally {
+				semaphore.unlock();
+			}
+		}
+
+		@Override
+		public void discoverValidationCarriers(FrozenFlush.Context requested) {
+			requested.discover(SailSourceBranch.this);
+		}
+
+		@Override
+		public void stage(FrozenFlush.Context requested) {
+			enlist(requested);
+			semaphore.lock();
+			try {
+				if (stagedOnce) {
+					return;
+				}
+				stageSuffix(captured);
+				stagedOnce = true;
+			} finally {
+				semaphore.unlock();
+			}
+		}
+
+		private void stageSuffix(List<Changeset> suffix) {
+			renewSealedSerializableCarrier();
+			for (SailSink carrier : validationCarriers()) {
+				context.validationCarrier(carrier);
+				for (Changeset change : suffix) {
+					prepare(change, carrier);
+				}
+				if (carrier instanceof Changeset changeset) {
+					changeset.validateReadBoundary();
+					changeset.releasePrepared();
+				} else {
+					// Native Memory validation owns the only exclusion protecting its original read snapshot.
+					// Keep it through physical application; release it only after acknowledgement/cancellation.
+					if (carrier != prepared || carrier == serializable || !coversPreparedObservations(suffix)) {
+						carrier.prepare();
+						if (carrier == prepared) {
+							if (preparedObservations == null) {
+								preparedObservations = new IdentityHashMap<>();
+							}
+							rememberPreparedObservations(suffix);
+						}
+					}
+				}
+			}
+			FrozenFlush.Batch destination = null;
+			// Reserve this position before wrappers stage additional sources. A raw primary still applies first.
+			context.terminal(this);
+			if (backingSource instanceof FrozenFlush buffered) {
+				destination = buffered.stageFrozen(suffix,
+						prepared instanceof Changeset carrier ? carrier : null, context);
+			}
+			if (destination != null) {
+				context.forwarded(this);
+			}
+		}
+
+		@Override
+		public void flush() {
+			if (context == null) {
+				enlist(new FrozenFlush.Context());
+			}
+			context.flush(this);
+		}
+
+		@Override
+		public void apply() {
+			if (!captured.isEmpty()) {
+				try (SailSink attempt = backingSource.sink(backingSinkIsolationLevel(captured))) {
+					context.attempt(attempt);
+					for (Changeset change : captured) {
+						prepare(change, attempt);
+					}
+					attempt.prepare();
+					for (Changeset change : captured) {
+						SailSourceBranch.this.flush(change, attempt);
+					}
+					attempt.flush();
+					context.recordOwnFlush(attempt);
+				}
+			}
+		}
+
+		@Override
+		public void unFreezeAndDiscardFlushed() {
+			if (context == null) {
+				throw new IllegalStateException("An unapplied batch cannot be acknowledged");
+			}
+			context.release(true);
+		}
+
+		@Override
+		public void close() {
+			if (context == null) {
+				releaseLocal(false);
+			} else {
+				context.release(false);
+			}
+		}
+
+		@Override
+		public void releaseLocal(boolean acknowledged) {
+			semaphore.lock();
+			try {
+				if (released) {
+					return;
+				}
+				released = true;
+				preparedObservations = null;
+				Throwable failure = context == null ? releaseValidationPreparation(null) : null;
+				if (acknowledged) {
+					for (Changeset change : captured) {
+						change.sealModel();
+					}
+					changes.removeAll(captured);
+					SailSink completedPrepared = prepared;
+					SailSink previousSerializable = serializable;
+					prepared = null;
+					try {
+						renewSealedSerializableCarrier();
+					} catch (RuntimeException | Error renewalFailure) {
+						failure = addFailure(failure, renewalFailure);
+					}
+					if (completedPrepared != previousSerializable) {
+						failure = closeResource(failure, completedPrepared);
+					}
+					for (WriteIntent intent : intents) {
+						bufferedWriteIntents.remove(intent);
+						failure = closeResource(failure, intent);
+					}
+					try {
+						retireSnapshot();
+					} catch (RuntimeException | Error cleanupFailure) {
+						failure = addFailure(failure, cleanupFailure);
+					}
+					failure = closeWritePreflight(failure);
+				} else {
+					changes.removeAll(staged);
+					for (Changeset other : pending) {
+						for (Changeset change : staged) {
+							other.removePrepend(change);
+						}
+					}
+				}
+				for (SailClosable model : models) {
+					failure = closeResource(failure, model);
+				}
+				frozenBatch = null;
+				if (failure != null) {
+					rethrow(failure);
+				}
+			} finally {
+				semaphore.unlock();
+			}
+		}
+	}
+
 	private void flushLocked() throws SailException {
 		if (!changes.isEmpty()) {
+			renewSealedSerializableCarrier();
 			if (prepared == null) {
 				prepareLocked();
 			}
@@ -1502,6 +1896,7 @@ class SailSourceBranch implements SailSource {
 				}
 			} finally {
 				prepared = null;
+				preparedObservations = null;
 			}
 			retireSnapshot();
 			closeWritePreflight();
@@ -1516,6 +1911,7 @@ class SailSourceBranch implements SailSource {
 		changes.clear();
 		SailSink toClose = prepared;
 		prepared = null;
+		preparedObservations = null;
 		if (toClose != serializable) {
 			failure = closeResource(failure, toClose);
 		}
@@ -1625,24 +2021,22 @@ class SailSourceBranch implements SailSource {
 
 	void mergeLocked(Changeset change) {
 		checkWriteNotSuspended();
-		pending.remove(change);
-		if (isChanged(change)) {
-			Changeset merged;
-			changes.add(change.shallowClone());
-			WriteIntent intent = change.takeWriteIntent();
+		Changeset.Transfer transfer = change.transfer();
+		if (transfer != null) {
+			Changeset incoming = transfer.changeset();
+			changes.add(incoming);
+			WriteIntent intent = transfer.intent();
 			if (intent != null) {
 				bufferedWriteIntents.addLast(intent);
 			}
-			compressChanges();
-			merged = changes.getLast();
-
-			// ´pending´ is a synchronized collection, so we should in theory use a synchronized block here to
-			// protect our iterator. The ´semaphore´ is already protecting all writes, and we have already acquired
-			// the ´semaphore´. Synchronizing on the ´pending´ collection could potentially lead to a deadlock when
-			// closing a Changeset during rollback.
-			for (Changeset c : pending) {
-				c.prepend(merged);
+			// Reusable carriers remain pending until close so that intervening publications are still validated.
+			// Publish the exact incoming generation before compression can combine it with any older prefix.
+			for (Changeset other : pending) {
+				if (other != change) {
+					other.prepend(incoming);
+				}
 			}
+			compressChanges();
 		}
 	}
 
@@ -1705,13 +2099,14 @@ class SailSourceBranch implements SailSource {
 				if (!(array[0].hasDeprecated() || array[0].hasApproved())
 						&& (array[1].hasDeprecated() || array[1].hasApproved())) {
 
-					if (Changeset.isOrderIndependent(array[0], array[1])) {
+					if (!array[0].isFrozen() && !array[1].isFrozen()
+							&& Changeset.isOrderIndependent(array[0], array[1])) {
 
 						// The last change contains all the approved and deprecated statements, faster to swap before
 						// merging. This is typically the case when parsing a file with namespaces at the beginning.
 
 						Changeset second = changes.removeLast();
-						if (changes.peekLast().isRefback()) {
+						if (changes.peekLast().isRetained()) {
 							changes.addLast(second);
 							return;
 						}
@@ -1727,7 +2122,7 @@ class SailSourceBranch implements SailSource {
 
 			while (changes.size() > 1) {
 				Changeset pop = changes.removeLast();
-				if (changes.peekLast().isRefback()) {
+				if (pop.isFrozen() || changes.peekLast().isFrozen() || changes.peekLast().isRetained()) {
 					changes.addLast(pop);
 					return;
 				}
@@ -1751,7 +2146,7 @@ class SailSourceBranch implements SailSource {
 			boolean eligible = false;
 			if (semaphore.tryLock()) {
 				try {
-					eligible = suspendedWrites == 0 && observers.isEmpty() && !changes.isEmpty();
+					eligible = frozenBatch == null && suspendedWrites == 0 && observers.isEmpty() && !changes.isEmpty();
 				} finally {
 					semaphore.unlock();
 				}
@@ -1780,7 +2175,7 @@ class SailSourceBranch implements SailSource {
 			try (publication) {
 				if (semaphore.tryLock()) {
 					try (SailWriteContinuation.Scope continuation = writeContinuation()) {
-						if (suspendedWrites == 0 && observers.isEmpty()) {
+						if (frozenBatch == null && suspendedWrites == 0 && observers.isEmpty()) {
 							try {
 								flushLocked();
 								flushed = true;
@@ -1828,7 +2223,7 @@ class SailSourceBranch implements SailSource {
 		}
 		try {
 			semaphore.lock();
-			if (changes.size() == 1 && !changes.getFirst().isRefback() && sink instanceof Changeset
+			if (changes.size() == 1 && !changes.getFirst().isRetained() && sink instanceof Changeset
 					&& !isChanged((Changeset) sink)) {
 				// one change to apply that is not in use to an empty Changeset
 				Changeset dst = (Changeset) sink;

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -162,6 +163,64 @@ public class SnapshotSailStoreTest {
 			assertEquals(beforeImplicitRead, observations.get(), "An implicit default read must not observe patterns");
 		} finally {
 			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void commitUsesOrderedConnectionHooksWhileBranchesRemainAttached() {
+		List<String> events = new ArrayList<>();
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createHookSail(store, events);
+		try (SailConnection connection = sail.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("hook"));
+			connection.commit();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(List.of("prepare", "flush", "attached"), events,
+				"commit preparation and flush hooks run in order, and flush observes the live transaction branch");
+	}
+
+	@Test
+	public void acknowledgedAliasCannotEraseSerializableNegativeReadConflict() throws Exception {
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink());
+		try {
+			SailSource root = store.getExplicitSailSource();
+			try (SailSourceBranch competitor = (SailSourceBranch) root.fork();
+					SailSourceBranch writer = (SailSourceBranch) root.fork()) {
+				var vf = SimpleValueFactory.getInstance();
+				Resource subject = vf.createIRI("urn:frozen:negative-read");
+				IRI predicate = vf.createIRI("urn:frozen:predicate");
+				Value object = vf.createLiteral("committed");
+				Statement statement = vf.createStatement(subject, predicate, object);
+
+				try (SailDataset dataset = competitor.dataset(IsolationLevels.SERIALIZABLE);
+						CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, predicate,
+								object)) {
+					assertFalse(statements.hasNext(), "the competitor establishes an admitted negative read");
+				}
+
+				SailSink original = writer.sink(IsolationLevels.NONE);
+				original.approve(statement);
+				original.flush();
+				SailSource.FlushBatch batch = writer.freezeForFlush();
+				try {
+					try (SailClosable publication = writer.beginPublication()) {
+						batch.flush();
+					}
+					batch.unFreezeAndDiscardFlushed();
+					assertAll(
+							() -> assertThrows(IllegalStateException.class, () -> original.deprecate(statement)),
+							() -> assertThrows(IllegalStateException.class, original::clear),
+							() -> assertThrows(SailConflictException.class, competitor::prepare));
+				} finally {
+					batch.close();
+					original.close();
+				}
+			}
+		} finally {
+			store.close();
 		}
 	}
 
@@ -1126,6 +1185,76 @@ public class SnapshotSailStoreTest {
 					@Override
 					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 						return strategy == null ? super.getEvaluationStrategy(dataset, tripleSource) : strategy;
+					}
+
+					@Override
+					protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+							throws SailException {
+					}
+
+					@Override
+					protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+							throws SailException {
+					}
+				};
+			}
+
+			@Override
+			public boolean isWritable() throws SailException {
+				return true;
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+		};
+	}
+
+	private Sail createHookSail(SailStore sailStore, List<String> events) {
+		return new AbstractNotifyingSail() {
+			{
+				setSupportedIsolationLevels(IsolationLevels.values());
+				setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+			}
+
+			@Override
+			protected void shutDownInternal() throws SailException {
+				sailStore.close();
+			}
+
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new SailSourceConnection(this, sailStore, (FederatedServiceResolver) null) {
+					private boolean checkingAttachment;
+					private SailSource preparedDuringFlush;
+
+					@Override
+					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+						return super.getEvaluationStrategy(dataset, tripleSource);
+					}
+
+					@Override
+					protected void prepareTransaction(SailSource source) throws SailException {
+						if (checkingAttachment) {
+							preparedDuringFlush = source;
+							return;
+						}
+						events.add("prepare");
+						source.prepare();
+					}
+
+					@Override
+					protected void flushTransaction(SailSource source) throws SailException {
+						events.add("flush");
+						checkingAttachment = true;
+						try {
+							prepareInternal();
+						} finally {
+							checkingAttachment = false;
+						}
+						events.add(preparedDuringFlush == source ? "attached" : "detached");
+						source.flush();
 					}
 
 					@Override
