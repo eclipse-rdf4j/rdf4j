@@ -30,6 +30,7 @@ import java.util.Set;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.Supplier;
@@ -569,6 +570,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void setNamespace(String prefix, String name) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		checkModelMutation();
 		beforeWriteIntent();
 		assert !closed;
@@ -577,7 +579,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				? saturatedAdd(64L, saturatedMultiply((long) prefix.length() + name.length(), 4L))
 				: 0L;
 		boolean signalWritePreflight = false;
-		ModelWriteState writeLock = acquireModelMutationLock();
+		ModelWriteState writeLock = acquireModelMutationLock(mutation);
 		try {
 			if (modelWriteState.removedPrefixes == null) {
 				modelWriteState.removedPrefixes = new HashSet<>();
@@ -599,11 +601,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void removeNamespace(String prefix) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		checkModelMutation();
 		beforeWriteIntent();
 		assert !closed;
 		boolean signalWritePreflight;
-		ModelWriteState writeLock = acquireModelMutationLock();
+		ModelWriteState writeLock = acquireModelMutationLock(mutation);
 		try {
 			if (modelWriteState.addedNamespaces != null) {
 				modelWriteState.addedNamespaces.remove(prefix);
@@ -625,12 +628,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clearNamespaces() {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		checkModelMutation();
 		beforeWriteIntent();
 		assert !closed;
 		boolean signalWritePreflight;
 
-		ModelWriteState writeLock = acquireModelMutationLock();
+		ModelWriteState writeLock = acquireModelMutationLock(mutation);
 		try {
 			modelWriteState.namespaceCleared = true;
 
@@ -713,11 +717,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clear(Resource... contexts) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
 			boolean signalWritePreflight;
-			ModelWriteState writeLock = acquireModelMutationLock();
+			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
 				if (contexts != null && contexts.length == 0) {
 					modelWriteState.statementCleared = true;
@@ -757,6 +762,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approve(Statement statement) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
@@ -764,7 +770,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			assert !closed;
 			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
-			ModelWriteState writeLock = acquireModelMutationLock();
+			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
 
 				if (modelWriteState.deprecated != null) {
@@ -800,13 +806,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecate(Statement statement) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
 			assert !closed;
 			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
-			ModelWriteState writeLock = acquireModelMutationLock();
+			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
 				if (modelWriteState.approved != null) {
 					modelWriteState.approved.remove(statement);
@@ -875,16 +882,27 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	protected void setChangeset(Changeset from) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			assert !closed;
 			assert !from.closed;
-			ModelWriteState destination = acquireModelMutationLock();
+			ModelWriteState destination = acquireModelWriteLock();
 			ModelWriteState source = null;
 			try {
+				checkModelMutation(destination);
+				StatementInput.Generation before = new StatementInput.Generation(destination.identity,
+						destination.revision);
+				if (mutation != null) {
+					mutation.validate(before);
+				}
 				if (destination != from.modelWriteState) {
 					source = from.acquireModelReadLock();
 				}
-				copyContents(from, source == null ? destination : source);
+				ModelWriteState adopted = source == null ? destination : source;
+				if (mutation != null) {
+					mutation.adopt(before, new StatementInput.Generation(adopted.identity, adopted.revision));
+				}
+				copyContents(from, adopted);
 			} finally {
 				if (source != null) {
 					source.unlockReader();
@@ -991,7 +1009,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	/** Atomically hands off this generation and its admission lease without consuming the reusable writer. */
-	Transfer transfer() {
+	Transfer transfer(SailSourceBranch branch) {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			Changeset copy = null;
 			boolean published = false;
@@ -1008,10 +1026,19 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				List<ModelWriteState> retainedBarriers = List.copyOf(barriers);
 				copy = cloneContents(state);
 				Transfer transfer = new Transfer(copy);
-				transfer.intent = takeWriteIntent();
-				inheritedMutationBarriers = retainedBarriers;
-				transferred = true;
-				modelWriteState = next;
+				SailModelCleanup.beginLock();
+				next.writerStamp = next.readWriteLock.writeLock();
+				try {
+					StreamingWritePreflight.transferred(branch, this, copy,
+							new StatementInput.Generation(state.identity, state.revision),
+							new StatementInput.Generation(next.identity, next.revision));
+					transfer.intent = takeWriteIntent();
+					inheritedMutationBarriers = retainedBarriers;
+					transferred = true;
+					modelWriteState = next;
+				} finally {
+					next.unlockWriter();
+				}
 				state.release();
 				published = true;
 				return transfer;
@@ -1193,6 +1220,234 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
+	StatementInput.Generation statementGeneration() {
+		ModelWriteState state = acquireModelReadLock();
+		try {
+			return new StatementInput.Generation(state.identity, state.revision);
+		} finally {
+			state.unlockReader();
+		}
+	}
+
+	/** Captures metadata and one exact holder lease without visiting or copying statements. */
+	StatementInput statementInput() {
+		return statementInput(new AtomicReference<>());
+	}
+
+	/** All cursors in one preflight graph share its first failure, including already exhausted cursors. */
+	StatementInput statementInput(AtomicReference<Throwable> failure) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState state = acquireModelReadLock();
+			try {
+				if (closed || transferred) {
+					return null;
+				}
+				List<SailSource.NamespaceUpdate> namespaces = new ArrayList<>();
+				if (state.addedNamespaces != null) {
+					for (Map.Entry<String, String> namespace : state.addedNamespaces.entrySet()) {
+						namespaces.add(new SailSource.NamespaceUpdate(namespace.getKey(), namespace.getValue()));
+					}
+				}
+				SailSource.WritePreflight metadata = new SailSource.WritePreflight(List.of(), namespaces,
+						state.removedPrefixes == null ? Set.of() : state.removedPrefixes,
+						state.deprecatedContexts == null ? Set.of() : state.deprecatedContexts,
+						state.statementCleared, state.namespaceCleared);
+				ChangesetInput input = new ChangesetInput(state, metadata, failure);
+				state.retain();
+				return input;
+			} finally {
+				state.unlockReader();
+			}
+		}
+	}
+
+	private final class ChangesetInput implements StatementInput {
+		private final ModelWriteState state;
+		private final List<Generation> generations;
+		private final SailSource.WritePreflight metadata;
+		private final boolean statements;
+		private final AtomicReference<Throwable> failure;
+		private boolean inputClosed;
+
+		private ChangesetInput(ModelWriteState state, SailSource.WritePreflight metadata,
+				AtomicReference<Throwable> failure) {
+			this.state = state;
+			this.generations = List.of(new Generation(state.identity, state.revision));
+			this.metadata = metadata;
+			this.statements = !state.approvedEmpty || !state.deprecatedEmpty;
+			this.failure = failure;
+		}
+
+		@Override
+		public synchronized CloseableIteration<Statement> openCursor() {
+			if (inputClosed) {
+				throw new IllegalStateException("A closed statement input cannot open another cursor");
+			}
+			InputCursor cursor = new InputCursor(state, generations.getFirst().revision(), failure);
+			state.retain();
+			return cursor;
+		}
+
+		@Override
+		public List<Generation> generations() {
+			return generations;
+		}
+
+		@Override
+		public SailSource.WritePreflight metadata() {
+			return metadata;
+		}
+
+		@Override
+		public boolean hasStatements() {
+			return statements;
+		}
+
+		@Override
+		public boolean isCurrent() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				SailModelCleanup.beginLock();
+				state.readWriteLock.readLock();
+				try {
+					return !closed && !transferred && modelWriteState == state
+							&& state.revision == generations.getFirst().revision();
+				} finally {
+					state.unlockReader();
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				boolean release;
+				synchronized (this) {
+					release = !inputClosed;
+					inputClosed = true;
+				}
+				if (release) {
+					state.release();
+				}
+			}
+		}
+	}
+
+	/** Opens at most one model cursor at a time; each delegate and the complete traversal own exact leases. */
+	private static final class InputCursor implements CloseableIteration<Statement> {
+		private final ModelWriteState state;
+		private final long revision;
+		private final AtomicReference<Throwable> failure;
+		private CloseableIteration<Statement> current;
+		private int nextModel;
+		private boolean cursorClosed;
+
+		private InputCursor(ModelWriteState state, long revision, AtomicReference<Throwable> failure) {
+			this.state = state;
+			this.revision = revision;
+			this.failure = failure;
+		}
+
+		private void openNext() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				SailModelCleanup.beginLock();
+				state.writerStamp = state.readWriteLock.writeLock();
+				try {
+					if (revision != state.revision) {
+						throw new SailConflictException("Statement generation changed before traversal");
+					}
+					Model model = nextModel++ == 0 ? state.approved : state.deprecated;
+					if (model != null) {
+						spill(model);
+						Iterator<Statement> iterator = model.iterator();
+						try {
+							RetainedStatementIterator retained = new RetainedStatementIterator(state, iterator,
+									failure);
+							state.retain();
+							current = retained;
+						} catch (RuntimeException | Error failure) {
+							closeIterator(iterator, state, failure, this.failure);
+							throw failure;
+						}
+					}
+				} finally {
+					state.unlockWriter();
+				}
+			}
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (cursorClosed) {
+				return false;
+			}
+			try {
+				while (true) {
+					if (current != null && current.hasNext()) {
+						return true;
+					}
+					if (current != null) {
+						current.close();
+						current = null;
+					}
+					if (nextModel == 2) {
+						close();
+						return false;
+					}
+					openNext();
+				}
+			} catch (RuntimeException | Error failure) {
+				closeAfter(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public Statement next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			try {
+				return current.next();
+			} catch (RuntimeException | Error failure) {
+				closeAfter(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		private void closeAfter(Throwable primary) {
+			failure.compareAndSet(null, primary);
+			try {
+				close();
+			} catch (RuntimeException | Error failure) {
+				if (primary != failure) {
+					primary.addSuppressed(failure);
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				if (!cursorClosed) {
+					cursorClosed = true;
+					try {
+						if (current != null) {
+							current.close();
+						}
+					} finally {
+						current = null;
+						state.release();
+					}
+				}
+			}
+		}
+	}
+
 	WritePreflightSnapshot getWritePreflightSnapshot() {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			assert !closed;
@@ -1318,7 +1573,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					primary = failure;
 					throw failure;
 				} finally {
-					closeIterator(iterator, primary);
+					closeIterator(iterator, state, primary);
 				}
 				return snapshot;
 			} finally {
@@ -1342,7 +1597,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					state.retain();
 					return retained;
 				} catch (RuntimeException | Error failure) {
-					closeIterator(iterator, failure);
+					closeIterator(iterator, state, failure);
 					throw failure;
 				}
 			} finally {
@@ -1357,7 +1612,60 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	private static void closeIterator(Iterator<?> iterator, Throwable primary) {
+	/** A raw iterator may release a native dataset whose final observer requires prepared branch guards. */
+	private static void closeIterator(Iterator<?> iterator, ModelWriteState state, Throwable primary) {
+		closeIterator(iterator, state, primary, null);
+	}
+
+	private static void closeIterator(Iterator<?> iterator, ModelWriteState state, Throwable immediate,
+			AtomicReference<Throwable> context) {
+		if (context != null && immediate != null) {
+			context.compareAndSet(null, immediate);
+		}
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			SailClosable ownership = state.retainCursor();
+			SailModelCleanup.defer(() -> {
+				try (SailModelCleanup.Scope callbacks = SailModelCleanup.enter()) {
+					Throwable primary = context == null ? immediate : context.get();
+					if (primary == null) {
+						primary = immediate;
+					}
+					Throwable failure = primary;
+					try {
+						closeIteratorNow(iterator, primary);
+					} catch (RuntimeException | Error closeFailure) {
+						failure = closeFailure;
+						if (context != null) {
+							context.compareAndSet(null, closeFailure);
+						}
+					} finally {
+						try {
+							ownership.close();
+						} catch (RuntimeException | Error releaseFailure) {
+							if (failure == null) {
+								failure = releaseFailure;
+								if (context != null) {
+									context.compareAndSet(null, releaseFailure);
+								}
+							} else if (failure != releaseFailure) {
+								failure.addSuppressed(releaseFailure);
+							}
+						}
+					}
+					if (primary == null) {
+						if (failure instanceof Error error) {
+							throw error;
+						}
+						if (failure instanceof RuntimeException runtime) {
+							throw runtime;
+						}
+					}
+				}
+			});
+		}
+	}
+
+	private static void closeIteratorNow(Iterator<?> iterator, Throwable primary) {
 		if (iterator instanceof AutoCloseable closeable) {
 			try {
 				closeable.close();
@@ -1381,12 +1689,19 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		private final ModelWriteState state;
 		private final Iterator<Statement> delegate;
 		private final long revision;
+		private final AtomicReference<Throwable> failure;
 		private boolean closed;
 
 		private RetainedStatementIterator(ModelWriteState state, Iterator<Statement> delegate) {
+			this(state, delegate, null);
+		}
+
+		private RetainedStatementIterator(ModelWriteState state, Iterator<Statement> delegate,
+				AtomicReference<Throwable> failure) {
 			this.state = state;
 			this.delegate = delegate;
 			this.revision = state.revision;
+			this.failure = failure;
 		}
 
 		private <T> T read(Supplier<T> operation) {
@@ -1441,7 +1756,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		private void closeAfter(Throwable primary) {
 			try {
-				close();
+				close(primary);
 			} catch (RuntimeException | Error failure) {
 				if (failure != primary) {
 					primary.addSuppressed(failure);
@@ -1451,11 +1766,15 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		@Override
 		public void close() {
+			close(null);
+		}
+
+		private void close(Throwable primary) {
 			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 				if (!closed) {
 					closed = true;
 					try {
-						closeIterator(delegate, null);
+						closeIterator(delegate, state, primary, failure);
 					} finally {
 						state.release();
 					}
@@ -1508,9 +1827,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	void removeApproved(Statement next) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			assert !closed;
-			ModelWriteState state = acquireModelMutationLock();
+			ModelWriteState state = acquireModelMutationLock(mutation);
 			try {
 				if (modelWriteState.approved != null) {
 					modelWriteState.approved.remove(next);
@@ -1544,8 +1864,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			Throwable primary = null;
 			try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
 				if (state.approved != null && !state.approvedEmpty) {
-					statements = new ScopedStatementSet(state.approved);
-					sink.approveAll(statements, state.approvedContexts);
+					statements = new ScopedStatementSet(state.approved, state::retainCursor);
+					ScopedStatementSet input = statements;
+					StreamingWritePreflight.mutate(this, sink, () -> sink.approveAll(input, state.approvedContexts));
 				}
 			} catch (RuntimeException | Error failure) {
 				primary = failure;
@@ -1584,8 +1905,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			Throwable primary = null;
 			try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
 				if (state.deprecated != null && !state.deprecatedEmpty) {
-					statements = new ScopedStatementSet(state.deprecated);
-					sink.deprecateAll(statements);
+					statements = new ScopedStatementSet(state.deprecated, state::retainCursor);
+					ScopedStatementSet input = statements;
+					StreamingWritePreflight.mutate(this, sink, () -> sink.deprecateAll(input));
 				}
 			} catch (RuntimeException | Error failure) {
 				primary = failure;
@@ -1690,11 +2012,15 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	private ModelWriteState acquireModelMutationLock() {
+	private ModelWriteState acquireModelMutationLock(StreamingWritePreflight.Mutation mutation) {
 		ModelWriteState state = acquireModelWriteLock();
 		try {
 			checkModelMutation(state);
 			ModelWriteState mutable = detachTransferredGeneration(state);
+			StatementInput.Generation before = new StatementInput.Generation(mutable.identity, mutable.revision);
+			if (mutation != null) {
+				mutation.advance(before, new StatementInput.Generation(mutable.identity, mutable.revision + 1));
+			}
 			mutable.revision++;
 			return mutable;
 		} catch (RuntimeException | Error failure) {
@@ -1793,6 +2119,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void approveAll(Set<Statement> approve, Set<Resource> approveContexts) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
@@ -1803,7 +2130,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 			}
 			boolean signalWritePreflight = false;
-			ModelWriteState writeLock = acquireModelMutationLock();
+			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
 
 				if (modelWriteState.deprecated != null) {
@@ -1834,6 +2161,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecateAll(Set<Statement> deprecate) {
+		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
@@ -1844,7 +2172,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				}
 			}
 			boolean signalWritePreflight = false;
-			ModelWriteState writeLock = acquireModelMutationLock();
+			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
 
 				if (modelWriteState.approved != null) {
@@ -1878,6 +2206,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private static final class ModelWriteState {
+		private final Object identity = new Object();
 		private Model approved;
 		private boolean approvedEmpty = true;
 		private Model deprecated;
@@ -1892,6 +2221,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		private final AtomicInteger owners = new AtomicInteger(1);
 		private final AtomicInteger readerOwners = new AtomicInteger();
 		private final AtomicInteger historyOwners = new AtomicInteger();
+
+		private SailClosable retainCursor() {
+			retain();
+			return this::release;
+		}
 
 		private void retain() {
 			int count;

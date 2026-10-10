@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -109,6 +110,37 @@ class SailSourceModelLifecycleTest {
 	}
 
 	@Test
+	void failedBulkImportDoesNotDuplicateSuppressedIteratorCloseFailure() {
+		SailStore store = mock(SailStore.class);
+		SailSource source = mock(SailSource.class);
+		SailSink sink = mock(SailSink.class);
+		when(store.getExplicitSailSource()).thenReturn(source);
+		when(source.sink(IsolationLevels.NONE)).thenReturn(sink);
+
+		SailException importFailure = new SailException("simulated import failure");
+		SailException closeFailure = new SailException("simulated iterator close failure");
+		TrackingBulkModel bulk = new TrackingBulkModel();
+		bulk.closeFailure = closeFailure;
+		bulk.add(statement("close-failure"));
+		doAnswer(invocation -> {
+			Iterator<Statement> iterator = statements(invocation).iterator();
+			if (iterator.hasNext()) {
+				iterator.next();
+			}
+			throw importFailure;
+		}).when(sink).approveAll(anySet(), anySet());
+
+		Throwable failure = catchThrowable(() -> new SailSourceModel(store, bulk));
+
+		assertThat(failure).isSameAs(importFailure);
+		assertThat(bulk.lastIterator).isNotNull();
+		assertThat(bulk.lastIterator.closeCount).isGreaterThan(0);
+		assertThat(failure.getSuppressed()).containsExactly(closeFailure);
+		assertThat(bulk.lastIterator.closeCount).isEqualTo(1);
+		verify(sink).close();
+	}
+
+	@Test
 	void statementIteratorCanBeClosedAfterPartialRead() throws Exception {
 		TrackingIteration iteration = new TrackingIteration(List.of(statement("one"), statement("two")));
 		SailSourceModel model = modelWith(iteration);
@@ -118,6 +150,17 @@ class SailSourceModelLifecycleTest {
 		((AutoCloseable) iterator).close();
 
 		assertThat(iteration.closeCount).isEqualTo(1);
+	}
+
+	@Test
+	void closeIteratorClosesRawCloseableIteratorExactlyOnce() {
+		TrackingIterator iterator = new TrackingIterator(List.of(statement("one")).iterator());
+		SailSourceModel model = new SailSourceModel(mock(SailSource.class));
+
+		model.closeIterator(iterator);
+
+		assertThat(iterator.closeCount).isGreaterThan(0);
+		assertThat(iterator.closeCount).isEqualTo(1);
 	}
 
 	@Test
@@ -243,6 +286,7 @@ class SailSourceModelLifecycleTest {
 	private static final class TrackingBulkModel extends LinkedHashModel {
 		private static final long serialVersionUID = 1L;
 		private TrackingIterator lastIterator;
+		private SailException closeFailure;
 
 		@Override
 		public Set<Resource> contexts() {
@@ -252,6 +296,7 @@ class SailSourceModelLifecycleTest {
 		@Override
 		public Iterator<Statement> iterator() {
 			lastIterator = new TrackingIterator(super.iterator());
+			lastIterator.closeFailure = closeFailure;
 			return lastIterator;
 		}
 	}
@@ -259,6 +304,7 @@ class SailSourceModelLifecycleTest {
 	private static final class TrackingIterator implements Iterator<Statement>, AutoCloseable {
 		private final Iterator<Statement> delegate;
 		private int closeCount;
+		private SailException closeFailure;
 
 		private TrackingIterator(Iterator<Statement> delegate) {
 			this.delegate = delegate;
@@ -282,6 +328,9 @@ class SailSourceModelLifecycleTest {
 		@Override
 		public void close() {
 			closeCount++;
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
 		}
 	}
 

@@ -91,6 +91,16 @@ class DelegatingSailSource implements SailSource, FrozenFlush {
 	}
 
 	@Override
+	public boolean supportsStreamingWritePreflight() {
+		// Subclasses can override legacy admission. Opt in explicitly before bypassing that boundary.
+		return getClass() == DelegatingSailSource.class && delegate.supportsStreamingWritePreflight();
+	}
+
+	SailSource streamingDelegate() {
+		return delegate;
+	}
+
+	@Override
 	public boolean shouldPreflightWrite(long approximateWriteBytes, boolean hasUnestimatedOperations) {
 		return delegate.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations);
 	}

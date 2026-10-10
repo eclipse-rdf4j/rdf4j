@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.function.Predicate;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
@@ -28,11 +29,14 @@ import org.eclipse.rdf4j.sail.SailException;
 final class ScopedStatementSet extends AbstractSet<Statement> implements SailClosable {
 
 	private final Model model;
+	private final Supplier<SailClosable> retainHolder;
+	private volatile Throwable closePrimary;
 	private final List<ScopedIterator> iterators = new ArrayList<>();
 	private boolean closed;
 
-	ScopedStatementSet(Model model) {
+	ScopedStatementSet(Model model, Supplier<SailClosable> retainHolder) {
 		this.model = Objects.requireNonNull(model, "model");
+		this.retainHolder = Objects.requireNonNull(retainHolder, "retainHolder");
 	}
 
 	@Override
@@ -41,15 +45,17 @@ final class ScopedStatementSet extends AbstractSet<Statement> implements SailClo
 			throw new IllegalStateException("Statement set has been closed");
 		}
 
-		Iterator<Statement> delegate = model.iterator();
+		SailClosable ownership = retainHolder.get();
+		Iterator<Statement> delegate = null;
 		ScopedIterator scoped = null;
 		try {
-			scoped = new ScopedIterator(Objects.requireNonNull(delegate, "model iterator"));
+			delegate = model.iterator();
+			scoped = new ScopedIterator(Objects.requireNonNull(delegate, "model iterator"), ownership);
 			iterators.add(scoped);
 			return scoped;
 		} catch (RuntimeException | Error failure) {
 			if (scoped == null) {
-				closeDelegate(delegate, failure);
+				deferClose(delegate, ownership, failure);
 			} else {
 				scoped.close(failure);
 			}
@@ -114,6 +120,7 @@ final class ScopedStatementSet extends AbstractSet<Statement> implements SailClo
 
 	/** Closes all opened iterators, attaching each close failure directly to {@code primary} when supplied. */
 	void close(Throwable primary) {
+		closePrimary = primary;
 		List<ScopedIterator> toClose;
 		synchronized (this) {
 			if (closed) {
@@ -148,12 +155,36 @@ final class ScopedStatementSet extends AbstractSet<Statement> implements SailClo
 		}
 	}
 
-	private static void closeDelegate(Iterator<?> delegate, Throwable primary) {
-		try {
-			closeDelegate(delegate);
-		} catch (Throwable closeFailure) {
-			addSuppressed(primary, closeFailure);
-		}
+	/** A raw cursor can own a dataset whose last observer needs branch locks retained by its consumer. */
+	private void deferClose(Iterator<?> delegate, SailClosable ownership, Throwable primary) {
+		SailModelCleanup.defer(() -> {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				Throwable original = closePrimary == null ? primary : closePrimary;
+				Throwable failure = original;
+				try {
+					closeDelegate(delegate);
+				} catch (Throwable closeFailure) {
+					if (failure == null) {
+						failure = closeFailure;
+					} else {
+						addSuppressed(failure, closeFailure);
+					}
+				} finally {
+					try {
+						ownership.close();
+					} catch (Throwable releaseFailure) {
+						if (failure == null) {
+							failure = releaseFailure;
+						} else {
+							addSuppressed(failure, releaseFailure);
+						}
+					}
+				}
+				if (original == null && failure != null) {
+					throwCloseFailure(failure);
+				}
+			}
+		});
 	}
 
 	private static void closeDelegate(Iterator<?> delegate) {
@@ -186,11 +217,13 @@ final class ScopedStatementSet extends AbstractSet<Statement> implements SailClo
 
 	private final class ScopedIterator implements Iterator<Statement>, AutoCloseable {
 		private Iterator<Statement> delegate;
+		private final SailClosable ownership;
 		private boolean closed;
 		private boolean exhausted;
 
-		private ScopedIterator(Iterator<Statement> delegate) {
+		private ScopedIterator(Iterator<Statement> delegate, SailClosable ownership) {
 			this.delegate = delegate;
+			this.ownership = ownership;
 		}
 
 		@Override
@@ -249,15 +282,7 @@ final class ScopedStatementSet extends AbstractSet<Statement> implements SailClo
 			synchronized (ScopedStatementSet.this) {
 				iterators.remove(this);
 			}
-			try {
-				closeDelegate(current);
-			} catch (Throwable closeFailure) {
-				if (primary != null) {
-					addSuppressed(primary, closeFailure);
-				} else {
-					throwCloseFailure(closeFailure);
-				}
-			}
+			deferClose(current, ownership, primary);
 		}
 
 		private synchronized Iterator<Statement> delegateForTraversal(boolean allowExhausted) {

@@ -28,6 +28,10 @@ interface FrozenFlush {
 	}
 
 	interface Batch extends SailSource.FlushBatch {
+		default StreamingWritePreflight preflight() {
+			return null;
+		}
+
 		default void enlist(Context context) {
 			context.register(this);
 		}
@@ -125,30 +129,41 @@ interface FrozenFlush {
 					flushed = false;
 					needsStaging = !staged;
 				}
-				try {
-					if (needsStaging) {
-						try {
-							root.discoverValidationCarriers(this);
-							root.stage(this);
-						} catch (RuntimeException | Error failure) {
-							synchronized (this) {
-								// A partial logical transfer must never masquerade as a complete replay on the next
-								// call.
-								stagingFailure = failure;
+				StreamingWritePreflight streaming = root.preflight();
+				try (SailClosable preflight = streaming == null ? null : streaming.enter()) {
+					try {
+						if (needsStaging) {
+							try {
+								root.discoverValidationCarriers(this);
+								root.stage(this);
+							} catch (RuntimeException | Error failure) {
+								if (streaming != null) {
+									streaming.failedForRoot(failure);
+								}
+								synchronized (this) {
+									// A partial logical transfer must never masquerade as a complete replay on the next
+									// call.
+									stagingFailure = failure;
+								}
+								throw failure;
 							}
-							throw failure;
 						}
-					}
-					List<Batch> toApply;
-					synchronized (this) {
-						staged = true;
-						toApply = List.copyOf(terminals);
-					}
-					for (Batch terminal : toApply) {
-						terminal.apply();
-					}
-					synchronized (this) {
-						flushed = true;
+						List<Batch> toApply;
+						synchronized (this) {
+							staged = true;
+							toApply = List.copyOf(terminals);
+						}
+						for (Batch terminal : toApply) {
+							terminal.apply();
+						}
+						synchronized (this) {
+							flushed = true;
+						}
+					} catch (RuntimeException | Error failure) {
+						if (streaming != null) {
+							streaming.failedForRoot(failure);
+						}
+						throw failure;
 					}
 				} finally {
 					synchronized (this) {

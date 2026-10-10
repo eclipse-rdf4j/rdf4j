@@ -105,6 +105,8 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
+import org.eclipse.rdf4j.sail.base.StatementInput;
+import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -368,13 +370,14 @@ class LmdbSailStore implements SailStore {
 	}
 
 	/** A frozen buffered forecast, usable only by its original logical attempt and first native generation. */
-	private final class ProjectedWriteScope implements SailClosable {
+	private final class ProjectedWriteScope implements SailSource.WritePreflightScope {
 		private final Object owner;
 		private final ReadAttemptLease attempt;
 		private final long tripleUsedBytes;
 		private final long valueUsedBytes;
 		// Accessed only under the coordinator lock; a scope is never rebound after its first native writer.
 		private long nativeGeneration;
+		private volatile boolean active = true;
 		private boolean closed;
 
 		private ProjectedWriteScope(Object owner, ReadAttemptLease attempt, long tripleUsedBytes,
@@ -388,6 +391,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void close() {
 			mapGrowthCoordinator.release(this);
+		}
+
+		@Override
+		public boolean isActive() {
+			return active;
 		}
 	}
 
@@ -1199,6 +1207,7 @@ class LmdbSailStore implements SailStore {
 			try {
 				if (!scope.closed) {
 					scope.closed = true;
+					scope.active = false;
 					List<ProjectedWriteScope> scopes = projectedWrites.get(scope.owner);
 					if (scopes != null) {
 						scopes.remove(scope);
@@ -1215,7 +1224,14 @@ class LmdbSailStore implements SailStore {
 		private void retireProjectedWrites(ReadAttemptLease attempt) {
 			List<ProjectedWriteScope> scopes = projectedWrites.get(attempt.owner);
 			if (scopes != null) {
-				scopes.removeIf(scope -> scope.attempt == attempt);
+				scopes.removeIf(scope -> {
+					if (scope.attempt == attempt) {
+						scope.closed = true;
+						scope.active = false;
+						return true;
+					}
+					return false;
+				});
 				if (scopes.isEmpty()) {
 					projectedWrites.remove(attempt.owner);
 				}
@@ -1227,7 +1243,14 @@ class LmdbSailStore implements SailStore {
 			try {
 				List<ProjectedWriteScope> scopes = projectedWrites.get(owner);
 				if (scopes != null) {
-					scopes.removeIf(scope -> scope.nativeGeneration == nativeGeneration);
+					scopes.removeIf(scope -> {
+						if (scope.nativeGeneration == nativeGeneration) {
+							scope.closed = true;
+							scope.active = false;
+							return true;
+						}
+						return false;
+					});
 					if (scopes.isEmpty()) {
 						projectedWrites.remove(owner);
 					}
@@ -2942,6 +2965,14 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private record PreparedWriteContextRetention(Object owner, Thread reservationThread,
+			PreparedWriteContext context) {
+	}
+
+	private record LmdbNumericWriteEstimate(long tripleDelta, long valueDelta, long namespaceAddedEncodedBytes,
+			boolean namespaceTouched, boolean namespaceCleared) implements SailSource.NumericWriteEstimate {
+	}
+
 	private final class PreparedWriteScope implements SailClosable {
 		private final WriterLease writerLease;
 		private final Thread reservationThread;
@@ -4094,24 +4125,10 @@ class LmdbSailStore implements SailStore {
 		Thread reservationThread = null;
 		PreparedWriteContext context = null;
 		if (owner == null) {
-			// Retain implicit ownership beyond an enclosing publication's close: the prepared sink still owns
-			// its branch lock and writer reservation, and a later unscoped publication must recover that owner.
-			Object inheritedOwner = currentWriterOwner();
-			PublicationContext publication = publicationContext.get();
-			boolean ownsInheritedOwner = publication != null && publication.ownsOwner;
-			reservationThread = Thread.currentThread();
-			context = preparedWriteContexts.compute(reservationThread, (thread, existing) -> {
-				if (existing != null && inheritedOwner != null && existing.owner != inheritedOwner) {
-					throw new SailConflictException("A retained prepared publication cannot change writer ownership");
-				}
-				PreparedWriteContext next = existing == null
-						? new PreparedWriteContext(inheritedOwner == null ? new Object() : inheritedOwner,
-								inheritedOwner == null || ownsInheritedOwner)
-						: existing;
-				next.references++;
-				return next;
-			});
-			owner = context.owner;
+			PreparedWriteContextRetention retained = retainPreparedWriteContext();
+			reservationThread = retained.reservationThread();
+			context = retained.context();
+			owner = retained.owner();
 		}
 
 		WriterLease lease;
@@ -4126,6 +4143,27 @@ class LmdbSailStore implements SailStore {
 			throw failure;
 		}
 		return new PreparedWriteScope(lease, reservationThread, context);
+	}
+
+	private PreparedWriteContextRetention retainPreparedWriteContext() {
+		// Retain implicit ownership beyond an enclosing publication's close: the prepared sink still owns
+		// its branch lock and writer reservation, and a later unscoped publication must recover that owner.
+		Object inheritedOwner = currentWriterOwner();
+		PublicationContext publication = publicationContext.get();
+		boolean ownsInheritedOwner = publication != null && publication.ownsOwner;
+		Thread reservationThread = Thread.currentThread();
+		PreparedWriteContext context = preparedWriteContexts.compute(reservationThread, (thread, existing) -> {
+			if (existing != null && inheritedOwner != null && existing.owner != inheritedOwner) {
+				throw new SailConflictException("A retained prepared publication cannot change writer ownership");
+			}
+			PreparedWriteContext next = existing == null
+					? new PreparedWriteContext(inheritedOwner == null ? new Object() : inheritedOwner,
+							inheritedOwner == null || ownsInheritedOwner)
+					: existing;
+			next.references++;
+			return next;
+		});
+		return new PreparedWriteContextRetention(context.owner, reservationThread, context);
 	}
 
 	private boolean releasePreparedWriteContext(Thread reservationThread, PreparedWriteContext context) {
@@ -5955,6 +5993,24 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public boolean supportsStreamingWritePreflight() {
+			return true;
+		}
+
+		@Override
+		public SailSource.NumericWriteEstimate estimateWritePreflight(StatementInput input) {
+			SailSource.WritePreflight metadata = input.metadata();
+			long tripleDelta = tripleStore.estimateWriteBytes(input);
+			long valueDelta = valueStore.estimateWriteBytes(input);
+			long namespaceAddedEncodedBytes = namespaceStore.estimateAddedNamespaceBytes(metadata);
+			boolean namespaceTouched = metadata.namespaceCleared() || !metadata.addedNamespaces().isEmpty()
+					|| !metadata.removedNamespacePrefixes().isEmpty();
+			input.validate();
+			return new LmdbNumericWriteEstimate(tripleDelta, valueDelta, namespaceAddedEncodedBytes,
+					namespaceTouched, metadata.namespaceCleared());
+		}
+
+		@Override
 		public boolean shouldPreflightWrite(long approximateWriteBytes, boolean hasUnestimatedOperations) {
 			if (hasUnestimatedOperations) {
 				return true;
@@ -6056,15 +6112,94 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		@Override
+		public SailSource.WritePreflightScope beginWritePreflight(SailSource.NumericWriteEstimate estimate,
+				Object requestedOwner) throws SailException {
+			if (!(estimate instanceof LmdbNumericWriteEstimate numericEstimate)) {
+				throw new IllegalArgumentException("Unsupported numeric LMDB write estimate: " + estimate);
+			}
+
+			long tripleEstimate = LmdbUtil.saturatedAdd(numericEstimate.tripleDelta(),
+					namespaceStore.estimateEncodedSnapshotBytes(numericEstimate.namespaceAddedEncodedBytes(),
+							numericEstimate.namespaceTouched(), numericEstimate.namespaceCleared()));
+			long valueEstimate = numericEstimate.valueDelta();
+			long tripleUsedBytes;
+			long valueUsedBytes;
+			boolean growthNeeded;
+			try {
+				boolean tripleGrowth = tripleStore.requiresResizeForEstimatedWrite(tripleEstimate);
+				boolean valueGrowth = valueStore.requiresResizeForEstimatedWrite(valueEstimate);
+				growthNeeded = tripleGrowth || valueGrowth;
+				tripleUsedBytes = LmdbUtil.saturatedAdd(tripleStore.occupiedBytes(), tripleEstimate);
+				valueUsedBytes = LmdbUtil.saturatedAdd(valueStore.occupiedBytes(), valueEstimate);
+			} catch (IOException e) {
+				throw new SailException("Unable to estimate LMDB map capacity for the streamed buffered write", e);
+			}
+
+			Object owner = writeOwner(requestedOwner);
+			ProjectedWriteScope scope = mapGrowthCoordinator.registerProjectedWrite(owner, tripleUsedBytes,
+					valueUsedBytes);
+			if (!growthNeeded) {
+				return scope;
+			}
+			try (MapGrowthAttempt warning = mapGrowthCoordinator.beginWarning(owner, tripleUsedBytes, valueUsedBytes,
+					false)) {
+				return scope;
+			} catch (IOException failure) {
+				scope.close();
+				throw new SailException("Unable to request LMDB map growth for a streamed buffered write", failure);
+			} catch (RuntimeException | Error failure) {
+				scope.close();
+				throw failure;
+			}
+		}
+
 		private Object writeOwner(Object requestedOwner) {
 			if (writerOwner != null) {
 				return writerOwner;
 			}
-			if (requestedOwner != null) {
-				return requestedOwner;
+			Object preflightOwner = StreamingWritePreflight.currentOwner(this, requestedOwner);
+			if (preflightOwner != null) {
+				return preflightOwner;
 			}
 			Object current = currentWriterOwner();
 			return current == null ? Thread.currentThread() : current;
+		}
+
+		@Override
+		public SailSource.WriteOwner retainWriteOwner(Object requestedOwner) {
+			Object owner = writerOwner == null ? requestedOwner : writerOwner;
+			if (owner != null) {
+				Object retainedOwner = owner;
+				return new SailSource.WriteOwner() {
+					@Override
+					public Object owner() {
+						return retainedOwner;
+					}
+
+					@Override
+					public void close() {
+					}
+				};
+			}
+
+			PreparedWriteContextRetention retained = retainPreparedWriteContext();
+			AtomicBoolean released = new AtomicBoolean();
+			return new SailSource.WriteOwner() {
+				@Override
+				public Object owner() {
+					return retained.owner();
+				}
+
+				@Override
+				public void close() {
+					if (released.compareAndSet(false, true)
+							&& releasePreparedWriteContext(retained.reservationThread(), retained.context())
+							&& retained.context().ownsOwner) {
+						completeWriterRollback(retained.owner());
+					}
+				}
+			};
 		}
 
 		@Override
@@ -6090,7 +6225,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailClosable beginPublication() throws SailException {
-			return beginPublicationScope(writerOwner);
+			return beginPublicationScope(StreamingWritePreflight.currentOwner(this, writerOwner));
 		}
 
 		@Override
@@ -6113,7 +6248,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailClosable tryBeginPublication() {
-			return tryBeginPublicationScope(writerOwner);
+			return tryBeginPublicationScope(StreamingWritePreflight.currentOwner(this, writerOwner));
 		}
 
 		@Override
@@ -6123,7 +6258,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailClosable beginPreparedWrite() throws SailException {
-			return LmdbSailStore.this.beginPreparedWrite(writerOwner);
+			return LmdbSailStore.this.beginPreparedWrite(StreamingWritePreflight.currentOwner(this, writerOwner));
 		}
 
 		@Override

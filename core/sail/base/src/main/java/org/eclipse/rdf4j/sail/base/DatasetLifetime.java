@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 
 /** Owner close forbids new operations; admitted cursors retain the complete dataset until their final release. */
 final class DatasetLifetime {
@@ -110,11 +111,31 @@ final class DatasetLifetime {
 		}
 	}
 
-	private final class RetainedCursor<T> extends AbstractCloseableIteration<T> {
+	private final class RetainedCursor<T> extends AbstractCloseableIteration<T> implements IndexReportingIterator {
 		private final CloseableIteration<? extends T> delegate;
 
 		private RetainedCursor(CloseableIteration<? extends T> delegate) {
 			this.delegate = delegate;
+		}
+
+		@Override
+		public String getIndexName() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getIndexName() : null;
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getSourceRowsScannedActual() : -1;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getSourceRowsMatchedActual() : -1;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getSourceRowsFilteredActual() : -1;
 		}
 
 		@Override

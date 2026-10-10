@@ -22,9 +22,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 /**
  * Provides a bag union of the two provided iterations.
  */
-public class DualUnionIteration<E> implements CloseableIteration<E> {
+public class DualUnionIteration<E> implements CloseableIteration<E>, IndexReportingIterator {
 
 	private final Comparator<E> cmp;
+	// Keep reporting available after exhausted children have released their iteration references.
+	private final IndexReportingIterator indexReporter1;
+	private final IndexReportingIterator indexReporter2;
 	private CloseableIteration<? extends E> iteration1;
 	private CloseableIteration<? extends E> iteration2;
 	private E nextElementIteration1;
@@ -37,9 +40,7 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 
 	private DualUnionIteration(CloseableIteration<? extends E> iteration1,
 			CloseableIteration<? extends E> iteration2) {
-		this.iteration1 = iteration1;
-		this.iteration2 = iteration2;
-		this.cmp = null;
+		this(null, iteration1, iteration2);
 	}
 
 	@Experimental
@@ -48,6 +49,46 @@ public class DualUnionIteration<E> implements CloseableIteration<E> {
 		this.iteration1 = iteration1;
 		this.iteration2 = iteration2;
 		this.cmp = cmp;
+		this.indexReporter1 = iteration1 instanceof IndexReportingIterator reporter ? reporter : null;
+		this.indexReporter2 = iteration2 instanceof IndexReportingIterator reporter ? reporter : null;
+	}
+
+	@Override
+	public String getIndexName() {
+		String first = indexReporter1 == null ? null : indexReporter1.getIndexName();
+		String second = indexReporter2 == null ? null : indexReporter2.getIndexName();
+		if (first == null || first.isEmpty()) {
+			return second == null ? "" : second;
+		}
+		if (second == null || second.isEmpty() || first.equals(second)) {
+			return first;
+		}
+		return first + ", " + second;
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getSourceRowsScannedActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getSourceRowsScannedActual());
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getSourceRowsMatchedActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getSourceRowsMatchedActual());
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		return aggregateMetric(indexReporter1 == null ? -1 : indexReporter1.getSourceRowsFilteredActual(),
+				indexReporter2 == null ? -1 : indexReporter2.getSourceRowsFilteredActual());
+	}
+
+	private static long aggregateMetric(long first, long second) {
+		if (first < 0) {
+			return second < 0 ? -1 : second;
+		}
+		return second < 0 ? first : first + second;
 	}
 
 	public static <E> CloseableIteration<? extends E> getWildcardInstance(

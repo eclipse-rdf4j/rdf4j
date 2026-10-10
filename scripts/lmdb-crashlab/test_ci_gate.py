@@ -353,10 +353,28 @@ class CiGateTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 validate_selected_test_reports(surefire, failsafe)
 
-    def test_pull_request_workflow_is_unconditional_and_selects_every_gate_case(self):
+    def test_pull_request_workflow_filters_relevant_changes_and_selects_every_gate_case(self):
         workflow = Path(__file__).parents[2] / ".github/workflows/lmdb-qemu-durability.yml"
         source = workflow.read_text(encoding="utf-8")
         self.assertRegex(source, r"(?m)^on:\s*\n\s+pull_request:\s*$")
+        pull_request = re.search(
+            r"(?ms)^  pull_request:\n(?P<body>.*?)(?=^ {0,2}[^\s#][^:\n]*:|\Z)", source
+        )
+        self.assertIsNotNone(pull_request, "workflow must define pull_request settings")
+        pull_request_body = pull_request.group("body")
+        paths_filter = re.search(
+            r"(?ms)^    paths:\s*\n(?P<paths>(?:^      - .*\n)+)", pull_request_body
+        )
+        self.assertIsNotNone(paths_filter, "pull_request must filter relevant paths")
+        selected_paths = set(re.findall(r"(?m)^      - ['\"]([^'\"]+)['\"]\s*$", paths_filter.group("paths")))
+        required_paths = {
+            "core/sail/lmdb/**",
+            "core/sail/base/**",
+            "scripts/lmdb-crashlab/**",
+            ".github/workflows/lmdb-qemu-durability.yml",
+        }
+        self.assertTrue(required_paths.issubset(selected_paths), f"missing pull_request paths: {required_paths - selected_paths}")
+        self.assertNotRegex(pull_request_body, r"(?m)^\s+paths-ignore:")
         self.assertIn("runs-on: ubuntu-24.04", source)
         self.assertNotIn("runs-on: ubuntu-24.04-arm", source)
         self.assertIn("qemu-system-x86_64", source)
@@ -367,7 +385,6 @@ class CiGateTests(unittest.TestCase):
         self.assertLess(source.index("Preflight KVM acceleration"), source.index("Build exact Java 25 artifacts"))
         self.assertIn("run_ci_campaigns.py", source)
         self.assertIn("if: always()", source)
-        self.assertNotIn("paths:", source)
         self.assertNotIn("continue-on-error:", source)
         for scenario in (*POWER_CUT_SCENARIOS, *RUNNING_TRIALS):
             self.assertIn(scenario, source)

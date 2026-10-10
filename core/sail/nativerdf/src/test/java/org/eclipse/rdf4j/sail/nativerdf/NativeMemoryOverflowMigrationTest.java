@@ -21,18 +21,34 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.lang.management.GarbageCollectorMXBean;
 import java.lang.management.ManagementFactory;
+import java.lang.ref.Reference;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileSystems;
 import java.nio.file.Path;
+import java.nio.file.StandardWatchEventKinds;
+import java.nio.file.WatchEvent;
+import java.nio.file.WatchKey;
+import java.nio.file.WatchService;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.management.NotificationEmitter;
 import javax.management.NotificationListener;
@@ -100,12 +116,18 @@ class NativeMemoryOverflowMigrationTest {
 				assertThat(model.storeCloseHeldModelMonitor).isFalse();
 			});
 			break;
+		case "cleaner-gc":
+			runCompletedSpillCleanerProbe();
+			break;
+		case "cleaner-explicit-close":
+			runCompletedSpillExplicitCloseProbe();
+			break;
 		default:
 			throw new IllegalArgumentException("Unknown pressure probe: " + args[0]);
 		}
 	}
 
-	private static void runInConstrainedHeap(String probe) throws Exception {
+	static String runInConstrainedHeap(String probe) throws Exception {
 		String classpath = System.getProperty("surefire.test.class.path");
 		if (classpath == null || classpath.isBlank()) {
 			classpath = System.getProperty("java.class.path");
@@ -117,9 +139,30 @@ class NativeMemoryOverflowMigrationTest {
 				NativeMemoryOverflowMigrationTest.class.getName(), probe)
 						.redirectErrorStream(true)
 						.start();
-		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-		int exitCode = process.waitFor();
+		ByteArrayOutputStream outputBytes = new ByteArrayOutputStream();
+		AtomicReference<IOException> outputFailure = new AtomicReference<>();
+		Thread outputReader = new Thread(() -> {
+			try {
+				process.getInputStream().transferTo(outputBytes);
+			} catch (IOException e) {
+				outputFailure.set(e);
+			}
+		}, "native-overflow-probe-output");
+		outputReader.setDaemon(true);
+		outputReader.start();
+		// This bounds child setup, native spill, and teardown; the probe's five-second GC window starts after adoption.
+		boolean exited = process.waitFor(25, TimeUnit.SECONDS);
+		if (!exited) {
+			process.destroyForcibly();
+			process.waitFor(5, TimeUnit.SECONDS);
+		}
+		outputReader.join(1000);
+		String output = outputBytes.toString(StandardCharsets.UTF_8);
 		System.out.print(output);
+		assertThat(exited).withFailMessage("Constrained-heap probe timed out: " + output).isTrue();
+		assertThat(outputReader.isAlive()).withFailMessage("Probe output reader did not finish: " + output).isFalse();
+		assertThat(outputFailure.get()).withFailMessage(output).isNull();
+		int exitCode = process.exitValue();
 		assertThat(exitCode).withFailMessage(output).isZero();
 		String maxMemoryLine = output.lines()
 				.filter(line -> line.startsWith("RUNTIME_MAX_MEMORY_BYTES="))
@@ -127,6 +170,192 @@ class NativeMemoryOverflowMigrationTest {
 				.orElseThrow(() -> new AssertionError(output));
 		long maxMemory = Long.parseLong(maxMemoryLine.substring("RUNTIME_MAX_MEMORY_BYTES=".length()));
 		assertThat(maxMemory).isLessThanOrEqualTo(128L * 1024 * 1024);
+		return output;
+	}
+
+	private static void runCompletedSpillCleanerProbe() throws Exception {
+		PressureSettings oldSettings = pressureSettings();
+		Path tempRoot = Path.of(System.getProperty("java.io.tmpdir")).toAbsolutePath();
+		try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
+			tempRoot.register(watchService, StandardWatchEventKinds.ENTRY_DELETE);
+			RealOverflowModel model = spillRealModel();
+			File directory = model.candidateDirectory;
+			ReferenceQueue<RealOverflowModel> referenceQueue = new ReferenceQueue<>();
+			WeakReference<RealOverflowModel> reference = new WeakReference<>(model, referenceQueue);
+			AtomicInteger closeCount = CountingNativeSailStore.CLOSE_COUNT;
+			long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			CleanerProbe probe = new CleanerProbe(directory, reference, referenceQueue, watchService, closeCount,
+					deadlineNanos);
+			model = null;
+
+			System.out.println("CLEANER_SPILL_ADOPTED=true");
+			System.out.println("CLEANER_SPILL_DIRECTORY=" + directory.getAbsolutePath());
+			System.gc();
+			ExecutorService waiters = Executors.newFixedThreadPool(2);
+			try {
+				CompletableFuture<Reference<? extends RealOverflowModel>> collectedFuture = CompletableFuture
+						.supplyAsync(() -> {
+							try {
+								long remainingNanos = probe.deadlineNanos() - System.nanoTime();
+								return remainingNanos > 0
+										? probe.referenceQueue()
+												.remove(
+														Math.max(1, TimeUnit.NANOSECONDS.toMillis(remainingNanos)))
+										: null;
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new CompletionException(e);
+							}
+						}, waiters);
+				CompletableFuture<DirectoryDeletionObservation> deletedFuture = CompletableFuture.supplyAsync(() -> {
+					try {
+						return awaitDirectoryDeletion(probe);
+					} catch (InterruptedException e) {
+						Thread.currentThread().interrupt();
+						throw new CompletionException(e);
+					}
+				}, waiters);
+				long remainingNanos = probe.deadlineNanos() - System.nanoTime();
+				Reference<? extends RealOverflowModel> collected = remainingNanos > 0
+						? collectedFuture.get(remainingNanos, TimeUnit.NANOSECONDS)
+						: collectedFuture.getNow(null);
+				assertThat(collected).isSameAs(probe.reference());
+				System.out.println("CLEANER_GC_COLLECTED=true");
+				System.out.println("CLEANER_GC_COLLECTED_AFTER_MS="
+						+ TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - (probe.deadlineNanos()
+								- TimeUnit.SECONDS.toNanos(5))));
+				DirectoryDeletionObservation deletion;
+				if (!probe.directory().exists()) {
+					deletion = new DirectoryDeletionObservation(false, true);
+				} else {
+					remainingNanos = probe.deadlineNanos() - System.nanoTime();
+					if (remainingNanos > 0) {
+						try {
+							deletion = deletedFuture.get(remainingNanos, TimeUnit.NANOSECONDS);
+						} catch (TimeoutException e) {
+							deletion = new DirectoryDeletionObservation(false, !probe.directory().exists());
+						}
+					} else {
+						deletion = deletedFuture.getNow(
+								new DirectoryDeletionObservation(false, !probe.directory().exists()));
+					}
+				}
+				assertThat(deletion.directoryAbsent()).isTrue();
+				assertThat(probe.directory()).doesNotExist();
+				assertThat(probe.closeCount().get()).isEqualTo(1);
+				System.out.println("CLEANER_DELETE_WATCH_EVENT_SEEN=" + deletion.watchEventSeen());
+				System.out.println("CLEANER_DIRECTORY_DELETED=true");
+				System.out.println("CLEANER_STORE_CLOSE_COUNT=" + probe.closeCount().get());
+			} finally {
+				waiters.shutdownNow();
+			}
+		} finally {
+			restorePressureSettings(oldSettings);
+		}
+	}
+
+	private static void runCompletedSpillExplicitCloseProbe() throws Exception {
+		PressureSettings oldSettings = pressureSettings();
+		RealOverflowModel model = null;
+		try {
+			model = spillRealModel();
+			File directory = model.candidateDirectory;
+			System.out.println("CLEANER_SPILL_ADOPTED=true");
+			model.close();
+			assertThat(directory).doesNotExist();
+			assertThat(CountingNativeSailStore.CLOSE_COUNT.get()).isEqualTo(1);
+			model.close();
+			assertThat(CountingNativeSailStore.CLOSE_COUNT.get()).isEqualTo(1);
+			System.out.println("CLEANER_EXPLICIT_CLOSE_REMOVED=true");
+			System.out.println("CLEANER_STORE_CLOSE_COUNT=" + CountingNativeSailStore.CLOSE_COUNT.get());
+		} finally {
+			if (model != null) {
+				model.close();
+			}
+			restorePressureSettings(oldSettings);
+		}
+	}
+
+	private static RealOverflowModel spillRealModel() throws Exception {
+		resetPressureState();
+		setPressureThresholds(-1, -1, -1, -1);
+		CountingNativeSailStore.CLOSE_COUNT.set(0);
+		RealOverflowModel model = new RealOverflowModel();
+		try {
+			Statement statement = SimpleValueFactory.getInstance()
+					.createStatement(
+							SimpleValueFactory.getInstance().createIRI("urn:overflow:subject"),
+							SimpleValueFactory.getInstance().createIRI("urn:overflow:predicate"),
+							SimpleValueFactory.getInstance().createLiteral("value"));
+			model.setNamespace("ex", "urn:example:");
+			model.add(statement);
+			try (GcNotifications notifications = new GcNotifications()) {
+				notifications.requestGcAndAwait();
+			}
+			model.spillToDiskIfNeeded();
+			assertThat(model.adoptedDiskModel()).isTrue();
+			assertThat(model.contains(statement)).isTrue();
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:example:"));
+			assertThat(model.candidateDirectory).exists();
+			assertThat(model.candidateDirectory.list()).isNotEmpty();
+			return model;
+		} catch (Throwable failure) {
+			try {
+				model.close();
+			} catch (Throwable closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			if (failure instanceof Exception exception) {
+				throw exception;
+			}
+			throw (Error) failure;
+		}
+	}
+
+	private static DirectoryDeletionObservation awaitDirectoryDeletion(CleanerProbe probe)
+			throws InterruptedException {
+		Path directoryName = probe.directory().toPath().getFileName();
+		boolean watchEventSeen = false;
+		while (true) {
+			if (!probe.directory().exists()) {
+				return new DirectoryDeletionObservation(watchEventSeen, true);
+			}
+			long remainingNanos = probe.deadlineNanos() - System.nanoTime();
+			if (remainingNanos <= 0) {
+				return new DirectoryDeletionObservation(watchEventSeen, !probe.directory().exists());
+			}
+			WatchKey watchKey = probe.watchService().poll(remainingNanos, TimeUnit.NANOSECONDS);
+			if (watchKey == null) {
+				return new DirectoryDeletionObservation(watchEventSeen, !probe.directory().exists());
+			}
+			for (WatchEvent<?> event : watchKey.pollEvents()) {
+				if (event.kind() == StandardWatchEventKinds.ENTRY_DELETE
+						&& directoryName.equals(event.context())) {
+					watchEventSeen = true;
+				}
+			}
+			if (!watchKey.reset()) {
+				return new DirectoryDeletionObservation(watchEventSeen, !probe.directory().exists());
+			}
+		}
+	}
+
+	private static PressureSettings pressureSettings() {
+		return new PressureSettings(AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH,
+				AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM,
+				AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW,
+				AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING);
+	}
+
+	private static void restorePressureSettings(PressureSettings settings) throws Exception {
+		try {
+			resetPressureState();
+		} finally {
+			setPressureThresholds(settings.high(), settings.medium(), settings.low(), settings.minimum());
+		}
 	}
 
 	private static void withPressure(FailureMode mode, ModelAssertion assertion) throws Exception {
@@ -198,6 +427,47 @@ class NativeMemoryOverflowMigrationTest {
 		NONE,
 		STORE_CREATION,
 		IMPORT
+	}
+
+	private record PressureSettings(int high, int medium, int low, int minimum) {
+	}
+
+	private record CleanerProbe(File directory, WeakReference<RealOverflowModel> reference,
+			ReferenceQueue<RealOverflowModel> referenceQueue, WatchService watchService, AtomicInteger closeCount,
+			long deadlineNanos) {
+	}
+
+	private record DirectoryDeletionObservation(boolean watchEventSeen, boolean directoryAbsent) {
+	}
+
+	private static final class RealOverflowModel extends MemoryOverflowModel {
+		private static final long serialVersionUID = 1L;
+
+		private File candidateDirectory;
+
+		@Override
+		protected SailStore createSailStore(File dataDirectory) throws IOException, SailException {
+			candidateDirectory = dataDirectory;
+			return new CountingNativeSailStore(dataDirectory);
+		}
+
+		private boolean adoptedDiskModel() {
+			return disk != null;
+		}
+	}
+
+	private static final class CountingNativeSailStore extends NativeSailStore {
+		private static final AtomicInteger CLOSE_COUNT = new AtomicInteger();
+
+		private CountingNativeSailStore(File dataDirectory) throws IOException, SailException {
+			super(dataDirectory, "spoc");
+		}
+
+		@Override
+		public void close() throws SailException {
+			CLOSE_COUNT.incrementAndGet();
+			super.close();
+		}
 	}
 
 	private static final class TestOverflowModel extends MemoryOverflowModel {

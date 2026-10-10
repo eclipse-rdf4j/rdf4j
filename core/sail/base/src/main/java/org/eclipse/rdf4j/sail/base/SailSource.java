@@ -337,6 +337,68 @@ public interface SailSource extends SailClosable {
 		return this;
 	}
 
+	/** Explicit opt-in; unknown implementations keep the complete legacy list-preflight protocol. */
+	@InternalUseOnly
+	default boolean supportsStreamingWritePreflight() {
+		return false;
+	}
+
+	/** Backend-specific numeric demand. Implementations must not retain the input or any statements. */
+	@InternalUseOnly
+	interface NumericWriteEstimate {
+		NumericWriteEstimate EMPTY = new NumericWriteEstimate() {
+		};
+	}
+
+	@InternalUseOnly
+	default NumericWriteEstimate estimateWritePreflight(StatementInput input) {
+		return NumericWriteEstimate.EMPTY;
+	}
+
+	/** A physical forecast can be retired independently of its cached logical numeric estimate. */
+	@InternalUseOnly
+	interface WritePreflightScope extends SailClosable {
+		boolean isActive();
+	}
+
+	/** Registers advisory demand only; must not acquire a writer, drain readers or resize synchronously. */
+	@InternalUseOnly
+	default WritePreflightScope beginWritePreflight(NumericWriteEstimate estimate, Object owner) {
+		return new WritePreflightScope() {
+			private volatile boolean active = true;
+
+			@Override
+			public boolean isActive() {
+				return active;
+			}
+
+			@Override
+			public void close() {
+				active = false;
+			}
+		};
+	}
+
+	/** Retains logical ownership without acquiring a physical writer reservation. */
+	@InternalUseOnly
+	interface WriteOwner extends SailClosable {
+		Object owner();
+	}
+
+	@InternalUseOnly
+	default WriteOwner retainWriteOwner(Object requestedOwner) {
+		return new WriteOwner() {
+			@Override
+			public Object owner() {
+				return requestedOwner;
+			}
+
+			@Override
+			public void close() {
+			}
+		};
+	}
+
 	/** Starts preflight for the supplied complete write estimate. */
 	@InternalUseOnly
 	default void preflightWrite(WritePreflight estimate) throws SailException {

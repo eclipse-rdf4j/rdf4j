@@ -86,6 +86,7 @@ import java.util.zip.CRC32;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -102,6 +103,7 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -2943,7 +2945,36 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	long estimateWriteBytes(SailSource.WritePreflight preflight) {
-		long estimate = estimateWriteBytes(preflight.statements());
+		return saturatedEstimateAdd(estimateWriteBytes(preflight.statements()), estimateWriteMetadataBytes(preflight));
+	}
+
+	long estimateWriteBytes(StatementInput input) {
+		long statementEstimate = 128L;
+		try (CloseableIteration<Statement> statements = input.openCursor()) {
+			if (statements.hasNext()) {
+				Statement statement = statements.next();
+				boolean moreStatements = statements.hasNext();
+				DictionaryByteEstimate estimate = new DictionaryByteEstimate(moreStatements);
+				do {
+					estimate.add(statement.getSubject());
+					estimate.add(statement.getPredicate());
+					estimate.add(statement.getObject());
+					estimate.add(statement.getContext());
+					if (!moreStatements) {
+						break;
+					}
+					statement = statements.next();
+					moreStatements = statements.hasNext();
+				} while (true);
+				statementEstimate = saturatedEstimateAdd(statementEstimate, estimate.bytes());
+			}
+		}
+		input.validate();
+		return saturatedEstimateAdd(statementEstimate, estimateWriteMetadataBytes(input.metadata()));
+	}
+
+	private long estimateWriteMetadataBytes(SailSource.WritePreflight preflight) {
+		long estimate = 0L;
 		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
 			long serializedBytes = DictionaryByteEstimate.utf8UpperBound(namespace.prefix())
 					+ DictionaryByteEstimate.utf8UpperBound(namespace.name()) + 32L;

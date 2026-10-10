@@ -551,6 +551,10 @@ class MemorySailStore implements SailStore {
 	}
 
 	private final class MemorySailSource extends BackingSailSource {
+		@Override
+		public boolean supportsStreamingWritePreflight() {
+			return true;
+		}
 
 		private final boolean explicit;
 

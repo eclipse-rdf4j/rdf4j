@@ -88,10 +88,12 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -1556,7 +1558,25 @@ class TripleStore implements Closeable {
 	}
 
 	long estimateWriteBytes(SailSource.WritePreflight preflight) {
-		long estimate = estimateWriteBytes(preflight.statements());
+		return saturatedAdd(estimateWriteBytes(preflight.statements()), estimateWriteMetadataBytes(preflight));
+	}
+
+	long estimateWriteBytes(StatementInput input) {
+		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
+		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size(), perIndexBytes), 64L);
+		long estimate = 0L;
+		try (CloseableIteration<Statement> statements = input.openCursor()) {
+			while (statements.hasNext()) {
+				statements.next();
+				estimate = saturatedAdd(estimate, perStatementBytes);
+			}
+		}
+		input.validate();
+		return saturatedAdd(estimate, estimateWriteMetadataBytes(input.metadata()));
+	}
+
+	private long estimateWriteMetadataBytes(SailSource.WritePreflight preflight) {
+		long estimate = 0L;
 		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
 			long keyAndValueBytes = (long) namespace.prefix().length() + namespace.name().length() + 96L;
 			estimate = saturatedAdd(estimate, keyAndValueBytes);

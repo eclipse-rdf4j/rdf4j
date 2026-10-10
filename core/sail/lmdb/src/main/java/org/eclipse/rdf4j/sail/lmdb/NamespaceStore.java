@@ -91,6 +91,21 @@ class NamespaceStore {
 		return estimate;
 	}
 
+	long estimateAddedNamespaceBytes(SailSource.WritePreflight metadata) {
+		long estimate = 0L;
+		for (SailSource.NamespaceUpdate namespace : metadata.addedNamespaces()) {
+			estimate = saturatedAdd(estimate, namespaceEntrySize(namespace.prefix(), namespace.name()));
+		}
+		return estimate;
+	}
+
+	synchronized long estimateEncodedSnapshotBytes(long addedBytes, boolean touched, boolean cleared) {
+		if (!touched) {
+			return 0L;
+		}
+		return saturatedAdd(cleared ? Integer.BYTES : encodedSnapshotSize, addedBytes);
+	}
+
 	public synchronized void setNamespace(String prefix, String name) {
 		SimpleNamespace namespace = namespacesMap.get(prefix);
 		if (namespace == null) {

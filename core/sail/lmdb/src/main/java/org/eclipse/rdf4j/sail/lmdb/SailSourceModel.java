@@ -206,9 +206,6 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		} catch (Throwable e) {
 			failure = e;
 		}
-		if (iter instanceof AutoCloseable closeable) {
-			failure = closeResource(closeable, failure);
-		}
 		if (failure != null) {
 			throw propagate(failure);
 		}
@@ -611,9 +608,6 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 			super.closeIterator(iterator);
 		} catch (Throwable closeFailure) {
 			failure = addSuppressed(failure, closeFailure);
-		}
-		if (iterator instanceof AutoCloseable closeable) {
-			failure = closeResource(closeable, failure);
 		}
 		return failure;
 	}

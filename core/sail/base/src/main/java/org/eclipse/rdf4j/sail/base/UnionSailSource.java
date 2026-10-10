@@ -38,6 +38,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	private SailClosable preparedWrite;
 	private SailModelCleanup.Retained preparedCleanup;
 	private UnionFlushBatch frozenBatch;
+	private final StreamingWritePreflight streamingPreflight = new StreamingWritePreflight(this);
 
 	/**
 	 * An {@link SailSource} that combines two other {@link SailSource}es.
@@ -78,6 +79,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 				failure = addFailure(failure, closeFailure);
 			}
 			failure = releasePreparedWrite(failure);
+			failure = closeResource(failure, streamingPreflight);
 			if (failure != null) {
 				rethrow(failure);
 			}
@@ -156,6 +158,19 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	@Override
 	public SailSource.WritePreflight writePreflightEstimate() {
 		return primary.writePreflightEstimate().merge(additional.writePreflightEstimate());
+	}
+
+	@Override
+	public boolean supportsStreamingWritePreflight() {
+		return primary.supportsStreamingWritePreflight() && additional.supportsStreamingWritePreflight();
+	}
+
+	SailSource streamingPrimary() {
+		return primary;
+	}
+
+	SailSource streamingAdditional() {
+		return additional;
 	}
 
 	@Override
@@ -275,6 +290,9 @@ class UnionSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public void preflightWrite() throws SailException {
+		if (StreamingWritePreflight.covers(this)) {
+			return;
+		}
 		preflightWrite(writePreflightEstimate());
 	}
 
@@ -291,53 +309,72 @@ class UnionSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public void prepare() throws SailException {
-		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
-			preflightWrite();
-			if (preparedWrite == null && hasPendingWriteChanges()) {
-				retainPreparedWrite();
-			}
-			try (SailClosable publication = beginPublication()) {
-				try {
-					primary.prepare();
-					additional.prepare();
-				} catch (RuntimeException | Error prepareFailure) {
-					SailSource.failPublication(publication);
-					throw prepareFailure;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter();
+				SailClosable preflight = streamingPreflight.enter()) {
+			try {
+				preflightWrite();
+				if (preparedWrite == null && hasPendingWriteChanges()) {
+					retainPreparedWrite();
 				}
-			} catch (RuntimeException | Error prepareFailure) {
-				Throwable failure = releasePreparedWrite(prepareFailure);
-				rethrow(failure);
+				try (SailClosable publication = beginPublication()) {
+					StreamingWritePreflight.validate(primary);
+					StreamingWritePreflight.validate(additional);
+					try {
+						primary.prepare();
+						additional.prepare();
+					} catch (RuntimeException | Error prepareFailure) {
+						StreamingWritePreflight.failed(this, prepareFailure);
+						SailSource.failPublication(publication);
+						throw prepareFailure;
+					}
+				} catch (RuntimeException | Error prepareFailure) {
+					StreamingWritePreflight.failed(this, prepareFailure);
+					Throwable failure = releasePreparedWrite(prepareFailure);
+					rethrow(failure);
+				}
+			} catch (RuntimeException | Error failure) {
+				StreamingWritePreflight.failed(this, failure);
+				throw failure;
 			}
-
 		}
 	}
 
 	@Override
 	public void flush() throws SailException {
-		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
-			if (frozenBatch != null) {
-				throw new IllegalStateException("Use the retained batch while this union is frozen");
-			}
-			if (preparedWrite == null && hasPendingWriteChanges()) {
-				retainPreparedWrite();
-			}
-			Throwable failure = null;
-			try (SailClosable publication = beginPublication()) {
-				try {
-					primary.flush();
-					additional.flush();
-				} catch (RuntimeException | Error flushFailure) {
-					SailSource.failPublication(publication);
-					throw flushFailure;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter();
+				SailClosable preflight = streamingPreflight.enter()) {
+			try {
+				if (frozenBatch != null) {
+					throw new IllegalStateException("Use the retained batch while this union is frozen");
 				}
-			} catch (RuntimeException | Error flushFailure) {
-				failure = flushFailure;
+				if (preparedWrite == null && hasPendingWriteChanges()) {
+					retainPreparedWrite();
+				}
+				Throwable failure = null;
+				try (SailClosable publication = beginPublication()) {
+					StreamingWritePreflight.validate(primary);
+					StreamingWritePreflight.validate(additional);
+					try {
+						primary.flush();
+						additional.flush();
+					} catch (RuntimeException | Error flushFailure) {
+						StreamingWritePreflight.failed(this, flushFailure);
+						SailSource.failPublication(publication);
+						throw flushFailure;
+					}
+				} catch (RuntimeException | Error flushFailure) {
+					StreamingWritePreflight.failed(this, flushFailure);
+					failure = flushFailure;
+				}
+				failure = releasePreparedWrite(failure);
+				failure = closeResource(failure, streamingPreflight);
+				if (failure != null) {
+					rethrow(failure);
+				}
+			} catch (RuntimeException | Error failure) {
+				StreamingWritePreflight.failed(this, failure);
+				throw failure;
 			}
-			failure = releasePreparedWrite(failure);
-			if (failure != null) {
-				rethrow(failure);
-			}
-
 		}
 	}
 
@@ -417,6 +454,11 @@ class UnionSailSource implements SailSource, FrozenFlush {
 		}
 
 		@Override
+		public StreamingWritePreflight preflight() {
+			return streamingPreflight;
+		}
+
+		@Override
 		public void enlist(FrozenFlush.Context requested) {
 			if (released || stagingStarted && context != requested) {
 				throw new IllegalStateException("The retained union has been released");
@@ -472,6 +514,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 				released = true;
 				frozenBatch = null;
 				Throwable failure = releasePreparedWrite(null);
+				failure = closeResource(failure, streamingPreflight);
 				if (failure != null) {
 					rethrow(failure);
 				}
