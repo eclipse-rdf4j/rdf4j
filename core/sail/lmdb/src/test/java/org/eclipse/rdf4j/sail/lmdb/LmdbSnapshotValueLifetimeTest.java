@@ -1742,13 +1742,19 @@ class LmdbSnapshotValueLifetimeTest {
 						() -> pinnedReader.getNamespace("retirement"),
 						"an already-observed direct dataset cannot read through a remapped ValueStore view");
 				assertEquals(LmdbSailStore.MapResizeKind.VALUE_STORE, conflict.kind());
+				try (SailConnection admissionBarrier = store.getConnection()) {
+					admissionBarrier.begin(IsolationLevels.SNAPSHOT);
+					admissionBarrier.rollback();
+				}
 				long valueMapAfterFirstGrowth = mapSize(valueStore);
 				long valueOccupiedAfterFirstGrowth = valueStore.occupiedBytes();
 				int secondGrowthCount = Math.toIntExact(valueMapAfterFirstGrowth / 512L + 1L);
 				List<Statement> secondGrowthBatch = valueGrowthBatch(growthPredicate, "second", secondGrowthCount);
 				assertTrue(Math.multiplyExact((long) secondGrowthBatch.size(), 512L) > valueMapAfterFirstGrowth,
 						"unique 512-byte literals must exceed the entire previous map before native overhead");
-				long secondGrowthStarted = System.nanoTime();
+				MapGrowthMetrics.Snapshot growthMetricsBeforeSecond = store.getBackingStore().growthMetricsSnapshot();
+				assertTrue(growthMetricsBeforeSecond.readerDrainWaitCount() > 0,
+						"the first forced reader retirement must await bounded reader grace");
 				try (SailConnection writer = store.getConnection()) {
 					writer.begin(IsolationLevels.SNAPSHOT);
 					for (Statement statement : secondGrowthBatch) {
@@ -1762,14 +1768,16 @@ class LmdbSnapshotValueLifetimeTest {
 				}
 				long valueMapAfterSecondGrowth = mapSize(valueStore);
 				long valueOccupiedAfterSecondGrowth = valueStore.occupiedBytes();
+				MapGrowthMetrics.Snapshot growthMetricsAfterSecond = store.getBackingStore().growthMetricsSnapshot();
 				assertTrue(valueMapAfterSecondGrowth > valueMapAfterFirstGrowth,
 						"the still-open invalidated dataset must overlap a second real ValueStore resize; initial map/occupied="
 								+ initialValueMapSize + "/" + initialValueOccupiedBytes + ", after first="
 								+ valueMapAfterFirstGrowth + "/" + valueOccupiedAfterFirstGrowth + ", after second="
 								+ valueMapAfterSecondGrowth + "/" + valueOccupiedAfterSecondGrowth + ", statementCount="
 								+ secondGrowthBatch.size());
-				assertTrue(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - secondGrowthStarted) < drainTimeoutMillis,
-						"a retired native pin must not consume a second bounded drain interval");
+				assertEquals(growthMetricsBeforeSecond.readerDrainWaitCount(),
+						growthMetricsAfterSecond.readerDrainWaitCount(),
+						"a retired native pin must not require another bounded reader-grace wait");
 				assertThrows(LmdbSailStore.MapResizeConflictException.class,
 						() -> {
 							try (CloseableIteration<? extends Statement> staleStatements = pinnedReader.getStatements(

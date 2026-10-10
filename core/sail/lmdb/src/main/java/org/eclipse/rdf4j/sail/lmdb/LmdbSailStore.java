@@ -1031,14 +1031,30 @@ class LmdbSailStore implements SailStore {
 
 		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
 				throws InterruptedException {
+			return awaitChange(deadline, coordinationDeadlineNanos, false);
+		}
+
+		private boolean awaitReaderDrain(QueryExecutionDeadline deadline, long coordinationDeadlineNanos)
+				throws InterruptedException {
+			return awaitChange(deadline, coordinationDeadlineNanos, true);
+		}
+
+		private boolean awaitChange(QueryExecutionDeadline deadline, long coordinationDeadlineNanos,
+				boolean readerDrainWait) throws InterruptedException {
 			throwIfExpired(deadline);
 			long remaining = remainingNanos(deadline, coordinationDeadlineNanos);
 			if (remaining == Long.MAX_VALUE) {
+				if (readerDrainWait) {
+					mapGrowthMetrics.recordReaderDrainWait();
+				}
 				changed.await();
 				return true;
 			}
 			if (remaining <= 0L) {
 				return false;
+			}
+			if (readerDrainWait) {
+				mapGrowthMetrics.recordReaderDrainWait();
 			}
 			changed.awaitNanos(remaining);
 			return true;
@@ -1335,7 +1351,7 @@ class LmdbSailStore implements SailStore {
 							while (!shuttingDown && (hasPendingDrainableViews(requestedEpisode)
 									|| hasDrainableViews(requestedEpisode))
 									&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0) {
-								changed.awaitNanos(LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos));
+								awaitReaderDrain(null, requestedEpisode.deadlineNanos);
 							}
 							if (shuttingDown) {
 								return;
@@ -1717,7 +1733,7 @@ class LmdbSailStore implements SailStore {
 						while (hasDrainableViews(requestedEpisode)
 								&& LmdbSailStore.remainingNanos(requestedEpisode.deadlineNanos) > 0 && !shuttingDown) {
 							try {
-								awaitChange(queryDeadline, requestedEpisode.deadlineNanos);
+								awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
 							} catch (InterruptedException e) {
 								Thread.currentThread().interrupt();
 								throw new IOException("Interrupted during emergency LMDB reader grace", e);
@@ -1730,7 +1746,7 @@ class LmdbSailStore implements SailStore {
 							break;
 						}
 						try {
-							awaitChange(queryDeadline, requestedEpisode.deadlineNanos);
+							awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
 						} catch (InterruptedException e) {
 							Thread.currentThread().interrupt();
 							coordinationFailure = new IOException(
@@ -1858,7 +1874,7 @@ class LmdbSailStore implements SailStore {
 												break;
 											}
 											try {
-												awaitChange(queryDeadline, requestedEpisode.deadlineNanos);
+												awaitReaderDrain(queryDeadline, requestedEpisode.deadlineNanos);
 											} catch (InterruptedException e) {
 												Thread.currentThread().interrupt();
 												coordinationFailure = new IOException(

@@ -25,6 +25,7 @@ final class MapGrowthMetrics {
 	private final LongAdder forcedInvalidatedViews = new LongAdder();
 	private final LongAdder replayRequests = new LongAdder();
 	private final LongAdder replayAccepted = new LongAdder();
+	private final LongAdder readerDrainWaitCount = new LongAdder();
 	private final LongAdder admissionWaitCount = new LongAdder();
 	private final LongAdder admissionWaitNanos = new LongAdder();
 	private final AtomicLong currentAdmissionWaiters = new AtomicLong();
@@ -94,6 +95,10 @@ final class MapGrowthMetrics {
 		replayAccepted.increment();
 	}
 
+	void recordReaderDrainWait() {
+		readerDrainWaitCount.increment();
+	}
+
 	void recordAdmissionWait(long elapsedNanos) {
 		if (elapsedNanos > 0) {
 			admissionWaitCount.increment();
@@ -136,15 +141,17 @@ final class MapGrowthMetrics {
 				? Math.max(maximumWriterWaitNanos, elapsed)
 				: maximumWriterWaitNanos;
 		return new Snapshot(growthEpisodes.sum(), forcedInvalidationEpisodes.sum(), forcedInvalidatedViews.sum(),
-				replayRequests.sum(), replayAccepted.sum(), admissionWaitCount.sum(), admissionWaitNanos.sum(),
-				currentAdmissionWaiters.get(), tripleStoreResizes.sum(), valueStoreResizes.sum(),
+				replayRequests.sum(), replayAccepted.sum(), readerDrainWaitCount.sum(), admissionWaitCount.sum(),
+				admissionWaitNanos.sum(), currentAdmissionWaiters.get(), tripleStoreResizes.sum(),
+				valueStoreResizes.sum(),
 				fallbackResizes.sum(), currentPhase, Map.copyOf(phases), writerMaximum, admissionTimeouts.sum(),
 				emergencyAttempts.sum(), emergencySuccesses.sum(), emergencyFailures.sum(), reservedReplays.sum(),
 				cancelledReplays.sum());
 	}
 
 	record Snapshot(long growthEpisodes, long forcedInvalidationEpisodes, long forcedInvalidatedViews,
-			long replayRequests, long replayAccepted, long admissionWaitCount, long admissionWaitNanos,
+			long replayRequests, long replayAccepted, long readerDrainWaitCount, long admissionWaitCount,
+			long admissionWaitNanos,
 			long currentAdmissionWaiters,
 			long tripleStoreResizes, long valueStoreResizes, long fallbackResizes,
 			LmdbSailStore.GrowthPhase currentPhase, Map<LmdbSailStore.GrowthPhase, Long> phaseNanos,
