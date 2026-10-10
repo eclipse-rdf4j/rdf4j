@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 
@@ -39,5 +40,10 @@ public final class LmdbGrowthTestSupport {
 	public static LongSupplier valueStoreResizeCounter(Object repository) {
 		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
 		return () -> store.getBackingStore().growthMetricsSnapshot().valueStoreResizes();
+	}
+
+	public static Supplier<String> growthMetricsSnapshot(Object repository) {
+		LmdbStore store = (LmdbStore) ((SailRepository) repository).getSail();
+		return () -> store.getBackingStore().growthMetricsSnapshot().toString();
 	}
 }

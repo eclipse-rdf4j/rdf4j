@@ -20,6 +20,7 @@ import java.util.EnumSet;
 import java.util.Map;
 import java.util.Properties;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.jetty.ee.webapp.WebAppClassLoading;
 import org.eclipse.jetty.ee11.webapp.WebAppContext;
@@ -127,6 +128,10 @@ public class TestServer {
 		return growthCounter(repositoryId, "valueStoreResizeCounter");
 	}
 
+	Supplier<String> growthMetricsSnapshot(String repositoryId) throws ReflectiveOperationException {
+		return growthSnapshot(repositoryId, "growthMetricsSnapshot");
+	}
+
 	private LongSupplier growthCounter(String repositoryId, String counterMethod) throws ReflectiveOperationException {
 		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
 		Object serverManager = dispatcherContext.getClass()
@@ -138,6 +143,20 @@ public class TestServer {
 		// Public calls bridge the webapp classloader; the fixture reads diagnostics beside its LMDB classes.
 		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
 		return (LongSupplier) support.getMethod(counterMethod, Object.class).invoke(null, repository);
+	}
+
+	@SuppressWarnings("unchecked")
+	private Supplier<String> growthSnapshot(String repositoryId, String snapshotMethod)
+			throws ReflectiveOperationException {
+		Object dispatcherContext = webapp.getServletContext().getAttribute(DISPATCHER_CONTEXT_ATTRIBUTE);
+		Object serverManager = dispatcherContext.getClass()
+				.getMethod("getBean", String.class)
+				.invoke(dispatcherContext, "rdf4jRepositoryManager");
+		Object repository = serverManager.getClass()
+				.getMethod("getRepository", String.class)
+				.invoke(serverManager, repositoryId);
+		Class<?> support = webapp.getClassLoader().loadClass("org.eclipse.rdf4j.sail.lmdb.LmdbGrowthTestSupport");
+		return (Supplier<String>) support.getMethod(snapshotMethod, Object.class).invoke(null, repository);
 	}
 
 	public void start() throws Exception {

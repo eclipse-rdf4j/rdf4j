@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
@@ -28,22 +30,28 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -1176,6 +1184,156 @@ class LmdbFrozenReplayTest {
 				() -> assertEquals("urn:m3:uncovered:", observedPersistedNamespace));
 	}
 
+	private static void assertFailedAbortAfterAppliedPrefixPreventsRetry(Path directory, boolean multiThreading)
+			throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> failedInput = replayStatements(5);
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:m3:abort-followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("follow-up after failed abort"));
+		IOException abortMarker = new IOException("injected failure after native abort");
+		Throwable commitFailure = null;
+		RepositoryException explicitRollbackFailure = null;
+		Set<Statement> immediatelyVisible = Set.of();
+		String immediatelyVisibleNamespace = null;
+		int notificationsAfterFailure = -1;
+		int attemptsAfterFailure = -1;
+		long initialTripleMapSize = 0L;
+		long initialValueMapSize = 0L;
+		long tripleMapAfterFailure = 0L;
+		long valueMapAfterFailure = 0L;
+		boolean followupCommitted = false;
+		RepositoryException followupFailure = null;
+		Set<Statement> reopenedStatements = Set.of();
+		String reopenedFailedNamespace = null;
+		String reopenedFollowupNamespace = null;
+		AtomicInteger notifications = new AtomicInteger();
+		CountingTripleStore tripleStore = null;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = multiThreading;
+			store.probe.reset();
+			tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "the counted native store must be initialized");
+			initialTripleMapSize = tripleStore.mapSizeBytes();
+			initialValueMapSize = tripleStore.valueStore.mapSizeBytes();
+			store.probe.abortFailureMarker.set(abortMarker);
+			store.probe.failRollbackAfterSuccessfulAbort.set(true);
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			try (RepositoryConnection writer = repository.getConnection();
+					RepositoryConnection observer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(writer, failedInput);
+				writer.setNamespace("m3-aborted", "urn:m3:aborted:");
+				store.probe.failAfterAlignedPrefix.set(true);
+				try {
+					writer.commit();
+				} catch (Throwable failure) {
+					commitFailure = failure;
+				}
+
+				assertEquals(1, store.probe.alignedCapacityFailures.get(),
+						"the real native capacity failure must activate");
+				assertEquals(2, store.probe.alignedPrefixRows.get(),
+						"the native writer must apply the first two rows before capacity failure");
+				assertEquals(1, store.probe.rollbackFailures.get(),
+						"the injected abort failure must occur after one physical abort");
+				assertSame(abortMarker, store.probe.observedAbortFailure.get(),
+						"the abort injection must be the exact marker used by the fixture");
+				assertNotNull(store.probe.injectedCapacityFailure.get(),
+						"the fixture must capture the actual map-full exception before abort");
+
+				tripleMapAfterFailure = tripleStore.mapSizeBytes();
+				valueMapAfterFailure = tripleStore.valueStore.mapSizeBytes();
+				attemptsAfterFailure = store.probe.transactionStarts.get();
+				notificationsAfterFailure = notifications.get();
+				immediatelyVisible = readAllStatements(observer);
+				immediatelyVisibleNamespace = observer.getNamespace("m3-aborted");
+				try {
+					writer.rollback();
+				} catch (RepositoryException failure) {
+					explicitRollbackFailure = failure;
+				}
+			}
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				writer.setNamespace("m3-followup", "urn:m3:followup:");
+				try {
+					writer.commit();
+					followupCommitted = true;
+				} catch (RepositoryException failure) {
+					followupFailure = failure;
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedFailedNamespace = reader.getNamespace("m3-aborted");
+				reopenedFollowupNamespace = reader.getNamespace("m3-followup");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedCommitFailure = commitFailure;
+		IOException observedCapacityFailure = store.probe.injectedCapacityFailure.get();
+		int observedAttempts = attemptsAfterFailure;
+		Set<Statement> observedImmediateRows = immediatelyVisible;
+		String observedImmediateNamespace = immediatelyVisibleNamespace;
+		long observedTripleMapSize = tripleMapAfterFailure;
+		long observedValueMapSize = valueMapAfterFailure;
+		long observedInitialTripleMapSize = initialTripleMapSize;
+		long observedInitialValueMapSize = initialValueMapSize;
+		int observedNotifications = notificationsAfterFailure;
+		RepositoryException observedRollbackFailure = explicitRollbackFailure;
+		boolean observedFollowupCommitted = followupCommitted;
+		RepositoryException observedFollowupFailure = followupFailure;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		String observedReopenedFailedNamespace = reopenedFailedNamespace;
+		String observedReopenedFollowupNamespace = reopenedFollowupNamespace;
+		assertAll("an uncertified abort failure is terminal and leaves the logical write unpublished",
+				() -> assertNotNull(observedCommitFailure, "commit must not retry after abort reports failure"),
+				() -> assertTrue(causeChainContainsIdentity(observedCommitFailure, observedCapacityFailure),
+						"the original map-capacity failure must remain the primary cause"),
+				() -> assertTrue(causeChainSuppressesIdentity(observedCommitFailure, abortMarker),
+						"the exact abort failure must remain suppressed on the reported failure"),
+				() -> assertEquals(1, observedAttempts, "abort failure must prevent a fresh physical attempt"),
+				() -> assertEquals(observedInitialTripleMapSize, observedTripleMapSize,
+						"abort failure must not trigger triple-map growth"),
+				() -> assertEquals(observedInitialValueMapSize, observedValueMapSize,
+						"abort failure must not trigger value-map growth"),
+				() -> assertEquals(0, store.probe.journalAllocations.get(),
+						"the covered failed attempt must remain journal-free"),
+				() -> assertEquals(0, observedNotifications,
+						"an uncommitted attempt must not notify listeners"),
+				() -> assertTrue(Collections.disjoint(failedInput, observedImmediateRows),
+						"the aborted prefix must not be visible to another connection"),
+				() -> assertNull(observedImmediateNamespace,
+						"the aborted namespace must remain invisible"),
+				() -> assertNull(observedRollbackFailure,
+						"explicit rollback after the failed commit must be safe"),
+				() -> assertTrue(observedFollowupCommitted,
+						"a later writer must be admitted after the failed transaction closes"),
+				() -> assertNull(observedFollowupFailure, "the follow-up writer must complete"),
+				() -> assertEquals(Set.of(followup), observedReopenedStatements,
+						"reopen must contain only the later committed write"),
+				() -> assertNull(observedReopenedFailedNamespace),
+				() -> assertEquals("urn:m3:followup:", observedReopenedFollowupNamespace));
+	}
+
 	private static void assertAlignedCapacityFailureRestarts(Path directory, boolean multiThreading) throws Exception {
 		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
 		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
@@ -1376,15 +1534,827 @@ class LmdbFrozenReplayTest {
 	}
 
 	private static boolean causeChainSuppressesIdentity(Throwable failure, Throwable expected) {
-		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-		for (Throwable cause = failure; cause != null && visited.add(cause); cause = cause.getCause()) {
+		Set<Throwable> visitedCauseChain = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Throwable cause = failure; cause != null && visitedCauseChain.add(cause); cause = cause.getCause()) {
 			for (Throwable suppressed : cause.getSuppressed()) {
-				if (suppressed == expected) {
+				Set<Throwable> visitedSuppressedGraph = Collections.newSetFromMap(new IdentityHashMap<>());
+				if (throwableGraphContainsIdentity(suppressed, expected, visitedSuppressedGraph)) {
 					return true;
 				}
 			}
 		}
 		return false;
+	}
+
+	private static boolean throwableGraphContainsIdentity(Throwable failure, Throwable expected,
+			Set<Throwable> visited) {
+		if (failure == expected) {
+			return true;
+		}
+		if (failure == null || !visited.add(failure)) {
+			return false;
+		}
+		if (throwableGraphContainsIdentity(failure.getCause(), expected, visited)) {
+			return true;
+		}
+		for (Throwable suppressed : failure.getSuppressed()) {
+			if (throwableGraphContainsIdentity(suppressed, expected, visited)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void outOfMemoryAfterAppliedPrefixDoesNotRetryAndReleasesWriter(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> failedInput = replayStatements(5);
+		OutOfMemoryError marker = new OutOfMemoryError("injected terminal failure after native prefix");
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:m3:oom-followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("follow-up after terminal error"));
+		Throwable commitFailure = null;
+		RepositoryException rollbackFailure = null;
+		RepositoryException followupFailure = null;
+		boolean followupCommitted = false;
+		int transactionStartsAfterFailure = -1;
+		int notificationsAfterFailure = -1;
+		long initialTripleMapSize = 0L;
+		long initialValueMapSize = 0L;
+		long tripleMapAfterFailure = 0L;
+		long valueMapAfterFailure = 0L;
+		Set<Statement> visibleAfterFailure = Set.of();
+		String visibleNamespaceAfterFailure = null;
+		Set<Statement> reopenedStatements = Set.of();
+		String reopenedFailedNamespace = null;
+		String reopenedFollowupNamespace = null;
+		AtomicInteger notifications = new AtomicInteger();
+		CountingTripleStore tripleStore = null;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "the counted native store must be initialized");
+			initialTripleMapSize = tripleStore.mapSizeBytes();
+			initialValueMapSize = tripleStore.valueStore.mapSizeBytes();
+			store.probe.terminalAfterPrefixMarker.set(marker);
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			try (RepositoryConnection writer = repository.getConnection();
+					RepositoryConnection observer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(writer, failedInput);
+				writer.setNamespace("m3-oom", "urn:m3:oom:");
+				try {
+					writer.commit();
+				} catch (Throwable failure) {
+					commitFailure = failure;
+				}
+
+				assertEquals(1, store.probe.terminalAfterPrefixFailures.get(),
+						"the sentinel error must be injected after a real aligned write");
+				assertEquals(2, store.probe.terminalAfterPrefixRows.get(),
+						"the sentinel error must follow the first two physically applied rows");
+				assertSame(marker, store.probe.observedTerminalAfterPrefixMarker.get(),
+						"the fixture must throw the exact sentinel error instance");
+				assertSame(marker, commitFailure, "the original sentinel error must remain primary");
+
+				transactionStartsAfterFailure = store.probe.transactionStarts.get();
+				notificationsAfterFailure = notifications.get();
+				tripleMapAfterFailure = tripleStore.mapSizeBytes();
+				valueMapAfterFailure = tripleStore.valueStore.mapSizeBytes();
+				visibleAfterFailure = readAllStatements(observer);
+				visibleNamespaceAfterFailure = observer.getNamespace("m3-oom");
+				try {
+					writer.rollback();
+				} catch (RepositoryException failure) {
+					rollbackFailure = failure;
+				}
+			}
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				writer.setNamespace("m3-oom-followup", "urn:m3:oom-followup:");
+				try {
+					writer.commit();
+					followupCommitted = true;
+				} catch (RepositoryException failure) {
+					followupFailure = failure;
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedFailedNamespace = reader.getNamespace("m3-oom");
+				reopenedFollowupNamespace = reader.getNamespace("m3-oom-followup");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		assertTrue(causeChainContainsIdentity(commitFailure, marker),
+				"the original sentinel error must remain the terminal commit failure");
+		assertEquals(1, transactionStartsAfterFailure, "an Error must not start a second physical attempt");
+		assertEquals(initialTripleMapSize, tripleMapAfterFailure, "an Error must not resize the triple map");
+		assertEquals(initialValueMapSize, valueMapAfterFailure, "an Error must not resize the value map");
+		assertEquals(0, store.probe.journalAllocations.get(), "the covered write must remain journal-free");
+		assertEquals(0, notificationsAfterFailure, "an uncommitted Error path must not notify listeners");
+		assertTrue(Collections.disjoint(failedInput, visibleAfterFailure),
+				"the uncommitted aligned prefix must remain invisible to another connection");
+		assertNull(visibleNamespaceAfterFailure, "the uncommitted namespace must remain invisible");
+		assertNull(rollbackFailure, "explicit rollback after the terminal Error must succeed");
+		assertTrue(followupCommitted, "a later writer must be admitted after the terminal Error");
+		assertNull(followupFailure, "the follow-up writer must complete");
+		assertEquals(Set.of(followup), reopenedStatements, "reopen must contain only the later committed write");
+		assertNull(reopenedFailedNamespace);
+		assertEquals("urn:m3:oom-followup:", reopenedFollowupNamespace);
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void disabledGrowthRetainsLegacyPolicyAfterCapacityPrefix(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2).setAutoGrow(false);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> failedInput = replayStatements(5);
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:m3:disabled-growth-followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("follow-up without map growth"));
+		Throwable commitFailure = null;
+		RepositoryException rollbackFailure = null;
+		RepositoryException followupFailure = null;
+		boolean followupCommitted = false;
+		int startsAfterFailure = -1;
+		int ordinaryStartsAfterFailure = -1;
+		int trackedDecisionStartsAfterFailure = -1;
+		int frozenStartsAfterFailure = -1;
+		int journalAllocationsAfterFailure = -1;
+		int notificationsAfterFailure = -1;
+		long initialTripleMapSize = 0L;
+		long initialValueMapSize = 0L;
+		long tripleMapAfterFailure = 0L;
+		long valueMapAfterFailure = 0L;
+		Set<Statement> visibleAfterFailure = Set.of();
+		String visibleNamespaceAfterFailure = null;
+		Set<Statement> reopenedStatements = Set.of();
+		String reopenedFailedNamespace = null;
+		String reopenedFollowupNamespace = null;
+		AtomicInteger notifications = new AtomicInteger();
+		CountingTripleStore tripleStore = null;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "the counted native store must be initialized");
+			initialTripleMapSize = tripleStore.mapSizeBytes();
+			initialValueMapSize = tripleStore.valueStore.mapSizeBytes();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			try (RepositoryConnection writer = repository.getConnection();
+					RepositoryConnection observer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(writer, failedInput);
+				writer.setNamespace("m3-growth-disabled", "urn:m3:growth-disabled:");
+				store.probe.failAfterAlignedPrefix.set(true);
+				try {
+					writer.commit();
+				} catch (Throwable failure) {
+					commitFailure = failure;
+				}
+
+				startsAfterFailure = store.probe.transactionStarts.get();
+				ordinaryStartsAfterFailure = store.probe.ordinaryDecisionStarts.get();
+				trackedDecisionStartsAfterFailure = store.probe.trackedDecisionStarts.get();
+				frozenStartsAfterFailure = store.probe.frozenReplayDecisionStarts.get();
+				journalAllocationsAfterFailure = store.probe.journalAllocations.get();
+				notificationsAfterFailure = notifications.get();
+				tripleMapAfterFailure = tripleStore.mapSizeBytes();
+				valueMapAfterFailure = tripleStore.valueStore.mapSizeBytes();
+				visibleAfterFailure = readAllStatements(observer);
+				visibleNamespaceAfterFailure = observer.getNamespace("m3-growth-disabled");
+				try {
+					writer.rollback();
+				} catch (RepositoryException failure) {
+					rollbackFailure = failure;
+				}
+			}
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				writer.setNamespace("m3-growth-disabled-followup", "urn:m3:growth-disabled-followup:");
+				try {
+					writer.commit();
+					followupCommitted = true;
+				} catch (RepositoryException failure) {
+					followupFailure = failure;
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedFailedNamespace = reader.getNamespace("m3-growth-disabled");
+				reopenedFollowupNamespace = reader.getNamespace("m3-growth-disabled-followup");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedCommitFailure = commitFailure;
+		int observedStartsAfterFailure = startsAfterFailure;
+		int observedOrdinaryStartsAfterFailure = ordinaryStartsAfterFailure;
+		int observedTrackedDecisionStartsAfterFailure = trackedDecisionStartsAfterFailure;
+		int observedFrozenStartsAfterFailure = frozenStartsAfterFailure;
+		int observedJournalAllocationsAfterFailure = journalAllocationsAfterFailure;
+		int observedNotificationsAfterFailure = notificationsAfterFailure;
+		long observedInitialTripleMapSize = initialTripleMapSize;
+		long observedInitialValueMapSize = initialValueMapSize;
+		long observedTripleMapAfterFailure = tripleMapAfterFailure;
+		long observedValueMapAfterFailure = valueMapAfterFailure;
+		Set<Statement> observedVisibleAfterFailure = visibleAfterFailure;
+		String observedVisibleNamespaceAfterFailure = visibleNamespaceAfterFailure;
+		RepositoryException observedRollbackFailure = rollbackFailure;
+		boolean observedFollowupCommitted = followupCommitted;
+		RepositoryException observedFollowupFailure = followupFailure;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		String observedReopenedFailedNamespace = reopenedFailedNamespace;
+		String observedReopenedFollowupNamespace = reopenedFollowupNamespace;
+		assertAll("disabled growth retains the existing non-journaled legacy policy",
+				() -> assertEquals(1, store.probe.alignedCapacityFailures.get(),
+						"the capacity failure must follow a real aligned native prefix"),
+				() -> assertEquals(2, store.probe.alignedPrefixRows.get(),
+						"the fixture must apply exactly two rows before capacity failure"),
+				() -> assertNotNull(store.probe.injectedCapacityFailure.get(),
+						"the actual map-full exception must be retained"),
+				() -> assertNotNull(observedCommitFailure, "disabled growth must leave the capacity failure terminal"),
+				() -> assertEquals(1, observedStartsAfterFailure,
+						"disabled growth must not start a second physical attempt"),
+				() -> assertEquals(1, observedOrdinaryStartsAfterFailure,
+						"the ordinary legacy replay decision must be selected exactly once"),
+				() -> assertEquals(0, observedTrackedDecisionStartsAfterFailure,
+						"autoGrow=false must not create a journal-tracked replay decision"),
+				() -> assertEquals(0, observedFrozenStartsAfterFailure,
+						"a no-growth transaction must not enter journal-free frozen replay"),
+				() -> assertEquals(0, observedJournalAllocationsAfterFailure,
+						"autoGrow=false keeps the existing no-journal legacy policy"),
+				() -> assertEquals(observedInitialTripleMapSize, observedTripleMapAfterFailure,
+						"disabled growth must not resize the triple map"),
+				() -> assertEquals(observedInitialValueMapSize, observedValueMapAfterFailure,
+						"disabled growth must not resize the value map"),
+				() -> assertEquals(0, observedNotificationsAfterFailure,
+						"an uncommitted capacity failure must not notify listeners"),
+				() -> assertTrue(Collections.disjoint(failedInput, observedVisibleAfterFailure),
+						"the failed prefix must remain invisible to another connection"),
+				() -> assertNull(observedVisibleNamespaceAfterFailure,
+						"the failed namespace must remain invisible"),
+				() -> assertNull(observedRollbackFailure, "explicit rollback after failure must succeed"),
+				() -> assertTrue(observedFollowupCommitted,
+						"a later writer must be admitted after the failed transaction closes"),
+				() -> assertNull(observedFollowupFailure, "the follow-up writer must complete"),
+				() -> assertEquals(Set.of(followup), observedReopenedStatements,
+						"reopen must contain only the later committed write"),
+				() -> assertNull(observedReopenedFailedNamespace),
+				() -> assertEquals("urn:m3:growth-disabled-followup:", observedReopenedFollowupNamespace));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void nativeCommitWithoutReceiptIsTerminalAndPersistsExactContents(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig();
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> statements = replayStatements(3);
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:m3:uncertain-commit-followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("follow-up after uncertain commit"));
+		RuntimeException marker = new IllegalStateException("injected failure before native commit receipt");
+		Throwable commitFailure = null;
+		Throwable connectionCleanupFailure = null;
+		Set<Statement> persistedStatements = Set.of();
+		boolean followupCommitted = false;
+		RepositoryException followupFailure = null;
+		int nativeCommitsBeforeReceipt = -1;
+		int attemptsForOriginalCommit = -1;
+		int journalAllocationsForOriginalCommit = -1;
+		long initialTripleMapSize = 0L;
+		long initialValueMapSize = 0L;
+		long tripleMapAfterCommit = 0L;
+		long valueMapAfterCommit = 0L;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			CountingTripleStore tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "The injected TripleStore must be available for the commit boundary probe");
+			initialTripleMapSize = tripleStore.mapSizeBytes();
+			initialValueMapSize = tripleStore.valueStore.mapSizeBytes();
+			store.probe.uncertainNativeCommitMarker.set(marker);
+			store.probe.failAfterNativeCommitWithoutReceipt.set(true);
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(writer, statements);
+				try {
+					writer.commit();
+				} catch (Throwable failure) {
+					commitFailure = failure;
+				}
+
+				nativeCommitsBeforeReceipt = store.probe.nativeCommitsBeforeReceipt.get();
+				attemptsForOriginalCommit = store.probe.transactionStarts.get();
+				journalAllocationsForOriginalCommit = store.probe.journalAllocations.get();
+				tripleMapAfterCommit = tripleStore.mapSizeBytes();
+				valueMapAfterCommit = tripleStore.valueStore.mapSizeBytes();
+			} catch (Throwable failure) {
+				connectionCleanupFailure = failure;
+			}
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				try {
+					writer.commit();
+					followupCommitted = true;
+				} catch (RepositoryException failure) {
+					followupFailure = failure;
+				}
+			} catch (RepositoryException failure) {
+				followupFailure = failure;
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				persistedStatements = readAllStatements(reader);
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Set<Statement> expectedOriginal = Set.copyOf(statements);
+		Set<Statement> expectedPersisted = new HashSet<>(expectedOriginal);
+		expectedPersisted.add(followup);
+		Throwable observedCommitFailure = commitFailure;
+		Throwable observedConnectionCleanupFailure = connectionCleanupFailure;
+		Set<Statement> observedPersistedStatements = persistedStatements;
+		int observedNativeCommitsBeforeReceipt = nativeCommitsBeforeReceipt;
+		int observedAttemptsForOriginalCommit = attemptsForOriginalCommit;
+		int observedJournalAllocationsForOriginalCommit = journalAllocationsForOriginalCommit;
+		long observedInitialTripleMapSize = initialTripleMapSize;
+		long observedInitialValueMapSize = initialValueMapSize;
+		long observedTripleMapAfterCommit = tripleMapAfterCommit;
+		long observedValueMapAfterCommit = valueMapAfterCommit;
+		boolean observedFollowupCommitted = followupCommitted;
+		RepositoryException observedFollowupFailure = followupFailure;
+		assertAll("an uncertain native commit is terminal and remains durable",
+				() -> assertEquals(1, observedNativeCommitsBeforeReceipt,
+						"the fixture must commit natively before throwing before the higher-level receipt"),
+				() -> assertTrue(causeChainContainsIdentity(observedCommitFailure, marker),
+						"the exact injected uncertainty marker must reach the caller"),
+				() -> assertNull(observedConnectionCleanupFailure,
+						"connection cleanup after an uncertain commit must complete"),
+				() -> assertEquals(1, observedAttemptsForOriginalCommit,
+						"the unconfirmed commit must not trigger a second physical attempt"),
+				() -> assertEquals(0, observedJournalAllocationsForOriginalCommit,
+						"the covered transaction must not allocate a mutation journal"),
+				() -> assertEquals(observedInitialTripleMapSize, observedTripleMapAfterCommit,
+						"an uncertain native outcome must not resize the triple map"),
+				() -> assertEquals(observedInitialValueMapSize, observedValueMapAfterCommit,
+						"an uncertain native outcome must not resize the value map"),
+				() -> assertTrue(observedFollowupCommitted,
+						"a fresh writer must be admitted after the uncertain commit is cleaned up"),
+				() -> assertNull(observedFollowupFailure, "the follow-up writer must complete"),
+				() -> assertEquals(expectedPersisted, observedPersistedStatements,
+						"the exact native result and follow-up must survive reopening"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayPreservesAdditionDuplicateAndRemovalSemantics(@TempDir Path directory) throws Exception {
+		Resource context = SimpleValueFactory.getInstance().createIRI("urn:m3:mutation-context");
+		Statement removedDefault = mutationStatement("remove-default", "old", null);
+		Statement retainedDefault = mutationStatement("retain-default", "keep", null);
+		Statement removedNamed = mutationStatement("remove-named", "old", context);
+		Statement addedDefault = mutationStatement("add-default", "new", null);
+		Statement addedNamed = mutationStatement("add-named", "new", context);
+		Set<Statement> expected = Set.of(retainedDefault, addedDefault, addedNamed);
+		assertCoveredMutation(directory, List.of(removedDefault, retainedDefault, removedNamed),
+				Map.of("base", "urn:m3:base:"), writer -> {
+					remove(writer, removedDefault);
+					remove(writer, removedNamed);
+					approve(writer, retainedDefault);
+					approve(writer, addedDefault);
+					approve(writer, addedNamed);
+					writer.setNamespace("base", "urn:m3:updated:");
+					writer.setNamespace("added", "urn:m3:added:");
+				}, expected, Set.of(), Map.of("base", "urn:m3:updated:", "added", "urn:m3:added:"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayPreservesGlobalClearAndSubsequentAddition(@TempDir Path directory) throws Exception {
+		Resource context = SimpleValueFactory.getInstance().createIRI("urn:m3:global-clear-context");
+		Statement oldDefault = mutationStatement("global-old-default", "old", null);
+		Statement oldNamed = mutationStatement("global-old-named", "old", context);
+		Statement fresh = mutationStatement("global-fresh", "fresh", null);
+		assertCoveredMutation(directory, List.of(oldDefault, oldNamed),
+				Map.of("retained", "urn:m3:retained:"), writer -> {
+					writer.clear();
+					approve(writer, fresh);
+					writer.setNamespace("after-clear", "urn:m3:after-clear:");
+				}, Set.of(fresh), Set.of(), Map.of("retained", "urn:m3:retained:",
+						"after-clear", "urn:m3:after-clear:"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayPreservesDefaultAndNamedContextClears(@TempDir Path directory) throws Exception {
+		Resource contextA = SimpleValueFactory.getInstance().createIRI("urn:m3:clear-context-a");
+		Resource contextB = SimpleValueFactory.getInstance().createIRI("urn:m3:clear-context-b");
+		Statement defaultStatement = mutationStatement("clear-default", "default", null);
+		Statement contextAStatement = mutationStatement("clear-a", "a", contextA);
+		Statement contextBStatement = mutationStatement("keep-b", "b", contextB);
+		assertCoveredMutation(directory, List.of(defaultStatement, contextAStatement, contextBStatement),
+				Map.of("context-a", contextA.stringValue(), "context-b", contextB.stringValue()), writer -> {
+					writer.clear((Resource) null);
+					writer.clear(contextA);
+				}, Set.of(contextBStatement), Set.of(),
+				Map.of("context-a", contextA.stringValue(), "context-b", contextB.stringValue()));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayPreservesOrderedClearAddRemoveClearAdd(@TempDir Path directory) throws Exception {
+		Resource contextA = SimpleValueFactory.getInstance().createIRI("urn:m3:ordered-context-a");
+		Resource contextB = SimpleValueFactory.getInstance().createIRI("urn:m3:ordered-context-b");
+		Statement oldDefault = mutationStatement("ordered-old-default", "old", null);
+		Statement oldA = mutationStatement("ordered-old-a", "old", contextA);
+		Statement oldB = mutationStatement("ordered-old-b", "old", contextB);
+		Statement transientA = mutationStatement("ordered-transient-a", "transient", contextA);
+		Statement transientB = mutationStatement("ordered-transient-b", "transient", contextB);
+		Statement finalStatement = mutationStatement("ordered-final", "final", null);
+		assertCoveredMutation(directory, List.of(oldDefault, oldA, oldB),
+				Map.of("remove-me", "urn:m3:temporary:", "keep", "urn:m3:old:"), writer -> {
+					writer.clear(contextA);
+					approve(writer, transientA);
+					remove(writer, transientA);
+					writer.clear(contextB);
+					approve(writer, transientB);
+					writer.clear();
+					approve(writer, finalStatement);
+					writer.removeNamespace("remove-me");
+					writer.setNamespace("keep", "urn:m3:new:");
+				}, Set.of(finalStatement), Set.of(), Map.of("keep", "urn:m3:new:"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayCertifiesRemovalOnlyChanges(@TempDir Path directory) throws Exception {
+		Statement removed = mutationStatement("remove-only", "old", null);
+		Statement retained = mutationStatement("remove-only-retained", "keep", null);
+		assertCoveredMutation(directory, List.of(removed, retained), Map.of("only", "urn:m3:only:"),
+				writer -> remove(writer, removed), Set.of(retained), Set.of(), Map.of("only", "urn:m3:only:"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayCertifiesClearOnlyChanges(@TempDir Path directory) throws Exception {
+		Resource context = SimpleValueFactory.getInstance().createIRI("urn:m3:clear-only-context");
+		Statement defaultStatement = mutationStatement("clear-only-default", "old", null);
+		Statement namedStatement = mutationStatement("clear-only-named", "old", context);
+		assertCoveredMutation(directory, List.of(defaultStatement, namedStatement),
+				Map.of("clear-only", "urn:m3:clear-only:"), writer -> writer.clear(),
+				Set.of(), Set.of(), Map.of("clear-only", "urn:m3:clear-only:"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void mutationReplayPreservesExplicitInferredRowsAndNamespaces(@TempDir Path directory) throws Exception {
+		Statement seeded = mutationStatement("mixed-seeded", "seeded", null);
+		Statement explicit = mutationStatement("mixed-explicit", "explicit", null);
+		Statement inferred = mutationStatement("mixed-inferred", "inferred", null);
+		Set<Statement> expectedExplicit = Set.of(seeded, explicit);
+		Set<Statement> expectedInferred = Set.of(inferred);
+		assertCoveredMutation(directory, List.of(seeded), Map.of("seed", "urn:m3:seed:"), writer -> {
+			approve(writer, seeded);
+			approve(writer, explicit);
+			assertTrue(((InferencerConnection) writer).addInferredStatement(
+					inferred.getSubject(), inferred.getPredicate(), inferred.getObject(), inferred.getContext()),
+					"the inferencer connection must accept the actual inferred input");
+			writer.setNamespace("explicit", "urn:m3:explicit:");
+			writer.setNamespace("inferred", "urn:m3:inferred:");
+		}, expectedExplicit, expectedInferred,
+				Map.of("seed", "urn:m3:seed:", "explicit", "urn:m3:explicit:", "inferred", "urn:m3:inferred:"));
+	}
+
+	private static void assertCoveredMutation(Path directory, List<Statement> seedStatements,
+			Map<String, String> seedNamespaces, Consumer<NotifyingSailConnection> mutation,
+			Set<Statement> expectedExplicit, Set<Statement> expectedInferred,
+			Map<String, String> expectedNamespaces) throws Exception {
+		LmdbStoreConfig config = smallMapConfig();
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		RuntimeException commitFailure = null;
+		Throwable connectionCleanupFailure = null;
+		int injectedCommitFailures = -1;
+		int physicalAttempts = -1;
+		int frozenAttempts = -1;
+		int mutationJournalAllocations = -1;
+		int notifications = -1;
+		List<Statement> immediateExplicit = List.of();
+		List<Statement> immediateAll = List.of();
+		Map<String, String> immediateNamespaces = Map.of();
+		List<Statement> persistedExplicit = List.of();
+		List<Statement> persistedAll = List.of();
+		Map<String, String> persistedNamespaces = Map.of();
+		AtomicInteger notificationCount = new AtomicInteger();
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			try (RepositoryConnection seeder = repository.getConnection()) {
+				seeder.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(seeder, seedStatements);
+				seedNamespaces.forEach(seeder::setNamespace);
+				seeder.commit();
+			}
+			store.probe.reset();
+			store.addSailChangedListener(event -> notificationCount.incrementAndGet());
+
+			try (NotifyingSailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				mutation.accept(writer);
+				store.probe.failNextCommit.set(true);
+				try {
+					writer.commit();
+				} catch (RuntimeException failure) {
+					commitFailure = failure;
+				}
+			} catch (Throwable failure) {
+				connectionCleanupFailure = failure;
+			}
+			injectedCommitFailures = store.probe.injectedCommitFailures.get();
+			physicalAttempts = store.probe.transactionStarts.get();
+			frozenAttempts = store.probe.frozenReplayDecisionStarts.get();
+			mutationJournalAllocations = store.probe.journalAllocations.get();
+			notifications = notificationCount.get();
+			try (RepositoryConnection reader = repository.getConnection()) {
+				immediateExplicit = readAllStatementRows(reader, false);
+				immediateAll = readAllStatementRows(reader, true);
+				immediateNamespaces = readAllNamespaces(reader);
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				persistedExplicit = readAllStatementRows(reader, false);
+				persistedAll = readAllStatementRows(reader, true);
+				persistedNamespaces = readAllNamespaces(reader);
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Set<Statement> expectedAll = new HashSet<>(expectedExplicit);
+		expectedAll.addAll(expectedInferred);
+		RuntimeException observedCommitFailure = commitFailure;
+		Throwable observedConnectionCleanupFailure = connectionCleanupFailure;
+		int observedInjectedCommitFailures = injectedCommitFailures;
+		int observedPhysicalAttempts = physicalAttempts;
+		int observedFrozenAttempts = frozenAttempts;
+		int observedJournalAllocations = mutationJournalAllocations;
+		int observedNotifications = notifications;
+		List<Statement> observedImmediateExplicit = immediateExplicit;
+		List<Statement> observedImmediateAll = immediateAll;
+		Map<String, String> observedImmediateNamespaces = immediateNamespaces;
+		List<Statement> observedPersistedExplicit = persistedExplicit;
+		List<Statement> observedPersistedAll = persistedAll;
+		Map<String, String> observedPersistedNamespaces = persistedNamespaces;
+		assertAll("the full statement mutation input is replayed exactly after commit MAP_FULL",
+				() -> assertEquals(1, observedInjectedCommitFailures,
+						"the native commit MAP_FULL injection must activate once after seeded data exists"),
+				() -> assertNull(observedCommitFailure,
+						"the covered mutation must recover from commit MAP_FULL: " + observedCommitFailure),
+				() -> assertNull(observedConnectionCleanupFailure,
+						"the connection must clean up after the successful replay"),
+				() -> assertEquals(2, observedPhysicalAttempts,
+						"one consumed native attempt must be followed by exactly one full retry"),
+				() -> assertEquals(2, observedFrozenAttempts,
+						"both physical attempts must use the frozen complete-input decision"),
+				() -> assertEquals(0, observedJournalAllocations,
+						"the complete mutation replay must not allocate a transaction journal"),
+				() -> assertEquals(1, observedNotifications,
+						"the logical mutation transaction must notify once despite native retry"),
+				() -> assertExactStatementRows(expectedExplicit, observedImmediateExplicit,
+						"fresh observer explicit statements"),
+				() -> assertExactStatementRows(expectedAll, observedImmediateAll,
+						"fresh observer explicit and inferred statements"),
+				() -> assertEquals(expectedNamespaces, observedImmediateNamespaces,
+						"fresh observer namespaces"),
+				() -> assertExactStatementRows(expectedExplicit, observedPersistedExplicit,
+						"reopened explicit statements"),
+				() -> assertExactStatementRows(expectedAll, observedPersistedAll,
+						"reopened explicit and inferred statements"),
+				() -> assertEquals(expectedNamespaces, observedPersistedNamespaces,
+						"reopened namespaces"));
+	}
+
+	private static Statement mutationStatement(String subject, String object, Resource context) {
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		return valueFactory.createStatement(valueFactory.createIRI("urn:m3:" + subject), PREDICATE,
+				valueFactory.createLiteral(object), context);
+	}
+
+	private static void approve(NotifyingSailConnection connection, Statement statement) throws SailException {
+		connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				statement.getContext());
+	}
+
+	private static void remove(NotifyingSailConnection connection, Statement statement) throws SailException {
+		connection.removeStatements(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+				statement.getContext());
+	}
+
+	private static void assertExactStatementRows(Set<Statement> expected, List<Statement> actual, String label) {
+		assertEquals(expected.size(), actual.size(), label + " exact row count");
+		assertEquals(expected, new HashSet<>(actual), label + " exact row set");
+	}
+
+	private static List<Statement> readAllStatementRows(RepositoryConnection connection, boolean includeInferred) {
+		List<Statement> statements = new ArrayList<>();
+		try (RepositoryResult<Statement> result = connection.getStatements(null, null, null, includeInferred)) {
+			while (result.hasNext()) {
+				statements.add(result.next());
+			}
+		}
+		return List.copyOf(statements);
+	}
+
+	private static Map<String, String> readAllNamespaces(RepositoryConnection connection) {
+		Map<String, String> namespaces = new LinkedHashMap<>();
+		try (RepositoryResult<Namespace> result = connection.getNamespaces()) {
+			while (result.hasNext()) {
+				Namespace namespace = result.next();
+				namespaces.put(namespace.getPrefix(), namespace.getName());
+			}
+		}
+		return Map.copyOf(namespaces);
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void expiredDeadlineAfterAppliedPrefixPreventsRetryAndReleasesWriter(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> failedInput = replayStatements(5);
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:m3:deadline-followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("follow-up after deadline"));
+		CountDownLatch deadlineExpired = new CountDownLatch(1);
+		Throwable commitFailure = null;
+		RepositoryException rollbackFailure = null;
+		RepositoryException followupFailure = null;
+		boolean followupCommitted = false;
+		boolean deadlineExpiredAfterPrefix = false;
+		int transactionStartsAfterFailure = -1;
+		int notificationsAfterFailure = -1;
+		long initialTripleMapSize = 0L;
+		long initialValueMapSize = 0L;
+		long tripleMapAfterFailure = 0L;
+		long valueMapAfterFailure = 0L;
+		Set<Statement> visibleAfterFailure = Set.of();
+		String visibleNamespaceAfterFailure = null;
+		Set<Statement> reopenedStatements = Set.of();
+		String reopenedFailedNamespace = null;
+		String reopenedFollowupNamespace = null;
+		AtomicInteger notifications = new AtomicInteger();
+		CountingTripleStore tripleStore = null;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "the counted native store must be initialized");
+			initialTripleMapSize = tripleStore.mapSizeBytes();
+			initialValueMapSize = tripleStore.valueStore.mapSizeBytes();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			try (RepositoryConnection writer = repository.getConnection();
+					RepositoryConnection observer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				addStatements(writer, failedInput);
+				writer.setNamespace("m3-deadline", "urn:m3:deadline:");
+				try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(2_000);
+						QueryExecutionDeadline.Registration registration = deadline
+								.onExpiration(deadlineExpired::countDown);
+						QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+					assertFalse(deadline.isExpired(), "the transaction must enter before its deadline expires");
+					store.probe.expireDeadlineAfterAlignedPrefix.set(deadlineExpired);
+					try {
+						writer.commit();
+					} catch (Throwable failure) {
+						commitFailure = failure;
+					}
+					deadlineExpiredAfterPrefix = deadline.isExpired();
+				}
+
+				transactionStartsAfterFailure = store.probe.transactionStarts.get();
+				notificationsAfterFailure = notifications.get();
+				tripleMapAfterFailure = tripleStore.mapSizeBytes();
+				valueMapAfterFailure = tripleStore.valueStore.mapSizeBytes();
+				visibleAfterFailure = readAllStatements(observer);
+				visibleNamespaceAfterFailure = observer.getNamespace("m3-deadline");
+				try {
+					writer.rollback();
+				} catch (RepositoryException failure) {
+					rollbackFailure = failure;
+				}
+			}
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(followup);
+				writer.setNamespace("m3-deadline-followup", "urn:m3:deadline-followup:");
+				try {
+					writer.commit();
+					followupCommitted = true;
+				} catch (RepositoryException failure) {
+					followupFailure = failure;
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedFailedNamespace = reader.getNamespace("m3-deadline");
+				reopenedFollowupNamespace = reader.getNamespace("m3-deadline-followup");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		assertTrue(deadlineExpiredAfterPrefix, "the real deadline must expire after the native prefix is applied");
+		assertEquals(1, store.probe.deadlineCapacityFailures.get(),
+				"the capacity failure must be injected only after the deadline callback fires");
+		assertEquals(2, store.probe.deadlinePrefixRows.get(),
+				"the deadline must expire after a real two-row native prefix");
+		assertNotNull(store.probe.injectedCapacityFailure.get(), "the activated capacity failure must be retained");
+		assertTrue(causeOfType(commitFailure, QueryInterruptedException.class) != null,
+				"an expired deadline must terminate the commit instead of retrying");
+		assertEquals(1, transactionStartsAfterFailure, "deadline cancellation must not start a fresh physical attempt");
+		assertEquals(initialTripleMapSize, tripleMapAfterFailure, "deadline cancellation must not grow the triple map");
+		assertEquals(initialValueMapSize, valueMapAfterFailure, "deadline cancellation must not grow the value map");
+		assertEquals(0, store.probe.journalAllocations.get(), "the covered write must remain journal-free");
+		assertEquals(0, notificationsAfterFailure, "an uncommitted deadline path must not notify listeners");
+		assertTrue(Collections.disjoint(failedInput, visibleAfterFailure),
+				"the uncommitted aligned prefix must remain invisible to another connection");
+		assertNull(visibleNamespaceAfterFailure, "the uncommitted namespace must remain invisible");
+		assertNull(rollbackFailure, "explicit rollback after deadline cancellation must succeed");
+		assertTrue(followupCommitted, "a later writer must be admitted after the cancelled transaction closes");
+		assertNull(followupFailure, "the follow-up writer must complete");
+		assertEquals(Set.of(followup), reopenedStatements, "reopen must contain only the later committed write");
+		assertNull(reopenedFailedNamespace);
+		assertEquals("urn:m3:deadline-followup:", reopenedFollowupNamespace);
 	}
 
 	private static List<Statement> replayStatements(int count) {
@@ -1418,6 +2388,18 @@ class LmdbFrozenReplayTest {
 		}
 		assertTrue(probe.journalAllocations.get() > 0,
 				"The direct TripleStore writer must activate the journal-allocation witness");
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void failedAbortAfterAppliedPrefixPreventsSynchronousRetry(@TempDir Path directory) throws Exception {
+		assertFailedAbortAfterAppliedPrefixPreventsRetry(directory, false);
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void failedAbortAfterAppliedPrefixPreventsAsynchronousRetry(@TempDir Path directory) throws Exception {
+		assertFailedAbortAfterAppliedPrefixPreventsRetry(directory, true);
 	}
 
 	private static LmdbStoreConfig smallMapConfig() {
@@ -1454,10 +2436,16 @@ class LmdbFrozenReplayTest {
 		private final AtomicInteger observedDecisionStarts = new AtomicInteger();
 		private final AtomicInteger newNativeTriplesStored = new AtomicInteger();
 		private final AtomicInteger injectedCommitFailures = new AtomicInteger();
+		private final AtomicInteger nativeCommitsBeforeReceipt = new AtomicInteger();
 		private final AtomicInteger postCommitCleanupFailures = new AtomicInteger();
 		private final AtomicInteger alignedCapacityFailures = new AtomicInteger();
 		private final AtomicInteger alignedCapacityFailureBudget = new AtomicInteger();
 		private final AtomicInteger alignedPrefixRows = new AtomicInteger();
+		private final AtomicInteger rollbackFailures = new AtomicInteger();
+		private final AtomicInteger terminalAfterPrefixFailures = new AtomicInteger();
+		private final AtomicInteger terminalAfterPrefixRows = new AtomicInteger();
+		private final AtomicInteger deadlineCapacityFailures = new AtomicInteger();
+		private final AtomicInteger deadlinePrefixRows = new AtomicInteger();
 		private final AtomicInteger inferredRowsApplied = new AtomicInteger();
 		private final AtomicInteger explicitRowsApplied = new AtomicInteger();
 		private final AtomicInteger inferredRowsBeforeExplicitFailure = new AtomicInteger();
@@ -1468,10 +2456,19 @@ class LmdbFrozenReplayTest {
 		private final AtomicLongArray valueMapAtAlignedFailure = new AtomicLongArray(2);
 		private final AtomicReference<CountingTripleStore> tripleStore = new AtomicReference<>();
 		private final AtomicReference<IOException> postCommitCleanupFailure = new AtomicReference<>();
+		private final AtomicReference<RuntimeException> uncertainNativeCommitMarker = new AtomicReference<>();
+		private final AtomicReference<IOException> abortFailureMarker = new AtomicReference<>();
+		private final AtomicReference<IOException> observedAbortFailure = new AtomicReference<>();
+		private final AtomicReference<IOException> injectedCapacityFailure = new AtomicReference<>();
+		private final AtomicReference<Error> terminalAfterPrefixMarker = new AtomicReference<>();
+		private final AtomicReference<Error> observedTerminalAfterPrefixMarker = new AtomicReference<>();
+		private final AtomicReference<CountDownLatch> expireDeadlineAfterAlignedPrefix = new AtomicReference<>();
 		private final AtomicBoolean failNextCommit = new AtomicBoolean();
+		private final AtomicBoolean failAfterNativeCommitWithoutReceipt = new AtomicBoolean();
 		private final AtomicBoolean failAfterAlignedPrefix = new AtomicBoolean();
 		private final AtomicBoolean failBeforeExplicitAfterInferred = new AtomicBoolean();
 		private final AtomicBoolean failAfterSuccessfulCommit = new AtomicBoolean();
+		private final AtomicBoolean failRollbackAfterSuccessfulAbort = new AtomicBoolean();
 
 		private void reset() {
 			journalAllocations.set(0);
@@ -1483,11 +2480,24 @@ class LmdbFrozenReplayTest {
 			observedDecisionStarts.set(0);
 			newNativeTriplesStored.set(0);
 			injectedCommitFailures.set(0);
+			nativeCommitsBeforeReceipt.set(0);
 			postCommitCleanupFailures.set(0);
 			postCommitCleanupFailure.set(null);
+			uncertainNativeCommitMarker.set(null);
+			abortFailureMarker.set(null);
+			observedAbortFailure.set(null);
+			injectedCapacityFailure.set(null);
+			terminalAfterPrefixMarker.set(null);
+			observedTerminalAfterPrefixMarker.set(null);
+			expireDeadlineAfterAlignedPrefix.set(null);
 			alignedCapacityFailures.set(0);
 			alignedCapacityFailureBudget.set(0);
 			alignedPrefixRows.set(0);
+			rollbackFailures.set(0);
+			terminalAfterPrefixFailures.set(0);
+			terminalAfterPrefixRows.set(0);
+			deadlineCapacityFailures.set(0);
+			deadlinePrefixRows.set(0);
 			inferredRowsApplied.set(0);
 			explicitRowsApplied.set(0);
 			inferredRowsBeforeExplicitFailure.set(0);
@@ -1499,9 +2509,11 @@ class LmdbFrozenReplayTest {
 				valueMapAtAlignedFailure.set(i, 0L);
 			}
 			failNextCommit.set(false);
+			failAfterNativeCommitWithoutReceipt.set(false);
 			failAfterAlignedPrefix.set(false);
 			failBeforeExplicitAfterInferred.set(false);
 			failAfterSuccessfulCommit.set(false);
+			failRollbackAfterSuccessfulAbort.set(false);
 		}
 
 		private void armAlignedCapacityFailures(int failures) {
@@ -1561,6 +2573,17 @@ class LmdbFrozenReplayTest {
 		}
 
 		@Override
+		public void rollback() throws IOException {
+			super.rollback();
+			if (probe.failRollbackAfterSuccessfulAbort.compareAndSet(true, false)) {
+				probe.rollbackFailures.incrementAndGet();
+				IOException marker = probe.abortFailureMarker.get();
+				probe.observedAbortFailure.set(marker);
+				throw marker;
+			}
+		}
+
+		@Override
 		TxnMutationJournal createMutationJournal() throws IOException {
 			probe.journalAllocations.incrementAndGet();
 			return super.createMutationJournal();
@@ -1597,7 +2620,13 @@ class LmdbFrozenReplayTest {
 				mdb_txn_abort(transaction);
 				return MDB_MAP_FULL;
 			}
-			return super.commitWriteTransaction(transaction);
+			int result = super.commitWriteTransaction(transaction);
+			if (currentProbe != null && result == MDB_SUCCESS
+					&& currentProbe.failAfterNativeCommitWithoutReceipt.compareAndSet(true, false)) {
+				currentProbe.nativeCommitsBeforeReceipt.incrementAndGet();
+				throw currentProbe.uncertainNativeCommitMarker.get();
+			}
+			return result;
 		}
 
 		@Override
@@ -1607,7 +2636,12 @@ class LmdbFrozenReplayTest {
 				probe.inferredRowsBeforeExplicitFailure.set(probe.inferredRowsApplied.get());
 				probe.explicitRowsBeforeFailure.set(probe.explicitRowsApplied.get());
 				probe.explicitCapacityFailures.incrementAndGet();
-				LmdbUtil.checkMapFull(MDB_MAP_FULL);
+				try {
+					LmdbUtil.checkMapFull(MDB_MAP_FULL);
+				} catch (IOException failure) {
+					probe.injectedCapacityFailure.set(failure);
+					throw failure;
+				}
 				throw new AssertionError("MDB_MAP_FULL must be classified as an LMDB map-capacity failure");
 			}
 			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
@@ -1615,6 +2649,33 @@ class LmdbFrozenReplayTest {
 				probe.explicitRowsApplied.addAndGet(count);
 			} else {
 				probe.inferredRowsApplied.addAndGet(count);
+			}
+			Error terminalFailure = probe.terminalAfterPrefixMarker.getAndSet(null);
+			if (terminalFailure != null) {
+				probe.terminalAfterPrefixFailures.incrementAndGet();
+				probe.terminalAfterPrefixRows.addAndGet(count);
+				probe.observedTerminalAfterPrefixMarker.set(terminalFailure);
+				throw terminalFailure;
+			}
+			CountDownLatch deadlineExpired = probe.expireDeadlineAfterAlignedPrefix.getAndSet(null);
+			if (explicit && deadlineExpired != null) {
+				probe.deadlinePrefixRows.addAndGet(count);
+				try {
+					if (!deadlineExpired.await(5, TimeUnit.SECONDS)) {
+						throw new AssertionError("the armed query deadline did not expire after the native prefix");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IOException("interrupted while awaiting the armed query deadline", interrupted);
+				}
+				probe.deadlineCapacityFailures.incrementAndGet();
+				try {
+					LmdbUtil.checkMapFull(MDB_MAP_FULL);
+				} catch (IOException failure) {
+					probe.injectedCapacityFailure.set(failure);
+					throw failure;
+				}
+				throw new AssertionError("MDB_MAP_FULL must be classified as an LMDB map-capacity failure");
 			}
 			if (probe.failAfterAlignedPrefix.compareAndSet(true, false)) {
 				int failureIndex = probe.alignedCapacityFailures.getAndIncrement();
@@ -1627,7 +2688,12 @@ class LmdbFrozenReplayTest {
 					}
 				}
 				probe.alignedCapacityFailureBudget.updateAndGet(remaining -> Math.max(0, remaining - 1));
-				LmdbUtil.checkMapFull(MDB_MAP_FULL);
+				try {
+					LmdbUtil.checkMapFull(MDB_MAP_FULL);
+				} catch (IOException failure) {
+					probe.injectedCapacityFailure.set(failure);
+					throw failure;
+				}
 				throw new AssertionError("MDB_MAP_FULL must be classified as an LMDB map-capacity failure");
 			}
 		}

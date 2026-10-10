@@ -14,8 +14,12 @@ package org.eclipse.rdf4j.http.server;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -25,6 +29,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.LongSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.protocol.Protocol;
@@ -121,6 +126,7 @@ public class LmdbServiceReplayIT {
 				LongSupplier replayRequested = server.replayRequestedCounter(repositoryId);
 				LongSupplier tripleResizes = server.tripleStoreResizeCounter(repositoryId);
 				LongSupplier valueResizes = server.valueStoreResizeCounter(repositoryId);
+				Supplier<String> growthMetrics = server.growthMetricsSnapshot(repositoryId);
 				long initialReplayAccepted = replayAccepted.getAsLong();
 				long initialReplayRequested = replayRequested.getAsLong();
 				long initialTripleResizes = tripleResizes.getAsLong();
@@ -163,7 +169,7 @@ public class LmdbServiceReplayIT {
 					writer.commit();
 				}
 				if (tripleGrowth) {
-					awaitReplayAccepted(replayAccepted, initialReplayAccepted);
+					awaitReplayAccepted(replayAccepted, initialReplayAccepted, growthMetrics);
 					serviceGate.release();
 				}
 				try (RepositoryConnection published = repository.getConnection()) {
@@ -186,7 +192,13 @@ public class LmdbServiceReplayIT {
 					assertThat(valueResizes.getAsLong()).isEqualTo(initialValueResizes);
 				} else {
 					assertThat(valueResizes.getAsLong()).isGreaterThan(initialValueResizes);
-					assertThat(tripleResizes.getAsLong()).isEqualTo(initialTripleResizes);
+					try {
+						assertThat(tripleResizes.getAsLong()).isEqualTo(initialTripleResizes);
+					} catch (AssertionError failure) {
+						printGrowthFailureDiagnostic("value-only growth changed the TripleStore resize count", failure,
+								growthMetrics);
+						throw failure;
+					}
 					assertThat(replayRequested.getAsLong()).isEqualTo(initialReplayRequested);
 					assertThat(replayAccepted.getAsLong()).isEqualTo(initialReplayAccepted);
 				}
@@ -222,13 +234,44 @@ public class LmdbServiceReplayIT {
 		}
 	}
 
-	private static void awaitReplayAccepted(LongSupplier replayAccepted, long initialReplayAccepted) {
+	private static void awaitReplayAccepted(LongSupplier replayAccepted, long initialReplayAccepted,
+			Supplier<String> growthMetrics) {
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (replayAccepted.getAsLong() <= initialReplayAccepted) {
 			if (System.nanoTime() >= deadlineNanos) {
-				throw new AssertionError("the soft growth episode did not accept the blocked SERVICE query for replay");
+				AssertionError failure = new AssertionError(
+						"the soft growth episode did not accept the blocked SERVICE query for replay");
+				printGrowthFailureDiagnostic("SERVICE replay acceptance deadline expired", failure, growthMetrics);
+				throw failure;
 			}
 			Thread.onSpinWait();
+		}
+	}
+
+	private static void printGrowthFailureDiagnostic(String label, Throwable failure, Supplier<String> growthMetrics) {
+		System.err.println("LMDB service replay diagnostic: " + label);
+		System.err.println("Growth metrics: " + growthMetrics.get());
+		failure.printStackTrace(System.err);
+		ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+		long[] deadlockedIds = threadMXBean.findDeadlockedThreads();
+		System.err
+				.println("Deadlocked thread ids: " + (deadlockedIds == null ? "none" : Arrays.toString(deadlockedIds)));
+		for (ThreadInfo threadInfo : threadMXBean.dumpAllThreads(true, true)) {
+			if (threadInfo == null) {
+				continue;
+			}
+			System.err.println("Thread \"" + threadInfo.getThreadName() + "\" id=" + threadInfo.getThreadId()
+					+ " state=" + threadInfo.getThreadState() + " lock=" + threadInfo.getLockName()
+					+ " lockOwner=" + threadInfo.getLockOwnerName() + " lockOwnerId=" + threadInfo.getLockOwnerId());
+			for (StackTraceElement frame : threadInfo.getStackTrace()) {
+				System.err.println("\tat " + frame);
+			}
+			for (var monitor : threadInfo.getLockedMonitors()) {
+				System.err.println("\tlocked monitor=" + monitor);
+			}
+			for (var synchronizer : threadInfo.getLockedSynchronizers()) {
+				System.err.println("\tlocked synchronizer=" + synchronizer);
+			}
 		}
 	}
 
