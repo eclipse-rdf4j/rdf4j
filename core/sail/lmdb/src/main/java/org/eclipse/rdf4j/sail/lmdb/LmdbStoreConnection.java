@@ -57,9 +57,12 @@ import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.UpdateContext;
+import org.eclipse.rdf4j.sail.base.FrozenReplayCoverage;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
 import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
@@ -75,6 +78,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	 *-----------*/
 
 	protected final LmdbStore lmdbStore;
+	private final SailStore sourceStore;
 
 	/*-----------*
 	 * Variables *
@@ -84,6 +88,25 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private boolean noneCheckpointPublished;
 	private boolean noneCheckpointAdded;
 	private boolean noneCheckpointRemoved;
+	private SailSource.FlushBatch flushBatch;
+	private Boolean frozenTransaction;
+	private boolean frozenCommitConfirmed;
+	private DefaultSailChangedEvent frozenCommittedEvent;
+
+	/** Consume the event before acknowledgement can invoke cleanup delegates or reentrant user callbacks. */
+	void recordFrozenCommit(SailSource.FlushBatch batch) {
+		if (batch != flushBatch) {
+			throw new IllegalStateException("The native commit does not belong to this connection's frozen batch");
+		}
+		if (!frozenCommitConfirmed) {
+			frozenCommitConfirmed = true;
+			frozenCommittedEvent = sailChangedEvent;
+			sailChangedEvent = new DefaultSailChangedEvent(lmdbStore);
+			noneCheckpointPublished = false;
+			noneCheckpointAdded = false;
+			noneCheckpointRemoved = false;
+		}
+	}
 
 	void recordNoneCheckpoint(boolean added, boolean removed) {
 		noneCheckpointPublished = true;
@@ -161,8 +184,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	 *--------------*/
 
 	protected LmdbStoreConnection(LmdbStore sail) {
-		super(sail, sail.getSailStore(), sail.getConnectionEvaluationStrategyFactory());
+		this(sail, sail.getSailStore());
+	}
+
+	private LmdbStoreConnection(LmdbStore sail, SailStore sourceStore) {
+		super(sail, sourceStore, sail.getConnectionEvaluationStrategyFactory());
 		this.lmdbStore = sail;
+		this.sourceStore = sourceStore;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
 
@@ -301,6 +329,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 			}
 			super.startTransactionInternal();
+			frozenTransaction = null;
 			transactionReadView = null;
 			noneCheckpointPublished = false;
 			noneCheckpointAdded = false;
@@ -335,31 +364,104 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	@Override
+	protected void prepareTransaction(SailSource source) throws SailException {
+		if (frozenTransaction == null) {
+			// fork() may erase a wrapper whose original root still owns finalization callbacks.
+			frozenTransaction = FrozenReplayCoverage.supports(sourceStore.getExplicitSailSource())
+					&& FrozenReplayCoverage.supports(sourceStore.getInferredSailSource());
+		}
+		if (frozenTransaction && flushBatch == null) {
+			flushBatch = source.freezeForFlush();
+		}
+		super.prepareTransaction(source);
+	}
+
+	@Override
+	protected void flushTransaction(SailSource source) throws SailException {
+		if (!Boolean.TRUE.equals(frozenTransaction)) {
+			super.flushTransaction(source);
+			return;
+		}
+		if (flushBatch == null) {
+			flushBatch = source.freezeForFlush();
+		}
+		flushAndCommitWithRetry(flushBatch);
+	}
+
+	private void flushAndCommitWithRetry(SailSource.FlushBatch batch) throws SailException {
+		LmdbSailStore backing = lmdbStore.getBackingStore();
+		try (LmdbSailStore.FlushPublication publication = backing.beginPublication(this, batch)) {
+			while (true) {
+				try {
+					batch.flush();
+					publication.commit();
+					return;
+				} catch (RuntimeException failure) {
+					TemporaryFlushingException temporary = backing.abortForStatementReplay(this, failure);
+					if (temporary == null) {
+						publication.fail();
+						throw failure;
+					}
+					backing.growForStatementReplay(this, temporary);
+				}
+			}
+		}
+	}
+
+	@Override
 	protected void commitInternal() throws SailException {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		WriteAttempt completedWriteAttempt = writeAttempt;
 		boolean committed = false;
+		boolean notifiedFrozenCommit = false;
+		Throwable primary = null;
 		finishReadAttempt();
-		try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
-			try {
+		try {
+			if (flushBatch != null) {
 				super.commitInternal();
-				lmdbStore.getSailStore().getExplicitSailSource().flush();
-				lmdbStore.getSailStore().getInferredSailSource().flush();
-			} catch (RuntimeException | Error failure) {
-				SailSource.failPublication(publication);
-				throw failure;
+			} else {
+				// NONE uses its existing checkpoint publication rather than a frozen statement graph.
+				try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
+					try {
+						super.commitInternal();
+						sourceStore.getExplicitSailSource().flush();
+						sourceStore.getInferredSailSource().flush();
+					} catch (RuntimeException | Error failure) {
+						SailSource.failPublication(publication);
+						throw failure;
+					}
+				}
 			}
 			committed = true;
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
 		} finally {
+			boolean releaseCommittedView = committed || frozenCommitConfirmed;
+			DefaultSailChangedEvent committedEvent = frozenCommittedEvent;
+			notifiedFrozenCommit = frozenCommitConfirmed;
+			frozenCommitConfirmed = false;
+			frozenCommittedEvent = null;
+			flushBatch = null;
+			frozenTransaction = null;
 			// Base isActive remains true until commitInternal returns; queued aliases must already be revoked.
 			writeAttempt = null;
-			if (committed) {
-				releaseTransactionReadView();
-			}
-			if (txnLock != null && txnLock.isActive()) {
-				txnLock.release();
-			}
-			completeTransactionAdmission();
+			closeResources(primary, () -> {
+				if (releaseCommittedView) {
+					releaseTransactionReadView();
+				}
+			}, () -> {
+				if (txnLock != null && txnLock.isActive()) {
+					txnLock.release();
+				}
+			}, this::completeTransactionAdmission, () -> {
+				if (committedEvent != null) {
+					lmdbStore.notifySailChanged(committedEvent);
+				}
+			});
+		}
+		if (notifiedFrozenCommit) {
+			return;
 		}
 		// Reaching this point certifies publication and cleanup; failed cleanup must retain its exact chunk.
 		lmdbStore.getBackingStore().retireCompletedNoneAttempt(this, completedWriteAttempt);
@@ -380,7 +482,14 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		try (SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this)) {
 			// Every cleanup step, including notification of an already committed NONE prefix, must run even
 			// when native abort or branch retirement fails. Preserve the first failure and suppress later ones.
-			closeResources(null, this::finishReadAttempt,
+			closeResources(null, this::finishReadAttempt, () -> {
+				SailSource.FlushBatch batch = flushBatch;
+				flushBatch = null;
+				frozenTransaction = null;
+				if (batch != null) {
+					batch.close();
+				}
+			},
 					() -> lmdbStore.getBackingStore().discardNonePending(this),
 					() -> lmdbStore.getBackingStore().rollback(this), super::rollbackInternal,
 					() -> lmdbStore.getBackingStore().completeWriterRollback(this), this::releaseTransactionReadView,

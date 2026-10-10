@@ -1130,6 +1130,9 @@ class ValueStore extends AbstractValueFactory {
 				writeTermIndexManifest(manifest);
 				break;
 			} catch (TermIndexMapFullException mapFull) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(mapFull);
+				}
 				// Abort every drop in this attempt before growing. The committed inactive indexes and old manifest are
 				// untouched, so the final publication can be retried as a whole.
 				Set<Integer> droppedDbis = new HashSet<>(droppedTermIndexDbis);
@@ -1313,6 +1316,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void growMapAfterReindexMapFull(long requiredBytes) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
 		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
 		try (growthAttempt) {
 			if (growthAttempt != null) {
@@ -2674,6 +2680,15 @@ class ValueStore extends AbstractValueFactory {
 		return Boolean.TRUE.equals(safeAllocationResize.get());
 	}
 
+	private boolean isFrozenReplay() {
+		TxnReplayPolicy.Decision decision = replayDecision;
+		return autoGrow && decision != null && decision.frozenReplay;
+	}
+
+	private FrozenStatementCapacityException frozenCapacity(Throwable cause) {
+		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.VALUE_STORE, cause);
+	}
+
 	private void resizeForAllocation(long txn, long requiredSize) throws IOException {
 		// These allocation sites own copied key/value bytes and resolve the replacement writer only after resize.
 		// Collision cursors, index maintenance and retired-ID continuations retain native handles and are excluded.
@@ -2688,11 +2703,16 @@ class ValueStore extends AbstractValueFactory {
 	private void resizeMap(long txn, long requiredSize) throws IOException {
 		if (autoGrow) {
 			long occupied = LmdbUtil.getNewSize(pageSize, txn, 0L);
-			if (growthPolicy.requiresGrowth(mapSize, occupied, requiredSize) && mapGrowthRequestListener != null) {
+			boolean growthRecommended = growthPolicy.requiresGrowth(mapSize, occupied, requiredSize);
+			boolean capacityRequired = growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize);
+			if (isFrozenReplay() && (growthRecommended || capacityRequired)) {
+				throw frozenCapacity(null);
+			}
+			if (growthRecommended && mapGrowthRequestListener != null) {
 				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 						saturatedEstimateAdd(occupied, requiredSize), false);
 			}
-			if (growthPolicy.hardCapacityRequired(mapSize, occupied, requiredSize)) {
+			if (capacityRequired) {
 				if (mapGrowthRequestListener != null) {
 					mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.VALUE_STORE,
 							saturatedEstimateAdd(occupied, requiredSize), true);
@@ -2785,6 +2805,9 @@ class ValueStore extends AbstractValueFactory {
 
 	private void growForTransactionRetry(long requiredSize, Throwable cause, TxnReplayPolicy.Decision decision)
 			throws IOException {
+		if (autoGrow && decision != null && decision.frozenReplay) {
+			throw frozenCapacity(cause);
+		}
 		if (decision != null && decision.checkpoint) {
 			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, cause);
 		}
@@ -4798,6 +4821,9 @@ class ValueStore extends AbstractValueFactory {
 				return result;
 			} catch (LmdbUtil.MapFullException mapFull) {
 				TxnReplayPolicy.Decision decision = replayDecision;
+				if (autoGrow && decision != null && decision.frozenReplay) {
+					throw frozenCapacity(mapFull);
+				}
 				if (autoGrow && decision != null && !decision.track) {
 					growForTransactionRetry(0L, mapFull, decision);
 				}
@@ -5360,6 +5386,9 @@ class ValueStore extends AbstractValueFactory {
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {
 			TxnReplayPolicy.Decision decision = replayDecision;
+			if (autoGrow && decision != null && decision.frozenReplay) {
+				throw frozenCapacity(mapFull);
+			}
 			if (autoGrow && decision != null && !decision.track) {
 				growForTransactionRetry(0L, mapFull, decision);
 			}
@@ -5378,6 +5407,9 @@ class ValueStore extends AbstractValueFactory {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit, boolean autoGrow) throws IOException {
+		if (commit && autoGrow && isFrozenReplay()) {
+			throw new IOException("ValueStore checkpoints are disabled during frozen statement replay");
+		}
 		if (commit) {
 			checkReplayFailure();
 		}
@@ -5667,6 +5699,9 @@ class ValueStore extends AbstractValueFactory {
 			endTransaction(true, false);
 		} catch (LmdbUtil.MapFullException mapFull) {
 			TxnReplayPolicy.Decision decision = replayDecision;
+			if (autoGrow && decision != null && decision.frozenReplay) {
+				throw frozenCapacity(mapFull);
+			}
 			if (autoGrow && decision != null && !decision.track) {
 				growForTransactionRetry(0L, mapFull, decision);
 			}

@@ -56,6 +56,7 @@ import java.util.function.Consumer;
 import java.util.function.Function;
 
 import org.eclipse.collections.impl.map.mutable.primitive.ObjectIntHashMap;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -98,6 +99,7 @@ import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
+import org.eclipse.rdf4j.sail.base.FrozenReplayCoverage;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -107,6 +109,7 @@ import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
 import org.eclipse.rdf4j.sail.base.SailWriteContinuation;
 import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingWritePreflight;
+import org.eclipse.rdf4j.sail.base.TemporaryFlushingException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -3119,6 +3122,7 @@ class LmdbSailStore implements SailStore {
 		private boolean changed;
 		private boolean commitRequested;
 		private boolean failed;
+		private RetainedFlushPublication retainedFlush;
 
 		private PublicationContext(Object owner, WriterLease writerLease, boolean ownsOwner) {
 			this.owner = owner;
@@ -3171,7 +3175,7 @@ class LmdbSailStore implements SailStore {
 
 			Throwable failure = null;
 			try {
-				if (finalizePublication && publicationCommitRequested) {
+				if (finalizePublication && publicationCommitRequested && context.retainedFlush == null) {
 					if (publicationFailed) {
 						rollback(context.owner);
 					} else {
@@ -4006,6 +4010,256 @@ class LmdbSailStore implements SailStore {
 		ensureNamespacePersistenceCertain();
 		checkWriterTransaction(owner);
 		return beginPublicationScope(owner);
+	}
+
+	@InternalUseOnly
+	interface FlushPublication extends SailSource.PublicationScope {
+		void commit() throws SailException;
+	}
+
+	/** The logical publication remains owned until commit acknowledgement and all final cleanup finish. */
+	@InternalUseOnly
+	FlushPublication beginPublication(Object owner, SailSource.FlushBatch batch) throws SailException {
+		if (publicationContext.get() != null) {
+			throw new SailException("A retained flush requires its own outer publication");
+		}
+		SailClosable scope = beginPublication(owner);
+		PublicationContext context = publicationContext.get();
+		RetainedFlushPublication retained = new RetainedFlushPublication(context, scope, batch);
+		context.retainedFlush = retained;
+		try {
+			retained.coverage = FrozenReplayCoverage.stage(batch);
+			FrozenReplayCoverage coverage = retained.coverage;
+			boolean targetsMatch = coverage != null && !coverage.targets().isEmpty() && coverage.acceptsOwner(owner);
+			if (targetsMatch) {
+				for (SailSource target : coverage.targets()) {
+					if (!(target instanceof LmdbSailSource nativeSource) || !nativeSource.belongsTo(this, owner)) {
+						targetsMatch = false;
+						break;
+					}
+				}
+			}
+			sinkStoreAccessLock.lock();
+			try {
+				// Policy is fixed before opening any terminal sink or writing even a namespace prefix.
+				retained.eligible = autoGrow && targetsMatch && coverage.hasStatementWork()
+						&& !storeTxnStarted.get() && namespaceTransactionOwner == null && storeReplayDecision == null;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+			if (retained.eligible) {
+				coverage.releaseAttemptCleanup();
+			}
+			return retained;
+		} catch (RuntimeException | Error failure) {
+			try {
+				retained.close();
+			} catch (RuntimeException | Error cleanupFailure) {
+				retainRollbackFailure(failure, cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private final class RetainedFlushPublication implements FlushPublication {
+		private final PublicationContext context;
+		private final SailClosable scope;
+		private final SailSource.FlushBatch batch;
+		private final long commitGeneration = tripleStore.getNativeCommitGeneration();
+		private FrozenReplayCoverage coverage;
+		private boolean eligible;
+		private boolean committed;
+		private boolean closed;
+		private StatementReplayCertificate retry;
+		private MapGrowthAttempt growth;
+
+		private RetainedFlushPublication(PublicationContext context, SailClosable scope, SailSource.FlushBatch batch) {
+			this.context = context;
+			this.scope = scope;
+			this.batch = batch;
+		}
+
+		private void checkActive() {
+			if (closed || committed || publicationContext.get() != context || context.depth != 1) {
+				throw new IllegalStateException("The retained publication is closed, committed, or nested");
+			}
+			if (coverage != null) {
+				coverage.validate();
+			}
+		}
+
+		private void markCommitted() {
+			if (!committed) {
+				committed = true;
+				if (context.owner instanceof LmdbStoreConnection connection) {
+					connection.recordFrozenCommit(batch);
+				}
+			}
+		}
+
+		@Override
+		public void commit() {
+			checkActive();
+			try {
+				commitPendingPublication(context.owner);
+			} catch (RuntimeException | Error failure) {
+				if (committed || tripleStore.getNativeCommitGeneration() > commitGeneration) {
+					markCommitted();
+					try {
+						batch.unFreezeAndDiscardFlushed();
+					} catch (RuntimeException | Error acknowledgementFailure) {
+						retainRollbackFailure(failure, acknowledgementFailure);
+					}
+				}
+				throw failure;
+			}
+			markCommitted();
+			batch.unFreezeAndDiscardFlushed();
+		}
+
+		@Override
+		public void fail() {
+			context.failed = true;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
+			try {
+				if (!committed) {
+					fail();
+					try {
+						rollback(context.owner);
+					} catch (RuntimeException | Error abortFailure) {
+						failure = abortFailure;
+					}
+				}
+				try {
+					batch.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					failure = retainRollbackFailure(failure, cleanupFailure);
+				}
+			} finally {
+				// The legacy scope only retires publication ownership; it must never implicitly commit this batch.
+				context.commitRequested = false;
+				try {
+					scope.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					failure = retainRollbackFailure(failure, cleanupFailure);
+				} finally {
+					if (growth != null) {
+						try {
+							growth.close();
+						} catch (RuntimeException | Error cleanupFailure) {
+							failure = retainRollbackFailure(failure, cleanupFailure);
+						}
+					}
+				}
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+		}
+	}
+
+	private record StatementReplayCertificate(TemporaryFlushingException failure, Object owner, Object graphOwner,
+			long generation) {
+	}
+
+	private boolean frozenReplayPublication(Object owner) {
+		PublicationContext context = publicationContext.get();
+		return context != null && context.owner == owner && context.retainedFlush != null
+				&& context.retainedFlush.eligible && !context.retainedFlush.committed;
+	}
+
+	/** Called only after batch.flush/commit has unwound every attempt cursor and stopped producing operations. */
+	TemporaryFlushingException abortForStatementReplay(Object owner, RuntimeException failure) {
+		PublicationContext context = publicationContext.get();
+		if (!frozenReplayPublication(owner) || namespacePersistenceFailure != null) {
+			return null;
+		}
+		boolean capacity = false;
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof Error || cause instanceof QueryInterruptedException
+					|| cause instanceof SailConflictException || cause instanceof CancellationException
+					|| cause.getSuppressed().length != 0) {
+				return null;
+			}
+			capacity |= cause instanceof FrozenStatementCapacityException || cause instanceof LmdbUtil.MapFullException;
+		}
+		if (!capacity) {
+			return null;
+		}
+		RetainedFlushPublication retained = context.retainedFlush;
+		retained.checkActive();
+		long failedGeneration;
+		sinkStoreAccessLock.lock();
+		try {
+			if (!storeTxnStarted.get() || storeTransactionOwner != owner || storeReplayDecision == null
+					|| !storeReplayDecision.frozenReplay || retained.retry != null) {
+				return null;
+			}
+			failedGeneration = storeTxnGeneration;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+		try {
+			// Async rollback finishes the worker and discards its queue before returning. Any abort error is terminal.
+			rollback(owner);
+		} catch (RuntimeException | Error abortFailure) {
+			retainRollbackFailure(failure, abortFailure);
+			return null;
+		}
+		checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
+		retained.coverage.validate();
+		TemporaryFlushingException temporary = new TemporaryFlushingException(
+				"The native attempt was aborted; its complete frozen statement input remains retained", failure);
+		retained.retry = new StatementReplayCertificate(temporary, owner, retained.coverage.publicationOwner(),
+				failedGeneration);
+		context.failed = false;
+		context.commitRequested = false;
+		return temporary;
+	}
+
+	@InternalUseOnly
+	void growForStatementReplay(Object owner, TemporaryFlushingException failure) throws SailException {
+		PublicationContext context = publicationContext.get();
+		RetainedFlushPublication retained = context == null ? null : context.retainedFlush;
+		StatementReplayCertificate certificate = retained == null ? null : retained.retry;
+		if (certificate == null || certificate.failure() != failure || certificate.owner() != owner
+				|| context.owner != owner || certificate.generation() != storeTxnGeneration
+				|| certificate.graphOwner() != retained.coverage.publicationOwner()
+				|| storeTxnStarted.get() || namespaceTransactionOwner != null) {
+			throw new SailException("No matching successfully aborted frozen statement attempt", failure);
+		}
+		retained.checkActive();
+		try {
+			mapGrowthCoordinator.certifyEmergency(owner);
+			if (retained.growth == null) {
+				retained.growth = mapGrowthCoordinator.begin(owner, certificate.generation());
+			}
+			MapGrowthAttempt growth = retained.growth;
+			growth.requestQuiescence(MapResizeKind.TRIPLE_STORE);
+			growth.requestQuiescence(MapResizeKind.VALUE_STORE);
+			long tripleBefore = tripleStore.mapSizeBytes();
+			long valueBefore = valueStore.mapSizeBytes();
+			tripleStore.growMapForEstimatedWrite(tripleBefore, growth);
+			valueStore.growMapForEstimatedWrite(valueBefore, growth);
+			if (tripleStore.mapSizeBytes() <= tripleBefore || valueStore.mapSizeBytes() <= valueBefore) {
+				throw new SailException("Frozen statement replay requires actual paired map-size progress", failure);
+			}
+			checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
+			retained.retry = null;
+		} catch (IOException capacityFailure) {
+			throw new SailException("Unable to grow LMDB maps for the retained statement attempt", capacityFailure);
+		}
 	}
 
 	/** Materialize a NONE batch before opening the final public publication/commit scope. */
@@ -5009,6 +5263,10 @@ class LmdbSailStore implements SailStore {
 					unusedIds.clear();
 					commitTripleTransaction();
 					nativeCommitted = true;
+					PublicationContext publication = publicationContext.get();
+					if (publication != null && publication.retainedFlush != null) {
+						publication.retainedFlush.markCommitted();
+					}
 					if (noneWriteState != null && noneWriteState.owner == owner) {
 						noneCheckpoints++;
 						if (owner instanceof LmdbStoreConnection connection) {
@@ -5095,6 +5353,10 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				if (committed) {
+					PublicationContext publication = publicationContext.get();
+					if (publication != null && publication.retainedFlush != null) {
+						publication.retainedFlush.markCommitted();
+					}
 					if (noneWriteState != null && noneWriteState.owner == owner) {
 						if (!nativeCommitted) {
 							noneCheckpoints++;
@@ -5127,10 +5389,12 @@ class LmdbSailStore implements SailStore {
 					if (namespacesChanged && !stateUnknown) {
 						namespaceStore.restore(previousNamespaces);
 					}
-					try {
-						rollback(owner);
-					} catch (RuntimeException | Error rollbackFailure) {
-						retainRollbackFailure(e, rollbackFailure);
+					if (!frozenReplayPublication(owner)) {
+						try {
+							rollback(owner);
+						} catch (RuntimeException | Error rollbackFailure) {
+							retainRollbackFailure(e, rollbackFailure);
+						}
 					}
 				}
 				if (e instanceof Error error) {
@@ -5944,6 +6208,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private final class LmdbSailSource extends BackingSailSource {
+		private boolean belongsTo(LmdbSailStore store, Object owner) {
+			return LmdbSailStore.this == store && (writerOwner == null || writerOwner == owner);
+		}
 
 		private final boolean explicit;
 		private final Object writerOwner;
@@ -6487,6 +6754,12 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			Object owner = writerOwner();
+			if (frozenReplayPublication(owner)) {
+				// The outer coordinator must first unwind model cursors and finish/discard asynchronous work.
+				// An attempt-local sink cannot certify or destroy that retained transaction's input.
+				releaseMutationLease();
+				return;
+			}
 			try {
 				recordWriterCapacityFailure(owner, failure);
 			} catch (RuntimeException | Error cleanupFailure) {
@@ -6562,7 +6835,8 @@ class LmdbSailStore implements SailStore {
 							admittedNoneState = null;
 						}
 					}
-					if (!nativeCheckpoints && ownsActiveBackingTransaction() && !flushRequested && !sharedNoneWork) {
+					if (!nativeCheckpoints && ownsActiveBackingTransaction() && !flushRequested && !sharedNoneWork
+							&& !frozenReplayPublication(writerOwner())) {
 						discardEstimatorUpdatesIfTouched();
 						rollbackBackingTransaction();
 					}
@@ -7102,6 +7376,8 @@ class LmdbSailStore implements SailStore {
 				storeReplayDecision = tripleStore.prepareReplayDecision();
 				if (nativeCheckpoints) {
 					storeReplayDecision = storeReplayDecision.forNativeCheckpoints();
+				} else if (frozenReplayPublication(writerOwner())) {
+					storeReplayDecision = storeReplayDecision.forFrozenReplay();
 				}
 				valueStore.setReplayDecision(storeReplayDecision);
 			}

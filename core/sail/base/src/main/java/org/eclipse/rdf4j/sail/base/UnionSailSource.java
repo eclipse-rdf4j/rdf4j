@@ -467,6 +467,21 @@ class UnionSailSource implements SailSource, FrozenFlush {
 		}
 
 		@Override
+		public FrozenFlush.Context context() {
+			return context;
+		}
+
+		@Override
+		public void releaseAttemptCleanup() {
+			// Retain the writer reservation, but let completed cursors dispose outside branch/model guards.
+			SailModelCleanup.Retained cleanup = preparedCleanup;
+			preparedCleanup = null;
+			if (cleanup != null) {
+				cleanup.close();
+			}
+		}
+
+		@Override
 		public void enlist(FrozenFlush.Context requested) {
 			if (released || stagingStarted && context != requested) {
 				throw new IllegalStateException("The retained union has been released");

@@ -431,6 +431,9 @@ class TripleStore implements Closeable {
 				}
 				writeNamespaceSnapshotBytes(encodedSnapshot);
 			} catch (MapFullException mapFull) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(mapFull);
+				}
 				resizeAndReplay(record, null);
 			} catch (IOException | RuntimeException | Error failure) {
 				markMutationFailure(failure);
@@ -787,6 +790,9 @@ class TripleStore implements Closeable {
 				resetAlignedWriteCursorState();
 				return;
 			} catch (MapFullException | LmdbUtil.MapFullException mapFull) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(mapFull);
+				}
 				abortReindexAttempt(currentIndexes, mapFull);
 				if (!autoGrow) {
 					throw mapFull;
@@ -842,6 +848,9 @@ class TripleStore implements Closeable {
 	}
 
 	private void growMapForReindex() throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
 		LmdbSailStore.MapGrowthAttempt growthAttempt;
 		try {
 			growthAttempt = beginMapGrowthAttempt();
@@ -1672,9 +1681,15 @@ class TripleStore implements Closeable {
 		}
 		if (autoGrow && growthPolicy.requiresGrowth(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
 				estimatedWriteBytes)) {
+			if (isFrozenReplay()) {
+				throw frozenCapacity(null);
+			}
 			requestMapGrowth(estimatedWriteBytes, false);
 		}
 		if (requiresResize(estimatedWriteBytes)) {
+			if (isFrozenReplay()) {
+				throw frozenCapacity(null);
+			}
 			if (replayDecision != null && replayDecision.checkpoint) {
 				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
 			}
@@ -1718,12 +1733,24 @@ class TripleStore implements Closeable {
 
 	private void ensureMutationJournal() throws IOException {
 		if (mutationJournal == null) {
-			mutationJournal = new TxnMutationJournal(dir.toPath());
+			mutationJournal = createMutationJournal();
 		}
 	}
 
+	TxnMutationJournal createMutationJournal() throws IOException {
+		return new TxnMutationJournal(dir.toPath());
+	}
+
 	private boolean usesReplayJournal() {
-		return autoGrow && (replayDecision == null || replayDecision.track);
+		return autoGrow && (replayDecision == null || !replayDecision.frozenReplay && replayDecision.track);
+	}
+
+	private boolean isFrozenReplay() {
+		return autoGrow && replayDecision != null && replayDecision.frozenReplay;
+	}
+
+	private FrozenStatementCapacityException frozenCapacity(Throwable cause) {
+		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, cause);
 	}
 
 	private void checkReplayFailure() throws IOException {
@@ -1737,6 +1764,9 @@ class TripleStore implements Closeable {
 
 	/** Grows capacity for a complete caller retry; a missing prefix can never be replayed. */
 	private void growForTransactionRetry(long requiredBytes, Throwable cause) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(cause);
+		}
 		if (replayDecision != null && replayDecision.checkpoint) {
 			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, cause);
 		}
@@ -1817,6 +1847,9 @@ class TripleStore implements Closeable {
 	 * the beginning after another growth.
 	 */
 	private void resizeAndReplay(long captureStart, boolean[] replayResults) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(new MapFullException());
+		}
 		if (!usesReplayJournal()) {
 			growForTransactionRetry(0L, new MapFullException());
 		}
@@ -1832,6 +1865,9 @@ class TripleStore implements Closeable {
 
 	private void resizeAndReplayAfterQuiescence(long captureStart, boolean[] replayResults,
 			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
 		if (!autoGrow) {
 			throw new IOException("LMDB map growth is disabled");
 		}
@@ -1954,6 +1990,9 @@ class TripleStore implements Closeable {
 	}
 
 	private void requestMapGrowth(long requiredBytes, boolean exhausted) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
 		LmdbSailStore.MapGrowthRequestListener listener = mapGrowthRequestListener;
 		if (listener != null) {
 			long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
@@ -2511,6 +2550,9 @@ class TripleStore implements Closeable {
 						removeQuadDirect(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
 								quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
 					} catch (MapFullException mapFull) {
+						if (isFrozenReplay()) {
+							throw frozenCapacity(mapFull);
+						}
 						mapFullQuad = quad.clone();
 						retryScan = true;
 						break;
@@ -2583,6 +2625,9 @@ class TripleStore implements Closeable {
 			try {
 				removed = removeQuadDirect(quad[0], quad[1], quad[2], quad[3], explicit);
 			} catch (MapFullException capacity) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(capacity);
+				}
 				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, capacity);
 			}
 			if (!removed) {
@@ -2753,6 +2798,9 @@ class TripleStore implements Closeable {
 							}
 							if (result != MDB_MAP_FULL || !autoGrow) {
 								E(result);
+							}
+							if (isFrozenReplay()) {
+								throw frozenCapacity(new MapFullException());
 							}
 							if (replayDecision != null && replayDecision.checkpoint) {
 								throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);

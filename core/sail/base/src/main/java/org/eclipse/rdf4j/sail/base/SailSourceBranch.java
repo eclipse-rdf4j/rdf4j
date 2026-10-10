@@ -1939,6 +1939,42 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			return streamingPreflight;
 		}
 
+		@Override
+		public FrozenFlush.Context context() {
+			if (context == null) {
+				enlist(new FrozenFlush.Context());
+			}
+			return context;
+		}
+
+		@Override
+		public SailSource replayTarget() {
+			return backingSource;
+		}
+
+		@Override
+		public boolean hasStatementWork() {
+			for (Changeset change : captured) {
+				if (change.isStatementCleared() || change.hasApproved() || change.hasDeprecated()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		@Override
+		public boolean acceptsReplayOwner(Object owner) {
+			if (writePreflightOwner != null && writePreflightOwner != owner) {
+				return false;
+			}
+			for (WriteIntent intent : intents) {
+				if (intent.owner() != owner) {
+					return false;
+				}
+			}
+			return true;
+		}
+
 		private void appendStaged(List<Changeset> additions) {
 			models.ensureCapacity(Math.addExact(models.size(), additions.size()));
 			captured.ensureCapacity(Math.addExact(captured.size(), additions.size()));

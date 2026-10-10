@@ -497,7 +497,9 @@ class CancellableOperationCoordinatorTest {
 		CountDownLatch releaseRemote = new CountDownLatch(1);
 		CountDownLatch remoteFinished = new CountDownLatch(1);
 		AtomicInteger forwarded = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
 		CancellableOperationCoordinator.Handle handle = coordinator.register("request-async", () -> {
+			remoteWorker.set(Thread.currentThread());
 			forwarded.incrementAndGet();
 			remoteStarted.countDown();
 			try {
@@ -516,6 +518,10 @@ class CancellableOperationCoordinatorTest {
 
 		releaseRemote.countDown();
 		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
+		Thread callbackWorker = remoteWorker.get();
+		assertThat(callbackWorker).isNotNull();
+		callbackWorker.join(TimeUnit.SECONDS.toMillis(5));
+		assertThat(callbackWorker.isAlive()).isFalse();
 		assertThat(forwarded).hasValue(1);
 		assertThat(coordinator.cancel("request-async")).isFalse();
 	}

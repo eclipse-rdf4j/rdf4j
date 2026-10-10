@@ -42,6 +42,25 @@ interface FrozenFlush {
 	}
 
 	interface Batch extends SailSource.FlushBatch {
+		default Context context() {
+			throw new UnsupportedOperationException("This batch does not expose retained replay coverage");
+		}
+
+		default SailSource replayTarget() {
+			return null;
+		}
+
+		default boolean hasStatementWork() {
+			return false;
+		}
+
+		default boolean acceptsReplayOwner(Object owner) {
+			return true;
+		}
+
+		default void releaseAttemptCleanup() {
+		}
+
 		default StreamingWritePreflight preflight() {
 			return null;
 		}
@@ -132,6 +151,14 @@ interface FrozenFlush {
 		}
 
 		void flush(Batch root) {
+			run(root, true);
+		}
+
+		void stage(Batch root) {
+			run(root, false);
+		}
+
+		private void run(Batch root, boolean apply) {
 			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 				boolean needsStaging;
 				synchronized (this) {
@@ -167,11 +194,13 @@ interface FrozenFlush {
 							staged = true;
 							toApply = List.copyOf(terminals);
 						}
-						for (Batch terminal : toApply) {
-							terminal.apply();
-						}
-						synchronized (this) {
-							flushed = true;
+						if (apply) {
+							for (Batch terminal : toApply) {
+								terminal.apply();
+							}
+							synchronized (this) {
+								flushed = true;
+							}
 						}
 					} catch (RuntimeException | Error failure) {
 						if (streaming != null) {
@@ -183,6 +212,51 @@ interface FrozenFlush {
 					synchronized (this) {
 						running = false;
 					}
+				}
+			}
+		}
+
+		synchronized void validateReplayCoverage() {
+			checkActive();
+			if (!staged || stagingFailure != null) {
+				throw new IllegalStateException("The complete retained graph has not been staged", stagingFailure);
+			}
+		}
+
+		List<Batch> replayTerminals() {
+			synchronized (this) {
+				validateReplayCoverage();
+				return List.copyOf(terminals);
+			}
+		}
+
+		boolean acceptsReplayOwner(Object requestedOwner) {
+			List<Batch> retained;
+			synchronized (this) {
+				validateReplayCoverage();
+				retained = List.copyOf(batches);
+			}
+			for (Batch batch : retained) {
+				if (!batch.acceptsReplayOwner(requestedOwner)) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		Object replayOwner() {
+			return owner;
+		}
+
+		void releaseAttemptCleanup() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				List<Batch> retained;
+				synchronized (this) {
+					validateReplayCoverage();
+					retained = List.copyOf(batches);
+				}
+				for (Batch batch : retained) {
+					batch.releaseAttemptCleanup();
 				}
 			}
 		}

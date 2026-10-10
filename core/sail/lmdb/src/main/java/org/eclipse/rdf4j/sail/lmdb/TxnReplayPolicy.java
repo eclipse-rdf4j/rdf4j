@@ -153,6 +153,8 @@ final class TxnReplayPolicy {
 		/** NONE retains a bounded native chunk in memory instead of an atomic transaction journal. */
 		final boolean checkpoint;
 		final boolean observe;
+		/** Frozen statement replay leaves capacity recovery to the publication coordinator. */
+		final boolean frozenReplay;
 		final long tripleHighWater;
 		final long valueHighWater;
 		final long valueMutationGeneration;
@@ -161,22 +163,30 @@ final class TxnReplayPolicy {
 
 		Decision(TxnReplayPolicy policy, boolean track, boolean observe, long tripleHighWater, long valueHighWater,
 				long valueMutationGeneration) {
-			this(policy, track, false, observe, tripleHighWater, valueHighWater, valueMutationGeneration);
+			this(policy, track, false, observe, false, tripleHighWater, valueHighWater, valueMutationGeneration);
 		}
 
 		private Decision(TxnReplayPolicy policy, boolean track, boolean checkpoint, boolean observe,
+				boolean frozenReplay,
 				long tripleHighWater, long valueHighWater, long valueMutationGeneration) {
 			this.policy = policy;
 			this.track = track;
 			this.checkpoint = checkpoint;
 			this.observe = observe;
+			this.frozenReplay = frozenReplay;
 			this.tripleHighWater = tripleHighWater;
 			this.valueHighWater = valueHighWater;
 			this.valueMutationGeneration = valueMutationGeneration;
 		}
 
 		Decision forNativeCheckpoints() {
-			return new Decision(policy, false, true, false, tripleHighWater, valueHighWater, valueMutationGeneration);
+			return new Decision(policy, false, true, false, false, tripleHighWater, valueHighWater,
+					valueMutationGeneration);
+		}
+
+		Decision forFrozenReplay() {
+			return new Decision(policy, false, false, false, true, tripleHighWater, valueHighWater,
+					valueMutationGeneration);
 		}
 
 		void check() throws LmdbTransactionRetryException {
