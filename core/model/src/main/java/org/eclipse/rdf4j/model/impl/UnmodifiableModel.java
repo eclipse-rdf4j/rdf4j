@@ -82,7 +82,11 @@ class UnmodifiableModel extends AbstractModel {
 
 	@Override
 	public Iterator<Statement> iterator() {
-		return Collections.unmodifiableSet(model).iterator();
+		Iterator<Statement> iterator = model.iterator();
+		if (iterator instanceof AutoCloseable closeable) {
+			return new CloseableUnmodifiableIterator(iterator, closeable);
+		}
+		return new UnmodifiableIterator(iterator);
 	}
 
 	@Override
@@ -94,6 +98,48 @@ class UnmodifiableModel extends AbstractModel {
 	public void removeTermIteration(Iterator<Statement> iter, Resource subj, IRI pred, Value obj,
 			Resource... contexts) {
 		throw new UnsupportedOperationException();
+	}
+
+	private static class UnmodifiableIterator implements Iterator<Statement> {
+		private final Iterator<Statement> delegate;
+
+		private UnmodifiableIterator(Iterator<Statement> delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public boolean hasNext() {
+			return delegate.hasNext();
+		}
+
+		@Override
+		public Statement next() {
+			return delegate.next();
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+	}
+
+	private static final class CloseableUnmodifiableIterator extends UnmodifiableIterator implements AutoCloseable {
+		private final AutoCloseable closeable;
+		private boolean closed;
+
+		private CloseableUnmodifiableIterator(Iterator<Statement> delegate, AutoCloseable closeable) {
+			super(delegate);
+			this.closeable = closeable;
+		}
+
+		@Override
+		public void close() throws Exception {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			closeable.close();
+		}
 	}
 
 }

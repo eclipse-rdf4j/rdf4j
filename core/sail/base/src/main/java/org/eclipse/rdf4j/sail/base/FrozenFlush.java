@@ -156,51 +156,54 @@ interface FrozenFlush {
 		}
 
 		void release(boolean acknowledged) {
-			List<Batch> reverse;
-			List<SailSink> carriers;
-			synchronized (this) {
-				if (released && !acknowledged) {
-					return;
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				List<Batch> reverse;
+				List<SailSink> carriers;
+				synchronized (this) {
+					if (released && !acknowledged) {
+						return;
+					}
+					checkActive();
+					if (acknowledged && (!flushed || stagingFailure != null)) {
+						throw new IllegalStateException("An unapplied or failed batch cannot be acknowledged");
+					}
+					// Commit acknowledgement is irrevocable even if any subsequent resource cleanup throws.
+					released = true;
+					reverse = new ArrayList<>(batches);
+					carriers = List.copyOf(validationCarriers);
 				}
-				checkActive();
-				if (acknowledged && (!flushed || stagingFailure != null)) {
-					throw new IllegalStateException("An unapplied or failed batch cannot be acknowledged");
-				}
-				// Commit acknowledgement is irrevocable even if any subsequent resource cleanup throws.
-				released = true;
-				reverse = new ArrayList<>(batches);
-				carriers = List.copyOf(validationCarriers);
-			}
-			Throwable failure = null;
-			// Include discovered ancestors whose staging failed before a batch could be registered for them.
-			for (SailSink carrier : carriers) {
-				try {
-					carrier.releasePrepared();
-				} catch (RuntimeException | Error cleanupFailure) {
-					if (failure == null) {
-						failure = cleanupFailure;
-					} else if (failure != cleanupFailure) {
-						failure.addSuppressed(cleanupFailure);
+				Throwable failure = null;
+				// Include discovered ancestors whose staging failed before a batch could be registered for them.
+				for (SailSink carrier : carriers) {
+					try {
+						carrier.releasePrepared();
+					} catch (RuntimeException | Error cleanupFailure) {
+						if (failure == null) {
+							failure = cleanupFailure;
+						} else if (failure != cleanupFailure) {
+							failure.addSuppressed(cleanupFailure);
+						}
 					}
 				}
-			}
-			// Delegate cleanup may need branch locks also used by a reader. Never retain the graph monitor here.
-			for (int i = reverse.size() - 1; i >= 0; i--) {
-				try {
-					reverse.get(i).releaseLocal(acknowledged);
-				} catch (RuntimeException | Error cleanupFailure) {
-					if (failure == null) {
-						failure = cleanupFailure;
-					} else if (failure != cleanupFailure) {
-						failure.addSuppressed(cleanupFailure);
+				// Delegate cleanup may need branch locks also used by a reader. Never retain the graph monitor here.
+				for (int i = reverse.size() - 1; i >= 0; i--) {
+					try {
+						reverse.get(i).releaseLocal(acknowledged);
+					} catch (RuntimeException | Error cleanupFailure) {
+						if (failure == null) {
+							failure = cleanupFailure;
+						} else if (failure != cleanupFailure) {
+							failure.addSuppressed(cleanupFailure);
+						}
 					}
 				}
-			}
-			if (failure instanceof Error error) {
-				throw error;
-			}
-			if (failure instanceof RuntimeException runtime) {
-				throw runtime;
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				if (failure instanceof RuntimeException runtime) {
+					throw runtime;
+				}
+
 			}
 		}
 

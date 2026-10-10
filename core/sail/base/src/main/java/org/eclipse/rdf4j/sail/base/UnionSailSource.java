@@ -36,6 +36,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	 */
 	private final SailSource additional;
 	private SailClosable preparedWrite;
+	private SailModelCleanup.Scope preparedCleanup;
 	private UnionFlushBatch frozenBatch;
 
 	/**
@@ -57,46 +58,52 @@ class UnionSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public void close() throws SailException {
-		Throwable failure = null;
-		if (frozenBatch != null) {
-			try {
-				frozenBatch.close();
-			} catch (RuntimeException | Error closeFailure) {
-				failure = closeFailure;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			Throwable failure = null;
+			if (frozenBatch != null) {
+				try {
+					frozenBatch.close();
+				} catch (RuntimeException | Error closeFailure) {
+					failure = closeFailure;
+				}
 			}
-		}
-		try {
-			primary.close();
-		} catch (RuntimeException | Error closeFailure) {
-			failure = addFailure(failure, closeFailure);
-		}
-		try {
-			additional.close();
-		} catch (RuntimeException | Error closeFailure) {
-			failure = addFailure(failure, closeFailure);
-		}
-		failure = releasePreparedWrite(failure);
-		if (failure != null) {
-			rethrow(failure);
+			try {
+				primary.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+			try {
+				additional.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+			failure = releasePreparedWrite(failure);
+			if (failure != null) {
+				rethrow(failure);
+			}
+
 		}
 	}
 
 	@Override
 	public void abandonUnobserved() throws SailException {
-		Throwable failure = null;
-		try {
-			primary.abandonUnobserved();
-		} catch (RuntimeException | Error abandonFailure) {
-			failure = abandonFailure;
-		}
-		try {
-			additional.abandonUnobserved();
-		} catch (RuntimeException | Error abandonFailure) {
-			failure = addFailure(failure, abandonFailure);
-		}
-		failure = releasePreparedWrite(failure);
-		if (failure != null) {
-			rethrow(failure);
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			Throwable failure = null;
+			try {
+				primary.abandonUnobserved();
+			} catch (RuntimeException | Error abandonFailure) {
+				failure = abandonFailure;
+			}
+			try {
+				additional.abandonUnobserved();
+			} catch (RuntimeException | Error abandonFailure) {
+				failure = addFailure(failure, abandonFailure);
+			}
+			failure = releasePreparedWrite(failure);
+			if (failure != null) {
+				rethrow(failure);
+			}
+
 		}
 	}
 
@@ -284,68 +291,77 @@ class UnionSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public void prepare() throws SailException {
-		preflightWrite();
-		if (preparedWrite == null && hasPendingWriteChanges()) {
-			preparedWrite = beginPreparedWrite();
-		}
-		try (SailClosable publication = beginPublication()) {
-			try {
-				primary.prepare();
-				additional.prepare();
-			} catch (RuntimeException | Error prepareFailure) {
-				SailSource.failPublication(publication);
-				throw prepareFailure;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			preflightWrite();
+			if (preparedWrite == null && hasPendingWriteChanges()) {
+				retainPreparedWrite();
 			}
-		} catch (RuntimeException | Error prepareFailure) {
-			Throwable failure = releasePreparedWrite(prepareFailure);
-			rethrow(failure);
+			try (SailClosable publication = beginPublication()) {
+				try {
+					primary.prepare();
+					additional.prepare();
+				} catch (RuntimeException | Error prepareFailure) {
+					SailSource.failPublication(publication);
+					throw prepareFailure;
+				}
+			} catch (RuntimeException | Error prepareFailure) {
+				Throwable failure = releasePreparedWrite(prepareFailure);
+				rethrow(failure);
+			}
+
 		}
 	}
 
 	@Override
 	public void flush() throws SailException {
-		if (frozenBatch != null) {
-			throw new IllegalStateException("Use the retained batch while this union is frozen");
-		}
-		if (preparedWrite == null && hasPendingWriteChanges()) {
-			preparedWrite = beginPreparedWrite();
-		}
-		Throwable failure = null;
-		try (SailClosable publication = beginPublication()) {
-			try {
-				primary.flush();
-				additional.flush();
-			} catch (RuntimeException | Error flushFailure) {
-				SailSource.failPublication(publication);
-				throw flushFailure;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			if (frozenBatch != null) {
+				throw new IllegalStateException("Use the retained batch while this union is frozen");
 			}
-		} catch (RuntimeException | Error flushFailure) {
-			failure = flushFailure;
-		}
-		failure = releasePreparedWrite(failure);
-		if (failure != null) {
-			rethrow(failure);
+			if (preparedWrite == null && hasPendingWriteChanges()) {
+				retainPreparedWrite();
+			}
+			Throwable failure = null;
+			try (SailClosable publication = beginPublication()) {
+				try {
+					primary.flush();
+					additional.flush();
+				} catch (RuntimeException | Error flushFailure) {
+					SailSource.failPublication(publication);
+					throw flushFailure;
+				}
+			} catch (RuntimeException | Error flushFailure) {
+				failure = flushFailure;
+			}
+			failure = releasePreparedWrite(failure);
+			if (failure != null) {
+				rethrow(failure);
+			}
+
 		}
 	}
 
 	@Override
 	public FlushBatch freezeForFlush() {
-		if (frozenBatch != null) {
-			throw new IllegalStateException("This union is already frozen");
-		}
-		FlushBatch first = primary.freezeForFlush();
-		try {
-			FlushBatch second = additional.freezeForFlush();
-			if (!(first instanceof FrozenFlush.Batch retainedFirst)
-					|| !(second instanceof FrozenFlush.Batch retainedSecond)) {
-				second.close();
-				throw new UnsupportedOperationException("Composite freezing requires coordinated child staging");
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			if (frozenBatch != null) {
+				throw new IllegalStateException("This union is already frozen");
 			}
-			frozenBatch = new UnionFlushBatch(retainedFirst, retainedSecond);
-			return frozenBatch;
-		} catch (RuntimeException | Error failure) {
-			closeResource(failure, first);
-			throw failure;
+			FlushBatch first = primary.freezeForFlush();
+			try {
+				FlushBatch second = additional.freezeForFlush();
+				if (!(first instanceof FrozenFlush.Batch retainedFirst)
+						|| !(second instanceof FrozenFlush.Batch retainedSecond)) {
+					second.close();
+					throw new UnsupportedOperationException("Composite freezing requires coordinated child staging");
+				}
+				frozenBatch = new UnionFlushBatch(retainedFirst, retainedSecond);
+				return frozenBatch;
+			} catch (RuntimeException | Error failure) {
+				closeResource(failure, first);
+				throw failure;
+			}
+
 		}
 	}
 
@@ -424,7 +440,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 			stagingStarted = true;
 			// Observation-only validation needs the same retained writer ownership as a statement batch.
 			if (preparedWrite == null) {
-				preparedWrite = beginPreparedWrite();
+				retainPreparedWrite();
 			}
 			first.stage(requested);
 			second.stage(requested);
@@ -583,10 +599,28 @@ class UnionSailSource implements SailSource, FrozenFlush {
 		throw (Error) failure;
 	}
 
+	private void retainPreparedWrite() {
+		SailModelCleanup.Scope cleanup = SailModelCleanup.enter();
+		try {
+			preparedWrite = beginPreparedWrite();
+			if (preparedWrite == null) {
+				cleanup.close();
+			} else {
+				preparedCleanup = cleanup;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeResource(failure, cleanup);
+			throw failure;
+		}
+	}
+
 	private Throwable releasePreparedWrite(Throwable failure) {
 		SailClosable toClose = preparedWrite;
 		preparedWrite = null;
-		return closeResource(failure, toClose);
+		SailModelCleanup.Scope cleanup = preparedCleanup;
+		preparedCleanup = null;
+		failure = closeResource(failure, toClose);
+		return closeResource(failure, cleanup);
 	}
 
 	private static Throwable addFailure(Throwable failure, Throwable later) {

@@ -12,10 +12,13 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -28,9 +31,11 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConflictException;
+import org.eclipse.rdf4j.sail.base.MemoryAutoFlushBranchFactory;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
@@ -403,6 +408,110 @@ class MemoryFrozenFlushTest {
 		}
 	}
 
+	@Test
+	void closingSerializableDatasetRetainsItsLiveMemoryStatementCursor() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource backing = store.getExplicitSailSource();
+				SailSource branch = backing.fork()) {
+			Statement original = statement("live-cursor-original");
+			Statement competitor = statement("live-cursor-competitor");
+			publish(backing, original);
+
+			try (SailDataset dataset = branch.dataset(IsolationLevels.SERIALIZABLE)) {
+				try (CloseableIteration<? extends Statement> cursor = dataset.getStatements(null, null, null)) {
+					assertTrue(cursor.hasNext(), "the serializable cursor opens against the original Memory snapshot");
+					publish(backing, competitor);
+					assertTrue(contains(backing, competitor), "a fresh NONE view sees the competitor's publication");
+
+					dataset.close();
+					assertThrows(SailConflictException.class, branch::prepare,
+							"closing the dataset owner must retain its serializable observation until its cursor closes");
+					assertEquals(original, cursor.next(), "the open cursor still reads its original Memory snapshot");
+					assertFalse(cursor.hasNext(), "the open cursor does not advance to the competitor's Y");
+				}
+			}
+		}
+	}
+
+	@Test
+	void autoFlushWaitsForSerializableObservationBeforePublishingBufferedWrite() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource backing = store.getExplicitSailSource();
+				SailSource branch = MemoryAutoFlushBranchFactory.create(backing)) {
+			Statement observed = statement("autoflush-negative-observation");
+			Statement buffered = statement("autoflush-buffered-write");
+			try (SailDataset dataset = branch.dataset(IsolationLevels.SERIALIZABLE)) {
+				try (CloseableIteration<? extends Statement> query = dataset.getStatements(observed.getSubject(),
+						observed.getPredicate(), observed.getObject(), observed.getContext())) {
+					assertFalse(query.hasNext(), "the pinned SERIALIZABLE dataset observes Y absent");
+				}
+
+				try (SailSink sink = branch.sink(IsolationLevels.NONE)) {
+					sink.approve(buffered);
+					sink.flush();
+				}
+				assertFalse(contains(backing, buffered), "an open observer prevents autoFlush from publishing X");
+
+				publish(backing, observed);
+				assertTrue(contains(backing, observed), "a fresh NONE view sees the competing Y");
+				assertThrows(SailConflictException.class, dataset::close,
+						"closing the observer validates its original boundary before autoFlush publishes X");
+				assertFalse(contains(backing, buffered), "the conflicting autoFlush leaves X unpublished");
+				assertTrue(contains(backing, observed), "the competing Y remains published");
+			}
+		}
+	}
+
+	@Test
+	void partialMemoryTripleCursorRetainsItsSnapshotAcrossDatasetCloseAndAcknowledgement() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource backing = store.getExplicitSailSource();
+				SailSource branch = backing.fork()) {
+			TripleTerm first = triple("cursor-triple-one");
+			TripleTerm second = triple("cursor-triple-two");
+			TripleTerm third = triple("cursor-triple-three");
+			Statement firstRow = tripleRow("cursor-row-one", first);
+			Statement secondRow = tripleRow("cursor-row-two", second);
+			Statement thirdRow = tripleRow("cursor-row-three", third);
+			publish(backing, firstRow);
+			publish(backing, secondRow);
+			publish(backing, thirdRow);
+
+			try (SailSink sink = branch.sink(IsolationLevels.NONE)) {
+				sink.deprecate(firstRow);
+				sink.flush();
+			}
+
+			try (SailDataset dataset = branch.dataset(IsolationLevels.SNAPSHOT)) {
+				try (CloseableIteration<? extends TripleTerm> cursor = dataset.getTriples(null, null, null)) {
+					assertTrue(cursor.hasNext(), "the real Memory triple iterator exposes the retained T2/T3 rows");
+					TripleTerm consumed = cursor.next();
+					assertTrue(Set.of(second, third).contains(consumed),
+							"the partial cursor consumes one retained triple");
+					dataset.close();
+
+					SailSource.FlushBatch batch = branch.freezeForFlush();
+					try {
+						batch.flush();
+						batch.unFreezeAndDiscardFlushed();
+					} finally {
+						batch.close();
+					}
+
+					Set<TripleTerm> remainingSnapshot = new HashSet<>();
+					remainingSnapshot.add(consumed);
+					while (cursor.hasNext()) {
+						remainingSnapshot.add(cursor.next());
+					}
+					assertEquals(Set.of(second, third), remainingSnapshot,
+							"the open triple cursor finishes against its original T2/T3 snapshot after ACK");
+				}
+			}
+			assertEquals(Set.of(second, third), readTriples(backing),
+					"the acknowledged Memory source retains only the non-deprecated RDF 1.2 triples");
+		}
+	}
+
 	private static void flushAndAcknowledge(SailSource branch) {
 		SailSource.FlushBatch batch = branch.freezeForFlush();
 		try {
@@ -441,5 +550,28 @@ class MemoryFrozenFlushTest {
 		IRI predicate = VALUE_FACTORY.createIRI("urn:memory:frozen:predicate");
 		Value object = VALUE_FACTORY.createLiteral(value);
 		return VALUE_FACTORY.createStatement(subject, predicate, object);
+	}
+
+	private static TripleTerm triple(String value) {
+		Resource subject = VALUE_FACTORY.createIRI("urn:memory:frozen:triple:" + value);
+		IRI predicate = VALUE_FACTORY.createIRI("urn:memory:frozen:triple-predicate");
+		return VALUE_FACTORY.createTripleTerm(subject, predicate, VALUE_FACTORY.createLiteral(value));
+	}
+
+	private static Statement tripleRow(String row, TripleTerm triple) {
+		Resource subject = VALUE_FACTORY.createIRI("urn:memory:frozen:triple-row:" + row);
+		IRI predicate = VALUE_FACTORY.createIRI("urn:memory:frozen:triple-row-predicate");
+		return VALUE_FACTORY.createStatement(subject, predicate, triple);
+	}
+
+	private static Set<TripleTerm> readTriples(SailSource source) throws Exception {
+		try (SailDataset dataset = source.dataset(IsolationLevels.NONE);
+				CloseableIteration<? extends TripleTerm> triples = dataset.getTriples(null, null, null)) {
+			Set<TripleTerm> result = new HashSet<>();
+			while (triples.hasNext()) {
+				result.add(triples.next());
+			}
+			return result;
+		}
 	}
 }

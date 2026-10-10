@@ -17,17 +17,22 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.ConcurrentModificationException;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.concurrent.locks.StampedLock;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -42,6 +47,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -60,7 +66,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile ModelWriteState modelWriteState = new ModelWriteState();
 	private volatile boolean transferred;
 	private volatile List<ModelWriteState> inheritedMutationBarriers = List.of();
-	private final AtomicInteger historyOwners = new AtomicInteger();
+	private final Object publicationIdentity = new Object();
+	private boolean readerView;
 	AdderBasedReadWriteLock refBacksReadWriteLock = new AdderBasedReadWriteLock();
 	Semaphore prependLock = new Semaphore(1);
 
@@ -74,7 +81,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * {@link Changeset}s that have been {@link #flush()}ed to the same {@link SailSourceBranch}, since this object was
 	 * {@link #flush()}ed.
 	 */
-	private Set<Changeset> prepend;
+	private Map<Object, HistoryLease> prepend;
 
 	/**
 	 * When in {@link IsolationLevels#SERIALIZABLE} this contains all the observed {@link StatementPattern}s that were
@@ -83,53 +90,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile Set<SimpleStatementPattern> observed;
 	private long observationRevision;
 
-	/**
-	 * Statements that have been added as part of a transaction, but has not yet been committed.
-	 * <p>
-	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
-	 */
-	private volatile Model approved;
-	private volatile boolean approvedEmpty = true;
-
-	/**
-	 * Explicit statements that have been removed as part of a transaction, but have not yet been committed.
-	 * <p>
-	 * DO NOT EXPOSE THE MODEL OUTSIDE OF THIS CLASS BECAUSE IT IS NOT THREAD-SAFE
-	 */
-	private volatile Model deprecated;
-	private volatile boolean deprecatedEmpty = true;
-
-	/**
-	 * Set of contexts of the {@link #approved} statements.
-	 */
-	private Set<Resource> approvedContexts;
-
-	/**
-	 * Set of contexts that were passed to {@link #clear(Resource...)}.
-	 */
-	private volatile Set<Resource> deprecatedContexts;
-
-	/**
-	 * Additional namespaces added.
-	 */
-	private Map<String, String> addedNamespaces;
-
-	/**
-	 * Namespace prefixes that were removed.
-	 */
-	private Set<String> removedPrefixes;
-
-	/**
-	 * If all namespaces were removed, other than {@link #addedNamespaces}.
-	 */
-	private volatile boolean namespaceCleared;
-
-	/**
-	 * If all statements were removed, other than {@link #approved}.
-	 */
-	private volatile boolean statementCleared;
-
-	private boolean closed;
+	private volatile boolean closed;
 	private IsolationLevel sinkIsolationLevel = IsolationLevels.NONE;
 
 	/** Whether the backing source consumes incremental buffered-write estimates. */
@@ -253,57 +214,59 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private static boolean hasNamespaceChanges(Changeset changeset) {
-		Map<String, String> addedNamespaces = changeset.getAddedNamespaces();
-		Set<String> removedPrefixes = changeset.getRemovedPrefixes();
-		return changeset.namespaceCleared || (addedNamespaces != null && !addedNamespaces.isEmpty())
-				|| (removedPrefixes != null && !removedPrefixes.isEmpty());
+		Map<String, String> additions = changeset.getAddedNamespaces();
+		Set<String> removals = changeset.getRemovedPrefixes();
+		return changeset.modelWriteState.namespaceCleared || (additions != null && !additions.isEmpty())
+				|| (removals != null && !removals.isEmpty());
 	}
 
 	private static boolean hasStatementChanges(Changeset changeset) {
-		Set<Resource> deprecatedContexts = changeset.getDeprecatedContexts();
-		return changeset.statementCleared || changeset.hasApproved() || changeset.hasDeprecated()
-				|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+		Set<Resource> cleared = changeset.getDeprecatedContexts();
+		return changeset.modelWriteState.statementCleared || changeset.hasApproved() || changeset.hasDeprecated()
+				|| (cleared != null && !cleared.isEmpty());
 	}
 
 	@Override
 	public void close() throws SailException {
-		Set<Changeset> history;
-		ModelWriteState writeLock = acquireModelWriteLock();
-		try {
-			closed = true;
-			refbacks = null;
-			prependLock.acquireUninterruptibly();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			Map<Object, HistoryLease> history;
+			ModelWriteState state = acquireModelWriteLock();
 			try {
-				history = prepend;
-				prepend = null;
+				if (closed) {
+					return;
+				}
+				closed = true;
+				refbacks = null;
+				observed = null;
+				prependLock.acquireUninterruptibly();
+				try {
+					history = prepend;
+					prepend = null;
+				} finally {
+					prependLock.release();
+				}
 			} finally {
-				prependLock.release();
+				state.unlockWriter();
 			}
-			observed = null;
-			approved = null;
-			deprecated = null;
-			approvedContexts = null;
-			deprecatedContexts = null;
-			addedNamespaces = null;
-			removedPrefixes = null;
-		} finally {
-			writeLock.unlockWriter();
-		}
-		if (history != null) {
-			for (Changeset retained : history) {
-				retained.releaseHistoryOwner();
+			if (readerView) {
+				state.readerOwners.decrementAndGet();
+			}
+			state.release();
+			if (history != null) {
+				for (HistoryLease retained : history.values()) {
+					retained.close();
+				}
 			}
 		}
 	}
 
-	private void releaseHistoryOwner() {
-		if (historyOwners.decrementAndGet() < 0) {
-			throw new IllegalStateException("Changeset history ownership underflow");
-		}
+	boolean sharesModelWith(Changeset other) {
+		return modelWriteState == other.modelWriteState;
 	}
 
 	boolean isRetained() {
-		return historyOwners.get() != 0 || isRefback();
+		ModelWriteState state = modelWriteState;
+		return state.historyOwners.get() != 0 || state.readerOwners.get() != 0 || isRefback();
 	}
 
 	@Override
@@ -324,14 +287,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		if (observations == null) {
 			return;
 		}
-		List<Changeset> history;
-		prependLock.acquireUninterruptibly();
-		try {
-			history = prepend == null ? List.of() : List.copyOf(prepend);
-		} finally {
-			prependLock.release();
-		}
-		if (!history.isEmpty()) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter(); HistorySnapshot history = borrowHistory()) {
 			for (SimpleStatementPattern p : observations) {
 				Resource subj = p.subject();
 				IRI pred = p.predicate();
@@ -343,9 +299,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				} else {
 					contexts = new Resource[] { context };
 				}
-				for (Changeset changeset : history) {
-					if (changeset.hasApproved(subj, pred, obj, contexts)
-							|| (changeset.hasDeprecated(subj, pred, obj, contexts))) {
+				for (HistoryLease preceding : history.leases) {
+					if (preceding.matches(subj, pred, obj, contexts)) {
 						throw new SailConflictException("Observed State has Changed");
 					}
 				}
@@ -357,10 +312,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if (approved == null || approvedEmpty) {
-				return false;
-			}
-			return approved.contains(subj, pred, obj, contexts);
+			return hasApproved(readLock, subj, pred, obj, contexts);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -371,18 +323,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if ((deprecated == null || deprecatedEmpty) && deprecatedContexts == null) {
-				return false;
-			}
-			if (deprecatedContexts != null) {
-				for (Resource context : contexts) {
-					if (deprecatedContexts.contains(context)) {
-						return true;
-					}
-				}
-			}
-
-			return deprecated.contains(subj, pred, obj, contexts);
+			return hasDeprecated(readLock, subj, pred, obj, contexts);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -428,29 +369,159 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	public void prepend(Changeset changeset) {
 		assert !closed;
-
-		prependLock.acquireUninterruptibly();
-
-		try {
-			if (prepend == null) {
-				prepend = Collections.newSetFromMap(new IdentityHashMap<>());
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState state = changeset.acquireModelReadLock();
+			HistoryLease lease;
+			try {
+				lease = new HistoryLease(changeset.publicationIdentity, state);
+			} finally {
+				state.unlockReader();
 			}
-			if (prepend.add(changeset)) {
-				changeset.historyOwners.incrementAndGet();
-			}
-		} finally {
-			prependLock.release();
+			adoptHistory(lease);
 		}
 	}
 
 	void removePrepend(Changeset changeset) {
-		prependLock.acquireUninterruptibly();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			HistoryLease removed;
+			prependLock.acquireUninterruptibly();
+			try {
+				removed = prepend == null ? null : prepend.remove(changeset.publicationIdentity);
+			} finally {
+				prependLock.release();
+			}
+			if (removed != null) {
+				removed.close();
+			}
+		}
+	}
+
+	/** Takes one independently releasable handle; duplicate publication identities do not extend ownership. */
+	private void adoptHistory(HistoryLease lease) {
+		boolean adopted = false;
 		try {
-			if (prepend != null && prepend.remove(changeset)) {
-				changeset.releaseHistoryOwner();
+			prependLock.acquireUninterruptibly();
+			try {
+				if (closed) {
+					throw new IllegalStateException("A closed changeset cannot retain publication history");
+				}
+				if (prepend == null) {
+					prepend = new IdentityHashMap<>();
+				}
+				if (!prepend.containsKey(lease.identity)) {
+					prepend.put(lease.identity, lease);
+					adopted = true;
+				}
+			} finally {
+				prependLock.release();
 			}
 		} finally {
-			prependLock.release();
+			if (!adopted) {
+				lease.close();
+			}
+		}
+	}
+
+	/** Borrow while the map owns its handles; closing a carrier after unlock cannot invalidate a traversal. */
+	private HistorySnapshot borrowHistory() {
+		HistorySnapshot snapshot = new HistorySnapshot();
+		try {
+			prependLock.acquireUninterruptibly();
+			try {
+				if (prepend != null) {
+					for (HistoryLease lease : prepend.values()) {
+						HistoryLease borrowed = lease.retain();
+						try {
+							snapshot.leases.add(borrowed);
+						} catch (RuntimeException | Error failure) {
+							borrowed.close();
+							throw failure;
+						}
+					}
+				}
+			} finally {
+				prependLock.release();
+			}
+			return snapshot;
+		} catch (RuntimeException | Error failure) {
+			snapshot.close();
+			throw failure;
+		}
+	}
+
+	private static boolean hasApproved(ModelWriteState state, Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+		return state.approved != null && !state.approvedEmpty && state.approved.contains(subj, pred, obj, contexts);
+	}
+
+	private static boolean hasDeprecated(ModelWriteState state, Resource subj, IRI pred, Value obj,
+			Resource[] contexts) {
+		if (state.statementCleared) {
+			return true;
+		}
+		if (state.deprecatedContexts != null && !state.deprecatedContexts.isEmpty()) {
+			if (contexts == null) {
+				if (state.deprecatedContexts.contains(null)) {
+					return true;
+				}
+			} else if (contexts.length == 0) {
+				return true;
+			} else {
+				for (Resource context : contexts) {
+					if (state.deprecatedContexts.contains(context)) {
+						return true;
+					}
+				}
+			}
+		}
+		return state.deprecated != null && !state.deprecatedEmpty
+				&& state.deprecated.contains(subj, pred, obj, contexts);
+	}
+
+	private static final class HistoryLease implements SailClosable {
+		private final Object identity;
+		private final ModelWriteState state;
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		private HistoryLease(Object identity, ModelWriteState state) {
+			this.identity = identity;
+			this.state = state;
+			state.retain();
+			state.historyOwners.incrementAndGet();
+		}
+
+		private HistoryLease retain() {
+			return new HistoryLease(identity, state);
+		}
+
+		private boolean matches(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			SailModelCleanup.beginLock();
+			state.readWriteLock.readLock();
+			try {
+				return hasApproved(state, subj, pred, obj, contexts) || hasDeprecated(state, subj, pred, obj, contexts);
+			} finally {
+				state.unlockReader();
+			}
+		}
+
+		@Override
+		public void close() {
+			if (closed.compareAndSet(false, true)) {
+				state.historyOwners.decrementAndGet();
+				state.release();
+			}
+		}
+	}
+
+	private static final class HistorySnapshot implements SailClosable {
+		private final List<HistoryLease> leases = new ArrayList<>();
+
+		@Override
+		public void close() {
+			for (HistoryLease lease : leases) {
+				lease.close();
+			}
+			leases.clear();
 		}
 	}
 
@@ -482,16 +553,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			destination.observeAll(observations);
 		}
 		if (destination instanceof Changeset changeset) {
-			List<Changeset> history;
-			prependLock.acquireUninterruptibly();
-			try {
-				history = prepend == null ? List.of() : List.copyOf(prepend);
-			} finally {
-				prependLock.release();
-			}
-			// Retain the replacement's history before the previous carrier can release any of it.
-			for (Changeset preceding : history) {
-				changeset.prepend(preceding);
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter(); HistorySnapshot history = borrowHistory()) {
+				for (HistoryLease preceding : history.leases) {
+					changeset.adoptHistory(preceding.retain());
+				}
 			}
 		}
 	}
@@ -508,14 +573,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean signalWritePreflight = false;
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
-			if (removedPrefixes == null) {
-				removedPrefixes = new HashSet<>();
+			if (modelWriteState.removedPrefixes == null) {
+				modelWriteState.removedPrefixes = new HashSet<>();
 			}
-			removedPrefixes.add(prefix);
-			if (addedNamespaces == null) {
-				addedNamespaces = new HashMap<>();
+			modelWriteState.removedPrefixes.add(prefix);
+			if (modelWriteState.addedNamespaces == null) {
+				modelWriteState.addedNamespaces = new HashMap<>();
 			}
-			addedNamespaces.put(prefix, name);
+			modelWriteState.addedNamespaces.put(prefix, name);
 			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
 			writeLock.unlockWriter();
@@ -534,13 +599,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean signalWritePreflight;
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
-			if (addedNamespaces != null) {
-				addedNamespaces.remove(prefix);
+			if (modelWriteState.addedNamespaces != null) {
+				modelWriteState.addedNamespaces.remove(prefix);
 			}
-			if (removedPrefixes == null) {
-				removedPrefixes = new HashSet<>();
+			if (modelWriteState.removedPrefixes == null) {
+				modelWriteState.removedPrefixes = new HashSet<>();
 			}
-			removedPrefixes.add(prefix);
+			modelWriteState.removedPrefixes.add(prefix);
 			signalWritePreflight = recordWriteIntent(
 					tracksWriteIntent() ? 64L + (long) prefix.length() * 4L : 0L, true);
 		} finally {
@@ -561,13 +626,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
-			namespaceCleared = true;
+			modelWriteState.namespaceCleared = true;
 
-			if (removedPrefixes != null) {
-				removedPrefixes.clear();
+			if (modelWriteState.removedPrefixes != null) {
+				modelWriteState.removedPrefixes.clear();
 			}
-			if (addedNamespaces != null) {
-				addedNamespaces.clear();
+			if (modelWriteState.addedNamespaces != null) {
+				modelWriteState.addedNamespaces.clear();
 			}
 			signalWritePreflight = recordWriteIntent(0L, true);
 		} finally {
@@ -648,31 +713,31 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
 			if (contexts != null && contexts.length == 0) {
-				statementCleared = true;
+				modelWriteState.statementCleared = true;
 
-				if (approved != null) {
-					approved.clear();
+				if (modelWriteState.approved != null) {
+					modelWriteState.approved.clear();
 				}
-				if (approvedContexts != null) {
-					approvedContexts.clear();
+				if (modelWriteState.approvedContexts != null) {
+					modelWriteState.approvedContexts.clear();
 				}
 			} else {
-				if (deprecatedContexts == null) {
-					deprecatedContexts = new HashSet<>();
+				if (modelWriteState.deprecatedContexts == null) {
+					modelWriteState.deprecatedContexts = new HashSet<>();
 				}
-				if (approved != null) {
-					approved.remove(null, null, null, contexts);
+				if (modelWriteState.approved != null) {
+					modelWriteState.approved.remove(null, null, null, contexts);
 				}
-				if (approvedContexts != null && contexts != null) {
+				if (modelWriteState.approvedContexts != null && contexts != null) {
 					for (Resource resource : contexts) {
-						approvedContexts.remove(resource);
+						modelWriteState.approvedContexts.remove(resource);
 					}
 				}
 				if (contexts != null) {
-					deprecatedContexts.addAll(Arrays.asList(contexts));
+					modelWriteState.deprecatedContexts.addAll(Arrays.asList(contexts));
 				}
 			}
-			approvedEmpty = approved == null || approved.isEmpty();
+			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
 			signalWritePreflight = recordWriteIntent(0L, true);
 		} finally {
 			writeLock.unlockWriter();
@@ -694,20 +759,21 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
 
-			if (deprecated != null) {
-				deprecated.remove(statement);
-				deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			if (modelWriteState.deprecated != null) {
+				modelWriteState.deprecated.remove(statement);
+				modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+						|| modelWriteState.deprecated.isEmpty();
 			}
-			if (approved == null) {
-				approved = createEmptyModel();
+			if (modelWriteState.approved == null) {
+				modelWriteState.approved = createEmptyModel();
 			}
-			approved.add(statement);
-			approvedEmpty = approved == null || approved.isEmpty();
+			modelWriteState.approved.add(statement);
+			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
 			if (statement.getContext() != null) {
-				if (approvedContexts == null) {
-					approvedContexts = new HashSet<>();
+				if (modelWriteState.approvedContexts == null) {
+					modelWriteState.approvedContexts = new HashSet<>();
 				}
-				approvedContexts.add(statement.getContext());
+				modelWriteState.approvedContexts.add(statement.getContext());
 			}
 			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
@@ -733,19 +799,20 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		boolean signalWritePreflight = false;
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
-			if (approved != null) {
-				approved.remove(statement);
-				approvedEmpty = approved == null || approved.isEmpty();
+			if (modelWriteState.approved != null) {
+				modelWriteState.approved.remove(statement);
+				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
 			}
-			if (deprecated == null) {
-				deprecated = createEmptyModel();
+			if (modelWriteState.deprecated == null) {
+				modelWriteState.deprecated = createEmptyModel();
 			}
-			deprecated.add(statement);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			modelWriteState.deprecated.add(statement);
+			modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+					|| modelWriteState.deprecated.isEmpty();
 			Resource ctx = statement.getContext();
-			if (approvedContexts != null && approvedContexts.contains(ctx)
-					&& !approved.contains(null, null, null, ctx)) {
-				approvedContexts.remove(ctx);
+			if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
+					&& !modelWriteState.approved.contains(null, null, null, ctx)) {
+				modelWriteState.approvedContexts.remove(ctx);
 			}
 			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 		} finally {
@@ -764,30 +831,30 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			sb.append(observed.size());
 			sb.append(" observations, ");
 		}
-		if (namespaceCleared) {
+		if (modelWriteState.namespaceCleared) {
 			sb.append("namespaceCleared, ");
 		}
-		if (removedPrefixes != null) {
-			sb.append(removedPrefixes.size());
+		if (modelWriteState.removedPrefixes != null) {
+			sb.append(modelWriteState.removedPrefixes.size());
 			sb.append(" removedPrefixes, ");
 		}
-		if (addedNamespaces != null) {
-			sb.append(addedNamespaces.size());
+		if (modelWriteState.addedNamespaces != null) {
+			sb.append(modelWriteState.addedNamespaces.size());
 			sb.append(" addedNamespaces, ");
 		}
-		if (statementCleared) {
+		if (modelWriteState.statementCleared) {
 			sb.append("statementCleared, ");
 		}
-		if (deprecatedContexts != null && !deprecatedContexts.isEmpty()) {
-			sb.append(deprecatedContexts.size());
+		if (modelWriteState.deprecatedContexts != null && !modelWriteState.deprecatedContexts.isEmpty()) {
+			sb.append(modelWriteState.deprecatedContexts.size());
 			sb.append(" deprecatedContexts, ");
 		}
-		if (deprecated != null) {
-			sb.append(deprecated.size());
+		if (modelWriteState.deprecated != null) {
+			sb.append(modelWriteState.deprecated.size());
 			sb.append(" deprecated, ");
 		}
-		if (approved != null) {
-			sb.append(approved.size());
+		if (modelWriteState.approved != null) {
+			sb.append(modelWriteState.approved.size());
 			sb.append(" approved, ");
 		}
 		if (sb.length() > 0) {
@@ -798,44 +865,58 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	protected void setChangeset(Changeset from) {
-		assert !closed;
-		assert !from.closed;
-		ModelWriteState destination = acquireModelMutationLock();
-		ModelWriteState source = null;
-		try {
-			if (destination != from.modelWriteState) {
-				source = from.acquireModelReadLock();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			assert !from.closed;
+			ModelWriteState destination = acquireModelMutationLock();
+			ModelWriteState source = null;
+			try {
+				if (destination != from.modelWriteState) {
+					source = from.acquireModelReadLock();
+				}
+				copyContents(from, source == null ? destination : source);
+			} finally {
+				if (source != null) {
+					source.unlockReader();
+				}
+				destination.unlockWriter();
 			}
-			copyContents(from, source == null ? destination : source);
-		} finally {
-			if (source != null) {
-				source.unlockReader();
-			}
-			destination.unlockWriter();
+
 		}
 	}
 
 	/** Caller owns the source state; the destination is new or exclusively locked. */
 	private void copyContents(Changeset from, ModelWriteState state) {
+		Set<SimpleStatementPattern> observations = from.observed == null ? null : new HashSet<>(from.observed);
+		state.retain();
+		ModelWriteState previous = this.modelWriteState;
 		this.sinkIsolationLevel = from.sinkIsolationLevel;
-		// Validation belongs to the carrier, while statement models belong to the shared generation.
-		this.observed = from.observed == null ? null : new HashSet<>(from.observed);
+		this.observed = observations;
 		this.observationRevision = from.observationRevision;
-		this.approved = from.approved;
-		this.approvedEmpty = from.approvedEmpty;
-		this.deprecated = from.deprecated;
-		this.deprecatedEmpty = from.deprecatedEmpty;
-		this.approvedContexts = from.approvedContexts;
-		this.deprecatedContexts = from.deprecatedContexts;
-		this.addedNamespaces = from.addedNamespaces;
-		this.removedPrefixes = from.removedPrefixes;
-		this.namespaceCleared = from.namespaceCleared;
-		this.statementCleared = from.statementCleared;
-		// Inherited barriers constrain the reusable writer alias, not this independently published generation.
 		this.inheritedMutationBarriers = List.of();
 		this.transferred = false;
-		// Publish last: a queued reader of the former state must retry before accessing the new fields.
 		this.modelWriteState = state;
+		previous.release();
+	}
+
+	/** A reader owns the precise generation, independently of the reusable writer wrapper. */
+	Changeset readerView() {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState state = acquireModelReadLock();
+			try {
+				Changeset view = newClone();
+				state.retain();
+				ModelWriteState empty = view.modelWriteState;
+				view.sinkIsolationLevel = sinkIsolationLevel;
+				view.readerView = true;
+				state.readerOwners.incrementAndGet();
+				view.modelWriteState = state;
+				empty.release();
+				return view;
+			} finally {
+				state.unlockReader();
+			}
+		}
 	}
 
 	IsolationLevel getSinkIsolationLevel() {
@@ -853,12 +934,15 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	 * @return a new Changeset that is a shallow clone of the current Changeset.
 	 */
 	public Changeset shallowClone() {
-		assert !closed;
-		ModelWriteState state = acquireModelReadLock();
-		try {
-			return cloneContents(state);
-		} finally {
-			state.unlockReader();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState state = acquireModelReadLock();
+			try {
+				return cloneContents(state);
+			} finally {
+				state.unlockReader();
+			}
+
 		}
 	}
 
@@ -898,21 +982,53 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	/** Atomically hands off this generation and its admission lease without consuming the reusable writer. */
 	Transfer transfer() {
-		ModelWriteState state = acquireModelWriteLock();
-		try {
-			if (transferred || !hasContents()) {
-				return null;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			Changeset copy = null;
+			boolean published = false;
+			ModelWriteState state = acquireModelWriteLock();
+			try {
+				if (transferred || !hasContents()) {
+					return null;
+				}
+				ModelWriteState next = new ModelWriteState();
+				List<ModelWriteState> barriers = new ArrayList<>(inheritedMutationBarriers);
+				if (!barriers.contains(state)) {
+					barriers.add(state);
+				}
+				List<ModelWriteState> retainedBarriers = List.copyOf(barriers);
+				copy = cloneContents(state);
+				Transfer transfer = new Transfer(copy);
+				transfer.intent = takeWriteIntent();
+				inheritedMutationBarriers = retainedBarriers;
+				transferred = true;
+				modelWriteState = next;
+				state.release();
+				published = true;
+				return transfer;
+			} finally {
+				state.unlockWriter();
+				if (copy != null && !published) {
+					copy.close();
+				}
 			}
-			Changeset copy = cloneContents(state);
-			SailSource.WriteIntent intent = takeWriteIntent();
-			transferred = true;
-			return new Transfer(copy, intent);
-		} finally {
-			state.unlockWriter();
 		}
 	}
 
-	record Transfer(Changeset changeset, SailSource.WriteIntent intent) {
+	static final class Transfer {
+		private final Changeset changeset;
+		private SailSource.WriteIntent intent;
+
+		private Transfer(Changeset changeset) {
+			this.changeset = changeset;
+		}
+
+		Changeset changeset() {
+			return changeset;
+		}
+
+		SailSource.WriteIntent intent() {
+			return intent;
+		}
 	}
 
 	public Set<SimpleStatementPattern> getObserved() {
@@ -958,7 +1074,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			return cloneSet(approvedContexts);
+			return cloneSet(modelWriteState.approvedContexts);
 
 		} finally {
 			readLock.unlockReader();
@@ -970,7 +1086,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			return cloneSet(deprecatedContexts);
+			return cloneSet(modelWriteState.deprecatedContexts);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -981,7 +1097,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return statementCleared;
+			return modelWriteState.statementCleared;
 		} finally {
 			state.unlockReader();
 		}
@@ -991,7 +1107,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			return addedNamespaces;
+			return modelWriteState.addedNamespaces;
 
 		} finally {
 			readLock.unlockReader();
@@ -1003,7 +1119,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			return cloneSet(removedPrefixes);
+			return cloneSet(modelWriteState.removedPrefixes);
 
 		} finally {
 			readLock.unlockReader();
@@ -1015,7 +1131,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return namespaceCleared;
+			return modelWriteState.namespaceCleared;
 		} finally {
 			state.unlockReader();
 		}
@@ -1025,8 +1141,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return (deprecated != null && !deprecatedEmpty)
-					|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+			return (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty)
+					|| (modelWriteState.deprecatedContexts != null && !modelWriteState.deprecatedContexts.isEmpty());
 		} finally {
 			state.unlockReader();
 		}
@@ -1044,9 +1160,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private boolean hasContents() {
-		return approved != null || deprecated != null || approvedContexts != null
-				|| deprecatedContexts != null || addedNamespaces != null
-				|| removedPrefixes != null || statementCleared || namespaceCleared
+		return modelWriteState.approved != null || modelWriteState.deprecated != null
+				|| modelWriteState.approvedContexts != null
+				|| modelWriteState.deprecatedContexts != null || modelWriteState.addedNamespaces != null
+				|| modelWriteState.removedPrefixes != null || modelWriteState.statementCleared
+				|| modelWriteState.namespaceCleared
 				|| observed != null;
 	}
 
@@ -1054,11 +1172,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return !transferred && (statementCleared || namespaceCleared || (approved != null && !approvedEmpty)
-					|| (deprecated != null && !deprecatedEmpty)
-					|| (deprecatedContexts != null && !deprecatedContexts.isEmpty())
-					|| (addedNamespaces != null && !addedNamespaces.isEmpty())
-					|| (removedPrefixes != null && !removedPrefixes.isEmpty()));
+			return !transferred && (modelWriteState.statementCleared || modelWriteState.namespaceCleared
+					|| (modelWriteState.approved != null && !modelWriteState.approvedEmpty)
+					|| (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty)
+					|| (modelWriteState.deprecatedContexts != null && !modelWriteState.deprecatedContexts.isEmpty())
+					|| (modelWriteState.addedNamespaces != null && !modelWriteState.addedNamespaces.isEmpty())
+					|| (modelWriteState.removedPrefixes != null && !modelWriteState.removedPrefixes.isEmpty()));
 		} finally {
 			state.unlockReader();
 		}
@@ -1072,26 +1191,27 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				return new WritePreflightSnapshot(List.of(), List.of(), Set.of(), Set.of(), false, false, false);
 			}
 			ArrayList<Statement> statements = new ArrayList<>();
-			if (approved != null && !approvedEmpty) {
-				statements.addAll(approved);
+			if (modelWriteState.approved != null && !modelWriteState.approvedEmpty) {
+				statements.addAll(modelWriteState.approved);
 			}
-			if (deprecated != null && !deprecatedEmpty) {
-				statements.addAll(deprecated);
+			if (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty) {
+				statements.addAll(modelWriteState.deprecated);
 			}
 			List<SailSource.NamespaceUpdate> namespaces = new ArrayList<>();
-			if (addedNamespaces != null) {
-				for (Map.Entry<String, String> namespace : addedNamespaces.entrySet()) {
+			if (modelWriteState.addedNamespaces != null) {
+				for (Map.Entry<String, String> namespace : modelWriteState.addedNamespaces.entrySet()) {
 					namespaces.add(new SailSource.NamespaceUpdate(namespace.getKey(), namespace.getValue()));
 				}
 			}
-			Set<String> removedNamespacePrefixes = removedPrefixes == null ? Collections.emptySet()
-					: new HashSet<>(removedPrefixes);
-			Set<Resource> clearedContexts = deprecatedContexts == null ? Collections.emptySet()
-					: new HashSet<>(deprecatedContexts);
-			boolean hasWrites = statementCleared || namespaceCleared || !statements.isEmpty()
+			Set<String> removedNamespacePrefixes = modelWriteState.removedPrefixes == null ? Collections.emptySet()
+					: new HashSet<>(modelWriteState.removedPrefixes);
+			Set<Resource> clearedContexts = modelWriteState.deprecatedContexts == null ? Collections.emptySet()
+					: new HashSet<>(modelWriteState.deprecatedContexts);
+			boolean hasWrites = modelWriteState.statementCleared || modelWriteState.namespaceCleared
+					|| !statements.isEmpty()
 					|| !namespaces.isEmpty() || !removedNamespacePrefixes.isEmpty() || !clearedContexts.isEmpty();
 			return new WritePreflightSnapshot(statements, namespaces, removedNamespacePrefixes, clearedContexts,
-					statementCleared, namespaceCleared, hasWrites);
+					modelWriteState.statementCleared, modelWriteState.namespaceCleared, hasWrites);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -1106,10 +1226,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if (deprecated == null || deprecatedEmpty) {
+			if (modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty) {
 				return Collections.emptyList();
 			}
-			return new ArrayList<>(deprecated);
+			return new ArrayList<>(modelWriteState.deprecated);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -1120,10 +1240,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if (approved == null || approvedEmpty) {
+			if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
 				return Collections.emptyList();
 			}
-			return new ArrayList<>(approved);
+			return new ArrayList<>(modelWriteState.approved);
 		} finally {
 			readLock.unlockReader();
 		}
@@ -1134,16 +1254,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if ((deprecated == null || deprecatedEmpty) && deprecatedContexts == null) {
+			if ((modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty)
+					&& modelWriteState.deprecatedContexts == null) {
 				return false;
 			}
-			if (deprecatedContexts != null) {
-				if (deprecatedContexts.contains(statement.getContext())) {
+			if (modelWriteState.deprecatedContexts != null) {
+				if (modelWriteState.deprecatedContexts.contains(statement.getContext())) {
 					return true;
 				}
 			}
-			if (deprecated != null) {
-				return deprecated.contains(statement);
+			if (modelWriteState.deprecated != null) {
+				return modelWriteState.deprecated.contains(statement);
 			} else {
 				return false;
 			}
@@ -1157,59 +1278,160 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return approved != null && !approvedEmpty;
+			return modelWriteState.approved != null && !modelWriteState.approvedEmpty;
 		} finally {
 			state.unlockReader();
 		}
 	}
 
-	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj,
-			Resource[] contexts) {
-		assert !closed;
+	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		return () -> openApprovedStatements(subj, pred, obj, contexts);
+	}
 
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (approved == null || approvedEmpty) {
-				return Collections.emptyList();
-			}
-
-			Iterable<Statement> statements = approved.getStatements(subj, pred, obj, contexts);
-
-			// This is a synchronized context, users of this method will be allowed to use the results at their leisure.
-			// We
-			// provide a copy of the data so that there will be no concurrent modification exceptions!
-			if (statements instanceof Collection) {
-				return new ArrayList<>((Collection<? extends Statement>) statements);
-			} else {
-				List<Statement> ret = List.of();
-				for (Statement statement : statements) {
-					if (ret.isEmpty()) {
-						ret = List.of(statement);
-					} else {
-						if (ret.size() == 1) {
-							ret = new ArrayList<>(ret);
-						}
-						ret.add(statement);
-					}
+	private Iterator<Statement> openApprovedStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState state = acquireModelWriteLock();
+			try {
+				if (state.approved == null || state.approvedEmpty) {
+					return Collections.emptyIterator();
 				}
-				return ret;
+				spill(state.approved);
+				Iterator<Statement> iterator = state.approved.getStatements(subj, pred, obj, contexts).iterator();
+				try {
+					RetainedStatementIterator retained = new RetainedStatementIterator(state, iterator);
+					state.retain();
+					return retained;
+				} catch (RuntimeException | Error failure) {
+					closeIterator(iterator, failure);
+					throw failure;
+				}
+			} finally {
+				state.unlockWriter();
 			}
-		} finally {
-			readLock.unlockReader();
+		}
+	}
+
+	private static void spill(Model model) {
+		if (model instanceof AbstractMemoryOverflowModel overflow) {
+			overflow.spillToDiskIfNeeded();
+		}
+	}
+
+	private static void closeIterator(Iterator<?> iterator, Throwable primary) {
+		if (iterator instanceof AutoCloseable closeable) {
+			try {
+				closeable.close();
+			} catch (Exception | Error failure) {
+				RuntimeException reported = failure instanceof RuntimeException runtime ? runtime
+						: new SailException(failure);
+				if (primary == null) {
+					if (failure instanceof Error error) {
+						throw error;
+					}
+					throw reported;
+				}
+				if (primary != failure) {
+					primary.addSuppressed(failure);
+				}
+			}
+		}
+	}
+
+	private static final class RetainedStatementIterator implements Iterator<Statement>, AutoCloseable {
+		private final ModelWriteState state;
+		private final Iterator<Statement> delegate;
+		private final long revision;
+		private boolean closed;
+
+		private RetainedStatementIterator(ModelWriteState state, Iterator<Statement> delegate) {
+			this.state = state;
+			this.delegate = delegate;
+			this.revision = state.revision;
 		}
 
+		private <T> T read(Supplier<T> operation) {
+			SailModelCleanup.beginLock();
+			state.readWriteLock.readLock();
+			try {
+				if (revision != state.revision) {
+					throw new ConcurrentModificationException("Statement generation changed during traversal");
+				}
+				return operation.get();
+			} finally {
+				state.unlockReader();
+			}
+		}
+
+		@Override
+		public boolean hasNext() {
+			if (closed) {
+				return false;
+			}
+			try {
+				boolean next = read(delegate::hasNext);
+				if (!next) {
+					close();
+				}
+				return next;
+			} catch (RuntimeException | Error failure) {
+				closeAfter(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public Statement next() {
+			if (closed) {
+				throw new NoSuchElementException();
+			}
+			try {
+				return read(delegate::next);
+			} catch (RuntimeException | Error failure) {
+				closeAfter(failure);
+				throw failure;
+			}
+		}
+
+		@Override
+		public void remove() {
+			throw new UnsupportedOperationException();
+		}
+
+		private void closeAfter(Throwable primary) {
+			try {
+				close();
+			} catch (RuntimeException | Error failure) {
+				if (failure != primary) {
+					primary.addSuppressed(failure);
+				}
+			}
+		}
+
+		@Override
+		public void close() {
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				if (!closed) {
+					closed = true;
+					try {
+						closeIterator(delegate, null);
+					} finally {
+						state.release();
+					}
+				}
+			}
+		}
 	}
 
 	Iterable<TripleTerm> getApprovedTriples(Resource subj, IRI pred, Value obj) {
 		assert !closed;
 		ModelWriteState readLock = acquireModelReadLock();
 		try {
-			if (approved == null || approvedEmpty) {
+			if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
 				return Collections.emptyList();
 			}
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
-			Stream<TripleTerm> approvedSubjectTriples = approved.parallelStream()
+			Stream<TripleTerm> approvedSubjectTriples = modelWriteState.approved.parallelStream()
 					.filter(st -> st.getSubject().isTripleTerm())
 					.map(st -> (TripleTerm) st.getSubject())
 					.filter(t -> {
@@ -1222,7 +1444,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						return obj == null || obj.equals(t.getObject());
 					});
 
-			Stream<TripleTerm> approvedObjectTriples = approved.parallelStream()
+			Stream<TripleTerm> approvedObjectTriples = modelWriteState.approved.parallelStream()
 					.filter(st -> st.getObject().isTripleTerm())
 					.map(st -> (TripleTerm) st.getObject())
 					.filter(t -> {
@@ -1245,9 +1467,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelMutationLock();
 		try {
-			if (approved != null) {
-				approved.remove(next);
-				approvedEmpty = approved.isEmpty();
+			if (modelWriteState.approved != null) {
+				modelWriteState.approved.remove(next);
+				modelWriteState.approvedEmpty = modelWriteState.approved.isEmpty();
 			}
 		} finally {
 			state.unlockWriter();
@@ -1263,37 +1485,77 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	void sinkApproved(SailSink sink) {
+		ModelWriteState migration = acquireModelWriteLock();
+		try {
+			spill(migration.approved);
+		} finally {
+			migration.unlockWriter();
+		}
 		ModelWriteState state = acquireModelReadLock();
 		boolean[] readLock = { true };
+		ScopedStatementSet statements = null;
+		Throwable primary = null;
 		try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
-			if (approved != null && !approvedEmpty) {
-				sink.approveAll(approved, approvedContexts);
+			if (state.approved != null && !state.approvedEmpty) {
+				statements = new ScopedStatementSet(state.approved);
+				sink.approveAll(statements, state.approvedContexts);
 			}
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
 		} finally {
 			try {
-				if (readLock[0]) {
-					state.unlockReader();
+				if (statements != null) {
+					statements.close(primary);
 				}
 			} finally {
-				state.unregisterContinuationReadLock(readLock);
+				try {
+					if (readLock[0]) {
+						state.unlockReader();
+					} else {
+						SailModelCleanup.endLock();
+					}
+				} finally {
+					state.unregisterContinuationReadLock(readLock);
+				}
 			}
 		}
 	}
 
 	void sinkDeprecated(SailSink sink) {
+		ModelWriteState migration = acquireModelWriteLock();
+		try {
+			spill(migration.deprecated);
+		} finally {
+			migration.unlockWriter();
+		}
 		ModelWriteState state = acquireModelReadLock();
 		boolean[] readLock = { true };
+		ScopedStatementSet statements = null;
+		Throwable primary = null;
 		try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
-			if (deprecated != null && !deprecatedEmpty) {
-				sink.deprecateAll(deprecated);
+			if (state.deprecated != null && !state.deprecatedEmpty) {
+				statements = new ScopedStatementSet(state.deprecated);
+				sink.deprecateAll(statements);
 			}
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
 		} finally {
 			try {
-				if (readLock[0]) {
-					state.unlockReader();
+				if (statements != null) {
+					statements.close(primary);
 				}
 			} finally {
-				state.unregisterContinuationReadLock(readLock);
+				try {
+					if (readLock[0]) {
+						state.unlockReader();
+					} else {
+						SailModelCleanup.endLock();
+					}
+				} finally {
+					state.unregisterContinuationReadLock(readLock);
+				}
 			}
 		}
 	}
@@ -1322,8 +1584,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private ModelWriteState acquireModelReadLock() {
 		while (true) {
 			ModelWriteState state = modelWriteState;
+			SailModelCleanup.beginLock();
 			state.readWriteLock.readLock();
 			if (state == modelWriteState) {
+				if (closed) {
+					state.unlockReader();
+					throw new IllegalStateException("The changeset is closed");
+				}
 				return state;
 			}
 			state.unlockReader();
@@ -1334,6 +1601,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		while (true) {
 			ModelWriteState state = modelWriteState;
 			checkWriteContinuation(state);
+			SailModelCleanup.beginLock();
 			state.writerStamp = state.readWriteLock.writeLock();
 			if (state != modelWriteState) {
 				state.unlockWriter();
@@ -1356,6 +1624,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private void checkModelMutation(ModelWriteState state) {
+		if (closed) {
+			throw new IllegalStateException("The changeset is closed");
+		}
 		checkWriteContinuation(state);
 		checkMutationBarrier(state);
 		for (ModelWriteState inherited : inheritedMutationBarriers) {
@@ -1373,7 +1644,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		ModelWriteState state = acquireModelWriteLock();
 		try {
 			checkModelMutation(state);
-			return detachTransferredGeneration(state);
+			ModelWriteState mutable = detachTransferredGeneration(state);
+			mutable.revision++;
+			return mutable;
 		} catch (RuntimeException | Error failure) {
 			state.unlockWriter();
 			throw failure;
@@ -1383,6 +1656,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private ModelWriteState acquireObservationWriteLock() {
 		ModelWriteState state = acquireModelWriteLock();
 		try {
+			if (closed) {
+				throw new IllegalStateException("The changeset is closed");
+			}
 			return detachTransferredGeneration(state);
 		} catch (RuntimeException | Error failure) {
 			state.unlockWriter();
@@ -1392,39 +1668,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	/** Caller owns the current writer; observation-only detachment retains active logical barriers. */
 	private ModelWriteState detachTransferredGeneration(ModelWriteState state) {
-		if (!transferred) {
-			return state;
-		}
-		ModelWriteState next = new ModelWriteState();
-		Set<SimpleStatementPattern> observations = observed == null ? null : new HashSet<>(observed);
-		List<ModelWriteState> barriers = new ArrayList<>();
-		for (ModelWriteState inherited : inheritedMutationBarriers) {
-			if (inherited.frozenOwners.get() != 0 || inherited.sealed) {
-				barriers.add(inherited);
+		if (transferred) {
+			List<ModelWriteState> barriers = new ArrayList<>();
+			for (ModelWriteState inherited : inheritedMutationBarriers) {
+				if (inherited.frozenOwners.get() != 0 || inherited.sealed) {
+					barriers.add(inherited);
+				}
 			}
+			inheritedMutationBarriers = List.copyOf(barriers);
+			transferred = false;
 		}
-		if ((state.frozenOwners.get() != 0 || state.sealed) && !barriers.contains(state)) {
-			barriers.add(state);
-		}
-		List<ModelWriteState> retainedBarriers = List.copyOf(barriers);
-		// Lock the unpublished replacement before publishing it; no allocation or fallible callback follows.
-		next.writerStamp = next.readWriteLock.writeLock();
-		observed = observations;
-		approved = null;
-		approvedEmpty = true;
-		deprecated = null;
-		deprecatedEmpty = true;
-		approvedContexts = null;
-		deprecatedContexts = null;
-		addedNamespaces = null;
-		removedPrefixes = null;
-		namespaceCleared = false;
-		statementCleared = false;
-		inheritedMutationBarriers = retainedBarriers;
-		transferred = false;
-		modelWriteState = next;
-		state.unlockWriter();
-		return next;
+		return state;
 	}
 
 	boolean isFrozen() {
@@ -1451,23 +1705,23 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	SailClosable freezeModel() {
 		ModelWriteState retained = acquireModelWriteLock();
 		try {
+			AtomicBoolean released = new AtomicBoolean();
+			SailClosable lease = () -> {
+				try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+					if (released.compareAndSet(false, true)) {
+						if (retained.frozenOwners.decrementAndGet() < 0) {
+							throw new IllegalStateException("Frozen model ownership underflow");
+						}
+						retained.release();
+					}
+				}
+			};
+			retained.retain();
 			retained.frozenOwners.incrementAndGet();
+			return lease;
 		} finally {
 			retained.unlockWriter();
 		}
-		return new SailClosable() {
-			private boolean released;
-
-			@Override
-			public synchronized void close() {
-				if (!released) {
-					released = true;
-					if (retained.frozenOwners.decrementAndGet() < 0) {
-						throw new IllegalStateException("Frozen model ownership underflow");
-					}
-				}
-			}
-		};
 	}
 
 	public void sinkObserved(SailSink sink) {
@@ -1501,20 +1755,20 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
 
-			if (deprecated != null) {
-				deprecated.removeAll(approve);
+			if (modelWriteState.deprecated != null) {
+				modelWriteState.deprecated.removeAll(approve);
 			}
-			if (approved == null) {
-				approved = createEmptyModel();
+			if (modelWriteState.approved == null) {
+				modelWriteState.approved = createEmptyModel();
 			}
-			approved.addAll(approve);
-			approvedEmpty = approved == null || approved.isEmpty();
+			modelWriteState.approved.addAll(approve);
+			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
 
 			if (approveContexts != null) {
-				if (approvedContexts == null) {
-					approvedContexts = new HashSet<>();
+				if (modelWriteState.approvedContexts == null) {
+					modelWriteState.approvedContexts = new HashSet<>();
 				}
-				approvedContexts.addAll(approveContexts);
+				modelWriteState.approvedContexts.addAll(approveContexts);
 			}
 			signalWritePreflight = recordWriteIntent(approximateBytes, false);
 
@@ -1540,21 +1794,22 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		ModelWriteState writeLock = acquireModelMutationLock();
 		try {
 
-			if (approved != null) {
-				approved.removeAll(deprecate);
-				approvedEmpty = approved == null || approved.isEmpty();
+			if (modelWriteState.approved != null) {
+				modelWriteState.approved.removeAll(deprecate);
+				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
 			}
-			if (deprecated == null) {
-				deprecated = createEmptyModel();
+			if (modelWriteState.deprecated == null) {
+				modelWriteState.deprecated = createEmptyModel();
 			}
-			deprecated.addAll(deprecate);
-			deprecatedEmpty = deprecated == null || deprecated.isEmpty();
+			modelWriteState.deprecated.addAll(deprecate);
+			modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+					|| modelWriteState.deprecated.isEmpty();
 
 			for (Statement statement : deprecate) {
 				Resource ctx = statement.getContext();
-				if (approvedContexts != null && approvedContexts.contains(ctx)
-						&& !approved.contains(null, null, null, ctx)) {
-					approvedContexts.remove(ctx);
+				if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
+						&& !modelWriteState.approved.contains(null, null, null, ctx)) {
+					modelWriteState.approvedContexts.remove(ctx);
 				}
 			}
 			signalWritePreflight = recordWriteIntent(approximateBytes, false);
@@ -1568,15 +1823,80 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private static final class ModelWriteState {
+		private Model approved;
+		private boolean approvedEmpty = true;
+		private Model deprecated;
+		private boolean deprecatedEmpty = true;
+		private Set<Resource> approvedContexts;
+		private Set<Resource> deprecatedContexts;
+		private Map<String, String> addedNamespaces;
+		private Set<String> removedPrefixes;
+		private boolean namespaceCleared;
+		private boolean statementCleared;
+		private long revision;
+		private final AtomicInteger owners = new AtomicInteger(1);
+		private final AtomicInteger readerOwners = new AtomicInteger();
+		private final AtomicInteger historyOwners = new AtomicInteger();
+
+		private void retain() {
+			int count;
+			do {
+				count = owners.get();
+				if (count == 0) {
+					throw new IllegalStateException("A released statement generation cannot be retained");
+				}
+			} while (!owners.compareAndSet(count, Math.addExact(count, 1)));
+		}
+
+		private void release() {
+			int remaining = owners.decrementAndGet();
+			if (remaining < 0) {
+				throw new IllegalStateException("Statement generation ownership underflow");
+			}
+			if (remaining != 0) {
+				return;
+			}
+			Model additions = approved;
+			Model removals = deprecated;
+			if (additions instanceof AutoCloseable closeable) {
+				SailModelCleanup.defer(() -> closeModel(closeable));
+			}
+			if (removals != additions && removals instanceof AutoCloseable closeable) {
+				SailModelCleanup.defer(() -> closeModel(closeable));
+			}
+			approved = null;
+			deprecated = null;
+			approvedEmpty = true;
+			deprecatedEmpty = true;
+			approvedContexts = null;
+			deprecatedContexts = null;
+			addedNamespaces = null;
+			removedPrefixes = null;
+			approximateWriteIntentBytes = 0L;
+			hasUnestimatedWriteIntent = false;
+		}
+
+		private static void closeModel(AutoCloseable model) {
+			try {
+				model.close();
+			} catch (RuntimeException | Error failure) {
+				throw failure;
+			} catch (Exception failure) {
+				throw new SailException(failure);
+			}
+		}
+
 		private final AdderBasedReadWriteLock readWriteLock = new AdderBasedReadWriteLock();
 		private long writerStamp;
 
 		private void unlockReader() {
 			readWriteLock.unlockReader(true);
+			SailModelCleanup.endLock();
 		}
 
 		private void unlockWriter() {
 			readWriteLock.unlockWriter(writerStamp);
+			SailModelCleanup.endLock();
 		}
 
 		private final AtomicInteger suspendedWriteModels = new AtomicInteger();

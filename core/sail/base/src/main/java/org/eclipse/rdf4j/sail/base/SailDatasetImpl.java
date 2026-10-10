@@ -59,6 +59,7 @@ class SailDatasetImpl implements SailDataset {
 	 * Changes that have not yet been {@link SailSource#flush()}ed to the backing {@link SailDataset}.
 	 */
 	private final Changeset changes;
+	private final DatasetLifetime lifetime;
 
 	/**
 	 * Create a derivative dataset that applies the given changeset. The life cycle of this and the given
@@ -69,8 +70,20 @@ class SailDatasetImpl implements SailDataset {
 	 */
 	public SailDatasetImpl(SailDataset derivedFrom, Changeset changes) {
 		this.derivedFrom = derivedFrom;
-		this.changes = changes;
-		changes.addRefback(this);
+		this.changes = changes.readerView();
+		try {
+			this.changes.addRefback(this);
+			lifetime = new DatasetLifetime(this::dispose);
+		} catch (RuntimeException | Error failure) {
+			try {
+				this.changes.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (failure != cleanup) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
 	}
 
 	@Override
@@ -80,38 +93,71 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public Function<Value, Value> getValuePreparer() {
-		return derivedFrom.getValuePreparer();
+		return lifetime.call(derivedFrom::getValuePreparer);
 	}
 
 	@Override
 	public Function<Value, Value> getValueCapturer() {
-		return derivedFrom.getValueCapturer();
+		return lifetime.call(derivedFrom::getValueCapturer);
 	}
 
 	@Override
 	public void close() throws SailException {
-		changes.removeRefback(this);
-		derivedFrom.close();
+		lifetime.close(false);
 	}
 
 	@Override
 	public void abandonUnobserved() throws SailException {
-		changes.removeRefback(this);
-		derivedFrom.abandonUnobserved();
+		lifetime.close(true);
+	}
+
+	private void dispose(boolean abandon) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			Throwable failure = null;
+			try {
+				changes.removeRefback(this);
+				changes.close();
+			} catch (RuntimeException | Error releaseFailure) {
+				failure = releaseFailure;
+			}
+			try {
+				if (abandon) {
+					derivedFrom.abandonUnobserved();
+				} else {
+					derivedFrom.close();
+				}
+			} catch (RuntimeException | Error releaseFailure) {
+				if (failure == null) {
+					failure = releaseFailure;
+				} else if (failure != releaseFailure) {
+					failure.addSuppressed(releaseFailure);
+				}
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+		}
 	}
 
 	@Override
 	public boolean isSnapshotCurrent() {
-		return derivedFrom.isSnapshotCurrent();
+		return lifetime.call(derivedFrom::isSnapshotCurrent);
 	}
 
 	@Override
 	public boolean isSnapshotCompatibleWithCurrentAdmission() {
-		return derivedFrom.isSnapshotCompatibleWithCurrentAdmission();
+		return lifetime.call(derivedFrom::isSnapshotCompatibleWithCurrentAdmission);
 	}
 
 	@Override
 	public String getNamespace(String prefix) throws SailException {
+		return lifetime.call(() -> getNamespaceInternal(prefix));
+	}
+
+	private String getNamespaceInternal(String prefix) throws SailException {
 		Map<String, String> addedNamespaces = changes.getAddedNamespaces();
 		if (addedNamespaces != null && addedNamespaces.containsKey(prefix)) {
 			return addedNamespaces.get(prefix);
@@ -125,166 +171,199 @@ class SailDatasetImpl implements SailDataset {
 
 	@Override
 	public CloseableIteration<? extends Namespace> getNamespaces() throws SailException {
+		return lifetime.open(() -> getNamespacesInternal());
+	}
+
+	private CloseableIteration<? extends Namespace> getNamespacesInternal() throws SailException {
 		final CloseableIteration<? extends Namespace> namespaces;
 		if (changes.isNamespaceCleared()) {
 			namespaces = NAMESPACES_EMPTY_ITERATION;
 		} else {
 			namespaces = derivedFrom.getNamespaces();
 		}
-		Iterator<Map.Entry<String, String>> added = null;
-		Set<String> removed;
-		synchronized (this) {
-			Map<String, String> addedNamespaces = changes.getAddedNamespaces();
-			if (addedNamespaces != null) {
-				added = addedNamespaces.entrySet().iterator();
+		try {
+			Iterator<Map.Entry<String, String>> added = null;
+			Set<String> removed;
+			synchronized (this) {
+				Map<String, String> addedNamespaces = changes.getAddedNamespaces();
+				if (addedNamespaces != null) {
+					added = addedNamespaces.entrySet().iterator();
+				}
+				removed = changes.getRemovedPrefixes();
 			}
-			removed = changes.getRemovedPrefixes();
-		}
-		if (added == null && removed == null) {
-			return namespaces;
-		}
-		final Iterator<Map.Entry<String, String>> addedIter = added;
-		final Set<String> removedSet = removed;
-		return new AbstractCloseableIteration<>() {
+			if (added == null && removed == null) {
+				return namespaces;
+			}
+			final Iterator<Map.Entry<String, String>> addedIter = added;
+			final Set<String> removedSet = removed;
+			return new AbstractCloseableIteration<>() {
 
-			volatile Namespace next;
+				volatile Namespace next;
 
-			@Override
-			public boolean hasNext() throws SailException {
-				if (isClosed()) {
-					return false;
-				}
-				if (addedIter != null && addedIter.hasNext()) {
-					return true;
-				}
-				Namespace toCheckNext = next;
-				while (toCheckNext == null && namespaces.hasNext()) {
-					toCheckNext = next = namespaces.next();
-					if (removedSet != null && removedSet.contains(toCheckNext.getPrefix())) {
-						toCheckNext = next = null;
+				@Override
+				public boolean hasNext() throws SailException {
+					if (isClosed()) {
+						return false;
 					}
-				}
-				return toCheckNext != null;
-			}
-
-			@Override
-			public Namespace next() throws SailException {
-				if (isClosed()) {
-					throw new NoSuchElementException("The iteration has been closed.");
-				}
-				if (addedIter != null && addedIter.hasNext()) {
-					Entry<String, String> e = addedIter.next();
-					return new SimpleNamespace(e.getKey(), e.getValue());
-				}
-				try {
-					if (hasNext()) {
-						Namespace toCheckNext = next;
-						if (toCheckNext != null) {
-							return toCheckNext;
+					if (addedIter != null && addedIter.hasNext()) {
+						return true;
+					}
+					Namespace toCheckNext = next;
+					while (toCheckNext == null && namespaces.hasNext()) {
+						toCheckNext = next = namespaces.next();
+						if (removedSet != null && removedSet.contains(toCheckNext.getPrefix())) {
+							toCheckNext = next = null;
 						}
 					}
-					close();
-					throw new NoSuchElementException("The iteration has been closed.");
-				} finally {
-					next = null;
+					return toCheckNext != null;
 				}
-			}
 
-			@Override
-			public void remove() {
-				throw new UnsupportedOperationException();
-			}
+				@Override
+				public Namespace next() throws SailException {
+					if (isClosed()) {
+						throw new NoSuchElementException("The iteration has been closed.");
+					}
+					if (addedIter != null && addedIter.hasNext()) {
+						Entry<String, String> e = addedIter.next();
+						return new SimpleNamespace(e.getKey(), e.getValue());
+					}
+					try {
+						if (hasNext()) {
+							Namespace toCheckNext = next;
+							if (toCheckNext != null) {
+								return toCheckNext;
+							}
+						}
+						close();
+						throw new NoSuchElementException("The iteration has been closed.");
+					} finally {
+						next = null;
+					}
+				}
 
-			@Override
-			public void handleClose() throws SailException {
-				namespaces.close();
-			}
-		};
+				@Override
+				public void remove() {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void handleClose() throws SailException {
+					namespaces.close();
+				}
+			};
+		} catch (RuntimeException | Error failure) {
+			closeCursor(namespaces, failure);
+			throw failure;
+		}
+
 	}
 
 	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
+		return lifetime.open(() -> getContextIDsInternal());
+	}
+
+	private CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		final CloseableIteration<? extends Resource> contextIDs;
 		contextIDs = derivedFrom.getContextIDs();
-		Iterator<Resource> added = null;
-		Set<Resource> removed = null;
-		synchronized (this) {
-			Set<Resource> approvedContexts = changes.getApprovedContexts();
-			if (approvedContexts != null) {
-				added = approvedContexts.iterator();
-			}
-			Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
-			if (deprecatedContexts != null) {
-				removed = deprecatedContexts;
-			}
-		}
-		if (added == null && removed == null) {
-			return contextIDs;
-		}
-		final Iterator<Resource> addedIter = added;
-		final Set<Resource> removedSet = removed;
-
-		return new AbstractCloseableIteration<>() {
-
-			volatile Resource next;
-
-			@Override
-			public boolean hasNext() throws SailException {
-				if (isClosed()) {
-					return false;
+		try {
+			Iterator<Resource> added = null;
+			Set<Resource> removed = null;
+			synchronized (this) {
+				Set<Resource> approvedContexts = changes.getApprovedContexts();
+				if (approvedContexts != null) {
+					added = approvedContexts.iterator();
 				}
-				if (addedIter != null && addedIter.hasNext()) {
-					return true;
+				Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
+				if (deprecatedContexts != null) {
+					removed = deprecatedContexts;
 				}
-				Resource toCheckNext = next;
-				while (toCheckNext == null && contextIDs.hasNext()) {
-					toCheckNext = next = contextIDs.next();
-					if (removedSet != null && removedSet.contains(toCheckNext)) {
-						toCheckNext = next = null;
+			}
+			if (added == null && removed == null) {
+				return contextIDs;
+			}
+			final Iterator<Resource> addedIter = added;
+			final Set<Resource> removedSet = removed;
+
+			return new AbstractCloseableIteration<>() {
+
+				volatile Resource next;
+
+				@Override
+				public boolean hasNext() throws SailException {
+					if (isClosed()) {
+						return false;
 					}
-				}
-				return toCheckNext != null;
-			}
-
-			@Override
-			public Resource next() throws SailException {
-				if (isClosed()) {
-					throw new NoSuchElementException("The iteration has been closed.");
-				}
-				if (addedIter != null && addedIter.hasNext()) {
-					return addedIter.next();
-				}
-				try {
-					if (hasNext()) {
-						Resource toCheckNext = next;
-						if (toCheckNext != null) {
-							return toCheckNext;
+					if (addedIter != null && addedIter.hasNext()) {
+						return true;
+					}
+					Resource toCheckNext = next;
+					while (toCheckNext == null && contextIDs.hasNext()) {
+						toCheckNext = next = contextIDs.next();
+						if (removedSet != null && removedSet.contains(toCheckNext)) {
+							toCheckNext = next = null;
 						}
 					}
-					close();
-					throw new NoSuchElementException("The iteration has been closed.");
-				} finally {
-					next = null;
+					return toCheckNext != null;
 				}
-			}
 
-			@Override
-			public void remove() throws SailException {
-				throw new UnsupportedOperationException();
-			}
+				@Override
+				public Resource next() throws SailException {
+					if (isClosed()) {
+						throw new NoSuchElementException("The iteration has been closed.");
+					}
+					if (addedIter != null && addedIter.hasNext()) {
+						return addedIter.next();
+					}
+					try {
+						if (hasNext()) {
+							Resource toCheckNext = next;
+							if (toCheckNext != null) {
+								return toCheckNext;
+							}
+						}
+						close();
+						throw new NoSuchElementException("The iteration has been closed.");
+					} finally {
+						next = null;
+					}
+				}
 
-			@Override
-			public void handleClose() throws SailException {
-				contextIDs.close();
-			}
-		};
+				@Override
+				public void remove() throws SailException {
+					throw new UnsupportedOperationException();
+				}
+
+				@Override
+				public void handleClose() throws SailException {
+					contextIDs.close();
+				}
+			};
+		} catch (RuntimeException | Error failure) {
+			closeCursor(contextIDs, failure);
+			throw failure;
+		}
+
 	}
 
 	@Override
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		return lifetime.call(() -> getStatementCountInternal(subj, pred, obj, contexts));
+	}
+
+	private long getStatementCountInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws SailException {
 		if (changes.isStatementCleared() || changes.hasApproved() || changes.hasDeprecated()) {
 			// pending statement changes are counted by iterating the merged view
-			return SailDataset.super.getStatementCount(subj, pred, obj, contexts);
+			long count = 0L;
+			try (CloseableIteration<? extends Statement> statements = getStatementsInternal(subj, pred, obj,
+					contexts)) {
+				while (statements.hasNext()) {
+					statements.next();
+					count++;
+				}
+			}
+			return count;
 		}
 		return derivedFrom.getStatementCount(subj, pred, obj, contexts);
 	}
@@ -292,79 +371,149 @@ class SailDatasetImpl implements SailDataset {
 	@Override
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			Resource... contexts) throws SailException {
-		Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
-		CloseableIteration<? extends Statement> iter;
-		if (changes.isStatementCleared()
-				|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
-				|| contexts != null && contexts.length > 0 && deprecatedContexts != null
-						&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
-			iter = null;
-		} else if (contexts != null && contexts.length > 0 && deprecatedContexts != null) {
-			List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
-			remaining.removeAll(deprecatedContexts);
-			iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));
-		} else {
-			iter = derivedFrom.getStatements(subj, pred, obj, contexts);
-		}
-		if (changes.hasDeprecated() && iter != null) {
-			iter = difference(iter, changes::hasDeprecated);
+		return lifetime.open(() -> getStatementsInternal(subj, pred, obj, contexts));
+	}
+
+	private CloseableIteration<? extends Statement> getStatementsInternal(Resource subj, IRI pred, Value obj,
+			Resource... contexts) throws SailException {
+		CloseableIteration<? extends Statement> iter = null;
+		CloseableIteration<? extends Statement> tail = null;
+		try {
+			Set<Resource> deprecatedContexts = changes.getDeprecatedContexts();
+
+			if (changes.isStatementCleared()
+					|| contexts == null && deprecatedContexts != null && deprecatedContexts.contains(null)
+					|| contexts != null && contexts.length > 0 && deprecatedContexts != null
+							&& deprecatedContexts.containsAll(Arrays.asList(contexts))) {
+				iter = null;
+			} else if (contexts != null && contexts.length > 0 && deprecatedContexts != null) {
+				List<Resource> remaining = new ArrayList<>(Arrays.asList(contexts));
+				remaining.removeAll(deprecatedContexts);
+				iter = derivedFrom.getStatements(subj, pred, obj, remaining.toArray(new Resource[0]));
+			} else {
+				iter = derivedFrom.getStatements(subj, pred, obj, contexts);
+			}
+			if (changes.hasDeprecated() && iter != null) {
+				iter = difference(iter, changes::hasDeprecated);
+			}
+
+			if (changes.hasApproved() && iter != null) {
+				// Reads must not consume approvals: a later freeze can retain the same generation, including for an
+				// iterator opened before freezing. Membership filtering needs no result-sized distinct set.
+				CloseableIteration<? extends Statement> distinctBacking = difference(iter,
+						statement -> changes.hasApproved(statement.getSubject(), statement.getPredicate(),
+								statement.getObject(), new Resource[] { statement.getContext() }));
+				tail = approvedIteration(subj, pred, obj, contexts);
+				return DualUnionIteration.getWildcardInstance(distinctBacking, tail);
+
+			} else if (changes.hasApproved()) {
+				return approvedIteration(subj, pred, obj, contexts);
+			} else if (iter != null) {
+				return iter;
+			} else {
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeCursor(iter, failure);
+			closeCursor(tail, failure);
+			throw failure;
 		}
 
-		if (changes.hasApproved() && iter != null) {
-			// Reads must not consume approvals: a later freeze can retain the same generation, including for an
-			// iterator opened before freezing. Membership filtering needs no result-sized distinct set.
-			CloseableIteration<? extends Statement> distinctBacking = difference(iter,
-					statement -> changes.hasApproved(statement.getSubject(), statement.getPredicate(),
-							statement.getObject(), new Resource[] { statement.getContext() }));
-			return DualUnionIteration.getWildcardInstance(distinctBacking,
-					new CloseableIteratorIteration<>(
-							changes.getApprovedStatements(subj, pred, obj, contexts).iterator()));
+	}
 
-		} else if (changes.hasApproved()) {
-			Iterator<Statement> i = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
-			return new CloseableIteratorIteration<>(i);
-		} else if (iter != null) {
-			return iter;
-		} else {
-			return IterationConstants.EMPTY_STATEMENT_ITERATION;
+	private CloseableIteration<Statement> approvedIteration(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+		Iterator<Statement> iterator = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
+		try {
+			return new CloseableIteratorIteration<>(iterator) {
+				@Override
+				protected void handleClose() {
+					if (iterator instanceof AutoCloseable closeable) {
+						try {
+							closeable.close();
+						} catch (RuntimeException | Error failure) {
+							throw failure;
+						} catch (Exception failure) {
+							throw new SailException(failure);
+						}
+					}
+				}
+			};
+		} catch (RuntimeException | Error failure) {
+			if (iterator instanceof AutoCloseable closeable) {
+				try {
+					closeable.close();
+				} catch (Exception | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			throw failure;
 		}
+
 	}
 
 	@Override
 	public CloseableIteration<? extends TripleTerm> getTriples(Resource subj, IRI pred, Value obj)
 			throws SailException {
+		return lifetime.open(() -> getTriplesInternal(subj, pred, obj));
+	}
 
-		CloseableIteration<? extends TripleTerm> iter;
-		if (changes.isStatementCleared()) {
-			// nothing in the backing source is relevant, but we may still need to return approved data
-			// from the changeset
-			iter = null;
-		} else {
-			iter = derivedFrom.getTriples(subj, pred, obj);
-		}
+	private CloseableIteration<? extends TripleTerm> getTriplesInternal(Resource subj, IRI pred, Value obj)
+			throws SailException {
+		CloseableIteration<? extends TripleTerm> iter = null;
+		CloseableIteration<? extends TripleTerm> tail = null;
+		try {
 
-		if (changes.hasDeprecated() && iter != null) {
-			iter = triplesDifference(iter, triple -> isDeprecated(triple, changes.getDeprecatedStatements()));
-		}
-
-		if (changes.hasApproved()) {
-			if (iter != null) {
-				CloseableIteratorIteration<? extends TripleTerm> tripleExceptionCloseableIteratorIteration = new CloseableIteratorIteration<>(
-						changes.getApprovedTriples(subj, pred, obj).iterator());
-
-				// merge newly approved triples in the changeset with data from the backing source
-				// TODO: see if use of collection factory is possible here.
-				return new DistinctIteration<>(
-						DualUnionIteration.getWildcardInstance(iter, tripleExceptionCloseableIteratorIteration),
-						new HashSet<>());
+			if (changes.isStatementCleared()) {
+				// nothing in the backing source is relevant, but we may still need to return approved data
+				// from the changeset
+				iter = null;
+			} else {
+				iter = derivedFrom.getTriples(subj, pred, obj);
 			}
 
-			// nothing relevant in the backing source, just return all matching approved triples from the changeset
-			return new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator());
-		} else if (iter != null) {
-			return iter;
-		} else {
-			return TRIPLE_EMPTY_ITERATION;
+			if (changes.hasDeprecated() && iter != null) {
+				iter = triplesDifference(iter, triple -> isDeprecated(triple, changes.getDeprecatedStatements()));
+			}
+
+			if (changes.hasApproved()) {
+				if (iter != null) {
+					tail = new CloseableIteratorIteration<>(
+							changes.getApprovedTriples(subj, pred, obj).iterator());
+
+					// merge newly approved triples in the changeset with data from the backing source
+					// TODO: see if use of collection factory is possible here.
+					return new DistinctIteration<>(
+							DualUnionIteration.getWildcardInstance(iter, tail),
+							new HashSet<>());
+				}
+
+				// nothing relevant in the backing source, just return all matching approved triples from the changeset
+				return new CloseableIteratorIteration<>(changes.getApprovedTriples(subj, pred, obj).iterator());
+			} else if (iter != null) {
+				return iter;
+			} else {
+				return TRIPLE_EMPTY_ITERATION;
+			}
+		} catch (RuntimeException | Error failure) {
+			closeCursor(iter, failure);
+			closeCursor(tail, failure);
+			throw failure;
+		}
+
+	}
+
+	private static void closeCursor(CloseableIteration<?> cursor, Throwable primary) {
+		if (cursor == null) {
+			return;
+		}
+		try {
+			cursor.close();
+		} catch (RuntimeException | Error failure) {
+			if (primary != failure) {
+				primary.addSuppressed(failure);
+			}
 		}
 	}
 
