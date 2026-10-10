@@ -14,6 +14,12 @@ package org.eclipse.rdf4j.sail.base;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
@@ -93,6 +99,173 @@ class StreamingWritePreflightOwnershipTest {
 			assertThat(readAll(retainedCursor.get()))
 					.containsExactly(firstStatement, secondStatement, thirdStatement);
 		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void twoPreparedUnionOwnerSnapshotsTerminateWithoutLosingBufferedRows() throws Exception {
+		assertForkedOwnerSnapshotScenarioTerminates("simple");
+	}
+
+	@Test
+	@Timeout(value = 70, unit = TimeUnit.SECONDS)
+	void reversedAndNestedUnionOwnerSnapshotsTerminateWithoutLosingBufferedRows() throws Exception {
+		for (String scenario : List.of("reversed", "nested", "nested-reversed")) {
+			assertForkedOwnerSnapshotScenarioTerminates(scenario);
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void ownPreparedBranchGuardAllowsReentrantUnionSnapshot() throws Exception {
+		RecordingStreamingSource primaryBacking = new RecordingStreamingSource();
+		RecordingStreamingSource additionalBacking = new RecordingStreamingSource();
+		primaryBacking.nullOwnerReturnsNull = true;
+		additionalBacking.nullOwnerReturnsNull = true;
+		AtomicInteger ownerQueries = new AtomicInteger();
+		primaryBacking.onNullOwnerQuery = thread -> ownerQueries.incrementAndGet();
+		SailSourceBranch primary = branch(primaryBacking);
+		SailSourceBranch additional = branch(additionalBacking);
+		UnionSailSource union = new UnionSailSource(primary, additional);
+		Statement row = statement("reentrant-owner-snapshot");
+		SailSink prepared = primary.sink(IsolationLevels.SNAPSHOT);
+
+		try {
+			prepared.approve(row);
+			prepared.prepare();
+			assertThat(primaryBacking.liveWriteReservations).hasValue(1);
+			int ownerQueriesBeforeUnion = ownerQueries.get();
+
+			union.prepare();
+
+			assertThat(ownerQueries.get())
+					.as("the same owner re-entered streaming snapshot resolution during Union.prepare")
+					.isGreaterThan(ownerQueriesBeforeUnion);
+			assertThat(((Changeset) prepared).getApprovedStatements()).containsExactly(row);
+		} finally {
+			prepared.close();
+			union.close();
+		}
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void unguardedSnapshotWaitsForForeignPreparedSinkRelease() throws Exception {
+		assertSnapshotWaitsForForeignPreparedSink(false, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void cleanupScopeAloneDoesNotMasqueradeAsPhysicalBranchGuard() throws Exception {
+		assertSnapshotWaitsForForeignPreparedSink(true, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void retainedCleanupReservationAloneDoesNotMasqueradeAsPhysicalBranchGuard() throws Exception {
+		assertSnapshotWaitsForForeignPreparedSink(false, true);
+	}
+
+	@Test
+	void serializableNegativeReadStillConflictsAcrossRetryAtSharedAncestor() throws Exception {
+		RecordingStreamingSource explicitBacking = new RecordingStreamingSource();
+		RecordingStreamingSource inferredBacking = new RecordingStreamingSource();
+		SailSourceBranch explicitRoot = branch(explicitBacking);
+		SailSourceBranch inferredRoot = branch(inferredBacking);
+		SailSourceBranch inferredSharedAncestor = branch(inferredRoot);
+		SailSourceBranch explicit = branch(explicitRoot);
+		SailSourceBranch inferred = branch(inferredSharedAncestor);
+		SailSourceBranch competitor = branch(inferredSharedAncestor);
+		UnionSailSource union = new UnionSailSource(explicit, inferred);
+		SailSourceBranch child = new SailSourceBranch(union, new DynamicModelFactory(), false);
+		Statement observed = statement("owner-retry-negative-observation");
+		Statement unrelated = statement("owner-retry-unrelated-write");
+
+		try {
+			try (SailDataset dataset = child.dataset(IsolationLevels.SERIALIZABLE);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(observed.getSubject(),
+							observed.getPredicate(), observed.getObject(), observed.getContext())) {
+				assertThat(statements.hasNext()).as("the SERIALIZABLE view records Y absent").isFalse();
+			}
+			try (SailDataset dataset = inferred.dataset(IsolationLevels.SERIALIZABLE);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(observed.getSubject(),
+							observed.getPredicate(), observed.getObject(), observed.getContext())) {
+				assertThat(statements.hasNext())
+						.as("the inferred branch retains a persistent negative-read carrier")
+						.isFalse();
+			}
+			assertThat(child.isChanged()).as("the negative read is retained in the child history").isTrue();
+			add(child, unrelated);
+
+			add(competitor, observed);
+			competitor.flush();
+			try (SailDataset current = inferredSharedAncestor.dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> statements = current.getStatements(observed.getSubject(),
+							observed.getPredicate(), observed.getObject(), observed.getContext())) {
+				assertThat(statements.hasNext())
+						.as("the competitor published Y at the exact inferred shared ancestor")
+						.isTrue();
+				assertThat(statements.next()).isEqualTo(observed);
+			}
+
+			SailSource.FlushBatch firstAttempt = child.freezeForFlush();
+			try {
+				assertThatThrownBy(firstAttempt::flush).isInstanceOf(SailConflictException.class);
+			} finally {
+				firstAttempt.close();
+			}
+			assertThat(child.isChanged()).as("the first failed publication retains its buffered row").isTrue();
+			SailSource.FlushBatch retryAttempt = child.freezeForFlush();
+			try {
+				assertThatThrownBy(retryAttempt::flush).isInstanceOf(SailConflictException.class);
+			} finally {
+				retryAttempt.close();
+			}
+			assertThat(child.isChanged()).as("the same original transaction remains retryable").isTrue();
+			try (SailDataset current = child.dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> statements = current.getStatements(unrelated.getSubject(),
+							unrelated.getPredicate(), unrelated.getObject(), unrelated.getContext())) {
+				assertThat(statements.hasNext()).as("retry did not lose the buffered own row").isTrue();
+				assertThat(statements.next()).isEqualTo(unrelated);
+			}
+			try (SailDataset current = explicitRoot.dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> statements = current.getStatements(unrelated.getSubject(),
+							unrelated.getPredicate(), unrelated.getObject(), unrelated.getContext())) {
+				assertThat(statements.hasNext()).as("conflicted own row was not published").isFalse();
+			}
+		} finally {
+			child.close();
+			competitor.close();
+			inferredSharedAncestor.close();
+			explicitRoot.close();
+			inferredRoot.close();
+		}
+	}
+
+	private static void assertForkedOwnerSnapshotScenarioTerminates(String scenario) throws Exception {
+		Path childLog = Files.createTempFile("prepared-union-owner-snapshot", ".log");
+		Process child = new ProcessBuilder(
+				Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-cp",
+				System.getProperty("java.class.path"),
+				PreparedUnionOwnerSnapshotRunner.class.getName(), scenario)
+						.redirectErrorStream(true)
+						.redirectOutput(childLog.toFile())
+						.start();
+
+		boolean finished = child.waitFor(15, TimeUnit.SECONDS);
+		if (!finished) {
+			child.destroyForcibly();
+			assertThat(child.waitFor(5, TimeUnit.SECONDS)).as("forked deadlock probe must stop").isTrue();
+		}
+		String output = Files.readString(childLog, StandardCharsets.UTF_8);
+		System.out.println("Prepared union owner snapshot child log: " + childLog);
+		assertThat(finished).withFailMessage("forked owner snapshot probe timed out\n%s", output).isTrue();
+		assertThat(child.exitValue()).withFailMessage("forked owner snapshot probe failed\n%s", output).isZero();
+		assertThat(output)
+				.contains("BOTH_SINKS_PREPARED", "BOTH_UNION_PREFLIGHTS_REACHED_OWNER_RESOLUTION",
+						"BUFFERED_ROWS_RETAINED_AFTER_PREFLIGHT", "OWNER_ROWS_PUBLISHED_AFTER_RETRY",
+						"PREPARED_RESERVATIONS_RELEASED");
 	}
 
 	@Test
@@ -1409,6 +1582,107 @@ class StreamingWritePreflightOwnershipTest {
 		return new SailSourceBranch(backing, new DynamicModelFactory(), false);
 	}
 
+	private static void assertSnapshotWaitsForForeignPreparedSink(boolean cleanupScope, boolean retainedReservation)
+			throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		terminal.nullOwnerReturnsNull = true;
+		SailSourceBranch parent = branch(terminal);
+		SailSourceBranch child = branch(parent);
+		Statement queued = statement("ordinary-snapshot-wait-" + cleanupScope + "-" + retainedReservation);
+		add(child, queued);
+
+		CountDownLatch parentPrepared = new CountDownLatch(1);
+		CountDownLatch releaseParent = new CountDownLatch(1);
+		CountDownLatch contenderAtOwnerResolution = new CountDownLatch(1);
+		CountDownLatch contenderCompleted = new CountDownLatch(1);
+		AtomicReference<Thread> contenderThread = new AtomicReference<>();
+		AtomicReference<Throwable> contenderFailure = new AtomicReference<>();
+		AtomicBoolean childClosedByContender = new AtomicBoolean();
+		terminal.onNullOwnerQuery = thread -> {
+			if (thread == contenderThread.get()) {
+				contenderAtOwnerResolution.countDown();
+			}
+		};
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> ownerTask = executor.submit(() -> {
+			try (SailSink sink = parent.sink(IsolationLevels.SERIALIZABLE)) {
+				sink.prepare();
+				parentPrepared.countDown();
+				await(releaseParent, "foreign prepared branch release");
+			}
+		});
+		Future<?> contenderTask = null;
+		boolean completedBeforeRelease = false;
+		boolean bufferedRowRetained = false;
+		try {
+			await(parentPrepared, "foreign SERIALIZABLE prepared sink");
+			contenderTask = executor.submit(() -> {
+				contenderThread.set(Thread.currentThread());
+				try {
+					if (cleanupScope) {
+						try (SailModelCleanup.Scope ignored = SailModelCleanup.enter()) {
+							child.prepare();
+							child.flush();
+						}
+					} else if (retainedReservation) {
+						SailModelCleanup.Retained retained;
+						try (SailModelCleanup.Scope ignored = SailModelCleanup.enter()) {
+							retained = SailModelCleanup.retain();
+						}
+						try {
+							try (SailModelCleanup.Scope ignored = SailModelCleanup.enter()) {
+								child.prepare();
+								child.flush();
+							}
+						} finally {
+							try (SailModelCleanup.Scope ignored = SailModelCleanup.enter()) {
+								retained.close();
+							}
+						}
+					} else {
+						child.prepare();
+						child.flush();
+					}
+				} catch (Throwable failure) {
+					contenderFailure.set(failure);
+					childClosedByContender.set(true);
+					try {
+						child.close();
+					} catch (Throwable closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				} finally {
+					contenderCompleted.countDown();
+				}
+			});
+			await(contenderAtOwnerResolution, "the contender reaching the shared ancestor snapshot");
+			completedBeforeRelease = contenderCompleted.await(250, TimeUnit.MILLISECONDS);
+		} finally {
+			releaseParent.countDown();
+			ownerTask.get(5, TimeUnit.SECONDS);
+			if (contenderTask != null) {
+				contenderTask.get(5, TimeUnit.SECONDS);
+			}
+			try (SailDataset dataset = child.dataset(IsolationLevels.NONE)) {
+				bufferedRowRetained = readAll(dataset.getStatements(null, null, null)).contains(queued);
+			}
+			if (!childClosedByContender.get()) {
+				child.close();
+			}
+			parent.close();
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+
+		assertThat(contenderAtOwnerResolution.getCount()).as("the contender reached the exact owner callback").isZero();
+		assertThat(completedBeforeRelease)
+				.as("an unguarded snapshot waits while a different owner retains the prepared branch")
+				.isFalse();
+		assertThat(contenderFailure.get()).as("the unguarded snapshot completes after foreign release").isNull();
+		assertThat(bufferedRowRetained).as("waiting does not discard the contender's real buffered row").isTrue();
+	}
+
 	private static Statement statement(String value) {
 		return VF.createStatement(VF.createIRI("urn:streaming-preflight:" + value),
 				VF.createIRI("urn:streaming-preflight:predicate"), VF.createLiteral(value));
@@ -1439,6 +1713,274 @@ class StreamingWritePreflightOwnershipTest {
 		} catch (InterruptedException interrupted) {
 			Thread.currentThread().interrupt();
 			throw new AssertionError("Interrupted while waiting for " + description, interrupted);
+		}
+	}
+
+	public static final class PreparedUnionOwnerSnapshotRunner {
+
+		private PreparedUnionOwnerSnapshotRunner() {
+		}
+
+		public static void main(String[] args) {
+			try {
+				run(args.length == 0 ? "simple" : args[0]);
+			} catch (Throwable failure) {
+				System.err.println("PREPARED_UNION_CHILD_FAILED");
+				failure.printStackTrace(System.err);
+				dumpAllThreads("child failure");
+				System.exit(1);
+			}
+			System.exit(0);
+		}
+
+		private static void run(String scenario) throws Exception {
+			RecordingStreamingSource primaryBacking = new RecordingStreamingSource();
+			RecordingStreamingSource additionalBacking = new RecordingStreamingSource();
+			RecordingStreamingSource nestedBacking = new RecordingStreamingSource();
+			primaryBacking.nullOwnerReturnsNull = true;
+			additionalBacking.nullOwnerReturnsNull = true;
+			SailSourceBranch primary = branch(primaryBacking);
+			SailSourceBranch additional = branch(additionalBacking);
+			SailSourceBranch nested = branch(nestedBacking);
+			UnionSailSource firstUnion = union(scenario, primary, additional, nested);
+			UnionSailSource secondUnion = union(scenario, primary, additional, nested);
+			Statement primaryRow = statement("prepared-primary-owner-row");
+			Statement additionalRow = statement("prepared-additional-owner-row");
+
+			CountDownLatch bothPrepared = new CountDownLatch(2);
+			CountDownLatch beginPreflight = new CountDownLatch(1);
+			CountDownLatch bothCompleted = new CountDownLatch(2);
+			CountDownLatch bothPreflightsCompleted = new CountDownLatch(2);
+			CountDownLatch allowOwnerFlush = new CountDownLatch(1);
+			CountDownLatch bothAtOwnerResolution = new CountDownLatch(2);
+			Set<Thread> ownerResolutionThreads = ConcurrentHashMap.newKeySet();
+			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
+			AtomicReference<String> primaryOutcome = new AtomicReference<>();
+			AtomicReference<String> additionalOutcome = new AtomicReference<>();
+			AtomicReference<List<Statement>> primaryRowsAtPrepare = new AtomicReference<>();
+			AtomicReference<List<Statement>> additionalRowsAtPrepare = new AtomicReference<>();
+			AtomicReference<List<Statement>> primaryRowsAfterPreflight = new AtomicReference<>();
+			AtomicReference<List<Statement>> additionalRowsAfterPreflight = new AtomicReference<>();
+			AtomicReference<String> primaryCleanupThread = new AtomicReference<>();
+			AtomicReference<String> additionalCleanupThread = new AtomicReference<>();
+
+			Thread primaryOwner = ownerThread("prepared-primary-owner", primary, firstUnion, primaryRow,
+					primaryBacking, bothPrepared, beginPreflight, bothPreflightsCompleted, allowOwnerFlush,
+					bothCompleted,
+					primaryOutcome, primaryRowsAtPrepare,
+					primaryRowsAfterPreflight, primaryCleanupThread, workerFailure);
+			Thread additionalOwner = ownerThread("prepared-additional-owner", additional, secondUnion, additionalRow,
+					additionalBacking, bothPrepared, beginPreflight, bothPreflightsCompleted, allowOwnerFlush,
+					bothCompleted,
+					additionalOutcome, additionalRowsAtPrepare,
+					additionalRowsAfterPreflight, additionalCleanupThread, workerFailure);
+			primaryOwner.start();
+			additionalOwner.start();
+
+			if (!bothPrepared.await(5, TimeUnit.SECONDS)) {
+				System.err.println("BOTH_SINKS_DID_NOT_PREPARE; workerFailure=" + workerFailure.get());
+				dumpAllThreads("prepared sink setup did not complete");
+				System.exit(3);
+			}
+			if (primaryBacking.liveWriteReservations.get() != 1
+					|| additionalBacking.liveWriteReservations.get() != 1
+					|| !primaryRowsAtPrepare.get().equals(List.of(primaryRow))
+					|| !additionalRowsAtPrepare.get().equals(List.of(additionalRow))) {
+				throw new AssertionError("Prepared sink reservations or buffered row witnesses were missing: primary="
+						+ primaryBacking.liveWriteReservations + "/" + primaryRowsAtPrepare.get() + ", additional="
+						+ additionalBacking.liveWriteReservations + "/" + additionalRowsAtPrepare.get());
+			}
+			System.out.println("BOTH_SINKS_PREPARED primaryRows=" + primaryRowsAtPrepare.get().size()
+					+ " additionalRows=" + additionalRowsAtPrepare.get().size() + " liveReservations=1/1");
+
+			Consumer<Thread> ownerResolutionBarrier = thread -> {
+				if (ownerResolutionThreads.add(thread)) {
+					bothAtOwnerResolution.countDown();
+					awaitBarrier(bothAtOwnerResolution, "both Union graph collections to reach owner resolution");
+				}
+			};
+			primaryBacking.onNullOwnerQuery = ownerResolutionBarrier;
+			additionalBacking.onNullOwnerQuery = ownerResolutionBarrier;
+			beginPreflight.countDown();
+			if (!bothAtOwnerResolution.await(5, TimeUnit.SECONDS)) {
+				System.err.println("BOTH_UNION_PREFLIGHTS_DID_NOT_REACH_OWNER_RESOLUTION; participants="
+						+ ownerResolutionThreads.size() + "; workerFailure=" + workerFailure.get());
+				dumpAllThreads("Union preflight activation did not complete");
+				System.exit(4);
+			}
+			System.out.println("BOTH_UNION_PREFLIGHTS_REACHED_OWNER_RESOLUTION participants="
+					+ ownerResolutionThreads.size());
+			if (!bothPreflightsCompleted.await(5, TimeUnit.SECONDS)) {
+				System.err.println("BOTH_UNION_PREFLIGHTS_DID_NOT_COMPLETE; participants="
+						+ ownerResolutionThreads.size() + "; workerFailure=" + workerFailure.get());
+				dumpAllThreads("Union preflight completion did not complete");
+				System.exit(5);
+			}
+			if (!primaryBacking.committed.isEmpty() || !additionalBacking.committed.isEmpty()) {
+				throw new AssertionError("A prepared owner published before the ordinary retry flush: primary="
+						+ primaryBacking.committed + ", additional=" + additionalBacking.committed);
+			}
+			System.out.println("BOTH_PREPARED_ROWS_RETAINED_BEFORE_OWNER_RETRY_FLUSH");
+			allowOwnerFlush.countDown();
+
+			if (!bothCompleted.await(5, TimeUnit.SECONDS)) {
+				System.err.println("UNION_PREPARES_DID_NOT_TERMINATE_WITHIN_BOUND; participants="
+						+ ownerResolutionThreads.size());
+				dumpAllThreads("opposing Union snapshot operations did not terminate");
+				System.exit(2);
+			}
+			if (workerFailure.get() != null) {
+				throw new AssertionError("Union owner worker failed", workerFailure.get());
+			}
+			if (!isAcceptedOutcome(primaryOutcome.get()) || !isAcceptedOutcome(additionalOutcome.get())) {
+				throw new AssertionError("Unexpected Union preflight outcomes: primary=" + primaryOutcome.get()
+						+ ", additional=" + additionalOutcome.get());
+			}
+			if (!"prepared-primary-owner".equals(primaryCleanupThread.get())
+					|| !"prepared-additional-owner".equals(additionalCleanupThread.get())) {
+				throw new AssertionError("Prepared sink cleanup did not run on its owner thread: primary="
+						+ primaryCleanupThread.get() + ", additional=" + additionalCleanupThread.get());
+			}
+
+			if (!List.of(primaryRow).equals(primaryRowsAfterPreflight.get())
+					|| !List.of(additionalRow).equals(additionalRowsAfterPreflight.get())
+					|| primaryBacking.committed.size() != 1 || !primaryBacking.committed.contains(primaryRow)
+					|| additionalBacking.committed.size() != 1
+					|| !additionalBacking.committed.contains(additionalRow)) {
+				throw new AssertionError(
+						"An accepted Union outcome or ordinary owner retry lost or duplicated buffered work: primary="
+								+ primaryRowsAfterPreflight.get() + ", additional=" + additionalRowsAfterPreflight.get()
+								+ ", committed=" + primaryBacking.committed + "/" + additionalBacking.committed);
+			}
+			if (primaryBacking.liveWriteReservations.get() != 0 || additionalBacking.liveWriteReservations.get() != 0
+					|| primaryBacking.liveSinkPreparations.get() != 0
+					|| additionalBacking.liveSinkPreparations.get() != 0) {
+				throw new AssertionError("The owner retry flush retained prepared reservations: "
+						+ primaryBacking.liveWriteReservations + "/" + primaryBacking.liveSinkPreparations + " and "
+						+ additionalBacking.liveWriteReservations + "/" + additionalBacking.liveSinkPreparations);
+			}
+			System.out.println("BUFFERED_ROWS_RETAINED_AFTER_PREFLIGHT primary=" + primaryOutcome.get()
+					+ " additional=" + additionalOutcome.get() + " ownerCleanup=both-owner-threads");
+			System.out.println("OWNER_ROWS_PUBLISHED_AFTER_RETRY primary=" + primaryBacking.committed.size()
+					+ " additional=" + additionalBacking.committed.size());
+			System.out.println("PREPARED_RESERVATIONS_RELEASED");
+			firstUnion.close();
+			secondUnion.close();
+		}
+
+		private static UnionSailSource union(String scenario, SailSourceBranch primary, SailSourceBranch additional,
+				SailSourceBranch nested) {
+			return switch (scenario) {
+			case "reversed" -> new UnionSailSource(additional, primary);
+			case "nested" -> new UnionSailSource(primary, new UnionSailSource(additional, nested));
+			case "nested-reversed" -> new UnionSailSource(additional, new UnionSailSource(primary, nested));
+			default -> new UnionSailSource(primary, additional);
+			};
+		}
+
+		private static Thread ownerThread(String name, SailSourceBranch branch, UnionSailSource union,
+				Statement row, RecordingStreamingSource backing, CountDownLatch bothPrepared,
+				CountDownLatch beginPreflight, CountDownLatch bothPreflightsCompleted, CountDownLatch allowOwnerFlush,
+				CountDownLatch bothCompleted,
+				AtomicReference<String> outcome, AtomicReference<List<Statement>> rowsAtPrepare,
+				AtomicReference<List<Statement>> rowsAfterPreflight, AtomicReference<String> cleanupThread,
+				AtomicReference<Throwable> workerFailure) {
+			Thread worker = new Thread(() -> {
+				SailSink sink = null;
+				AtomicBoolean preflightReported = new AtomicBoolean();
+				try {
+					sink = branch.sink(IsolationLevels.SNAPSHOT);
+					sink.approve(row);
+					sink.prepare();
+					rowsAtPrepare.set(((Changeset) sink).getApprovedStatements());
+					if (!rowsAtPrepare.get().equals(List.of(row))) {
+						throw new AssertionError(
+								"Prepared Changeset did not retain its real row: " + rowsAtPrepare.get());
+					}
+					bothPrepared.countDown();
+					awaitBarrier(beginPreflight, "both prepared sinks before Union preflight");
+					try {
+						union.prepare();
+						outcome.set("prepared");
+					} catch (SailConflictException acceptedConflict) {
+						outcome.set("conflict: " + acceptedConflict.getMessage());
+					}
+					rowsAfterPreflight.set(((Changeset) sink).getApprovedStatements());
+					if (!rowsAfterPreflight.get().contains(row)) {
+						throw new AssertionError("Union outcome discarded the owner's buffered row: " + row);
+					}
+					if (preflightReported.compareAndSet(false, true)) {
+						bothPreflightsCompleted.countDown();
+					}
+					awaitBarrier(allowOwnerFlush, "both owners to retry their retained buffered rows");
+					sink.flush();
+					sink.close();
+					cleanupThread.set(Thread.currentThread().getName());
+					sink = null;
+					branch.flush();
+					if (backing.committed.size() != 1 || !backing.committed.contains(row)) {
+						throw new AssertionError("The owner-thread retry did not publish exactly its original row: "
+								+ backing.committed);
+					}
+				} catch (Throwable failure) {
+					workerFailure.compareAndSet(null, failure);
+				} finally {
+					if (sink != null) {
+						try {
+							sink.close();
+							cleanupThread.set(Thread.currentThread().getName());
+						} catch (Throwable cleanupFailure) {
+							workerFailure.compareAndSet(null, cleanupFailure);
+						}
+					}
+					if (preflightReported.compareAndSet(false, true)) {
+						bothPreflightsCompleted.countDown();
+					}
+					bothCompleted.countDown();
+				}
+			}, name);
+			worker.setDaemon(true);
+			return worker;
+		}
+
+		private static boolean isAcceptedOutcome(String outcome) {
+			return outcome != null && (outcome.equals("prepared") || outcome.startsWith("conflict:"));
+		}
+
+		private static void awaitBarrier(CountDownLatch latch, String description) {
+			try {
+				if (!latch.await(5, TimeUnit.SECONDS)) {
+					throw new AssertionError("Timed out waiting for " + description);
+				}
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError("Interrupted while waiting for " + description, interrupted);
+			}
+		}
+
+		private static void dumpAllThreads(String phase) {
+			System.err.println("FULL_THREAD_DUMP phase=" + phase);
+			ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+			ThreadInfo[] threadInfos = threadMXBean.dumpAllThreads(true, true);
+			for (ThreadInfo threadInfo : threadInfos) {
+				if (threadInfo == null) {
+					continue;
+				}
+				System.err.println("Thread \"" + threadInfo.getThreadName() + "\" id=" + threadInfo.getThreadId()
+						+ " state=" + threadInfo.getThreadState() + " lock=" + threadInfo.getLockInfo()
+						+ " lockOwner=" + threadInfo.getLockOwnerName() + " lockOwnerId="
+						+ threadInfo.getLockOwnerId());
+				for (StackTraceElement frame : threadInfo.getStackTrace()) {
+					System.err.println("\tat " + frame);
+				}
+				for (var monitor : threadInfo.getLockedMonitors()) {
+					System.err.println("\tlocked monitor=" + monitor);
+				}
+				for (var synchronizer : threadInfo.getLockedSynchronizers()) {
+					System.err.println("\tlocked synchronizer=" + synchronizer);
+				}
+			}
+			System.err.flush();
 		}
 	}
 

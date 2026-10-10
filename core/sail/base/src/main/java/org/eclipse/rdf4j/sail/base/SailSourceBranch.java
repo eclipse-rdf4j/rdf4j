@@ -1531,9 +1531,13 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	private void lockStreamingSnapshot(boolean nonblocking) {
-		if (nonblocking) {
+		if (nonblocking || SailModelCleanup.holdsOrdinaryGuard()) {
 			if (!semaphore.tryLock()) {
-				throw new StreamingWritePreflight.Unavailable();
+				if (nonblocking) {
+					throw new StreamingWritePreflight.Unavailable();
+				}
+				throw new SailConflictException(
+						"Cannot wait for another buffered source while retaining branch or model guards; retry the transaction");
 			}
 		} else {
 			semaphore.lock();

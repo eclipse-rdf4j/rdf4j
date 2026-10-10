@@ -49,6 +49,14 @@ final class SailModelCleanup {
 		CURRENT.get().endHold();
 	}
 
+	/** Lexical scopes and retained cleanup reservations are not physical branch or model guards. */
+	static boolean holdsOrdinaryGuard() {
+		State state = CURRENT.get();
+		synchronized (state) {
+			return state.holds > state.scopes;
+		}
+	}
+
 	static void defer(SailClosable resource) {
 		State state = CURRENT.get();
 		Pending pending = new Pending(resource);
