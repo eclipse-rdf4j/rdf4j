@@ -114,43 +114,46 @@ interface FrozenFlush {
 		}
 
 		void flush(Batch root) {
-			boolean needsStaging;
-			synchronized (this) {
-				checkActive();
-				if (stagingFailure != null) {
-					throw new IllegalStateException("The retained flush graph could not be staged", stagingFailure);
-				}
-				running = true;
-				flushed = false;
-				needsStaging = !staged;
-			}
-			try {
-				if (needsStaging) {
-					try {
-						root.discoverValidationCarriers(this);
-						root.stage(this);
-					} catch (RuntimeException | Error failure) {
-						synchronized (this) {
-							// A partial logical transfer must never masquerade as a complete replay on the next call.
-							stagingFailure = failure;
-						}
-						throw failure;
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				boolean needsStaging;
+				synchronized (this) {
+					checkActive();
+					if (stagingFailure != null) {
+						throw new IllegalStateException("The retained flush graph could not be staged", stagingFailure);
 					}
+					running = true;
+					flushed = false;
+					needsStaging = !staged;
 				}
-				List<Batch> toApply;
-				synchronized (this) {
-					staged = true;
-					toApply = List.copyOf(terminals);
-				}
-				for (Batch terminal : toApply) {
-					terminal.apply();
-				}
-				synchronized (this) {
-					flushed = true;
-				}
-			} finally {
-				synchronized (this) {
-					running = false;
+				try {
+					if (needsStaging) {
+						try {
+							root.discoverValidationCarriers(this);
+							root.stage(this);
+						} catch (RuntimeException | Error failure) {
+							synchronized (this) {
+								// A partial logical transfer must never masquerade as a complete replay on the next
+								// call.
+								stagingFailure = failure;
+							}
+							throw failure;
+						}
+					}
+					List<Batch> toApply;
+					synchronized (this) {
+						staged = true;
+						toApply = List.copyOf(terminals);
+					}
+					for (Batch terminal : toApply) {
+						terminal.apply();
+					}
+					synchronized (this) {
+						flushed = true;
+					}
+				} finally {
+					synchronized (this) {
+						running = false;
+					}
 				}
 			}
 		}

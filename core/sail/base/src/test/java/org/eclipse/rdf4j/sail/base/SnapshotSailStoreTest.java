@@ -27,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -1084,30 +1086,52 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
-	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterCommit() {
-		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.READ_COMMITTED);
+	public void testAutoFlushClosesLastOwnedAutoCloseableModelAfterReadCommittedCommit() {
+		assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels.READ_COMMITTED);
 	}
 
 	@Test
-	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterSerializableCommit() {
-		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.SERIALIZABLE);
+	public void testAutoFlushClosesLastOwnedAutoCloseableModelAfterSerializableCommit() {
+		assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels.SERIALIZABLE);
 	}
 
-	private void assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels level) {
+	private void assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels level) {
 		AtomicInteger closeCount = new AtomicInteger();
-		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink(),
+		AtomicBoolean approvalBatchConsumed = new AtomicBoolean();
+		AtomicInteger approvedStatementCount = new AtomicInteger();
+		Statement expectedStatement = SimpleValueFactory.getInstance()
+				.createStatement(RDF.TYPE, RDFS.LABEL,
+						SimpleValueFactory.getInstance().createLiteral("type"));
+		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink() {
+			@Override
+			public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+				assertEquals(0, closeCount.get(), "the retained model stays open while the sink consumes approvals");
+				assertFalse(approved.isEmpty(), "the sink must receive the buffered statement");
+				for (Statement statement : approved) {
+					assertEquals(expectedStatement, statement);
+					approvedStatementCount.incrementAndGet();
+				}
+				assertEquals(0, closeCount.get(), "the model remains open through approval consumption");
+				approvalBatchConsumed.set(true);
+			}
+		},
 				() -> new CloseCountingModel(closeCount));
 		Sail sail = createSail(sailStore);
 
-		try (SailConnection connection = sail.getConnection()) {
-			connection.begin(level);
-			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
-			connection.commit();
+		try {
+			try (SailConnection connection = sail.getConnection()) {
+				connection.begin(level);
+				connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
+				connection.commit();
 
-			assertEquals(0, closeCount.get());
+				assertTrue(approvalBatchConsumed.get(), "the sink consumed the approved model before commit completed");
+				assertEquals(1, approvedStatementCount.get(), "the sink consumed the actual buffered statement");
+				assertEquals(1, closeCount.get(), "commit releases the final owner after approval consumption");
+			}
 		} finally {
 			sail.shutDown();
 		}
+		assertEquals(1, closeCount.get(), "connection close and sail shutdown do not dispose the model again");
 	}
 
 	@Test
