@@ -114,8 +114,9 @@ final class GeneralPathPlan implements SlotPlan {
 		long rowSubj = subjSlot >= 0 ? row.slots[subjSlot] : UNKNOWN;
 		long rowObj = objSlot >= 0 ? row.slots[objSlot] : UNKNOWN;
 		long rowCtx = ctxSlot >= 0 ? row.slots[ctxSlot] : UNKNOWN;
-		if (!fixedValueCompatible(row, rowSubj, subjConst) || !fixedValueCompatible(row, rowObj, objConst)
-				|| !fixedValueCompatible(row, rowCtx, ctxConst)) {
+		if (!fixedValueCompatible(row, rowSubj, subjConst, subjSlot)
+				|| !fixedValueCompatible(row, rowObj, objConst, objSlot)
+				|| !fixedValueCompatible(row, rowCtx, ctxConst, ctxSlot)) {
 			return EmptyCursor.INSTANCE;
 		}
 		long subj = subjConst != UNKNOWN ? subjConst : rowSubj;
@@ -131,8 +132,9 @@ final class GeneralPathPlan implements SlotPlan {
 		return new GeneralPathPairCursor(row, this, pairs, subjWasBound, objWasBound);
 	}
 
-	private static boolean fixedValueCompatible(RowState row, long bound, long fixed) {
-		return bound == UNKNOWN || fixed == UNKNOWN || ZeroLengthPathPlan.sameTerm(row, bound, fixed);
+	private static boolean fixedValueCompatible(RowState row, long bound, long fixed, int slot) {
+		return bound == UNKNOWN || fixed == UNKNOWN
+				|| ZeroLengthPathPlan.sameTerm(row, bound, row.positionMask(slot), fixed, 0);
 	}
 
 	@Override
@@ -244,7 +246,8 @@ final class GeneralPathEvaluation {
 		if (subj != UNKNOWN) {
 			LongHashSet reached = reachableFrom(subj, true);
 			if (obj != UNKNOWN) {
-				boolean identity = plan.minLength == 0L && ZeroLengthPathPlan.sameTerm(row, subj, obj);
+				boolean identity = plan.minLength == 0L && ZeroLengthPathPlan.sameTerm(row, subj,
+						row.positionMask(plan.subjSlot), obj, row.positionMask(plan.objSlot));
 				if (identity || reached.contains(obj)) {
 					addPair(subj, obj);
 				}

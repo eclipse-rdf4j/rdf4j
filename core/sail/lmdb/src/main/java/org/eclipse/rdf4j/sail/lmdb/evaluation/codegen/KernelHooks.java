@@ -119,6 +119,32 @@ public interface KernelHooks {
 	/** SPARQL ORDER BY comparison of two ids (negative/zero/positive contract like a {@code Comparator}). */
 	int compareValues(long left, long right);
 
+	/** Complete RDF position mask of one physical kernel column, or zero when it has no associated variable. */
+	default int positionMask(int column) {
+		return 0;
+	}
+
+	/** Complete RDF position mask after the kernel's output projection or grouping. */
+	default int outputPositionMask(int column) {
+		return positionMask(column);
+	}
+
+	/** Complete RDF position mask of an aggregate's source variable before scratch-column normalization. */
+	default int aggregatePositionMask(int aggregate) {
+		return 0;
+	}
+
+	/** Compares values while retaining the operand variables' RDF position masks. */
+	default int compareValues(long left, int leftPositionMask, long right, int rightPositionMask) {
+		return compareValues(left, right);
+	}
+
+	/** Compares two values occupying the same projected output column. */
+	default int compareOutputValues(long left, long right, int column) {
+		int mask = outputPositionMask(column);
+		return compareValues(left, mask, right, mask);
+	}
+
 	/**
 	 * Whether {@code candidate} replaces {@code incumbent} as the current MIN/MAX winner. Generated extrema updates
 	 * route through this hook rather than comparing inline so an engine can refuse ties between distinct terms — two
@@ -130,11 +156,26 @@ public interface KernelHooks {
 		return min ? comparison < 0 : comparison > 0;
 	}
 
+	/** Retains the input variable's RDF position mask during MIN/MAX comparison. */
+	default boolean replacesWinner(long candidate, long incumbent, boolean min, int positionMask) {
+		return replacesWinner(candidate, incumbent, min);
+	}
+
 	/** True when the id decodes to a numeric literal usable in arithmetic aggregates. */
 	boolean isNumeric(long id);
 
+	/** Numeric classification retaining the input variable's RDF position mask. */
+	default boolean isNumeric(long id, int positionMask) {
+		return isNumeric(id);
+	}
+
 	/** The numeric value of an id for which {@link #isNumeric(long)} returned true. */
 	double doubleValue(long id);
+
+	/** Numeric conversion retaining the input variable's RDF position mask. */
+	default double doubleValue(long id, int positionMask) {
+		return doubleValue(id);
+	}
 
 	/**
 	 * Adds one bound value to an exact SUM or AVG accumulator owned by the engine. The aggregate and group ordinals are

@@ -164,9 +164,9 @@ class LmdbSailStoreOverlayStartupTest {
 						openedValues.set(values);
 						System.setProperties(failing);
 					}))
-					.isInstanceOf(SecurityException.class)
-					.hasMessage("controlled warmup property refusal")
-					.hasStackTraceContaining("warmConfiguredValueOverlay");
+							.isInstanceOf(SecurityException.class)
+							.hasMessage("controlled warmup property refusal")
+							.hasStackTraceContaining("warmConfiguredValueOverlay");
 			assertThatThrownBy(() -> openedValues.get().getTxnManager().createReadTxn())
 					.as("failed owner must close its native dictionary")
 					.isInstanceOf(IOException.class)

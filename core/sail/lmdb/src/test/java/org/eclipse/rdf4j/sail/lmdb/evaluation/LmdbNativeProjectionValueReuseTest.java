@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
@@ -45,7 +46,7 @@ class LmdbNativeProjectionValueReuseTest {
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		String label = "Grønn \uD83C\uDF32";
 		var literal = SimpleValueFactory.getInstance().createLiteral(label, "nb");
-		when(codec.decodeAssured(42L)).thenReturn(LmdbNativeValueCodec.fromValue(literal));
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(LmdbNativeValueCodec.fromValue(literal));
 		RowState row = row(source);
 		row.slots[0] = 42L;
 		LmdbNativeScalarExpressionCompiler compiler = compiler(source, codec);
@@ -56,7 +57,7 @@ class LmdbNativeProjectionValueReuseTest {
 		assertEquals(Integer.toString(label.length()), compiler.compileValue(
 				new FunctionCall(FN.STRING_LENGTH.stringValue(), new Str(new Var("value")))).evaluator.eval(row)
 						.label());
-		verify(codec, times(1)).decodeAssured(42L);
+		verify(codec, times(1)).decodeAssured(42L, ValuePosition.NONE);
 	}
 
 	@Test
@@ -64,9 +65,9 @@ class LmdbNativeProjectionValueReuseTest {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec first = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec second = mock(LmdbNativeValueCodec.class);
-		when(first.decodeAssured(42L)).thenReturn(decoded("first"));
-		when(first.decodeAssured(43L)).thenReturn(decoded("next"));
-		when(second.decodeAssured(42L)).thenReturn(decoded("second"));
+		when(first.decodeAssured(42L, ValuePosition.NONE)).thenReturn(decoded("first"));
+		when(first.decodeAssured(43L, ValuePosition.NONE)).thenReturn(decoded("next"));
+		when(second.decodeAssured(42L, ValuePosition.NONE)).thenReturn(decoded("second"));
 		RowState row = row(source);
 		LmdbNativeCompiledValue value = compiler(source, first).compileValue(new Str(new Var("value")));
 		row.slots[0] = 42L;
@@ -78,16 +79,17 @@ class LmdbNativeProjectionValueReuseTest {
 		assertEquals("first", value.evaluator.eval(row).label());
 		assertEquals("second",
 				compiler(source, second).compileValue(new Str(new Var("value"))).evaluator.eval(row).label());
-		verify(first, times(2)).decodeAssured(42L);
-		verify(first, times(1)).decodeAssured(43L);
-		verify(second, times(1)).decodeAssured(42L);
+		verify(first, times(2)).decodeAssured(42L, ValuePosition.NONE);
+		verify(first, times(1)).decodeAssured(43L, ValuePosition.NONE);
+		verify(second, times(1)).decodeAssured(42L, ValuePosition.NONE);
 	}
 
 	@Test
 	void failedResolutionDoesNotCacheAnUnpublishedValue() {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
-		when(codec.decodeAssured(42L)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR, decoded("published"));
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR,
+				decoded("published"));
 		RowState row = row(source);
 		row.slots[0] = 42L;
 		LmdbNativeCompiledValue value = compiler(source, codec).compileValue(new Str(new Var("value")));
@@ -101,7 +103,7 @@ class LmdbNativeProjectionValueReuseTest {
 				new NativeValueResolutionContractTest.Source());
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		long id = source.internComputedValue(SimpleValueFactory.getInstance().createLiteral("runtime lexical value"));
-		when(codec.decodeAssured(id)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR);
+		when(codec.decodeAssured(id, ValuePosition.NONE)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR);
 		RowState row = row(source);
 		row.slots[0] = id;
 		LmdbNativeCompiledValue value = compiler(source, codec).compileValue(new Str(new Var("value")));
@@ -116,13 +118,13 @@ class LmdbNativeProjectionValueReuseTest {
 		NativeLmdbQuerySource source = new SyntheticValueSource(mock(NativeLmdbQuerySource.class),
 				PlanValueCatalog.EMPTY);
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
-		when(codec.decodeAssured(42L)).thenReturn(decoded("stored"));
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(decoded("stored"));
 		RowState row = row(source);
 		row.slots[0] = 42L;
 		LmdbNativeCompiledValue value = compiler(source, codec).compileValue(new Str(new Var("value")));
 		assertEquals("stored", value.evaluator.eval(row).label());
 		assertEquals("stored", value.evaluator.eval(row).label());
-		verify(codec, times(1)).decodeAssured(42L);
+		verify(codec, times(1)).decodeAssured(42L, ValuePosition.NONE);
 	}
 
 	@Test
@@ -130,7 +132,7 @@ class LmdbNativeProjectionValueReuseTest {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue value = decoded("accounted");
-		when(codec.decodeAssured(42L)).thenReturn(value);
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(value);
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		RowState row = row(source);
@@ -141,7 +143,7 @@ class LmdbNativeProjectionValueReuseTest {
 			assertSame(value, row.decodedValue(0, codec, true));
 			assertEquals(RowState.decodedInputMemoryBytes(row.slots.length) + value.ownedBytes(), manager.usedBytes());
 			assertSame(value, row.decodedValue(0, codec, true));
-			verify(codec, times(1)).decodeAssured(42L);
+			verify(codec, times(1)).decodeAssured(42L, ValuePosition.NONE);
 
 			row.closeDecodedInputs();
 			assertEquals(0L, manager.usedBytes());
@@ -157,8 +159,8 @@ class LmdbNativeProjectionValueReuseTest {
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue parentValue = decoded("parent");
 		LmdbNativeValueCodec.DecodedValue childValue = decoded("child");
-		when(codec.decodeAssured(42L)).thenReturn(parentValue);
-		when(codec.decodeAssured(43L)).thenReturn(childValue);
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(parentValue);
+		when(codec.decodeAssured(43L, ValuePosition.NONE)).thenReturn(childValue);
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		RowState parent = row(source);
@@ -190,7 +192,7 @@ class LmdbNativeProjectionValueReuseTest {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue value = decoded("long-input-".repeat(4_096));
-		when(codec.decodeAssured(42L)).thenReturn(value);
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(value);
 		long capacity = RowState.decodedInputMemoryBytes(1) + value.ownedBytes() - 1L;
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(capacity, capacity);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
@@ -201,7 +203,7 @@ class LmdbNativeProjectionValueReuseTest {
 			row.enableDecodedInputAccounting();
 			assertSame(value, row.decodedValue(0, codec, true));
 			assertSame(value, row.decodedValue(0, codec, true));
-			verify(codec, times(2)).decodeAssured(42L);
+			verify(codec, times(2)).decodeAssured(42L, ValuePosition.NONE);
 			assertEquals(0L, manager.usedBytes());
 		} finally {
 			row.closeDecodedInputs();
@@ -227,8 +229,8 @@ class LmdbNativeProjectionValueReuseTest {
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue large = decoded("L".repeat(512));
 		LmdbNativeValueCodec.DecodedValue small = decoded("s");
-		when(codec.decodeAssured(42L)).thenReturn(large);
-		when(codec.decodeAssured(43L)).thenReturn(small);
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(large);
+		when(codec.decodeAssured(43L, ValuePosition.NONE)).thenReturn(small);
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		RowState row = row(source);
@@ -254,9 +256,9 @@ class LmdbNativeProjectionValueReuseTest {
 		LmdbNativeValueCodec second = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue firstValue = decoded("first authority");
 		LmdbNativeValueCodec.DecodedValue secondValue = decoded("second authority");
-		when(first.decodeAssured(42L)).thenReturn(firstValue);
-		when(second.decodeAssured(42L)).thenReturn(secondValue);
-		when(second.decodeAssured(43L)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR);
+		when(first.decodeAssured(42L, ValuePosition.NONE)).thenReturn(firstValue);
+		when(second.decodeAssured(42L, ValuePosition.NONE)).thenReturn(secondValue);
+		when(second.decodeAssured(43L, ValuePosition.NONE)).thenReturn(LmdbNativeValueCodec.DecodedValue.ERROR);
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		RowState row = row(source);
@@ -282,7 +284,7 @@ class LmdbNativeProjectionValueReuseTest {
 		LmdbNativeValueCodec codec = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec.DecodedValue triple = LmdbNativeValueCodec.DecodedValue.triple(
 				SimpleValueFactory.getInstance().createIRI("http://example.com/triple"));
-		when(codec.decodeAssured(42L)).thenReturn(triple);
+		when(codec.decodeAssured(42L, ValuePosition.NONE)).thenReturn(triple);
 		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(1_000_000L, 1_000_000L);
 		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		RowState row = row(source);
@@ -292,7 +294,7 @@ class LmdbNativeProjectionValueReuseTest {
 			row.enableDecodedInputAccounting();
 			assertSame(triple, row.decodedValue(0, codec, true));
 			assertSame(triple, row.decodedValue(0, codec, true));
-			verify(codec, times(2)).decodeAssured(42L);
+			verify(codec, times(2)).decodeAssured(42L, ValuePosition.NONE);
 			assertEquals(-1L, triple.ownedBytes());
 			assertEquals(0L, manager.usedBytes());
 		} finally {

@@ -317,6 +317,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	final long limit;
 	final boolean strictCompare;
 	final LmdbNativeEvaluationStrategy strategy;
+	final NativeValuePositionAnalysis valuePositions;
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
@@ -370,13 +371,15 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		this.orderSlots = orderSlots;
 		this.orderAscending = orderAscending;
 		this.sortLayout = NativeSortLayout.create(layout.slotNames().length, sourceSlots, orderSlots);
-		this.projectionLayout = NativeProjectedBindingSet.ProjectionLayout.create(targetNames, sourceSlots);
+		this.projectionLayout = NativeProjectedBindingSet.ProjectionLayout.create(targetNames, sourceSlots,
+				layout.positionMasks(sourceSlots));
 		this.sortProjectionLayout = NativeProjectedBindingSet.ProjectionLayout.create(targetNames,
-				this.sortLayout.sourceSlots);
+				this.sortLayout.sourceSlots, layout.positionMasks(sourceSlots));
 		this.offset = offset;
 		this.limit = limit;
 		this.strictCompare = strictCompare;
 		this.strategy = strategy;
+		this.valuePositions = strategy == null ? null : strategy.valuePositionSnapshot();
 		this.originalExpr = originalExpr;
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
@@ -513,29 +516,29 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 
 	synchronized QueryEvaluationStep genericStep() {
 		if (genericFallbackDescriptor == null) {
-			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
 		}
 		if (rootEvaluationScoped && !genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
 			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
-			return strategy.genericPrecompile(genericFallbackDescriptor.pinnedExpr(),
+			return genericFallbackDescriptor.genericPrecompile(strategy,
 					new EvaluationScopedQueryEvaluationContext(context));
 		}
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			genericStep = genericFallbackDescriptor.genericPrecompile(strategy, context);
 		}
 		return genericStep;
 	}
 
 	synchronized QueryEvaluationStep genericStep(NativeExecutionContext executionContext) {
 		if (genericFallbackDescriptor == null) {
-			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
 		}
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
 						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
-				return strategy.genericPrecompile(genericFallbackDescriptor.<TupleExpr>pinnedExpr(), scoped);
+				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}
 		return genericStep();
@@ -672,13 +675,14 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			for (int k = 0; k < orderSlots.length; k++) {
 				long leftId = left[leftOffset + sortLayout.orderSlots[k]];
 				long rightId = right[rightOffset + sortLayout.orderSlots[k]];
-				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec, orderAuthority);
+				int positionMask = layout.positionMask(orderSlots[k]);
+				Integer nativeCmp = orderCompare(leftId, rightId, orderCodec, orderAuthority, positionMask);
 				int cmp;
 				if (nativeCmp != null) {
 					cmp = nativeCmp;
 				} else {
-					Value leftValue = orderValue(leftId, values);
-					Value rightValue = orderValue(rightId, values);
+					Value leftValue = orderValue(leftId, values, positionMask);
+					Value rightValue = orderValue(rightId, values, positionMask);
 					cmp = values.comparator.compare(leftValue, rightValue);
 				}
 				if (cmp != 0) {
@@ -1168,13 +1172,22 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	}
 
 	Value orderValue(long id, AggContext values) {
+		return orderValue(id, values, 0);
+	}
+
+	Value orderValue(long id, AggContext values, int positionMask) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
 			return null;
 		}
-		return values.value(id);
+		return values.value(id, positionMask);
 	}
 
 	Integer orderCompare(long leftId, long rightId, LmdbNativeValueCodec codec, NativeTermAuthority authority) {
+		return orderCompare(leftId, rightId, codec, authority, 0);
+	}
+
+	Integer orderCompare(long leftId, long rightId, LmdbNativeValueCodec codec, NativeTermAuthority authority,
+			int positionMask) {
 		if (codec == null || leftId == UNKNOWN || leftId == NULL_CONTEXT_ID || rightId == UNKNOWN
 				|| rightId == NULL_CONTEXT_ID) {
 			return null;
@@ -1189,7 +1202,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// biased value fields compare exactly like the numbers, across all ordered subtypes — no decode
 			return ValueIds.compareOrderedIntegers(leftId, rightId);
 		}
-		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId), codec.decode(rightId));
+		return LmdbNativeExpressionCompiler.compareDecoded(codec.decode(leftId, positionMask),
+				codec.decode(rightId, positionMask));
 	}
 
 	RowCursor openPrefixRunCursor(RowState row) throws IOException {
@@ -1774,7 +1788,8 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				? projectionLayout
 				: projectionSlots == sortLayout.sourceSlots
 						? sortProjectionLayout
-						: NativeProjectedBindingSet.ProjectionLayout.create(targetNames, projectionSlots);
+						: NativeProjectedBindingSet.ProjectionLayout.create(targetNames, projectionSlots,
+								layout.positionMasks(sourceSlots));
 		return project(slots, values, activeProjection);
 	}
 
@@ -1790,7 +1805,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		for (int i = 0; i < activeProjection.names.length; i++) {
 			long id = projectedIds[i];
 			if (NativeProjectedBindingSet.isBound(id)) {
-				result.addBinding(activeProjection.names[i], values.value(id));
+				result.addBinding(activeProjection.names[i], values.value(id, activeProjection.positionMasks[i]));
 			}
 		}
 		return result;

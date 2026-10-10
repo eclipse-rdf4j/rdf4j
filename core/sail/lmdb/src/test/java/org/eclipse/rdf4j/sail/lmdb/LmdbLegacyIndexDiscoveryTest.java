@@ -596,7 +596,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		}
 		assertThat(
 				TripleIndex.parseIndexSpecList(properties(directory, "store.properties").getProperty("triple-indexes")))
-				.isEqualTo(Set.of("spoc", "ospc"));
+						.isEqualTo(Set.of("spoc", "ospc"));
 	}
 
 	@Test

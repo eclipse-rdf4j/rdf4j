@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -40,6 +41,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
 import org.junit.jupiter.api.Test;
 
@@ -984,6 +986,9 @@ class LmdbNativePackedFtreeStructuredGroupsTest {
 			}
 			when(mockSource.idSpace()).thenReturn(idSpace);
 			when(mockSource.lazyValue(anyLong())).thenAnswer(invocation -> SimpleValueFactory.getInstance()
+					.createLiteral(String.valueOf((long) (Long) invocation.getArgument(0)), CoreDatatype.XSD.INTEGER));
+			when(mockSource.lazyValue(anyLong(), eq(ValuePosition.NONE))).thenAnswer(invocation -> SimpleValueFactory
+					.getInstance()
 					.createLiteral(String.valueOf((long) (Long) invocation.getArgument(0)), CoreDatatype.XSD.INTEGER));
 			when(mockSource.adjacencyKeyDomainCardinality(anyLong(), anyBoolean())).thenAnswer(invocation -> {
 				AdjacencyKey key = new AdjacencyKey(invocation.getArgument(0), invocation.getArgument(1));

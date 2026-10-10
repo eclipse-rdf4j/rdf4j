@@ -1810,7 +1810,8 @@ public final class KernelRuntime {
 		for (int k = 0; k < keyColumns.length; k++) {
 			long left = rows[leftRow * stride + keyColumns[k]];
 			long right = rows[rightRow * stride + keyColumns[k]];
-			int cmp = hooks != null ? hooks.compareValues(left, right) : Long.compareUnsigned(left, right);
+			int cmp = hooks != null ? hooks.compareOutputValues(left, right, keyColumns[k])
+					: Long.compareUnsigned(left, right);
 			if (descending != null && descending[k]) {
 				cmp = -cmp;
 			}

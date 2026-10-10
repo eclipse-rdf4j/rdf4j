@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -162,8 +163,8 @@ class LmdbNativeComparisonCompilerTest {
 		long constant = ValueIds.createId(ValueIds.T_LITERAL, 11L);
 		long candidate = ValueIds.createId(ValueIds.T_LITERAL, 12L);
 		when(compileCodec.decode(constant)).thenReturn(decodedLiteral("constant"));
-		when(compileCodec.decode(candidate)).thenReturn(decodedLiteral("compile-source"));
-		when(workerCodec.decode(candidate)).thenReturn(decodedLiteral("constant"));
+		when(compileCodec.decode(candidate, ValuePosition.NONE)).thenReturn(decodedLiteral("compile-source"));
+		when(workerCodec.decode(candidate, ValuePosition.NONE)).thenReturn(decodedLiteral("constant"));
 
 		CachedCompareFilter template = new CachedCompareFilter(0, constant, false, Compare.CompareOp.EQ, true,
 				bindings -> false, compileCodec);

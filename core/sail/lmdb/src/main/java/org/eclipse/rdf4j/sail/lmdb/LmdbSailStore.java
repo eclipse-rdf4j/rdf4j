@@ -4457,13 +4457,18 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public Value lazyValue(long id) throws QueryEvaluationException {
+			return lazyValue(id, ValuePosition.NONE);
+		}
+
+		@Override
+		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			try {
 				// no open-check — see idOf
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
-				return valueStore.getLazyValue(id);
+				return valueStore.getLazyValue(id, positionMask);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}
@@ -5868,13 +5873,18 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public Value lazyValue(long id) throws QueryEvaluationException {
+			return lazyValue(id, ValuePosition.NONE);
+		}
+
+		@Override
+		public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 			try {
 				// no dataset-open assertion — see idOf
 				if (id == 0L || id == LmdbValue.UNKNOWN_ID) {
 					return null;
 				}
 				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
-				return valueStore.getLazyValue(id);
+				return valueStore.getLazyValue(id, positionMask);
 			} catch (IOException e) {
 				throw new QueryEvaluationException(e);
 			}

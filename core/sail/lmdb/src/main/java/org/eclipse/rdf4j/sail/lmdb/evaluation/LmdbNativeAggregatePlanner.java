@@ -102,7 +102,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compile(Filter filter) {
-		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition());
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		boolean evaluationScopedHaving = !descriptor.shareableAcrossEvaluations();
 		if (evaluationScopedHaving) {
 			// The group and its authoritative HAVING predicate are one query evaluation. This applies to both root
@@ -178,7 +178,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
-			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition());
+			GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 			if (!descriptor.shareableAcrossEvaluations()) {
 				// A retained aggregate wrapper must prepare its semantic predicate against the same evaluation context
 				// as the grouped source. Preparing it against the planner context would freeze query-scoped values such
@@ -224,6 +224,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	QueryEvaluationStep compileGroup(Group group, ValueExpr havingCondition, TupleExpr originalExpr) {
+		layout.positionMasks(strategy.valuePositionMasks(originalExpr), strategy.valuePositionMasks(group.getArg()));
 		QueryEvaluationStep census = LmdbNativeCensusAggregate.tryCreate(group, source, strategy, context, originalExpr,
 				pattern -> compileContextConstraint(pattern, context.getDataset()));
 		if (census != null) {
@@ -364,6 +365,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * piece is unsupported so the generic evaluator remains the fallback.
 	 */
 	QueryEvaluationStep compileRowRoot(TupleExpr expr) {
+		layout.positionMasks(strategy.valuePositionMasks(expr), strategy.valuePositionMasks(expr));
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
@@ -622,6 +624,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private QueryEvaluationStep compileBareRoot(TupleExpr expr, boolean rootScopeApproved) {
+		layout.positionMasks(strategy.valuePositionMasks(expr), strategy.valuePositionMasks(expr));
 		// bare fragments serve the generic evaluator's own recursion: a generic island inside a native fragment
 		// inside a generic host would add indirection without coverage, so islands are suppressed on this route
 		islandsSuppressed = true;
@@ -1006,7 +1009,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		return new LmdbNativeDatatypeHistogram(stepSource, plan, constants[0], constants[1], constants[2],
-				literalField, keyName, countElem.getName(), strategy, originalExpr, context);
+				literalField, strategy.valuePositionMasks(node).getOrDefault(literalVarName, 0), keyName,
+				countElem.getName(), strategy, originalExpr, context);
 	}
 
 	/**
@@ -1074,7 +1078,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		return new LmdbNativePredicatePlaneGroups(source, plan, keyName, channels,
-				LmdbNativePredicatePlaneGroups.NAMESPACE_CLASSIFIER, strategy, originalExpr, context);
+				LmdbNativePredicatePlaneGroups.NAMESPACE_CLASSIFIER,
+				strategy.valuePositionMasks(pattern).getOrDefault(predicate.getName(), 0), strategy, originalExpr,
+				context);
 	}
 
 	private static boolean isPredicateNamespaceExpression(ValueExpr expression, String predicateName) {

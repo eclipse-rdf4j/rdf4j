@@ -337,6 +337,11 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
+		return lazyValue(id, 0);
+	}
+
+	@Override
+	public Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		if (context != null) {
 			Value interned = context.valueOf(id);
 			if (interned != null) {
@@ -349,7 +354,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
 			return planConstant;
 		}
-		return delegate.lazyValue(id);
+		return delegate.lazyValue(id, positionMask);
 	}
 
 	@Override

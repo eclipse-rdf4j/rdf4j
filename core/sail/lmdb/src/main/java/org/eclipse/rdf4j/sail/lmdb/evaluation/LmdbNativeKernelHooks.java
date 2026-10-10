@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelHooks;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.FragmentBinding;
@@ -71,6 +72,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	private final AggContext numericContext;
 	private final LmdbNativeKernelBindings.KernelGroupLayout groupLayout;
 	private final int[] columnSlots;
+	private final int[] outputSlots;
 	private final AggState[][] rowStates;
 	private int[] scratchWriteSlots;
 	private long[] scratchWritePrevious;
@@ -167,6 +169,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			this.residuals = bindings.kernelResiduals;
 			this.groupLayout = bindings.groupLayout;
 			this.columnSlots = bindings.kernelColumnEngineSlots;
+			this.outputSlots = bindings.columnEngineSlots;
 			int aggregateCount = bindings.groupLayout == null ? 0 : bindings.groupLayout.outs.length;
 			this.rowStates = new AggState[aggregateCount][];
 			this.rowAggregateContext = new AggContext(source, false, false, false, memory);
@@ -502,7 +505,12 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 	 */
 	@Override
 	public boolean replacesWinner(long candidate, long incumbent, boolean min) {
-		int comparison = compareValues(candidate, incumbent);
+		return replacesWinner(candidate, incumbent, min, ValuePosition.NONE);
+	}
+
+	@Override
+	public boolean replacesWinner(long candidate, long incumbent, boolean min, int positionMask) {
+		int comparison = compareValues(candidate, positionMask, incumbent, positionMask);
 		if (comparison == 0 && candidate != incumbent && !sameRdfTerm(candidate, incumbent)) {
 			throw EncounterOrderFallback.distinctTermExtremaTie();
 		}
@@ -511,6 +519,44 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public int compareValues(long left, long right) {
+		return compareValues(left, ValuePosition.NONE, right, ValuePosition.NONE);
+	}
+
+	@Override
+	public int positionMask(int column) {
+		return column >= 0 && column < columnSlots.length && columnSlots[column] >= 0
+				? scratch.layout.positionMask(columnSlots[column])
+				: ValuePosition.NONE;
+	}
+
+	@Override
+	public int outputPositionMask(int column) {
+		if (groupLayout == null) {
+			return column >= 0 && column < outputSlots.length && outputSlots[column] >= 0
+					? scratch.layout.positionMask(outputSlots[column])
+					: ValuePosition.NONE;
+		}
+		if (column < 0) {
+			return ValuePosition.NONE;
+		}
+		if (column < groupLayout.groupEngineSlots.length) {
+			return scratch.layout.positionMask(groupLayout.groupEngineSlots[column]);
+		}
+		int aggregate = column - groupLayout.groupEngineSlots.length;
+		return aggregate < groupLayout.outs.length
+				? scratch.layout.positionMask(groupLayout.outs[aggregate].spec.name)
+				: ValuePosition.NONE;
+	}
+
+	@Override
+	public int aggregatePositionMask(int aggregate) {
+		return groupLayout != null && aggregate >= 0 && aggregate < groupLayout.outs.length
+				? groupLayout.outs[aggregate].spec.positionMask
+				: ValuePosition.NONE;
+	}
+
+	@Override
+	public int compareValues(long left, int leftPositionMask, long right, int rightPositionMask) {
 		NativeTermAuthority authority = scratch.termAuthority();
 		NativeIdKind leftKind = idKind(authority, left);
 		NativeIdKind rightKind = idKind(authority, right);
@@ -520,13 +566,14 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 			if (ValueIds.isOrderedInteger(left) && ValueIds.isOrderedInteger(right)) {
 				return ValueIds.compareOrderedIntegers(left, right);
 			}
-			Integer decoded = LmdbNativeExpressionCompiler.compareDecoded(codec.decode(left), codec.decode(right));
+			Integer decoded = LmdbNativeExpressionCompiler.compareDecoded(codec.decode(left, leftPositionMask),
+					codec.decode(right, rightPositionMask));
 			if (decoded != null) {
 				return decoded;
 			}
 		}
-		Value leftValue = valueForComparison(left, authority, leftKind);
-		Value rightValue = valueForComparison(right, authority, rightKind);
+		Value leftValue = valueForComparison(left, authority, leftKind, leftPositionMask);
+		Value rightValue = valueForComparison(right, authority, rightKind, rightPositionMask);
 		return comparator.compare(leftValue, rightValue);
 	}
 
@@ -537,6 +584,11 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 
 	@Override
 	public boolean isNumeric(long id) {
+		return isNumeric(id, ValuePosition.NONE);
+	}
+
+	@Override
+	public boolean isNumeric(long id, int positionMask) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
 			return false;
 		}
@@ -552,19 +604,24 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		if (ValueIds.isOrderedInteger(id)) {
 			return true;
 		}
-		LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id);
+		LmdbNativeValueCodec.DecodedValue decoded = codec.decode(id, positionMask);
 		return !decoded.error() && decoded.numeric();
 	}
 
 	@Override
 	public double doubleValue(long id) {
+		return doubleValue(id, ValuePosition.NONE);
+	}
+
+	@Override
+	public double doubleValue(long id, int positionMask) {
 		NativeTermAuthority authority = scratch.termAuthority();
 		NativeIdKind kind = idKind(authority, id);
 		if (kind == NativeIdKind.STORE && ValueIds.isOrderedInteger(id)) {
 			return ValueIds.orderedIntegerValue(id);
 		}
 		LmdbNativeValueCodec.DecodedValue decoded = kind == NativeIdKind.STORE
-				? codec.decode(id)
+				? codec.decode(id, positionMask)
 				: decodeAuthoritative(id, authority);
 		if (decoded.floatingValue() != null) {
 			return decoded.floatingValue();
@@ -582,11 +639,12 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		return authority == null ? NativeIdKind.STORE : authority.kind(id);
 	}
 
-	private Value valueForComparison(long id, NativeTermAuthority authority, NativeIdKind kind) {
+	private Value valueForComparison(long id, NativeTermAuthority authority, NativeIdKind kind, int positionMask) {
 		if (id == UNKNOWN || id == NULL_CONTEXT_ID) {
 			return null;
 		}
-		return authority != null && kind != NativeIdKind.STORE ? authority.valueOf(id) : source.lazyValue(id);
+		return authority != null && kind != NativeIdKind.STORE ? authority.valueOf(id)
+				: source.lazyValue(id, positionMask);
 	}
 
 	private static LmdbNativeValueCodec.DecodedValue decodeAuthoritative(long id, NativeTermAuthority authority) {
@@ -670,7 +728,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		if (numericErrors[aggregateId][groupId]) {
 			return;
 		}
-		Literal literal = AggState.numericLiteral(numericContext, valueId);
+		Literal literal = AggState.numericLiteral(numericContext, valueId, aggregatePositionMask(aggregateId));
 		if (literal == null) {
 			numericErrors[aggregateId][groupId] = true;
 			return;
@@ -696,7 +754,7 @@ final class LmdbNativeKernelHooks implements KernelHooks {
 		if (numericErrors[aggregateId][groupId])
 			return;
 		// Same null/type/promotion and floating encounter-order gate as ordinary native/IR arithmetic.
-		Literal literal = AggState.numericLiteral(numericContext, valueId);
+		Literal literal = AggState.numericLiteral(numericContext, valueId, aggregatePositionMask(aggregateId));
 		if (literal == null) {
 			numericErrors[aggregateId][groupId] = true;
 			return;

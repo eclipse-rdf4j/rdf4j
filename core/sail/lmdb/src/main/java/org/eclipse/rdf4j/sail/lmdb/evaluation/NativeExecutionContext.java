@@ -243,7 +243,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		return (T) genericSteps.computeIfAbsent(descriptor, d -> factory.get());
+		return (T) genericSteps.computeIfAbsent(descriptor, d -> d.prepare(factory));
 	}
 
 	@SuppressWarnings("unchecked")

@@ -36,21 +36,30 @@ interface LmdbNativeSlotResolver {
 interface LmdbNativeSlotReader {
 	long id(int slot);
 
+	default int positionMask(int slot) {
+		return 0;
+	}
+
 	/** Resolves one scalar input through this reader's authority before consulting a stored-value codec. */
 	default LmdbNativeValueCodec.DecodedValue decodedValue(int slot, LmdbNativeValueCodec codec, boolean assured) {
 		long id = id(slot);
 		NativeTermAuthority authority = termAuthority();
 		NativeIdKind kind = authority == null ? NativeIdKind.STORE : authority.kind(id);
-		return resolveValue(id, codec, assured, authority, kind);
+		return resolveValue(id, codec, assured, authority, kind, positionMask(slot));
 	}
 
 	static LmdbNativeValueCodec.DecodedValue resolveValue(long id, LmdbNativeValueCodec codec, boolean assured,
 			NativeTermAuthority authority, NativeIdKind kind) {
+		return resolveValue(id, codec, assured, authority, kind, 0);
+	}
+
+	static LmdbNativeValueCodec.DecodedValue resolveValue(long id, LmdbNativeValueCodec codec, boolean assured,
+			NativeTermAuthority authority, NativeIdKind kind, int positionMask) {
 		if (authority != null && kind != NativeIdKind.STORE) {
 			Value value = authority.valueOf(id);
 			return value == null ? LmdbNativeValueCodec.DecodedValue.ERROR : LmdbNativeValueCodec.fromValue(value);
 		}
-		return assured ? codec.decodeAssured(id) : codec.decode(id);
+		return assured ? codec.decodeAssured(id, positionMask) : codec.decode(id, positionMask);
 	}
 
 	/** The authority that can materialize every id visible through this reader, including plan/runtime ids. */
@@ -140,7 +149,7 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 
 	@Override
 	public int selectBatch(NativeBatch batch, int[] sel, int n, RowState scratch) {
-		BatchSlotReader reader = new BatchSlotReader(batch, scratch.termAuthority());
+		BatchSlotReader reader = new BatchSlotReader(batch, scratch.termAuthority(), scratch.layout);
 		int accepted = 0;
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
@@ -190,16 +199,23 @@ final class LmdbNativeCompiledBoolean implements NativeBooleanFilter {
 	private static final class BatchSlotReader implements LmdbNativeSlotReader {
 		private final NativeBatch batch;
 		private final NativeTermAuthority termAuthority;
+		private final NativeSlotLayout layout;
 		private int physicalRow;
 
-		private BatchSlotReader(NativeBatch batch, NativeTermAuthority termAuthority) {
+		private BatchSlotReader(NativeBatch batch, NativeTermAuthority termAuthority, NativeSlotLayout layout) {
 			this.batch = batch;
 			this.termAuthority = termAuthority;
+			this.layout = layout;
 		}
 
 		@Override
 		public long id(int slot) {
 			return batch.slots[slot * batch.capacity + physicalRow];
+		}
+
+		@Override
+		public int positionMask(int slot) {
+			return layout.positionMask(slot);
 		}
 
 		@Override

@@ -585,7 +585,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 	}
 
 	NativeBooleanFilter compileSemanticBoolean(ValueExpr expr) {
-		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr);
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expr, strategy);
 		if (!descriptor.shareableAcrossEvaluations()) {
 			// The condition carries query-scope state (NOW/BNODE/volatiles): compile its predicate once per
 			// evaluation through the execution context, so a retained compiled step observes a fresh query scope
@@ -603,8 +603,9 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 				return compileSemanticValue(compilingStrategy, pinned,
 						new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
 			};
-			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> compileSemanticValue(compilingStrategy,
-					pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot));
+			Supplier<NativeBindingSetValueEvaluator> sharedFallback = () -> descriptor.prepare(
+					() -> compileSemanticValue(compilingStrategy,
+							pinned, new SlotAwareQueryEvaluationContext(compileContext, layoutSnapshot)));
 			return new NativeValueOutcomeBooleanFilter(descriptor, perEvaluation, sharedFallback, readMask);
 		}
 		QueryValueEvaluationStep step;

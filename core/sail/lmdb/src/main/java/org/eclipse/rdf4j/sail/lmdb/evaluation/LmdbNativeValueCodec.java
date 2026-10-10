@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreFormat;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.Varint;
 import org.eclipse.rdf4j.sail.lmdb.inlined.Dates;
@@ -67,7 +68,7 @@ final class LmdbNativeValueCodec {
 	 * nondeterministic COUNT(DISTINCT) answers (LIBRARY query 3, 2026-08-16 theme run). An immutable pair makes every
 	 * read and write atomic; a lost race merely re-decodes.
 	 */
-	private final AtomicReferenceArray<CachedDecode> cache = new AtomicReferenceArray<>(CACHE_SIZE);
+	private final AtomicReferenceArray<CachedDecode>[] cache;
 
 	private static final class CachedDecode {
 		final long id;
@@ -98,37 +99,66 @@ final class LmdbNativeValueCodec {
 	private final AtomicReferenceArray<CachedText> namespaces = new AtomicReferenceArray<>(META_CACHE_SIZE);
 
 	LmdbNativeValueCodec(ValueStore valueStore) {
+		this(valueStore, CACHE_SIZE);
+	}
+
+	@SuppressWarnings("unchecked")
+	LmdbNativeValueCodec(ValueStore valueStore, int totalBudget) {
+		if (totalBudget < 0) {
+			throw new IllegalArgumentException("negative decode cache budget");
+		}
 		this.valueStore = valueStore;
+		cache = (AtomicReferenceArray<CachedDecode>[]) new AtomicReferenceArray<?>[5];
+		for (int bank = 0; bank < cache.length; bank++) {
+			cache[bank] = new AtomicReferenceArray<>(totalBudget / cache.length
+					+ (bank < totalBudget % cache.length ? 1 : 0));
+		}
+	}
+
+	int cacheBankCapacity(int bank) {
+		return cache[bank].length();
 	}
 
 	DecodedValue decode(long id) {
+		return decode(id, ValuePosition.NONE);
+	}
+
+	DecodedValue decode(long id, int positionMask) {
 		if (id == 0L || id == NativeLmdbQuerySource.UNKNOWN_ID) {
 			return DecodedValue.ERROR;
 		}
-		return decodeKnown(id);
+		return decodeKnown(id, positionMask);
 	}
 
 	/** Decode a slot whose plan guarantees it is bound, retaining the null-context sentinel check. */
 	DecodedValue decodeAssured(long id) {
+		return decodeAssured(id, ValuePosition.NONE);
+	}
+
+	DecodedValue decodeAssured(long id, int positionMask) {
 		if (id == 0L) {
 			return DecodedValue.ERROR;
 		}
-		return decodeKnown(id);
+		return decodeKnown(id, positionMask);
 	}
 
-	private DecodedValue decodeKnown(long id) {
-		int cacheIndex = cacheIndex(id);
-		CachedDecode cached = cache.get(cacheIndex);
+	private DecodedValue decodeKnown(long id, int positionMask) {
+		AtomicReferenceArray<CachedDecode> bank = cache[ValuePosition.cacheBank(positionMask)];
+		if (bank.length() == 0) {
+			return decodeUncached(id, positionMask);
+		}
+		int cacheIndex = cacheIndex(id, bank.length());
+		CachedDecode cached = bank.get(cacheIndex);
 		if (cached != null && cached.id == id) {
 			CACHE_HITS.incrementAndGet();
 			return cached.value;
 		}
-		DecodedValue decoded = decodeUncached(id);
-		cache.set(cacheIndex, new CachedDecode(id, decoded));
+		DecodedValue decoded = decodeUncached(id, positionMask);
+		bank.set(cacheIndex, new CachedDecode(id, decoded));
 		return decoded;
 	}
 
-	private DecodedValue decodeUncached(long id) {
+	private DecodedValue decodeUncached(long id, int positionMask) {
 		try {
 			if (ValueIds.isInlined(id)) {
 				return decodeInlined(id);
@@ -139,7 +169,7 @@ final class LmdbNativeValueCodec {
 				if (!nativeTripleTermsEnabled()) {
 					return DecodedValue.ERROR;
 				}
-				Value term = valueStore.getLazyValue(id);
+				Value term = valueStore.getLazyValue(id, positionMask);
 				return term == null ? DecodedValue.ERROR : DecodedValue.triple(term);
 			}
 			StoredPayload data = readStoredPayload(id);
@@ -581,12 +611,12 @@ final class LmdbNativeValueCodec {
 		return new String(scratch, 0, length, StandardCharsets.UTF_8);
 	}
 
-	private static int cacheIndex(long id) {
+	private static int cacheIndex(long id, int capacity) {
 		long value = id;
 		value ^= value >>> 33;
 		value *= 0xff51afd7ed558ccdL;
 		value ^= value >>> 33;
-		return (int) value & (CACHE_SIZE - 1);
+		return ((int) value & Integer.MAX_VALUE) % capacity;
 	}
 
 	private static final class StoredPayload {

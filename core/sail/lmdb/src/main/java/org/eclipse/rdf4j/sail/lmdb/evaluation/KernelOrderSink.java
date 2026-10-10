@@ -67,7 +67,8 @@ public final class KernelOrderSink implements AutoCloseable {
 				KernelRuntime.checkCancelled(cancellation);
 			for (int k = 0; k < columns.length; k++) {
 				long a = left[lo + columns[k]], b = right[ro + columns[k]];
-				int cmp = hooks == null ? Long.compareUnsigned(a, b) : hooks.compareValues(a, b);
+				int cmp = hooks == null ? Long.compareUnsigned(a, b)
+						: hooks.compareOutputValues(a, b, columns[k]);
 				// Reverse operands' ordering sign, not -cmp (a legal comparator may return MIN_VALUE).
 				if (cmp != 0)
 					return reverse != null && reverse[k] ? (cmp < 0 ? 1 : -1) : (cmp < 0 ? -1 : 1);

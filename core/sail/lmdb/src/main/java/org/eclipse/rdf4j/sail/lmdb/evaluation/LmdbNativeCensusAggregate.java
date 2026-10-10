@@ -90,6 +90,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 
 	private final NativeLmdbQuerySource source;
 	private final LmdbNativeEvaluationStrategy strategy;
+	private final NativeValuePositionAnalysis valuePositions;
 	private final QueryEvaluationContext context;
 	private final Group group;
 	private final TupleExpr explainTarget;
@@ -97,6 +98,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 	private final boolean named;
 	private final long[] constants;
 	private final String[] groupNames;
+	private final int[] groupPositionMasks;
 	private final int[] groupFields;
 	private final Channel[] channels;
 	private final boolean[] acceptedKinds;
@@ -111,6 +113,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 			BooleanExpression filter) {
 		this.source = source;
 		this.strategy = strategy;
+		this.valuePositions = strategy.valuePositionSnapshot();
 		this.context = context;
 		this.group = group;
 		this.explainTarget = explainTarget;
@@ -118,6 +121,11 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 		this.constants = constants;
 		this.named = pattern.getScope() == StatementPattern.Scope.NAMED_CONTEXTS;
 		this.groupNames = groupNames;
+		this.groupPositionMasks = new int[groupNames.length];
+		Map<String, Integer> positions = strategy.valuePositionMasks(group.getArg());
+		for (int i = 0; i < groupNames.length; i++) {
+			groupPositionMasks[i] = positions.getOrDefault(groupNames[i], 0);
+		}
 		this.groupFields = groupFields;
 		this.channels = channels;
 		this.acceptedKinds = filter.values;
@@ -651,7 +659,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 
 	private synchronized QueryEvaluationStep fallback() {
 		if (fallback == null) {
-			fallback = strategy.genericPrecompile(group, context);
+			fallback = strategy.withValuePositions(valuePositions, () -> strategy.genericPrecompile(group, context));
 		}
 		return fallback;
 	}
@@ -720,7 +728,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				for (int i = 0; i < groupNames.length; i++) {
 					long id = entry.getKey().ids[i];
 					if (id != NULL_CONTEXT_ID && id != UNKNOWN) {
-						row.addBinding(groupNames[i], source.lazyValue(id));
+						row.addBinding(groupNames[i], source.lazyValue(id, groupPositionMasks[i]));
 					}
 				}
 				for (int i = 0; i < channels.length; i++) {

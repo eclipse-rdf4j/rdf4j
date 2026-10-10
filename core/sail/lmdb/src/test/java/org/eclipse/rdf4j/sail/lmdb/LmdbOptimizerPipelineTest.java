@@ -500,7 +500,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 
@@ -515,7 +515,7 @@ class LmdbOptimizerPipelineTest {
 
 		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 				new EvaluationStatistics())
-				.getOptimizers()) {
+						.getOptimizers()) {
 			optimizer.optimize(tupleExpr, null, EmptyBindingSet.getInstance());
 		}
 

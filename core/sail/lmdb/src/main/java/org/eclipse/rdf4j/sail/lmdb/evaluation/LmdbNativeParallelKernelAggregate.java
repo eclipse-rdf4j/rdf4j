@@ -2109,7 +2109,8 @@ final class LmdbNativeParallelKernelAggregate {
 			partial.hasWinner[out] = true;
 			return;
 		}
-		int comparison = hooks.compareValues(candidate, partial.winners[out]);
+		int positionMask = hooks.aggregatePositionMask(out);
+		int comparison = hooks.compareValues(candidate, positionMask, partial.winners[out], positionMask);
 		if (comparison == 0 && candidate != partial.winners[out]
 				&& !hooks.sameRdfTerm(candidate, partial.winners[out])) {
 			// Two distinct terms compare equal: the surviving representative would depend on partition and merge

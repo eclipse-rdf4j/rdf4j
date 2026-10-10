@@ -167,6 +167,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	private final int edgePredicateSlot;
 	private final NativeSlotLayout layout;
 	private final LmdbNativeEvaluationStrategy strategy;
+	private final NativeValuePositionAnalysis valuePositions;
 	private final TupleExpr originalExpr;
 	private final QueryEvaluationContext context;
 	private QueryEvaluationStep genericStep;
@@ -176,13 +177,15 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			int edgePredicateSlot, NativeSlotLayout layout, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
 		this(source, subjectTypePredicate, objectTypePredicate, subjectTypeKeyPosition, groupNames, aggregateNames,
-				predicateFilters, edgePredicateSlot, layout, strategy, originalExpr, context, true);
+				predicateFilters, edgePredicateSlot, layout, strategy, originalExpr, context, true,
+				strategy == null ? null : strategy.valuePositionSnapshot());
 	}
 
 	private LmdbNativeTypeMatrix(NativeLmdbQuerySource source, long subjectTypePredicate, long objectTypePredicate,
 			int subjectTypeKeyPosition, String[] groupNames, String[] aggregateNames, MaskedFilter[] predicateFilters,
 			int edgePredicateSlot, NativeSlotLayout layout, LmdbNativeEvaluationStrategy strategy,
-			TupleExpr originalExpr, QueryEvaluationContext context, boolean countPlan) {
+			TupleExpr originalExpr, QueryEvaluationContext context, boolean countPlan,
+			NativeValuePositionAnalysis valuePositions) {
 		this.source = source;
 		this.subjectTypePredicate = subjectTypePredicate;
 		this.objectTypePredicate = objectTypePredicate;
@@ -193,6 +196,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		this.edgePredicateSlot = edgePredicateSlot;
 		this.layout = layout;
 		this.strategy = strategy;
+		this.valuePositions = valuePositions;
 		this.originalExpr = originalExpr;
 		this.context = context;
 		if (countPlan) {
@@ -294,7 +298,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				LmdbNativeProbeDeadline.poll(++pollTick);
 				QueryBindingSet row = new QueryBindingSet(groupNames.length + aggregateNames.length);
 				for (int i = 0; i < groupNames.length; i++) {
-					row.addBinding(groupNames[i], source.lazyValue(entry.getKey().ids[i]));
+					row.addBinding(groupNames[i],
+							source.lazyValue(entry.getKey().ids[i], layout.positionMask(groupNames[i])));
 				}
 				for (String aggregateName : aggregateNames) {
 					row.addBinding(aggregateName,
@@ -318,7 +323,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 		return new LmdbNativeTypeMatrix(evaluationSource, subjectTypePredicate, objectTypePredicate,
 				subjectTypeKeyPosition,
 				groupNames, aggregateNames, predicateFilters, edgePredicateSlot, layout, strategy, originalExpr,
-				context, false);
+				context, false, valuePositions);
 	}
 
 	private synchronized QueryEvaluationStep genericStep() {
@@ -328,7 +333,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				evaluationContext = synthetic.executionContext()
 						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
 			}
-			genericStep = strategy.genericPrecompile(originalExpr, evaluationContext);
+			QueryEvaluationContext preparedContext = evaluationContext;
+			genericStep = strategy.withValuePositions(valuePositions,
+					() -> strategy.genericPrecompile(originalExpr, preparedContext));
 		}
 		return genericStep;
 	}
@@ -2053,7 +2060,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			keys[1 - subjectTypeKeyPosition] = counters.secondKeys[i];
 			QueryBindingSet row = new QueryBindingSet(groupNames.length + aggregateNames.length);
 			for (int group = 0; group < groupNames.length; group++) {
-				row.addBinding(groupNames[group], source.lazyValue(keys[group]));
+				row.addBinding(groupNames[group],
+						source.lazyValue(keys[group], layout.positionMask(groupNames[group])));
 			}
 			for (String aggregateName : aggregateNames) {
 				row.addBinding(aggregateName,
@@ -3966,7 +3974,8 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			keys[subjectTypeKeyPosition] = sourceType;
 			keys[1 - subjectTypeKeyPosition] = counters.keys[i];
 			for (int group = 0; group < groupNames.length; group++) {
-				row.addBinding(groupNames[group], source.lazyValue(keys[group]));
+				row.addBinding(groupNames[group],
+						source.lazyValue(keys[group], layout.positionMask(groupNames[group])));
 			}
 			for (String aggregateName : aggregateNames) {
 				row.addBinding(aggregateName,

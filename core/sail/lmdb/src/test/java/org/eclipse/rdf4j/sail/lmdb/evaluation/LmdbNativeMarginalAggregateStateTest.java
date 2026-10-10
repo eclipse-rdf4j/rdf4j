@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -24,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeMarginalAggregateStateTest {
@@ -87,7 +89,8 @@ class LmdbNativeMarginalAggregateStateTest {
 	private static NativeLmdbQuerySource source() {
 		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class);
 		when(source.idSpace()).thenReturn(source);
-		when(source.lazyValue(anyLong())).thenAnswer(call -> AggContext.integerLiteral(call.getArgument(0)));
+		when(source.lazyValue(anyLong(), eq(ValuePosition.NONE)))
+				.thenAnswer(call -> AggContext.integerLiteral(call.getArgument(0)));
 		return source;
 	}
 

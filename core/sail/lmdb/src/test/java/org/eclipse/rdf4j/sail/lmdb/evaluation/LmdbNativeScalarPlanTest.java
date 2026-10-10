@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelTermKindProof;
@@ -82,10 +83,10 @@ class LmdbNativeScalarPlanTest {
 		NativeLmdbQuerySource sourceB = mock(NativeLmdbQuerySource.class);
 		LmdbNativeValueCodec codecA = mock(LmdbNativeValueCodec.class);
 		LmdbNativeValueCodec codecB = mock(LmdbNativeValueCodec.class);
-		when(codecA.decode(42L)).thenReturn(stringValue("worker-a"));
-		when(codecB.decode(42L)).thenReturn(stringValue("worker-b"));
-		when(codecA.decodeAssured(42L)).thenReturn(stringValue("worker-a"));
-		when(codecB.decodeAssured(42L)).thenReturn(stringValue("worker-b"));
+		when(codecA.decode(42L, ValuePosition.NONE)).thenReturn(stringValue("worker-a"));
+		when(codecB.decode(42L, ValuePosition.NONE)).thenReturn(stringValue("worker-b"));
+		when(codecA.decodeAssured(42L, ValuePosition.NONE)).thenReturn(stringValue("worker-a"));
+		when(codecB.decodeAssured(42L, ValuePosition.NONE)).thenReturn(stringValue("worker-b"));
 
 		NativeScalarPlan plan = NativeScalarPlan.create(new Str(new Var("value")), name -> 0,
 				NativeScalarPlan.ResultKind.VALUE, false, 1L, false, false);
@@ -189,7 +190,7 @@ class LmdbNativeScalarPlanTest {
 				.isEqualTo(EffectClass.SIDE_EFFECTING_OR_UNSUPPORTED);
 		assertThat(
 				planOf(new FunctionCall("urn:rdf4j:test:unknown-function", new Str(new Var("value")))).workerBindable())
-				.isFalse();
+						.isFalse();
 		assertThat(planOf(new FunctionCall(org.eclipse.rdf4j.model.vocabulary.FN.LOWER_CASE.stringValue(),
 				new FunctionCall(new Rand().getURI()))).effect()).isEqualTo(EffectClass.VOLATILE);
 	}

@@ -74,13 +74,14 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		ENGAGED.incrementAndGet();
 		long rowSubj = subjSlot >= 0 ? row.slots[subjSlot] : UNKNOWN;
 		long rowObj = objSlot >= 0 ? row.slots[objSlot] : UNKNOWN;
-		if (!fixedValueCompatible(row, rowSubj, subjConst) || !fixedValueCompatible(row, rowObj, objConst)) {
+		if (!fixedValueCompatible(row, rowSubj, subjConst, subjSlot)
+				|| !fixedValueCompatible(row, rowObj, objConst, objSlot)) {
 			return EmptyCursor.INSTANCE;
 		}
 		long subj = subjConst != UNKNOWN ? subjConst : rowSubj;
 		long obj = objConst != UNKNOWN ? objConst : rowObj;
 		if (subj != UNKNOWN && obj != UNKNOWN) {
-			return sameTerm(row, subj, obj)
+			return sameTerm(row, subj, row.positionMask(subjSlot), obj, row.positionMask(objSlot))
 					? new ZeroLengthIdentityCursor(row, subjSlot, subj, objSlot, obj)
 					: EmptyCursor.INSTANCE;
 		}
@@ -96,16 +97,20 @@ final class ZeroLengthPathPlan implements SlotPlan {
 		return new ZeroLengthNodeCursor(row, this);
 	}
 
-	private static boolean fixedValueCompatible(RowState row, long bound, long fixed) {
-		return bound == UNKNOWN || fixed == UNKNOWN || sameTerm(row, bound, fixed);
+	private static boolean fixedValueCompatible(RowState row, long bound, long fixed, int slot) {
+		return bound == UNKNOWN || fixed == UNKNOWN || sameTerm(row, bound, row.positionMask(slot), fixed, 0);
 	}
 
 	static boolean sameTerm(RowState row, long left, long right) {
+		return sameTerm(row, left, 0, right, 0);
+	}
+
+	static boolean sameTerm(RowState row, long left, int leftPositionMask, long right, int rightPositionMask) {
 		if (left == right) {
 			return true;
 		}
-		Value a = row.source.lazyValue(left);
-		Value b = row.source.lazyValue(right);
+		Value a = row.source.lazyValue(left, leftPositionMask);
+		Value b = row.source.lazyValue(right, rightPositionMask);
 		return a != null && a.equals(b);
 	}
 
@@ -281,7 +286,8 @@ final class ZeroLengthNodeCursor implements RowCursor {
 		if (!seenIds.add(id)) {
 			return false;
 		}
-		Value term = row.source.lazyValue(id);
+		Value term = row.source.lazyValue(id, row.layout.positionMask(plan.subjSlot)
+				| row.layout.positionMask(plan.objSlot));
 		return term != null && seenTerms.add(term);
 	}
 

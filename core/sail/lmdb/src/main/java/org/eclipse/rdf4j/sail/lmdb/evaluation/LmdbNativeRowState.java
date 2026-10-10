@@ -134,6 +134,11 @@ final class RowState implements LmdbNativeSlotReader {
 	}
 
 	@Override
+	public int positionMask(int slot) {
+		return layout.positionMask(slot);
+	}
+
+	@Override
 	public LmdbNativeValueCodec.DecodedValue decodedValue(int slot, LmdbNativeValueCodec codec, boolean assured) {
 		long id = slots[slot];
 		NativeTermAuthority authority = termAuthority();
@@ -155,7 +160,7 @@ final class RowState implements LmdbNativeSlotReader {
 			decodedAuthority = authority;
 		}
 		LmdbNativeValueCodec.DecodedValue value = LmdbNativeSlotReader.resolveValue(id, codec, assured, authority,
-				kind);
+				kind, positionMask(slot));
 		if (value == null || value.error()) {
 			// An unresolved value may be published later. Errors must never become negative cache entries.
 			clearDecodedEntry(slot);

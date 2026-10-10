@@ -86,11 +86,25 @@ public interface ValueStoreRevision {
 		private final ValueStoreRevision revision;
 		private final long revisionId;
 		private final ValueStore valueStore;
+		private final int positionMask;
+		// Every position wrapper retains the original lazy revision registered with the retirement cleaner.
+		private final ValueStoreRevision retentionAnchor;
 
 		public Lazy(ValueStoreRevision revision) {
-			this.revision = revision;
+			this(revision, ValuePosition.NONE);
+		}
+
+		public Lazy(ValueStoreRevision revision, int positionMask) {
+			this.positionMask = ValuePosition.validateMask(positionMask);
+			this.revision = revision instanceof Lazy lazy ? lazy.revision : revision;
+			this.retentionAnchor = revision instanceof Lazy ? revision : null;
 			this.revisionId = revision.getRevisionId();
 			this.valueStore = revision.getValueStore();
+		}
+
+		@Override
+		public int getPositionMask() {
+			return positionMask;
 		}
 
 		@Override
@@ -105,7 +119,7 @@ public interface ValueStoreRevision {
 
 		@Override
 		public boolean resolveValue(long id, LmdbValue value) {
-			if (valueStore != null && valueStore.resolveValue(id, value)) {
+			if (valueStore != null && valueStore.resolveValue(id, value, positionMask)) {
 				// set unwrapped version of revision
 				value.setInternalID(id, revision);
 				return true;
@@ -129,6 +143,11 @@ public interface ValueStoreRevision {
 	ValueStore getValueStore();
 
 	boolean resolveValue(long id, LmdbValue value);
+
+	/** Deferred cache routing hint; it does not participate in dictionary revision identity. */
+	default int getPositionMask() {
+		return ValuePosition.NONE;
+	}
 
 	/** Unequal physical IDs imply unequal RDF terms only for a canonical dictionary generation. */
 	default boolean hasCanonicalIds() {

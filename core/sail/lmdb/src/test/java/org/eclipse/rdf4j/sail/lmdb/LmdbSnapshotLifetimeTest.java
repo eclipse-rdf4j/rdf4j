@@ -234,7 +234,7 @@ class LmdbSnapshotLifetimeTest {
 			assertThat(after).containsExactlyInAnyOrderElementsOf(before);
 			assertThat(
 					QueryResults.asList(held.getTriples(later.getSubject(), later.getPredicate(), later.getObject())))
-					.isEmpty();
+							.isEmpty();
 			try (var fresh = snapshot()) {
 				List<TripleTerm> added = QueryResults.asList(fresh.getTriples(later.getSubject(), later.getPredicate(),
 						later.getObject()));

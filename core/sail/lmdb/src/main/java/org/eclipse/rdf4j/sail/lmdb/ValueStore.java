@@ -765,7 +765,8 @@ public class ValueStore extends AbstractValueFactory {
 	private static final int VALUE_CACHE_WAY_SHIFT = 2;
 
 	/**
-	 * A small set-associative cache containing values stored by their ID.
+	 * Five isolated set-associative cache banks containing values stored by their ID, routed in S/P/O/C/NONE order. The
+	 * existing total capacity is divided in whole four-way sets; any remainder goes to the earlier banks.
 	 * <p>
 	 * The old direct-mapped cache lost hot values whenever IDs had the same low bits, which is common for the encoded
 	 * RDF4J LMDB IDs. The query benchmark spends a large amount of time resolving repeated value IDs, so keeping a few
@@ -773,7 +774,8 @@ public class ValueStore extends AbstractValueFactory {
 	 */
 	private final LmdbValue[] valueCache;
 	private final long[] valueCacheId;
-	private final int valueCacheSetMask;
+	private final int[] valueCacheBankOffsets = new int[ValuePosition.CACHE_BANKS];
+	private final int[] valueCacheBankSets = new int[ValuePosition.CACHE_BANKS];
 
 	/**
 	 * Per-revision in-memory cache for RDF hash codes by value ID. This lets repeated DISTINCT/GROUP BY hashing reuse a
@@ -886,6 +888,7 @@ public class ValueStore extends AbstractValueFactory {
 	 * object is GCed then it is safe to finally remove the ID-value associations and to reuse IDs.
 	 */
 	private volatile ValueStoreRevision.Lazy lazyRevision;
+	private volatile ValueStoreRevision.Lazy[] positionLazyRevisions;
 	/**
 	 * The next ID that is associated with a stored value
 	 */
@@ -1007,7 +1010,14 @@ public class ValueStore extends AbstractValueFactory {
 				/ VALUE_CACHE_WAYS));
 		valueCache = new LmdbValue[cacheSets * VALUE_CACHE_WAYS];
 		valueCacheId = new long[valueCache.length];
-		valueCacheSetMask = cacheSets - 1;
+		int cacheOffset = 0;
+		for (int bank = 0; bank < ValuePosition.CACHE_BANKS; bank++) {
+			int bankSets = cacheSets / ValuePosition.CACHE_BANKS
+					+ (bank < cacheSets % ValuePosition.CACHE_BANKS ? 1 : 0);
+			valueCacheBankOffsets[bank] = cacheOffset;
+			valueCacheBankSets[bank] = bankSets;
+			cacheOffset += bankSets * VALUE_CACHE_WAYS;
+		}
 
 		int hashCacheSize = nextPowerOfTwo(Math.max(1024, config.getValueCacheSize()));
 		valueHashCacheId = new long[hashCacheSize];
@@ -2675,6 +2685,12 @@ public class ValueStore extends AbstractValueFactory {
 	private void setNewRevision() {
 		revision = new ValueStoreRevision.Default(this);
 		lazyRevision = new ValueStoreRevision.Lazy(revision);
+		ValueStoreRevision.Lazy[] lazyRevisions = new ValueStoreRevision.Lazy[ValuePosition.ALL + 1];
+		lazyRevisions[ValuePosition.NONE] = lazyRevision;
+		for (int mask = 1; mask <= ValuePosition.ALL; mask++) {
+			lazyRevisions[mask] = new ValueStoreRevision.Lazy(lazyRevision, mask);
+		}
+		positionLazyRevisions = lazyRevisions;
 	}
 
 	ValueStoreRevision getRevision() {
@@ -3243,7 +3259,15 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return the value object or <code>null</code> if not found
 	 */
 	LmdbValue cachedValue(long id) {
-		int base = valueCacheBase(id);
+		return cachedValue(id, ValuePosition.NONE);
+	}
+
+	LmdbValue cachedValue(long id, int positionMask) {
+		int bank = ValuePosition.cacheBank(positionMask);
+		if (valueCacheBankSets[bank] == 0) {
+			return null;
+		}
+		int base = valueCacheBase(id, bank);
 
 		// Faster to read the long from an array than calling LmdbValue#getInternalID() on the value object. There may
 		// be race conditions, especially if the cache is small and has a high churn rate, but we can live with that
@@ -3269,11 +3293,12 @@ public class ValueStore extends AbstractValueFactory {
 	 * @param value ID of a value object
 	 */
 	void cacheValue(long id, LmdbValue value) {
-		cacheValueIn(valueCache, valueCacheId, valueCacheSetMask, id, value);
+		cacheValue(id, value, ValuePosition.NONE);
 	}
 
-	private void cacheValueIn(LmdbValue[] cache, long[] cacheId, int setMask, long id, LmdbValue value) {
-		if (value == null) {
+	void cacheValue(long id, LmdbValue value, int positionMask) {
+		int bank = ValuePosition.cacheBank(positionMask);
+		if (value == null || valueCacheBankSets[bank] == 0) {
 			return;
 		}
 		long retainedLexicalLength = value.retainedLexicalLength();
@@ -3281,27 +3306,34 @@ public class ValueStore extends AbstractValueFactory {
 			return;
 		}
 
-		int base = (spreadValueId(id) & setMask) << VALUE_CACHE_WAY_SHIFT;
+		int base = valueCacheBase(id, bank);
 		int emptySlot = -1;
 
 		for (int i = 0; i < VALUE_CACHE_WAYS; i++) {
 			int idx = base + i;
-			if (cacheId[idx] == id) {
-				cache[idx] = value;
+			if (valueCacheId[idx] == id) {
+				valueCache[idx] = value;
 				return;
 			}
-			if (emptySlot < 0 && cache[idx] == null) {
+			if (emptySlot < 0 && valueCache[idx] == null) {
 				emptySlot = idx;
 			}
 		}
 
 		int idx = emptySlot >= 0 ? emptySlot : base + ((spreadValueId(id) >>> 8) & VALUE_CACHE_WAY_MASK);
-		cacheId[idx] = id;
-		cache[idx] = value;
+		valueCacheId[idx] = id;
+		valueCache[idx] = value;
 	}
 
-	private int valueCacheBase(long id) {
-		return (spreadValueId(id) & valueCacheSetMask) << VALUE_CACHE_WAY_SHIFT;
+	int valueCacheCapacity(int positionMask) {
+		return valueCacheBankSets[ValuePosition.cacheBank(positionMask)] * VALUE_CACHE_WAYS;
+	}
+
+	private int valueCacheBase(long id, int bank) {
+		int sets = valueCacheBankSets[bank];
+		int hash = spreadValueId(id);
+		int set = (sets & (sets - 1)) == 0 ? hash & (sets - 1) : Integer.remainderUnsigned(hash, sets);
+		return valueCacheBankOffsets[bank] + (set << VALUE_CACHE_WAY_SHIFT);
 	}
 
 	private static int spreadValueId(long id) {
@@ -3329,36 +3361,43 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
+		return getLazyValue(id, ValuePosition.NONE);
+	}
+
+	/** Gets a lazy value retaining its RDF position mask until materialization. */
+	public LmdbValue getLazyValue(long id, int positionMask) throws IOException {
+		ValuePosition.validateMask(positionMask);
 		if (ValueIds.isInlined(id)) {
 			// inlined ids encode the whole value in the id itself and never touch the dictionary, so the
 			// revision lock (and the shared value cache probe) is pure overhead on this very hot path
-			return new LmdbLiteral(lazyRevision, id);
+			return new LmdbLiteral(positionLazyRevisions[positionMask], id);
 		}
 		// the body only reads the race-tolerant value cache and the revision fields, so an optimistic read
 		// suffices; a concurrent revision swap (write lock during commit) fails validation and we retry
 		// under the full read lock, discarding the possibly-stale shell
 		long optimistic = revisionLock.tryOptimisticRead();
 		if (optimistic != 0L) {
-			LmdbValue resultValue = lazyValueForId(id);
+			LmdbValue resultValue = lazyValueForId(id, positionMask);
 			if (revisionLock.validate(optimistic)) {
 				return resultValue;
 			}
 		}
 		long stamp = revisionLock.readLock();
 		try {
-			return lazyValueForId(id);
+			return lazyValueForId(id, positionMask);
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
 	}
 
-	private LmdbValue lazyValueForId(long id) throws IOException {
+	private LmdbValue lazyValueForId(long id, int positionMask) throws IOException {
 		// Do not use a store-global lazy-value cache here. The query benchmark showed that a global hash
 		// probe on every statement term costs more CPU than it saves on high-cardinality scans. Iterators
 		// that see local repetition keep their own tiny last-value cache instead.
-		LmdbValue resultValue = cachedValue(id);
+		LmdbValue resultValue = cachedValue(id, positionMask);
 
 		if (resultValue == null) {
+			ValueStoreRevision.Lazy lazyRevision = positionLazyRevisions[positionMask];
 			int idType = ValueIds.getIdType(id);
 			switch (idType) {
 			case ValueIds.T_URI:
@@ -3395,10 +3434,16 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getValue(long id) throws IOException {
+		return getValue(id, ValuePosition.NONE);
+	}
+
+	/** Gets a value using only the cache bank selected by its RDF position mask. */
+	public LmdbValue getValue(long id, int positionMask) throws IOException {
+		ValuePosition.validateMask(positionMask);
 		long stamp = revisionLock.readLock();
 		try {
 			// Check value cache
-			LmdbValue resultValue = cachedValue(id);
+			LmdbValue resultValue = cachedValue(id, positionMask);
 
 			if (resultValue == null) {
 				// unpack inlined values if possible
@@ -3409,7 +3454,7 @@ public class ValueStore extends AbstractValueFactory {
 
 				if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
 					resultValue = id2tripleTerm(id, null);
-					cacheValue(id, resultValue);
+					cacheValue(id, resultValue, positionMask);
 					return resultValue;
 				}
 
@@ -3418,7 +3463,7 @@ public class ValueStore extends AbstractValueFactory {
 				if (data != null) {
 					resultValue = data2value(id, data, null);
 					// Store value in cache
-					cacheValue(id, resultValue);
+					cacheValue(id, resultValue, positionMask);
 				}
 			}
 			return resultValue;
@@ -3435,6 +3480,12 @@ public class ValueStore extends AbstractValueFactory {
 	 * @return <code>true</code> if value could be successfully resolved, else <code>false</code>
 	 */
 	public boolean resolveValue(long id, LmdbValue value) {
+		return resolveValue(id, value, ValuePosition.NONE);
+	}
+
+	/** Initializes a shell using its retained RDF position mask for lookup and admission. */
+	public boolean resolveValue(long id, LmdbValue value, int positionMask) {
+		ValuePosition.validateMask(positionMask);
 		// unpack inlined values if possible
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = format.unpackLiteral(id, this);
@@ -3445,7 +3496,7 @@ public class ValueStore extends AbstractValueFactory {
 			return true;
 		}
 		// Try to get from cache
-		LmdbValue cached = cachedValue(id);
+		LmdbValue cached = cachedValue(id, positionMask);
 		if (cached != null && this.getRevision().getRevisionId() == cached.getValueStoreRevision().getRevisionId()) {
 			value.setFromInitializedValue(cached);
 			return true;
@@ -3453,7 +3504,7 @@ public class ValueStore extends AbstractValueFactory {
 		try {
 			if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
 				value = id2tripleTerm(id, (LmdbTripleTerm) value);
-				cacheValue(id, value);
+				cacheValue(id, value, positionMask);
 				return true;
 			}
 
@@ -3461,7 +3512,7 @@ public class ValueStore extends AbstractValueFactory {
 			if (data != null) {
 //				System.out.println(id);
 				data2value(id, data, value);
-				cacheValue(id, value);
+				cacheValue(id, value, positionMask);
 				return true;
 			}
 		} catch (IOException e) {
@@ -3503,6 +3554,8 @@ public class ValueStore extends AbstractValueFactory {
 	private boolean resolveValueInTransaction(ValueStoreRevision expectedRevision,
 			ValueStoreRevision resolvedRevision, long id, LmdbValue value, long txn, MDBVal keyData,
 			MDBVal valueData, ByteBuffer keyBuffer, ValueOverlayRegistry.SnapshotLease overlay) throws IOException {
+		ValueStoreRevision valueRevision = value.getValueStoreRevision();
+		int positionMask = valueRevision == null ? ValuePosition.NONE : valueRevision.getPositionMask();
 		if (ValueIds.isInlined(id)) {
 			Literal unpacked = format.unpackLiteral(id, this);
 			((LmdbLiteral) value).setLabel(unpacked.getLabel());
@@ -3512,7 +3565,7 @@ public class ValueStore extends AbstractValueFactory {
 			return true;
 		}
 
-		LmdbValue cached = cachedValue(id);
+		LmdbValue cached = cachedValue(id, positionMask);
 		if (cached != null && sameRevision(cached.getValueStoreRevision(), expectedRevision)) {
 			value.setFromInitializedValue(cached);
 			setResolvedRevision(value, id, resolvedRevision);
@@ -3520,7 +3573,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		if (ValueIds.getIdType(id) == ValueIds.T_TRIPLE) {
-			boolean resolved = resolveValue(id, value);
+			boolean resolved = resolveValue(id, value, positionMask);
 			if (resolved) {
 				setResolvedRevision(value, id, resolvedRevision);
 			}
@@ -3540,7 +3593,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 		data2value(id, data, value);
 		setResolvedRevision(value, id, resolvedRevision);
-		cacheValue(id, value);
+		cacheValue(id, value, positionMask);
 		return true;
 	}
 

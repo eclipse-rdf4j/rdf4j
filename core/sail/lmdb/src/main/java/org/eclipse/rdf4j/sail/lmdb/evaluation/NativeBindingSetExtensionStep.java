@@ -237,7 +237,7 @@ final class NativeBindingSetValueCompiler {
 		if (scalarSubquery != null) {
 			return scalarSubquery;
 		}
-		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expression);
+		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(expression, strategy);
 		if (!descriptor.shareableAcrossEvaluations()) {
 			return new EvaluationScopedValueEvaluator(descriptor, strategy, context);
 		}
@@ -276,11 +276,11 @@ final class NativeBindingSetValueCompiler {
 		@Override
 		public NativeValueOutcome evaluate(BindingSet bindings, NativeExecutionContext executionContext) {
 			QueryValueEvaluationStep valueStep = executionContext == null
-					? strategy.precompile(descriptor.<ValueExpr>pinnedExpr(), compileContext)
+					? descriptor.precompileValue(strategy, compileContext)
 					: executionContext.genericStep(descriptor, () -> {
 						QueryEvaluationContext scoped = executionContext
 								.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
-						return strategy.precompile(descriptor.<ValueExpr>pinnedExpr(), scoped);
+						return descriptor.precompileValue(strategy, scoped);
 					});
 			try {
 				return NativeValueOutcome.bound(valueStep.evaluate(bindings));

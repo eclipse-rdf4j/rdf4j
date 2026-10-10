@@ -47,9 +47,9 @@ class LmdbIndexRebuildGrowthTest {
 				"-XX:ErrorFile=" + directory.resolve("hs_err_pid%p.log"), "-cp", System.getProperty("java.class.path"),
 				GrowthChild.class.getName(), directory.toString(), Integer.toString(format),
 				Boolean.toString(inline), Boolean.toString(inferred))
-				.redirectErrorStream(true)
-				.redirectOutput(output.toFile())
-				.start();
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
 		try {
 			boolean completed = child.waitFor(60, TimeUnit.SECONDS);
 			assertThat(completed).as("Native rebuild child must finish; evidence: %s", output).isTrue();

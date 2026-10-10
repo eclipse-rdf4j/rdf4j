@@ -44,6 +44,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	final String[] names;
 	final long[] ids;
 	final Value[] values;
+	final int[] positionMasks;
 	final int size;
 	Set<String> bindingNames;
 
@@ -54,6 +55,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	NativeProjectedBindingSet(NativeLmdbQuerySource source, ProjectionLayout layout, long[] row) {
 		this.source = source;
 		this.names = layout.names;
+		this.positionMasks = layout.positionMasks;
 		this.ids = new long[layout.names.length];
 		layout.copyIds(row, ids);
 		this.values = new Value[this.ids.length];
@@ -80,18 +82,28 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	static final class ProjectionLayout {
 		final String[] names;
 		final int[] sourceSlots;
+		final int[] positionMasks;
 		/** Original projection occurrence to canonical target, or {@code null} when names are already unique. */
 		final int[] targets;
 
-		private ProjectionLayout(String[] names, int[] sourceSlots, int[] targets) {
-			this.names = names;
-			this.sourceSlots = sourceSlots;
+		private ProjectionLayout(String[] names, int[] sourceSlots, int[] targets, int[] positionMasks) {
+			this.names = names.clone();
+			this.sourceSlots = sourceSlots.clone();
 			this.targets = targets;
+			this.positionMasks = positionMasks;
 		}
 
 		static ProjectionLayout create(String[] names, int[] sourceSlots) {
+			return create(names, sourceSlots, new int[names.length]);
+		}
+
+		static ProjectionLayout create(String[] names, int[] sourceSlots, int[] sourcePositionMasks) {
+			if (names.length != sourceSlots.length || names.length != sourcePositionMasks.length) {
+				throw new IllegalArgumentException("projection metadata lengths differ");
+			}
 			int[] targets = null;
 			String[] uniqueNames = new String[names.length];
+			int[] uniqueMasks = new int[names.length];
 			int uniqueCount = 0;
 			for (int i = 0; i < names.length; i++) {
 				int target = indexOf(uniqueNames, uniqueCount, names[i]);
@@ -107,10 +119,12 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 				if (targets != null) {
 					targets[i] = target;
 				}
+				uniqueMasks[target] |= sourcePositionMasks[i];
 			}
 			return targets == null
-					? new ProjectionLayout(names, sourceSlots, null)
-					: new ProjectionLayout(Arrays.copyOf(uniqueNames, uniqueCount), sourceSlots, targets);
+					? new ProjectionLayout(names, sourceSlots, null, uniqueMasks)
+					: new ProjectionLayout(Arrays.copyOf(uniqueNames, uniqueCount), sourceSlots, targets,
+							Arrays.copyOf(uniqueMasks, uniqueCount));
 		}
 
 		void copyIds(long[] row, long[] ids) {
@@ -228,7 +242,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 				if (value == null) {
 					value = findMaterializedDuplicate(i);
 					if (value == null) {
-						value = currentSource.lazyValue(ids[i]);
+						value = currentSource.lazyValue(ids[i], positionMasks[i]);
 						materializedValues++;
 					}
 					values[i] = value;
@@ -277,7 +291,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 			if (currentSource == null) {
 				throw new IllegalStateException("detached native result has an unresolved value");
 			}
-			value = currentSource.lazyValue(id);
+			value = currentSource.lazyValue(id, positionMasks[index]);
 			values[index] = value;
 			MATERIALIZED_VALUES.incrementAndGet();
 		}
@@ -287,7 +301,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 	private Value findMaterializedDuplicate(int index) {
 		long id = ids[index];
 		for (int i = 0; i < values.length; i++) {
-			if (i != index && ids[i] == id && values[i] != null) {
+			if (i != index && ids[i] == id && positionMasks[i] == positionMasks[index] && values[i] != null) {
 				return values[i];
 			}
 		}

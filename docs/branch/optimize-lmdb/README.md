@@ -1,5 +1,10 @@
 # `optimize-lmdb` developer guide
 
+The [interactive branch field guide](index.html) explains the branch aspect by
+aspect, with worked examples, source links and explicit tradeoffs. Its source
+snapshot is `9d17a49841` (2026-10-08); it does not refresh the historical
+inventory or claim a current RDF4J build, test or benchmark run.
+
 This guide set inventories the historical `optimize-lmdb` changes and the
 unchanged contracts those changes rely on. Its revision roles are:
 

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.MathUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -212,6 +213,7 @@ final class NativeCustomAggregate {
 final class AggregateSpec {
 	final String name;
 	final int slot;
+	final int positionMask;
 	final long constant;
 	final boolean distinct;
 	final AggKind kind;
@@ -237,6 +239,11 @@ final class AggregateSpec {
 
 	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
 			int[] rowSlots, NativeCustomAggregate custom) {
+		this(name, slot, constant, distinct, kind, separator, rowSlots, custom, 0);
+	}
+
+	private AggregateSpec(String name, int slot, long constant, boolean distinct, AggKind kind, String separator,
+			int[] rowSlots, NativeCustomAggregate custom, int positionMask) {
 		this.name = name;
 		this.slot = slot;
 		this.constant = constant;
@@ -245,6 +252,11 @@ final class AggregateSpec {
 		this.separator = separator;
 		this.rowSlots = rowSlots;
 		this.custom = custom;
+		this.positionMask = positionMask;
+	}
+
+	AggregateSpec withPositionMask(int mask) {
+		return new AggregateSpec(name, slot, constant, distinct, kind, separator, rowSlots, custom, mask);
 	}
 
 	static AggregateSpec custom(String name, NativeCustomAggregate custom) {
@@ -359,7 +371,6 @@ final class AggregateSpec {
 @Experimental
 final class AggContext {
 	private static final int INITIAL_VALUE_CACHE_CAPACITY = 16;
-	private static final byte OCCUPIED = 1;
 	private static final long ARRAY_HEADER_BYTES = 16L;
 	private static final long REFERENCE_BYTES = Long.BYTES;
 	private static final long VALUE_OBJECT_BYTES = 64L;
@@ -432,11 +443,16 @@ final class AggContext {
 	}
 
 	Value value(long id) {
-		int slot = valueCacheSlot(id);
-		if (valueCacheStates[slot] == OCCUPIED) {
+		return value(id, ValuePosition.NONE);
+	}
+
+	Value value(long id, int positionMask) {
+		byte bankState = (byte) (ValuePosition.cacheBank(positionMask) + 1);
+		int slot = valueCacheSlot(id, bankState);
+		if (valueCacheStates[slot] != 0) {
 			return valueCacheValues[slot];
 		}
-		Value value = source.lazyValue(id);
+		Value value = source.lazyValue(id, positionMask);
 		if (value == null) {
 			return null;
 		}
@@ -459,11 +475,11 @@ final class AggContext {
 					}
 					return value;
 				}
-				slot = valueCacheSlot(id);
+				slot = valueCacheSlot(id, bankState);
 			}
 			valueCacheIds[slot] = id;
 			valueCacheValues[slot] = value;
-			valueCacheStates[slot] = OCCUPIED;
+			valueCacheStates[slot] = bankState;
 			valueCacheSize++;
 			if (retained) {
 				retainedValueBytes = Math.addExact(retainedValueBytes, retainedBytes);
@@ -486,13 +502,13 @@ final class AggContext {
 				source instanceof SyntheticValueSource synthetic ? synthetic.executionContext() : null));
 	}
 
-	private int valueCacheSlot(long id) {
-		return valueCacheSlot(id, valueCacheIds, valueCacheStates);
+	private int valueCacheSlot(long id, byte bankState) {
+		return valueCacheSlot(id, bankState, valueCacheIds, valueCacheStates);
 	}
 
-	private static int valueCacheSlot(long id, long[] ids, byte[] states) {
-		int slot = mixValueId(id) & (ids.length - 1);
-		while (states[slot] == OCCUPIED && ids[slot] != id) {
+	private static int valueCacheSlot(long id, byte bankState, long[] ids, byte[] states) {
+		int slot = mixValueId(id ^ bankState) & (ids.length - 1);
+		while (states[slot] != 0 && (ids[slot] != id || states[slot] != bankState)) {
 			slot = slot + 1 & (ids.length - 1);
 		}
 		return slot;
@@ -515,13 +531,13 @@ final class AggContext {
 			replacementValues = new Value[capacity];
 			replacementStates = new byte[capacity];
 			for (int i = 0; i < oldIds.length; i++) {
-				if (oldStates[i] != OCCUPIED) {
+				if (oldStates[i] == 0) {
 					continue;
 				}
-				int slot = valueCacheSlot(oldIds[i], replacementIds, replacementStates);
+				int slot = valueCacheSlot(oldIds[i], oldStates[i], replacementIds, replacementStates);
 				replacementIds[slot] = oldIds[i];
 				replacementValues[slot] = oldValues[i];
-				replacementStates[slot] = OCCUPIED;
+				replacementStates[slot] = oldStates[i];
 			}
 		} catch (RuntimeException | Error problem) {
 			if (memory != null) {
@@ -828,14 +844,14 @@ final class AggState {
 		case SAMPLE:
 			if (extremes[i] == null) {
 				// first eligible value of the group wins; materialization cost is once per group
-				extremes[i] = ctx.value(value);
+				extremes[i] = ctx.value(value, specs[i].positionMask);
 			}
 			break;
 		case GROUP_CONCAT: {
 			if (ctx.encounterOrderChanging) {
 				throw EncounterOrderFallback.groupConcatOrder();
 			}
-			Value concatValue = ctx.value(value);
+			Value concatValue = ctx.value(value, specs[i].positionMask);
 			if (concatValue != null) {
 				if (concats[i] == null) {
 					concats[i] = new StringBuilder();
@@ -857,7 +873,7 @@ final class AggState {
 		if (typeErrors[i]) {
 			return;
 		}
-		Literal literal = numericLiteral(ctx, id);
+		Literal literal = numericLiteral(ctx, id, specs[i].positionMask);
 		if (literal == null) {
 			typeErrors[i] = true;
 			return;
@@ -870,7 +886,11 @@ final class AggState {
 	 * native value aggregate. The exact Janino sidecar uses this too so it cannot drift from the ordinary aggregate.
 	 */
 	static Literal numericLiteral(AggContext context, long id) {
-		Value value = context.value(id);
+		return numericLiteral(context, id, ValuePosition.NONE);
+	}
+
+	static Literal numericLiteral(AggContext context, long id, int positionMask) {
+		Value value = context.value(id, positionMask);
 		if (!value.isLiteral()) {
 			return null;
 		}
@@ -970,7 +990,7 @@ final class AggState {
 		case SAMPLE:
 			// any eligible value is a valid sample; weight is irrelevant
 			if (extremes[i] == null) {
-				extremes[i] = ctx.value(id);
+				extremes[i] = ctx.value(id, specs[i].positionMask);
 			}
 			break;
 		case GROUP_CONCAT:
@@ -985,7 +1005,7 @@ final class AggState {
 		if (typeErrors[i]) {
 			return;
 		}
-		Value v = ctx.value(id);
+		Value v = ctx.value(id, specs[i].positionMask);
 		if (!v.isLiteral()) {
 			typeErrors[i] = true;
 			return;
@@ -1005,7 +1025,7 @@ final class AggState {
 		if (typeErrors[i]) {
 			return;
 		}
-		Value v = ctx.value(id);
+		Value v = ctx.value(id, specs[i].positionMask);
 		if (v.isLiteral()) {
 			Literal literal = (Literal) v;
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
@@ -1034,7 +1054,7 @@ final class AggState {
 		if (typeErrors[i]) {
 			return;
 		}
-		Value v = ctx.value(id);
+		Value v = ctx.value(id, specs[i].positionMask);
 		if (v.isLiteral()) {
 			Literal literal = (Literal) v;
 			CoreDatatype.XSD coreDatatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
@@ -1055,7 +1075,7 @@ final class AggState {
 		if (extremeIds[i] == id) {
 			return;
 		}
-		Value v = ctx.value(id);
+		Value v = ctx.value(id, specs[i].positionMask);
 		if (extremes[i] == null) {
 			extremes[i] = v;
 			extremeIds[i] = id;

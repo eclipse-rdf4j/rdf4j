@@ -983,6 +983,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 				specs[i] = AggregateSpec.slot(elem.getName(), slot(var.getName()), op.isDistinct(), kind);
 			}
 		}
+		Map<String, Integer> inputPositions = strategy.valuePositionMasks(group.getArg());
+		for (int i = 0; i < specs.length; i++) {
+			int positionMask = specs[i].slot < 0 ? 0
+					: inputPositions.getOrDefault(slotNames.get(specs[i].slot), 0);
+			specs[i] = specs[i].withPositionMask(positionMask);
+		}
 		return specs;
 	}
 
@@ -1160,6 +1166,9 @@ abstract class LmdbNativeAggregatePlannerBase {
 		if (var == null) {
 			return Term.unbound();
 		}
+		if (!var.isConstant() && (!var.hasValue() || !var.isAnonymous())) {
+			layout.patternPosition(var.getName(), 1 << field.ordinal());
+		}
 		if (var.hasValue()) {
 			Value value = var.getValue();
 			if (!validValueForField(value, field)) {
@@ -1233,7 +1242,8 @@ abstract class LmdbNativeAggregatePlannerBase {
 		}
 		Set<String> varNames = bindingAndExtensionNames(expr);
 		varNames.addAll(names);
-		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr), expr.getClass().getSimpleName(), outSlots,
+		return new GenericEvalPlan(GenericSubplanDescriptor.create(expr, strategy), expr.getClass().getSimpleName(),
+				outSlots,
 				outNames, varNames, strategy, context);
 	}
 

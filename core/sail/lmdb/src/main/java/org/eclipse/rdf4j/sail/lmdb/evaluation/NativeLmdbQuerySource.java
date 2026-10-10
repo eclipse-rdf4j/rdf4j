@@ -64,6 +64,11 @@ public interface NativeLmdbQuerySource {
 
 	Value lazyValue(long id) throws QueryEvaluationException;
 
+	/** Materializes a value using the complete static position mask of its lexical binding. */
+	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
+		return lazyValue(id);
+	}
+
 	/**
 	 * Whether {@link #tripleTerms(long, long, long)} is available on this source — the compile-time admission gate for
 	 * the native SPARQL 1.2 TripleRef scan.

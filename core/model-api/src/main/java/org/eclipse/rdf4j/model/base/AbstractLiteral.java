@@ -172,10 +172,10 @@ public abstract class AbstractLiteral implements Literal {
 
 	@Override
 	public boolean equals(Object o) {
-		if(o == this) {
+		if (o == this) {
 			return true;
 		}
-		if(o == null || !(o instanceof Literal)) {
+		if (o == null || !(o instanceof Literal)) {
 			return false;
 		}
 

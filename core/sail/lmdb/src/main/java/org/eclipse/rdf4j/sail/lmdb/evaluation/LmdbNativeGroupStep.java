@@ -66,6 +66,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	final AggregateSpec[] aggregates;
 	final boolean strictCompare;
 	final LmdbNativeEvaluationStrategy strategy;
+	final NativeValuePositionAnalysis valuePositions;
 	final TupleExpr originalExpr;
 	final QueryEvaluationContext context;
 	final String[] optionalOnlyNames;
@@ -113,6 +114,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		this.aggregates = aggregates;
 		this.strictCompare = strictCompare;
 		this.strategy = strategy;
+		this.valuePositions = strategy == null ? null : strategy.valuePositionSnapshot();
 		this.originalExpr = originalExpr;
 		this.context = context;
 		this.optionalOnlyNames = optionalOnlyNames.isEmpty() ? NO_OPTIONAL_ONLY_NAMES
@@ -321,29 +323,29 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 
 	synchronized QueryEvaluationStep genericStep() {
 		if (genericFallbackDescriptor == null) {
-			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
 		}
 		if (rootEvaluationScoped && !genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
 			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
-			return strategy.genericPrecompile(genericFallbackDescriptor.pinnedExpr(),
+			return genericFallbackDescriptor.genericPrecompile(strategy,
 					new EvaluationScopedQueryEvaluationContext(context));
 		}
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			genericStep = genericFallbackDescriptor.genericPrecompile(strategy, context);
 		}
 		return genericStep;
 	}
 
 	synchronized QueryEvaluationStep genericStep(NativeExecutionContext executionContext) {
 		if (genericFallbackDescriptor == null) {
-			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr);
+			genericFallbackDescriptor = GenericSubplanDescriptor.create(originalExpr, strategy, valuePositions);
 		}
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
 						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
-				return strategy.genericPrecompile(genericFallbackDescriptor.<TupleExpr>pinnedExpr(), scoped);
+				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}
 		return genericStep();
@@ -1898,7 +1900,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		for (int i = 0; i < groupSlots.length; i++) {
 			long id = key.ids[i];
 			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				result.addBinding(slotNames[groupSlots[i]], source.lazyValue(id));
+				result.addBinding(slotNames[groupSlots[i]], source.lazyValue(id, layout.positionMask(groupSlots[i])));
 			}
 		}
 		result.addBinding(aggregates[0].name,
@@ -2107,7 +2109,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 	BindingSet kernelGroupRow(long groupId, long count) {
 		QueryBindingSet result = new QueryBindingSet(groupSlots.length + aggregates.length);
 		if (groupSlots.length == 1 && groupId != UNKNOWN && groupId != NULL_CONTEXT_ID) {
-			result.addBinding(slotNames[groupSlots[0]], source.lazyValue(groupId));
+			result.addBinding(slotNames[groupSlots[0]], source.lazyValue(groupId, layout.positionMask(groupSlots[0])));
 		}
 		org.eclipse.rdf4j.model.Literal countLiteral = SimpleValueFactory.getInstance()
 				.createLiteral(BigInteger.valueOf(count));
@@ -2130,7 +2132,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		for (int i = 0; i < layout.groupEngineSlots.length; i++) {
 			long id = rowBuf[base + i];
 			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				result.addBinding(slotNames[layout.groupEngineSlots[i]], source.lazyValue(id));
+				result.addBinding(slotNames[layout.groupEngineSlots[i]],
+						source.lazyValue(id, this.layout.positionMask(layout.groupEngineSlots[i])));
 			}
 		}
 		int offset = base + layout.groupEngineSlots.length;
@@ -2159,7 +2162,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			}
 			default: // ENC_VALUE_ID
 				if (raw != UNKNOWN) {
-					result.addBinding(out.spec.name, source.lazyValue(raw));
+					result.addBinding(out.spec.name, source.lazyValue(raw, this.layout.positionMask(out.spec.name)));
 				}
 				break;
 			}
@@ -2173,7 +2176,7 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 		for (int i = 0; i < groupSlots.length; i++) {
 			long id = row[i];
 			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				result.addBinding(slotNames[groupSlots[i]], source.lazyValue(id));
+				result.addBinding(slotNames[groupSlots[i]], source.lazyValue(id, layout.positionMask(groupSlots[i])));
 			}
 		}
 		for (int i = 0; i < aggregates.length; i++) {
@@ -2190,7 +2193,8 @@ final class NativeGroupIteration implements CloseableIteration<BindingSet>, Coop
 			for (int i = 0; i < groupSlots.length; i++) {
 				long id = key.ids[i];
 				if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-					result.addBinding(slotNames[groupSlots[i]], valueSource.lazyValue(id));
+					result.addBinding(slotNames[groupSlots[i]],
+							valueSource.lazyValue(id, layout.positionMask(groupSlots[i])));
 				}
 			}
 		}

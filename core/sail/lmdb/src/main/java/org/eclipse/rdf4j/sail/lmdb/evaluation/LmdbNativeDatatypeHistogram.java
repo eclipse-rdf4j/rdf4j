@@ -90,15 +90,17 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 	private final long obj;
 	/** Quad position (TripleIndex.*_IDX) of the literal-valued variable inside the pattern. */
 	private final int valueField;
+	private final int positionMask;
 	private final String keyName;
 	private final String countName;
 	private final LmdbNativeEvaluationStrategy strategy;
+	private final NativeValuePositionAnalysis valuePositions;
 	private final TupleExpr originalExpr;
 	private final QueryEvaluationContext context;
 	private QueryEvaluationStep genericStep;
 
 	LmdbNativeDatatypeHistogram(NativeLmdbQuerySource source, LmdbPrefixRunPlan plan, long subj, long pred, long obj,
-			int valueField, String keyName, String countName, LmdbNativeEvaluationStrategy strategy,
+			int valueField, int positionMask, String keyName, String countName, LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
 		this.source = source;
 		this.plan = plan;
@@ -106,9 +108,11 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		this.pred = pred;
 		this.obj = obj;
 		this.valueField = valueField;
+		this.positionMask = positionMask;
 		this.keyName = keyName;
 		this.countName = countName;
 		this.strategy = strategy;
+		this.valuePositions = strategy.valuePositionSnapshot();
 		this.originalExpr = originalExpr;
 		this.context = context;
 		PLANNED.incrementAndGet();
@@ -155,7 +159,8 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 
 	private synchronized QueryEvaluationStep genericStep() {
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			genericStep = strategy.withValuePositions(valuePositions,
+					() -> strategy.genericPrecompile(originalExpr, context));
 		}
 		return genericStep;
 	}
@@ -467,7 +472,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 			// inlined literal: every id of one type code carries the same datatype — resolve one representative
 			IRI cached = inlinedDatatypes.get(type);
 			if (cached == null) {
-				Value value = resolverSource.lazyValue(id);
+				Value value = resolverSource.lazyValue(id, positionMask);
 				if (!(value instanceof Literal)) {
 					return null;
 				}
@@ -480,7 +485,7 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 		private IRI referencedDatatype(long literalId, long datatypeId) {
 			if (datatypeId < 0L) {
 				// Header peek unsupported by this source: full materialization fallback.
-				Value value = resolverSource.lazyValue(literalId);
+				Value value = resolverSource.lazyValue(literalId, positionMask);
 				return value instanceof Literal ? ((Literal) value).getDatatype() : null;
 			}
 			if (datatypeId == 0L) {

@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -222,13 +221,12 @@ final class GenericEvalPlan implements SlotPlan {
 	private QueryEvaluationStep prepare(NativeExecutionContext execution) {
 		QueryEvaluationContext scoped = execution
 				.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
-		TupleExpr pinned = descriptor.pinnedExpr();
 		// M-A2 nested roots: strategy.precompile lets the native compiler claim the island body where its shape is
 		// supported (e.g. a subquery Projection becomes a nested native row root with its own private slot layout
 		// and value catalog; cross-authority ids are re-imported by value at write-back). Unsupported bodies fall
 		// through to generic preparation inside the same call; the island's write-back contract is identical either
 		// way, and interior recursion keeps claiming fragments exactly as the generic host does.
-		return strategy.precompile(pinned, scoped);
+		return descriptor.precompile(strategy, scoped);
 	}
 
 	/**
@@ -243,7 +241,7 @@ final class GenericEvalPlan implements SlotPlan {
 		while (extra != 0L) {
 			int slot = Long.numberOfTrailingZeros(extra);
 			extra &= extra - 1;
-			Value value = row.source.lazyValue(row.slots[slot]);
+			Value value = row.source.lazyValue(row.slots[slot], row.layout.positionMask(slot));
 			if (value != null) {
 				input.setBinding(slotNames[slot], value);
 			}

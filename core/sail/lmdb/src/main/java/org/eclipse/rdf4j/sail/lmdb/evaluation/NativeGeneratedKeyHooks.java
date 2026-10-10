@@ -78,13 +78,48 @@ final class NativeGeneratedKeyHooks implements KernelHooks {
 	}
 
 	@Override
+	public int positionMask(int column) {
+		return delegate.positionMask(column);
+	}
+
+	@Override
+	public int outputPositionMask(int column) {
+		return delegate.outputPositionMask(column);
+	}
+
+	@Override
+	public int aggregatePositionMask(int aggregate) {
+		return delegate.aggregatePositionMask(aggregate);
+	}
+
+	@Override
+	public int compareValues(long left, int leftPositionMask, long right, int rightPositionMask) {
+		return delegate.compareValues(left, leftPositionMask, right, rightPositionMask);
+	}
+
+	@Override
+	public boolean replacesWinner(long candidate, long incumbent, boolean min, int positionMask) {
+		return delegate.replacesWinner(candidate, incumbent, min, positionMask);
+	}
+
+	@Override
 	public boolean isNumeric(long id) {
 		return delegate.isNumeric(id);
 	}
 
 	@Override
+	public boolean isNumeric(long id, int positionMask) {
+		return delegate.isNumeric(id, positionMask);
+	}
+
+	@Override
 	public double doubleValue(long id) {
 		return delegate.doubleValue(id);
+	}
+
+	@Override
+	public double doubleValue(long id, int positionMask) {
+		return delegate.doubleValue(id, positionMask);
 	}
 
 	@Override

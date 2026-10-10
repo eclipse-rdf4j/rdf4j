@@ -345,7 +345,8 @@ final class LmdbNativeParallelPrefixRuns {
 		for (int i = 0; i < it.groupSlots.length; i++) {
 			long id = entry[i];
 			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
-				result.addBinding(it.slotNames[it.groupSlots[i]], it.source.lazyValue(id));
+				result.addBinding(it.slotNames[it.groupSlots[i]],
+						it.source.lazyValue(id, it.layout.positionMask(it.groupSlots[i])));
 			}
 		}
 		if (it.prefixCountRunRows || (it.prefixDistinctRuns && it.aggregates.length == 1)) {

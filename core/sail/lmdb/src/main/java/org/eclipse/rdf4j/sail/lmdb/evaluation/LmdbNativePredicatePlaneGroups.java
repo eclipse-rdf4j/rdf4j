@@ -76,24 +76,29 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 	};
 
 	private final NativeLmdbQuerySource source;
+	private final int predicatePositionMask;
 	private final LmdbPrefixRunPlan plan;
 	private final String groupBindingName;
 	private final Channel[] channels;
 	private final PredicateClassifier classifier;
 	private final LmdbNativeEvaluationStrategy strategy;
+	private final NativeValuePositionAnalysis valuePositions;
 	private final TupleExpr originalExpr;
 	private final QueryEvaluationContext context;
 	private QueryEvaluationStep genericStep;
 
 	LmdbNativePredicatePlaneGroups(NativeLmdbQuerySource source, LmdbPrefixRunPlan plan, String groupBindingName,
-			Channel[] channels, PredicateClassifier classifier, LmdbNativeEvaluationStrategy strategy,
+			Channel[] channels, PredicateClassifier classifier, int predicatePositionMask,
+			LmdbNativeEvaluationStrategy strategy,
 			TupleExpr originalExpr, QueryEvaluationContext context) {
 		this.source = source;
+		this.predicatePositionMask = predicatePositionMask;
 		this.plan = plan;
 		this.groupBindingName = groupBindingName;
 		this.channels = channels.clone();
 		this.classifier = classifier;
 		this.strategy = strategy;
+		this.valuePositions = strategy.valuePositionSnapshot();
 		this.originalExpr = originalExpr;
 		this.context = context;
 		PLANNED.incrementAndGet();
@@ -175,7 +180,7 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 		long[] predicates = batch.predicates();
 		long[] quadCounts = batch.quadCounts();
 		for (int lane = 0; lane < batch.size(); lane++) {
-			Value value = source.lazyValue(predicates[lane]);
+			Value value = source.lazyValue(predicates[lane], predicatePositionMask);
 			PREDICATE_DECODES.incrementAndGet();
 			if (!(value instanceof IRI)) {
 				throw new QueryEvaluationException(
@@ -196,7 +201,8 @@ final class LmdbNativePredicatePlaneGroups implements QueryEvaluationStep {
 
 	private synchronized QueryEvaluationStep genericStep() {
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			genericStep = strategy.withValuePositions(valuePositions,
+					() -> strategy.genericPrecompile(originalExpr, context));
 		}
 		return genericStep;
 	}

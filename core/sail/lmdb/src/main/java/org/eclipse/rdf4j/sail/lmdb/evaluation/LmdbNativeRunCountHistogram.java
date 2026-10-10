@@ -79,6 +79,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 	private final String keyName;
 	private final String countName;
 	private final LmdbNativeEvaluationStrategy strategy;
+	private final NativeValuePositionAnalysis valuePositions;
 	private final TupleExpr originalExpr;
 	private final QueryEvaluationContext context;
 	private QueryEvaluationStep genericStep;
@@ -94,6 +95,7 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 		this.keyName = keyName;
 		this.countName = countName;
 		this.strategy = strategy;
+		this.valuePositions = strategy.valuePositionSnapshot();
 		this.originalExpr = originalExpr;
 		this.context = context;
 		PLANNED.incrementAndGet();
@@ -140,7 +142,8 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 
 	private synchronized QueryEvaluationStep genericStep() {
 		if (genericStep == null) {
-			genericStep = strategy.genericPrecompile(originalExpr, context);
+			genericStep = strategy.withValuePositions(valuePositions,
+					() -> strategy.genericPrecompile(originalExpr, context));
 		}
 		return genericStep;
 	}

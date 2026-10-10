@@ -62,6 +62,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private Map<ScopedId, Integer> scopedValueIndexes;
 
 	private ValueStoreRevision commonRevision;
+	private int commonCacheBank;
 	private int bufferIndex;
 	private int bufferSize;
 	private int nextBufferCapacity;
@@ -256,7 +257,7 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 		LeadingFieldSorters.lsdRadixSort(valueOrder, valueIds, valueCount, scratchValueOrder, scratchValueIds,
 				radixCounts, radixOffsets);
-		if (scopedValueIndexes == null && commonRevision != null) {
+		if (commonRevision != null) {
 			commonRevision.resolveValues(values, valueOrder, valueCount);
 			return;
 		}
@@ -337,7 +338,11 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		}
 		if (valueCount == 0) {
 			commonRevision = revision;
-		} else if (!sameRevision(commonRevision, revision)) {
+			commonCacheBank = cacheBank(revision);
+		} else if (!sameRevision(commonRevision, revision) || commonCacheBank != cacheBank(revision)) {
+			if (!sameRevision(commonRevision, revision)) {
+				commonRevision = null;
+			}
 			buildScopedValueIndexes();
 			return findOrAddScopedValue(value, id, revision);
 		}
@@ -351,7 +356,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	}
 
 	private int findOrAddScopedValue(LmdbValue value, long id, ValueStoreRevision revision) {
-		ScopedId key = new ScopedId(revision, id);
+		if (commonRevision != null && !sameRevision(commonRevision, revision)) {
+			commonRevision = null;
+		}
+		ScopedId key = new ScopedId(revision, id, cacheBank(revision));
 		Integer existing = scopedValueIndexes.get(key);
 		if (existing != null) {
 			return existing;
@@ -364,10 +372,9 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 	private void buildScopedValueIndexes() {
 		scopedValueIndexes = new HashMap<>(Math.max(INITIAL_COLLECTION_SIZE, valueCount * 2));
 		for (int i = 0; i < valueCount; i++) {
-			scopedValueIndexes.put(new ScopedId(valueRevisions[i], valueIds[i]), i);
+			scopedValueIndexes.put(new ScopedId(valueRevisions[i], valueIds[i], cacheBank(valueRevisions[i])), i);
 		}
 		valueIndexesById.clear();
-		commonRevision = null;
 	}
 
 	private int addKnownValue(LmdbValue value, long id, ValueStoreRevision revision) {
@@ -496,6 +503,10 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 		return left == right || left != null && left.equals(right);
 	}
 
-	private record ScopedId(ValueStoreRevision revision, long id) {
+	private static int cacheBank(ValueStoreRevision revision) {
+		return ValuePosition.cacheBank(revision == null ? ValuePosition.NONE : revision.getPositionMask());
+	}
+
+	private record ScopedId(ValueStoreRevision revision, long id, int cacheBank) {
 	}
 }

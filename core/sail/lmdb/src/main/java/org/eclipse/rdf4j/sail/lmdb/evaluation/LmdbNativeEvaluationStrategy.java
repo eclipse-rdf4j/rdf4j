@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -72,6 +74,68 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	private volatile boolean trackTimeShadow;
 	private volatile boolean trackResultSizeShadow;
 	private volatile LmdbNativeEvaluationStrategy genericOnlyView;
+	private volatile NativeValuePositionAnalysis valuePositions;
+	private ThreadLocal<NativeValuePositionAnalysis> scopedValuePositions = new ThreadLocal<>();
+
+	NativeValuePositionAnalysis valuePositionSnapshot() {
+		NativeValuePositionAnalysis scoped = scopedValuePositions.get();
+		return scoped != null ? scoped : valuePositions;
+	}
+
+	<T> T withValuePositions(NativeValuePositionAnalysis snapshot, Supplier<T> action) {
+		if (snapshot == null) {
+			return action.get();
+		}
+		NativeValuePositionAnalysis previous = scopedValuePositions.get();
+		scopedValuePositions.set(snapshot);
+		try {
+			return action.get();
+		} finally {
+			if (previous == null) {
+				scopedValuePositions.remove();
+			} else {
+				scopedValuePositions.set(previous);
+			}
+		}
+	}
+
+	private void setValuePositions(NativeValuePositionAnalysis positions) {
+		if (scopedValuePositions.get() != null) {
+			scopedValuePositions.set(positions);
+		} else {
+			valuePositions = positions;
+			if (genericOnlyView != null) {
+				genericOnlyView.valuePositions = positions;
+			}
+		}
+	}
+
+	NativeValuePositionAnalysis copyValuePositions(QueryModelNode original, QueryModelNode copy) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		return current == null ? null : current.copySubtree(original, copy);
+	}
+
+	@Override
+	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics statistics, BindingSet bindings) {
+		return withPreparedTupleExpr(expr, prepared -> {
+			NativeValuePositionAnalysis positions = NativeValuePositionAnalysis.analyze(prepared);
+			setValuePositions(positions);
+			return withValuePositions(positions, () -> super.optimize(prepared, statistics, bindings));
+		});
+	}
+
+	Map<String, Integer> valuePositionMasks(TupleExpr expr) {
+		return selectValuePositions(expr).masksFor(expr);
+	}
+
+	private NativeValuePositionAnalysis selectValuePositions(TupleExpr expr) {
+		NativeValuePositionAnalysis current = valuePositionSnapshot();
+		if (current == null || !current.containsContext(expr)) {
+			current = NativeValuePositionAnalysis.analyze(expr);
+			setValuePositions(current);
+		}
+		return current;
+	}
 
 	LmdbNativeEvaluationStrategy(TripleSource tripleSource, Dataset dataset,
 			FederatedServiceResolver serviceResolver, long iterationCacheSyncTreshold,
@@ -188,6 +252,8 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 					view.setTrackResultSize(trackResultSizeShadow);
 					view.setQueryEvaluationMode(getQueryEvaluationMode());
 					view.setQueryExecutionPolicy(getQueryExecutionPolicy());
+					view.valuePositions = valuePositions;
+					view.scopedValuePositions = scopedValuePositions;
 					if (optimizerPipelineShadow != null) {
 						view.setOptimizerPipeline(optimizerPipelineShadow);
 					}
@@ -267,23 +333,31 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
 		return withPreparedTupleExpr(expr, prepared -> {
-			QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
-					tripleSource.getComparator());
-			if (prepared instanceof QueryRoot) {
-				String[] allVariables = ArrayBindingBasedQueryEvaluationContext
-						.findAllVariablesUsedInQuery((QueryRoot) prepared);
-				QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
-				QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context, allVariables,
+			NativeValuePositionAnalysis positions = selectValuePositions(prepared);
+			return withValuePositions(positions, () -> {
+				QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset,
+						tripleSource.getValueFactory(),
 						tripleSource.getComparator());
-				context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
-			}
-			return precompile(prepared, context);
+				if (prepared instanceof QueryRoot) {
+					String[] allVariables = ArrayBindingBasedQueryEvaluationContext
+							.findAllVariablesUsedInQuery((QueryRoot) prepared);
+					QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
+					QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context,
+							allVariables,
+							tripleSource.getComparator());
+					context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
+				}
+				return precompile(prepared, context);
+			});
 		});
 	}
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		return withPreparedTupleExpr(expr, prepared -> precompileWithPreparedValues(prepared, context));
+		return withPreparedTupleExpr(expr, prepared -> {
+			NativeValuePositionAnalysis positions = selectValuePositions(prepared);
+			return withValuePositions(positions, () -> precompileWithPreparedValues(prepared, context));
+		});
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {

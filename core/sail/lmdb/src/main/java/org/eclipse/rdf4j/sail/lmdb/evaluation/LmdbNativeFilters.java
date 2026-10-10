@@ -1102,7 +1102,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 
 	@Override
 	public boolean accept(RowState row) {
-		return acceptId(row.slots[slot], row.source);
+		return acceptId(row.slots[slot], row.source, row.positionMask(slot));
 	}
 
 	@Override
@@ -1111,7 +1111,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		int columnOffset = slot * batch.capacity;
 		for (int i = 0; i < n; i++) {
 			int physicalRow = sel[i];
-			if (acceptId(batch.slots[columnOffset + physicalRow], scratch.source)) {
+			if (acceptId(batch.slots[columnOffset + physicalRow], scratch.source, scratch.positionMask(slot))) {
 				sel[acceptedCount++] = physicalRow;
 			}
 		}
@@ -1138,7 +1138,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		return forkForParallelWorker();
 	}
 
-	private boolean acceptId(long id, NativeLmdbQuerySource source) {
+	private boolean acceptId(long id, NativeLmdbQuerySource source, int positionMask) {
 		if (checkBound && id == UNKNOWN) {
 			return false;
 		}
@@ -1155,7 +1155,7 @@ final class ValueSetFilter implements NativeBooleanFilter {
 		boolean result = false;
 		Value value;
 		try {
-			value = source.lazyValue(id);
+			value = source.lazyValue(id, positionMask);
 		} catch (RuntimeException e) {
 			value = null;
 		}
@@ -1400,7 +1400,7 @@ final class CachedCompareFilter implements NativeBooleanFilter {
 		}
 		if (codec != null && constantDecoded != null && !constantDecoded.error()) {
 			LmdbNativeValueCodec.DecodedValue value = idKind == NativeIdKind.STORE
-					? codec.decode(id)
+					? codec.decode(id, row.positionMask(slot))
 					: decodeAuthoritative(authority, id);
 			Boolean result = constantOnLeft
 					? LmdbNativeExpressionCompiler.compareAsBoolean(constantDecoded, value, op, strict)

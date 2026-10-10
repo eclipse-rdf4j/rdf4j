@@ -3733,7 +3733,7 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			case LmdbNativeKernelIr.AGG_MAX_ID:
 				if (KernelHooks.isBoundValue(hooks, value)
 						&& (!agB[i][group] || hooks.replacesWinner(value, agW[i][group],
-								output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
+								output.kind == LmdbNativeKernelIr.AGG_MIN_ID, hooks.aggregatePositionMask(i)))) {
 					agW[i][group] = value;
 					agB[i][group] = true;
 				}
@@ -4634,14 +4634,15 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 			case LmdbNativeKernelIr.AGG_MAX_ID:
 				// replacesWinner (never an inline compare) so the hooks can refuse distinct-term extrema ties.
 				if (KernelHooks.isBoundValue(hooks, value) && (!agB[i][g]
-						|| hooks.replacesWinner(value, agW[i][g], output.kind == LmdbNativeKernelIr.AGG_MIN_ID))) {
+						|| hooks.replacesWinner(value, agW[i][g], output.kind == LmdbNativeKernelIr.AGG_MIN_ID,
+								hooks.aggregatePositionMask(i)))) {
 					agW[i][g] = value;
 					agB[i][g] = true;
 				}
 				break;
 			case LmdbNativeKernelIr.AGG_MIN:
-				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value)) {
-					double t = hooks.doubleValue(value);
+				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value, hooks.aggregatePositionMask(i))) {
+					double t = hooks.doubleValue(value, hooks.aggregatePositionMask(i));
 					if (!agB[i][g] || t < agM[i][g]) {
 						agM[i][g] = t;
 						agB[i][g] = true;
@@ -4649,8 +4650,8 @@ final class LmdbNativeKernelInterpreter implements JaninoKernel {
 				}
 				break;
 			default: // MAX
-				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value)) {
-					double t = hooks.doubleValue(value);
+				if (KernelHooks.isBoundValue(hooks, value) && hooks.isNumeric(value, hooks.aggregatePositionMask(i))) {
+					double t = hooks.doubleValue(value, hooks.aggregatePositionMask(i));
 					if (!agB[i][g] || t > agM[i][g]) {
 						agM[i][g] = t;
 						agB[i][g] = true;

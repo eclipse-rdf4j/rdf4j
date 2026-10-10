@@ -348,11 +348,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
 			if (memoIds[slot] == id) {
 				return memoValues[slot];
 			}
-			Value value = source.lazyValue(id);
+			Value value = source.lazyValue(id, layout.positionMask(slot));
 			memoIds[slot] = id;
 			memoValues[slot] = value;
 			return value;
 		}
-		return source.lazyValue(id);
+		return source.lazyValue(id, layout.positionMask(slot));
 	}
 }

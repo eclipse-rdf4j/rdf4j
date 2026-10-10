@@ -683,7 +683,8 @@ final class LmdbAdjacencyAggregatePlan {
 	private BindingSet binding(NativeGroupIteration owner, long groupId, Counts counts) {
 		QueryBindingSet result = new QueryBindingSet((groupSlot < 0 ? 0 : 1) + channels.length);
 		if (groupSlot >= 0 && groupId != UNKNOWN && groupId != NULL_CONTEXT_ID) {
-			result.addBinding(owner.slotNames[groupSlot], owner.source.lazyValue(groupId));
+			result.addBinding(owner.slotNames[groupSlot],
+					owner.source.lazyValue(groupId, owner.layout.positionMask(groupSlot)));
 		}
 		for (CountChannel channel : channels) {
 			long count = channel.distinct ? counts.distinct(channel.field) : counts.rows;

@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 /** Native symmetric-CBD {@code DESCRIBE} root over an arbitrary semantic-native child. */
 @Experimental
@@ -234,9 +235,9 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 		}
 
 		private BindingSet materialize(long[] record) {
-			Value subject = source.lazyValue(record[TripleIndex.SUBJ_IDX]);
-			Value predicate = source.lazyValue(record[TripleIndex.PRED_IDX]);
-			Value object = source.lazyValue(record[TripleIndex.OBJ_IDX]);
+			Value subject = source.lazyValue(record[TripleIndex.SUBJ_IDX], ValuePosition.SUBJECT);
+			Value predicate = source.lazyValue(record[TripleIndex.PRED_IDX], ValuePosition.PREDICATE);
+			Value object = source.lazyValue(record[TripleIndex.OBJ_IDX], ValuePosition.OBJECT);
 			if (!compatible(SUBJECT, subject) || !compatible(PREDICATE, predicate) || !compatible(OBJECT, object)) {
 				return null;
 			}
