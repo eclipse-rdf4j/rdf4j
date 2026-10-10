@@ -382,6 +382,7 @@
 									<excludes>
 										<exclude>esclipse-settings/**</exclude>
 										<exclude>**/target/**</exclude>
+										<exclude>work/**</exclude>
 										<exclude>**/site/themes/**</exclude>
 										<exclude>**/.*/**</exclude>
 										<exclude>**/dependency-reduced-pom.xml</exclude>

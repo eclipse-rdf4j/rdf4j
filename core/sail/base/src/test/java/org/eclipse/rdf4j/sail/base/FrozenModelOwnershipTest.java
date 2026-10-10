@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -304,6 +305,168 @@ class FrozenModelOwnershipTest {
 	}
 
 	@Test
+	void plainModelReadCallbackDrainsDeferredCleanupAtReaderBoundary() {
+		TrackingFactory victimModels = new TrackingFactory();
+		Changeset victim = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return victimModels.createEmptyModel();
+			}
+		};
+		Statement victimStatement = statement("callback-victim");
+		victim.approve(victimStatement);
+		TrackingModel victimModel = victimModels.onlyModel();
+
+		CallbackTrackingModel queryModel = new CallbackTrackingModel();
+		Changeset query = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return queryModel;
+			}
+		};
+		Statement queryStatement = statement("callback-query");
+		query.approve(queryStatement);
+		AtomicBoolean callbackFired = new AtomicBoolean();
+		queryModel.onPatternContains = () -> {
+			callbackFired.set(true);
+			assertEquals(0, victimModel.closes, "the query's outer reader guard delays nested cleanup");
+			victim.close();
+			assertEquals(0, victimModel.closes, "nested cleanup stays deferred until the query returns");
+		};
+		queryModel.patternCallbackEnabled = true;
+
+		try (victim; query) {
+			assertTrue(query.hasApproved(queryStatement.getSubject(), queryStatement.getPredicate(),
+					queryStatement.getObject(), new Resource[0]));
+			assertTrue(callbackFired.get(), "the actual model pattern lookup invoked the nested close callback");
+			assertEquals(1, victimModel.closes,
+					"the reader boundary drains cleanup deferred by the model callback before returning; callbackFired="
+							+ callbackFired.get());
+		}
+	}
+
+	@Test
+	void plainModelReadPreservesPrimaryFailureWhenDeferredCleanupAlsoFails() {
+		TrackingFactory victimModels = new TrackingFactory();
+		Changeset victim = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return victimModels.createEmptyModel();
+			}
+		};
+		victim.approve(statement("callback-failure-victim"));
+		TrackingModel victimModel = victimModels.onlyModel();
+		SailException cleanupFailure = new SailException("injected deferred model cleanup failure");
+		victimModel.onClose = () -> {
+			throw cleanupFailure;
+		};
+
+		CallbackTrackingModel queryModel = new CallbackTrackingModel();
+		Changeset query = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return queryModel;
+			}
+		};
+		Statement queryStatement = statement("callback-failure-query");
+		query.approve(queryStatement);
+		RuntimeException primaryFailure = new IllegalStateException("injected model lookup failure");
+		AtomicBoolean callbackFired = new AtomicBoolean();
+		queryModel.onPatternContains = () -> {
+			callbackFired.set(true);
+			assertEquals(0, victimModel.closes);
+			victim.close();
+			assertEquals(0, victimModel.closes);
+			throw primaryFailure;
+		};
+		queryModel.patternCallbackEnabled = true;
+
+		try (victim; query) {
+			RuntimeException thrown = assertThrows(RuntimeException.class,
+					() -> query.hasApproved(queryStatement.getSubject(), queryStatement.getPredicate(),
+							queryStatement.getObject(), new Resource[0]));
+			assertSame(primaryFailure, thrown);
+			assertTrue(callbackFired.get(), "the injected delegate failure came from the actual model lookup");
+			assertEquals(1, victimModel.closes);
+			assertEquals(1, primaryFailure.getSuppressed().length);
+			assertSame(cleanupFailure, primaryFailure.getSuppressed()[0]);
+		}
+	}
+
+	@Test
+	void sinkObservedCallbackDrainsDeferredCleanupAtReaderBoundary() {
+		TrackingFactory victimModels = new TrackingFactory();
+		Changeset victim = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return victimModels.createEmptyModel();
+			}
+		};
+		victim.approve(statement("sink-observed-victim"));
+		TrackingModel victimModel = victimModels.onlyModel();
+
+		Changeset observed = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+		};
+		Statement pattern = statement("sink-observed-pattern");
+		observed.observe(pattern.getSubject(), pattern.getPredicate(), pattern.getObject());
+		AtomicBoolean callbackFired = new AtomicBoolean();
+		Changeset destination = new Changeset() {
+			@Override
+			public void flush() {
+			}
+
+			@Override
+			public Model createEmptyModel() {
+				return new LinkedHashModel();
+			}
+
+			@Override
+			public void observeAll(Set<SimpleStatementPattern> patterns) {
+				callbackFired.set(true);
+				assertEquals(0, victimModel.closes, "the observed carrier's reader guard defers nested cleanup");
+				victim.close();
+				assertEquals(0, victimModel.closes, "nested cleanup stays deferred while sinkObserved is active");
+				super.observeAll(patterns);
+			}
+		};
+
+		try (victim; observed; destination) {
+			observed.sinkObserved(destination);
+			assertTrue(callbackFired.get(), "sinkObserved called the destination's actual observeAll callback");
+			assertEquals(1, victimModel.closes,
+					"sinkObserved drains nested cleanup before returning; callbackFired=" + callbackFired.get());
+		}
+	}
+
+	@Test
 	void unrelatedModelCleanupWaitsForPreparedContinuationAndRunsAfterReservationRelease() {
 		TrackingFactory models = new TrackingFactory();
 		ReservationSource backing = new ReservationSource();
@@ -401,7 +564,7 @@ class FrozenModelOwnershipTest {
 		}
 	}
 
-	private static final class TrackingModel extends LinkedHashModel implements AutoCloseable {
+	private static class TrackingModel extends LinkedHashModel implements AutoCloseable {
 		private int closes;
 		private Runnable onClose = () -> {
 		};
@@ -410,6 +573,20 @@ class FrozenModelOwnershipTest {
 		public void close() {
 			closes++;
 			onClose.run();
+		}
+	}
+
+	private static final class CallbackTrackingModel extends TrackingModel {
+		private Runnable onPatternContains = () -> {
+		};
+		private boolean patternCallbackEnabled;
+
+		@Override
+		public boolean contains(Resource subj, IRI pred, Value obj, Resource... contexts) {
+			if (patternCallbackEnabled) {
+				onPatternContains.run();
+			}
+			return super.contains(subj, pred, obj, contexts);
 		}
 	}
 

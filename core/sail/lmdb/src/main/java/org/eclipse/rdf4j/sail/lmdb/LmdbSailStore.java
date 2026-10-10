@@ -7043,11 +7043,30 @@ class LmdbSailStore implements SailStore {
 			int[] positions = new int[capacity];
 			ObjectIntHashMap<Value> indexes = new ObjectIntHashMap<>();
 			int valueCount = 0;
+			Resource previousSubject = null;
+			int previousSubjectIndex = -1;
 			for (int i = 0; i < batch.size; i++) {
 				Statement statement = batch.statements[i];
-				for (int field = 0; field < 4; field++) {
+				Resource subject = statement.getSubject();
+				int offset = 4 * i;
+
+				// Reuse the previous subject's batch index only for the exact same object.
+				if (subject != previousSubject) {
+					previousSubjectIndex = -1;
+					if (subject != null) {
+						previousSubjectIndex = indexes.getIfAbsent(subject, -1);
+						if (previousSubjectIndex < 0) {
+							previousSubjectIndex = valueCount++;
+							indexes.put(subject, previousSubjectIndex);
+							values[previousSubjectIndex] = subject;
+						}
+					}
+					previousSubject = subject;
+				}
+				positions[offset] = previousSubjectIndex;
+
+				for (int field = 1; field < 4; field++) {
 					Value value = switch (field) {
-					case 0 -> statement.getSubject();
 					case 1 -> statement.getPredicate();
 					case 2 -> statement.getObject();
 					default -> statement.getContext();
@@ -7061,7 +7080,7 @@ class LmdbSailStore implements SailStore {
 							values[index] = value;
 						}
 					}
-					positions[4 * i + field] = index;
+					positions[offset + field] = index;
 				}
 			}
 			valueStore.storeValues(values, ids, valueCount);

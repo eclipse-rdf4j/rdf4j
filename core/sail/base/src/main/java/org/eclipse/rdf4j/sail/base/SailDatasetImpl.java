@@ -422,35 +422,7 @@ class SailDatasetImpl implements SailDataset {
 	}
 
 	private CloseableIteration<Statement> approvedIteration(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		Iterator<Statement> iterator = changes.getApprovedStatements(subj, pred, obj, contexts).iterator();
-		try {
-			return new CloseableIteratorIteration<>(iterator) {
-				@Override
-				protected void handleClose() {
-					if (iterator instanceof AutoCloseable closeable) {
-						try {
-							closeable.close();
-						} catch (RuntimeException | Error failure) {
-							throw failure;
-						} catch (Exception failure) {
-							throw new SailException(failure);
-						}
-					}
-				}
-			};
-		} catch (RuntimeException | Error failure) {
-			if (iterator instanceof AutoCloseable closeable) {
-				try {
-					closeable.close();
-				} catch (Exception | Error cleanup) {
-					if (cleanup != failure) {
-						failure.addSuppressed(cleanup);
-					}
-				}
-			}
-			throw failure;
-		}
-
+		return changes.openApprovedStatements(subj, pred, obj, contexts);
 	}
 
 	@Override

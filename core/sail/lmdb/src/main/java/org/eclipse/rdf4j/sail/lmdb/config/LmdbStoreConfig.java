@@ -634,7 +634,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		super.parse(m, implNode);
 		Set<Value> implementations = m.filter(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, null).objects();
 		if (!implementations.isEmpty()) {
-			if (implementations.size() != 1 || !(implementations.iterator().next() instanceof Literal literal)) {
+			if (implementations.size() != 1 || !(implementations.iterator().next()instanceof Literal literal)) {
 				throw new SailConfigException("One literal required for " + LmdbStoreSchema.CACHE_IMPLEMENTATION
 						+ " property, found " + implementations);
 			}

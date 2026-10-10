@@ -36,7 +36,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	 */
 	private final SailSource additional;
 	private SailClosable preparedWrite;
-	private SailModelCleanup.Scope preparedCleanup;
+	private SailModelCleanup.Retained preparedCleanup;
 	private UnionFlushBatch frozenBatch;
 
 	/**
@@ -600,7 +600,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	}
 
 	private void retainPreparedWrite() {
-		SailModelCleanup.Scope cleanup = SailModelCleanup.enter();
+		SailModelCleanup.Retained cleanup = SailModelCleanup.retain();
 		try {
 			preparedWrite = beginPreparedWrite();
 			if (preparedWrite == null) {
@@ -617,7 +617,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	private Throwable releasePreparedWrite(Throwable failure) {
 		SailClosable toClose = preparedWrite;
 		preparedWrite = null;
-		SailModelCleanup.Scope cleanup = preparedCleanup;
+		SailModelCleanup.Retained cleanup = preparedCleanup;
 		preparedCleanup = null;
 		failure = closeResource(failure, toClose);
 		return closeResource(failure, cleanup);

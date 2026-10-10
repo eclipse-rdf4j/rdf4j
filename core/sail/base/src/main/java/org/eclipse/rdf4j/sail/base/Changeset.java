@@ -38,6 +38,8 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -309,23 +311,27 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	boolean hasApproved(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			return hasApproved(readLock, subj, pred, obj, contexts);
-		} finally {
-			readLock.unlockReader();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				return hasApproved(readLock, subj, pred, obj, contexts);
+			} finally {
+				readLock.unlockReader();
+			}
 		}
 	}
 
 	@Experimental
 	public boolean hasDeprecated(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			return hasDeprecated(readLock, subj, pred, obj, contexts);
-		} finally {
-			readLock.unlockReader();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				return hasDeprecated(readLock, subj, pred, obj, contexts);
+			} finally {
+				readLock.unlockReader();
+			}
 		}
 	}
 
@@ -707,82 +713,84 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void clear(Resource... contexts) {
-		checkModelMutation();
-		beforeWriteIntent();
-		boolean signalWritePreflight;
-		ModelWriteState writeLock = acquireModelMutationLock();
-		try {
-			if (contexts != null && contexts.length == 0) {
-				modelWriteState.statementCleared = true;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			checkModelMutation();
+			beforeWriteIntent();
+			boolean signalWritePreflight;
+			ModelWriteState writeLock = acquireModelMutationLock();
+			try {
+				if (contexts != null && contexts.length == 0) {
+					modelWriteState.statementCleared = true;
 
-				if (modelWriteState.approved != null) {
-					modelWriteState.approved.clear();
-				}
-				if (modelWriteState.approvedContexts != null) {
-					modelWriteState.approvedContexts.clear();
-				}
-			} else {
-				if (modelWriteState.deprecatedContexts == null) {
-					modelWriteState.deprecatedContexts = new HashSet<>();
-				}
-				if (modelWriteState.approved != null) {
-					modelWriteState.approved.remove(null, null, null, contexts);
-				}
-				if (modelWriteState.approvedContexts != null && contexts != null) {
-					for (Resource resource : contexts) {
-						modelWriteState.approvedContexts.remove(resource);
+					if (modelWriteState.approved != null) {
+						modelWriteState.approved.clear();
+					}
+					if (modelWriteState.approvedContexts != null) {
+						modelWriteState.approvedContexts.clear();
+					}
+				} else {
+					if (modelWriteState.deprecatedContexts == null) {
+						modelWriteState.deprecatedContexts = new HashSet<>();
+					}
+					if (modelWriteState.approved != null) {
+						modelWriteState.approved.remove(null, null, null, contexts);
+					}
+					if (modelWriteState.approvedContexts != null && contexts != null) {
+						for (Resource resource : contexts) {
+							modelWriteState.approvedContexts.remove(resource);
+						}
+					}
+					if (contexts != null) {
+						modelWriteState.deprecatedContexts.addAll(Arrays.asList(contexts));
 					}
 				}
-				if (contexts != null) {
-					modelWriteState.deprecatedContexts.addAll(Arrays.asList(contexts));
-				}
+				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
+				signalWritePreflight = recordWriteIntent(0L, true);
+			} finally {
+				writeLock.unlockWriter();
 			}
-			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
-			signalWritePreflight = recordWriteIntent(0L, true);
-		} finally {
-			writeLock.unlockWriter();
+			if (signalWritePreflight) {
+				writeIntentChanged();
+			}
 		}
-		if (signalWritePreflight) {
-			writeIntentChanged();
-		}
-
 	}
 
 	@Override
 	public void approve(Statement statement) {
-		checkModelMutation();
-		beforeWriteIntent();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			checkModelMutation();
+			beforeWriteIntent();
 
-		assert !closed;
-		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
-		boolean signalWritePreflight = false;
-		ModelWriteState writeLock = acquireModelMutationLock();
-		try {
+			assert !closed;
+			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+			boolean signalWritePreflight = false;
+			ModelWriteState writeLock = acquireModelMutationLock();
+			try {
 
-			if (modelWriteState.deprecated != null) {
-				modelWriteState.deprecated.remove(statement);
-				modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
-						|| modelWriteState.deprecated.isEmpty();
-			}
-			if (modelWriteState.approved == null) {
-				modelWriteState.approved = createEmptyModel();
-			}
-			modelWriteState.approved.add(statement);
-			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
-			if (statement.getContext() != null) {
-				if (modelWriteState.approvedContexts == null) {
-					modelWriteState.approvedContexts = new HashSet<>();
+				if (modelWriteState.deprecated != null) {
+					modelWriteState.deprecated.remove(statement);
+					modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+							|| modelWriteState.deprecated.isEmpty();
 				}
-				modelWriteState.approvedContexts.add(statement.getContext());
+				if (modelWriteState.approved == null) {
+					modelWriteState.approved = createEmptyModel();
+				}
+				modelWriteState.approved.add(statement);
+				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
+				if (statement.getContext() != null) {
+					if (modelWriteState.approvedContexts == null) {
+						modelWriteState.approvedContexts = new HashSet<>();
+					}
+					modelWriteState.approvedContexts.add(statement.getContext());
+				}
+				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+			} finally {
+				writeLock.unlockWriter();
 			}
-			signalWritePreflight = recordWriteIntent(approximateBytes, false);
-		} finally {
-			writeLock.unlockWriter();
+			if (signalWritePreflight) {
+				writeIntentChanged();
+			}
 		}
-		if (signalWritePreflight) {
-			writeIntentChanged();
-		}
-
 	}
 
 	@Override
@@ -792,36 +800,38 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	@Override
 	public void deprecate(Statement statement) {
-		checkModelMutation();
-		beforeWriteIntent();
-		assert !closed;
-		long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
-		boolean signalWritePreflight = false;
-		ModelWriteState writeLock = acquireModelMutationLock();
-		try {
-			if (modelWriteState.approved != null) {
-				modelWriteState.approved.remove(statement);
-				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			checkModelMutation();
+			beforeWriteIntent();
+			assert !closed;
+			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+			boolean signalWritePreflight = false;
+			ModelWriteState writeLock = acquireModelMutationLock();
+			try {
+				if (modelWriteState.approved != null) {
+					modelWriteState.approved.remove(statement);
+					modelWriteState.approvedEmpty = modelWriteState.approved == null
+							|| modelWriteState.approved.isEmpty();
+				}
+				if (modelWriteState.deprecated == null) {
+					modelWriteState.deprecated = createEmptyModel();
+				}
+				modelWriteState.deprecated.add(statement);
+				modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+						|| modelWriteState.deprecated.isEmpty();
+				Resource ctx = statement.getContext();
+				if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
+						&& !modelWriteState.approved.contains(null, null, null, ctx)) {
+					modelWriteState.approvedContexts.remove(ctx);
+				}
+				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+			} finally {
+				writeLock.unlockWriter();
 			}
-			if (modelWriteState.deprecated == null) {
-				modelWriteState.deprecated = createEmptyModel();
+			if (signalWritePreflight) {
+				writeIntentChanged();
 			}
-			modelWriteState.deprecated.add(statement);
-			modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
-					|| modelWriteState.deprecated.isEmpty();
-			Resource ctx = statement.getContext();
-			if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
-					&& !modelWriteState.approved.contains(null, null, null, ctx)) {
-				modelWriteState.approvedContexts.remove(ctx);
-			}
-			signalWritePreflight = recordWriteIntent(approximateBytes, false);
-		} finally {
-			writeLock.unlockWriter();
 		}
-		if (signalWritePreflight) {
-			writeIntentChanged();
-		}
-
 	}
 
 	@Override
@@ -1184,36 +1194,38 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	WritePreflightSnapshot getWritePreflightSnapshot() {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (transferred) {
-				return new WritePreflightSnapshot(List.of(), List.of(), Set.of(), Set.of(), false, false, false);
-			}
-			ArrayList<Statement> statements = new ArrayList<>();
-			if (modelWriteState.approved != null && !modelWriteState.approvedEmpty) {
-				statements.addAll(modelWriteState.approved);
-			}
-			if (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty) {
-				statements.addAll(modelWriteState.deprecated);
-			}
-			List<SailSource.NamespaceUpdate> namespaces = new ArrayList<>();
-			if (modelWriteState.addedNamespaces != null) {
-				for (Map.Entry<String, String> namespace : modelWriteState.addedNamespaces.entrySet()) {
-					namespaces.add(new SailSource.NamespaceUpdate(namespace.getKey(), namespace.getValue()));
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if (transferred) {
+					return new WritePreflightSnapshot(List.of(), List.of(), Set.of(), Set.of(), false, false, false);
 				}
+				ArrayList<Statement> statements = new ArrayList<>();
+				if (modelWriteState.approved != null && !modelWriteState.approvedEmpty) {
+					statements.addAll(modelWriteState.approved);
+				}
+				if (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty) {
+					statements.addAll(modelWriteState.deprecated);
+				}
+				List<SailSource.NamespaceUpdate> namespaces = new ArrayList<>();
+				if (modelWriteState.addedNamespaces != null) {
+					for (Map.Entry<String, String> namespace : modelWriteState.addedNamespaces.entrySet()) {
+						namespaces.add(new SailSource.NamespaceUpdate(namespace.getKey(), namespace.getValue()));
+					}
+				}
+				Set<String> removedNamespacePrefixes = modelWriteState.removedPrefixes == null ? Collections.emptySet()
+						: new HashSet<>(modelWriteState.removedPrefixes);
+				Set<Resource> clearedContexts = modelWriteState.deprecatedContexts == null ? Collections.emptySet()
+						: new HashSet<>(modelWriteState.deprecatedContexts);
+				boolean hasWrites = modelWriteState.statementCleared || modelWriteState.namespaceCleared
+						|| !statements.isEmpty()
+						|| !namespaces.isEmpty() || !removedNamespacePrefixes.isEmpty() || !clearedContexts.isEmpty();
+				return new WritePreflightSnapshot(statements, namespaces, removedNamespacePrefixes, clearedContexts,
+						modelWriteState.statementCleared, modelWriteState.namespaceCleared, hasWrites);
+			} finally {
+				readLock.unlockReader();
 			}
-			Set<String> removedNamespacePrefixes = modelWriteState.removedPrefixes == null ? Collections.emptySet()
-					: new HashSet<>(modelWriteState.removedPrefixes);
-			Set<Resource> clearedContexts = modelWriteState.deprecatedContexts == null ? Collections.emptySet()
-					: new HashSet<>(modelWriteState.deprecatedContexts);
-			boolean hasWrites = modelWriteState.statementCleared || modelWriteState.namespaceCleared
-					|| !statements.isEmpty()
-					|| !namespaces.isEmpty() || !removedNamespacePrefixes.isEmpty() || !clearedContexts.isEmpty();
-			return new WritePreflightSnapshot(statements, namespaces, removedNamespacePrefixes, clearedContexts,
-					modelWriteState.statementCleared, modelWriteState.namespaceCleared, hasWrites);
-		} finally {
-			readLock.unlockReader();
 		}
 	}
 
@@ -1223,55 +1235,58 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	List<Statement> getDeprecatedStatements() {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty) {
-				return Collections.emptyList();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if (modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty) {
+					return Collections.emptyList();
+				}
+				return new ArrayList<>(modelWriteState.deprecated);
+			} finally {
+				readLock.unlockReader();
 			}
-			return new ArrayList<>(modelWriteState.deprecated);
-		} finally {
-			readLock.unlockReader();
 		}
-
 	}
 
 	List<Statement> getApprovedStatements() {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
-				return Collections.emptyList();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
+					return Collections.emptyList();
+				}
+				return new ArrayList<>(modelWriteState.approved);
+			} finally {
+				readLock.unlockReader();
 			}
-			return new ArrayList<>(modelWriteState.approved);
-		} finally {
-			readLock.unlockReader();
 		}
-
 	}
 
 	boolean hasDeprecated(Statement statement) {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if ((modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty)
-					&& modelWriteState.deprecatedContexts == null) {
-				return false;
-			}
-			if (modelWriteState.deprecatedContexts != null) {
-				if (modelWriteState.deprecatedContexts.contains(statement.getContext())) {
-					return true;
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if ((modelWriteState.deprecated == null || modelWriteState.deprecatedEmpty)
+						&& modelWriteState.deprecatedContexts == null) {
+					return false;
 				}
+				if (modelWriteState.deprecatedContexts != null) {
+					if (modelWriteState.deprecatedContexts.contains(statement.getContext())) {
+						return true;
+					}
+				}
+				if (modelWriteState.deprecated != null) {
+					return modelWriteState.deprecated.contains(statement);
+				} else {
+					return false;
+				}
+			} finally {
+				readLock.unlockReader();
 			}
-			if (modelWriteState.deprecated != null) {
-				return modelWriteState.deprecated.contains(statement);
-			} else {
-				return false;
-			}
-		} finally {
-			readLock.unlockReader();
 		}
-
 	}
 
 	boolean hasApproved() {
@@ -1285,15 +1300,40 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	Iterable<Statement> getApprovedStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-		return () -> openApprovedStatements(subj, pred, obj, contexts);
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState state = acquireModelReadLock();
+			try {
+				if (state.approved == null || state.approvedEmpty) {
+					return Collections.emptyList();
+				}
+				// This legacy Iterable is an immediate snapshot and imposes no cursor-close obligation.
+				List<Statement> snapshot = new ArrayList<>();
+				Iterator<Statement> iterator = state.approved.getStatements(subj, pred, obj, contexts).iterator();
+				Throwable primary = null;
+				try {
+					while (iterator.hasNext()) {
+						snapshot.add(iterator.next());
+					}
+				} catch (RuntimeException | Error failure) {
+					primary = failure;
+					throw failure;
+				} finally {
+					closeIterator(iterator, primary);
+				}
+				return snapshot;
+			} finally {
+				state.unlockReader();
+			}
+		}
 	}
 
-	private Iterator<Statement> openApprovedStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+	/** Opens an owned cursor for an exact dataset generation, separate from the legacy snapshot API. */
+	CloseableIteration<Statement> openApprovedStatements(Resource subj, IRI pred, Value obj, Resource[] contexts) {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			ModelWriteState state = acquireModelWriteLock();
 			try {
 				if (state.approved == null || state.approvedEmpty) {
-					return Collections.emptyIterator();
+					return new EmptyIteration<>();
 				}
 				spill(state.approved);
 				Iterator<Statement> iterator = state.approved.getStatements(subj, pred, obj, contexts).iterator();
@@ -1337,7 +1377,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 	}
 
-	private static final class RetainedStatementIterator implements Iterator<Statement>, AutoCloseable {
+	private static final class RetainedStatementIterator implements CloseableIteration<Statement> {
 		private final ModelWriteState state;
 		private final Iterator<Statement> delegate;
 		private final long revision;
@@ -1350,15 +1390,17 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		}
 
 		private <T> T read(Supplier<T> operation) {
-			SailModelCleanup.beginLock();
-			state.readWriteLock.readLock();
-			try {
-				if (revision != state.revision) {
-					throw new ConcurrentModificationException("Statement generation changed during traversal");
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				SailModelCleanup.beginLock();
+				state.readWriteLock.readLock();
+				try {
+					if (revision != state.revision) {
+						throw new ConcurrentModificationException("Statement generation changed during traversal");
+					}
+					return operation.get();
+				} finally {
+					state.unlockReader();
 				}
-				return operation.get();
-			} finally {
-				state.unlockReader();
 			}
 		}
 
@@ -1423,56 +1465,60 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	Iterable<TripleTerm> getApprovedTriples(Resource subj, IRI pred, Value obj) {
-		assert !closed;
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
-				return Collections.emptyList();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if (modelWriteState.approved == null || modelWriteState.approvedEmpty) {
+					return Collections.emptyList();
+				}
+				// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
+				// for functionally complete first.
+				Stream<TripleTerm> approvedSubjectTriples = modelWriteState.approved.parallelStream()
+						.filter(st -> st.getSubject().isTripleTerm())
+						.map(st -> (TripleTerm) st.getSubject())
+						.filter(t -> {
+							if (subj != null && !subj.equals(t.getSubject())) {
+								return false;
+							}
+							if (pred != null && !pred.equals(t.getPredicate())) {
+								return false;
+							}
+							return obj == null || obj.equals(t.getObject());
+						});
+
+				Stream<TripleTerm> approvedObjectTriples = modelWriteState.approved.parallelStream()
+						.filter(st -> st.getObject().isTripleTerm())
+						.map(st -> (TripleTerm) st.getObject())
+						.filter(t -> {
+							if (subj != null && !subj.equals(t.getSubject())) {
+								return false;
+							}
+							if (pred != null && !pred.equals(t.getPredicate())) {
+								return false;
+							}
+							return obj == null || obj.equals(t.getObject());
+						});
+
+				return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
+			} finally {
+				readLock.unlockReader();
 			}
-			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
-			// for functionally complete first.
-			Stream<TripleTerm> approvedSubjectTriples = modelWriteState.approved.parallelStream()
-					.filter(st -> st.getSubject().isTripleTerm())
-					.map(st -> (TripleTerm) st.getSubject())
-					.filter(t -> {
-						if (subj != null && !subj.equals(t.getSubject())) {
-							return false;
-						}
-						if (pred != null && !pred.equals(t.getPredicate())) {
-							return false;
-						}
-						return obj == null || obj.equals(t.getObject());
-					});
-
-			Stream<TripleTerm> approvedObjectTriples = modelWriteState.approved.parallelStream()
-					.filter(st -> st.getObject().isTripleTerm())
-					.map(st -> (TripleTerm) st.getObject())
-					.filter(t -> {
-						if (subj != null && !subj.equals(t.getSubject())) {
-							return false;
-						}
-						if (pred != null && !pred.equals(t.getPredicate())) {
-							return false;
-						}
-						return obj == null || obj.equals(t.getObject());
-					});
-
-			return Stream.concat(approvedSubjectTriples, approvedObjectTriples).collect(Collectors.toList());
-		} finally {
-			readLock.unlockReader();
 		}
 	}
 
 	void removeApproved(Statement next) {
-		assert !closed;
-		ModelWriteState state = acquireModelMutationLock();
-		try {
-			if (modelWriteState.approved != null) {
-				modelWriteState.approved.remove(next);
-				modelWriteState.approvedEmpty = modelWriteState.approved.isEmpty();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			assert !closed;
+			ModelWriteState state = acquireModelMutationLock();
+			try {
+				if (modelWriteState.approved != null) {
+					modelWriteState.approved.remove(next);
+					modelWriteState.approvedEmpty = modelWriteState.approved.isEmpty();
+				}
+			} finally {
+				state.unlockWriter();
 			}
-		} finally {
-			state.unlockWriter();
 		}
 	}
 
@@ -1485,76 +1531,80 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	void sinkApproved(SailSink sink) {
-		ModelWriteState migration = acquireModelWriteLock();
-		try {
-			spill(migration.approved);
-		} finally {
-			migration.unlockWriter();
-		}
-		ModelWriteState state = acquireModelReadLock();
-		boolean[] readLock = { true };
-		ScopedStatementSet statements = null;
-		Throwable primary = null;
-		try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
-			if (state.approved != null && !state.approvedEmpty) {
-				statements = new ScopedStatementSet(state.approved);
-				sink.approveAll(statements, state.approvedContexts);
-			}
-		} catch (RuntimeException | Error failure) {
-			primary = failure;
-			throw failure;
-		} finally {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState migration = acquireModelWriteLock();
 			try {
-				if (statements != null) {
-					statements.close(primary);
+				spill(migration.approved);
+			} finally {
+				migration.unlockWriter();
+			}
+			ModelWriteState state = acquireModelReadLock();
+			boolean[] readLock = { true };
+			ScopedStatementSet statements = null;
+			Throwable primary = null;
+			try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
+				if (state.approved != null && !state.approvedEmpty) {
+					statements = new ScopedStatementSet(state.approved);
+					sink.approveAll(statements, state.approvedContexts);
 				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
 			} finally {
 				try {
-					if (readLock[0]) {
-						state.unlockReader();
-					} else {
-						SailModelCleanup.endLock();
+					if (statements != null) {
+						statements.close(primary);
 					}
 				} finally {
-					state.unregisterContinuationReadLock(readLock);
+					try {
+						if (readLock[0]) {
+							state.unlockReader();
+						} else {
+							SailModelCleanup.endLock();
+						}
+					} finally {
+						state.unregisterContinuationReadLock(readLock);
+					}
 				}
 			}
 		}
 	}
 
 	void sinkDeprecated(SailSink sink) {
-		ModelWriteState migration = acquireModelWriteLock();
-		try {
-			spill(migration.deprecated);
-		} finally {
-			migration.unlockWriter();
-		}
-		ModelWriteState state = acquireModelReadLock();
-		boolean[] readLock = { true };
-		ScopedStatementSet statements = null;
-		Throwable primary = null;
-		try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
-			if (state.deprecated != null && !state.deprecatedEmpty) {
-				statements = new ScopedStatementSet(state.deprecated);
-				sink.deprecateAll(statements);
-			}
-		} catch (RuntimeException | Error failure) {
-			primary = failure;
-			throw failure;
-		} finally {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			ModelWriteState migration = acquireModelWriteLock();
 			try {
-				if (statements != null) {
-					statements.close(primary);
+				spill(migration.deprecated);
+			} finally {
+				migration.unlockWriter();
+			}
+			ModelWriteState state = acquireModelReadLock();
+			boolean[] readLock = { true };
+			ScopedStatementSet statements = null;
+			Throwable primary = null;
+			try (SailWriteContinuation.Scope continuation = modelContinuation(state, readLock)) {
+				if (state.deprecated != null && !state.deprecatedEmpty) {
+					statements = new ScopedStatementSet(state.deprecated);
+					sink.deprecateAll(statements);
 				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
 			} finally {
 				try {
-					if (readLock[0]) {
-						state.unlockReader();
-					} else {
-						SailModelCleanup.endLock();
+					if (statements != null) {
+						statements.close(primary);
 					}
 				} finally {
-					state.unregisterContinuationReadLock(readLock);
+					try {
+						if (readLock[0]) {
+							state.unlockReader();
+						} else {
+							SailModelCleanup.endLock();
+						}
+					} finally {
+						state.unregisterContinuationReadLock(readLock);
+					}
 				}
 			}
 		}
@@ -1725,100 +1775,105 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	public void sinkObserved(SailSink sink) {
-		if (observed == null) {
-			return;
-		}
-
-		ModelWriteState readLock = acquireModelReadLock();
-		try {
-			if (observed != null) {
-				sink.observeAll(observed);
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			if (observed == null) {
+				return;
 			}
 
-		} finally {
-			readLock.unlockReader();
+			ModelWriteState readLock = acquireModelReadLock();
+			try {
+				if (observed != null) {
+					sink.observeAll(observed);
+				}
+			} finally {
+				readLock.unlockReader();
+			}
 		}
-
 	}
 
 	@Override
 	public void approveAll(Set<Statement> approve, Set<Resource> approveContexts) {
-		checkModelMutation();
-		beforeWriteIntent();
-		long approximateBytes = 0L;
-		if (tracksWriteIntent()) {
-			for (Statement statement : approve) {
-				approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
-			}
-		}
-		boolean signalWritePreflight = false;
-		ModelWriteState writeLock = acquireModelMutationLock();
-		try {
-
-			if (modelWriteState.deprecated != null) {
-				modelWriteState.deprecated.removeAll(approve);
-			}
-			if (modelWriteState.approved == null) {
-				modelWriteState.approved = createEmptyModel();
-			}
-			modelWriteState.approved.addAll(approve);
-			modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
-
-			if (approveContexts != null) {
-				if (modelWriteState.approvedContexts == null) {
-					modelWriteState.approvedContexts = new HashSet<>();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			checkModelMutation();
+			beforeWriteIntent();
+			long approximateBytes = 0L;
+			if (tracksWriteIntent()) {
+				for (Statement statement : approve) {
+					approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
 				}
-				modelWriteState.approvedContexts.addAll(approveContexts);
 			}
-			signalWritePreflight = recordWriteIntent(approximateBytes, false);
+			boolean signalWritePreflight = false;
+			ModelWriteState writeLock = acquireModelMutationLock();
+			try {
 
-		} finally {
-			writeLock.unlockWriter();
-		}
-		if (signalWritePreflight) {
-			writeIntentChanged();
+				if (modelWriteState.deprecated != null) {
+					modelWriteState.deprecated.removeAll(approve);
+				}
+				if (modelWriteState.approved == null) {
+					modelWriteState.approved = createEmptyModel();
+				}
+				modelWriteState.approved.addAll(approve);
+				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
+
+				if (approveContexts != null) {
+					if (modelWriteState.approvedContexts == null) {
+						modelWriteState.approvedContexts = new HashSet<>();
+					}
+					modelWriteState.approvedContexts.addAll(approveContexts);
+				}
+				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+
+			} finally {
+				writeLock.unlockWriter();
+			}
+			if (signalWritePreflight) {
+				writeIntentChanged();
+			}
 		}
 	}
 
 	@Override
 	public void deprecateAll(Set<Statement> deprecate) {
-		checkModelMutation();
-		beforeWriteIntent();
-		long approximateBytes = 0L;
-		if (tracksWriteIntent()) {
-			for (Statement statement : deprecate) {
-				approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
-			}
-		}
-		boolean signalWritePreflight = false;
-		ModelWriteState writeLock = acquireModelMutationLock();
-		try {
-
-			if (modelWriteState.approved != null) {
-				modelWriteState.approved.removeAll(deprecate);
-				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
-			}
-			if (modelWriteState.deprecated == null) {
-				modelWriteState.deprecated = createEmptyModel();
-			}
-			modelWriteState.deprecated.addAll(deprecate);
-			modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
-					|| modelWriteState.deprecated.isEmpty();
-
-			for (Statement statement : deprecate) {
-				Resource ctx = statement.getContext();
-				if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
-						&& !modelWriteState.approved.contains(null, null, null, ctx)) {
-					modelWriteState.approvedContexts.remove(ctx);
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			checkModelMutation();
+			beforeWriteIntent();
+			long approximateBytes = 0L;
+			if (tracksWriteIntent()) {
+				for (Statement statement : deprecate) {
+					approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
 				}
 			}
-			signalWritePreflight = recordWriteIntent(approximateBytes, false);
+			boolean signalWritePreflight = false;
+			ModelWriteState writeLock = acquireModelMutationLock();
+			try {
 
-		} finally {
-			writeLock.unlockWriter();
-		}
-		if (signalWritePreflight) {
-			writeIntentChanged();
+				if (modelWriteState.approved != null) {
+					modelWriteState.approved.removeAll(deprecate);
+					modelWriteState.approvedEmpty = modelWriteState.approved == null
+							|| modelWriteState.approved.isEmpty();
+				}
+				if (modelWriteState.deprecated == null) {
+					modelWriteState.deprecated = createEmptyModel();
+				}
+				modelWriteState.deprecated.addAll(deprecate);
+				modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
+						|| modelWriteState.deprecated.isEmpty();
+
+				for (Statement statement : deprecate) {
+					Resource ctx = statement.getContext();
+					if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
+							&& !modelWriteState.approved.contains(null, null, null, ctx)) {
+						modelWriteState.approvedContexts.remove(ctx);
+					}
+				}
+				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+
+			} finally {
+				writeLock.unlockWriter();
+			}
+			if (signalWritePreflight) {
+				writeIntentChanged();
+			}
 		}
 	}
 

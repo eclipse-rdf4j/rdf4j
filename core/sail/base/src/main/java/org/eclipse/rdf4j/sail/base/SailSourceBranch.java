@@ -383,7 +383,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 			private boolean prepared;
 			private SailClosable preparedWrite;
-			private SailModelCleanup.Scope preparedCleanup;
+			private SailModelCleanup.Retained preparedCleanup;
 			private final Object fallbackWriteOwner = new Object();
 			private volatile WriteIntent writeIntent;
 			private Object admittedWriteOwner;
@@ -448,7 +448,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					}
 
 					SailClosable reservation = null;
-					SailModelCleanup.Scope retainedCleanup = null;
+					SailModelCleanup.Retained retainedCleanup = null;
 					boolean branchLockHeld = false;
 					try {
 						if (hasWriteChanges()) {
@@ -462,7 +462,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 						// SERIALIZABLE
 						// sinks. Keep its backing reservation for that lifetime so a competing publisher cannot own the
 						// backing writer while waiting for a lock the prepared owner needs to publish and release.
-						retainedCleanup = SailModelCleanup.enter();
+						retainedCleanup = SailModelCleanup.retain();
 						reservation = SailSourceBranch.this.beginPreparedWrite(pendingWriteOwner());
 						try (SailClosable publication = SailSourceBranch.this.beginPublication(pendingWriteOwner())) {
 							preparedChangeset(this);
@@ -510,7 +510,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					}
 					SailClosable reservation = preparedWrite;
 					preparedWrite = null;
-					SailModelCleanup.Scope retainedCleanup = preparedCleanup;
+					SailModelCleanup.Retained retainedCleanup = preparedCleanup;
 					preparedCleanup = null;
 					failure = closeResource(failure, reservation);
 					failure = closeResource(failure, retainedCleanup);

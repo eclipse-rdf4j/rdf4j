@@ -70,3 +70,5 @@ e2e/test-results
 /core/sail/lmdb/persistent-lmdb-theme-store/
 /persistent-lmdb-theme-store/
 papers/
+/work/
+/core/sail/lmdb/work/
