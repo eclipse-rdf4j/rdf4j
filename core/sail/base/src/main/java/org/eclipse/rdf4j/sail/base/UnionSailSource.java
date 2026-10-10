@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.sail.SailException;
@@ -380,6 +381,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public FlushBatch freezeForFlush() {
+		FrozenFlush.checkFreezeSupport(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			if (frozenBatch != null) {
 				throw new IllegalStateException("This union is already frozen");
@@ -400,6 +402,12 @@ class UnionSailSource implements SailSource, FrozenFlush {
 			}
 
 		}
+	}
+
+	@Override
+	public void checkFreezeSupport(Set<FrozenFlush> visited) {
+		FrozenFlush.checkFreezeSupport(primary, visited);
+		FrozenFlush.checkFreezeSupport(additional, visited);
 	}
 
 	@Override

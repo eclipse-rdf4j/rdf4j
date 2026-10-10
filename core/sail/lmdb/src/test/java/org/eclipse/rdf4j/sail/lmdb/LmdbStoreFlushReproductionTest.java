@@ -911,11 +911,13 @@ class LmdbStoreFlushReproductionTest {
 			sink.observe(null, PREDICATE, null, new Resource[0]);
 			try (SailClosable publication = source.beginPublication()) {
 				sink.prepare();
+				sink.prepare();
 			}
 			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000L);
 					QueryExecutionDeadline.Scope ignored = deadline.enter();
 					SailClosable continuation = source.beginPublication()) {
 				// A bounded admission must recover the observation's retained logical publication owner.
+				sink.prepare();
 			}
 			try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(250L);
 					QueryExecutionDeadline.Scope ignored = deadline.enter()) {

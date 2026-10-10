@@ -28,6 +28,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
@@ -237,6 +238,174 @@ class FrozenFlushBatchTest {
 				assertEquals(expected, backing.attempts.get(1), "replay keeps prefix and full child order");
 				batch.unFreezeAndDiscardFlushed();
 				assertFalse(parent.isChanged(), "acknowledgement empties the shared root");
+				batch.close();
+			}
+		}
+	}
+
+	@Test
+	void unknownDelegatingSinkTransformRunsDuringOrdinaryBranchFlush() throws Exception {
+		RecordingSource backing = new RecordingSource();
+		AtomicInteger transformedApprovals = new AtomicInteger();
+		try (SailSourceBranch parent = branch(backing);
+				TransformingDelegatingSailSource wrapper = new TransformingDelegatingSailSource(parent,
+						transformedApprovals);
+				SailSourceBranch child = branch(wrapper)) {
+			write(child, "ordinary-wrapper-input");
+			child.flush();
+			assertEquals(1, transformedApprovals.get(),
+					"ordinary branch flush must invoke the wrapper's sink behavior");
+
+			parent.flush();
+			assertEquals(List.of(List.of("add:ordinary-wrapper-input", "add:ordinary-wrapper-input-wrapped")),
+					backing.attempts, "the wrapper's semantic addition reaches the terminal source");
+		}
+	}
+
+	@Test
+	void unknownDelegatingSourceRejectsDirectFreezeBeforeDelegateApplication() throws Exception {
+		RecordingSource backing = new RecordingSource();
+		AtomicInteger transformedApprovals = new AtomicInteger();
+		try (SailSourceBranch delegate = branch(backing);
+				TransformingDelegatingSailSource wrapper = new TransformingDelegatingSailSource(delegate,
+						transformedApprovals)) {
+			write(delegate, "pending-before-direct-freeze");
+
+			SailSource.FlushBatch unexpectedlyReturned = null;
+			UnsupportedOperationException rejection = null;
+			try {
+				unexpectedlyReturned = wrapper.freezeForFlush();
+			} catch (UnsupportedOperationException expected) {
+				rejection = expected;
+			}
+			boolean noApplicationAtRejection = backing.attempts.isEmpty();
+			boolean mutationAcceptedBeforeCleanup = false;
+			if (unexpectedlyReturned == null) {
+				write(wrapper, "after-direct-freeze-rejection");
+				mutationAcceptedBeforeCleanup = true;
+			} else {
+				try {
+					write(wrapper, "after-direct-freeze-rejection");
+					mutationAcceptedBeforeCleanup = true;
+				} catch (IllegalStateException expectedWhileUnexpectedlyFrozen) {
+					// This records that an incorrectly returned batch froze the delegate before the assertion below.
+				}
+				unexpectedlyReturned.close();
+			}
+			boolean delegateRetainedPendingChanges = delegate.isChanged();
+
+			if (!mutationAcceptedBeforeCleanup) {
+				write(wrapper, "after-direct-freeze-rejection");
+			}
+			wrapper.flush();
+
+			assertEquals(1, transformedApprovals.get(), "the wrapper remains usable through its ordinary sink");
+			assertEquals(List.of(List.of("add:pending-before-direct-freeze", "add:after-direct-freeze-rejection",
+					"add:after-direct-freeze-rejection-wrapped")), backing.attempts,
+					"ordinary delegate flush preserves both pending input and wrapper semantics");
+			assertTrue(rejection != null,
+					"an unknown DelegatingSailSource subclass must not be frozen by unwrapping it");
+			assertTrue(noApplicationAtRejection, "rejection must happen before opening a terminal application sink");
+			assertTrue(mutationAcceptedBeforeCleanup,
+					"rejection must precede delegate freeze so an ordinary mutation remains available immediately");
+			assertTrue(delegateRetainedPendingChanges, "a rejected freeze must leave delegate input available");
+		}
+	}
+
+	@Test
+	void nestedChildAndUnionRejectUnknownDelegatingSourcesBeforeTransfer() throws Exception {
+		RecordingSource primaryBacking = new RecordingSource();
+		RecordingSource additionalBacking = new RecordingSource();
+		AtomicInteger primaryTransformedApprovals = new AtomicInteger();
+		AtomicInteger additionalTransformedApprovals = new AtomicInteger();
+		try (SailSourceBranch primaryRoot = branch(primaryBacking);
+				TransformingDelegatingSailSource primaryWrapper = new TransformingDelegatingSailSource(primaryRoot,
+						primaryTransformedApprovals);
+				SailSourceBranch nestedChild = branch(primaryWrapper);
+				SailSourceBranch additionalRoot = branch(additionalBacking);
+				TransformingDelegatingSailSource additionalWrapper = new TransformingDelegatingSailSource(
+						additionalRoot, additionalTransformedApprovals);
+				UnionSailSource union = new UnionSailSource(nestedChild, additionalWrapper);
+				SailSourceBranch outer = branch(union)) {
+			write(primaryRoot, "primary-pending-before-freeze");
+			write(additionalRoot, "additional-pending-before-freeze");
+			write(primaryWrapper, "primary-wrapper-probe");
+			write(additionalWrapper, "additional-wrapper-probe");
+			write(nestedChild, "nested-child-pending");
+			write(outer, "union-child-pending");
+			assertEquals(1, primaryTransformedApprovals.get(),
+					"the primary wrapper behavior is activated before freezing");
+			assertEquals(1, additionalTransformedApprovals.get(),
+					"the additional wrapper behavior is activated before freezing");
+			assertEquals(3, countStatements(primaryRoot),
+					"the primary delegate contains its raw row and the wrapper input plus transformed row");
+			assertEquals(3, countStatements(additionalRoot),
+					"the additional delegate contains its raw row and the wrapper input plus transformed row");
+
+			SailSource.FlushBatch batch = null;
+			UnsupportedOperationException rejection = null;
+			try {
+				batch = freeze(outer);
+			} catch (UnsupportedOperationException expected) {
+				rejection = expected;
+			}
+			if (batch != null) {
+				try {
+					batch.flush();
+				} catch (UnsupportedOperationException expected) {
+					rejection = expected;
+				}
+			}
+			boolean noTerminalApplicationAtRejection = primaryBacking.attempts.isEmpty()
+					&& additionalBacking.attempts.isEmpty();
+			if (batch != null) {
+				batch.close();
+			}
+			boolean outerInputRetained = outer.isChanged();
+			boolean primaryInputRetained = primaryRoot.isChanged();
+			boolean additionalInputRetained = additionalRoot.isChanged();
+
+			if (rejection != null) {
+				outer.flush();
+				union.flush();
+				primaryRoot.flush();
+			}
+
+			assertTrue(primaryTransformedApprovals.get() >= 1,
+					"the fixture exercised the primary wrapper's ordinary sink transformation");
+			assertTrue(additionalTransformedApprovals.get() >= 1,
+					"the fixture exercised the additional wrapper's ordinary sink transformation");
+			assertTrue(rejection != null,
+					"nested child and union freezing must reject unknown wrapper semantics before transfer");
+			assertTrue(noTerminalApplicationAtRejection,
+					"the rejected graph must not apply either terminal before ordinary flush resumes");
+			assertTrue(outerInputRetained, "the outer branch keeps its logical input after cancellation");
+			assertTrue(primaryInputRetained, "the primary delegate keeps its logical input after rejection");
+			assertTrue(additionalInputRetained, "the additional delegate keeps its logical input after rejection");
+			assertEquals(List.of(List.of("add:primary-pending-before-freeze", "add:primary-wrapper-probe",
+					"add:primary-wrapper-probe-wrapped", "add:nested-child-pending",
+					"add:nested-child-pending-wrapped", "add:union-child-pending",
+					"add:union-child-pending-wrapped")), primaryBacking.attempts,
+					"ordinary nested flush retains the primary wrapper's semantic additions");
+			assertEquals(List.of(List.of("add:additional-pending-before-freeze", "add:additional-wrapper-probe",
+					"add:additional-wrapper-probe-wrapped")), additionalBacking.attempts,
+					"ordinary union flush retains the additional wrapper's semantic additions");
+		}
+	}
+
+	@Test
+	void exactDelegatingSourceRemainsSupportedForFrozenReplay() throws Exception {
+		RecordingSource backing = new RecordingSource();
+		try (SailSourceBranch delegate = branch(backing);
+				SailSource wrapper = new DelegatingSailSource(delegate, false)) {
+			write(wrapper, "supported-delegating-input");
+			SailSource.FlushBatch batch = freeze(wrapper);
+			try {
+				batch.flush();
+				assertEquals(List.of(List.of("add:supported-delegating-input")), backing.attempts,
+						"the exact built-in delegator retains supported replay behavior");
+				batch.unFreezeAndDiscardFlushed();
+			} finally {
 				batch.close();
 			}
 		}
@@ -1761,6 +1930,108 @@ class FrozenFlushBatchTest {
 					applied.add("remove:" + statement.getObject().stringValue());
 				}
 			};
+		}
+	}
+
+	private static final class TransformingDelegatingSailSource extends DelegatingSailSource {
+		private final AtomicInteger transformedApprovals;
+
+		private TransformingDelegatingSailSource(SailSource delegate, AtomicInteger transformedApprovals) {
+			super(delegate, false);
+			this.transformedApprovals = transformedApprovals;
+		}
+
+		@Override
+		public SailSink sink(IsolationLevel level) throws SailException {
+			return new TransformingSink(super.sink(level), transformedApprovals);
+		}
+	}
+
+	private static final class TransformingSink implements SailSink {
+		private final SailSink delegate;
+		private final AtomicInteger transformedApprovals;
+
+		private TransformingSink(SailSink delegate, AtomicInteger transformedApprovals) {
+			this.delegate = delegate;
+			this.transformedApprovals = transformedApprovals;
+		}
+
+		@Override
+		public void prepare() throws SailException {
+			delegate.prepare();
+		}
+
+		@Override
+		public void releasePrepared() throws SailException {
+			delegate.releasePrepared();
+		}
+
+		@Override
+		public void beginFrozenFlush(Object owner) throws SailException {
+			delegate.beginFrozenFlush(owner);
+		}
+
+		@Override
+		public void recordOwnFlush(SailSink flushed) throws SailException {
+			delegate.recordOwnFlush(flushed);
+		}
+
+		@Override
+		public void flush() throws SailException {
+			delegate.flush();
+		}
+
+		@Override
+		public void close() throws SailException {
+			delegate.close();
+		}
+
+		@Override
+		public void setNamespace(String prefix, String name) throws SailException {
+			delegate.setNamespace(prefix, name);
+		}
+
+		@Override
+		public void removeNamespace(String prefix) throws SailException {
+			delegate.removeNamespace(prefix);
+		}
+
+		@Override
+		public void clearNamespaces() throws SailException {
+			delegate.clearNamespaces();
+		}
+
+		@Override
+		public void clear(Resource... contexts) throws SailException {
+			delegate.clear(contexts);
+		}
+
+		@Override
+		public void observe(Resource subject, IRI predicate, Value object, Resource... contexts) throws SailException {
+			delegate.observe(subject, predicate, object, contexts);
+		}
+
+		@Override
+		public void approve(Resource subject, IRI predicate, Value object, Resource context) throws SailException {
+			transformedApprovals.incrementAndGet();
+			delegate.approve(subject, predicate, object, context);
+			delegate.approve(subject, predicate,
+					SimpleValueFactory.getInstance().createLiteral(object.stringValue() + "-wrapped"), context);
+		}
+
+		@Override
+		public void deprecate(Statement statement) throws SailException {
+			delegate.deprecate(statement);
+		}
+
+		@Override
+		public boolean deprecateByQuery(Resource subject, IRI predicate, Value object, Resource[] contexts) {
+			return delegate.deprecateByQuery(subject, predicate, object, contexts);
+		}
+
+		@Override
+		public boolean supportsDeprecateByQuery() {
+			return delegate.supportsDeprecateByQuery();
 		}
 	}
 

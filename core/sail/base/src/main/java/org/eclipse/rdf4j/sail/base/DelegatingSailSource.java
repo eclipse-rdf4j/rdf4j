@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.model.Statement;
@@ -172,17 +173,33 @@ class DelegatingSailSource implements SailSource, FrozenFlush {
 
 	@Override
 	public FlushBatch freezeForFlush() throws SailException {
+		FrozenFlush.checkFreezeSupport(this);
 		return delegate.freezeForFlush();
+	}
+
+	/** Subclasses must explicitly promise that frozen traversal may bypass their wrapper callbacks. */
+	protected boolean isFrozenFlushTransparent() {
+		return getClass() == DelegatingSailSource.class;
+	}
+
+	@Override
+	public void checkFreezeSupport(Set<FrozenFlush> visited) {
+		if (!isFrozenFlushTransparent()) {
+			throw new UnsupportedOperationException("This source wrapper does not support transparent frozen staging");
+		}
+		FrozenFlush.checkFreezeSupport(delegate, visited);
 	}
 
 	@Override
 	public void enlistValidationCarriers(FrozenFlush.Context context) {
+		FrozenFlush.checkFreezeSupport(this);
 		context.discover(delegate);
 	}
 
 	@Override
 	public FrozenFlush.Batch stageFrozen(List<Changeset> incoming, Changeset validationCarrier,
 			FrozenFlush.Context context) {
+		FrozenFlush.checkFreezeSupport(this);
 		return delegate instanceof FrozenFlush buffered ? buffered.stageFrozen(incoming, validationCarrier, context)
 				: null;
 	}

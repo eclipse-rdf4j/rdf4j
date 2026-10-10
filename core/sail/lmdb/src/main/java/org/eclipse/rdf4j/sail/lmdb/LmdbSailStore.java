@@ -6168,9 +6168,17 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSource.WriteOwner retainWriteOwner(Object requestedOwner) {
-			Object owner = writerOwner == null ? requestedOwner : writerOwner;
-			if (owner != null) {
-				Object retainedOwner = owner;
+			PublicationContext publication = publicationContext.get();
+			PreparedWriteContext preparedContext = preparedWriteContexts.get(Thread.currentThread());
+			Object currentOwner = currentWriterOwner();
+			// Matching an active owner alone is insufficient: connection publications borrow an explicit owner.
+			// Only ownership minted implicitly here, or its already retained context, needs unscoped recovery.
+			boolean implicitOwner = writerOwner == null && (requestedOwner == null
+					|| publication != null && publication.ownsOwner && publication.owner == requestedOwner
+					|| preparedContext != null && preparedContext.ownsOwner && preparedContext.owner == requestedOwner
+							&& (currentOwner == null || currentOwner == requestedOwner));
+			if (!implicitOwner) {
+				Object retainedOwner = writerOwner == null ? requestedOwner : writerOwner;
 				return new SailSource.WriteOwner() {
 					@Override
 					public Object owner() {

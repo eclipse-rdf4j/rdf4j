@@ -112,6 +112,7 @@ public final class StreamingWritePreflight implements SailClosable {
 		boolean committed = false;
 		try {
 			graph.collect(root, List.of(), null);
+			graph.validateInputs();
 			graph.finishGroups();
 			Frame frame = new Frame(this, graph, CURRENT.get());
 			// Refresh is transactional: an estimate failure cannot retire an older prepared owner's handle.
@@ -418,20 +419,21 @@ public final class StreamingWritePreflight implements SailClosable {
 		private void collect(SailSource source, List<StatementInput> inherited, Object requestedOwner) {
 			sources.add(source);
 			if (source instanceof SailSourceBranch branch) {
-				SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner);
+				boolean first = collected.add(branch);
+				SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner,
+						first, failure);
 				List<StatementInput> routed = new ArrayList<>();
-				if (collected.add(branch)) {
+				if (first) {
 					Set<Changeset> own = identitySet();
 					members.put(branch, own);
-					for (Changeset change : snapshot.changes()) {
-						StatementInput input = change.statementInput(failure);
-						if (input != null) {
-							inputs.put(change, input);
-							if (input.hasChanges()) {
-								own.add(change);
-								if (!snapshot.forwarded()) {
-									routed.add(input);
-								}
+					for (SailSourceBranch.StreamingChange entry : snapshot.changes()) {
+						Changeset change = entry.change();
+						StatementInput input = entry.input();
+						inputs.put(change, input);
+						if (input.hasChanges()) {
+							own.add(change);
+							if (!snapshot.forwarded()) {
+								routed.add(input);
 							}
 						}
 					}
@@ -578,16 +580,19 @@ public final class StreamingWritePreflight implements SailClosable {
 				}
 			}
 			if (source instanceof SailSourceBranch branch) {
-				Set<Changeset> seen = identitySet();
-				for (Changeset change : branch.streamingChanges(graph.nonblocking)) {
-					check(change);
-					seen.add(change);
-				}
-				for (Changeset change : members.getOrDefault(branch, Set.of())) {
-					if (!seen.contains(change) && !retired.contains(change)) {
-						throw new SailConflictException("Captured logical work disappeared during write publication");
+				branch.validateStreamingChanges(graph.nonblocking, current -> {
+					Set<Changeset> seen = identitySet();
+					for (Changeset change : current) {
+						check(change);
+						seen.add(change);
 					}
-				}
+					for (Changeset change : members.getOrDefault(branch, Set.of())) {
+						if (!seen.contains(change) && !retired.contains(change)) {
+							throw new SailConflictException(
+									"Captured logical work disappeared during write publication");
+						}
+					}
+				});
 			}
 		}
 

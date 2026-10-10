@@ -26,8 +26,10 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -1040,8 +1042,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		SnapshotObserver physical = null;
 		SailSink observationSink = null;
 		try {
-			for (Changeset change : changes) {
-				derivedFrom = new SailDatasetImpl(derivedFrom, change);
+			if (!changes.isEmpty()) {
+				derivedFrom = new SailDatasetImpl(derivedFrom, List.copyOf(changes));
 			}
 			physical = new SnapshotObserver(derivedFrom);
 			physical.register();
@@ -1484,24 +1486,47 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		return backingSource;
 	}
 
-	record StreamingSnapshot(List<Changeset> changes, boolean forwarded, Object owner) {
+	record StreamingChange(Changeset change, StatementInput input) {
 	}
 
-	StreamingSnapshot streamingSnapshot(boolean nonblocking, Object inherited) {
-		// Backing callbacks must precede the short branch guard, including the nonblocking reader-close path.
+	record StreamingSnapshot(List<StreamingChange> changes, boolean forwarded, Object owner) {
+	}
+
+	StreamingSnapshot streamingSnapshot(boolean nonblocking, Object inherited, boolean retainInputs,
+			AtomicReference<Throwable> failure) {
+		// Resolve callbacks before the short guard. Retain exact holders before any pending sink can retire.
 		Object effectiveOwner = owner(inherited);
 		if (effectiveOwner == null) {
 			effectiveOwner = backingSource.writeIntentOwner(null);
 		}
-		lockStreamingSnapshot(nonblocking);
-		try {
-			if (effectiveOwner == null && !bufferedWriteIntents.isEmpty()) {
-				effectiveOwner = bufferedWriteIntents.getFirst().owner();
+		List<StreamingChange> retained = new ArrayList<>();
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			try {
+				lockStreamingSnapshot(nonblocking);
+				try {
+					if (effectiveOwner == null && !bufferedWriteIntents.isEmpty()) {
+						effectiveOwner = bufferedWriteIntents.getFirst().owner();
+					}
+					if (retainInputs) {
+						for (Changeset change : streamingChangesLocked()) {
+							StatementInput input = change.statementInput(failure);
+							if (input != null) {
+								retained.add(new StreamingChange(change, input));
+							}
+						}
+					}
+					return new StreamingSnapshot(List.copyOf(retained),
+							frozenBatch != null && frozenBatch.forwarded, effectiveOwner);
+				} finally {
+					semaphore.unlock();
+				}
+			} catch (RuntimeException | Error captureFailure) {
+				failure.compareAndSet(null, captureFailure);
+				for (StreamingChange entry : retained) {
+					closeResource(captureFailure, entry.input());
+				}
+				throw captureFailure;
 			}
-			return new StreamingSnapshot(streamingChangesLocked(), frozenBatch != null && frozenBatch.forwarded,
-					effectiveOwner);
-		} finally {
-			semaphore.unlock();
 		}
 	}
 
@@ -1515,12 +1540,15 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		}
 	}
 
-	List<Changeset> streamingChanges(boolean nonblocking) {
-		lockStreamingSnapshot(nonblocking);
-		try {
-			return streamingChangesLocked();
-		} finally {
-			semaphore.unlock();
+	/** Membership and revision checks share the same guard as retirement, with no backend callbacks. */
+	void validateStreamingChanges(boolean nonblocking, Consumer<List<Changeset>> validation) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			lockStreamingSnapshot(nonblocking);
+			try {
+				validation.accept(streamingChangesLocked());
+			} finally {
+				semaphore.unlock();
+			}
 		}
 	}
 
@@ -1779,6 +1807,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 	@Override
 	public FlushBatch freezeForFlush() {
+		FrozenFlush.checkFreezeSupport(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			semaphore.lock();
 			try {
@@ -1788,6 +1817,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			}
 
 		}
+	}
+
+	@Override
+	public void checkFreezeSupport(Set<FrozenFlush> visited) {
+		FrozenFlush.checkFreezeSupport(backingSource, visited);
 	}
 
 	private BranchFlushBatch freezeLocked(List<Changeset> staged) {

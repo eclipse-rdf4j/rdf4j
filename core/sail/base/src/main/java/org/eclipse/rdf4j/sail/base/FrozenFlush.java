@@ -21,6 +21,20 @@ import java.util.Set;
 /** Internal staging protocol: built-in wrappers forward it with the same semantics as their sink. */
 interface FrozenFlush {
 
+	/** Check the complete buffered graph before installing any local freeze ownership. */
+	default void checkFreezeSupport(Set<FrozenFlush> visited) {
+	}
+
+	static void checkFreezeSupport(SailSource source) {
+		checkFreezeSupport(source, Collections.newSetFromMap(new IdentityHashMap<>()));
+	}
+
+	static void checkFreezeSupport(SailSource source, Set<FrozenFlush> visited) {
+		if (source instanceof FrozenFlush buffered && visited.add(buffered)) {
+			buffered.checkFreezeSupport(visited);
+		}
+	}
+
 	Batch stageFrozen(List<Changeset> incoming, Changeset validationCarrier, Context context);
 
 	/** Discover carriers without transferring models or freezing independently mutable ancestors. */
