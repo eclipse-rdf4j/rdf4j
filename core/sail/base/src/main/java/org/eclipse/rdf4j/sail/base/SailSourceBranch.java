@@ -1711,9 +1711,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	/** Backing preparation can validate an ancestor and must not wait while retaining this child's guard. */
-	private Preparation prepareForPublication(boolean explicitPreparation, boolean nonblocking) throws SailException {
+	private PublicationPreparation prepareForPublication(boolean explicitPreparation, boolean nonblocking)
+			throws SailException {
 		SailSink carrier;
 		Preparation ownership;
+		PublicationPreparation publication;
 		boolean newlyOwned;
 		Map<Changeset, Long> observations = new IdentityHashMap<>();
 		lockStreamingSnapshot(nonblocking);
@@ -1727,11 +1729,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				throw new IllegalStateException("Use the retained batch while this branch is frozen");
 			}
 			if (changes.isEmpty()) {
-				return null;
+				return new PublicationPreparation(null, List.of(), null);
 			}
 			renewSealedSerializableCarrier();
 			if (!explicitPreparation && ownsPreparation(prepared)) {
-				return null;
+				return capturePublicationPreparation(prepared, null);
 			}
 			if (prepared == null) {
 				prepared = serializable == null ? backingSource.sink(backingSinkIsolationLevel()) : serializable;
@@ -1750,6 +1752,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				ownership = new Preparation(carrier);
 				preparations.put(carrier, ownership);
 			}
+			publication = capturePublicationPreparation(carrier, newlyOwned ? ownership : null);
 			ownership.begin();
 		} finally {
 			semaphore.unlock();
@@ -1763,17 +1766,78 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				if (prepared != carrier || !ownership.isActive()) {
 					throw new SailConflictException("The buffered preparation changed during backing validation");
 				}
+				publication.validate();
 				preparedObservations = observations;
 			} finally {
 				semaphore.unlock();
 			}
-			return newlyOwned ? ownership : null;
+			return publication;
 		} catch (RuntimeException | Error failure) {
 			ownership.finished(false);
 			if (newlyOwned) {
-				closeResource(failure, ownership::cancel);
+				Throwable primary = cancelBeforeApplication(failure, ownership::cancel);
+				if (primary != failure) {
+					rethrow(primary);
+				}
 			}
 			throw failure;
+		}
+	}
+
+	/** A clean busy skip has no primary failure to hide reservation cleanup behind. */
+	private static Throwable cancelBeforeApplication(Throwable failure, SailClosable acquired) {
+		if (failure instanceof StreamingWritePreflight.Unavailable) {
+			Throwable cleanupFailure = closeResource(null, acquired);
+			return cleanupFailure == null ? failure : addFailure(cleanupFailure, failure);
+		}
+		return closeResource(failure, acquired);
+	}
+
+	/** Caller holds the branch guard; capture only generation metadata, never statement contents. */
+	private PublicationPreparation capturePublicationPreparation(SailSink carrier, Preparation acquired) {
+		List<PreparedGeneration> generations = new ArrayList<>(changes.size());
+		for (Changeset change : changes) {
+			generations.add(new PreparedGeneration(change, change.statementGeneration(), change.observationRevision()));
+		}
+		return new PublicationPreparation(carrier, List.copyOf(generations), acquired);
+	}
+
+	private record PreparedGeneration(Changeset change, StatementInput.Generation statements, long observations) {
+	}
+
+	/** One preparation point, independent of generations another child may subsequently publish. */
+	private final class PublicationPreparation {
+		private final SailSink carrier;
+		private final List<PreparedGeneration> generations;
+		private final Preparation acquired;
+
+		private PublicationPreparation(SailSink carrier, List<PreparedGeneration> generations, Preparation acquired) {
+			this.carrier = carrier;
+			this.generations = generations;
+			this.acquired = acquired;
+		}
+
+		private boolean isEmpty() {
+			return generations.isEmpty();
+		}
+
+		/** Caller holds the branch guard through validation and application. */
+		private void validate() {
+			if (prepared != carrier || !ownsPreparation(carrier) || changes.size() != generations.size()) {
+				throw new SailConflictException("Buffered changes changed after publication preparation");
+			}
+			Iterator<Changeset> current = changes.iterator();
+			for (PreparedGeneration generation : generations) {
+				Changeset change = current.next();
+				if (change != generation.change() || !change.statementGeneration().equals(generation.statements())
+						|| change.observationRevision() != generation.observations()) {
+					throw new SailConflictException("Buffered generations changed after publication preparation");
+				}
+			}
+		}
+
+		private Throwable cancel(Throwable failure) {
+			return cancelBeforeApplication(failure, acquired == null ? null : acquired::cancel);
 		}
 	}
 
@@ -1997,22 +2061,54 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				boolean startedPreflight = ensureWritePreflight();
 				try {
 					try (SailClosable publication = beginPublication()) {
-						StreamingWritePreflight.validate(this);
-						prepareForPublication(false, false);
-						semaphore.lock();
-						try (SailWriteContinuation.Scope continuation = writeContinuation()) {
-							if (frozenBatch != null) {
-								throw new IllegalStateException("Use the retained batch while this branch is frozen");
+						PublicationPreparation preparation = null;
+						boolean applicationStarted = false;
+						boolean publicationFailed = false;
+						Throwable publicationFailure = null;
+						try {
+							StreamingWritePreflight.validate(this);
+							preparation = prepareForPublication(false, false);
+							// Empty preparation has already linearized. A later child publication stays queued.
+							if (!preparation.isEmpty()) {
+								admitDestination(preparation.carrier);
+								semaphore.lock();
+								try (SailWriteContinuation.Scope continuation = writeContinuation()) {
+									if (frozenBatch != null) {
+										throw new IllegalStateException(
+												"Use the retained batch while this branch is frozen");
+									}
+									StreamingWritePreflight.validate(this);
+									preparation.validate();
+									applicationStarted = true;
+									try {
+										flushLocked();
+									} catch (Throwable failure) {
+										publicationFailed = true;
+										StreamingWritePreflight.failed(SailSourceBranch.this, failure, true);
+										closeResource(failure, () -> SailSource.failPublication(publication));
+										rethrow(cleanupFailedFlush(failure));
+									}
+								} finally {
+									semaphore.unlock();
+								}
 							}
-							try {
-								flushLocked();
-							} catch (Throwable failure) {
-								StreamingWritePreflight.failed(SailSourceBranch.this, failure);
-								SailSource.failPublication(publication);
-								rethrow(cleanupFailedFlush(failure));
+						} catch (RuntimeException | Error failure) {
+							publicationFailure = failure;
+							if (!publicationFailed) {
+								publicationFailed = true;
+								closeResource(failure, () -> SailSource.failPublication(publication));
 							}
+							throw failure;
 						} finally {
-							semaphore.unlock();
+							if (!applicationStarted && preparation != null) {
+								Throwable failure = preparation.cancel(publicationFailure);
+								if (failure != null && failure != publicationFailure) {
+									if (!publicationFailed) {
+										closeResource(failure, () -> SailSource.failPublication(publication));
+									}
+									rethrow(failure);
+								}
+							}
 						}
 					}
 				} catch (Throwable failure) {
@@ -2430,7 +2526,6 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			if (prepared == null) {
 				throw new SailConflictException("Buffered changes arrived after publication preparation");
 			}
-			StreamingWritePreflight.validate(this);
 			flush(prepared);
 			prepared.flush();
 			try {
@@ -2726,6 +2821,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				if (!eligible) {
 					return;
 				}
+				boolean applicationStarted = false;
 				try (SailClosable preflight = streamingPreflight.enter(true)) {
 					try {
 						boolean startedPreflight = ensureWritePreflight();
@@ -2748,20 +2844,28 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 						}
 						boolean flushed = false;
 						try (publication) {
-							Preparation acquired = null;
+							PublicationPreparation preparation = null;
+							boolean publicationFailed = false;
 							Throwable preparationFailure = null;
 							try {
 								StreamingWritePreflight.validate(this);
-								acquired = prepareForPublication(false, true);
-								if (semaphore.tryLock()) {
+								preparation = prepareForPublication(false, true);
+								if (preparation != null && !preparation.isEmpty()) {
+									admitDestination(preparation.carrier);
+								}
+								if (preparation != null && !preparation.isEmpty() && semaphore.tryLock()) {
 									try (SailWriteContinuation.Scope continuation = writeContinuation()) {
 										if (frozenBatch == null && suspendedWrites == 0 && observers.isEmpty()) {
+											StreamingWritePreflight.validate(this);
+											preparation.validate();
+											applicationStarted = true;
 											try {
 												flushLocked();
 												flushed = true;
 											} catch (Throwable failure) {
-												StreamingWritePreflight.failed(SailSourceBranch.this, failure);
-												SailSource.failPublication(publication);
+												publicationFailed = true;
+												StreamingWritePreflight.failed(SailSourceBranch.this, failure, true);
+												closeResource(failure, () -> SailSource.failPublication(publication));
 												rethrow(cleanupFailedFlush(failure));
 											}
 										}
@@ -2771,11 +2875,19 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 								}
 							} catch (RuntimeException | Error failure) {
 								preparationFailure = failure;
+								if (!publicationFailed && (!(failure instanceof StreamingWritePreflight.Unavailable)
+										|| applicationStarted)) {
+									publicationFailed = true;
+									closeResource(failure, () -> SailSource.failPublication(publication));
+								}
 								throw failure;
 							} finally {
-								if (!flushed && acquired != null) {
-									Throwable failure = closeResource(preparationFailure, acquired::cancel);
-									if (failure != null && preparationFailure == null) {
+								if (!applicationStarted && preparation != null) {
+									Throwable failure = preparation.cancel(preparationFailure);
+									if (failure != null && failure != preparationFailure) {
+										if (!publicationFailed) {
+											closeResource(failure, () -> SailSource.failPublication(publication));
+										}
 										rethrow(failure);
 									}
 								}
@@ -2793,7 +2905,10 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 						throw failure;
 					}
 				} catch (StreamingWritePreflight.Unavailable busyAncestor) {
-					// Reader cleanup must not wait for an ancestor's retained preparation.
+					if (applicationStarted) {
+						throw busyAncestor;
+					}
+					// Only an unapplied reader cleanup may skip an ancestor's retained preparation.
 					return;
 				}
 			}
@@ -2820,13 +2935,16 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		change.sinkObserved(sink);
 	}
 
+	private void admitDestination(SailSink sink) {
+		if (sink instanceof Changeset destination) {
+			// The optimized transfer bypasses ordinary mutation admission. Do this before the final guarded check,
+			// so a refusal cannot discard input that has not changed hands.
+			destination.beforeWriteIntent();
+		}
+	}
+
 	private void flush(SailSink sink) throws SailException {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
-			if (sink instanceof Changeset destination) {
-				// The optimized model transfer bypasses the ordinary mutation methods. Establish the destination's
-				// intent under this publication owner before either branch lock or the retained model changes hands.
-				destination.beforeWriteIntent();
-			}
 			try {
 				semaphore.lock();
 				if (changes.size() == 1 && !changes.getFirst().isRetained() && sink instanceof Changeset

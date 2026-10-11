@@ -89,9 +89,14 @@ public final class StreamingWritePreflight implements SailClosable {
 
 	/** Publish the primary failure before frame/resource closure can run delayed cursor callbacks. */
 	static void failed(SailSource source, Throwable failure) {
+		failed(source, failure, false);
+	}
+
+	/** A nonblocking admission signal is terminal once application has started. */
+	static void failed(SailSource source, Throwable failure, boolean applicationStarted) {
 		Frame frame = CURRENT.get();
 		if (frame != null && frame.graph.sources.contains(source)) {
-			frame.fail(failure);
+			frame.fail(failure, applicationStarted);
 		}
 	}
 
@@ -645,7 +650,11 @@ public final class StreamingWritePreflight implements SailClosable {
 		}
 
 		private void fail(Throwable failure) {
-			if (!(failure instanceof Unavailable)) {
+			fail(failure, false);
+		}
+
+		private void fail(Throwable failure, boolean applicationStarted) {
+			if (applicationStarted || !(failure instanceof Unavailable)) {
 				failed = true;
 				graph.recordFailure(failure);
 			}
