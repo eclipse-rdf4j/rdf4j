@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
@@ -55,7 +56,9 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -78,6 +81,9 @@ import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -149,7 +155,9 @@ class LmdbCrashRecoveryTest {
 		NONE,
 		BEFORE_TRIPLE_COMMIT,
 		AFTER_MAP_GROWTH_REPLAY,
-		AFTER_MIXED_MAP_GROWTH_REPLAY
+		AFTER_MIXED_MAP_GROWTH_REPLAY,
+		BEFORE_FROZEN_AUTOGROW_COMMIT,
+		BEFORE_FROZEN_MIXED_AUTOGROW_COMMIT
 	}
 
 	@Test
@@ -578,6 +586,8 @@ class LmdbCrashRecoveryTest {
 					"the old statement and namespace state must be durable before the mixed writer starts");
 			assertEquals("MAP_GROWTH_REPLAY_RETURNED", child.readLine(180, TimeUnit.SECONDS),
 					"the transaction must grow the map repeatedly and finish replay before the cut");
+			assertFalse(replayJournalFiles(storeDir).isEmpty(),
+					"the uncovered direct-source replay must retain its real journal at the crash cut");
 			appendAndForceWitness(witness, "INVOKED\t" + transaction.witnessRecord());
 			child.terminate();
 		}
@@ -587,6 +597,54 @@ class LmdbCrashRecoveryTest {
 		RecoveryState recovery = readRecoveryState(storeDir, transaction.additions().get(2));
 		verifyAtomicTransactionOutcome(Set.copyOf(beforeTransaction.additions()), beforeTransaction.namespaceValue(),
 				transaction, recovery.statements(), recovery.namespace(), recovery.indexCounts(), preservedImage);
+		assertRecoveryIndexes(recovery, transaction.additions().get(2));
+		assertTrue(recovery.inferredStatements().isEmpty(),
+				"the inferred input is promoted into explicit state and must not survive as a duplicate inferred row");
+	}
+
+	@Test
+	@Timeout(value = 210, unit = TimeUnit.SECONDS)
+	void completedDirectMixedAutogrowPromotesInferenceExactlyOnce(@TempDir Path workDir) throws Exception {
+		Path storeDir = workDir.resolve("direct-mixed-autogrow-store");
+		StoreTransaction beforeTransaction = mixedAutogrowBaseline();
+		StoreTransaction transaction = mixedAutogrowTransaction();
+		LmdbStore store = new LmdbStore(storeDir.toFile(), durableConfig(4096 * 10L));
+		store.init();
+		try {
+			applyDirectBacking(store, beforeTransaction, Set.of());
+			applyDirectBacking(store, transaction, Set.of(MIXED_PROMOTED));
+		} finally {
+			store.shutDown();
+		}
+
+		assertCompletedMixedAutogrowOutcome(storeDir, beforeTransaction, transaction);
+	}
+
+	@Test
+	@Timeout(value = 210, unit = TimeUnit.SECONDS)
+	void completedPublicFrozenMixedAutogrowPromotesInferenceExactlyOnce(@TempDir Path workDir) throws Exception {
+		Path storeDir = workDir.resolve("public-frozen-mixed-autogrow-store");
+		StoreTransaction beforeTransaction = mixedAutogrowBaseline();
+		StoreTransaction transaction = mixedAutogrowTransaction();
+		LmdbStore store = new LmdbStore(storeDir.toFile(), durableConfig(4096 * 10L));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				apply(connection, beforeTransaction);
+				connection.commit();
+			}
+			try (SailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.SNAPSHOT);
+				applyMixed(connection, transaction);
+				connection.commit();
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		assertCompletedMixedAutogrowOutcome(storeDir, beforeTransaction, transaction);
 	}
 
 	@Test
@@ -645,6 +703,92 @@ class LmdbCrashRecoveryTest {
 				recovery.namespace(), recovery.indexCounts(), preservedImage);
 		assertTrue(replayJournalFiles(storeDir).isEmpty(),
 				"Opening the store after a process death must remove only the abandoned replay journal");
+	}
+
+	@Test
+	@Timeout(value = 210, unit = TimeUnit.SECONDS)
+	void interruptedCoveredFrozenAutogrowReplayCannotPublishPartialTransaction(@TempDir Path workDir)
+			throws Exception {
+		Path testWorkDir = createTestWorkDir(workDir, "covered-frozen-autogrow-cut");
+		Path storeDir = testWorkDir.resolve("lmdb-store");
+		Path witness = createExternalWitness(testWorkDir, "covered-frozen-autogrow-witness");
+		assertWitnessStoreIsIndependent(witness);
+		LmdbStoreConfig config = durableConfig().setTripleDBSize(4096 * 10L);
+		StoreTransaction transaction;
+		try (ChildProcessSession child = new ChildProcessSession(
+				startWriter(storeDir, PausePoint.BEFORE_FROZEN_AUTOGROW_COMMIT, config))) {
+			assertEquals("READY", child.readLine());
+			String mapSizeMessage = child.readLine();
+			assertTrue(mapSizeMessage.startsWith("INITIAL_TRIPLE_MAP_SIZE:"),
+					"the child must expose its starting map size before the covered write begins");
+			long initialTripleMapSize = Long.parseLong(
+					mapSizeMessage.substring("INITIAL_TRIPLE_MAP_SIZE:".length()));
+			transaction = autogrowTransaction(initialTripleMapSize);
+			String pause = child.readLine(180, TimeUnit.SECONDS);
+			assertFrozenReplayPause(pause, AUTOGROW_TRANSACTION_SIZE, 0);
+			assertTrue(replayJournalFiles(storeDir).isEmpty(),
+					"a covered frozen replay must not allocate a main-store mutation journal");
+			appendAndForceWitness(witness, "INVOKED\t" + transaction.witnessRecord());
+			child.terminate();
+		}
+
+		Path preservedImage = preserveCrashImage(storeDir, "covered-frozen-autogrow-replay-cut", witness);
+		System.out.println("CRASH_DURABILITY_ARTIFACT:" + preservedImage);
+		assertTrue(replayJournalFiles(storeDir).isEmpty(),
+				"the abrupt stop before frozen native commit must leave no main-store mutation journal");
+		RecoveryState recovery = readRecoveryState(storeDir, transaction.additions().get(0));
+		verifyAtomicTransactionOutcome(Set.of(), null, transaction, recovery.statements(), recovery.namespace(),
+				recovery.indexCounts(), preservedImage);
+		assertRecoveryIndexes(recovery, transaction.additions().get(0));
+		assertTrue(recovery.statements().isEmpty(),
+				"a crash before the authoritative native commit must retain the empty pretransaction statement state");
+		assertNull(recovery.namespace(),
+				"a crash before the authoritative native commit must retain the absent pretransaction namespace");
+		assertTrue(recovery.inferredStatements().isEmpty(),
+				"a single-branch frozen write must not create inferred statements");
+		assertTrue(replayJournalFiles(storeDir).isEmpty(),
+				"opening the store after frozen replay crash recovery must leave no replay journal");
+	}
+
+	@Test
+	@Timeout(value = 240, unit = TimeUnit.SECONDS)
+	void interruptedCoveredFrozenMixedAutogrowReplayIsAllOrNone(@TempDir Path workDir) throws Exception {
+		Path testWorkDir = createTestWorkDir(workDir, "covered-frozen-mixed-autogrow-cut");
+		Path storeDir = testWorkDir.resolve("lmdb-store");
+		Path witness = createExternalWitness(testWorkDir, "covered-frozen-mixed-autogrow-witness");
+		assertWitnessStoreIsIndependent(witness);
+		LmdbStoreConfig config = durableConfig().setTripleDBSize(4096 * 10L);
+		StoreTransaction beforeTransaction = mixedAutogrowBaseline();
+		StoreTransaction transaction = mixedAutogrowTransaction();
+		try (ChildProcessSession child = new ChildProcessSession(
+				startWriter(storeDir, PausePoint.BEFORE_FROZEN_MIXED_AUTOGROW_COMMIT, config))) {
+			assertEquals("READY", child.readLine());
+			assertEquals("BASELINE_COMMITTED", child.readLine(),
+					"the old statement and namespace state must be durable before the covered mixed writer starts");
+			String pause = child.readLine(180, TimeUnit.SECONDS);
+			assertFrozenReplayPause(pause, transaction.additions().size(), 1);
+			assertTrue(replayJournalFiles(storeDir).isEmpty(),
+					"a covered frozen mixed replay must not allocate a main-store mutation journal");
+			appendAndForceWitness(witness, "INVOKED\t" + transaction.witnessRecord());
+			child.terminate();
+		}
+
+		Path preservedImage = preserveCrashImage(storeDir, "covered-frozen-mixed-autogrow-replay-cut", witness);
+		System.out.println("CRASH_DURABILITY_ARTIFACT:" + preservedImage);
+		assertTrue(replayJournalFiles(storeDir).isEmpty(),
+				"the abrupt stop before frozen mixed native commit must leave no main-store mutation journal");
+		RecoveryState recovery = readRecoveryState(storeDir, transaction.additions().get(2));
+		verifyAtomicTransactionOutcome(Set.copyOf(beforeTransaction.additions()), beforeTransaction.namespaceValue(),
+				transaction, recovery.statements(), recovery.namespace(), recovery.indexCounts(), preservedImage);
+		assertRecoveryIndexes(recovery, transaction.additions().get(2));
+		assertEquals(Set.copyOf(beforeTransaction.additions()), recovery.statements(),
+				"a crash before native commit must retain the exact pretransaction explicit statement state");
+		assertEquals(beforeTransaction.namespaceValue(), recovery.namespace(),
+				"a crash before native commit must retain the exact pretransaction namespace");
+		assertTrue(recovery.inferredStatements().isEmpty(),
+				"a crash before native commit must not publish the pending inferred promotion");
+		assertTrue(replayJournalFiles(storeDir).isEmpty(),
+				"opening the store after frozen mixed crash recovery must leave no replay journal");
 	}
 
 	@Test
@@ -937,7 +1081,8 @@ class LmdbCrashRecoveryTest {
 					"ASK { GRAPH <urn:crash:second-graph> { <urn:crash:new-subject> "
 							+ "<urn:crash:predicate> \"named graph value\" } }")
 					.evaluate(), "public SPARQL evaluation must read recovered named-graph state");
-			return new RecoveryState(Set.copyOf(recovered), connection.getNamespace("crash"),
+			return new RecoveryState(Set.copyOf(recovered), readInferredStatements(store),
+					connection.getNamespace("crash"),
 					indexCounts(connection, ACKNOWLEDGED_FIRST.additions().get(0)));
 		} finally {
 			repository.shutDown();
@@ -1073,11 +1218,94 @@ class LmdbCrashRecoveryTest {
 							"logical statement iteration returned a duplicate: " + statement);
 				}
 			}
-			return new RecoveryState(Set.copyOf(recovered), connection.getNamespace("crash"),
+			return new RecoveryState(Set.copyOf(recovered), readInferredStatements(store),
+					connection.getNamespace("crash"),
 					indexCounts(connection, indexProbe));
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	private static void assertCompletedMixedAutogrowOutcome(Path storeDir, StoreTransaction beforeTransaction,
+			StoreTransaction transaction) {
+		RecoveryState recovery = readRecoveryState(storeDir, MIXED_PROMOTED);
+		Set<Statement> expectedStatements = applyTransaction(Set.copyOf(beforeTransaction.additions()), transaction);
+		String expectedNamespace = transaction.namespaceValue() == null
+				? beforeTransaction.namespaceValue()
+				: transaction.namespaceValue();
+		assertEquals(expectedStatements, recovery.statements(),
+				"a complete mixed write must persist the exact explicit transaction result");
+		assertEquals(expectedNamespace, recovery.namespace(),
+				"a complete mixed write must persist its exact namespace result");
+		assertTrue(recovery.inferredStatements().isEmpty(),
+				"an explicitly promoted inferred row must not remain as an inferred duplicate");
+		assertRecoveryIndexes(recovery, MIXED_PROMOTED);
+	}
+
+	private static void assertRecoveryIndexes(RecoveryState recovery, Statement probe) {
+		Set<Statement> rows = recovery.statements();
+		Map<String, Integer> counts = recovery.indexCounts();
+		assertEquals(rows.size(), counts.get("all"), "the reopened full scan must match the recovered row set");
+		assertEquals(countMatching(rows, statement -> statement.getSubject().equals(probe.getSubject())),
+				counts.get("subject"), "subject index count must match the recovered rows");
+		assertEquals(countMatching(rows, statement -> statement.getPredicate().equals(probe.getPredicate())),
+				counts.get("predicate"), "predicate index count must match the recovered rows");
+		assertEquals(countMatching(rows, statement -> statement.getObject().equals(probe.getObject())),
+				counts.get("object"), "object index count must match the recovered rows");
+		String contextKey = probe.getContext() == null ? "defaultContext" : "namedContext";
+		assertEquals(countMatching(rows, statement -> Objects.equals(statement.getContext(), probe.getContext())),
+				counts.get(contextKey), "context index count must match the recovered rows");
+		assertEquals(countMatching(rows, statement -> statement.getSubject().equals(probe.getSubject())
+				&& statement.getPredicate().equals(probe.getPredicate())
+				&& statement.getObject().equals(probe.getObject())
+				&& Objects.equals(statement.getContext(), probe.getContext())), counts.get("exactPattern"),
+				"exact-pattern index count must match the recovered rows");
+	}
+
+	private static int countMatching(Set<Statement> statements, Predicate<Statement> predicate) {
+		return Math.toIntExact(statements.stream().filter(predicate).count());
+	}
+
+	private static void assertFrozenReplayPause(String line, int expectedExplicitRows, int expectedInferredRows) {
+		assertTrue(line != null && line.startsWith("FROZEN_REPLAY_READY_TO_COMMIT"),
+				"the child must report a frozen replay immediately before its native commit; observed " + line);
+		Map<String, String> metrics = new LinkedHashMap<>();
+		for (String field : line.split("\\t")) {
+			int separator = field.indexOf('=');
+			if (separator > 0) {
+				metrics.put(field.substring(0, separator), field.substring(separator + 1));
+			}
+		}
+		assertTrue(Integer.parseInt(metrics.get("frozenStarts")) >= 2,
+				"the covered transaction must retry from a fresh frozen native attempt: " + line);
+		assertTrue(Integer.parseInt(metrics.get("mainCapacityFailures")) >= 1,
+				"the covered transaction must hit native capacity before replay: " + line);
+		assertTrue(Integer.parseInt(metrics.get("successfulAborts")) >= 1,
+				"the failed physical attempt must be rolled back before the replay: " + line);
+		assertTrue(Integer.parseInt(metrics.get("mapGrowths")) >= 1,
+				"the retry must advance the affected native map: " + line);
+		assertTrue(Long.parseLong(metrics.get("mapAfter")) > Long.parseLong(metrics.get("mapBefore")),
+				"the retry must grow the affected native map before replay: " + line);
+		assertEquals("0", metrics.get("journalAllocations"),
+				"covered frozen attempts must not create a legacy mutation journal: " + line);
+		assertEquals(expectedExplicitRows, Integer.parseInt(metrics.get("explicitRows")),
+				"the complete explicit input must be applied in the paused replay attempt: " + line);
+		assertEquals(expectedInferredRows, Integer.parseInt(metrics.get("inferredRows")),
+				"the complete inferred input must be applied in the paused replay attempt: " + line);
+		assertEquals("false", metrics.get("nativeCommitReturned"),
+				"the crash cut must precede the authoritative native commit: " + line);
+	}
+
+	private static Set<Statement> readInferredStatements(LmdbStore store) {
+		Set<Statement> recovered = new LinkedHashSet<>();
+		try (SailDataset dataset = store.getBackingStore().getInferredSailSource().dataset(IsolationLevels.NONE);
+				var statements = dataset.getStatements(null, null, null)) {
+			while (statements.hasNext()) {
+				Statement statement = statements.next();
+				assertTrue(recovered.add(statement), "inferred index iteration returned a duplicate: " + statement);
+			}
+		}
+		return Set.copyOf(recovered);
 	}
 
 	private static Path preserveCrashImage(Path storeDir, String label, Path witness) throws IOException {
@@ -1228,6 +1456,52 @@ class LmdbCrashRecoveryTest {
 		}
 	}
 
+	private static void applyMixed(SailConnection connection, StoreTransaction transaction) {
+		for (Statement statement : transaction.removals()) {
+			removeStatement(connection, statement);
+		}
+		for (Statement statement : transaction.additions()) {
+			if (statement.equals(MIXED_PROMOTED)
+					&& !((InferencerConnection) connection).addInferredStatement(statement.getSubject(),
+							statement.getPredicate(), statement.getObject(), statement.getContext())) {
+				throw new AssertionError(
+						"The mixed replay must add its inferred statement before explicit publication");
+			}
+			addStatement(connection, statement);
+		}
+		if (transaction.namespaceValue() != null) {
+			connection.setNamespace("crash", transaction.namespaceValue());
+		}
+	}
+
+	private static void applyDirectBacking(LmdbStore store, StoreTransaction transaction,
+			Set<Statement> inferredAdditions) {
+		LmdbSailStore backing = store.getBackingStore();
+		Object owner = new Object();
+		SailSource explicitSource = backing.getExplicitSailSource(owner);
+		SailSource inferredSource = backing.getInferredSailSource(owner);
+		try (SailClosable publication = backing.beginPublication(owner);
+				SailSink explicit = explicitSource.sink(IsolationLevels.SNAPSHOT);
+				SailSink inferred = inferredSource.sink(IsolationLevels.SNAPSHOT)) {
+			Set<Statement> removals = new LinkedHashSet<>(transaction.removals());
+			Set<Statement> additions = new LinkedHashSet<>(transaction.additions());
+			Set<Resource> contexts = additions.stream()
+					.map(Statement::getContext)
+					.filter(Objects::nonNull)
+					.collect(Collectors.toCollection(LinkedHashSet::new));
+			explicit.deprecateAll(removals);
+			inferred.deprecateAll(removals);
+			inferred.approveAll(new LinkedHashSet<>(inferredAdditions), contexts);
+			explicit.approveAll(additions, contexts);
+			if (transaction.namespaceValue() != null) {
+				explicit.setNamespace("crash", transaction.namespaceValue());
+			}
+			// The legacy replay journal must include the inferred promotion before explicit writes trigger growth.
+			inferred.flush();
+			explicit.flush();
+		}
+	}
+
 	private static void addStatement(SailConnection connection, Statement statement) {
 		if (statement.getContext() == null) {
 			connection.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject());
@@ -1313,7 +1587,8 @@ class LmdbCrashRecoveryTest {
 		}
 	}
 
-	private record RecoveryState(Set<Statement> statements, String namespace, Map<String, Integer> indexCounts) {
+	private record RecoveryState(Set<Statement> statements, Set<Statement> inferredStatements, String namespace,
+			Map<String, Integer> indexCounts) {
 	}
 
 	/** Child process used to ensure test assertions run after an ungraceful JVM stop. */
@@ -1346,14 +1621,37 @@ class LmdbCrashRecoveryTest {
 					System.out.println("CRASHLAB:INITIAL_TRIPLE_MAP_SIZE:" + initialTripleMapSize);
 					System.out.flush();
 					StoreTransaction transaction = autogrowTransaction(initialTripleMapSize);
-					try (SailConnection connection = store.getConnection()) {
-						connection.begin(IsolationLevels.SNAPSHOT);
-						apply(connection, transaction);
-						connection.commit();
-					}
+					applyDirectBacking(store, transaction, Set.of());
 					throw new AssertionError("The full map-growth replay pause point was not reached");
 				}
 				if (pausePoint == PausePoint.AFTER_MIXED_MAP_GROWTH_REPLAY) {
+					applyDirectBacking(store, mixedAutogrowBaseline(), Set.of());
+					System.out.println("CRASHLAB:BASELINE_COMMITTED");
+					System.out.flush();
+					StoreTransaction transaction = mixedAutogrowTransaction();
+					applyDirectBacking(store, transaction, Set.of(MIXED_PROMOTED));
+					throw new AssertionError("The mixed full map-growth replay pause point was not reached");
+				}
+				if (pausePoint == PausePoint.BEFORE_FROZEN_AUTOGROW_COMMIT) {
+					long initialTripleMapSize = ((PausingLmdbStore) store).tripleMapSizeBytes();
+					System.out.println("CRASHLAB:INITIAL_TRIPLE_MAP_SIZE:" + initialTripleMapSize);
+					System.out.flush();
+					StoreTransaction transaction = autogrowTransaction(initialTripleMapSize);
+					((PausingLmdbStore) store).armFrozenReplay(transaction.additions().size(), 0);
+					try (SailConnection connection = store.getConnection()) {
+						connection.begin(IsolationLevels.SNAPSHOT);
+						apply(connection, transaction);
+						try {
+							connection.commit();
+						} catch (RuntimeException | Error failure) {
+							System.out.println(((PausingLmdbStore) store).frozenReplayDiagnostics());
+							System.out.flush();
+							throw failure;
+						}
+					}
+					throw new AssertionError("The frozen replay commit pause point was not reached");
+				}
+				if (pausePoint == PausePoint.BEFORE_FROZEN_MIXED_AUTOGROW_COMMIT) {
 					try (SailConnection connection = store.getConnection()) {
 						connection.begin(IsolationLevels.SNAPSHOT);
 						apply(connection, mixedAutogrowBaseline());
@@ -1362,22 +1660,19 @@ class LmdbCrashRecoveryTest {
 					System.out.println("CRASHLAB:BASELINE_COMMITTED");
 					System.out.flush();
 					StoreTransaction transaction = mixedAutogrowTransaction();
+					((PausingLmdbStore) store).armFrozenReplay(transaction.additions().size(), 1);
 					try (SailConnection connection = store.getConnection()) {
 						connection.begin(IsolationLevels.SNAPSHOT);
-						removeStatement(connection, REMOVED_ACKNOWLEDGED_STATEMENT);
-						removeStatement(connection, MIXED_DELETE_ONLY);
-						addStatement(connection, REMOVED_ACKNOWLEDGED_STATEMENT);
-						assertTrue(((InferencerConnection) connection).addInferredStatement(MIXED_PROMOTED.getSubject(),
-								MIXED_PROMOTED.getPredicate(), MIXED_PROMOTED.getObject(),
-								MIXED_PROMOTED.getContext()));
-						addStatement(connection, MIXED_PROMOTED);
-						for (int i = 2; i < transaction.additions().size(); i++) {
-							addStatement(connection, transaction.additions().get(i));
+						applyMixed(connection, transaction);
+						try {
+							connection.commit();
+						} catch (RuntimeException | Error failure) {
+							System.out.println(((PausingLmdbStore) store).frozenReplayDiagnostics());
+							System.out.flush();
+							throw failure;
 						}
-						connection.setNamespace("crash", transaction.namespaceValue());
-						connection.commit();
 					}
-					throw new AssertionError("The mixed full map-growth replay pause point was not reached");
+					throw new AssertionError("The frozen mixed replay commit pause point was not reached");
 				}
 				try (SailConnection connection = store.getConnection()) {
 					connection.begin(IsolationLevels.SNAPSHOT);
@@ -1440,6 +1735,16 @@ class LmdbCrashRecoveryTest {
 		private void armPause() {
 			pauseArmed.set(true);
 		}
+
+		private void armFrozenReplay(int expectedExplicitRows, int expectedInferredRows) {
+			((PausingTripleStore) Objects.requireNonNull(tripleStore, "backing TripleStore must be initialized"))
+					.armFrozenReplay(expectedExplicitRows, expectedInferredRows);
+		}
+
+		private String frozenReplayDiagnostics() {
+			return Objects.requireNonNull((PausingTripleStore) tripleStore,
+					"backing PausingTripleStore must be initialized").frozenReplayDiagnostics();
+		}
 	}
 
 	private static final class PausingTripleStore extends TripleStore {
@@ -1449,6 +1754,20 @@ class LmdbCrashRecoveryTest {
 		private final AtomicBoolean paused = new AtomicBoolean();
 		private final AtomicInteger commitCount = new AtomicInteger();
 		private final AtomicBoolean pauseArmed;
+		private final AtomicBoolean frozenProbeArmed = new AtomicBoolean();
+		private final AtomicInteger frozenStarts = new AtomicInteger();
+		private final AtomicInteger mainCapacityFailures = new AtomicInteger();
+		private final AtomicInteger successfulPhysicalAborts = new AtomicInteger();
+		private final AtomicInteger actualMapGrowths = new AtomicInteger();
+		private final AtomicInteger mutationJournalAllocations = new AtomicInteger();
+		private final AtomicInteger currentExplicitRows = new AtomicInteger();
+		private final AtomicInteger currentInferredRows = new AtomicInteger();
+		private final AtomicBoolean capacityAwaitingAbort = new AtomicBoolean();
+		private final AtomicLong growthMapBefore = new AtomicLong();
+		private final AtomicLong growthMapAfter = new AtomicLong();
+		private volatile boolean currentFrozenDecision;
+		private volatile int expectedExplicitRows;
+		private volatile int expectedInferredRows;
 
 		private PausingTripleStore(java.io.File dir, StoreProperties properties, LmdbStoreConfig config,
 				ValueStore valueStore, PausePoint pausePoint, AtomicBoolean pauseArmed)
@@ -1457,6 +1776,114 @@ class LmdbCrashRecoveryTest {
 			this.tripleStoreDir = dir;
 			this.pausePoint = pausePoint;
 			this.pauseArmed = pauseArmed;
+		}
+
+		private boolean isPauseArmed() {
+			AtomicBoolean armed = pauseArmed;
+			return armed != null && armed.get();
+		}
+
+		private boolean isFrozenProbeArmed() {
+			AtomicBoolean armed = frozenProbeArmed;
+			return armed != null && armed.get();
+		}
+
+		private void armFrozenReplay(int explicitRows, int inferredRows) {
+			expectedExplicitRows = explicitRows;
+			expectedInferredRows = inferredRows;
+			frozenStarts.set(0);
+			mainCapacityFailures.set(0);
+			successfulPhysicalAborts.set(0);
+			actualMapGrowths.set(0);
+			mutationJournalAllocations.set(0);
+			currentExplicitRows.set(0);
+			currentInferredRows.set(0);
+			capacityAwaitingAbort.set(false);
+			growthMapBefore.set(0L);
+			growthMapAfter.set(0L);
+			frozenProbeArmed.set(true);
+		}
+
+		private String frozenReplayDiagnostics() {
+			return "CRASHLAB:FROZEN_REPLAY_FAILURE"
+					+ "\tfrozenStarts=" + frozenStarts.get()
+					+ "\tmainCapacityFailures=" + mainCapacityFailures.get()
+					+ "\tsuccessfulAborts=" + successfulPhysicalAborts.get()
+					+ "\tmapGrowths=" + actualMapGrowths.get()
+					+ "\tmapBefore=" + growthMapBefore.get()
+					+ "\tmapAfter=" + growthMapAfter.get()
+					+ "\tjournalAllocations=" + mutationJournalAllocations.get()
+					+ "\texplicitRows=" + currentExplicitRows.get()
+					+ "\tinferredRows=" + currentInferredRows.get()
+					+ "\tcurrentFrozenDecision=" + currentFrozenDecision
+					+ "\tcapacityAwaitingAbort=" + capacityAwaitingAbort.get()
+					+ "\tcurrentMapSize=" + mapSizeBytes();
+		}
+
+		@Override
+		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			super.startTransaction(decision);
+			currentFrozenDecision = decision != null && decision.frozenReplay;
+			AtomicBoolean probe = frozenProbeArmed;
+			if (probe != null && probe.get() && currentFrozenDecision) {
+				frozenStarts.incrementAndGet();
+				currentExplicitRows.set(0);
+				currentInferredRows.set(0);
+			}
+		}
+
+		@Override
+		public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			try {
+				super.storeTriplesAligned(subj, pred, obj, context, count, explicit, addedIndexConsumer);
+				if (isFrozenProbeArmed() && currentFrozenDecision) {
+					(explicit ? currentExplicitRows : currentInferredRows).addAndGet(count);
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				if (isFrozenProbeArmed() && currentFrozenDecision
+						&& failure instanceof FrozenStatementCapacityException) {
+					mainCapacityFailures.incrementAndGet();
+					capacityAwaitingAbort.set(true);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		TxnMutationJournal createMutationJournal() throws IOException {
+			if (isFrozenProbeArmed()) {
+				mutationJournalAllocations.incrementAndGet();
+			}
+			return super.createMutationJournal();
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			boolean failedCapacity = isFrozenProbeArmed() && currentFrozenDecision
+					&& capacityAwaitingAbort.get();
+			super.rollback();
+			if (failedCapacity) {
+				successfulPhysicalAborts.incrementAndGet();
+				capacityAwaitingAbort.set(false);
+			}
+			currentFrozenDecision = false;
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long estimatedWriteBytes,
+				LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+			long before = mapSizeBytes();
+			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
+			long after = mapSizeBytes();
+			if (isFrozenProbeArmed() && mainCapacityFailures.get() > 0
+					&& successfulPhysicalAborts.get() > actualMapGrowths.get() && after > before) {
+				if (actualMapGrowths.getAndIncrement() == 0) {
+					growthMapBefore.set(before);
+				}
+				growthMapAfter.set(after);
+			}
+			return grew;
 		}
 
 		@Override
@@ -1472,12 +1899,52 @@ class LmdbCrashRecoveryTest {
 
 		@Override
 		public void commit() throws IOException {
-			commitCount.incrementAndGet();
-			if (pauseArmed.get() && pausePoint == PausePoint.BEFORE_TRIPLE_COMMIT
+			AtomicInteger commits = commitCount;
+			if (commits != null) {
+				commits.incrementAndGet();
+			}
+			if (isPauseArmed() && pausePoint == PausePoint.BEFORE_TRIPLE_COMMIT
 					&& paused.compareAndSet(false, true)) {
 				pauseProcess("TRIPLE_COMMIT_PAUSED");
 			}
 			super.commit();
+		}
+
+		@Override
+		int commitWriteTransaction(long transaction) {
+			boolean frozenPause = pausePoint == PausePoint.BEFORE_FROZEN_AUTOGROW_COMMIT
+					|| pausePoint == PausePoint.BEFORE_FROZEN_MIXED_AUTOGROW_COMMIT;
+			if (isPauseArmed() && isFrozenProbeArmed() && frozenPause && currentFrozenDecision
+					&& frozenStarts.get() >= 2 && mainCapacityFailures.get() > 0
+					&& successfulPhysicalAborts.get() > 0 && actualMapGrowths.get() > 0
+					&& currentExplicitRows.get() == expectedExplicitRows
+					&& currentInferredRows.get() == expectedInferredRows && paused.compareAndSet(false, true)) {
+				String marker = "CRASHLAB:FROZEN_REPLAY_READY_TO_COMMIT"
+						+ "\tfrozenStarts=" + frozenStarts.get()
+						+ "\tmainCapacityFailures=" + mainCapacityFailures.get()
+						+ "\tsuccessfulAborts=" + successfulPhysicalAborts.get()
+						+ "\tmapGrowths=" + actualMapGrowths.get()
+						+ "\tmapBefore=" + growthMapBefore.get()
+						+ "\tmapAfter=" + growthMapAfter.get()
+						+ "\tjournalAllocations=" + mutationJournalAllocations.get()
+						+ "\texplicitRows=" + currentExplicitRows.get()
+						+ "\tinferredRows=" + currentInferredRows.get()
+						+ "\tnativeCommitReturned=false";
+				System.out.println(marker);
+				System.out.flush();
+				try {
+					new CountDownLatch(1).await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException("Frozen replay crash pause interrupted", e);
+				}
+			}
+			int result = super.commitWriteTransaction(transaction);
+			if (isFrozenProbeArmed() && currentFrozenDecision && result == MDB_MAP_FULL) {
+				mainCapacityFailures.incrementAndGet();
+				capacityAwaitingAbort.set(true);
+			}
+			return result;
 		}
 
 		@Override
@@ -1487,7 +1954,10 @@ class LmdbCrashRecoveryTest {
 			if (pausePoint == PausePoint.AFTER_MAP_GROWTH_REPLAY && !hasSpilledReplayJournal()) {
 				return;
 			}
-			if (pauseArmed.get() && requestedPause
+			if (pausePoint == PausePoint.AFTER_MIXED_MAP_GROWTH_REPLAY && !hasSpilledReplayJournal()) {
+				return;
+			}
+			if (isPauseArmed() && requestedPause
 					&& paused.compareAndSet(false, true)) {
 				pauseProcess("MAP_GROWTH_REPLAY_RETURNED");
 			}
