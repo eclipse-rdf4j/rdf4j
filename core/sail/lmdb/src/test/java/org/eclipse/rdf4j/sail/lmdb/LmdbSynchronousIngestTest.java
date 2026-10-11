@@ -56,9 +56,11 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.LegacyFinalizingSailStore;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -644,7 +646,7 @@ class LmdbSynchronousIngestTest {
 			"DISABLED,true" })
 	void realAlignedMapFullPreservesReplayRetryAndDisabledGrowth(Policy policy, boolean prefix,
 			@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			Set<Statement> prior = statements("prior", 2);
 			write(fixture, prior);
@@ -659,6 +661,7 @@ class LmdbSynchronousIngestTest {
 				writer.setNamespace("abandoned", "urn:complete:");
 				if (policy == Policy.TRACKED) {
 					writer.commit();
+					assertLegacyRootPath(fixture);
 					assertEquals(!prefix, fixture.events.starts.getFirst() == Thread.currentThread());
 					assertTrue(fixture.events.decisions.getFirst().track);
 					try (RepositoryConnection observer = fixture.repository.getConnection()) {
@@ -669,6 +672,7 @@ class LmdbSynchronousIngestTest {
 					}
 				} else {
 					RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+					assertLegacyRootPath(fixture);
 					assertEquals(!prefix, fixture.events.starts.getFirst() == Thread.currentThread());
 					assertFalse(fixture.events.decisions.getFirst().track);
 					assertEquals(0, fixture.store.triples.writeTxn);
@@ -696,7 +700,7 @@ class LmdbSynchronousIngestTest {
 			"DISABLED,TRIPLES" })
 	void consumedCommitHandlesPreserveAuthorityAndWholeRetry(Policy policy, Environment environment,
 			@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			Set<Statement> prior = statements("commit-prior", 2);
 			write(fixture, prior);
@@ -713,10 +717,12 @@ class LmdbSynchronousIngestTest {
 				writer.setNamespace("abandoned", "urn:complete:");
 				if (policy == Policy.TRACKED && environment == Environment.TRIPLES) {
 					writer.commit();
+					assertLegacyRootPath(fixture);
 					assertEquals(List.of("values", "triples", "triples"), fixture.events.publicationOrder);
 					assertVisible(writer, input);
 				} else {
 					RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+					assertLegacyRootPath(fixture);
 					assertEquals(0, fixture.store.triples.writeTxn);
 					assertUnpublished(fixture, input);
 					if (policy == Policy.OMITTED) {
@@ -739,7 +745,7 @@ class LmdbSynchronousIngestTest {
 	@CsvSource({ "DISABLED,2", "DISABLED,5", "OMITTED,2", "OMITTED,5" })
 	void consumedCommitFailureKeepsPrimaryCauseWhenRollbackThrowsError(Policy policy, int count,
 			@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			Set<Statement> prior = statements("cleanup-commit-prior", 2);
 			write(fixture, prior);
@@ -753,6 +759,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+				assertLegacyRootPath(fixture);
 				Throwable primary = policy == Policy.OMITTED
 						? cause(failure, LmdbTransactionRetryException.class)
 						: cause(failure, LmdbUtil.MapFullException.class);
@@ -781,7 +788,7 @@ class LmdbSynchronousIngestTest {
 	@CsvSource({ "DISABLED,2", "DISABLED,5", "OMITTED,2", "OMITTED,5" })
 	void consumedDictionaryCommitFailureSuppressesRollbackError(Policy policy, int count, @TempDir Path directory)
 			throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			AssertionError cleanup = new AssertionError("cleanup Error after dictionary commit consumption");
 			fixture.events.failValueCommit.set(true);
@@ -792,6 +799,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+				assertLegacyRootPath(fixture);
 				Throwable primary = policy == Policy.OMITTED
 						? cause(failure, LmdbTransactionRetryException.class)
 						: cause(failure, LmdbUtil.MapFullException.class);
@@ -820,7 +828,7 @@ class LmdbSynchronousIngestTest {
 	@CsvSource({ "DISABLED,VALUES", "DISABLED,TRIPLES", "OMITTED,VALUES", "OMITTED,TRIPLES" })
 	void consumedCommitErrorRetainsCapacityCauseAndSuppressesRollbackError(Policy policy, Environment environment,
 			@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			AssertionError primary = new AssertionError("primary Error after consuming failed native commit");
 			AssertionError cleanup = new AssertionError("rollback Error must not replace primary Error");
@@ -837,6 +845,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				assertSame(primary, assertThrows(AssertionError.class, writer::commit));
+				assertLegacyRootPath(fixture);
 				assertEquals(List.of(cleanup), List.of(primary.getSuppressed()));
 				assertSame(Thread.currentThread(), fixture.events.starts.getFirst());
 				assertEquals(0, fixture.store.triples.writeTxn);
@@ -859,7 +868,7 @@ class LmdbSynchronousIngestTest {
 	@CsvSource({ "DISABLED", "OMITTED" })
 	void asyncRollbackKeepsFirstAndRecoveryFailuresOnceAndClearsThemForNextTransaction(Policy policy,
 			@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(policy))) {
+		try (Fixture fixture = new Fixture(directory, config(policy), true)) {
 			warmIfOmitted(fixture, policy);
 			AssertionError first = new AssertionError("first Error after consuming actual queued native rollback");
 			AssertionError recovery = new AssertionError("recovery Error after delegating another rollback");
@@ -872,6 +881,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+				assertLegacyRootPath(fixture);
 				Throwable primary = policy == Policy.OMITTED
 						? cause(failure, LmdbTransactionRetryException.class)
 						: cause(failure, LmdbUtil.MapFullException.class);
@@ -896,7 +906,7 @@ class LmdbSynchronousIngestTest {
 
 	@Test
 	void capacityRetryNestedInOperationErrorPoisonsBeforeDecisionCleanup(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED))) {
+		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED), true)) {
 			warmIfOmitted(fixture, Policy.OMITTED);
 			fixture.events.failContextCall.set(1);
 			fixture.events.wrapCapacityError.set(true);
@@ -906,6 +916,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				AssertionError failure = assertThrows(AssertionError.class, writer::commit);
+				assertLegacyRootPath(fixture);
 				assertPoisoned(writer, failure);
 				assertEquals(0, fixture.store.triples.writeTxn);
 				assertUnpublished(fixture, input);
@@ -918,7 +929,7 @@ class LmdbSynchronousIngestTest {
 
 	@Test
 	void realDictionaryStartupCapacityErrorRetainsOwnerUntilCallerRollback(@TempDir Path directory) throws Exception {
-		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED))) {
+		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED), true)) {
 			warmIfOmitted(fixture, Policy.OMITTED);
 			Value large = VF.createLiteral("v".repeat(33 * 1024 * 1024));
 			fixture.events.startupValue = large;
@@ -928,6 +939,7 @@ class LmdbSynchronousIngestTest {
 				writer.add(input);
 				writer.setNamespace("abandoned", "urn:complete:");
 				AssertionError failure = assertThrows(AssertionError.class, writer::commit);
+				assertLegacyRootPath(fixture);
 				assertPoisoned(writer, failure);
 				assertEquals(0, fixture.store.triples.writeTxn);
 				assertUnpublished(fixture, input);
@@ -1445,6 +1457,14 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	private static void assertLegacyRootPath(Fixture fixture) {
+		assertFalse(fixture.events.decisions.isEmpty(), "the legacy path must select a native replay decision");
+		assertFalse(fixture.events.decisions.getFirst().frozenReplay,
+				"the non-transparent root wrapper must exercise the legacy replay path");
+		assertTrue(fixture.events.rootFinalizations.get() > 0,
+				"the test's successful repository setup commit must invoke the captured root callback");
+	}
+
 	private static void independentWrite(Fixture fixture, String prefix) throws Exception {
 		try (ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 			Future<?> result = executor.submit(() -> {
@@ -1493,6 +1513,7 @@ class LmdbSynchronousIngestTest {
 		private volatile CountDownLatch successfulTripleCommits = new CountDownLatch(0);
 		private final AtomicInteger valueAborts = new AtomicInteger();
 		private final AtomicInteger valueRollbacks = new AtomicInteger();
+		private final AtomicInteger rootFinalizations = new AtomicInteger();
 		private final AtomicReference<Throwable> mutationFailure = new AtomicReference<>();
 		private final AtomicReference<Throwable> tripleStartFailure = new AtomicReference<>();
 		private final AtomicReference<Throwable> valueStartFailure = new AtomicReference<>();
@@ -1555,9 +1576,19 @@ class LmdbSynchronousIngestTest {
 		}
 
 		Fixture(Path directory, LmdbStoreConfig config) {
-			store = new ObservedStore(directory.toFile(), config, events);
+			this(directory, config, false);
+		}
+
+		Fixture(Path directory, LmdbStoreConfig config, boolean legacyRoot) {
+			store = new ObservedStore(directory.toFile(), config, events, legacyRoot);
 			repository = new SailRepository(store);
 			repository.init();
+			if (legacyRoot) {
+				try (RepositoryConnection control = repository.getConnection()) {
+					control.begin();
+					control.commit();
+				}
+			}
 			events.clearWrites();
 		}
 
@@ -1574,11 +1605,25 @@ class LmdbSynchronousIngestTest {
 
 	private static final class ObservedStore extends LmdbStore {
 		private final Events events;
+		private final boolean legacyRoot;
 		private ObservedTriples triples;
+		private SailStore legacySailStore;
 
-		ObservedStore(File directory, LmdbStoreConfig config, Events events) {
+		ObservedStore(File directory, LmdbStoreConfig config, Events events, boolean legacyRoot) {
 			super(directory, config);
 			this.events = events;
+			this.legacyRoot = legacyRoot;
+		}
+
+		@Override
+		synchronized SailStore getSailStore() {
+			if (!legacyRoot) {
+				return super.getSailStore();
+			}
+			if (legacySailStore == null) {
+				legacySailStore = new LegacyFinalizingSailStore(super.getSailStore(), events.rootFinalizations);
+			}
+			return legacySailStore;
 		}
 
 		@Override

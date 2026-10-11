@@ -59,10 +59,12 @@ import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.LegacyFinalizingSailStore;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -315,7 +317,7 @@ class AdaptiveReplayIntegrationTest {
 	@Test
 	void repositoryCannotContinueWithASuffixAfterSkippedCommitFailure() throws Exception {
 		LmdbStoreConfig config = largeConfig();
-		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, config);
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, config, true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var writer = repository.getConnection()) {
@@ -329,6 +331,9 @@ class AdaptiveReplayIntegrationTest {
 			writer.setNamespace("failed", "urn:failed-prefix:");
 			store.triples.failNextCommit = true;
 			RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+			assertLegacyDecisionAndFinalization(store);
+			assertEquals(1, store.triples.injectedCommitFailures,
+					"the legacy native commit boundary must consume the injected MAP_FULL handle");
 			assertNotNull(retryCause(failure));
 			assertTrue(writer.isActive(), "The failed logical transaction still needs caller rollback");
 			RepositoryException continuation = assertThrows(RepositoryException.class,
@@ -722,7 +727,8 @@ class AdaptiveReplayIntegrationTest {
 	@Test
 	void delayedAsyncWriterCannotCreateAnOwnerlessFailureAfterDictionaryStartupExhaustion() throws Exception {
 		// This fault fixture requires async startup; disabled bulk retains the direct scalar scheduling preference.
-		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory, largeConfig().setBulkOperationSize(0));
+		FaultInjectingLmdbStore store = new FaultInjectingLmdbStore(directory,
+				largeConfig().setBulkOperationSize(0), true);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var writer = repository.getConnection()) {
@@ -748,6 +754,9 @@ class AdaptiveReplayIntegrationTest {
 			} finally {
 				resume.countDown();
 			}
+			assertLegacyDecisionAndFinalization(store);
+			assertTrue(store.values.nativeWriteTransactionsStarted > 0,
+					"the dictionary startup failure must reach a real native write transaction");
 			assertNotNull(retryCause(failure));
 			assertSame(retryCause(failure), retryCause(assertThrows(RepositoryException.class,
 					() -> writer.setNamespace("forbidden", "urn:forbidden:"))));
@@ -1315,6 +1324,14 @@ class AdaptiveReplayIntegrationTest {
 		return null;
 	}
 
+	private static void assertLegacyDecisionAndFinalization(FaultInjectingLmdbStore store) {
+		TxnReplayPolicy.Decision decision = store.triples.latestDecision;
+		assertNotNull(decision, "the legacy policy must choose an actual native replay decision");
+		assertFalse(decision.frozenReplay, "the non-transparent root wrapper must exercise legacy replay policy");
+		assertTrue(store.rootFinalizations.get() > 0,
+				"a successful repository transaction must invoke the captured root's real finalization callback");
+	}
+
 	private static LmdbStoreConfig largeConfig() {
 		return new LmdbStoreConfig("spoc,posc").setTripleDBSize(64L * 1024 * 1024)
 				.setValueDBSize(64L * 1024 * 1024)
@@ -1325,9 +1342,28 @@ class AdaptiveReplayIntegrationTest {
 		private FaultyTripleStore triples;
 		private FaultyValueStore values;
 		private Object lastCheckedOwner;
+		private final AtomicInteger rootFinalizations = new AtomicInteger();
+		private final boolean legacyRoot;
+		private SailStore legacySailStore;
 
 		FaultInjectingLmdbStore(File directory, LmdbStoreConfig config) {
+			this(directory, config, false);
+		}
+
+		FaultInjectingLmdbStore(File directory, LmdbStoreConfig config, boolean legacyRoot) {
 			super(directory, config);
+			this.legacyRoot = legacyRoot;
+		}
+
+		@Override
+		synchronized SailStore getSailStore() {
+			if (!legacyRoot) {
+				return super.getSailStore();
+			}
+			if (legacySailStore == null) {
+				legacySailStore = new LegacyFinalizingSailStore(super.getSailStore(), rootFinalizations);
+			}
+			return legacySailStore;
 		}
 
 		@Override
@@ -1346,6 +1382,7 @@ class AdaptiveReplayIntegrationTest {
 	}
 
 	private static final class FaultyTripleStore extends TripleStore {
+		private volatile TxnReplayPolicy.Decision latestDecision;
 		private volatile boolean failNextCommit;
 		private int injectedCommitFailures;
 		private int partialAlignedSecondarySortPasses;
@@ -1392,6 +1429,7 @@ class AdaptiveReplayIntegrationTest {
 
 		@Override
 		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			latestDecision = decision;
 			CountDownLatch entered = delayedStartEntered;
 			if (entered != null) {
 				delayedStartEntered = null;

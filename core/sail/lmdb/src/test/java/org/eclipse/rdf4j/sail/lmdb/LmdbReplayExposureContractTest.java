@@ -448,6 +448,7 @@ class LmdbReplayExposureContractTest {
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
+		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 		try {
 			registry.add(function);
 			repository.init();
@@ -476,13 +477,15 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the initial query attempt must reach its barrier");
-			String namespace = publishGrowth(repository, initialMapSize, "unrelated-failure", 10_000);
+			Future<String> growthCommit = writerExecutor.submit(
+					() -> publishGrowth(repository, initialMapSize, "unrelated-failure", 10_000));
 			awaitGrowthEpisode(backingStore, before);
 			awaitReplayAccepted(backingStore, before);
 			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
 					"the growth episode must accept a replay request while the custom function is blocked");
 			function.releaseFirstInvocation();
 
+			String namespace = growthCommit.get(15, TimeUnit.SECONDS);
 			Throwable failure = query.get(15, TimeUnit.SECONDS);
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
@@ -494,14 +497,18 @@ class LmdbReplayExposureContractTest {
 		} finally {
 			function.releaseFirstInvocation();
 			queryExecutor.shutdownNow();
-			boolean terminated;
+			writerExecutor.shutdownNow();
+			boolean queryTerminated;
+			boolean writerTerminated;
 			try {
-				terminated = queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+				queryTerminated = queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+				writerTerminated = writerExecutor.awaitTermination(5, TimeUnit.SECONDS);
 			} finally {
 				registry.remove(function);
 				repository.shutDown();
 			}
-			assertTrue(terminated, "the query worker must terminate");
+			assertTrue(queryTerminated, "the query worker must terminate");
+			assertTrue(writerTerminated, "the growth writer must terminate");
 		}
 	}
 
@@ -520,6 +527,7 @@ class LmdbReplayExposureContractTest {
 				.setReadOnlyReplayMaxRetries(3));
 		SailRepository repository = new SailRepository(store);
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
+		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 		try {
 			registry.add(function);
 			repository.init();
@@ -548,13 +556,15 @@ class LmdbReplayExposureContractTest {
 			});
 
 			assertTrue(function.awaitFirstInvocation(), "the query must reach the deterministic cancellation barrier");
-			String namespace = publishGrowth(repository, initialMapSize, "query-cancel", 10_000);
+			Future<String> growthCommit = writerExecutor.submit(
+					() -> publishGrowth(repository, initialMapSize, "query-cancel", 10_000));
 			awaitGrowthEpisode(backingStore, before);
 			awaitReplayAccepted(backingStore, before);
 			assertTrue(backingStore.growthMetricsSnapshot().replayAccepted() > before.replayAccepted(),
 					"the growth episode must accept replay while the callback is blocked");
 			function.releaseFirstInvocation();
 
+			String namespace = growthCommit.get(15, TimeUnit.SECONDS);
 			Throwable failure = query.get(15, TimeUnit.SECONDS);
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			assertTrue(mapSize(tripleStore) > initialMapSize, "the concurrent writer must grow TripleStore");
@@ -565,14 +575,18 @@ class LmdbReplayExposureContractTest {
 		} finally {
 			function.releaseFirstInvocation();
 			queryExecutor.shutdownNow();
-			boolean terminated;
+			writerExecutor.shutdownNow();
+			boolean queryTerminated;
+			boolean writerTerminated;
 			try {
-				terminated = queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+				queryTerminated = queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+				writerTerminated = writerExecutor.awaitTermination(5, TimeUnit.SECONDS);
 			} finally {
 				registry.remove(function);
 				repository.shutDown();
 			}
-			assertTrue(terminated, "the query worker must terminate");
+			assertTrue(queryTerminated, "the query worker must terminate");
+			assertTrue(writerTerminated, "the growth writer must terminate");
 		}
 	}
 
