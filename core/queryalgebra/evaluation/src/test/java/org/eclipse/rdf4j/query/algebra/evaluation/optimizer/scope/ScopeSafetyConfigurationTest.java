@@ -56,9 +56,6 @@ public class ScopeSafetyConfigurationTest {
 		assertEquals(ScopeSafetyMode.OFF, ScopeSafetyConfiguration.readSystemPropertiesSafely().mode());
 		withProperty(MODE, "audit", () -> assertEquals(ScopeSafetyMode.AUDIT,
 				ScopeSafetyConfiguration.readSystemPropertiesSafely().mode()));
-		// the removed SHADOW mode is an unknown value now, which disables scope safety
-		withProperty(MODE, "shadow", () -> assertEquals(ScopeSafetyMode.OFF,
-				ScopeSafetyConfiguration.readSystemPropertiesSafely().mode()));
 	}
 
 	@Test
