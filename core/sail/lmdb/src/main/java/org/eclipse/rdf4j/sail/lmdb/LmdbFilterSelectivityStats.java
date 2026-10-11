@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
@@ -88,6 +89,7 @@ class LmdbFilterSelectivityStats
 	private final long optimizerSamplingMaxMillis;
 	private final int optimizerSamplingMaxRows;
 	private final boolean backgroundRawSamplingEnabled;
+	private Supplier<LmdbSailStore.DatasetAdmission> samplingViewSupplier;
 
 	private final Map<PatternFilterKey, LearnedCounts> learnedByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, LearnedCounts> learnedByTemplate = new HashMap<>();
@@ -122,6 +124,11 @@ class LmdbFilterSelectivityStats
 		this.optimizerSamplingMaxRows = Math.max(0, optimizerSamplingMaxRows);
 		this.backgroundRawSamplingEnabled = backgroundRawSamplingEnabled;
 		loadIfPresent();
+	}
+
+	/** Installed before publication by the store that owns the paired native read views. */
+	void setSamplingViewSupplier(Supplier<LmdbSailStore.DatasetAdmission> samplingViewSupplier) {
+		this.samplingViewSupplier = Objects.requireNonNull(samplingViewSupplier, "samplingViewSupplier");
 	}
 
 	@Override
@@ -511,7 +518,7 @@ class LmdbFilterSelectivityStats
 
 	private SampledPassRatio sampleFilterPassRatio(SamplingCandidate candidate, boolean foregroundSampling,
 			long deadlineNanos) {
-		if (candidate == null) {
+		if (candidate == null || samplingViewSupplier == null) {
 			return null;
 		}
 
@@ -521,11 +528,6 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
-		DefaultEvaluationStrategy strategy = samplingStrategy();
-		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
-		if (condition == null) {
-			return null;
-		}
 		if (foregroundSampling) {
 			deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(optimizerSamplingMaxMillis);
 		}
@@ -535,10 +537,26 @@ class LmdbFilterSelectivityStats
 		int eligibleRows = 0;
 		int scannedRows = 0;
 
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+			LmdbSailStore.ReadView view = admission.view();
+			ValueStore.ReadSnapshot values = view.valueSnapshot();
+			// A queued request contains RDF terms, not authority to reuse IDs from an earlier dictionary epoch.
+			long subjId = resolvePatternId(values, candidate.pattern.getSubjectVar());
+			long predId = resolvePatternId(values, candidate.pattern.getPredicateVar());
+			long objId = resolvePatternId(values, candidate.pattern.getObjectVar());
+			long contextId = resolvePatternId(values, candidate.pattern.getContextVar());
+			if (subjId == MISSING_VALUE_ID || predId == MISSING_VALUE_ID || objId == MISSING_VALUE_ID
+					|| contextId == MISSING_VALUE_ID) {
+				return null;
+			}
+			DefaultEvaluationStrategy strategy = samplingStrategy();
+			QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
+			if (condition == null) {
+				return null;
+			}
+			Txn txn = view.tripleTxn();
 			for (boolean explicit : new boolean[] { true, false }) {
-				try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
-						candidate.objId, candidate.contextId, explicit)) {
+				try (RecordIterator triples = tripleStore.getTriples(txn, subjId, predId, objId, contextId, explicit)) {
 					long[] row;
 					while (scannedRows < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
 							&& (row = triples.next()) != null) {
@@ -546,7 +564,7 @@ class LmdbFilterSelectivityStats
 						if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
 							continue;
 						}
-						BindingSet bindingSet = toBindingSet(candidate.pattern, row);
+						BindingSet bindingSet = toBindingSet(values, candidate.pattern, row);
 						eligibleRows++;
 						if (samples.size() < reservoirSize) {
 							samples.add(bindingSet);
@@ -562,32 +580,30 @@ class LmdbFilterSelectivityStats
 					break;
 				}
 			}
+			if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
+				return null;
+			}
+
+			// Lazy literals and triple terms may resolve while evaluating the condition, after cursor exhaustion.
+			int passed = 0;
+			for (BindingSet sample : samples) {
+				try {
+					if (strategy.isTrue(condition, sample)) {
+						passed++;
+					}
+				} catch (ValueExprEvaluationException e) {
+					// Per-row evaluation failures behave like filtered rows during query execution.
+				} catch (RuntimeException e) {
+					return null;
+				}
+			}
+			if (passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
+				return null;
+			}
+			return new SampledPassRatio((double) passed / samples.size(), samples.size());
 		} catch (IOException e) {
 			return null;
 		}
-
-		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
-			return null;
-		}
-
-		int passed = 0;
-		for (BindingSet sample : samples) {
-			try {
-				if (strategy.isTrue(condition, sample)) {
-					passed++;
-				}
-			} catch (ValueExprEvaluationException e) {
-				// Per-row evaluation failures behave like filtered rows during query execution.
-			} catch (RuntimeException e) {
-				return null;
-			}
-		}
-
-		if (passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
-			return null;
-		}
-
-		return new SampledPassRatio((double) passed / samples.size(), samples.size());
 	}
 
 	private synchronized void voteBackgroundSamplingRequest(SamplingCandidate candidate, boolean foregroundNeeded) {
@@ -837,6 +853,14 @@ class LmdbFilterSelectivityStats
 		return id == LmdbValue.UNKNOWN_ID ? MISSING_VALUE_ID : id;
 	}
 
+	private long resolvePatternId(ValueStore.ReadSnapshot snapshot, Var var) throws IOException {
+		if (var == null || !var.hasValue()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		long id = valueStore.getStatementId(snapshot, var.getValue());
+		return id == LmdbValue.UNKNOWN_ID ? MISSING_VALUE_ID : id;
+	}
+
 	private boolean matchesRepeatedVarEquality(StatementPattern pattern, long[] row) {
 		Map<String, Long> bindingsByName = new HashMap<>(4);
 		return matchesRepeatedVar(pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX], bindingsByName)
@@ -853,21 +877,23 @@ class LmdbFilterSelectivityStats
 		return existing == null || existing.longValue() == valueId;
 	}
 
-	private BindingSet toBindingSet(StatementPattern pattern, long[] row) throws IOException {
+	private BindingSet toBindingSet(ValueStore.ReadSnapshot snapshot, StatementPattern pattern, long[] row)
+			throws IOException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
-		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX]);
-		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleIndex.PRED_IDX]);
-		addBinding(bindingSet, pattern.getObjectVar(), row[TripleIndex.OBJ_IDX]);
-		addBinding(bindingSet, pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getPredicateVar(), row[TripleIndex.PRED_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getObjectVar(), row[TripleIndex.OBJ_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX]);
 		return bindingSet;
 	}
 
-	private void addBinding(QueryBindingSet bindingSet, Var var, long valueId) throws IOException {
+	private void addBinding(ValueStore.ReadSnapshot snapshot, QueryBindingSet bindingSet, Var var, long valueId)
+			throws IOException {
 		if (var == null || var.hasValue() || var.getName() == null || bindingSet.hasBinding(var.getName())
 				|| valueId == 0L) {
 			return;
 		}
-		bindingSet.addBinding(var.getName(), valueStore.getValue(valueId));
+		bindingSet.addBinding(var.getName(), valueStore.getValue(snapshot, valueId));
 	}
 
 	private SnapshotRevision currentEstimatorRevision() {

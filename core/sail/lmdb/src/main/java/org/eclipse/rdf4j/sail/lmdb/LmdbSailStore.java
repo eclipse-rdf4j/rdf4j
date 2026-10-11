@@ -5082,6 +5082,8 @@ class LmdbSailStore implements SailStore {
 				filterSelectivityStats = statsFactory.create(estimatorPath, tripleStore, valueStore,
 						config.getOptimizerSamplingEnabled(), config.getOptimizerSamplingMaxMillis(),
 						config.getOptimizerSamplingMaxRows(), config.getBackgroundRawSamplingEnabled());
+				filterSelectivityStats.setSamplingViewSupplier(
+						() -> beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null));
 				sketchBasedJoinEstimator.setRebuildAllowedSupplier(() -> !storeTxnStarted.get());
 				sketchBasedJoinEstimator.setLearnedStatsProvider(filterSelectivityStats);
 				sketchBasedJoinEstimator.setPatternFilterSamplingEstimator(filterSelectivityStats);
@@ -6085,31 +6087,13 @@ class LmdbSailStore implements SailStore {
 			}
 			return 0;
 		}
-		if (!sinkStoreAccessLock.tryLock()) {
-			if (pendingRequests > 0) {
-				logger.info(
-						"LMDB background filter sampling cycle skipped: sink store access lock unavailable, pendingRequests={}",
-						pendingRequests);
-			}
-			return 0;
+		// Paired read admission may wait for a publication whose writer needs sinkStoreAccessLock.
+		// The admitted snapshots provide coherence without holding that ordinary writer guard.
+		int sampled = filterSelectivityStats.runBackgroundSamplingCycle(maxMillis);
+		if (sampled > 0) {
+			scheduleEstimatorPersist();
 		}
-		try {
-			if (storeTxnStarted.get()) {
-				if (pendingRequests > 0) {
-					logger.info(
-							"LMDB background filter sampling cycle skipped: store transaction started after lock, pendingRequests={}",
-							pendingRequests);
-				}
-				return 0;
-			}
-			int sampled = filterSelectivityStats.runBackgroundSamplingCycle(maxMillis);
-			if (sampled > 0) {
-				scheduleEstimatorPersist();
-			}
-			return sampled;
-		} finally {
-			sinkStoreAccessLock.unlock();
-		}
+		return sampled;
 	}
 
 	private void persistEstimatorState() {
