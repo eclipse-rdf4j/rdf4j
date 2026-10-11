@@ -1057,8 +1057,9 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		SnapshotObserver physical = null;
 		SailSink observationSink = null;
 		try {
-			if (!changes.isEmpty()) {
-				derivedFrom = new SailDatasetImpl(derivedFrom, List.copyOf(changes));
+			List<Changeset> visibleChanges = datasetChanges();
+			if (!visibleChanges.isEmpty()) {
+				derivedFrom = new SailDatasetImpl(derivedFrom, visibleChanges);
 			}
 			physical = new SnapshotObserver(derivedFrom);
 			physical.register();
@@ -1100,6 +1101,22 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			}
 			throw failure;
 		}
+	}
+
+	/** Called under the branch guard; staged transfers belong only to their uncommitted publication. */
+	private List<Changeset> datasetChanges() {
+		if (frozenBatch == null || frozenBatch.staged.isEmpty()) {
+			return List.copyOf(changes);
+		}
+		Set<Changeset> unpublished = Collections.newSetFromMap(new IdentityHashMap<>());
+		unpublished.addAll(frozenBatch.staged);
+		List<Changeset> visible = new ArrayList<>(changes.size() - unpublished.size());
+		for (Changeset change : changes) {
+			if (!unpublished.contains(change)) {
+				visible.add(change);
+			}
+		}
+		return visible;
 	}
 
 	private boolean isSnapshotUsable(SailDataset dataset, IsolationLevel level) {
