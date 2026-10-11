@@ -14,7 +14,6 @@ package org.eclipse.rdf4j.sail.memory;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
-import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -151,38 +150,90 @@ class MemorySailStore implements SailStore {
 	private MutationSegment mutationSegment;
 	private NamespaceSegment namespaceSegment;
 
-	private static final class MutationSegment {
-		final WeakReference<MemorySailSink> owner;
+	private enum SegmentState {
+		PENDING,
+		COMMITTED,
+		ABORTED
+	}
+
+	private static final class MutationOwner {
+		boolean cancelled;
+	}
+
+	private static class OwnedSegment {
+		final MutationOwner owner;
+		final Set<MemorySailSink> members = Collections.newSetFromMap(new WeakHashMap<>());
+		SegmentState state = SegmentState.PENDING;
+
+		OwnedSegment(MemorySailSink sink) {
+			owner = sink.writeOwner;
+			members.add(sink);
+		}
+
+		void finish(SegmentState completed) {
+			state = completed;
+			members.clear();
+		}
+	}
+
+	private static final class MutationSegment extends OwnedSegment {
+		final int snapshot;
 		final Set<MemStatement> additions = Collections.newSetFromMap(new IdentityHashMap<>());
 		final Map<MemStatement, Integer> deprecations = new IdentityHashMap<>();
 
-		MutationSegment(MemorySailSink owner) {
-			this.owner = new WeakReference<>(owner);
+		MutationSegment(MemorySailSink sink, int snapshot) {
+			super(sink);
+			this.snapshot = snapshot;
+		}
+
+		@Override
+		void finish(SegmentState completed) {
+			super.finish(completed);
+			additions.clear();
+			deprecations.clear();
 		}
 	}
 
 	/** Namespace publication is independent of the statement snapshot, including ordinary NONE imports. */
-	private static final class NamespaceSegment {
-		final WeakReference<MemorySailSink> owner;
+	private static final class NamespaceSegment extends OwnedSegment {
 		final Map<String, String> originals = new LinkedHashMap<>();
 
-		NamespaceSegment(MemorySailSink owner) {
-			this.owner = new WeakReference<>(owner);
+		NamespaceSegment(MemorySailSink sink) {
+			super(sink);
+		}
+
+		@Override
+		void finish(SegmentState completed) {
+			super.finish(completed);
+			originals.clear();
 		}
 	}
 
 	/** Caller owns the transaction lock and registry guard; no live sink can mutate an abandoned segment. */
 	private void retireAbandonedSegment() {
-		if (mutationSegment != null && mutationSegment.owner.get() == null) {
-			boolean cleanup = undoSegment(mutationSegment);
-			mutationSegment = null;
-			if (cleanup) {
-				scheduleSnapshotCleanup();
-			}
+		if (mutationSegment != null && mutationSegment.members.isEmpty()) {
+			retireAbandonedOwner(mutationSegment.owner);
 		}
-		if (namespaceSegment != null && namespaceSegment.owner.get() == null) {
+		if (namespaceSegment != null && namespaceSegment.members.isEmpty()) {
+			retireAbandonedOwner(namespaceSegment.owner);
+		}
+	}
+
+	private void retireAbandonedOwner(MutationOwner owner) {
+		owner.cancelled = true;
+		boolean cleanup = false;
+		if (mutationSegment != null && mutationSegment.owner == owner) {
+			cleanup = undoSegment(mutationSegment);
+			mutationSegment.finish(SegmentState.ABORTED);
+			mutationSegment = null;
+		}
+		if (namespaceSegment != null && namespaceSegment.owner == owner) {
 			undoNamespaces(namespaceSegment);
+			namespaceSegment.finish(SegmentState.ABORTED);
 			namespaceSegment = null;
+		}
+		if (cleanup) {
+			scheduleSnapshotCleanup();
 		}
 	}
 
@@ -257,6 +308,57 @@ class MemorySailStore implements SailStore {
 	@Override
 	public SailSource getInferredSailSource() {
 		return new MemorySailSource(false);
+	}
+
+	/** Explicit ownership for a connection transaction or an import using both physical sources. */
+	SinkGroup newSinkGroup() {
+		return new SinkGroup();
+	}
+
+	final class SinkGroup implements SailStore {
+		private SailSource explicit;
+		private SailSource inferred;
+		private MutationOwner owner;
+
+		SinkGroup() {
+			newTransaction();
+		}
+
+		void newTransaction() {
+			synchronized (preparedSinks) {
+				if (owner != null) {
+					owner.cancelled = true;
+				}
+				owner = new MutationOwner();
+				explicit = new MemorySailSource(true, owner);
+				inferred = new MemorySailSource(false, owner);
+			}
+		}
+
+		@Override
+		public ValueFactory getValueFactory() {
+			return MemorySailStore.this.getValueFactory();
+		}
+
+		@Override
+		public EvaluationStatistics getEvaluationStatistics() {
+			return MemorySailStore.this.getEvaluationStatistics();
+		}
+
+		@Override
+		public SailSource getExplicitSailSource() {
+			return explicit;
+		}
+
+		@Override
+		public SailSource getInferredSailSource() {
+			return inferred;
+		}
+
+		@Override
+		public void close() {
+			// The facade owns no store resources; callers close their sinks before retiring the group.
+		}
 	}
 
 	/**
@@ -619,14 +721,20 @@ class MemorySailStore implements SailStore {
 		}
 
 		private final boolean explicit;
+		private final MutationOwner writeOwner;
 
 		public MemorySailSource(boolean explicit) {
+			this(explicit, null);
+		}
+
+		private MemorySailSource(boolean explicit, MutationOwner writeOwner) {
 			this.explicit = explicit;
+			this.writeOwner = writeOwner;
 		}
 
 		@Override
 		public SailSink sink(IsolationLevel level) throws SailException {
-			return new MemorySailSink(explicit, level.isCompatibleWith(IsolationLevels.SERIALIZABLE));
+			return new MemorySailSink(explicit, level.isCompatibleWith(IsolationLevels.SERIALIZABLE), writeOwner);
 		}
 
 		@Override
@@ -644,6 +752,7 @@ class MemorySailStore implements SailStore {
 		private volatile boolean closed = false;
 
 		private final boolean explicit;
+		private final MutationOwner writeOwner;
 
 		private final int serializable;
 		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
@@ -662,8 +771,9 @@ class MemorySailStore implements SailStore {
 		private MutationSegment segment;
 		private NamespaceSegment namespaces;
 
-		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {
+		public MemorySailSink(boolean explicit, boolean serializable, MutationOwner writeOwner) throws SailException {
 			this.explicit = explicit;
+			this.writeOwner = writeOwner == null ? new MutationOwner() : writeOwner;
 			if (serializable) {
 				this.serializable = currentSnapshot;
 				this.reservedSnapshot = snapshotMonitor.reserve(this.serializable, this);
@@ -693,8 +803,11 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void prepare() throws SailException {
 			acquireExclusiveTransactionLock();
-			if (segment == null) {
-				nextSnapshot = currentSnapshot + 1;
+			synchronized (preparedSinks) {
+				checkCancelledSegment();
+				if (segment == null || segment.state == SegmentState.COMMITTED) {
+					nextSnapshot = currentSnapshot + 1;
+				}
 			}
 			if (observations != null) {
 				for (StatementPattern p : observations) {
@@ -783,27 +896,30 @@ class MemorySailStore implements SailStore {
 			if (txnLock != null && txnLock.isActive()) {
 				synchronized (preparedSinks) {
 					retireAbandonedSegment();
+					checkCancelledSegment();
 					flushedSnapshot = -1;
-					if (namespaces != null && namespaceSegment != namespaces) {
-						throw new SailConflictException("Memory namespace segment ownership changed");
-					}
-					if (segment != null) {
-						if (mutationSegment != segment) {
-							throw new SailConflictException("Memory mutation segment ownership changed");
-						}
+					boolean pending = segment != null && segment.state == SegmentState.PENDING
+							|| namespaces != null && namespaces.state == SegmentState.PENDING;
+					if (pending && mutationSegment != null && mutationSegment.owner == writeOwner) {
 						invalidateCache();
-						currentSnapshot = nextSnapshot;
-						flushedSnapshot = nextSnapshot;
+						currentSnapshot = mutationSegment.snapshot;
+						flushedSnapshot = mutationSegment.snapshot;
+						requireCleanup |= !mutationSegment.deprecations.isEmpty();
+						mutationSegment.finish(SegmentState.COMMITTED);
 						mutationSegment = null;
-						segment = null;
+					} else if (segment != null && segment.state == SegmentState.COMMITTED) {
+						// A peer's successful flush already published this exact cohort, never a later one.
+						flushedSnapshot = segment.snapshot;
 					} else if (mutationSegment == null) {
 						// Preserve empty preparation's snapshot boundary without publishing another sink's rows.
 						currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
 					}
-					if (namespaces != null) {
+					if (pending && namespaceSegment != null && namespaceSegment.owner == writeOwner) {
+						namespaceSegment.finish(SegmentState.COMMITTED);
 						namespaceSegment = null;
-						namespaces = null;
 					}
+					segment = null;
+					namespaces = null;
 				}
 				flushCompleted = true;
 				if (requireCleanup) {
@@ -839,20 +955,26 @@ class MemorySailStore implements SailStore {
 			boolean cleanup = false;
 			try {
 				synchronized (preparedSinks) {
+					boolean abortPending = hasPendingContribution();
+					if (abortPending) {
+						writeOwner.cancelled = true;
+					}
 					try {
-						if (segment != null && mutationSegment == segment) {
-							cleanup = undoSegment(segment);
+						if (abortPending && mutationSegment != null
+								&& mutationSegment.owner == writeOwner) {
+							cleanup = undoSegment(mutationSegment);
+							mutationSegment.finish(SegmentState.ABORTED);
 							mutationSegment = null;
-							segment = null;
 						}
 					} catch (RuntimeException | Error undoFailure) {
 						failure = undoFailure;
 					}
 					try {
-						if (namespaces != null && namespaceSegment == namespaces) {
-							undoNamespaces(namespaces);
+						if (abortPending && namespaceSegment != null
+								&& namespaceSegment.owner == writeOwner) {
+							undoNamespaces(namespaceSegment);
+							namespaceSegment.finish(SegmentState.ABORTED);
 							namespaceSegment = null;
-							namespaces = null;
 						}
 					} catch (RuntimeException | Error namespaceFailure) {
 						if (failure == null) {
@@ -878,6 +1000,8 @@ class MemorySailStore implements SailStore {
 					}
 				} finally {
 					txnLock = null;
+					segment = null;
+					namespaces = null;
 					synchronized (preparedSinks) {
 						preparedSinks.remove(this);
 						frozenOwner = null;
@@ -1118,14 +1242,17 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			synchronized (preparedSinks) {
 				retireAbandonedSegment();
-				if (mutationSegment != null && mutationSegment.owner.get() != this) {
+				checkCancelledSegment();
+				if (mutationSegment != null && mutationSegment.owner != writeOwner) {
 					throw new SailConflictException("Another Memory sink owns unpublished mutations");
 				}
 				if (mutationSegment == null) {
-					segment = mutationSegment = new MutationSegment(this);
-					nextSnapshot = currentSnapshot + 1;
-					flushCompleted = false;
+					mutationSegment = new MutationSegment(this, currentSnapshot + 1);
 				}
+				segment = mutationSegment;
+				segment.members.add(this);
+				nextSnapshot = segment.snapshot;
+				flushCompleted = false;
 			}
 		}
 
@@ -1133,13 +1260,28 @@ class MemorySailStore implements SailStore {
 			acquireExclusiveTransactionLock();
 			synchronized (preparedSinks) {
 				retireAbandonedSegment();
-				if (namespaceSegment != null && namespaceSegment.owner.get() != this) {
+				checkCancelledSegment();
+				if (namespaceSegment != null && namespaceSegment.owner != writeOwner) {
 					throw new SailConflictException("Another Memory sink owns unpublished namespaces");
 				}
 				if (namespaceSegment == null) {
-					namespaces = namespaceSegment = new NamespaceSegment(this);
-					flushCompleted = false;
+					namespaceSegment = new NamespaceSegment(this);
 				}
+				namespaces = namespaceSegment;
+				namespaces.members.add(this);
+				flushCompleted = false;
+			}
+		}
+
+		private boolean hasPendingContribution() {
+			return segment != null && segment.state == SegmentState.PENDING
+					|| namespaces != null && namespaces.state == SegmentState.PENDING;
+		}
+
+		private void checkCancelledSegment() {
+			if (writeOwner.cancelled || segment != null && segment.state == SegmentState.ABORTED
+					|| namespaces != null && namespaces.state == SegmentState.ABORTED) {
+				throw new SailConflictException("The Memory mutation cohort was cancelled");
 			}
 		}
 

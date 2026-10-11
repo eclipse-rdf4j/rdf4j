@@ -473,6 +473,205 @@ class MemorySailSinkAbortTest {
 	}
 
 	@Test
+	void closingMutatedCohortMemberCancelsPeerAndRejectsFurtherWrites() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				SailSource inferred = store.getInferredSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			Statement retained = statement("cohort-cancel-retained");
+			Statement pendingExplicit = statement("cohort-cancel-explicit");
+			Statement pendingInferred = statement("cohort-cancel-inferred");
+			Statement rejected = statement("cohort-cancel-rejected");
+			Statement fresh = statement("cohort-cancel-fresh");
+			publish(explicit, retained);
+
+			try (SailSink cancellingMember = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+					SailSink peer = group.getInferredSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				cancellingMember.prepare();
+				peer.prepare();
+				cancellingMember.approve(pendingExplicit);
+				peer.approve(pendingInferred);
+				cancellingMember.close();
+
+				assertCurrentRows(explicit, Set.of(retained));
+				assertCurrentRows(inferred, Set.of());
+				assertThrows(SailConflictException.class, () -> peer.approve(rejected),
+						"a peer cannot write after another cohort member cancels its pending segment");
+			}
+
+			group.newTransaction();
+			try (SailSink nextExplicit = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+					SailSink nextInferred = group.getInferredSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				nextExplicit.prepare();
+				nextInferred.prepare();
+				nextExplicit.approve(fresh);
+				nextExplicit.flush();
+				nextInferred.approve(statement("cohort-cancel-fresh-inferred"));
+				nextInferred.flush();
+			}
+
+			assertCurrentRows(explicit, Set.of(retained, fresh));
+			assertCurrentRows(inferred, Set.of(statement("cohort-cancel-fresh-inferred")));
+		}
+	}
+
+	@Test
+	void closingPreparationOnlyCohortMemberLeavesPeerContribution() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			Statement contribution = statement("cohort-preparation-only-peer");
+			try (SailSink preparationOnly = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+					SailSink peer = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				preparationOnly.prepare();
+				peer.prepare();
+				peer.approve(contribution);
+				preparationOnly.close();
+
+				assertCurrentRows(explicit, Set.of());
+				peer.flush();
+			}
+
+			assertCurrentRows(explicit, Set.of(contribution));
+		}
+	}
+
+	@Test
+	void firstCohortFlushPublishesPeerContributionsBeforeSiblingClose() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				SailSource inferred = store.getInferredSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			Statement explicitRow = statement("cohort-first-flush-explicit");
+			Statement inferredRow = statement("cohort-first-flush-inferred");
+			try (SailSink first = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+					SailSink sibling = group.getInferredSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				first.prepare();
+				sibling.prepare();
+				first.approve(explicitRow);
+				sibling.approve(inferredRow);
+				first.setNamespace("cohort", "urn:memory:cohort:first-flush");
+				sibling.setNamespace("peer", "urn:memory:cohort:peer-flush");
+				first.flush();
+
+				assertCurrentRows(explicit, Set.of(explicitRow));
+				assertCurrentRows(inferred, Set.of(inferredRow));
+				assertNamespaces(explicit, Map.of(
+						"cohort", "urn:memory:cohort:first-flush",
+						"peer", "urn:memory:cohort:peer-flush"));
+				sibling.close();
+			}
+
+			assertCurrentRows(explicit, Set.of(explicitRow));
+			assertCurrentRows(inferred, Set.of(inferredRow));
+			assertNamespaces(explicit, Map.of(
+					"cohort", "urn:memory:cohort:first-flush",
+					"peer", "urn:memory:cohort:peer-flush"));
+		}
+	}
+
+	@Test
+	void cancellingNextCohortSegmentPreservesFlushedPrefixAndPinnedReader() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				SailSource inferred = store.getInferredSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			Statement retained = statement("cohort-prefix-retained");
+			Statement explicitPrefix = statement("cohort-prefix-explicit");
+			Statement inferredPrefix = statement("cohort-prefix-inferred");
+			Statement abandoned = statement("cohort-prefix-abandoned");
+			publish(explicit, retained);
+
+			try (SailDataset oldExplicit = explicit.dataset(IsolationLevels.SNAPSHOT_READ);
+					SailDataset oldInferred = inferred.dataset(IsolationLevels.SNAPSHOT_READ);
+					SailSink first = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+					SailSink peer = group.getInferredSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				first.prepare();
+				peer.prepare();
+				first.approve(explicitPrefix);
+				peer.approve(inferredPrefix);
+				first.setNamespace("stable", "urn:memory:cohort:committed");
+				peer.setNamespace("peer", "urn:memory:cohort:committed-peer");
+				first.flush();
+
+				assertRows(oldExplicit, Set.of(retained));
+				assertRows(oldInferred, Set.of());
+				assertCurrentRows(explicit, Set.of(retained, explicitPrefix));
+				assertCurrentRows(inferred, Set.of(inferredPrefix));
+				assertNamespaces(explicit, Map.of(
+						"stable", "urn:memory:cohort:committed",
+						"peer", "urn:memory:cohort:committed-peer"));
+
+				peer.approve(abandoned);
+				peer.setNamespace("stable", "urn:memory:cohort:aborted");
+				peer.setNamespace("temporary", "urn:memory:cohort:temporary");
+			}
+
+			assertCurrentRows(explicit, Set.of(retained, explicitPrefix));
+			assertCurrentRows(inferred, Set.of(inferredPrefix));
+			assertNamespaces(explicit, Map.of(
+					"stable", "urn:memory:cohort:committed",
+					"peer", "urn:memory:cohort:committed-peer"));
+		}
+	}
+
+	@Test
+	void newTransactionRejectsStalePreparationOnlyMember() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			SailSource staleSource = group.getExplicitSailSource();
+			SailSink staleMember = staleSource.sink(IsolationLevels.SNAPSHOT);
+			staleMember.prepare(); // Positive witness: this member belongs to the old transaction group.
+			group.newTransaction();
+			Statement staleRow = statement("stale-preparation-only-member");
+			SailException staleFailure = failureOf(() -> staleMember.approve(staleRow));
+			staleMember.close();
+
+			assertCurrentRows(explicit, Set.of());
+			Statement freshRow = statement("fresh-after-preparation-rotation");
+			try (SailSink freshMember = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				freshMember.prepare();
+				freshMember.approve(freshRow);
+				freshMember.flush();
+			}
+			assertCurrentRows(explicit, Set.of(freshRow));
+			assertTrue(staleFailure instanceof SailConflictException,
+					"a preparation-only sink from the retired transaction group must be rejected");
+		}
+	}
+
+	@Test
+	void newTransactionRejectsStaleCommittedMemberWithoutUndoingItsPrefix() throws Exception {
+		try (MemorySailStore store = new MemorySailStore(false);
+				SailSource explicit = store.getExplicitSailSource();
+				MemorySailStore.SinkGroup group = store.newSinkGroup()) {
+			Statement committed = statement("stale-committed-member-prefix");
+			Statement staleRow = statement("stale-committed-member-row");
+			SailSink staleMember = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT);
+			staleMember.prepare();
+			staleMember.approve(committed);
+			staleMember.flush(); // Positive witness: this old member published one segment.
+			assertCurrentRows(explicit, Set.of(committed));
+
+			group.newTransaction();
+			SailException staleFailure = failureOf(() -> staleMember.approve(staleRow));
+			staleMember.close();
+
+			Statement freshRow = statement("fresh-after-committed-rotation");
+			try (SailSink freshMember = group.getExplicitSailSource().sink(IsolationLevels.SNAPSHOT)) {
+				freshMember.prepare();
+				freshMember.approve(freshRow);
+				freshMember.flush();
+			}
+
+			assertCurrentRows(explicit, Set.of(committed, freshRow));
+			assertTrue(staleFailure instanceof SailConflictException,
+					"a previously committed sink must not join a later connection transaction");
+		}
+	}
+
+	@Test
 	void namespaceAndContextMutationsAreRestoredAfterSinkAbort() throws Exception {
 		try (MemorySailStore store = new MemorySailStore(false);
 				SailSource source = store.getExplicitSailSource()) {
