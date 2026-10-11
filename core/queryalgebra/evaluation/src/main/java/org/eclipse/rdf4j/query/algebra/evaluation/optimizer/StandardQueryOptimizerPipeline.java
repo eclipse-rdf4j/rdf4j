@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -46,6 +47,7 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	public static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	public static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	public static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	@Experimental
 	public static final ScopeSafeAlgebraOptimizer SCOPE_SAFE_ALGEBRA_OPTIMIZER = new ScopeSafeAlgebraOptimizer();
 	public static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	public static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();

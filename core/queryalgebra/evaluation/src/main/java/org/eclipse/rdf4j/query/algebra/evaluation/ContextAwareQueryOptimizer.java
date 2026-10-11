@@ -13,13 +13,21 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.function.BiConsumer;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
 
-/** Supplemental optimizer API for sharing one query-local optimization session across a pipeline island. */
+/**
+ * Supplemental optimizer API for sharing one query-local optimization session across a pipeline island.
+ * <p>
+ * Implementations must override both {@code optimize} methods: the three-argument method is the legacy pass that
+ * {@link #dispatch} runs, and its default (opening a session and calling the four-argument method) would otherwise
+ * recurse when the four-argument method delegates to {@code dispatch(..., this::optimize, ...)}.
+ */
+@Experimental
 public interface ContextAwareQueryOptimizer extends QueryOptimizer {
 
 	/** How an optimizer participates in ENFORCE mode, where only scope-safe rewrites may run. */

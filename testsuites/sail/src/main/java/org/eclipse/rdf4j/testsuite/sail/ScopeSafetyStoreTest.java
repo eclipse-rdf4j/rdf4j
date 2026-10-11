@@ -50,7 +50,7 @@ public abstract class ScopeSafetyStoreTest {
 	private static final List<String> MODES = List.of("off", "audit", "enforce", "shadow");
 
 	@TempDir
-	protected Path dataDir;
+	protected Path dataDirectory;
 
 	protected abstract Sail createSail(Path dataDirectory);
 
@@ -58,7 +58,7 @@ public abstract class ScopeSafetyStoreTest {
 	public void allFiftyQueriesMatchInEveryMode() throws Exception {
 		synchronized (PROPERTY_LOCK) {
 			Map<String, String> saved = saveProperties();
-			SailRepository repository = new SailRepository(createSail(dataDir));
+			SailRepository repository = new SailRepository(createSail(dataDirectory));
 			try {
 				repository.init();
 				try (var connection = repository.getConnection();
@@ -107,7 +107,7 @@ public abstract class ScopeSafetyStoreTest {
 	public void adversarialVariableScopingQueriesMatchInEveryMode() throws Exception {
 		synchronized (PROPERTY_LOCK) {
 			Map<String, String> saved = saveProperties();
-			SailRepository repository = new SailRepository(createSail(dataDir));
+			SailRepository repository = new SailRepository(createSail(dataDirectory));
 			try {
 				repository.init();
 				try (var connection = repository.getConnection();
