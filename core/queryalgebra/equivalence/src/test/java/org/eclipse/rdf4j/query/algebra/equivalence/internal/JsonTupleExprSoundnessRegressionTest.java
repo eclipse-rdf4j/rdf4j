@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.equivalence.internal;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -91,9 +92,11 @@ class JsonTupleExprSoundnessRegressionTest {
 	}
 
 	/**
-	 * RDF4J's runtime REDUCED iteration can make a nested operand's evaluation schedule observable even when callers
-	 * only inspect SET support. Removing REDUCED from this fuzz-discovered tree changes the support on the empty
-	 * dataset, so the runtime checker must not apply the specification-level support-preservation rule.
+	 * This fuzz-discovered pair once changed SET support on the empty dataset when REDUCED was removed, because RDF4J
+	 * evaluated the shared operand differently under REDUCED. The runtime now evaluates it identically, so the pair
+	 * agrees on SET support and differs only in multiplicity, as SPARQL requires. The runtime checker still does not
+	 * apply the specification-level support-preservation rule to REDUCED, so it must neither certify the removal nor
+	 * report a counterexample that the runtime no longer exhibits.
 	 */
 	@Test
 	void runtimeReducedIsNotHiddenBySetObservation() throws Exception {
@@ -103,18 +106,20 @@ class JsonTupleExprSoundnessRegressionTest {
 
 		EvaluationOutcome originalOutcome = evaluateAllowingError(original, empty);
 		EvaluationOutcome candidateOutcome = evaluateAllowingError(candidate, empty);
-		assertFalse(
-				originalOutcome.sameAs(candidateOutcome, ObservationMode.SET),
-				() -> "the preserved fuzz witness no longer distinguishes SET support: "
-						+ originalOutcome + " versus " + candidateOutcome);
+		assertTrue(originalOutcome.sameAs(candidateOutcome, ObservationMode.SET),
+				() -> "REDUCED removal changed SET support: " + originalOutcome + " versus " + candidateOutcome);
+		assertFalse(originalOutcome.sameAs(candidateOutcome, ObservationMode.BAG),
+				() -> "the witness should still differ in multiplicity: " + originalOutcome + " versus "
+						+ candidateOutcome);
 
 		CheckOptions options = CheckOptions.builder()
 				.observationMode(ObservationMode.SET)
 				.boundedCounterexampleSearch(false)
 				.addEvaluationCase(empty)
 				.build();
-		assertDatasetIsVerifiedWitness(options, original, candidate);
-		assertNotEquivalentWithVerifiedCounterexample(options, original, candidate);
+		EquivalenceResult result = new AlgebraEquivalenceChecker(options).check(original, candidate);
+		assertNotEquals(EquivalenceStatus.EQUIVALENT, result.getStatus(), result::getReason);
+		assertNotEquals(EquivalenceStatus.NOT_EQUIVALENT, result.getStatus(), result::getReason);
 	}
 
 	/**
