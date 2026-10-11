@@ -35,6 +35,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,6 +65,115 @@ import org.junit.jupiter.api.Timeout;
 class StreamingWritePreflightOwnershipTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void parentCloseDuringRunningChildPublicationDoesNotWaitOnDescendantRelease() throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		SailSourceBranch parent = branch(terminal);
+		SailSourceBranch child = branch(parent);
+		Statement row = statement("parent-close-during-running-child-publication");
+		add(child, row);
+		SailSource.FlushBatch batch = child.freezeForFlush();
+		CountDownLatch terminalPreparationEntered = new CountDownLatch(1);
+		CountDownLatch releaseTerminalPreparation = new CountDownLatch(1);
+		terminal.onSinkPrepare = () -> {
+			terminalPreparationEntered.countDown();
+			await(releaseTerminalPreparation, "running child publication release");
+		};
+		AtomicReference<Throwable> publicationFailure = new AtomicReference<>();
+		AtomicReference<Throwable> parentCloseFailure = new AtomicReference<>();
+		AtomicReference<Throwable> cleanupFailure = new AtomicReference<>();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> publication = executor.submit(() -> {
+			try {
+				batch.flush();
+			} catch (Throwable failure) {
+				publicationFailure.set(failure);
+			}
+		});
+		Future<?> close = null;
+		boolean closeCompletedBeforeRelease = false;
+		boolean terminalWasUnchangedAtClose = false;
+		try {
+			await(terminalPreparationEntered, "terminal prepare during running child publication");
+			assertThat(terminal.sinkPrepareCalls.get())
+					.as("the descendant batch reached the terminal sink while its context is running")
+					.isGreaterThan(0);
+			close = executor.submit(() -> {
+				try {
+					parent.close();
+				} catch (Throwable failure) {
+					parentCloseFailure.set(failure);
+				}
+			});
+			try {
+				close.get(2, TimeUnit.SECONDS);
+				closeCompletedBeforeRelease = true;
+			} catch (TimeoutException stillWaitingForChild) {
+				// Release the terminal callback before reporting a parent/descendant close cycle.
+			}
+			terminalWasUnchangedAtClose = terminal.committed.isEmpty();
+		} finally {
+			releaseTerminalPreparation.countDown();
+			try {
+				publication.get(5, TimeUnit.SECONDS);
+			} catch (Throwable failure) {
+				cleanupFailure.compareAndSet(null, failure);
+			}
+			if (close != null) {
+				try {
+					close.get(5, TimeUnit.SECONDS);
+				} catch (Throwable failure) {
+					cleanupFailure.compareAndSet(null, failure);
+				}
+			}
+			try {
+				batch.close();
+			} catch (Throwable failure) {
+				cleanupFailure.compareAndSet(null, failure);
+			}
+			try {
+				child.close();
+			} catch (Throwable failure) {
+				cleanupFailure.compareAndSet(null, failure);
+			}
+			try {
+				parent.close();
+			} catch (Throwable failure) {
+				cleanupFailure.compareAndSet(null, failure);
+			} finally {
+				executor.shutdownNow();
+				try {
+					if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+						cleanupFailure.compareAndSet(null,
+								new AssertionError(
+										"parent close and descendant publication workers did not terminate"));
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					cleanupFailure.compareAndSet(null, interrupted);
+				}
+			}
+		}
+
+		assertThat(closeCompletedBeforeRelease)
+				.as("parent close completes or rejects promptly without waiting for child publication release")
+				.isTrue();
+		assertThat(terminalWasUnchangedAtClose)
+				.as("parent close ran before terminal application and did not acknowledge a row")
+				.isTrue();
+		assertThat(parentCloseFailure.get())
+				.as("the running frozen batch may reject close, but that rejection is prompt")
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("in use");
+		assertThat(publicationFailure.get())
+				.as("the child publication terminates after the parent close boundary is released")
+				.isNotNull();
+		assertThat(cleanupFailure.get()).as("all publication and close resources are joined").isNull();
+		assertThat(terminal.committed).as("a canceled descendant publication never reaches terminal commit").isEmpty();
+		assertThat(terminal.approvalCount(row)).as("the canceled row was never applied").hasValue(0);
+	}
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
