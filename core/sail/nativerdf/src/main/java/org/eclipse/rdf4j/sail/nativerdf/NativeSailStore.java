@@ -550,6 +550,10 @@ class NativeSailStore implements SailStore {
 	}
 
 	private final class NativeSailSource extends BackingSailSource {
+		@Override
+		public boolean supportsStreamingWritePreflight() {
+			return true;
+		}
 
 		private final boolean explicit;
 

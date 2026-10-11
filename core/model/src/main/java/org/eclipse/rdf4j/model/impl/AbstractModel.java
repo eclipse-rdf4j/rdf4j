@@ -17,13 +17,16 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.ModelException;
 
 /**
  * Provides basic operations that are common to all Models.
@@ -47,6 +50,23 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	@Override
 	public boolean isEmpty() {
 		return !contains(null, null, null, NO_CONTEXT);
+	}
+
+	@Override
+	public void forEach(Consumer<? super Statement> action) {
+		Objects.requireNonNull(action);
+		Iterator<Statement> iter = iterator();
+		Throwable failure = null;
+		try {
+			while (iter.hasNext()) {
+				action.accept(iter.next());
+			}
+		} catch (RuntimeException | Error e) {
+			failure = e;
+			throw e;
+		} finally {
+			closeIterator(iter, failure);
+		}
 	}
 
 	@Override
@@ -560,6 +580,27 @@ public abstract class AbstractModel extends AbstractSet<Statement> implements Mo
 	protected void closeIterator(Iterator<?> iter) {
 		if (iter instanceof ValueSet.ValueSetIterator) {
 			closeIterator(((ValueSet.ValueSetIterator) iter).iter);
+		} else if (iter instanceof AutoCloseable closeable) {
+			try {
+				closeable.close();
+			} catch (RuntimeException | Error e) {
+				throw e;
+			} catch (Exception e) {
+				throw new ModelException(e);
+			}
+		}
+	}
+
+	private void closeIterator(Iterator<?> iter, Throwable failure) {
+		try {
+			closeIterator(iter);
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure == null) {
+				throw closeFailure;
+			}
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
 		}
 	}
 

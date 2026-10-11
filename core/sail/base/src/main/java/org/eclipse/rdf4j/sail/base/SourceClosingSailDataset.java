@@ -55,16 +55,27 @@ final class SourceClosingSailDataset extends DelegatingSailDataset {
 
 	@Override
 	public void close() {
+		release(false);
+	}
+
+	@Override
+	public void abandonUnobserved() {
+		release(true);
+	}
+
+	private void release(boolean abandon) {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
+		SailClosable datasetCleanup = abandon ? dataset::abandonUnobserved : dataset;
+		SailClosable sourceCleanup = abandon ? source::abandonUnobserved : source;
 		try {
-			dataset.close();
+			datasetCleanup.close();
 		} catch (RuntimeException | Error failure) {
-			closeAfterFailure(failure, source);
+			closeAfterFailure(failure, sourceCleanup);
 			throw failure;
 		}
-		source.close();
+		sourceCleanup.close();
 	}
 
 	/**

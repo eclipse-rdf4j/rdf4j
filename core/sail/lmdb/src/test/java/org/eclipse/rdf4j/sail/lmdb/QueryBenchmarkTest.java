@@ -13,20 +13,27 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Stream;
 
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -36,6 +43,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.rules.TemporaryFolder;
 
@@ -43,6 +51,12 @@ import org.junit.rules.TemporaryFolder;
  *
  */
 public class QueryBenchmarkTest {
+
+	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+	private static final IRI LOWERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
+			.createIRI("http://www.w3.org/ns/dcat#distribution");
+	private static final IRI UPPERCASE_DCAT_DISTRIBUTION = VALUE_FACTORY
+			.createIRI("http://www.w3.org/ns/dcat#Distribution");
 
 	private static SailRepository repository;
 	private static File dataDir;
@@ -290,36 +304,132 @@ public class QueryBenchmarkTest {
 
 	@Test
 	public void simpleUpdateQueryIsolationReadCommitted() {
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query2).execute();
-			connection.commit();
-		}
-
-		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.READ_COMMITTED);
-			connection.prepareUpdate(query3).execute();
-			connection.commit();
-		}
-		hasStatement();
+		assertSimpleUpdateTransitions(IsolationLevels.READ_COMMITTED, false);
 
 	}
 
 	@Test
 	public void simpleUpdateQueryIsolationNone() {
+		assertSimpleUpdateTransitions(IsolationLevels.NONE, true);
+
+	}
+
+	private static void assertSimpleUpdateTransitions(IsolationLevel isolationLevel, boolean assertNoRemaps) {
+		resetBenchmarkTypeStatements();
+		LmdbSailStore backingStore = ((LmdbStore) repository.getSail()).getBackingStore();
+		MapGrowthMetrics.Snapshot initialGrowth = backingStore.growthMetricsSnapshot();
+		Set<Statement> initialTypes;
+		long initialSize;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
+			initialTypes = readTypeStatements(connection);
+			initialSize = connection.size();
+		}
+		assertTrue(initialTypes.stream()
+				.anyMatch(
+						statement -> UPPERCASE_DCAT_DISTRIBUTION.equals(statement.getObject())),
+				"the benchmark dataset must include rows transformed by query3");
+
+		Set<Statement> afterQuery2 = transformTypeObject(initialTypes, LOWERCASE_DCAT_DISTRIBUTION,
+				UPPERCASE_DCAT_DISTRIBUTION);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(isolationLevel);
 			connection.prepareUpdate(query2).execute();
 			connection.commit();
 		}
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			connection.begin(IsolationLevels.NONE);
-			connection.prepareUpdate(query3).execute();
+			assertEquals(initialSize, connection.size(), "the DELETE/INSERT must preserve total statement count");
+			assertEquals(afterQuery2, readTypeStatements(connection),
+					"query2 must replace lowercase distribution types while preserving other RDF type rows and contexts");
+		}
+		if (assertNoRemaps) {
+			assertNoMapResizes(initialGrowth, backingStore.growthMetricsSnapshot(), "query2 under NONE");
+		}
+
+		Set<Statement> afterQuery3 = transformTypeObject(afterQuery2, UPPERCASE_DCAT_DISTRIBUTION,
+				LOWERCASE_DCAT_DISTRIBUTION);
+		MapGrowthMetrics.Snapshot beforeQuery3 = backingStore.growthMetricsSnapshot();
+		LmdbSailStore.NoneIngestionMetrics checkpointsBeforeQuery3 = backingStore.noneIngestionMetrics();
+		RuntimeException query3Failure = null;
+		MapGrowthMetrics.Snapshot duringQuery3Failure = null;
+		LmdbSailStore.NoneIngestionMetrics checkpointsAtQuery3Failure = null;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(isolationLevel);
+			try {
+				connection.prepareUpdate(query3).execute();
+				connection.commit();
+			} catch (RuntimeException failure) {
+				query3Failure = failure;
+				duringQuery3Failure = backingStore.growthMetricsSnapshot();
+				checkpointsAtQuery3Failure = backingStore.noneIngestionMetrics();
+			}
+		}
+		if (query3Failure != null) {
+			MapGrowthMetrics.Snapshot afterQuery3Cleanup = backingStore.growthMetricsSnapshot();
+			LmdbSailStore.NoneIngestionMetrics checkpointsAfterQuery3Cleanup = backingStore.noneIngestionMetrics();
+			int persistedTypeRowsAfterQuery3Failure;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				persistedTypeRowsAfterQuery3Failure = readTypeStatements(connection).size();
+			}
+			throw new AssertionError("query3 failed with growth metrics before=" + beforeQuery3
+					+ ", at failure=" + duringQuery3Failure + ", after connection cleanup=" + afterQuery3Cleanup
+					+ "; NONE checkpoints before=" + checkpointsBeforeQuery3 + ", at failure="
+					+ checkpointsAtQuery3Failure + ", after cleanup=" + checkpointsAfterQuery3Cleanup
+					+ "; expected type rows before query3=" + afterQuery2.size()
+					+ ", persisted type rows after failure=" + persistedTypeRowsAfterQuery3Failure, query3Failure);
+		}
+
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			assertEquals(initialSize, connection.size(),
+					"the reverse DELETE/INSERT must preserve total statement count");
+			assertEquals(afterQuery3, readTypeStatements(connection),
+					"query3 must replace uppercase distribution types while preserving other RDF type rows and contexts");
+		}
+		assertFalse(afterQuery3.stream()
+				.anyMatch(
+						statement -> UPPERCASE_DCAT_DISTRIBUTION.equals(statement.getObject())),
+				"query3 must remove all old uppercase Distribution rows");
+		assertTrue(afterQuery3.stream()
+				.anyMatch(
+						statement -> LOWERCASE_DCAT_DISTRIBUTION.equals(statement.getObject())),
+				"query3 must insert the corresponding lowercase distribution rows");
+		if (assertNoRemaps) {
+			assertNoMapResizes(initialGrowth, backingStore.growthMetricsSnapshot(), "query2/query3 under NONE");
+		}
+	}
+
+	private static void resetBenchmarkTypeStatements() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.begin(IsolationLevels.READ_COMMITTED);
+			connection.remove((Resource) null, RDF.TYPE, null);
+			connection.add(statementList);
 			connection.commit();
 		}
-		hasStatement();
+	}
 
+	private static Set<Statement> readTypeStatements(SailRepositoryConnection connection) {
+		return new LinkedHashSet<>(Iterations.asList(connection.getStatements(null, RDF.TYPE, null, false)));
+	}
+
+	private static Set<Statement> transformTypeObject(Set<Statement> statements, IRI oldType, IRI newType) {
+		Set<Statement> transformed = new LinkedHashSet<>();
+		for (Statement statement : statements) {
+			if (oldType.equals(statement.getObject())) {
+				transformed.add(VALUE_FACTORY.createStatement(statement.getSubject(), RDF.TYPE, newType,
+						statement.getContext()));
+			} else {
+				transformed.add(statement);
+			}
+		}
+		return transformed;
+	}
+
+	private static void assertNoMapResizes(MapGrowthMetrics.Snapshot before, MapGrowthMetrics.Snapshot after,
+			String phase) {
+		assertEquals(before.tripleStoreResizes(), after.tripleStoreResizes(),
+				"the configured-map " + phase + " fixture must not resize TripleStore");
+		assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
+				"the configured-map " + phase + " fixture must not resize ValueStore");
 	}
 
 	@Test

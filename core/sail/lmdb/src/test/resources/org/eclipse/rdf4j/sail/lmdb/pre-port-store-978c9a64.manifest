@@ -1,0 +1,11 @@
+sourceCommit=978c9a64cf4e7b61daede825b5f3e4400dc97b05
+sourceLmDBImplementationUnmodified=true
+buildNote=base-layer lease edits were present during generation; no core/sail/lmdb production file had been modified
+generatedWith=LmdbStore 6.2.0-SNAPSHOT, config indexes spoc,posc, forceSync=true
+archive=pre-port-store-978c9a64.zip
+archiveSha256=ca35f03d4a8e532a0a921d44936da7938250141f62cf66ea2f8b0b5e0d7ec286
+contents=one explicit literal statement, one explicit quoted-triple statement, one named context, namespace prefix legacy
+producerPlatform=Darwin 25.6.0 arm64
+producerJava=Eclipse Temurin OpenJDK 26+35
+producerNativeLmDB=0.9.33 from LWJGL 3.3.6
+testExtraction=skips environment-local lock.mdb files and lets LMDB recreate them

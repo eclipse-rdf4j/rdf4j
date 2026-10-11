@@ -17,6 +17,8 @@ import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.readTransaction;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.writeTransaction;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.system.MemoryUtil.NULL;
+import static org.lwjgl.system.MemoryUtil.memAlloc;
+import static org.lwjgl.system.MemoryUtil.memFree;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
 import static org.lwjgl.util.lmdb.LMDB.MDB_KEYEXIST;
@@ -50,7 +52,6 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
-import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_commit;
@@ -60,9 +61,15 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
@@ -75,18 +82,21 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.LongAdder;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.regex.Pattern;
 
 import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
-import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.Record;
-import org.eclipse.rdf4j.sail.lmdb.TxnRecordCache.RecordCacheIterator;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator;
 import org.eclipse.rdf4j.sail.lmdb.estimate.LmdbPageCardinalityEstimator.CardinalityEstimate;
@@ -108,6 +118,22 @@ import org.slf4j.LoggerFactory;
  */
 @SuppressWarnings("deprecation")
 class TripleStore implements Closeable {
+	interface EnvironmentLifecycle {
+		void afterOpen(long env) throws IOException;
+
+		void close(long env);
+	}
+
+	private static final EnvironmentLifecycle DEFAULT_ENVIRONMENT_LIFECYCLE = new EnvironmentLifecycle() {
+		@Override
+		public void afterOpen(long env) {
+		}
+
+		@Override
+		public void close(long env) {
+			mdb_env_close(env);
+		}
+	};
 
 	/**
 	 * The default triple indexes.
@@ -123,6 +149,15 @@ class TripleStore implements Closeable {
 	 * Variables *
 	 *-----------*/
 	private static final Logger logger = LoggerFactory.getLogger(TripleStore.class);
+	private static final String NAMESPACE_DATABASE_NAME = "namespaces";
+	private static final byte[] NAMESPACE_FORMAT_KEY = "format".getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] NAMESPACE_SNAPSHOT_KEY = "snapshot".getBytes(StandardCharsets.US_ASCII);
+	private static final int NAMESPACE_DATABASE_VERSION = 1;
+	private static final byte[] INDEX_FORMAT_KEY = "triple-index-format".getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] INDEX_SPECS_KEY = "triple-index-specs".getBytes(StandardCharsets.US_ASCII);
+	private static final int INDEX_DATABASE_VERSION = 1;
+	private static final Pattern MUTATION_JOURNAL_NAME = Pattern.compile(
+			"txn-replay-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.bin");
 	/**
 	 * The directory that is used to store the index files.
 	 */
@@ -133,6 +168,7 @@ class TripleStore implements Closeable {
 	 * in the store directory and are loaded when the store is initialized.
 	 */
 	private final StoreProperties properties;
+	private final EnvironmentLifecycle environmentLifecycle;
 	/**
 	 * The list of triple indexes that are used to store and retrieve triples.
 	 */
@@ -141,13 +177,24 @@ class TripleStore implements Closeable {
 
 	long env;
 	long writeTxn;
+	/** Retains the writer's allocation after a failed native commit has consumed its transaction handle. */
+	private long replayProjectedUsedBytes;
 	private final int mainDbi;
 	private final int contextsDbi;
+	private final int namespacesDbi;
 	private int pageSize;
 	private final boolean autoGrow;
+	private final MapGrowthPolicy growthPolicy;
 	private final boolean pageWalkingEstimatorEnabled;
-	private long mapSize;
+	private volatile long mapSize;
+	private volatile long committedHighWaterBytes;
+	private TxnReplayPolicy replayPolicy;
+	private long valueEnvironmentGeneration;
+	private TxnReplayPolicy.Decision replayDecision;
+	private final Object capacityOrigin = new Object();
 	private final TxnManager txnManager;
+	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
+	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
 	private final LeadingFieldSortAlgorithm leadingFieldSortAlgorithm = LeadingFieldSortAlgorithm.LSD_RADIX;
 	private long[] explicitAlignedWriteCursors = new long[0];
 	private long[] inferredAlignedWriteCursors = new long[0];
@@ -158,11 +205,23 @@ class TripleStore implements Closeable {
 	private final int[] leadingFieldRadixOffsets = new int[256];
 	private final LmdbPageCardinalityEstimator pageEstimator;
 	private final AtomicLong dataRevision = new AtomicLong();
+	private final AtomicLong nativeCommitGeneration = new AtomicLong();
 	private final AtomicLong mappingGeneration = new AtomicLong();
 
-	private TxnRecordCache recordCache = null;
+	private TxnMutationJournal mutationJournal;
+	private Throwable mutationFailure;
+	private boolean nativeMutation;
+	private boolean tripleMutation;
 
-	private record DatabaseHandles(int mainDbi, int contextsDbi) {
+	static final class MapFullException extends IOException {
+		private static final long serialVersionUID = 1L;
+
+		MapFullException() {
+			super("LMDB map is full");
+		}
+	}
+
+	private record DatabaseHandles(int mainDbi, int contextsDbi, int namespacesDbi) {
 	}
 
 	private record PageAndMapState(int pageSize, boolean empty) {
@@ -174,108 +233,129 @@ class TripleStore implements Closeable {
 
 	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore)
 			throws IOException, SailException {
+		this(dir, properties, config, valueStore, DEFAULT_ENVIRONMENT_LIFECYCLE);
+	}
+
+	TripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
+			EnvironmentLifecycle environmentLifecycle) throws IOException, SailException {
 		this.dir = dir;
 		this.dataMdbFile = new File(dir, "data.mdb");
 		this.properties = properties;
+		this.environmentLifecycle = Objects.requireNonNull(environmentLifecycle);
 		boolean forceSync = config.getForceSync();
 		boolean noReadahead = config.getNoReadahead();
 		this.autoGrow = config.getAutoGrow();
+		this.growthPolicy = new MapGrowthPolicy(config.getMapGrowthThreshold());
 		this.pageWalkingEstimatorEnabled = config.getPageCardinalityEstimator()
 				&& !Boolean.getBoolean(DISABLE_PAGE_WALKING_ESTIMATOR_PROPERTY);
 		this.valueStore = valueStore;
 		// create directory if it not exists
 		this.dir.mkdirs();
 
-		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_env_create(pp));
-			env = pp.get(0);
-		}
-
-		// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred)
-		E(mdb_env_set_maxdbs(env, 1 + 48));
-		E(mdb_env_set_maxreaders(env, 256));
-
-		// Open environment
-		int flags = MDB_NOTLS;
-		if (!forceSync) {
-			flags |= MDB_NOSYNC | MDB_NOMETASYNC;
-		}
-		if (noReadahead) {
-			flags |= MDB_NORDAHEAD;
-		}
-		E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
-		// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
-		// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
-		// comparator state.
-		DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
-			int mainDbi = openDatabaseWithTxn(txn, null, 0);
-			String name = "contexts";
-			IntBuffer ip = stack.mallocInt(1);
-			if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
-				E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+		try {
+			try (MemoryStack stack = stackPush()) {
+				PointerBuffer pp = stack.mallocPointer(1);
+				E(mdb_env_create(pp));
+				env = pp.get(0);
 			}
-			return new DatabaseHandles(mainDbi, ip.get(0));
-		});
-		mainDbi = databaseHandles.mainDbi();
-		contextsDbi = databaseHandles.contextsDbi();
 
-		txnManager = new TxnManager(env, Mode.RESET);
-		pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
-				: null;
+			// 1 for contexts, 48 for all possible triple indexes (24 explicit + 24 inferred), 1 for namespaces.
+			E(mdb_env_set_maxdbs(env, 1 + 48 + 1));
+			E(mdb_env_set_maxreaders(env, 256));
+
+			// Open environment
+			int flags = MDB_NOTLS;
+			if (!forceSync) {
+				flags |= MDB_NOSYNC | MDB_NOMETASYNC;
+			}
+			if (noReadahead) {
+				flags |= MDB_NORDAHEAD;
+			}
+			E(mdb_env_open(env, this.dir.getAbsolutePath(), flags, 0664));
+			environmentLifecycle.afterOpen(env);
+			// Open the unnamed main database and contexts database in one serialized setup transaction. The main DBI is
+			// retained for page-estimator read scopes; opening it again while readers are active mutates LMDB's shared
+			// comparator state.
+			DatabaseHandles databaseHandles = writeTransaction(env, (stack, txn) -> {
+				cleanupAbandonedMutationJournals();
+				int mainDbi = openDatabaseWithTxn(txn, null, 0);
+				String name = "contexts";
+				IntBuffer ip = stack.mallocInt(1);
+				if (mdb_dbi_open(txn, name, 0, ip) == MDB_NOTFOUND) {
+					E(mdb_dbi_open(txn, name, MDB_CREATE, ip));
+				}
+				int contextsDbi = ip.get(0);
+				int namespaceResult = mdb_dbi_open(txn, NAMESPACE_DATABASE_NAME, 0, ip);
+				if (namespaceResult == MDB_NOTFOUND) {
+					E(mdb_dbi_open(txn, NAMESPACE_DATABASE_NAME, MDB_CREATE, ip));
+				} else {
+					E(namespaceResult);
+				}
+				return new DatabaseHandles(mainDbi, contextsDbi, ip.get(0));
+			});
+			mainDbi = databaseHandles.mainDbi();
+			contextsDbi = databaseHandles.contextsDbi();
+			namespacesDbi = databaseHandles.namespacesDbi();
+
+			txnManager = new TxnManager(env, Mode.RESET, LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			pageEstimator = pageWalkingEstimatorEnabled ? new LmdbPageCardinalityEstimator(dataMdbFile, env, mainDbi)
+					: null;
+		} catch (IOException | RuntimeException | Error failure) {
+			cleanupAfterInitializationFailure(failure);
+			throw failure;
+		}
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
-			if (!properties.isLoaded()) {
-				// newly created lmdb store
-				Set<String> indexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
-				if (indexSpecs.isEmpty()) {
+			startTransaction();
+			Set<String> effectiveIndexSpecs = readIndexSpecs(writeTxn);
+			boolean nativeIndexManifest = effectiveIndexSpecs != null;
+			if (effectiveIndexSpecs == null && properties.isLoaded()) {
+				// Import the legacy sidecar once. The marker and DBI creation become durable together.
+				effectiveIndexSpecs = getIndexSpecs();
+			} else if (effectiveIndexSpecs == null) {
+				// A missing sidecar does not make a native store new: its committed manifest takes precedence above.
+				effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
+				if (effectiveIndexSpecs.isEmpty()) {
 					logger.debug("No triple indexes specified, using default: {}", DEFAULT_TRIPLE_INDEXES);
 					indexSpecStr = DEFAULT_TRIPLE_INDEXES;
-					indexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
-				}
-
-				startTransaction();
-				initIndexes(indexSpecs);
-				endTransaction(true);
-
-				initializePageAndMapSize(config.getTripleDBSize());
-			} else {
-				// Initialize existing indexes
-				Set<String> indexSpecs = getIndexSpecs();
-				startTransaction();
-				initIndexes(indexSpecs);
-				endTransaction(true);
-				initializePageAndMapSize(config.getTripleDBSize());
-
-				// Compare the existing indexes with the requested indexes
-				Set<String> reqIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
-				if (reqIndexSpecs.isEmpty()) {
-					// No indexes specified, use the existing ones
-					indexSpecStr = properties.getTripleIndexes();
-				} else if (!reqIndexSpecs.equals(indexSpecs)) {
-					// Set of indexes needs to be changed
-					startTransaction();
-					reindex(indexSpecs, reqIndexSpecs);
-					endTransaction(true);
+					effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
 				}
 			}
+			initIndexes(effectiveIndexSpecs);
+			if (!nativeIndexManifest) {
+				writeIndexSpecs(effectiveIndexSpecs);
+			}
+			endTransaction(true);
+			initializePageAndMapSize(config.getTripleDBSize());
+
+			Set<String> requestedIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
+			if (!requestedIndexSpecs.isEmpty() && !requestedIndexSpecs.equals(effectiveIndexSpecs)) {
+				startTransaction();
+				reindex(effectiveIndexSpecs, requestedIndexSpecs);
+				effectiveIndexSpecs = requestedIndexSpecs;
+			}
+			if (indexSpecStr == null || indexSpecStr.isEmpty()) {
+				indexSpecStr = String.join(",", TripleIndex.orderIndexSpecs(effectiveIndexSpecs));
+			}
 			properties.setTripleIndexes(indexSpecStr);
+			resetAlignedWriteCursorState();
+			if (pageEstimator != null) {
+				List<String> fieldSequences = new ArrayList<>(indexes.size());
+				for (TripleIndex index : indexes) {
+					fieldSequences.add(new String(index.getFieldSeq()));
+				}
+				pageEstimator.configureIndexes(fieldSequences);
+			}
+			refreshCommittedHighWater();
+			replayPolicy = new TxnReplayPolicy(config.getMapGrowthThreshold());
+			valueEnvironmentGeneration = valueStore == null ? 0L : valueStore.environmentGeneration();
 		} catch (IOException e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
 		} catch (RuntimeException | Error e) {
 			cleanupAfterInitializationFailure(e);
 			throw e;
-		}
-
-		resetAlignedWriteCursorState();
-		if (pageEstimator != null) {
-			List<String> fieldSequences = new ArrayList<>(indexes.size());
-			for (TripleIndex index : indexes) {
-				fieldSequences.add(new String(index.getFieldSeq()));
-			}
-			pageEstimator.configureIndexes(fieldSequences);
 		}
 	}
 
@@ -299,6 +379,226 @@ class TripleStore implements Closeable {
 
 	long getDataRevision() {
 		return dataRevision.get();
+	}
+
+	long getNativeCommitGeneration() {
+		return nativeCommitGeneration.get();
+	}
+
+	/**
+	 * Reads the namespace snapshot when the version marker exists. A {@code null} result means this TripleStore
+	 * predates the authoritative namespace database and its legacy file should be imported.
+	 */
+	Map<String, String> readNamespaceSnapshot() throws IOException {
+		return readTransaction(env, this::readNamespaceSnapshot);
+	}
+
+	/** Installs a legacy or empty namespace snapshot only if the authoritative marker is still absent. */
+	Map<String, String> initializeNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
+		TxnReplayPolicy.Decision decision = prepareReplayDecision();
+		startTransaction(new TxnReplayPolicy.Decision(replayPolicy, true, false, decision.tripleHighWater,
+				decision.valueHighWater, decision.valueMutationGeneration));
+		try {
+			Map<String, String> persisted = readNamespaceSnapshot(writeTxn);
+			if (persisted != null) {
+				rollback();
+				return persisted;
+			}
+			writeNamespaceSnapshot(namespaces);
+			commit(false);
+			return Collections.unmodifiableMap(new LinkedHashMap<>(namespaces));
+		} catch (IOException | RuntimeException | Error failure) {
+			if (writeTxn != 0) {
+				try {
+					rollback();
+				} catch (IOException | RuntimeException | Error rollbackFailure) {
+					failure.addSuppressed(rollbackFailure);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	/** Writes the immutable namespace snapshot into the currently open RDF writer transaction. */
+	void writeNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
+		checkReplayFailure();
+		byte[] encodedSnapshot = NamespaceStore.encodeSnapshot(namespaces);
+		if (autoGrow) {
+			prepareForMutation(encodedSnapshot.length + 2L * TripleIndex.MAX_KEY_LENGTH + 64L);
+			long record = usesReplayJournal() ? mutationJournal.mark() : -1L;
+			try {
+				if (usesReplayJournal()) {
+					mutationJournal.appendNamespaceSnapshot(encodedSnapshot);
+				}
+				writeNamespaceSnapshotBytes(encodedSnapshot);
+			} catch (MapFullException mapFull) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(mapFull);
+				}
+				resizeAndReplay(record, null);
+			} catch (IOException | RuntimeException | Error failure) {
+				markMutationFailure(failure);
+				throw failure;
+			}
+		} else {
+			try {
+				writeNamespaceSnapshotBytes(encodedSnapshot);
+			} catch (IOException | RuntimeException | Error failure) {
+				markMutationFailure(failure);
+				throw failure;
+			}
+		}
+	}
+
+	/** Writes an already encoded snapshot into the currently open RDF writer transaction. */
+	void writeNamespaceSnapshotBytes(byte[] encodedSnapshot) throws IOException {
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Namespace snapshot requires an active TripleStore writer transaction");
+		}
+		try (MemoryStack stack = stackPush()) {
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(stack.bytes(NAMESPACE_SNAPSHOT_KEY));
+			MDBVal previous = MDBVal.malloc(stack);
+			int result = mdb_get(writeTxn, namespacesDbi, key, previous);
+			E(result);
+			if (result == MDB_SUCCESS && previous.mv_data().equals(ByteBuffer.wrap(encodedSnapshot))
+					&& readNamespaceDatabaseVersion(stack, writeTxn) == NAMESPACE_DATABASE_VERSION) {
+				return;
+			}
+			writeNamespaceDatabaseValue(stack, writeTxn, NAMESPACE_SNAPSHOT_KEY, encodedSnapshot);
+			writeNamespaceDatabaseValue(stack, writeTxn, NAMESPACE_FORMAT_KEY,
+					ByteBuffer.allocate(Integer.BYTES).putInt(NAMESPACE_DATABASE_VERSION).array());
+		}
+		nativeMutation = true;
+	}
+
+	/** Commits only namespace metadata without advancing the triple data revision. */
+	void commitNamespaceSnapshot(Map<String, String> namespaces) throws IOException {
+		commitNamespaceSnapshot(namespaces, prepareReplayDecision());
+	}
+
+	void commitNamespaceSnapshot(Map<String, String> namespaces, TxnReplayPolicy.Decision decision) throws IOException {
+		if (writeTxn != 0) {
+			throw new IllegalStateException(
+					"Namespace-only commit cannot run inside an active TripleStore transaction");
+		}
+		try {
+			startTransaction(decision);
+			writeNamespaceSnapshot(namespaces);
+			commit(false);
+		} catch (IOException | RuntimeException | Error failure) {
+			if (writeTxn != 0) {
+				try {
+					rollback();
+				} catch (IOException | RuntimeException | Error rollbackFailure) {
+					failure.addSuppressed(rollbackFailure);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	private int readNamespaceDatabaseVersion(MemoryStack stack, long txn) throws IOException {
+		byte[] version = readNamespaceDatabaseValue(stack, txn, NAMESPACE_FORMAT_KEY);
+		if (version == null) {
+			return 0;
+		}
+		if (version.length != Integer.BYTES) {
+			throw new IOException("Namespace database format marker is malformed");
+		}
+		int value = ByteBuffer.wrap(version).getInt();
+		if (value != NAMESPACE_DATABASE_VERSION) {
+			throw new IOException("Unsupported namespace database format version: " + value);
+		}
+		return value;
+	}
+
+	private Map<String, String> readNamespaceSnapshot(MemoryStack stack, long txn) throws IOException {
+		int version = readNamespaceDatabaseVersion(stack, txn);
+		if (version == 0) {
+			return null;
+		}
+		byte[] snapshot = readNamespaceDatabaseValue(stack, txn, NAMESPACE_SNAPSHOT_KEY);
+		if (snapshot == null) {
+			throw new IOException("Namespace database marker exists without a snapshot");
+		}
+		return NamespaceStore.decodeSnapshot(snapshot);
+	}
+
+	private Map<String, String> readNamespaceSnapshot(long txn) throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			return readNamespaceSnapshot(stack, txn);
+		}
+	}
+
+	/**
+	 * Returns the index specification committed with the native index databases, or {@code null} for a legacy store
+	 * whose configuration is still authoritative in {@code store.properties}.
+	 */
+	private Set<String> readIndexSpecs(long txn) throws IOException, SailException {
+		try (MemoryStack stack = stackPush()) {
+			byte[] format = readNamespaceDatabaseValue(stack, txn, INDEX_FORMAT_KEY);
+			byte[] encodedSpecs = readNamespaceDatabaseValue(stack, txn, INDEX_SPECS_KEY);
+			if (format == null) {
+				if (encodedSpecs != null) {
+					throw new IOException("Triple index specifications exist without a native format marker");
+				}
+				return null;
+			}
+			if (format.length != Integer.BYTES || ByteBuffer.wrap(format).getInt() != INDEX_DATABASE_VERSION) {
+				throw new IOException("Unsupported native triple index metadata format");
+			}
+			if (encodedSpecs == null) {
+				throw new IOException("Native triple index metadata marker exists without index specifications");
+			}
+			Set<String> indexSpecs = TripleIndex.parseIndexSpecList(new String(encodedSpecs, StandardCharsets.UTF_8));
+			if (indexSpecs.isEmpty()) {
+				throw new IOException("Native triple index metadata contains no index specifications");
+			}
+			return indexSpecs;
+		}
+	}
+
+	/** Writes an index manifest in the same native writer transaction as index creation or deletion. */
+	private void writeIndexSpecs(Set<String> indexSpecs) throws IOException {
+		byte[] format = ByteBuffer.allocate(Integer.BYTES).putInt(INDEX_DATABASE_VERSION).array();
+		byte[] encodedSpecs = String.join(",", TripleIndex.orderIndexSpecs(indexSpecs))
+				.getBytes(StandardCharsets.UTF_8);
+		try (MemoryStack stack = stackPush()) {
+			writeNamespaceDatabaseValue(stack, writeTxn, INDEX_SPECS_KEY, encodedSpecs);
+			writeNamespaceDatabaseValue(stack, writeTxn, INDEX_FORMAT_KEY, format);
+		}
+		nativeMutation = true;
+	}
+
+	private byte[] readNamespaceDatabaseValue(MemoryStack stack, long txn, byte[] key) throws IOException {
+		MDBVal keyValue = MDBVal.calloc(stack);
+		MDBVal dataValue = MDBVal.calloc(stack);
+		keyValue.mv_data(stack.malloc(key.length).put(key).flip());
+		int result = mdb_get(txn, namespacesDbi, keyValue, dataValue);
+		if (result == MDB_NOTFOUND) {
+			return null;
+		}
+		E(result);
+		ByteBuffer data = Objects.requireNonNull(dataValue.mv_data()).duplicate();
+		byte[] value = new byte[data.remaining()];
+		data.get(value);
+		return value;
+	}
+
+	private void writeNamespaceDatabaseValue(MemoryStack stack, long txn, byte[] key, byte[] value)
+			throws IOException {
+		MDBVal keyValue = MDBVal.calloc(stack);
+		MDBVal dataValue = MDBVal.calloc(stack);
+		keyValue.mv_data(stack.malloc(key.length).put(key).flip());
+		ByteBuffer data = memAlloc(value.length);
+		try {
+			data.put(value).flip();
+			dataValue.mv_data(data);
+			checkMutationResult(mdb_put(txn, namespacesDbi, keyValue, dataValue, 0));
+		} finally {
+			memFree(data);
+		}
 	}
 
 	Map<String, LmdbStore.LmdbDatabaseStats> getLmdbStats() throws IOException {
@@ -326,6 +626,7 @@ class TripleStore implements Closeable {
 		for (String fieldSeq : TripleIndex.orderIndexSpecs(indexSpecs)) {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn));
+			nativeMutation = true;
 		}
 	}
 
@@ -375,25 +676,31 @@ class TripleStore implements Closeable {
 				failure.addSuppressed(cleanupFailure);
 			}
 		}
-		for (TripleIndex index : indexes) {
+		if (txnManager != null) {
 			try {
-				index.close();
+				txnManager.close();
 			} catch (Throwable cleanupFailure) {
 				failure.addSuppressed(cleanupFailure);
 			}
 		}
-		try {
-			txnManager.close();
-		} catch (Throwable cleanupFailure) {
-			failure.addSuppressed(cleanupFailure);
-		}
 		if (env != 0) {
 			try {
-				mdb_env_close(env);
+				environmentLifecycle.close(env);
 			} catch (Throwable cleanupFailure) {
 				failure.addSuppressed(cleanupFailure);
 			} finally {
 				env = 0;
+			}
+		}
+	}
+
+	private void cleanupAbandonedMutationJournals() throws IOException {
+		try (DirectoryStream<Path> journals = Files.newDirectoryStream(dir.toPath(), "txn-replay-*.bin")) {
+			for (Path journal : journals) {
+				if (MUTATION_JOURNAL_NAME.matcher(journal.getFileName().toString()).matches()
+						&& Files.isRegularFile(journal, LinkOption.NOFOLLOW_LINKS)) {
+					Files.deleteIfExists(journal);
+				}
 			}
 		}
 	}
@@ -425,140 +732,266 @@ class TripleStore implements Closeable {
 			currentIndexes.put(new String(index.getFieldSeq()), index);
 		}
 
-		// Determine the set of newly added indexes and initialize these using an
-		// existing index as source
 		Set<String> addedIndexSpecs = new HashSet<>(newIndexSpecs);
 		addedIndexSpecs.removeAll(currentIndexSpecs);
-
-		if (!addedIndexSpecs.isEmpty()) {
-			TripleIndex sourceIndex = indexes.getFirst();
-			for (boolean explicit : new boolean[] { true, false }) {
-				try (MemoryStack stack = stackPush()) {
-					MDBVal keyValue = MDBVal.calloc(stack);
-					ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-					keyValue.mv_data(keyBuf);
-					MDBVal dataValue = MDBVal.calloc(stack);
-					for (String fieldSeq : addedIndexSpecs) {
-						logger.debug("Initializing new index '{}'...", fieldSeq);
-
-						TripleIndex addedIndex = new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env,
-								writeTxn);
-						RecordIterator[] sourceIter = { null };
-						try {
-							sourceIter[0] = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
-									explicit, txnManager.createTxn(writeTxn));
-
-							RecordIterator it = sourceIter[0];
-							long[] quad;
-							while ((quad = it.next()) != null) {
-								keyBuf.clear();
-								addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-										quad[TripleIndex.OBJ_IDX],
-										quad[TripleIndex.CONTEXT_IDX]);
-								keyBuf.flip();
-
-								if (requiresResize()) {
-									endTransaction(true);
-
-									// the lock is just a safety measure if reindex is somehow called outside of the
-									// constructor
-									StampedLongAdderLockManager lockManager = txnManager.lockManager();
-									long stamp;
-									try {
-										stamp = lockManager.writeLock();
-									} catch (InterruptedException e) {
-										throw new SailException(e);
-									}
-									try {
-										txnManager.deactivate();
-										mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-										E(setMapSize(mapSize));
-										logger.debug("resized map to {}", mapSize);
-									} finally {
-										try {
-											txnManager.activate();
-										} finally {
-											lockManager.unlockWrite(stamp);
-										}
-									}
-									startTransaction();
-								}
-
-								E(mdb_put(writeTxn, addedIndex.getDB(explicit), keyValue, dataValue, 0));
-							}
-						} finally {
-							if (sourceIter[0] != null) {
-								sourceIter[0].close();
-							}
-						}
-
-						currentIndexes.put(fieldSeq, addedIndex);
-					}
-				}
-			}
-
-			logger.debug("New index(es) initialized");
-		}
-
-		// Determine the set of removed indexes
 		Set<String> removedIndexSpecs = new HashSet<>(currentIndexSpecs);
 		removedIndexSpecs.removeAll(newIndexSpecs);
-
-		List<Throwable> removedIndexExceptions = new ArrayList<>();
-		// Delete files for removed indexes
-		for (String fieldSeq : removedIndexSpecs) {
+		while (true) {
+			Map<String, TripleIndex> rewrittenIndexes = new HashMap<>(currentIndexes);
 			try {
-				TripleIndex removedIndex = currentIndexes.remove(fieldSeq);
-				removedIndex.destroy(writeTxn);
-				logger.debug("Deleted file(s) for removed {} index", fieldSeq);
-			} catch (Throwable e) {
-				removedIndexExceptions.add(e);
+				if (!addedIndexSpecs.isEmpty()) {
+					TripleIndex sourceIndex = indexes.getFirst();
+					for (String fieldSeq : TripleIndex.orderIndexSpecs(addedIndexSpecs)) {
+						logger.debug("Initializing new index '{}'...", fieldSeq);
+						TripleIndex addedIndex = new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn);
+						rewrittenIndexes.put(fieldSeq, addedIndex);
+						for (boolean explicit : new boolean[] { true, false }) {
+							try (MemoryStack stack = stackPush()) {
+								MDBVal keyValue = MDBVal.calloc(stack);
+								ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+								MDBVal dataValue = MDBVal.calloc(stack);
+								RecordIterator sourceIter = new LmdbRecordIterator(sourceIndex, false, -1, -1, -1, -1,
+										explicit, txnManager.createTxn(writeTxn));
+								try {
+									long[] quad;
+									while ((quad = sourceIter.next()) != null) {
+										if (requiresResize()) {
+											throw new MapFullException();
+										}
+										keyBuf.clear();
+										addedIndex.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+												quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
+										keyBuf.flip();
+										keyValue.mv_data(keyBuf);
+										checkMutationResult(
+												mdb_put(writeTxn, addedIndex.getDB(explicit), keyValue, dataValue,
+														0));
+									}
+								} finally {
+									sourceIter.close();
+								}
+							}
+						}
+					}
+				}
+
+				for (String fieldSeq : TripleIndex.orderIndexSpecs(removedIndexSpecs)) {
+					TripleIndex removedIndex = currentIndexes.get(fieldSeq);
+					removedIndex.destroy(writeTxn);
+				}
+				writeIndexSpecs(newIndexSpecs);
+				if (!commitReindexTransaction()) {
+					throw new MapFullException();
+				}
+
+				indexes.clear();
+				for (String fieldSeq : TripleIndex.orderIndexSpecs(newIndexSpecs)) {
+					indexes.add(rewrittenIndexes.get(fieldSeq));
+				}
+				resetAlignedWriteCursorState();
+				return;
+			} catch (MapFullException | LmdbUtil.MapFullException mapFull) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(mapFull);
+				}
+				abortReindexAttempt(currentIndexes, mapFull);
+				if (!autoGrow) {
+					throw mapFull;
+				}
+				growMapForReindex();
+				startTransaction();
+			} catch (IOException | RuntimeException | Error failure) {
+				abortReindexAttempt(currentIndexes, failure);
+				throw failure;
 			}
 		}
+	}
 
-		if (!removedIndexExceptions.isEmpty()) {
-			throw new IOException(removedIndexExceptions.getFirst());
+	private void abortReindexAttempt(Map<String, TripleIndex> currentIndexes, Throwable failure) throws IOException {
+		try {
+			if (writeTxn != 0) {
+				endTransaction(false);
+			}
+			reopenDroppedIndexesAfterAbort(currentIndexes);
+		} catch (IOException | RuntimeException | Error cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+			throw new IOException("Failed to abort an incomplete LMDB index rebuild", failure);
+		}
+	}
+
+	private void reopenDroppedIndexesAfterAbort(Map<String, TripleIndex> currentIndexes) throws IOException {
+		Map<String, TripleIndex> droppedIndexes = new HashMap<>();
+		for (Map.Entry<String, TripleIndex> entry : currentIndexes.entrySet()) {
+			if (entry.getValue().hasDroppedDatabaseHandle()) {
+				droppedIndexes.put(entry.getKey(), entry.getValue());
+			}
+		}
+		if (droppedIndexes.isEmpty()) {
+			return;
 		}
 
-		// Update the indexes variable, using the specified index order
-		indexes.clear();
-		for (String fieldSeq : newIndexSpecs) {
-			indexes.add(currentIndexes.remove(fieldSeq));
+		Map<String, TripleIndex> reopenedIndexes = writeTransaction(env, (stack, txn) -> {
+			Map<String, TripleIndex> reopened = new HashMap<>();
+			for (String fieldSeq : droppedIndexes.keySet()) {
+				reopened.put(fieldSeq, new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, txn));
+			}
+			return reopened;
+		});
+		for (Map.Entry<String, TripleIndex> entry : reopenedIndexes.entrySet()) {
+			String fieldSeq = entry.getKey();
+			TripleIndex staleIndex = droppedIndexes.get(fieldSeq);
+			int indexPosition = indexes.indexOf(staleIndex);
+			if (indexPosition >= 0) {
+				indexes.set(indexPosition, entry.getValue());
+			}
+			currentIndexes.put(fieldSeq, entry.getValue());
 		}
-		resetAlignedWriteCursorState();
+	}
+
+	private void growMapForReindex() throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
+		LmdbSailStore.MapGrowthAttempt growthAttempt;
+		try {
+			growthAttempt = beginMapGrowthAttempt();
+		} catch (LmdbTransactionRetryException unsafeContinuation) {
+			growForTransactionRetry(0L, unsafeContinuation);
+			throw unsafeContinuation;
+		}
+		try (growthAttempt) {
+			if (growthAttempt != null) {
+				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			growMapForReindexAfterQuiescence(growthAttempt);
+		}
+	}
+
+	private void growMapForReindexAfterQuiescence(LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting to grow the LMDB map for index rebuild", e);
+		}
+		try {
+			txnManager.deactivate();
+			mapSize = growthPolicy.grownMapSize(mapSize, pageSize, 0);
+			if (growthAttempt != null) {
+				growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			E(setMapSize(mapSize));
+			logger.debug("resized map to {} for index rebuild", mapSize);
+		} finally {
+			try {
+				txnManager.activate();
+			} finally {
+				lockManager.unlockWrite(stamp);
+			}
+		}
+	}
+
+	boolean commitReindexTransaction() throws IOException {
+		closeAlignedWriteCursors();
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while committing the LMDB index rebuild", e);
+		}
+		int result;
+		try {
+			long transaction = writeTxn;
+			writeTxn = 0;
+			result = mdb_txn_commit(transaction);
+			if (result == MDB_SUCCESS) {
+				nativeCommitGeneration.incrementAndGet();
+				nativeMutation = false;
+				tripleMutation = false;
+				txnManager.reset();
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+		if (result == MDB_MAP_FULL && autoGrow) {
+			return false;
+		}
+		E(result);
+		return true;
 	}
 
 	@Override
 	public void close() throws IOException {
-		if (env != 0) {
-			endTransaction(false);
+		try (TxnManager.CloseBarrier ignored = txnManager.acquireCloseBarrier()) {
+			if (env == 0) {
+				return;
+			}
 
-			List<Throwable> caughtExceptions = new ArrayList<>();
+			Throwable failure = null;
+			long environment = env;
+			try {
+				endTransaction(false);
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			}
+			try {
+				txnManager.closeUnderExclusiveLock();
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			}
 			if (pageEstimator != null) {
 				try {
 					pageEstimator.close();
-				} catch (Throwable e) {
-					logger.warn("Failed to close page estimator", e);
-					caughtExceptions.add(e);
+				} catch (Throwable closeFailure) {
+					logger.warn("Failed to close page estimator", closeFailure);
+					failure = appendCloseFailure(failure, closeFailure);
 				}
 			}
 			for (TripleIndex index : indexes) {
 				try {
 					index.close();
-				} catch (Throwable e) {
+				} catch (Throwable closeFailure) {
 					logger.warn("Failed to close file for {} index", new String(index.getFieldSeq()));
-					caughtExceptions.add(e);
+					failure = appendCloseFailure(failure, closeFailure);
 				}
 			}
-
-			txnManager.close();
-
-			mdb_env_close(env);
-			env = 0;
-
-			if (!caughtExceptions.isEmpty()) {
-				throw new IOException(caughtExceptions.getFirst());
+			try {
+				environmentLifecycle.close(environment);
+			} catch (Throwable closeFailure) {
+				failure = appendCloseFailure(failure, closeFailure);
+			} finally {
+				env = 0;
 			}
+			rethrowCloseFailure(failure);
+		}
+	}
+
+	private static Throwable appendCloseFailure(Throwable failure, Throwable closeFailure) {
+		if (failure == null) {
+			return closeFailure;
+		}
+		if (failure != closeFailure) {
+			failure.addSuppressed(closeFailure);
+		}
+		return failure;
+	}
+
+	private static void rethrowCloseFailure(Throwable failure) throws IOException {
+		if (failure instanceof IOException ioException) {
+			throw ioException;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IOException(failure);
 		}
 	}
 
@@ -1112,10 +1545,478 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean requiresResize() {
+		return requiresResize(0L);
+	}
+
+	private boolean requiresResize(long estimatedWriteBytes) {
 		if (autoGrow) {
-			return LmdbUtil.requiresResize(mapSize, pageSize, writeTxn, 0);
+			return growthPolicy.hardCapacityRequired(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
+					estimatedWriteBytes);
 		} else {
 			return false;
+		}
+	}
+
+	long estimateWriteBytes(List<Statement> statements) {
+		long estimate = 0L;
+		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
+		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size(), perIndexBytes), 64L);
+		for (Statement ignored : statements) {
+			estimate = saturatedAdd(estimate, perStatementBytes);
+		}
+		return estimate;
+	}
+
+	long estimateWriteBytes(SailSource.WritePreflight preflight) {
+		return saturatedAdd(estimateWriteBytes(preflight.statements()), estimateWriteMetadataBytes(preflight));
+	}
+
+	long estimateWriteBytes(StatementInput input) {
+		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
+		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size(), perIndexBytes), 64L);
+		long estimate = 0L;
+		try (CloseableIteration<Statement> statements = input.openCursor()) {
+			while (statements.hasNext()) {
+				statements.next();
+				estimate = saturatedAdd(estimate, perStatementBytes);
+			}
+		}
+		input.validate();
+		return saturatedAdd(estimate, estimateWriteMetadataBytes(input.metadata()));
+	}
+
+	private long estimateWriteMetadataBytes(SailSource.WritePreflight preflight) {
+		long estimate = 0L;
+		for (SailSource.NamespaceUpdate namespace : preflight.addedNamespaces()) {
+			long keyAndValueBytes = (long) namespace.prefix().length() + namespace.name().length() + 96L;
+			estimate = saturatedAdd(estimate, keyAndValueBytes);
+		}
+		if (preflight.statementCleared() || !preflight.clearedContexts().isEmpty()
+				|| preflight.namespaceCleared() || !preflight.removedNamespacePrefixes().isEmpty()) {
+			estimate = saturatedAdd(estimate, LmdbUtil.MIN_FREE_SPACE);
+		}
+		return estimate;
+	}
+
+	boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
+		if (!autoGrow) {
+			return false;
+		}
+		return growthPolicy.requiresGrowth(mapSize, occupiedBytes(), estimatedWriteBytes);
+	}
+
+	long occupiedBytes() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			return saturatedMultiply(nextPageNo, pageSize);
+		}
+	}
+
+	long mapSizeBytes() {
+		return mapSize;
+	}
+
+	boolean retainsGrowthReserve() throws IOException {
+		return growthPolicy.retainsGrowthReserve(mapSize, occupiedBytes());
+	}
+
+	long committedHighWaterBytes() {
+		return committedHighWaterBytes;
+	}
+
+	boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+			throws IOException {
+		if (!autoGrow || writeTxn != 0) {
+			return false;
+		}
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while preparing the TripleStore map for a buffered write", e);
+		}
+		try {
+			if (writeTxn != 0 || !requiresResizeForEstimatedWrite(estimatedWriteBytes)) {
+				return false;
+			}
+			txnManager.deactivate();
+			try {
+				long nextPageNo;
+				try (MemoryStack stack = stackPush()) {
+					MDBEnvInfo info = MDBEnvInfo.calloc(stack);
+					E(mdb_env_info(env, info));
+					nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+				}
+				long currentFootprint = saturatedMultiply(nextPageNo, pageSize);
+				long projectedFootprint = saturatedAdd(currentFootprint, estimatedWriteBytes);
+				long resizedMapSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedFootprint);
+				if (growthAttempt != null) {
+					growthAttempt.markMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
+				E(setMapSize(resizedMapSize));
+				mapSize = resizedMapSize;
+				return true;
+			} finally {
+				txnManager.activate();
+			}
+		} finally {
+			lockManager.unlockWrite(stamp);
+		}
+	}
+
+	private void prepareForMutation() throws IOException {
+		prepareForMutation(0L);
+	}
+
+	private void prepareForMutation(long estimatedWriteBytes) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		if (usesReplayJournal()) {
+			ensureMutationJournal();
+		}
+		if (autoGrow && growthPolicy.requiresGrowth(mapSize, LmdbUtil.getNewSize(pageSize, writeTxn, 0L),
+				estimatedWriteBytes)) {
+			if (isFrozenReplay()) {
+				throw frozenCapacity(null);
+			}
+			requestMapGrowth(estimatedWriteBytes, false);
+		}
+		if (requiresResize(estimatedWriteBytes)) {
+			if (isFrozenReplay()) {
+				throw frozenCapacity(null);
+			}
+			if (replayDecision != null && replayDecision.checkpoint) {
+				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
+			}
+			requestMapGrowth(estimatedWriteBytes, true);
+			if (!usesReplayJournal()) {
+				growForTransactionRetry(estimatedWriteBytes, null);
+			} else {
+				resizeAndReplay(-1, null);
+			}
+		}
+	}
+
+	private long estimateTripleMutationBytes(long subj, long pred, long obj, long context) {
+		// Estimate encoded index payload from IDs already available here; page splits still use the journal fallback.
+		long keyBytes = estimateKeyLength(subj, pred, obj, context);
+		return saturatedAdd(saturatedMultiply(indexes.size(), 2L * keyBytes + 64L), 64L);
+	}
+
+	private long estimateAlignedMutationBytes(long[] subj, long[] pred, long[] obj, long[] context, int count) {
+		long estimate = 64L;
+		for (int i = 0; i < count; i++) {
+			long keyBytes = estimateKeyLength(subj[i], pred[i], obj[i], context[i]);
+			estimate = saturatedAdd(estimate,
+					saturatedMultiply(indexes.size(), 2L * keyBytes + 64L));
+		}
+		return estimate;
+	}
+
+	private static long estimateKeyLength(long subj, long pred, long obj, long context) {
+		return 4L + (subj > 240 ? Long.BYTES : 0L) + (pred > 240 ? Long.BYTES : 0L)
+				+ (obj > 240 ? Long.BYTES : 0L) + (context > 240 ? Long.BYTES : 0L);
+	}
+
+	private static long saturatedAdd(long left, long right) {
+		return Long.MAX_VALUE - left < right ? Long.MAX_VALUE : left + right;
+	}
+
+	private static long saturatedMultiply(long left, long right) {
+		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
+	}
+
+	private void ensureMutationJournal() throws IOException {
+		if (mutationJournal == null) {
+			mutationJournal = createMutationJournal();
+		}
+	}
+
+	TxnMutationJournal createMutationJournal() throws IOException {
+		return new TxnMutationJournal(dir.toPath());
+	}
+
+	private boolean usesReplayJournal() {
+		return autoGrow && (replayDecision == null || !replayDecision.frozenReplay && replayDecision.track);
+	}
+
+	private boolean isFrozenReplay() {
+		return autoGrow && replayDecision != null && replayDecision.frozenReplay;
+	}
+
+	FrozenStatementCapacityException frozenCapacity(Throwable cause) {
+		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, capacityOrigin,
+				replayDecision, cause);
+	}
+
+	boolean ownsFrozenCapacity(FrozenStatementCapacityException failure, TxnReplayPolicy.Decision decision) {
+		return failure.kind() == LmdbSailStore.MapResizeKind.TRIPLE_STORE && failure.matches(capacityOrigin, decision);
+	}
+
+	private void checkReplayFailure() throws IOException {
+		if (replayDecision != null) {
+			replayDecision.check();
+		}
+		if (mutationFailure != null) {
+			throw new IOException("Cannot mutate a TripleStore transaction after a failed mutation", mutationFailure);
+		}
+	}
+
+	/** Grows capacity for a complete caller retry; a missing prefix can never be replayed. */
+	private void growForTransactionRetry(long requiredBytes, Throwable cause) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(cause);
+		}
+		if (replayDecision != null && replayDecision.checkpoint) {
+			throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, cause);
+		}
+		LmdbTransactionRetryException retry = replayDecision == null
+				? new LmdbTransactionRetryException("TripleStore", cause)
+				: replayDecision.capacityFailure("TripleStore", cause);
+		markMutationFailure(retry);
+		long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
+				: LmdbUtil.getNewSize(pageSize, writeTxn, requiredBytes);
+		if (mapGrowthRequestListener != null) {
+			try {
+				closeAlignedWriteCursors();
+				if (writeTxn != 0) {
+					mdb_txn_abort(writeTxn);
+					writeTxn = 0;
+				}
+				mapGrowthRequestListener.request(LmdbSailStore.MapResizeKind.TRIPLE_STORE, projectedBytes, true);
+			} catch (IOException | RuntimeException cleanupFailure) {
+				retry.addSuppressed(cleanupFailure);
+			}
+			throw retry;
+		}
+		try {
+			closeAlignedWriteCursors();
+			if (writeTxn != 0) {
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+			}
+			try (LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt()) {
+				if (growthAttempt != null) {
+					growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
+				var lockManager = txnManager.lockManager();
+				long stamp = lockManager.writeLock();
+				try {
+					txnManager.deactivate();
+					try {
+						long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedBytes);
+						if (growthAttempt != null) {
+							growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+						}
+						E(setMapSize(grownSize));
+						mapSize = grownSize;
+					} finally {
+						txnManager.activate();
+					}
+				} finally {
+					lockManager.unlockWrite(stamp);
+				}
+			}
+		} catch (IOException | RuntimeException | InterruptedException growthFailure) {
+			if (growthFailure instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			retry.addSuppressed(growthFailure);
+		}
+		throw retry;
+	}
+
+	private void markMutationFailure(Throwable failure) {
+		if (mutationFailure == null) {
+			mutationFailure = failure;
+		} else if (mutationFailure != failure) {
+			mutationFailure.addSuppressed(failure);
+		}
+	}
+
+	private void checkMutationResult(int result) throws IOException {
+		if (result == MDB_MAP_FULL && autoGrow) {
+			throw new MapFullException();
+		}
+		E(result);
+	}
+
+	/**
+	 * Aborts the current native transaction, grows the map with all readers deactivated, and replays the complete
+	 * logical journal into a fresh writer. If replay itself fills the larger map, it too is aborted and replayed from
+	 * the beginning after another growth.
+	 */
+	private void resizeAndReplay(long captureStart, boolean[] replayResults) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(new MapFullException());
+		}
+		if (!usesReplayJournal()) {
+			growForTransactionRetry(0L, new MapFullException());
+		}
+		requestMapGrowth(0L, true);
+		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
+		try (growthAttempt) {
+			if (growthAttempt != null) {
+				growthAttempt.requestQuiescence(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+			}
+			resizeAndReplayAfterQuiescence(captureStart, replayResults, growthAttempt);
+		}
+	}
+
+	private void resizeAndReplayAfterQuiescence(long captureStart, boolean[] replayResults,
+			LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
+		if (!autoGrow) {
+			throw new IOException("LMDB map growth is disabled");
+		}
+		ensureMutationJournal();
+		closeAlignedWriteCursors();
+		StampedLongAdderLockManager lockManager = txnManager.lockManager();
+		long stamp;
+		try {
+			stamp = lockManager.writeLock();
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while waiting to resize the TripleStore map", e);
+		}
+		Throwable failure = null;
+		try {
+			txnManager.deactivate();
+			if (writeTxn != 0) {
+				replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+						LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+			}
+			while (true) {
+				long projectedUsedBytes = Math.max(committedHighWaterBytes, replayProjectedUsedBytes);
+				if (growthAttempt != null) {
+					projectedUsedBytes = growthAttempt.projectedUsedBytes(LmdbSailStore.MapResizeKind.TRIPLE_STORE,
+							projectedUsedBytes);
+				}
+				long grownSize = growthPolicy.grownMapSize(mapSize, pageSize, projectedUsedBytes);
+				if (growthAttempt != null) {
+					growthAttempt.markFallbackMapResized(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				}
+				E(setMapSize(grownSize));
+				mapSize = grownSize;
+				beginNativeWriteTransaction();
+				try {
+					mutationJournal.replay(new TxnMutationJournal.ReplayAction() {
+						@Override
+						public boolean store(long subj, long pred, long obj, long context, boolean explicit,
+								long record)
+								throws IOException {
+							boolean added = storeTripleDirect(subj, pred, obj, context, explicit);
+							if (replayResults != null && record >= captureStart
+									&& record - captureStart < replayResults.length) {
+								replayResults[(int) (record - captureStart)] = added;
+							}
+							return added;
+						}
+
+						@Override
+						public void remove(long subj, long pred, long obj, long context, boolean explicit)
+								throws IOException {
+							removeQuadDirect(subj, pred, obj, context, explicit);
+						}
+
+						@Override
+						public void writeNamespaceSnapshot(byte[] snapshot) throws IOException {
+							writeNamespaceSnapshotBytes(snapshot);
+						}
+					});
+					long replayedUse = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
+					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes, replayedUse);
+					if (!growthPolicy.retainsGrowthReserve(mapSize, replayedUse)) {
+						mdb_txn_abort(writeTxn);
+						writeTxn = 0L;
+						continue;
+					}
+					afterMapGrowthReplay();
+					break;
+				} catch (MapFullException mapFull) {
+					replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+							LmdbUtil.getNewSize(pageSize, writeTxn, 0L));
+					mdb_txn_abort(writeTxn);
+					writeTxn = 0;
+				}
+			}
+		} catch (IOException | RuntimeException | Error e) {
+			failure = e;
+			if (writeTxn != 0) {
+				mdb_txn_abort(writeTxn);
+				writeTxn = 0;
+			}
+			markMutationFailure(e);
+		} finally {
+			try {
+				txnManager.activate();
+			} catch (IOException | RuntimeException | Error activateFailure) {
+				if (failure == null) {
+					failure = activateFailure;
+				} else {
+					failure.addSuppressed(activateFailure);
+				}
+				markMutationFailure(activateFailure);
+			} finally {
+				lockManager.unlockWrite(stamp);
+			}
+		}
+		if (failure instanceof IOException io) {
+			throw io;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	private LmdbSailStore.MapGrowthAttempt beginMapGrowthAttempt() throws IOException {
+		LmdbSailStore.MapGrowthAttemptSupplier supplier = mapGrowthAttemptSupplier;
+		return supplier == null ? null : supplier.begin();
+	}
+
+	void setMapGrowthAttemptSupplier(LmdbSailStore.MapGrowthAttemptSupplier supplier) {
+		mapGrowthAttemptSupplier = supplier;
+	}
+
+	void setMapGrowthRequestListener(LmdbSailStore.MapGrowthRequestListener listener) {
+		mapGrowthRequestListener = listener;
+	}
+
+	private void requestMapGrowth(long requiredBytes, boolean exhausted) throws IOException {
+		if (isFrozenReplay()) {
+			throw frozenCapacity(null);
+		}
+		LmdbSailStore.MapGrowthRequestListener listener = mapGrowthRequestListener;
+		if (listener != null) {
+			long projectedBytes = writeTxn == 0 ? saturatedAdd(committedHighWaterBytes, requiredBytes)
+					: LmdbUtil.getNewSize(pageSize, writeTxn, requiredBytes);
+			listener.request(LmdbSailStore.MapResizeKind.TRIPLE_STORE, projectedBytes, exhausted);
+		}
+	}
+
+	/** Test seam for observing a complete replay before its single authoritative commit. */
+	protected void afterMapGrowthReplay() throws IOException {
+		// No work by default.
+	}
+
+	private void beginNativeWriteTransaction() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			PointerBuffer pp = stack.mallocPointer(1);
+			E(mdb_txn_begin(env, NULL, 0, pp));
+			writeTxn = pp.get(0);
 		}
 	}
 
@@ -1124,6 +2025,62 @@ class TripleStore implements Closeable {
 	int localCount = 0;
 
 	public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		if (!usesReplayJournal()) {
+			if (autoGrow) {
+				prepareForMutation(estimateTripleMutationBytes(subj, pred, obj, context));
+			}
+			try {
+				boolean added = storeTripleDirect(subj, pred, obj, context, explicit);
+				if (added) {
+					nativeMutation = true;
+					tripleMutation = true;
+				}
+				logAddedStatements(added ? 1 : 0);
+				return added;
+			} catch (MapFullException mapFull) {
+				if (autoGrow) {
+					growForTransactionRetry(0L, mapFull);
+				}
+				throw mapFull;
+			} catch (IOException | RuntimeException | Error failure) {
+				markMutationFailure(failure);
+				throw failure;
+			}
+		}
+
+		prepareForMutation(estimateTripleMutationBytes(subj, pred, obj, context));
+		long record = mutationJournal.mark();
+		try {
+			mutationJournal.appendStore(subj, pred, obj, context, explicit);
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		}
+		boolean added;
+		try {
+			added = storeTripleDirect(subj, pred, obj, context, explicit);
+		} catch (MapFullException mapFull) {
+			boolean[] replayResults = new boolean[1];
+			resizeAndReplay(record, replayResults);
+			added = replayResults[0];
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		}
+		if (added) {
+			nativeMutation = true;
+			tripleMutation = true;
+		}
+		logAddedStatements(added ? 1 : 0);
+		return added;
+	}
+
+	private boolean storeTripleDirect(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
 		TripleIndex mainIndex = indexes.getFirst();
 		boolean stAdded;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
@@ -1135,44 +2092,20 @@ class TripleStore implements Closeable {
 			keyBuf.flip();
 			keyVal.mv_data(keyBuf);
 
-			if (recordCache == null) {
-				if (requiresResize()) {
-					// map is full, resize required
-					recordCache = new TxnRecordCache(dir);
-					logger.debug("resize of map size {} required while adding - initialize record cache", mapSize);
-				}
-			}
-
-			if (recordCache != null) {
-				long[] quad = new long[] { subj, pred, obj, context };
-				boolean mainExplicitExists = mdb_get(writeTxn, mainIndex.getDB(true), keyVal, dataVal) == MDB_SUCCESS;
-				boolean mainInferredExists = mdb_get(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
-				boolean statementAdded = !recordExistsInCacheOrMain(recordCache.getRecordState(quad, explicit),
-						explicit ? mainExplicitExists : mainInferredExists);
-				if (!statementAdded) {
-					return false;
-				}
-				if (explicit) {
-					TxnRecordCache.RecordState inferredCacheState = recordCache.getRecordState(quad, false);
-					if (recordExistsInCacheOrMain(inferredCacheState, mainInferredExists)) {
-						recordCache.removeRecord(quad, false, true);
-					}
-				}
-				// put record in cache and return immediately
-				recordCache.storeRecord(quad, explicit, explicit ? !mainExplicitExists : !mainInferredExists);
-				return true;
-			}
-
 			int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 			if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
-				throw new IOException(mdb_strerror(rc));
+				checkMutationResult(rc);
 			}
 
 			stAdded = rc == MDB_SUCCESS;
 
 			boolean foundImplicit = false;
 			if (explicit && stAdded) {
-				foundImplicit = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal) == MDB_SUCCESS;
+				int result = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+				if (result != MDB_SUCCESS && result != MDB_NOTFOUND) {
+					checkMutationResult(result);
+				}
+				foundImplicit = result == MDB_SUCCESS;
 			}
 
 			if (stAdded) {
@@ -1186,23 +2119,18 @@ class TripleStore implements Closeable {
 					keyVal.mv_data(keyBuf);
 
 					if (foundImplicit) {
-						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+						checkMutationResult(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
-					E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
+					checkMutationResult(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
 				}
 
-				incrementContext(stack, context);
+				if (!foundImplicit) {
+					incrementContext(stack, context);
+				}
 			}
 		}
 
-		logAddedStatements(stAdded ? 1 : 0);
-
 		return stAdded;
-	}
-
-	private boolean recordExistsInCacheOrMain(TxnRecordCache.RecordState cacheState, boolean mainExists) {
-		return cacheState == TxnRecordCache.RecordState.ADD
-				|| cacheState == TxnRecordCache.RecordState.ABSENT && mainExists;
 	}
 
 	@Experimental
@@ -1215,17 +2143,86 @@ class TripleStore implements Closeable {
 	public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count, boolean explicit,
 			IntConsumer addedIndexConsumer)
 			throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		if (usesReplayJournal() && count > 1) {
+			storeTriplesAlignedWithJournal(subj, pred, obj, context, count, explicit, addedIndexConsumer);
+			return;
+		}
+		if (autoGrow && !usesReplayJournal()) {
+			prepareForMutation(estimateAlignedMutationBytes(subj, pred, obj, context, count));
+		}
+		try {
+			storeTriplesAlignedDirect(subj, pred, obj, context, count, explicit, addedIndexConsumer, null);
+		} catch (MapFullException mapFull) {
+			if (autoGrow && !usesReplayJournal()) {
+				growForTransactionRetry(0L, mapFull);
+			}
+			markMutationFailure(mapFull);
+			throw mapFull;
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		}
+	}
+
+	private void storeTriplesAlignedWithJournal(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+		prepareForMutation(estimateAlignedMutationBytes(subj, pred, obj, context, count));
+		long firstRecord = mutationJournal.mark();
+		try {
+			for (int i = 0; i < count; i++) {
+				mutationJournal.appendStore(subj[i], pred[i], obj[i], context[i], explicit);
+			}
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		}
+		boolean[] added = new boolean[count];
+		try {
+			storeTriplesAlignedDirect(subj, pred, obj, context, count, explicit, null, added);
+		} catch (MapFullException mapFull) {
+			resizeAndReplay(firstRecord, added);
+		} catch (IOException | RuntimeException | Error failure) {
+			markMutationFailure(failure);
+			throw failure;
+		}
+		int addedCount = 0;
+		for (int i = 0; i < count; i++) {
+			if (added[i]) {
+				addedCount++;
+				if (addedIndexConsumer != null) {
+					try {
+						addedIndexConsumer.accept(i);
+					} catch (RuntimeException | Error callbackFailure) {
+						markMutationFailure(callbackFailure);
+						throw callbackFailure;
+					}
+				}
+			}
+		}
+		if (addedCount > 0) {
+			nativeMutation = true;
+			tripleMutation = true;
+		}
+		logAddedStatements(addedCount);
+	}
+
+	private void storeTriplesAlignedDirect(long[] subj, long[] pred, long[] obj, long[] context, int count,
+			boolean explicit, IntConsumer addedIndexConsumer, boolean[] addedResults) throws IOException {
 		if (count == 0) {
 			return;
 		}
-		if (count == 1 || count < subj.length || recordCache != null || requiresResize()) {
+		boolean[] addedFlags = addedResults == null ? new boolean[count] : addedResults;
+		if (count == 1) {
 			storeTriplesIndividually(subj, pred, obj, context, 0, count, explicit, addedIndexConsumer);
 			return;
 		}
 
 		TripleIndex mainIndex = indexes.getFirst();
 		int addedCount = 0;
-		int remainingStart = count;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer cursorHandle = REUSE_SECONDARY_WRITE_CURSOR
 					? stack.mallocPointer(1)
@@ -1234,13 +2231,19 @@ class TripleStore implements Closeable {
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			int[] sortedIndices = new int[count];
+			int[] inputOrder = new int[count];
+			for (int i = 0; i < count; i++) {
+				inputOrder[i] = i;
+			}
+			// Native writes follow the primary index; callbacks, duplicate selection and replay retain input indexes.
+			sortStatementIndicesByLeadingField(inputOrder, count, mainIndex, subj, pred, obj, context);
 			boolean[] promotedFromImplicit = new boolean[count];
 			LongIntHashMap contextIncrements = new LongIntHashMap();
 
-			for (int i = 0; i < count; i++) {
+			for (int position = 0; position < count; position++) {
+				int i = inputOrder[position];
 				if (shouldFallBackFromAlignedWrite()) {
-					remainingStart = i;
-					break;
+					throw new MapFullException();
 				}
 				keyBuf.clear();
 				mainIndex.toKey(keyBuf, subj[i], pred[i], obj[i], context[i]);
@@ -1249,44 +2252,34 @@ class TripleStore implements Closeable {
 
 				int rc = mdb_put(writeTxn, mainIndex.getDB(explicit), keyVal, dataVal, MDB_NOOVERWRITE);
 				if (rc == MDB_MAP_FULL && autoGrow) {
-					remainingStart = i;
-					break;
+					throw new MapFullException();
 				}
 				if (rc != MDB_SUCCESS && rc != MDB_KEYEXIST) {
-					throw new IOException(mdb_strerror(rc));
+					checkMutationResult(rc);
 				}
 
 				if (rc == MDB_SUCCESS) {
-					if (addedIndexConsumer != null) {
-						addedIndexConsumer.accept(i);
-					}
+					addedFlags[i] = true;
 					sortedIndices[addedCount++] = i;
 					if (explicit) {
-						promotedFromImplicit[i] = mdb_del(writeTxn, mainIndex.getDB(false), keyVal,
-								dataVal) == MDB_SUCCESS;
+						int deleteResult = mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal);
+						if (deleteResult != MDB_SUCCESS && deleteResult != MDB_NOTFOUND) {
+							checkMutationResult(deleteResult);
+						}
+						promotedFromImplicit[i] = deleteResult == MDB_SUCCESS;
 					}
-					contextIncrements.addToValue(context[i], 1);
+					if (!promotedFromImplicit[i]) {
+						contextIncrements.addToValue(context[i], 1);
+					}
 				}
 			}
 
 			int[] mainOrderIndices = Arrays.copyOf(sortedIndices, addedCount);
-			LongIntHashMap appliedContextIncrements = new LongIntHashMap();
-			try {
-				LongIterator contextIterator = contextIncrements.keysView().longIterator();
-				while (contextIterator.hasNext()) {
-					long contextId = contextIterator.next();
-					int increment = contextIncrements.get(contextId);
-					incrementAlignedContext(stack, contextId, increment);
-					appliedContextIncrements.addToValue(contextId, increment);
-				}
-			} catch (IOException e) {
-				if (!shouldFallBackFromAlignedContextWrite(e)) {
-					throw e;
-				}
-				fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-						promotedFromImplicit, remainingStart, count, explicit, appliedContextIncrements,
-						addedIndexConsumer);
-				return;
+			LongIterator contextIterator = contextIncrements.keysView().longIterator();
+			while (contextIterator.hasNext()) {
+				long contextId = contextIterator.next();
+				int increment = contextIncrements.get(contextId);
+				incrementAlignedContext(stack, contextId, increment);
 			}
 
 			char[] currentFieldSeq = mainIndex.getFieldSeq();
@@ -1310,42 +2303,38 @@ class TripleStore implements Closeable {
 					keyVal.mv_data(keyBuf);
 
 					if (promotedFromImplicit[statementIndex]) {
-						E(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
+						checkMutationResult(mdb_del(writeTxn, index.getDB(false), keyVal, dataVal));
 					}
 					if (shouldFallBackFromAlignedWrite()) {
-						fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-								promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-								addedIndexConsumer);
-						return;
+						throw new MapFullException();
 					}
 					if (REUSE_SECONDARY_WRITE_CURSOR) {
 						int rc = mdb_cursor_put(secondaryWriteCursor, keyVal, dataVal, 0);
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
-						}
-						E(rc);
+						checkMutationResult(rc);
 					} else {
 						int rc = mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0);
-						if (rc == MDB_MAP_FULL && autoGrow) {
-							fallBackFromAlignedWrite(mainOrderIndices, addedCount, subj, pred, obj, context,
-									promotedFromImplicit, remainingStart, count, explicit, contextIncrements,
-									addedIndexConsumer);
-							return;
-						}
-						E(rc);
+						checkMutationResult(rc);
 					}
 				}
 			}
 		}
 
-		if (remainingStart < count) {
-			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
+		if (addedIndexConsumer != null && addedResults == null) {
+			for (int i = 0; i < count; i++) {
+				if (addedFlags[i]) {
+					try {
+						addedIndexConsumer.accept(i);
+					} catch (RuntimeException | Error callbackFailure) {
+						markMutationFailure(callbackFailure);
+						throw callbackFailure;
+					}
+				}
+			}
 		}
-
-		logAddedStatements(addedCount);
+		if (addedCount > 0) {
+			nativeMutation = true;
+			tripleMutation = true;
+		}
 	}
 
 	private void storeTriplesIndividually(long[] subj, long[] pred, long[] obj, long[] context, int startIndex,
@@ -1359,36 +2348,7 @@ class TripleStore implements Closeable {
 	}
 
 	private boolean shouldFallBackFromAlignedWrite() {
-		return recordCache != null || requiresResize();
-	}
-
-	private void fallBackFromAlignedWrite(int[] addedStatementIndices, int addedCount, long[] subj, long[] pred,
-			long[] obj, long[] context, boolean[] promotedFromImplicit, int remainingStart, int count, boolean explicit,
-			LongIntHashMap contextIncrementsToUndo, IntConsumer addedIndexConsumer)
-			throws IOException {
-		undoContextIncrements(contextIncrementsToUndo);
-		if (recordCache == null) {
-			recordCache = new TxnRecordCache(dir);
-			logger.debug("resize of map size {} required while bulk adding - initialize record cache", mapSize);
-		}
-		for (int i = 0; i < addedCount; i++) {
-			int statementIndex = addedStatementIndices[i];
-			long statementSubj = subj[statementIndex];
-			long statementPred = pred[statementIndex];
-			long statementObj = obj[statementIndex];
-			long statementContext = context[statementIndex];
-			if (explicit && promotedFromImplicit[statementIndex]) {
-				long[] quad = new long[] { statementSubj, statementPred, statementObj, statementContext };
-				recordCache.removeRecord(quad, false, true);
-				recordCache.storeRecord(quad, true, true);
-			} else {
-				recordCache.storeRecord(new long[] { statementSubj, statementPred, statementObj, statementContext },
-						explicit, true);
-			}
-		}
-		if (remainingStart < count) {
-			storeTriplesIndividually(subj, pred, obj, context, remainingStart, count, explicit, addedIndexConsumer);
-		}
+		return requiresResize();
 	}
 
 	void sortStatementIndicesByLeadingField(int[] statementIndices, int length, TripleIndex index, long[] subj,
@@ -1491,23 +2451,6 @@ class TripleStore implements Closeable {
 		incrementContext(stack, context, amount);
 	}
 
-	private boolean shouldFallBackFromAlignedContextWrite(IOException e) {
-		return autoGrow && e.getMessage() != null && e.getMessage().contains("MDB_MAP_FULL");
-	}
-
-	private void undoContextIncrements(LongIntHashMap contextIncrements) throws IOException {
-		if (contextIncrements == null) {
-			return;
-		}
-		try (MemoryStack stack = MemoryStack.stackPush()) {
-			LongIterator contextIterator = contextIncrements.keysView().longIterator();
-			while (contextIterator.hasNext()) {
-				long contextId = contextIterator.next();
-				decrementContext(stack, contextId, contextIncrements.get(contextId));
-			}
-		}
-	}
-
 	private void incrementContext(MemoryStack stack, long context) throws IOException {
 		incrementContext(stack, context, 1);
 	}
@@ -1531,7 +2474,7 @@ class TripleStore implements Closeable {
 			ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
 			Varint.writeUnsigned(countBb, newCount);
 			dataVal.mv_data(countBb.flip());
-			E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
+			checkMutationResult(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
 		} finally {
 			stack.pop();
 		}
@@ -1555,14 +2498,14 @@ class TripleStore implements Closeable {
 				// update count
 				long newCount = Varint.readUnsigned(dataVal.mv_data()) - amount;
 				if (newCount <= 0) {
-					E(mdb_del(writeTxn, contextsDbi, idVal, null));
+					checkMutationResult(mdb_del(writeTxn, contextsDbi, idVal, null));
 					return true;
 				} else {
 					// write count
 					ByteBuffer countBb = stack.malloc(Varint.calcLengthUnsigned(newCount));
 					Varint.writeUnsigned(countBb, newCount);
 					dataVal.mv_data(countBb.flip());
-					E(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
+					checkMutationResult(mdb_put(writeTxn, contextsDbi, idVal, dataVal, 0));
 				}
 			}
 			return false;
@@ -1584,104 +2527,205 @@ class TripleStore implements Closeable {
 	 */
 	public void removeTriplesByContext(long subj, long pred, long obj, long context,
 			boolean explicit, Consumer<long[]> handler) throws IOException {
-		RecordIterator records = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
-		removeTriples(records, explicit, handler);
+		checkReplayFailure();
+		if (writeTxn == 0) {
+			throw new IllegalStateException("Mutation requires an active TripleStore write transaction");
+		}
+		while (true) {
+			if (autoGrow) {
+				prepareForMutation();
+			}
+			boolean retryScan = false;
+			long mapFullRecord = -1;
+			long[] mapFullQuad = null;
+			RecordIterator iterator = getTriples(txnManager.createTxn(writeTxn), subj, pred, obj, context, explicit);
+			try (iterator) {
+				long[] quad;
+				while ((quad = iterator.next()) != null) {
+					if (usesReplayJournal()) {
+						mapFullRecord = mutationJournal.mark();
+						try {
+							mutationJournal.appendRemove(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+									quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
+						} catch (IOException | RuntimeException | Error failure) {
+							markMutationFailure(failure);
+							throw failure;
+						}
+					}
+					try {
+						removeQuadDirect(quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
+								quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX], explicit);
+					} catch (MapFullException mapFull) {
+						if (isFrozenReplay()) {
+							throw frozenCapacity(mapFull);
+						}
+						mapFullQuad = quad.clone();
+						retryScan = true;
+						break;
+					} catch (IOException | RuntimeException | Error failure) {
+						markMutationFailure(failure);
+						throw failure;
+					}
+					nativeMutation = true;
+					tripleMutation = true;
+					try {
+						handler.accept(quad);
+					} catch (RuntimeException | Error callbackFailure) {
+						markMutationFailure(callbackFailure);
+						throw callbackFailure;
+					}
+				}
+			}
+			if (retryScan) {
+				resizeAndReplay(mapFullRecord, null);
+				nativeMutation = true;
+				tripleMutation = true;
+				try {
+					handler.accept(mapFullQuad);
+				} catch (RuntimeException | Error callbackFailure) {
+					markMutationFailure(callbackFailure);
+					throw callbackFailure;
+				}
+				continue;
+			}
+			return;
+		}
 	}
 
-	public void removeTriples(RecordIterator it, boolean explicit, Consumer<long[]> handler) throws IOException {
-		try (it; MemoryStack stack = MemoryStack.stackPush()) {
-			MDBVal keyValue = MDBVal.calloc(stack);
-			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+	/** Capture a bounded native continuation and close its query cursor before any mutation/checkpoint. */
+	long[][] collectNativeChunkRemovals(long subj, long pred, long obj, long context, boolean explicit, int limit)
+			throws IOException {
+		return collectNativeChunkQuads(subj, pred, obj, context, explicit, limit, null);
+	}
 
+	long[][] collectNativeChunkQuads(long subj, long pred, long obj, long context, boolean explicit, int limit,
+			long[] after) throws IOException {
+		checkReplayFailure();
+		if (writeTxn == 0 || replayDecision == null || !replayDecision.checkpoint) {
+			throw new IllegalStateException("Bounded removals require the NONE native checkpoint writer");
+		}
+		List<long[]> quads = new ArrayList<>(limit);
+		TripleIndex index = TripleIndex.getBestIndex(indexes, subj, pred, obj, context);
+		try (LmdbRecordIterator iterator = new LmdbRecordIterator(index,
+				index.getPatternScore(subj, pred, obj, context) > 0, subj, pred, obj, context, explicit,
+				txnManager.createTxn(writeTxn))) {
+			if (after != null) {
+				iterator.resumeAfter(after);
+			}
 			long[] quad;
-			while ((quad = it.next()) != null) {
-				if (recordCache == null) {
-					if (requiresResize()) {
-						// map is full, resize required
-						recordCache = new TxnRecordCache(dir);
-						logger.debug("resize of map size {} required while removing - initialize record cache",
-								mapSize);
-					}
-				}
-				if (recordCache != null) {
-					recordCache.removeRecord(quad, explicit, true);
-					handler.accept(quad);
-					continue;
-				}
-
-				for (TripleIndex index : indexes) {
-					keyBuf.clear();
-					index.toKey(keyBuf, quad[TripleIndex.SUBJ_IDX], quad[TripleIndex.PRED_IDX],
-							quad[TripleIndex.OBJ_IDX], quad[TripleIndex.CONTEXT_IDX]);
-					keyBuf.flip();
-					// update buffer positions in MDBVal
-					keyValue.mv_data(keyBuf);
-
-					E(mdb_del(writeTxn, index.getDB(explicit), keyValue, null));
-				}
-
-				decrementContext(stack, quad[TripleIndex.CONTEXT_IDX]);
-				handler.accept(quad);
+			while (quads.size() < limit && (quad = iterator.next()) != null) {
+				quads.add(quad.clone());
 			}
+		}
+		return quads.toArray(long[][]::new);
+	}
+
+	void removeNativeChunkQuads(long[][] quads, boolean explicit, IntConsumer handler) throws IOException {
+		for (int i = 0; i < quads.length; i++) {
+			long[] quad = quads[i];
+			if (quad == null) {
+				continue;
+			}
+			prepareForMutation(estimateTripleMutationBytes(quad[0], quad[1], quad[2], quad[3]));
+			boolean removed;
+			try {
+				removed = removeQuadDirect(quad[0], quad[1], quad[2], quad[3], explicit);
+			} catch (MapFullException capacity) {
+				if (isFrozenReplay()) {
+					throw frozenCapacity(capacity);
+				}
+				throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, capacity);
+			}
+			if (!removed) {
+				continue;
+			}
+			nativeMutation = true;
+			tripleMutation = true;
+			handler.accept(i);
 		}
 	}
 
-	protected void updateFromCache() throws IOException {
-		recordCache.commit();
-		for (boolean explicit : new boolean[] { true, false }) {
-			RecordCacheIterator it = recordCache.getRecords(explicit);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				PointerBuffer pp = stack.mallocPointer(1);
-				MDBVal keyVal = MDBVal.malloc(stack);
-				// use calloc to get an empty data value
-				MDBVal dataVal = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-
-				Record r;
-				while ((r = it.next()) != null) {
-					if (requiresResize()) {
-						// resize map if required
-						E(mdb_txn_commit(writeTxn));
-						mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-						E(setMapSize(mapSize));
-						logger.debug("resized map to {}", mapSize);
-						E(mdb_txn_begin(env, NULL, 0, pp));
-						writeTxn = pp.get(0);
-					}
-
-					for (TripleIndex index : indexes) {
-						keyBuf.clear();
-						index.toKey(keyBuf, r.quad[0], r.quad[1], r.quad[2], r.quad[3]);
-						keyBuf.flip();
-						// update buffer positions in MDBVal
-						keyVal.mv_data(keyBuf);
-
-						if (r.add) {
-							E(mdb_put(writeTxn, index.getDB(explicit), keyVal, dataVal, 0));
-						} else {
-							E(mdb_del(writeTxn, index.getDB(explicit), keyVal, null));
-						}
-					}
-
-					if (r.contextDelta) {
-						if (r.add) {
-							incrementContext(stack, r.quad[TripleIndex.CONTEXT_IDX]);
-						} else {
-							decrementContext(stack, r.quad[TripleIndex.CONTEXT_IDX]);
-						}
-					}
-				}
+	private boolean removeQuadDirect(long subj, long pred, long obj, long context, boolean explicit)
+			throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBVal keyValue = MDBVal.calloc(stack);
+			MDBVal ignored = MDBVal.calloc(stack);
+			ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			TripleIndex first = indexes.getFirst();
+			first.toKey(keyBuf, subj, pred, obj, context);
+			keyValue.mv_data(keyBuf.flip());
+			int existing = mdb_get(writeTxn, first.getDB(explicit), keyValue, ignored);
+			if (existing == MDB_NOTFOUND) {
+				return false;
 			}
+			E(existing);
+			for (TripleIndex index : indexes) {
+				keyBuf.clear();
+				index.toKey(keyBuf, subj, pred, obj, context);
+				keyBuf.flip();
+				keyValue.mv_data(keyBuf);
+				int result = mdb_del(writeTxn, index.getDB(explicit), keyValue, null);
+				checkMutationResult(result);
+			}
+			decrementContext(stack, context);
+			return true;
 		}
-		recordCache.close();
 	}
 
 	public void startTransaction() throws IOException {
+		startTransaction(prepareReplayDecision());
+	}
+
+	TxnReplayPolicy.Decision prepareReplayDecision() {
+		if (replayPolicy != null && valueStore != null
+				&& valueEnvironmentGeneration != valueStore.environmentGeneration()) {
+			valueEnvironmentGeneration = valueStore.environmentGeneration();
+			replayPolicy.capacityFailure();
+		}
+		long valueMap = valueStore == null ? 0L : valueStore.replayMapSize();
+		long valueHighWater = valueStore == null ? 0L : valueStore.committedHighWaterBytes();
+		long valueGeneration = valueStore == null ? 0L : valueStore.mutationGeneration();
+		boolean knownHighWater = committedHighWaterBytes != Long.MAX_VALUE && valueHighWater != Long.MAX_VALUE;
+		if (!knownHighWater && replayPolicy != null) {
+			replayPolicy.capacityFailure();
+		}
+		boolean track = autoGrow && (replayPolicy == null
+				|| replayPolicy.shouldTrack(mapSize, committedHighWaterBytes, valueMap, valueHighWater));
+		return new TxnReplayPolicy.Decision(replayPolicy, track,
+				replayPolicy != null && valueStore != null && knownHighWater,
+				committedHighWaterBytes, valueHighWater, valueGeneration);
+	}
+
+	void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+		checkReplayFailure();
+		decision.check();
 		closeAlignedWriteCursors();
+		if (writeTxn != 0) {
+			throw new IllegalStateException("A TripleStore writer transaction is already active");
+		}
+		if (mutationJournal != null || mutationFailure != null) {
+			throw new IllegalStateException(
+					"A failed TripleStore transaction must be completed before starting another");
+		}
+		mutationFailure = null;
+		nativeMutation = false;
+		tripleMutation = false;
+		mutationJournal = null;
+		replayDecision = decision;
+		if (valueStore != null) {
+			valueStore.setReplayDecision(decision);
+		}
+		beginNativeWriteTransaction();
+		replayProjectedUsedBytes = LmdbUtil.getNewSize(pageSize, writeTxn, 0L);
+	}
+
+	private void refreshCommittedHighWater() throws IOException {
+		committedHighWaterBytes = Long.MAX_VALUE;
 		try (MemoryStack stack = stackPush()) {
-			PointerBuffer pp = stack.mallocPointer(1);
-			E(mdb_txn_begin(env, NULL, 0, pp));
-			writeTxn = pp.get(0);
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			long nextPage = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
+			committedHighWaterBytes = saturatedMultiply(nextPage, pageSize);
 		}
 	}
 
@@ -1689,70 +2733,143 @@ class TripleStore implements Closeable {
 	 * Closes the snapshot and the DB iterator if any was opened in the current transaction
 	 */
 	void endTransaction(boolean commit) throws IOException {
-		if (writeTxn != 0) {
+		endTransaction(commit, true);
+	}
+
+	private void endTransaction(boolean commit, boolean advanceDataRevision) throws IOException {
+		if (writeTxn != 0 || mutationJournal != null || mutationFailure != null || replayDecision != null) {
+			Throwable failure = null;
+			boolean committed = false;
 			try {
-				closeAlignedWriteCursors();
-				if (commit) {
-					var lockManager = txnManager.lockManager();
-					long stamp;
-					try {
-						stamp = lockManager.writeLock();
-					} catch (InterruptedException e) {
-						throw new SailException(e);
+				if (commit && replayDecision != null) {
+					replayDecision.check();
+				}
+				if (writeTxn != 0) {
+					closeAlignedWriteCursors();
+					if (commit && mutationFailure != null) {
+						throw new IOException("Cannot commit a TripleStore transaction after a failed mutation",
+								mutationFailure);
 					}
-					try {
-						E(mdb_txn_commit(writeTxn));
-						if (recordCache != null) {
-							try {
-								txnManager.deactivate();
-								mapSize = LmdbUtil.autoGrowMapSize(mapSize, pageSize, 0);
-								E(setMapSize(mapSize));
-								logger.debug("resized map to {}", mapSize);
-								// restart write transaction
-								try (MemoryStack stack = stackPush()) {
-									PointerBuffer pp = stack.mallocPointer(1);
-									E(mdb_txn_begin(env, NULL, 0, pp));
-									writeTxn = pp.get(0);
-								}
-								updateFromCache();
-								// finally, commit write transaction
-								E(mdb_txn_commit(writeTxn));
-							} finally {
-								recordCache = null;
-								txnManager.activate();
-							}
-						} else {
-							// invalidate open read transaction so that they are not re-used
-							// otherwise iterators won't see the updated data
-							txnManager.reset();
-						}
-						dataRevision.incrementAndGet();
-					} catch (IOException e) {
-						// abort transaction if exception occurred while committing
+					if (!commit || !nativeMutation) {
 						mdb_txn_abort(writeTxn);
-						throw e;
-					} finally {
-						lockManager.unlockWrite(stamp);
+						writeTxn = 0;
+					} else {
+						while (true) {
+							var lockManager = txnManager.lockManager();
+							long stamp;
+							try {
+								stamp = lockManager.writeLock();
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new IOException("Interrupted while committing the TripleStore transaction", e);
+							}
+							int result;
+							try {
+								closeAlignedWriteCursors();
+								long transaction = writeTxn;
+								replayProjectedUsedBytes = Math.max(replayProjectedUsedBytes,
+										LmdbUtil.getNewSize(pageSize, transaction, 0L));
+								writeTxn = 0;
+								result = commitWriteTransaction(transaction);
+								if (result == MDB_SUCCESS) {
+									nativeCommitGeneration.incrementAndGet();
+									committed = true;
+									if (advanceDataRevision && tripleMutation) {
+										dataRevision.incrementAndGet();
+									}
+									try {
+										// Native commit can allocate named-DB/freelist pages after its last mutation.
+										refreshCommittedHighWater();
+										if (replayDecision != null && replayDecision.observe) {
+											replayPolicy.committed(
+													Math.max(0L,
+															committedHighWaterBytes - replayDecision.tripleHighWater),
+													nativeMutation,
+													Math.max(0L,
+															valueStore.committedHighWaterBytes()
+																	- replayDecision.valueHighWater),
+													valueStore
+															.mutationGeneration() != replayDecision.valueMutationGeneration,
+													replayDecision.track);
+										}
+									} finally {
+										txnManager.reset();
+									}
+								}
+							} finally {
+								lockManager.unlockWrite(stamp);
+							}
+							if (result == MDB_SUCCESS) {
+								break;
+							}
+							if (result != MDB_MAP_FULL || !autoGrow) {
+								E(result);
+							}
+							if (isFrozenReplay()) {
+								throw frozenCapacity(new MapFullException());
+							}
+							if (replayDecision != null && replayDecision.checkpoint) {
+								throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
+							}
+							resizeAndReplay(-1, null);
+						}
 					}
-				} else {
+				} else if (commit && mutationFailure != null) {
+					throw new IOException("Cannot commit a TripleStore transaction after a failed mutation",
+							mutationFailure);
+				}
+			} catch (IOException | RuntimeException | Error e) {
+				failure = e;
+			} finally {
+				if (writeTxn != 0 && (!commit || !committed)) {
 					mdb_txn_abort(writeTxn);
 				}
-			} finally {
 				writeTxn = 0;
-				// ensure that record cache is always reset
-				if (recordCache != null) {
+				TxnMutationJournal journal = mutationJournal;
+				mutationJournal = null;
+				mutationFailure = null;
+				nativeMutation = false;
+				tripleMutation = false;
+				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
+					if (valueStore != null) {
+						valueStore.clearReplayDecision(replayDecision);
+					}
+					replayDecision = null;
+				}
+				if (journal != null) {
 					try {
-						recordCache.close();
-					} finally {
-						recordCache = null;
+						journal.close();
+					} catch (IOException closeFailure) {
+						if (failure == null) {
+							failure = closeFailure;
+						} else {
+							failure.addSuppressed(closeFailure);
+						}
 					}
 				}
+			}
+			if (failure instanceof IOException io) {
+				throw io;
+			}
+			if (failure instanceof RuntimeException runtimeException) {
+				throw runtimeException;
+			}
+			if (failure instanceof Error error) {
+				throw error;
 			}
 		}
 	}
 
 	public void commit() throws IOException {
 		endTransaction(true);
+	}
+
+	int commitWriteTransaction(long transaction) {
+		return mdb_txn_commit(transaction);
+	}
+
+	private void commit(boolean advanceDataRevision) throws IOException {
+		endTransaction(true, advanceDataRevision);
 	}
 
 	public void rollback() throws IOException {

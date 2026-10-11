@@ -15,9 +15,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import java.util.HashMap;
+import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -32,6 +36,91 @@ import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class BindingSetAssignmentQueryEvaluationStepTest {
+
+	@Test
+	void preparesRepeatableInputsOnlyOnDemandAndRetainsOwnedValues() {
+		BindingSet first = binding("x", "first");
+		BindingSet second = binding("x", "second");
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(first, second));
+		AtomicInteger captures = new AtomicInteger();
+		Function<Value, Value> preparer = copyingPreparer(captures);
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null), preparer);
+
+		assertThat(captures).hasValue(0);
+		Value preparedFirst;
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			preparedFirst = rows.next().getValue("x");
+			assertThat(preparedFirst).isEqualTo(first.getValue("x")).isNotSameAs(first.getValue("x"));
+			assertThat(captures).hasValue(1);
+		}
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.next().getValue("x")).isSameAs(preparedFirst);
+			assertThat(captures).hasValue(1);
+			assertThat(rows.next().getValue("x")).isEqualTo(second.getValue("x")).isNotSameAs(second.getValue("x"));
+		}
+		assertThat(captures).hasValue(2);
+		assertThat(first.getValue("x").stringValue()).isEqualTo("first");
+	}
+
+	@Test
+	void preparedInputsKeepUndefSlotsOutOfResults() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("x", "undef"),
+				SimpleValueFactory.getInstance().createLiteral("first"), null)));
+		AtomicInteger captures = new AtomicInteger();
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null), copyingPreparer(captures));
+
+		assertThat(results(step.evaluate(EmptyBindingSet.getInstance()))).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactly("x");
+			assertThat(row.getValue("x").stringValue()).isEqualTo("first");
+		});
+		assertThat(captures).hasValue(1);
+	}
+
+	@Test
+	void preparesOpaqueRecycledRowsWithoutSpeculativePulls() {
+		AtomicInteger pulls = new AtomicInteger();
+		MapBindingSet recycled = new MapBindingSet();
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(() -> new Iterator<>() {
+			@Override
+			public boolean hasNext() {
+				return pulls.get() < 2;
+			}
+
+			@Override
+			public BindingSet next() {
+				recycled.setBinding("x",
+						SimpleValueFactory.getInstance().createLiteral("row" + pulls.incrementAndGet()));
+				return recycled;
+			}
+		});
+		AtomicInteger captures = new AtomicInteger();
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null), copyingPreparer(captures));
+		assertThat(pulls).hasValue(0);
+		try (CloseableIteration<BindingSet> rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(pulls).hasValue(0);
+			BindingSet first = rows.next();
+			assertThat(pulls).hasValue(1);
+			BindingSet second = rows.next();
+			assertThat(first.getValue("x").stringValue()).isEqualTo("row1");
+			assertThat(second.getValue("x").stringValue()).isEqualTo("row2");
+			assertThat(captures).hasValue(2);
+		}
+	}
+
+	private static Function<Value, Value> copyingPreparer(AtomicInteger captures) {
+		Map<Value, Value> copies = new IdentityHashMap<>();
+		return value -> copies.computeIfAbsent(value, original -> {
+			captures.incrementAndGet();
+			return SimpleValueFactory.getInstance().createLiteral(original.stringValue());
+		});
+	}
 
 	@Test
 	void repeatableRowsCheckOverlapsOutsideTheDeclaredHeader() {

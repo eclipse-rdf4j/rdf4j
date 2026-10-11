@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbCacheImplementation;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -54,23 +55,30 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 10, time = 1, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 3, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
+@Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	@Param({ "NONE", "READ_COMMITTED", "SNAPSHOT_READ", "SNAPSHOT", "SERIALIZABLE" })
+//	@Param({ "NONE", "READ_COMMITTED" })
+	@Param({ "NONE" })
 	public IsolationLevels isolationLevel;
 
-	@Param({ "256" })
+	@Param({ "1024" })
 	public int bulkOperationSize;
 
 	@Param({ "true" })
 	public boolean automaticEvaluationStrategy;
+
+	@Param({ "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT", "ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
+			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT", "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT",
+			"ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
+			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT" })
+	public LmdbCacheImplementation cacheImplementation;
 
 	private Model data;
 	private File temporaryFolder;
@@ -84,10 +92,10 @@ public class DatagovLoadIsolationBenchmark {
 				"dataset resource not found: " + DATA_FILE)) {
 			this.data = Rio.parse(resourceAsStream, "", RDFFormat.TURTLE);
 		}
-		System.gc();
-		Thread.sleep(100);
-		System.gc();
-		Thread.sleep(100);
+//		System.gc();
+//		Thread.sleep(100);
+//		System.gc();
+//		Thread.sleep(100);
 	}
 
 	public static void main(String[] args) throws RunnerException {
@@ -104,15 +112,15 @@ public class DatagovLoadIsolationBenchmark {
 		return loadOnce(createBenchmarkConfig());
 	}
 
-	@Benchmark
-	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
-		return loadOnce(createBenchmarkConfigAllIndexes());
-	}
-
-	@Benchmark
-	public boolean loadDatagovFileInBatches() throws IOException {
-		return loadDatagovFileInBatchesInternal();
-	}
+//	@Benchmark
+//	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
+//		return loadOnce(createBenchmarkConfigAllIndexes());
+//	}
+//
+//	@Benchmark
+//	public boolean loadDatagovFileInBatches() throws IOException {
+//		return loadDatagovFileInBatchesInternal();
+//	}
 
 	private boolean loadDatagovFileInBatchesInternal() throws IOException {
 		temporaryFolder = Files.newTemporaryFolder();
@@ -162,18 +170,39 @@ public class DatagovLoadIsolationBenchmark {
 		}
 	}
 
-	private LmdbStoreConfig createBenchmarkConfig() {
+	LmdbStoreConfig createBenchmarkConfig() {
 		return configure(ConfigUtil.createConfig().setBulkOperationSize(bulkOperationSize));
 	}
 
-	private LmdbStoreConfig createBenchmarkConfigAllIndexes() {
+	LmdbStoreConfig createBenchmarkConfigAllIndexes() {
 		return configure(ConfigUtil.createAllIndexesConfig().setBulkOperationSize(bulkOperationSize));
 	}
 
 	private LmdbStoreConfig configure(LmdbStoreConfig config) {
+		config.setCacheImplementation(cacheImplementation);
 		if (!automaticEvaluationStrategy) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
 		return config;
 	}
+
+	final class ConfigUtil {
+		private static final String DEFAULT_TRIPLE_INDEXES = "spoc,ospc,psoc,posc";
+		private static final String ALL_TRIPLE_INDEXES = "spoc,psoc,sopc,opsc,posc,ospc";
+
+		static LmdbStoreConfig createConfig() {
+			return createConfig(DEFAULT_TRIPLE_INDEXES);
+		}
+
+		static LmdbStoreConfig createAllIndexesConfig() {
+			return createConfig(ALL_TRIPLE_INDEXES);
+		}
+
+		private static LmdbStoreConfig createConfig(String tripleIndexes) {
+			LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes);
+			config.setForceSync(false);
+			return config;
+		}
+	}
+
 }

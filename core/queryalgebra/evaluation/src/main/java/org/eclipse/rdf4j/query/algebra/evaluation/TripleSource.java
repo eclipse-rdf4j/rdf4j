@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.Comparator;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -143,4 +144,26 @@ public interface TripleSource extends AvailableStatementOrder {
 	 * @return a ValueFactory object for this TripleSource.
 	 */
 	ValueFactory getValueFactory();
+
+	/**
+	 * Returns an optional preparer for query-owned statement-pattern inputs. A preparer may replace a value with an
+	 * equal store-native value and retain a lookup result for the current read view, including a missing identifier. It
+	 * must not mutate caller values or retain the closed read view through returned values. A null preparer leaves
+	 * ordinary values and factory conversion unchanged. When a capturer is also supplied, both functions belong to this
+	 * same captured read view and must accept one another's owned representations.
+	 */
+	default Function<Value, Value> getValuePreparer() {
+		return null;
+	}
+
+	/**
+	 * Returns optional capture of values produced inside a query into owned representations. Capture must not perform
+	 * dictionary lookup: a later statement-pattern preparation resolves any identifier that is actually needed. It must
+	 * preserve lexical equality without retaining mutable caller payloads or a closed native read view. It belongs to
+	 * the same captured read view as {@link #getValuePreparer()}, rather than the connection's later current
+	 * transaction.
+	 */
+	default Function<Value, Value> getValueCapturer() {
+		return null;
+	}
 }

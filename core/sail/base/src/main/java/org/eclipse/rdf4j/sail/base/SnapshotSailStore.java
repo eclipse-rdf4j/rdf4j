@@ -95,6 +95,10 @@ public class SnapshotSailStore implements SailStore {
 	 */
 	SailDataset datasetForRead(boolean inferred, IsolationLevel level) {
 		SailSource source = inferred ? getInferredSailSource() : getExplicitSailSource();
+		return datasetForRead(source, inferred, level);
+	}
+
+	SailDataset datasetForRead(SailSource source, boolean inferred, IsolationLevel level) {
 		SailSourceBranch root = inferred ? inferredAutoFlush : explicitAutoFlush;
 		return source == root ? root.datasetWithoutObservations(level)
 				: SourceClosingSailDataset.open(source.fork(), level);

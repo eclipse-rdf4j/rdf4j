@@ -34,8 +34,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Function;
+import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.util.MpmcRingBuffer;
@@ -98,6 +103,7 @@ final class TxnManager {
 
 	private final long env;
 	private final Mode mode;
+	private final LmdbSailStore.MapResizeKind mapResizeKind;
 
 	/** All live read transactions owned by this manager (identity semantics: Txn does not override equals). */
 	private final Set<Txn> open = ConcurrentHashMap.newKeySet();
@@ -107,6 +113,8 @@ final class TxnManager {
 	private final Semaphore readerSlots = new Semaphore(POOL_SIZE - 1, true);
 	/** Reserved for short callbacks whose caller already holds a transaction. */
 	private final Semaphore priorityReaderSlot = new Semaphore(1, true);
+	/** Ordinary permit demand advertised before the final pressure scan, through admission or cancellation. */
+	private final AtomicInteger ordinaryReaderAdmissions = new AtomicInteger();
 
 	private final ReentrantLock readersFullLock = new ReentrantLock();
 	private final Condition readerInactive = readersFullLock.newCondition();
@@ -114,13 +122,20 @@ final class TxnManager {
 	private final AtomicLong lastReaderCheck = new AtomicLong(Long.MIN_VALUE);
 
 	private final Pool[] pools = new Pool[CACHED_POOLS];
-	private final StampedLongAdderLockManager lockManager = new StampedLongAdderLockManager();
+	private final StampedLongAdderLockManager lockManager = new NativeBarrier();
 
 	private volatile boolean managerClosed;
+	// Deterministic admission-race seam; only the blocking path visits it.
+	volatile Runnable beforeBlockingReaderAdmissionForTest;
 
 	TxnManager(long env, Mode mode) throws IOException {
+		this(env, mode, null);
+	}
+
+	TxnManager(long env, Mode mode, LmdbSailStore.MapResizeKind mapResizeKind) throws IOException {
 		this.env = env;
 		this.mode = mode;
+		this.mapResizeKind = mapResizeKind;
 		this.txnPool = mode == Mode.RESET ? new MpmcRingBuffer<>(POOL_SIZE) : null;
 		for (int i = 0; i < pools.length; i++) {
 			pools[i] = new Pool();
@@ -165,31 +180,146 @@ final class TxnManager {
 	 * caller never has to poll the pool.
 	 */
 	Txn createReadTxnInternal(boolean resetOnWrite) throws IOException {
-		return createReadTxnInternal(resetOnWrite, false);
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore readerPermit = acquireReaderPermit(false, deadline);
+		long readStamp;
+		try {
+			readStamp = acquireReadBarrier(deadline);
+		} catch (InterruptedException e) {
+			releaseReaderPermit(readerPermit);
+			Thread.currentThread().interrupt();
+			throw new SailException("Interrupted while acquiring read lock", e);
+		} catch (RuntimeException | Error e) {
+			releaseReaderPermit(readerPermit);
+			throw e;
+		}
+		try {
+			return createReadTxnInternal(resetOnWrite, readerPermit, deadline);
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
 	}
 
-	private Txn createReadTxnInternal(boolean resetOnWrite, boolean priority) throws IOException {
+	/** Starts a resettable reader inside a native interval whose shared read barrier the caller already holds. */
+	Txn createReadTxnUnderReadLock() throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		return createReadTxnInternal(true, false, deadline);
+	}
+
+	private Txn createReadTxnInternal(boolean resetOnWrite, boolean priority, QueryExecutionDeadline deadline)
+			throws IOException {
 		checkNotClosed();
-		Semaphore readerPermit = acquireReaderPermit(priority);
+		Semaphore readerPermit = acquireReaderPermits(1, priority, deadline, true);
+		return createReadTxnInternal(resetOnWrite, readerPermit, deadline);
+	}
+
+	/**
+	 * Reserves a reader slot without starting its native transaction. Callers coordinating admission across multiple
+	 * stores can reserve all required slots before entering their publication gate, then start the transactions while
+	 * holding that gate.
+	 */
+	ReaderReservation reserveReadTxn(boolean resetOnWrite) throws IOException {
+		checkNotClosed();
+		return new ReaderReservation(resetOnWrite, acquireReaderPermit(false));
+	}
+
+	/** Opens a family of untracked readers pinned to one committed data revision. */
+	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
+		if (count <= 0) {
+			throw new IllegalArgumentException("pinned transaction family size must be positive: " + count);
+		}
+		if (count >= POOL_SIZE) {
+			throw new IOException("Pinned transaction family exceeds the ordinary reader capacity: " + count);
+		}
+
+		Txn[] transactions = new Txn[count];
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permits = acquireReaderPermits(count, false, deadline);
+		int unassigned = count;
+		int opened = 0;
+		long readStamp = 0;
+		boolean readLocked = false;
+		try {
+			try {
+				readStamp = acquireReadBarrier(deadline);
+				readLocked = true;
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while pinning a read transaction family", e);
+			}
+
+			long revision = dataRevision.getAsLong();
+			for (; opened < count; opened++) {
+				// Each transaction-start path owns and returns its assigned permit on failure.
+				unassigned--;
+				Txn transaction = createReadTxnInternal(false, permits, deadline);
+				transactions[opened] = transaction;
+				transaction.setSnapshotRevision(revision);
+				checkQueryDeadline(deadline);
+			}
+			checkQueryDeadline(deadline);
+			return transactions;
+		} catch (IOException | RuntimeException | Error e) {
+			for (int i = transactions.length - 1; i >= 0; i--) {
+				if (transactions[i] != null) {
+					transactions[i].close();
+				}
+			}
+			throw e;
+		} finally {
+			if (readLocked) {
+				lockManager.unlockRead(readStamp);
+			}
+			permits.release(unassigned);
+		}
+	}
+
+	/** Oldest active pinned-reader revision, or {@link Long#MAX_VALUE} when there are none. */
+	long minPinnedSnapshotRevision() {
+		long min = Long.MAX_VALUE;
+		for (Txn txn : open) {
+			long revision = txn.snapshotRevision();
+			if (!txn.isIdle() && !txn.isClosed() && revision >= 0 && revision < min) {
+				min = revision;
+			}
+		}
+		return min;
+	}
+
+	private Txn createReadTxnInternal(boolean resetOnWrite, Semaphore readerPermit,
+			QueryExecutionDeadline deadline) throws IOException {
+		return createReadTxnInternal(resetOnWrite, readerPermit, deadline, false);
+	}
+
+	private Txn createReadTxnInternal(boolean resetOnWrite, Semaphore readerPermit,
+			QueryExecutionDeadline deadline, boolean currentSnapshot) throws IOException {
 
 		boolean permitConsumed = false;
 		try {
+			checkQueryDeadline(deadline);
+			checkNotClosed();
 			// Fast path: recycle an idle reader. The permit guarantees that either the pool is non-empty or that
 			// starting a new transaction stays within POOL_SIZE.
 			Txn pooled = pollPooled();
 			if (pooled != null) {
 				try {
-					pooled.reuse(resetOnWrite, readerPermit);
-				} catch (IOException | RuntimeException e) {
+					pooled.reuse(resetOnWrite, readerPermit, currentSnapshot);
+				} catch (IOException | RuntimeException | Error e) {
 					discardPooled(pooled);
 					throw e;
 				}
 				permitConsumed = true;
+				try {
+					checkQueryDeadline(deadline);
+				} catch (RuntimeException | Error e) {
+					pooled.close();
+					throw e;
+				}
 				return pooled;
 			}
 
 			checkNotClosed();
-			Txn txn = new Txn(startReadTxn(), /* owned= */ true, resetOnWrite, readerPermit);
+			Txn txn = new Txn(startReadTxn(deadline), /* owned= */ true, resetOnWrite, readerPermit);
 			open.add(txn);
 			if (managerClosed) {
 				// lost the race against close(): do not leak the native transaction
@@ -199,10 +329,121 @@ final class TxnManager {
 				throw new IOException("Transaction manager is closed");
 			}
 			permitConsumed = true;
+			try {
+				checkQueryDeadline(deadline);
+			} catch (RuntimeException | Error e) {
+				txn.close();
+				throw e;
+			}
 			return txn;
 		} finally {
 			if (!permitConsumed) {
 				releaseReaderPermit(readerPermit);
+			}
+		}
+	}
+
+	/** A pre-acquired reader permit that can be consumed exactly once to start a transaction. */
+	final class ReaderReservation implements AutoCloseable {
+		private final boolean resetOnWrite;
+		private Semaphore readerPermit;
+
+		private ReaderReservation(boolean resetOnWrite, Semaphore readerPermit) {
+			this.resetOnWrite = resetOnWrite;
+			this.readerPermit = readerPermit;
+		}
+
+		/**
+		 * Starts the reserved transaction and transfers permit ownership to it. On failure the permit is returned by
+		 * the transaction-start path; a failed admission consumes the reservation and returns its permit.
+		 */
+		synchronized Txn start() throws IOException {
+			return startPinned(null);
+		}
+
+		/** Starts this reservation and stamps the transaction before releasing the manager read lock. */
+		synchronized Txn startPinned(LongSupplier dataRevision) throws IOException {
+			return startPinned(dataRevision, Function.identity());
+		}
+
+		/** Captures caller-owned snapshot metadata before releasing the native-operation barrier. */
+		synchronized <T> T startPinned(LongSupplier dataRevision, Function<Txn, T> snapshotFactory) throws IOException {
+			if (readerPermit == null) {
+				throw new IllegalStateException("Reader reservation has already been consumed or closed");
+			}
+			if (dataRevision != null && resetOnWrite) {
+				throw new IllegalStateException("A pinned read transaction must be untracked for write commits");
+			}
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			Semaphore permit = readerPermit;
+			readerPermit = null;
+			long readStamp;
+			try {
+				readStamp = acquireReadBarrier(deadline);
+			} catch (InterruptedException e) {
+				releaseReaderPermit(permit);
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while starting a reserved read transaction", e);
+			} catch (RuntimeException | Error e) {
+				releaseReaderPermit(permit);
+				throw e;
+			}
+			try {
+				Txn txn = createReadTxnInternal(resetOnWrite, permit, deadline);
+				try {
+					if (dataRevision != null) {
+						txn.setSnapshotRevision(dataRevision.getAsLong());
+						checkQueryDeadline(deadline);
+					}
+					return snapshotFactory.apply(txn);
+				} catch (RuntimeException | Error e) {
+					txn.close();
+					throw e;
+				}
+			} finally {
+				lockManager.unlockRead(readStamp);
+			}
+		}
+
+		/** Captures native and caller-owned snapshot metadata inside a caller's reader-start scope. */
+		synchronized <T> T startPinned(LongSupplier dataRevision, Function<Txn, T> snapshotFactory,
+				ReaderStartScopeFactory scopeFactory) throws IOException {
+			if (readerPermit == null) {
+				throw new IllegalStateException("Reader reservation has already been consumed or closed");
+			}
+			if (dataRevision != null && resetOnWrite) {
+				throw new IllegalStateException("A pinned read transaction must be untracked for write commits");
+			}
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			Semaphore permit = readerPermit;
+			readerPermit = null;
+			long readStamp;
+			try {
+				readStamp = acquireReadBarrier(deadline);
+			} catch (InterruptedException e) {
+				releaseReaderPermit(permit);
+				Thread.currentThread().interrupt();
+				throw new IOException("Interrupted while starting a reserved read transaction", e);
+			} catch (RuntimeException | Error e) {
+				releaseReaderPermit(permit);
+				throw e;
+			}
+			try {
+				return startScopedReadTxn(resetOnWrite, permit, deadline, dataRevision, snapshotFactory, scopeFactory);
+			} finally {
+				lockManager.unlockRead(readStamp);
+			}
+		}
+
+		@Override
+		public void close() {
+			Semaphore permit;
+			synchronized (this) {
+				permit = readerPermit;
+				readerPermit = null;
+			}
+			if (permit != null) {
+				releaseReaderPermit(permit);
 			}
 		}
 	}
@@ -220,15 +461,132 @@ final class TxnManager {
 		return doWith(transaction, true);
 	}
 
-	private <T> T doWith(Transaction<T> transaction, boolean priority) throws IOException {
+	/**
+	 * Starts a short callback's reader inside a caller's scope, then releases that scope before invoking the callback.
+	 * Reader capacity is reserved before either gate is acquired, using the current query's absolute deadline.
+	 */
+	<T> T doWithPriority(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = acquireReaderPermit(true, deadline);
+		return doWithScoped(transaction, scopeFactory, permit, deadline);
+	}
+
+	/**
+	 * Runs a scoped short callback only when an ordinary reader permit is immediately available. Timed zero admission
+	 * honors queued ordinary callers. Returns {@code null} when not admitted; callers must use non-null callback
+	 * results to distinguish that outcome. This operation never consumes the reserved priority reader.
+	 */
+	<T> T tryDoWith(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = tryAcquireReaderPermit(deadline);
+		return permit == null ? null : doWithScoped(transaction, scopeFactory, permit, deadline);
+	}
+
+	/** Retains an ordinary current reader; the caller must close it. Never borrows the priority slot. */
+	Txn tryCreateRetainedReadTxnUnderReadLock(ReaderStartScopeFactory scopeFactory) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = tryAcquireReaderPermit(deadline, true);
+		if (permit == null) {
+			return null;
+		}
+		// Admission is nonblocking; the caller already owns its decode's native read barrier.
+		return startScopedReadTxn(false, permit, deadline, null, Function.identity(), scopeFactory);
+	}
+
+	@FunctionalInterface
+	interface IdleReaderReclaimer {
+		boolean reclaim();
+	}
+
+	private <T> T doWithScoped(Transaction<T> transaction, ReaderStartScopeFactory scopeFactory, Semaphore permit,
+			QueryExecutionDeadline deadline) throws IOException {
 		long readStamp;
 		try {
-			readStamp = lockManager.readLock();
+			readStamp = acquireReadBarrier(deadline);
 		} catch (InterruptedException e) {
+			releaseReaderPermit(permit);
 			Thread.currentThread().interrupt();
 			throw new SailException("Interrupted while acquiring read lock", e);
+		} catch (RuntimeException | Error e) {
+			releaseReaderPermit(permit);
+			throw e;
 		}
-		try (Txn txn = createReadTxnInternal(true, priority); MemoryStack stack = stackPush()) {
+		try (Txn txn = startScopedReadTxn(true, permit, deadline, null, Function.identity(), scopeFactory);
+				MemoryStack stack = stackPush()) {
+			return transaction.exec(stack, txn.get());
+		} finally {
+			lockManager.unlockRead(readStamp);
+		}
+	}
+
+	/** Opens the caller's scope after the native read barrier and before starting or renewing its reader. */
+	@FunctionalInterface
+	interface ReaderStartScopeFactory {
+		ReaderStartScope open() throws IOException;
+	}
+
+	/** Holds only reader-start and snapshot-metadata capture; application callbacks run after it closes. */
+	@FunctionalInterface
+	interface ReaderStartScope extends AutoCloseable {
+		@Override
+		void close();
+	}
+
+	/** The caller holds the native read barrier and has already reserved the supplied reader permit. */
+	private <T> T startScopedReadTxn(boolean resetOnWrite, Semaphore permit, QueryExecutionDeadline deadline,
+			LongSupplier dataRevision, Function<Txn, T> snapshotFactory, ReaderStartScopeFactory scopeFactory)
+			throws IOException {
+		boolean permitTransferred = false;
+		Txn txn = null;
+		try {
+			T snapshot;
+			try (ReaderStartScope ignored = scopeFactory.open()) {
+				// The native start path returns the permit itself if starting or renewing fails.
+				permitTransferred = true;
+				// The caller's scope pairs current metadata with the native snapshot. An idle pooled handle may
+				// still hold an earlier snapshot after a lower-level writer checkpoint, so renew it before capture.
+				txn = createReadTxnInternal(resetOnWrite, permit, deadline, true);
+				if (dataRevision != null) {
+					txn.setSnapshotRevision(dataRevision.getAsLong());
+				}
+				snapshot = snapshotFactory.apply(txn);
+				checkQueryDeadline(deadline);
+			}
+			checkQueryDeadline(deadline);
+			return snapshot;
+		} catch (IOException | RuntimeException | Error failure) {
+			if (txn != null) {
+				try {
+					txn.close();
+				} catch (RuntimeException | Error cleanupFailure) {
+					if (cleanupFailure != failure) {
+						failure.addSuppressed(cleanupFailure);
+					}
+				}
+			}
+			throw failure;
+		} finally {
+			if (!permitTransferred) {
+				releaseReaderPermit(permit);
+			}
+		}
+	}
+
+	private <T> T doWith(Transaction<T> transaction, boolean priority) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		Semaphore permit = acquireReaderPermit(priority, deadline);
+		long readStamp;
+		try {
+			readStamp = acquireReadBarrier(deadline);
+		} catch (InterruptedException e) {
+			releaseReaderPermit(permit);
+			Thread.currentThread().interrupt();
+			throw new SailException("Interrupted while acquiring read lock", e);
+		} catch (RuntimeException | Error failure) {
+			releaseReaderPermit(permit);
+			throw failure;
+		}
+		try (Txn txn = createReadTxnInternal(true, permit, deadline); MemoryStack stack = stackPush()) {
 			return transaction.exec(stack, txn.get());
 		} finally {
 			lockManager.unlockRead(readStamp);
@@ -238,6 +596,87 @@ final class TxnManager {
 	/** Exposes the shared lock manager used to coordinate read and write transactions. */
 	StampedLongAdderLockManager lockManager() {
 		return lockManager;
+	}
+
+	/** Acquires the shared read barrier using the query's current deadline, if one is installed. */
+	long acquireReadBarrier() throws IOException {
+		try {
+			return acquireReadBarrier(QueryExecutionDeadline.current());
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while acquiring read lock", e);
+		}
+	}
+
+	private long acquireReadBarrier(QueryExecutionDeadline deadline) throws InterruptedException {
+		checkQueryDeadline(deadline);
+		if (deadline == null) {
+			return lockManager.readLock();
+		}
+		long remainingNanos = deadline.remainingNanos();
+		if (remainingNanos <= 0L) {
+			throw queryInterrupted();
+		}
+		long stamp = lockManager.tryReadLock(remainingNanos, TimeUnit.NANOSECONDS);
+		if (stamp == 0L) {
+			throw queryInterrupted();
+		}
+		if (deadline.remainingNanos() <= 0L) {
+			lockManager.unlockRead(stamp);
+			throw queryInterrupted();
+		}
+		return stamp;
+	}
+
+	/**
+	 * Stops new admissions, then acquires the shared lock exclusively and retries until shutdown can finish safely.
+	 */
+	CloseBarrier acquireCloseBarrier() {
+		stopAdmissions();
+		boolean interrupted = Thread.interrupted();
+		long stamp = 0L;
+		try {
+			while (stamp == 0L) {
+				try {
+					stamp = lockManager.writeLock();
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+			return new CloseBarrier(stamp, interrupted);
+		} catch (RuntimeException | Error failure) {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+			throw failure;
+		}
+	}
+
+	/** Holds the manager's exclusive native-operation barrier until the close sequence finishes. */
+	final class CloseBarrier implements AutoCloseable {
+		private final long stamp;
+		private final boolean restoreInterrupt;
+		private boolean closed;
+
+		private CloseBarrier(long stamp, boolean restoreInterrupt) {
+			this.stamp = stamp;
+			this.restoreInterrupt = restoreInterrupt;
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			try {
+				lockManager.unlockWrite(stamp);
+			} finally {
+				if (restoreInterrupt) {
+					Thread.currentThread().interrupt();
+				}
+			}
+		}
 	}
 
 	/** Renews all tracked transactions, e.g. after a map resize. */
@@ -256,30 +695,84 @@ final class TxnManager {
 	}
 
 	void close() {
-		managerClosed = true;
+		try (CloseBarrier ignored = acquireCloseBarrier()) {
+			closeUnderExclusiveLock();
+		}
+	}
+
+	/**
+	 * Closes the manager while its exclusive native-operation barrier is already held by the caller.
+	 */
+	void closeUnderExclusiveLock() {
+		stopAdmissions();
+		Throwable failure = null;
 
 		// Drain the idle pool first; the transactions themselves are still tracked in `open` and are aborted below.
 		if (txnPool != null) {
-			// noinspection StatementWithEmptyBody
-			while (txnPool.poll() != null) {
-				// discard
+			try {
+				// noinspection StatementWithEmptyBody
+				while (txnPool.poll() != null) {
+					// discard
+				}
+			} catch (Throwable cleanupFailure) {
+				failure = appendCloseFailure(failure, cleanupFailure);
 			}
 		}
 
 		for (Txn txn : open) {
-			if (open.remove(txn)) {
-				txn.abortAndMarkClosed();
+			try {
+				if (open.remove(txn)) {
+					txn.abortAndMarkClosed();
+				}
+			} catch (Throwable cleanupFailure) {
+				failure = appendCloseFailure(failure, cleanupFailure);
 			}
 		}
 
-		// Poison both semaphores: wake admission waiters, which then fail fast in acquireReaderPermit().
-		// Permit accounting is irrelevant from here on, the manager is closed.
+		for (Pool pool : pools) {
+			try {
+				pool.close();
+			} catch (Throwable cleanupFailure) {
+				failure = appendCloseFailure(failure, cleanupFailure);
+			}
+		}
+		rethrowCloseFailure(failure);
+	}
+
+	/**
+	 * Linearizes shutdown before the exclusive native barrier so blocked admission calls can release their shared
+	 * barrier and let close wait only for native work that was already admitted.
+	 */
+	private synchronized void stopAdmissions() {
+		if (managerClosed) {
+			return;
+		}
+		managerClosed = true;
+		// Permit accounting ends with shutdown; these releases wake queued readers, which then observe managerClosed.
 		readerSlots.release(POOL_SIZE);
 		priorityReaderSlot.release();
 		signalReaderInactive();
+	}
 
-		for (Pool pool : pools) {
-			pool.close();
+	private static Throwable appendCloseFailure(Throwable failure, Throwable cleanupFailure) {
+		if (failure == null) {
+			return cleanupFailure;
+		}
+		if (failure != cleanupFailure) {
+			failure.addSuppressed(cleanupFailure);
+		}
+		return failure;
+	}
+
+	private static void rethrowCloseFailure(Throwable failure) {
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure != null) {
+			throw new IllegalStateException("Failed to close transaction manager", failure);
 		}
 	}
 
@@ -287,28 +780,163 @@ final class TxnManager {
 	// reader admission
 	// ---------------------------------------------------------------------------------------------
 
-	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
-		Semaphore slots;
-		try {
-			if (priority && readerSlots.tryAcquire(0, TimeUnit.NANOSECONDS)) {
-				slots = readerSlots;
-			} else {
-				slots = priority ? priorityReaderSlot : readerSlots;
-				if (!slots.tryAcquire(READER_ADMISSION_TIMEOUT_NANOS, TimeUnit.NANOSECONDS)) {
-					throw new IOException("Timed out after "
-							+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
-							+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
+	boolean hasQueuedOrdinaryReaders() {
+		return ordinaryReaderAdmissions.get() != 0 || readerSlots.hasQueuedThreads();
+	}
+
+	/** A blocked pressure scan is retried at the actual native writer completion, without polling. */
+	private final class NativeBarrier extends StampedLongAdderLockManager {
+		@Override
+		public void unlockWrite(long stamp) {
+			super.unlockWrite(stamp);
+			if (ordinaryReaderAdmissions.get() != 0 && !managerClosed) {
+				try {
+					reclaimIdleReaders(Math.min(POOL_SIZE - 1, ordinaryReaderAdmissions.get()), false);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
 				}
 			}
+		}
+	}
+
+	private Semaphore acquireReaderPermit(boolean priority) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		return acquireReaderPermit(priority, deadline);
+	}
+
+	private Semaphore acquireReaderPermit(boolean priority, QueryExecutionDeadline deadline) throws IOException {
+		return acquireReaderPermits(1, priority, deadline);
+	}
+
+	private Semaphore tryAcquireReaderPermit(QueryExecutionDeadline deadline) throws IOException {
+		return tryAcquireReaderPermit(deadline, false);
+	}
+
+	private Semaphore tryAcquireReaderPermit(QueryExecutionDeadline deadline, boolean underReadLock)
+			throws IOException {
+		checkQueryDeadline(deadline);
+		checkNotClosed();
+		boolean acquired = false;
+		boolean keepPermit = false;
+		try {
+			acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
+			if (!acquired) {
+				reclaimIdleReaders(1, underReadLock);
+				acquired = readerSlots.tryAcquire(1, 0, TimeUnit.NANOSECONDS);
+			}
+			checkQueryDeadline(deadline);
+			checkNotClosed();
+			keepPermit = acquired;
+			return acquired ? readerSlots : null;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			throw new IOException("Interrupted while acquiring a free read transaction", e);
+		} finally {
+			if (acquired && !keepPermit) {
+				readerSlots.release();
+			}
+		}
+	}
+
+	private Semaphore acquireReaderPermits(int count, boolean priority, QueryExecutionDeadline deadline)
+			throws IOException {
+		return acquireReaderPermits(count, priority, deadline, false);
+	}
+
+	private Semaphore acquireReaderPermits(int count, boolean priority, QueryExecutionDeadline deadline,
+			boolean underReadLock) throws IOException {
+		checkQueryDeadline(deadline);
+		Semaphore slots = priority ? priorityReaderSlot : readerSlots;
+		boolean acquired = false;
+		boolean keepPermit = false;
+		boolean admissionAdvertised = false;
+		try {
+			if (!readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS)) {
+				ordinaryReaderAdmissions.addAndGet(count);
+				admissionAdvertised = true;
+				reclaimIdleReaders(count, underReadLock);
+				acquired = readerSlots.tryAcquire(count, 0, TimeUnit.NANOSECONDS);
+			} else {
+				acquired = true;
+			}
+			if (acquired) {
+				slots = readerSlots;
+			}
+			if (!acquired) {
+				Runnable beforeBlocking = beforeBlockingReaderAdmissionForTest;
+				if (beforeBlocking != null) {
+					beforeBlocking.run();
+				}
+				long timeoutNanos = READER_ADMISSION_TIMEOUT_NANOS;
+				if (deadline != null) {
+					long queryRemainingNanos = deadline.remainingNanos();
+					if (queryRemainingNanos <= 0L) {
+						throw queryInterrupted();
+					}
+					timeoutNanos = Math.min(timeoutNanos, queryRemainingNanos);
+				}
+				if (!slots.tryAcquire(count, timeoutNanos, TimeUnit.NANOSECONDS)) {
+					checkQueryDeadline(deadline);
+					throw readerAdmissionTimeout();
+				}
+				acquired = true;
+			}
+			checkQueryDeadline(deadline);
+			if (managerClosed) {
+				throw new IOException("Transaction manager is closed");
+			}
+			keepPermit = true;
+			return slots;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while waiting for a free read transaction", e);
+		} finally {
+			if (admissionAdvertised) {
+				ordinaryReaderAdmissions.addAndGet(-count);
+			}
+			if (acquired && !keepPermit) {
+				slots.release(count);
+			}
 		}
-		if (managerClosed) {
-			slots.release();
-			throw new IOException("Transaction manager is closed");
+	}
+
+	/** Pressure alone visits parked readers; normal admission and dictionary decode never scan this set. */
+	private void reclaimIdleReaders(int count, boolean underReadLock) throws InterruptedException {
+		long stamp = underReadLock ? 0L : lockManager.tryReadLock(0, TimeUnit.NANOSECONDS);
+		if (!underReadLock && stamp == 0) {
+			return;
 		}
-		return slots;
+		try {
+			for (Txn txn : open) {
+				IdleReaderReclaimer reclaimer = txn.idleReaderReclaimer;
+				if (reclaimer != null) {
+					reclaimer.reclaim();
+				}
+				if (readerSlots.availablePermits() >= count) {
+					break;
+				}
+			}
+		} finally {
+			if (!underReadLock) {
+				lockManager.unlockRead(stamp);
+			}
+		}
+	}
+
+	private static void checkQueryDeadline(QueryExecutionDeadline deadline) {
+		if (deadline != null && deadline.remainingNanos() <= 0L) {
+			throw queryInterrupted();
+		}
+	}
+
+	private static QueryInterruptedException queryInterrupted() {
+		return new QueryInterruptedException("Query evaluation took too long");
+	}
+
+	private static IOException readerAdmissionTimeout() {
+		return new IOException("Timed out after "
+				+ TimeUnit.NANOSECONDS.toMillis(READER_ADMISSION_TIMEOUT_NANOS)
+				+ " ms waiting for a free read transaction (limit " + POOL_SIZE + ")");
 	}
 
 	/** Returns a reader permit and wakes both admission waiters and readers-full waiters. */
@@ -328,18 +956,37 @@ final class TxnManager {
 	// transaction start / renew, with a single unified readers-full retry
 	// ---------------------------------------------------------------------------------------------
 
-	private long startReadTxn() throws IOException {
+	private long startReadTxn(QueryExecutionDeadline deadline) throws IOException {
 		try (MemoryStack stack = stackPush()) {
 			PointerBuffer pp = stack.mallocPointer(1);
-			E(withReadersFullRetry(null, () -> mdb_txn_begin(env, NULL, MDB_RDONLY, pp)));
-			return pp.get(0);
+			int rc = withReadersFullRetry(deadline, () -> mdb_txn_begin(env, NULL, MDB_RDONLY, pp));
+			if (rc != MDB_SUCCESS) {
+				E(rc);
+			}
+			long txn = pp.get(0);
+			try {
+				checkQueryDeadline(deadline);
+			} catch (RuntimeException | Error failure) {
+				mdb_txn_abort(txn);
+				signalReaderInactive();
+				throw failure;
+			}
+			return txn;
 		}
 	}
 
-	private void renewReadTxn(long txn, Txn excluded) throws IOException {
-		int rc = withReadersFullRetry(excluded, () -> mdb_txn_renew(txn));
+	private void renewReadTxn(long txn) throws IOException {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		int rc = withReadersFullRetry(deadline, () -> mdb_txn_renew(txn));
 		if (rc != MDB_SUCCESS) {
 			E(rc);
+		}
+		try {
+			checkQueryDeadline(deadline);
+		} catch (RuntimeException | Error failure) {
+			mdb_txn_reset(txn);
+			signalReaderInactive();
+			throw failure;
 		}
 	}
 
@@ -355,32 +1002,61 @@ final class TxnManager {
 	 * This deals with the <em>environment-wide</em> reader table (shared with other processes / managers), which is a
 	 * different resource than {@link #readerSlots}.
 	 */
-	private int withReadersFullRetry(Txn excluded, NativeCall call) throws IOException {
+	private int withReadersFullRetry(QueryExecutionDeadline queryDeadline, NativeCall call) throws IOException {
+		checkQueryDeadline(queryDeadline);
 		int rc = call.run();
 		if (rc != MDB_READERS_FULL) {
 			return rc;
 		}
 
 		readersFullWaiters.incrementAndGet();
-		try (MemoryStack stack = stackPush()) {
+		try (MemoryStack stack = stackPush();
+				QueryExecutionDeadline.Registration expiryRegistration = queryDeadline == null ? null
+						: queryDeadline.onExpiration(this::signalReaderInactive)) {
 			IntBuffer dead = stack.mallocInt(1);
-			long deadline = System.nanoTime() + READERS_FULL_TIMEOUT_NANOS;
-			long backoffMillis = BACKOFF_MIN_MILLIS;
+			long nativeDeadline = System.nanoTime() + READERS_FULL_TIMEOUT_NANOS;
+			long backoffNanos = TimeUnit.MILLISECONDS.toNanos(BACKOFF_MIN_MILLIS);
 
 			while (rc == MDB_READERS_FULL) {
 				if (Thread.interrupted()) {
 					Thread.currentThread().interrupt();
 					throw new IOException("Interrupted while waiting for a free LMDB reader slot");
 				}
-				closePooledReaders();
-				checkForDeadReaders(dead);
-				awaitReaderRelease(excluded, backoffMillis);
-				backoffMillis = Math.min(backoffMillis << 1, BACKOFF_MAX_MILLIS);
-
-				rc = call.run();
-				if (rc == MDB_READERS_FULL && System.nanoTime() - deadline >= 0) {
+				checkQueryDeadline(queryDeadline);
+				long nativeRemainingNanos = nativeDeadline - System.nanoTime();
+				if (nativeRemainingNanos <= 0L) {
 					break;
 				}
+				closePooledReaders();
+				checkForDeadReaders(dead);
+				checkQueryDeadline(queryDeadline);
+				nativeRemainingNanos = nativeDeadline - System.nanoTime();
+				if (nativeRemainingNanos <= 0L) {
+					break;
+				}
+				long waitNanos = Math.min(backoffNanos, nativeRemainingNanos);
+				if (queryDeadline != null) {
+					long queryRemainingNanos = queryDeadline.remainingNanos();
+					if (queryRemainingNanos <= 0L) {
+						throw queryInterrupted();
+					}
+					waitNanos = Math.min(waitNanos, queryRemainingNanos);
+				}
+				awaitReaderRelease(waitNanos);
+				checkQueryDeadline(queryDeadline);
+				if (nativeDeadline - System.nanoTime() <= 0L) {
+					break;
+				}
+
+				rc = call.run();
+				if (rc == MDB_READERS_FULL) {
+					checkQueryDeadline(queryDeadline);
+					if (nativeDeadline - System.nanoTime() <= 0L) {
+						break;
+					}
+				}
+				backoffNanos = Math.min(backoffNanos << 1,
+						TimeUnit.MILLISECONDS.toNanos(BACKOFF_MAX_MILLIS));
 			}
 		} finally {
 			readersFullWaiters.decrementAndGet();
@@ -424,23 +1100,16 @@ final class TxnManager {
 		}
 	}
 
-	private void awaitReaderRelease(Txn excluded, long timeoutMillis) throws IOException {
+	private void awaitReaderRelease(long timeoutNanos) throws IOException {
 		readersFullLock.lock();
 		try {
-			if (hasTrackedReaders(excluded)) {
-				readerInactive.await(timeoutMillis, TimeUnit.MILLISECONDS);
-			}
+			readerInactive.awaitNanos(timeoutNanos);
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			throw new IOException(e);
+			throw new IOException("Interrupted while waiting for a free LMDB reader slot", e);
 		} finally {
 			readersFullLock.unlock();
 		}
-	}
-
-	private boolean hasTrackedReaders(Txn excluded) {
-		int size = open.size();
-		return (excluded != null && open.contains(excluded)) ? size > 1 : size > 0;
 	}
 
 	/** Cheap no-op unless somebody is actually blocked on a readers-full condition. */
@@ -521,6 +1190,10 @@ final class TxnManager {
 		private final Pool valuePool = pools[POOL_ROTATION.getAndIncrement() & (CACHED_POOLS - 1)];
 
 		private volatile long version;
+		private volatile long snapshotRevision = -1;
+		private volatile boolean snapshotInvalidated;
+		private volatile LmdbSailStore.MapResizeKind snapshotInvalidationKind;
+		private volatile boolean snapshotBound;
 		private volatile boolean active = true;
 		/** Permanently finished: aborted or handed back to LMDB. */
 		private volatile boolean closed;
@@ -544,6 +1217,81 @@ final class TxnManager {
 			return version;
 		}
 
+		private volatile IdleReaderReclaimer idleReaderReclaimer;
+
+		void setIdleReaderReclaimer(IdleReaderReclaimer reclaimer) {
+			idleReaderReclaimer = reclaimer;
+		}
+
+		/** The caller holds the native read barrier and exclusive ownership of this ordinary reader. */
+		synchronized void refreshCurrent() throws IOException {
+			ensureSnapshotValid();
+			if (snapshotBound) {
+				throw new IllegalStateException("Cannot refresh a membership-bound dictionary reader");
+			}
+			resetNative();
+			stale = false;
+			version++;
+			activate();
+		}
+
+		long snapshotRevision() {
+			return snapshotRevision;
+		}
+
+		synchronized void setSnapshotRevision(long revision) {
+			if (closed || idle) {
+				throw new IllegalStateException("Cannot pin a closed or idle read transaction");
+			}
+			snapshotRevision = revision;
+			snapshotBound = true;
+			snapshotInvalidated = false;
+			snapshotInvalidationKind = null;
+		}
+
+		synchronized void setSnapshotBound() {
+			if (closed || idle) {
+				throw new IllegalStateException("Cannot pin a closed or idle read transaction");
+			}
+			snapshotBound = true;
+		}
+
+		// This observational probe also runs under the growth coordinator lock. Native access and state
+		// transitions retain their own guards; taking this monitor here would invert term declaration's order.
+		boolean isNativeActive() {
+			return active && !closed;
+		}
+
+		synchronized void invalidateAndReset(LmdbSailStore.MapResizeKind kind) {
+			snapshotBound = true;
+			snapshotInvalidated = true;
+			snapshotInvalidationKind = kind;
+			snapshotRevision = -1;
+			resetNative();
+		}
+
+		void ensureSnapshotValid() {
+			if (snapshotInvalidated) {
+				String message = "SNAPSHOT transaction invalidated: the store's memory map was resized "
+						+ "during the transaction; retry the transaction";
+				if (snapshotInvalidationKind != null) {
+					throw new LmdbSailStore.MapResizeConflictException(snapshotInvalidationKind, message);
+				}
+				throw new SailConflictException(message);
+			}
+			if (closed || idle) {
+				throw new SailException("SNAPSHOT transaction is closed; retry the read operation");
+			}
+		}
+
+		boolean isClosed() {
+			return closed;
+		}
+
+		boolean isIdle() {
+			return idle;
+		}
+
 		StampedLongAdderLockManager lockManager() {
 			return lockManager;
 		}
@@ -564,6 +1312,8 @@ final class TxnManager {
 					return;
 				}
 				permit = readerPermit;
+				idleReaderReclaimer = null;
+				snapshotRevision = -1;
 				releasePermit = release();
 			}
 			if (releasePermit) {
@@ -579,6 +1329,9 @@ final class TxnManager {
 				return;
 			}
 			if (resetOnWrite || idle) {
+				if (snapshotRevision >= 0) {
+					snapshotInvalidated = true;
+				}
 				resetNative();
 				version++;
 				if (!idle) {
@@ -596,12 +1349,17 @@ final class TxnManager {
 				return;
 			}
 			if (active) {
-				if (!idle) {
+				if (!idle && !snapshotInvalidated) {
 					// idle readers stay reset; they are renewed lazily in reuse()
 					activate();
 				}
 				version++;
 			} else {
+				if (snapshotBound) {
+					snapshotInvalidated = true;
+					snapshotInvalidationKind = mapResizeKind;
+					snapshotRevision = -1;
+				}
 				deactivate();
 			}
 		}
@@ -609,13 +1367,18 @@ final class TxnManager {
 		// -- internals, all called with the monitor held -------------------------------------------
 
 		/** Prepares a pooled transaction for reuse. */
-		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit) throws IOException {
-			if (stale) {
+		private synchronized void reuse(boolean resetOnWrite, Semaphore readerPermit, boolean currentSnapshot)
+				throws IOException {
+			if (stale || currentSnapshot) {
 				resetNative();
 				stale = false;
 			}
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.snapshotRevision = -1;
+			this.snapshotBound = false;
+			this.snapshotInvalidated = false;
+			this.snapshotInvalidationKind = null;
 			this.idle = false;
 			this.closed = false;
 			activate();
@@ -623,7 +1386,7 @@ final class TxnManager {
 
 		private void activate() throws IOException {
 			if (!active && !closed) {
-				renewReadTxn(txn, this);
+				renewReadTxn(txn);
 				active = true;
 			}
 		}
@@ -693,6 +1456,7 @@ final class TxnManager {
 			active = false;
 			idle = false;
 			closed = true;
+			snapshotRevision = -1;
 		}
 
 		@Override

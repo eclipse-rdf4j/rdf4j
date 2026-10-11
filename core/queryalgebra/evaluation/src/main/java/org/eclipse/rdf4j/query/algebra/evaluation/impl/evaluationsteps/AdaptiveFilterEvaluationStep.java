@@ -1130,6 +1130,16 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 			public ValueFactory getValueFactory() {
 				return source.getValueFactory();
 			}
+
+			@Override
+			public Function<Value, Value> getValuePreparer() {
+				return source.getValuePreparer();
+			}
+
+			@Override
+			public Function<Value, Value> getValueCapturer() {
+				return source.getValueCapturer();
+			}
 		};
 	}
 
@@ -1285,6 +1295,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public Literal getNow() {
 			return delegate.getNow();
+		}
+
+		@Override
+		public Value captureConstant(Value value, Function<Value, Value> capturer) {
+			return delegate.captureConstant(value, capturer);
 		}
 
 		@Override

@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.util.ModelException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -200,27 +201,27 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	@Override
 	public synchronized Set<Namespace> getNamespaces() {
-		return memory.getNamespaces();
+		return getDelegate().getNamespaces();
 	}
 
 	@Override
 	public synchronized Optional<Namespace> getNamespace(String prefix) {
-		return memory.getNamespace(prefix);
+		return getDelegate().getNamespace(prefix);
 	}
 
 	@Override
 	public synchronized Namespace setNamespace(String prefix, String name) {
-		return memory.setNamespace(prefix, name);
+		return getDelegate().setNamespace(prefix, name);
 	}
 
 	@Override
-	public void setNamespace(Namespace namespace) {
-		memory.setNamespace(namespace);
+	public synchronized void setNamespace(Namespace namespace) {
+		getDelegate().setNamespace(namespace);
 	}
 
 	@Override
 	public synchronized Optional<Namespace> removeNamespace(String prefix) {
-		return memory.removeNamespace(prefix);
+		return getDelegate().removeNamespace(prefix);
 	}
 
 	@Override
@@ -234,7 +235,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	@Override
-	public boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public synchronized boolean add(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		checkMemoryOverflow();
 		boolean add = getDelegate().add(subj, pred, obj, contexts);
 		if (add && memory instanceof DynamicModel) {
@@ -246,7 +247,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	long count = 0;
 
 	@Override
-	public boolean add(Statement st) {
+	public synchronized boolean add(Statement st) {
 		if (count++ % BATCH_SIZE == 0) {
 			checkMemoryOverflow();
 		}
@@ -258,7 +259,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	@Override
-	public boolean addAll(Collection<? extends Statement> c) {
+	public synchronized boolean addAll(Collection<? extends Statement> c) {
 		checkMemoryOverflow();
 		if (disk != null || c.size() <= BATCH_SIZE) {
 			return getDelegate().addAll(c);
@@ -289,7 +290,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	@Override
-	public boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
+	public synchronized boolean remove(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return getDelegate().remove(subj, pred, obj, contexts);
 	}
 
@@ -304,7 +305,7 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	}
 
 	@Override
-	public boolean clear(Resource... contexts) {
+	public synchronized boolean clear(Resource... contexts) {
 		return getDelegate().clear(contexts);
 	}
 
@@ -474,6 +475,11 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	}
 
+	@InternalUseOnly
+	public final void spillToDiskIfNeeded() {
+		checkMemoryOverflow();
+	}
+
 	private synchronized void overflowToDisk() {
 
 		try {
@@ -486,8 +492,10 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 				}
 
 				Model memory = this.memory;
-				this.memory = null;
 				overflowToDiskInner(memory);
+				if (this.disk != null) {
+					this.memory = null;
+				}
 
 				logger.debug("overflow synced to disk");
 				System.gc();
@@ -503,41 +511,58 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 
 	@Override
 	public void close() {
-		boolean shouldCallInnerClose = true;
-		boolean interrupted = false;
-		try {
-			interrupted = Thread.interrupted();
-			lock.lockInterruptibly();
+		Model diskModel;
+		synchronized (this) {
+			lock.lock();
 			try {
 				if (closed) {
-					shouldCallInnerClose = false;
 					return;
 				}
 				closed = true;
+				diskModel = disk;
 				memory = null;
 				disk = null;
-				innerClose();
-				shouldCallInnerClose = false;
 			} finally {
 				lock.unlock();
 			}
-		} catch (InterruptedException e) {
-			Thread.currentThread().interrupt();
-			throw new RuntimeException(e);
-		} finally {
-			if (interrupted) {
-				Thread.currentThread().interrupt();
-			}
+		}
 
-			// even if we were interrupted we want to make sure we don't leave the model in an inconsistent state and
-			// that we free up any resources as soon as possible, so we null out the references to the memory and disk
-			// models and close the disk model if it was not already closed by another thread
-			memory = null;
-			disk = null;
-			if (shouldCallInnerClose) {
-				innerClose();
+		Throwable failure = null;
+		if (diskModel instanceof AutoCloseable closeable) {
+			try {
+				closeable.close();
+			} catch (Throwable closeFailure) {
+				failure = closeFailure;
 			}
 		}
+		try {
+			innerClose();
+		} catch (Throwable closeFailure) {
+			failure = addSuppressed(failure, closeFailure);
+		}
+		if (failure != null) {
+			throw propagate(failure);
+		}
+	}
+
+	private static Throwable addSuppressed(Throwable failure, Throwable suppressed) {
+		if (failure == null) {
+			return suppressed;
+		}
+		if (failure != suppressed) {
+			failure.addSuppressed(suppressed);
+		}
+		return failure;
+	}
+
+	private static RuntimeException propagate(Throwable failure) {
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			return runtimeException;
+		}
+		return new ModelException(failure);
 	}
 
 	abstract protected void innerClose();

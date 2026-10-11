@@ -68,6 +68,9 @@ public class LmdbStoreSchema {
 	 */
 	public final static IRI VALUE_ID_CACHE_SIZE;
 
+	/** Selects the generic value-ID and namespace cache backend by enum name. */
+	public final static IRI CACHE_IMPLEMENTATION;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#bulkOperationSize</tt>
 	 */
@@ -129,6 +132,15 @@ public class LmdbStoreSchema {
 
 	public final static IRI BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE;
 
+	public final static IRI MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	/**
+	 * <tt>http://rdf4j.org/config/sail/lmdb#mapGrowthThreshold</tt>
+	 */
+	public final static IRI MAP_GROWTH_THRESHOLD;
+
+	public final static IRI READ_ONLY_REPLAY_MAX_RETRIES;
+
 	/**
 	 * <tt>http://rdf4j.org/config/sail/lmdb#inlineLiterals</tt>
 	 */
@@ -144,6 +156,7 @@ public class LmdbStoreSchema {
 		VALUE_DB_SIZE = factory.createIRI(NAMESPACE, "valueDBSize");
 		VALUE_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueCacheSize");
 		VALUE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "valueIDCacheSize");
+		CACHE_IMPLEMENTATION = factory.createIRI(NAMESPACE, "cacheImplementation");
 		BULK_OPERATION_SIZE = factory.createIRI(NAMESPACE, "bulkOperationSize");
 		NAMESPACE_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceCacheSize");
 		NAMESPACE_ID_CACHE_SIZE = factory.createIRI(NAMESPACE, "namespaceIDCacheSize");
@@ -166,6 +179,9 @@ public class LmdbStoreSchema {
 		BACKGROUND_RAW_SAMPLING_ENABLED = factory.createIRI(NAMESPACE, "backgroundRawSamplingEnabled");
 		BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = factory.createIRI(NAMESPACE,
 				"backgroundRawSamplingMaxMillisPerCycle");
+		MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = factory.createIRI(NAMESPACE, "mapGrowthReadDrainTimeoutMillis");
+		MAP_GROWTH_THRESHOLD = factory.createIRI(NAMESPACE, "mapGrowthThreshold");
+		READ_ONLY_REPLAY_MAX_RETRIES = factory.createIRI(NAMESPACE, "readOnlyReplayMaxRetries");
 		INLINE_LITERALS = factory.createIRI(NAMESPACE, "inlineLiterals");
 	}
 }

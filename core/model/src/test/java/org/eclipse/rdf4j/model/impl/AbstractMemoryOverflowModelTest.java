@@ -12,14 +12,200 @@
 package org.eclipse.rdf4j.model.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.lang.management.GarbageCollectorMXBean;
+import java.lang.management.ManagementFactory;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+
+import javax.management.NotificationEmitter;
+import javax.management.NotificationListener;
 
 import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 public class AbstractMemoryOverflowModelTest {
+
+	@Test
+	void publicPressureHookSpillsAfterGcPressureNotification() throws Exception {
+		runInConstrainedHeap("pressure-hook");
+	}
+
+	@Test
+	void failedDiskMigrationRetainsOriginalModelAndCanBeRetried() throws Exception {
+		runInConstrainedHeap("migration-retry");
+	}
+
+	public static void main(String[] args) throws Exception {
+		if (args.length != 1) {
+			throw new IllegalArgumentException("Expected one pressure probe name");
+		}
+		System.out.println("RUNTIME_MAX_MEMORY_BYTES=" + Runtime.getRuntime().maxMemory());
+		AbstractMemoryOverflowModelTest test = new AbstractMemoryOverflowModelTest();
+		switch (args[0]) {
+		case "pressure-hook":
+			test.pressureHookProbe();
+			break;
+		case "migration-retry":
+			test.migrationRetryProbe();
+			break;
+		default:
+			throw new IllegalArgumentException("Unknown pressure probe: " + args[0]);
+		}
+	}
+
+	private static void runInConstrainedHeap(String probe) throws Exception {
+		String classpath = System.getProperty("surefire.test.class.path");
+		if (classpath == null || classpath.isBlank()) {
+			classpath = System.getProperty("java.class.path");
+		}
+		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		String mockitoAgent = Path.of(Mockito.class.getProtectionDomain().getCodeSource().getLocation().toURI())
+				.toString();
+		Process process = new ProcessBuilder(java, "-Xmx128m", "-javaagent:" + mockitoAgent, "-cp", classpath,
+				AbstractMemoryOverflowModelTest.class.getName(), probe)
+						.redirectErrorStream(true)
+						.start();
+		String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+		int exitCode = process.waitFor();
+		System.out.print(output);
+		assertThat(exitCode).withFailMessage(output).isZero();
+		String maxMemoryLine = output.lines()
+				.filter(line -> line.startsWith("RUNTIME_MAX_MEMORY_BYTES="))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(output));
+		long maxMemory = Long.parseLong(maxMemoryLine.substring("RUNTIME_MAX_MEMORY_BYTES=".length()));
+		assertThat(maxMemory).isLessThanOrEqualTo(128L * 1024 * 1024);
+	}
+
+	private void pressureHookProbe() throws Exception {
+		Method spillToDiskIfNeeded = AbstractMemoryOverflowModel.class.getMethod("spillToDiskIfNeeded");
+		assertThat(Modifier.isPublic(spillToDiskIfNeeded.getModifiers())).isTrue();
+		assertThat(Modifier.isFinal(spillToDiskIfNeeded.getModifiers())).isTrue();
+
+		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
+		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
+		int oldLow = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		RecordingOverflowModel model = new RecordingOverflowModel();
+		GcNotifications notifications = new GcNotifications();
+		try {
+			resetPressureState(notifications);
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = -1;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = -1;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = -1;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+
+			Statement statement = SimpleValueFactory.getInstance()
+					.createStatement(
+							SimpleValueFactory.getInstance().createIRI("urn:overflow:subject"),
+							SimpleValueFactory.getInstance().createIRI("urn:overflow:predicate"),
+							SimpleValueFactory.getInstance().createLiteral("value"));
+			model.add(statement);
+			assertThat(model.spillCount).isZero();
+
+			notifications.requestGcAndAwait();
+			spillToDiskIfNeeded.invoke(model);
+
+			assertThat(model.spillCount).isEqualTo(1);
+			assertThat(model.spilledStatements).containsExactly(statement);
+		} finally {
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = oldHigh;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = oldMedium;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = oldLow;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+			try {
+				notifications.requestGcAndAwait();
+				RecordingOverflowModel pressureReset = new RecordingOverflowModel();
+				spillToDiskIfNeeded.invoke(pressureReset);
+				pressureReset.close();
+			} finally {
+				model.close();
+				notifications.close();
+			}
+		}
+	}
+
+	private void migrationRetryProbe() throws Exception {
+		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
+		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
+		int oldLow = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		RetryableOverflowModel model = new RetryableOverflowModel();
+		GcNotifications notifications = new GcNotifications();
+		try {
+			resetPressureState(notifications);
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = -1;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = -1;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = -1;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+
+			ValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Statement first = valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject:1"),
+					valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("first"));
+			Statement second = valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject:2"),
+					valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("second"));
+			model.setNamespace("ex", "urn:overflow:");
+			model.add(first);
+			model.add(second);
+			notifications.requestGcAndAwait();
+
+			assertThatThrownBy(model::spillToDiskIfNeeded)
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("simulated spill import failure");
+
+			assertThat(model).containsExactly(first, second);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+
+			model.spillToDiskIfNeeded();
+
+			assertThat(model.spillAttempts).isEqualTo(2);
+			assertThat(model).containsExactly(first, second);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+		} finally {
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = oldHigh;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = oldMedium;
+			AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = oldLow;
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = oldMinimum;
+			try {
+				notifications.requestGcAndAwait();
+				RecordingOverflowModel pressureReset = new RecordingOverflowModel();
+				pressureReset.spillToDiskIfNeeded();
+				pressureReset.close();
+			} finally {
+				model.close();
+				notifications.close();
+			}
+		}
+	}
+
+	private static void resetPressureState(GcNotifications notifications) throws Exception {
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = Integer.MAX_VALUE;
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = Integer.MAX_VALUE;
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = -1;
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = -1;
+		notifications.requestGcAndAwait();
+		RecordingOverflowModel reset = new RecordingOverflowModel();
+		try {
+			reset.spillToDiskIfNeeded();
+		} finally {
+			reset.close();
+		}
+	}
 
 	@Test
 	void memoryModelForMemoryOverflowUsesDynamicModel() throws Exception {
@@ -131,6 +317,16 @@ public class AbstractMemoryOverflowModelTest {
 		assertThat(model.getInnerCloseInvocations()).isEqualTo(1);
 	}
 
+	@Test
+	void closeRunsDiskAndStoreCleanupOutsideModelMonitor() {
+		CleanupObservingOverflowModel model = new CleanupObservingOverflowModel();
+
+		model.close();
+
+		assertThat(model.diskCloseHeldModelMonitor).isFalse();
+		assertThat(model.innerCloseHeldModelMonitor).isFalse();
+	}
+
 	private static AbstractMemoryOverflowModel<AbstractModel> newModel() {
 		return new AbstractMemoryOverflowModel<>() {
 			private static final long serialVersionUID = 4119844228099208169L;
@@ -178,6 +374,108 @@ public class AbstractMemoryOverflowModelTest {
 
 		private int getInnerCloseInvocations() {
 			return innerCloseInvocations;
+		}
+	}
+
+	private static final class CleanupObservingOverflowModel
+			extends AbstractMemoryOverflowModel<CleanupObservingModel> {
+		private static final long serialVersionUID = 4119844228099208173L;
+
+		private boolean diskCloseHeldModelMonitor;
+		private boolean innerCloseHeldModelMonitor;
+
+		private CleanupObservingOverflowModel() {
+			disk = new CleanupObservingModel(() -> diskCloseHeldModelMonitor = Thread.holdsLock(this));
+		}
+
+		@Override
+		protected void overflowToDiskInner(Model memory) {
+			// no-op
+		}
+
+		@Override
+		protected void innerClose() {
+			innerCloseHeldModelMonitor = Thread.holdsLock(this);
+		}
+	}
+
+	private static final class CleanupObservingModel extends LinkedHashModel implements AutoCloseable {
+		private static final long serialVersionUID = 4119844228099208174L;
+
+		private final Runnable closeCallback;
+
+		private CleanupObservingModel(Runnable closeCallback) {
+			this.closeCallback = closeCallback;
+		}
+
+		@Override
+		public void close() {
+			closeCallback.run();
+		}
+	}
+
+	private static final class RecordingOverflowModel extends AbstractMemoryOverflowModel<LinkedHashModel> {
+		private static final long serialVersionUID = 4119844228099208171L;
+
+		private int spillCount;
+		private LinkedHashModel spilledStatements;
+
+		@Override
+		protected void overflowToDiskInner(Model memory) {
+			spillCount++;
+			spilledStatements = new LinkedHashModel(memory);
+			disk = spilledStatements;
+		}
+
+		@Override
+		protected void innerClose() {
+			// no-op
+		}
+	}
+
+	private static final class RetryableOverflowModel extends AbstractMemoryOverflowModel<LinkedHashModel> {
+		private static final long serialVersionUID = 4119844228099208172L;
+
+		private int spillAttempts;
+
+		@Override
+		protected void overflowToDiskInner(Model memory) {
+			if (spillAttempts++ == 0) {
+				throw new IllegalStateException("simulated spill import failure");
+			}
+			disk = new LinkedHashModel(memory);
+		}
+
+		@Override
+		protected void innerClose() {
+			// no-op
+		}
+	}
+
+	private static final class GcNotifications implements AutoCloseable {
+		private final BlockingQueue<Boolean> notifications = new LinkedBlockingQueue<>();
+		private final NotificationListener listener = (notification, handback) -> notifications.offer(Boolean.TRUE);
+		private final List<NotificationEmitter> emitters = new ArrayList<>();
+
+		private GcNotifications() {
+			for (GarbageCollectorMXBean gcBean : ManagementFactory.getGarbageCollectorMXBeans()) {
+				if (gcBean instanceof NotificationEmitter emitter) {
+					emitter.addNotificationListener(listener, null, null);
+					emitters.add(emitter);
+				}
+			}
+		}
+
+		private void requestGcAndAwait() throws InterruptedException {
+			System.gc();
+			assertThat(notifications.poll(30, TimeUnit.SECONDS)).isNotNull();
+		}
+
+		@Override
+		public void close() throws Exception {
+			for (NotificationEmitter emitter : emitters) {
+				emitter.removeNotificationListener(listener);
+			}
 		}
 	}
 }

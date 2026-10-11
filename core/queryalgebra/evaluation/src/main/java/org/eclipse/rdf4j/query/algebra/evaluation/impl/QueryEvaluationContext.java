@@ -16,6 +16,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -72,6 +73,7 @@ public interface QueryEvaluationContext {
 		private Map<String, BNode> bnodesByLabel;
 		private long bnodeSolutionId;
 		private long bnodeId;
+		private final Map<Function<Value, Value>, Map<Value, Value>> constantValues = new IdentityHashMap<>();
 
 		/**
 		 * Set the shared now value to a preexisting object
@@ -156,6 +158,17 @@ public interface QueryEvaluationContext {
 		}
 
 		@Override
+		public synchronized Value captureConstant(Value value, Function<Value, Value> capturer) {
+			Map<Value, Value> captured = constantValues.computeIfAbsent(capturer, ignored -> new IdentityHashMap<>());
+			if (!captured.containsKey(value)) {
+				Value owned = capturer.apply(value);
+				captured.put(value, owned);
+				captured.put(owned, owned);
+			}
+			return captured.get(value);
+		}
+
+		@Override
 		public Dataset getDataset() {
 			return dataset;
 		}
@@ -177,6 +190,15 @@ public interface QueryEvaluationContext {
 	 * @return the shared now;
 	 */
 	Literal getNow();
+
+	/**
+	 * Captures a demanded constant result for this query. Contexts owning shared scalar state reuse captures by value
+	 * identity and capturer identity. Ordinary produced values must be captured directly so mutable caller inputs can
+	 * change independently of any constant expression that references the same object.
+	 */
+	default Value captureConstant(Value value, Function<Value, Value> capturer) {
+		return capturer.apply(value);
+	}
 
 	/**
 	 * @return The dataset that this query is operation on.
