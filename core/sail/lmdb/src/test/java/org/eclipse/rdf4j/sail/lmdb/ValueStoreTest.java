@@ -14,12 +14,14 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.openDatabaseWithTxn;
+import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
@@ -46,6 +48,7 @@ import java.lang.management.ThreadMXBean;
 import java.lang.ref.Reference;
 import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -2245,6 +2248,100 @@ public class ValueStoreTest {
 		assertTrue("The datatype is still referenced by three surviving literals", nextIds.isEmpty());
 		valueStore.commit();
 		assertNotEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(datatype));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "namespace", "datatype", "triple-component" })
+	public void testCheckpointRollbackDoesNotLoseSharedComponentReferences(String componentKind) throws Exception {
+		valueStore.close();
+		valueStore = new ValueStore(new File(dataDir, "checkpoint-" + componentKind), new LmdbStoreConfig());
+
+		Value sharedComponent;
+		Value firstDependent;
+		Value checkpointDependent;
+		switch (componentKind) {
+		case "namespace" -> {
+			sharedComponent = Values.iri("urn:refcount:checkpoint:namespace:");
+			firstDependent = Values.iri("urn:refcount:checkpoint:namespace:", "first");
+			checkpointDependent = Values.iri("urn:refcount:checkpoint:namespace:", "checkpoint");
+		}
+		case "datatype" -> {
+			sharedComponent = Values.iri("urn:refcount:checkpoint:datatype");
+			firstDependent = Values.literal("first", (IRI) sharedComponent);
+			checkpointDependent = Values.literal("checkpoint", (IRI) sharedComponent);
+		}
+		case "triple-component" -> {
+			sharedComponent = Values.iri("urn:refcount:checkpoint:predicate");
+			firstDependent = Values.tripleTerm(Values.bnode("first"), (IRI) sharedComponent,
+					Values.literal("first object"));
+			checkpointDependent = Values.tripleTerm(Values.bnode("checkpoint"), (IRI) sharedComponent,
+					Values.literal("checkpoint object"));
+		}
+		default -> throw new IllegalArgumentException("Unsupported shared component kind: " + componentKind);
+		}
+
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(firstDependent);
+		valueStore.commit();
+		long sharedComponentId = componentKind.equals("namespace")
+				? namespaceIdFromEncodedIri(firstId, (IRI) firstDependent)
+				: valueStore.getId(sharedComponent);
+		assertEquals("The initial committed dependency establishes one reference", 1L,
+				persistedRefCount(sharedComponentId));
+
+		long nativeGenerationBeforeCheckpoint = valueStore.nativeCommitGeneration();
+		valueStore.startTransaction(true);
+		long checkpointDependentId = valueStore.storeValue(checkpointDependent);
+		valueStore.endTransaction(true, true);
+		assertEquals("the checkpoint must persist the second dependent mapping",
+				checkpointDependent, valueStore.getValue(checkpointDependentId));
+		assertTrue("the checkpoint must complete a real native ValueStore commit",
+				valueStore.nativeCommitGeneration() > nativeGenerationBeforeCheckpoint);
+		valueStore.startTransaction(false);
+		valueStore.rollback();
+
+		Set<Long> nextIds = new HashSet<>();
+		valueStore.startTransaction(true);
+		valueStore.gcIds(Set.of(checkpointDependentId), nextIds);
+		valueStore.commit();
+		boolean sharedComponentWasQueued = nextIds.contains(sharedComponentId);
+		long referenceCountAfterRemoval = persistedRefCount(sharedComponentId);
+
+		valueStore.close();
+		valueStore = new ValueStore(new File(dataDir, "checkpoint-" + componentKind), new LmdbStoreConfig());
+		long reopenedFirstId = valueStore.getId(firstDependent);
+		long reopenedSharedComponentId = componentKind.equals("namespace")
+				? namespaceIdFromEncodedIri(reopenedFirstId, (IRI) firstDependent)
+				: valueStore.getId(sharedComponent);
+		long reopenedReferenceCount = persistedRefCount(reopenedSharedComponentId);
+		assertAll("checkpoint commit followed by rollback preserves live shared component references",
+				() -> assertFalse("removing the checkpointed dependent must not queue a still-referenced component",
+						sharedComponentWasQueued),
+				() -> assertEquals("the remaining dependent must retain one persisted reference", 1L,
+						referenceCountAfterRemoval),
+				() -> assertEquals("the original dependent mapping must survive the checkpoint and removal", firstId,
+						reopenedFirstId),
+				() -> assertEquals("the shared component mapping must survive reopening", sharedComponentId,
+						reopenedSharedComponentId),
+				() -> assertEquals("the reopened component count must match its remaining dependent", 1L,
+						reopenedReferenceCount));
+	}
+
+	private long namespaceIdFromEncodedIri(long iriId, IRI expectedIri) throws IOException {
+		byte[] iriData = valueStore.getData(iriId);
+		assertEquals("an IRI mapping starts with the URI value marker", 0, iriData[0]);
+		ByteBuffer namespaceIdBuffer = ByteBuffer.wrap(iriData, 1, iriData.length - 1);
+		long namespaceId = Varint.readUnsigned(namespaceIdBuffer);
+
+		byte[] namespaceData = valueStore.getData(namespaceId);
+		assertEquals("the referenced component is an encoded namespace", 4, namespaceData[0]);
+		assertArrayEquals("the namespace entry retains its exact UTF-8 bytes",
+				expectedIri.getNamespace().getBytes(StandardCharsets.UTF_8),
+				Arrays.copyOfRange(namespaceData, 1, namespaceData.length));
+		assertArrayEquals("the IRI mapping retains its exact local-name bytes",
+				expectedIri.getLocalName().getBytes(StandardCharsets.UTF_8),
+				Arrays.copyOfRange(iriData, namespaceIdBuffer.position(), iriData.length));
+		return namespaceId;
 	}
 
 	@Test

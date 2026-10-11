@@ -185,6 +185,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	/** Enforces the prepared transaction contract before a subclass accepts application mutations. */
+	protected final void verifyNotPrepared() {
+		if (txnPrepared) {
+			throw new IllegalStateException("A prepared transaction cannot accept further mutations");
+		}
+	}
+
 	@Override
 	public void begin() throws SailException {
 		begin(sailBase.getDefaultIsolationLevel());
@@ -495,6 +502,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected final boolean transactionActive() {
 		return txnActive;
+	}
+
+	/** Whether the active transaction has completed public preparation. */
+	protected final boolean transactionPrepared() {
+		return txnPrepared;
 	}
 
 	/**

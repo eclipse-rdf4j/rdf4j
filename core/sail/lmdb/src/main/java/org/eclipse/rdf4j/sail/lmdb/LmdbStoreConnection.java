@@ -519,7 +519,20 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	@Override
+	public void flush() throws SailException {
+		if (isActive() && transactionPrepared()) {
+			// Repository prepare/commit flush again. Close late readers without opening a new mutable update.
+			endUpdate(null);
+		} else {
+			super.flush();
+		}
+	}
+
+	@Override
 	protected void endUpdateInternal(UpdateContext op) throws SailException {
+		if (op != null) {
+			verifyNotPrepared();
+		}
 		if (isActive() && IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation())) {
 			lmdbStore.getBackingStore().flushNonePending(this);
 			try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
@@ -532,6 +545,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	public void startUpdate(UpdateContext op) throws SailException {
+		verifyNotPrepared();
 		if (op != null) {
 			markTransactionWriteAttempted();
 		}
@@ -2343,6 +2357,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	}
 
 	private void markTransactionWriteAttempted() {
+		verifyNotPrepared();
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		LmdbSailStore.ReadAttemptLease admission = transactionAdmissionLease;
 		if (admission != null) {

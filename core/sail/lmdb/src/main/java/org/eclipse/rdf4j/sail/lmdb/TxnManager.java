@@ -1256,7 +1256,9 @@ final class TxnManager {
 			snapshotBound = true;
 		}
 
-		synchronized boolean isNativeActive() {
+		// This observational probe also runs under the growth coordinator lock. Native access and state
+		// transitions retain their own guards; taking this monitor here would invert term declaration's order.
+		boolean isNativeActive() {
 			return active && !closed;
 		}
 

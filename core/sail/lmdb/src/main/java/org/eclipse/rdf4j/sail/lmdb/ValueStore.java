@@ -249,6 +249,7 @@ class ValueStore extends AbstractValueFactory {
 	private volatile long environmentGeneration;
 	private boolean nativeMutation;
 	private volatile TxnReplayPolicy.Decision replayDecision;
+	private final Object capacityOrigin = new Object();
 	// main database
 	private int dbi;
 	private int termIndexManifestDbi;
@@ -2685,8 +2686,17 @@ class ValueStore extends AbstractValueFactory {
 		return autoGrow && decision != null && decision.frozenReplay;
 	}
 
-	private FrozenStatementCapacityException frozenCapacity(Throwable cause) {
-		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.VALUE_STORE, cause);
+	FrozenStatementCapacityException frozenCapacity(Throwable cause) {
+		return frozenCapacity(cause, replayDecision);
+	}
+
+	private FrozenStatementCapacityException frozenCapacity(Throwable cause, TxnReplayPolicy.Decision decision) {
+		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.VALUE_STORE, capacityOrigin, decision,
+				cause);
+	}
+
+	boolean ownsFrozenCapacity(FrozenStatementCapacityException failure, TxnReplayPolicy.Decision decision) {
+		return failure.kind() == LmdbSailStore.MapResizeKind.VALUE_STORE && failure.matches(capacityOrigin, decision);
 	}
 
 	private void resizeForAllocation(long txn, long requiredSize) throws IOException {
@@ -5473,12 +5483,11 @@ class ValueStore extends AbstractValueFactory {
 		}
 		if (writeTxn != 0) {
 			if (commit) {
-				if (!autoGrow) {
-					try (MemoryStack stack = stackPush()) {
-						updateRefCounts(stack, writeTxn);
-					}
-					refCountsTxCache.clear();
+				// Checkpoints publish dictionary mappings too: their component counts must be in the same commit.
+				try (MemoryStack stack = stackPush()) {
+					updateRefCounts(stack, writeTxn);
 				}
+				refCountsTxCache.clear();
 				if (invalidateRevisionOnCommit) {
 					long stamp = revisionLock.writeLock();
 					try {
@@ -5695,12 +5704,12 @@ class ValueStore extends AbstractValueFactory {
 
 	public void commit() throws IOException {
 		long generationBefore = nativeCommitGeneration;
+		TxnReplayPolicy.Decision decision = replayDecision;
 		try {
 			endTransaction(true, false);
 		} catch (LmdbUtil.MapFullException mapFull) {
-			TxnReplayPolicy.Decision decision = replayDecision;
 			if (autoGrow && decision != null && decision.frozenReplay) {
-				throw frozenCapacity(mapFull);
+				throw frozenCapacity(mapFull, decision);
 			}
 			if (autoGrow && decision != null && !decision.track) {
 				growForTransactionRetry(0L, mapFull, decision);

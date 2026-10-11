@@ -19,13 +19,25 @@ final class FrozenStatementCapacityException extends IOException {
 	private static final long serialVersionUID = 1L;
 
 	private final LmdbSailStore.MapResizeKind kind;
+	private final transient Object origin;
+	private final transient TxnReplayPolicy.Decision decision;
 
-	FrozenStatementCapacityException(LmdbSailStore.MapResizeKind kind, Throwable cause) {
+	FrozenStatementCapacityException(LmdbSailStore.MapResizeKind kind, Object origin,
+			TxnReplayPolicy.Decision decision, Throwable cause) {
 		super("LMDB map capacity requires frozen statement replay: " + Objects.requireNonNull(kind), cause);
 		this.kind = kind;
+		this.origin = Objects.requireNonNull(origin);
+		this.decision = Objects.requireNonNull(decision);
+		if (!decision.frozenReplay) {
+			throw new IllegalArgumentException("Capacity certification requires a frozen native attempt");
+		}
 	}
 
 	LmdbSailStore.MapResizeKind kind() {
 		return kind;
+	}
+
+	boolean matches(Object origin, TxnReplayPolicy.Decision decision) {
+		return this.origin != null && this.origin == origin && this.decision == decision;
 	}
 }

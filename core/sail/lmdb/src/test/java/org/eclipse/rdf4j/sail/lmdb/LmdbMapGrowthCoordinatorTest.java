@@ -534,6 +534,99 @@ class LmdbMapGrowthCoordinatorTest {
 	}
 
 	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void valueStorePinQueryDoesNotWaitForConcurrentTermSnapshotDeclaration(@TempDir Path dataDir) throws Exception {
+		LmdbStore store = newStore(dataDir, 100);
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		LmdbSailStore.ReadView view = backing.createTransactionReadView();
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		CountDownLatch termDeclarationEntered = new CountDownLatch(1);
+		CountDownLatch releaseTermDeclaration = new CountDownLatch(1);
+		CountDownLatch pinQueryStarted = new CountDownLatch(1);
+		Future<?> termDeclaration = null;
+		Future<Boolean> pinQuery = null;
+		boolean pinQueryCompletedWhileGuardHeld = false;
+		boolean pinObservedWhileGuardHeld = false;
+
+		try {
+			view.requireDictionaryTermSnapshot();
+			assertTrue(view.hasNativePin(LmdbSailStore.MapResizeKind.VALUE_STORE),
+					"the fixture must hold a real ValueStore native pin");
+
+			termDeclaration = executor.submit(() -> {
+				try {
+					view.valueSnapshot().requireTermSnapshot(declareMembership -> {
+						declareMembership.run();
+						termDeclarationEntered.countDown();
+						try {
+							if (!releaseTermDeclaration.await(3, TimeUnit.SECONDS)) {
+								throw new AssertionError("the test must release the guarded term declaration");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError("the guarded term declaration was interrupted", e);
+						}
+					});
+				} catch (IOException e) {
+					throw new AssertionError("the real term snapshot declaration must complete", e);
+				}
+			});
+			assertTrue(termDeclarationEntered.await(2, TimeUnit.SECONDS),
+					"the worker must hold the actual ValueStore read guard inside term membership declaration");
+
+			pinQuery = executor.submit(() -> {
+				pinQueryStarted.countDown();
+				return view.hasNativePin(LmdbSailStore.MapResizeKind.VALUE_STORE);
+			});
+			assertTrue(pinQueryStarted.await(1, TimeUnit.SECONDS), "the second worker must start the pin query");
+			try {
+				pinObservedWhileGuardHeld = pinQuery.get(500, TimeUnit.MILLISECONDS);
+				pinQueryCompletedWhileGuardHeld = true;
+			} catch (TimeoutException expectedWhileTheCurrentImplementationWaitsOnTheTxnMonitor) {
+				// Releasing the term-declaration worker below lets this bounded regression finish deterministically.
+			}
+		} finally {
+			releaseTermDeclaration.countDown();
+			Throwable workerFailure = null;
+			if (termDeclaration != null) {
+				try {
+					termDeclaration.get(2, TimeUnit.SECONDS);
+				} catch (ExecutionException failure) {
+					workerFailure = failure.getCause();
+				}
+			}
+			if (pinQuery != null) {
+				try {
+					pinObservedWhileGuardHeld |= pinQuery.get(2, TimeUnit.SECONDS);
+				} catch (ExecutionException failure) {
+					if (workerFailure == null) {
+						workerFailure = failure.getCause();
+					} else {
+						workerFailure.addSuppressed(failure.getCause());
+					}
+				}
+			}
+			executor.shutdownNow();
+			boolean workersTerminated = executor.awaitTermination(2, TimeUnit.SECONDS);
+			try {
+				view.close();
+			} finally {
+				store.shutDown();
+			}
+			assertTrue(workersTerminated, "both native snapshot workers must finish after the guard is released");
+			if (workerFailure != null) {
+				throw new AssertionError("both bounded native snapshot workers must complete normally", workerFailure);
+			}
+		}
+
+		assertTrue(pinQueryCompletedWhileGuardHeld,
+				"checking a native pin must not wait for another thread's term-snapshot read guard");
+		assertTrue(pinObservedWhileGuardHeld,
+				"the liveness-safe pin query must still report the active native snapshot");
+	}
+
+	@Test
 	@Timeout(value = 5, unit = TimeUnit.SECONDS)
 	void nestedGrowthAttemptsWithSameOwnerShareOneEpisode(@TempDir Path dataDir) throws Exception {
 		LmdbStore store = newStore(dataDir, 100);

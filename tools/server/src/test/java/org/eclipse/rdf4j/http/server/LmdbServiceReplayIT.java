@@ -57,7 +57,7 @@ import com.sun.net.httpserver.HttpServer;
 /** End-to-end coverage for SERVICE results during dictionary and TripleStore map growth. */
 public class LmdbServiceReplayIT {
 
-	private static final long TRIPLE_GROWTH_MAP_SIZE = 2L * 1024L * 1024L;
+	private static final long TRIPLE_GROWTH_MAP_SIZE = 8L * 1024L * 1024L;
 	private static final long TRIPLE_GROWTH_VALUE_MAP_SIZE = 128L * 1024L * 1024L;
 	private static final long VALUE_GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
 	private static final double GROWTH_THRESHOLD = 0.10d;
@@ -100,6 +100,7 @@ public class LmdbServiceReplayIT {
 	private static void assertServiceQueryAcrossGrowth(boolean tripleGrowth) throws Exception {
 		String repositoryId = REPOSITORY_ID + (tripleGrowth ? "-triples" : "-values");
 		ExecutorService queryExecutor = Executors.newSingleThreadExecutor();
+		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 		try (ServiceGate serviceGate = new ServiceGate()) {
 			RemoteRepositoryManager manager = RemoteRepositoryManager.getInstance(TestServer.SERVER_URL);
 			HTTPRepository repositoryForCleanup = null;
@@ -131,6 +132,11 @@ public class LmdbServiceReplayIT {
 				long initialReplayRequested = replayRequested.getAsLong();
 				long initialTripleResizes = tripleResizes.getAsLong();
 				long initialValueResizes = valueResizes.getAsLong();
+				if (tripleGrowth) {
+					assertThat(initialTripleResizes)
+							.as("the seed transaction must not resize the TripleStore before the SERVICE query")
+							.isZero();
+				}
 
 				// The SERVICE endpoint variable is read from LMDB, forcing the local snapshot lookup before the gate.
 				String query = "SELECT ?value ?remoteValue WHERE { "
@@ -138,12 +144,14 @@ public class LmdbServiceReplayIT {
 						+ "<" + SUBJECT + "> <" + SERVICE_PREDICATE + "> ?endpoint . "
 						+ "SERVICE ?endpoint { <urn:rdf4j:lmdb-service-replay:remote> "
 						+ "<urn:rdf4j:lmdb-service-replay:remote-value> ?remoteValue } }";
+				AtomicInteger queryRows = new AtomicInteger();
 				Future<Set<String>> queryResult = queryExecutor.submit(() -> {
 					try (RepositoryConnection reader = repository.getConnection();
 							TupleQueryResult result = reader.prepareTupleQuery(query).evaluate()) {
 						Set<String> values = new HashSet<>();
 						while (result.hasNext()) {
 							var bindingSet = result.next();
+							queryRows.incrementAndGet();
 							values.add(bindingSet.getValue("value").stringValue() + "|"
 									+ bindingSet.getValue("remoteValue").stringValue());
 						}
@@ -152,25 +160,39 @@ public class LmdbServiceReplayIT {
 				});
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
+				assertThat(queryRows.get())
+						.as("the gated SERVICE query must not expose a result before replay acceptance")
+						.isZero();
 				// HTTP namespace updates use a separate request even during an active transaction. Keep the
 				// actual resize demand in this transaction so it publishes with the after row.
 				String growthLiteral = tripleGrowth ? null
 						: "n"
 								.repeat(Math.toIntExact(Math.round(VALUE_GROWTH_MAP_SIZE * GROWTH_THRESHOLD * 1.5d)));
 				IRI overflowSubject = Values.iri("urn:rdf4j:lmdb-service-replay:growth:overflow");
-				try (RepositoryConnection writer = repository.getConnection()) {
-					writer.begin();
-					if (tripleGrowth) {
-						writer.add(growthStatements(10_000));
-					} else {
-						writer.add(overflowSubject, GROWTH_PREDICATE, Values.literal(growthLiteral));
+				Future<?> writerCommit = writerExecutor.submit(() -> {
+					try (RepositoryConnection writer = repository.getConnection()) {
+						writer.begin();
+						if (tripleGrowth) {
+							writer.add(growthStatements(10_000));
+						} else {
+							writer.add(overflowSubject, GROWTH_PREDICATE, Values.literal(growthLiteral));
+						}
+						writer.add(SUBJECT, VALUE_PREDICATE, Values.literal("after"));
+						writer.commit();
 					}
-					writer.add(SUBJECT, VALUE_PREDICATE, Values.literal("after"));
-					writer.commit();
-				}
+				});
 				if (tripleGrowth) {
 					awaitReplayAccepted(replayAccepted, initialReplayAccepted, growthMetrics);
+					assertThat(queryRows.get())
+							.as("the blocked SERVICE query must not expose a result before its replay is accepted")
+							.isZero();
 					serviceGate.release();
+				}
+				writerCommit.get(30, TimeUnit.SECONDS);
+				if (tripleGrowth) {
+					assertThat(tripleResizes.getAsLong())
+							.as("the fixed post-query row load must resize the TripleStore before publication")
+							.isGreaterThan(initialTripleResizes);
 				}
 				try (RepositoryConnection published = repository.getConnection()) {
 					published.begin(IsolationLevels.SNAPSHOT);
@@ -205,6 +227,9 @@ public class LmdbServiceReplayIT {
 				serviceGate.release();
 
 				Set<String> results = queryResult.get(30, TimeUnit.SECONDS);
+				assertThat(queryRows.get())
+						.as("the SERVICE query must return exactly the expected number of rows")
+						.isEqualTo(tripleGrowth ? 2 : 1);
 				if (tripleGrowth) {
 					assertThat(results).containsExactlyInAnyOrder("before|service-result", "after|service-result");
 					assertThat(serviceGate.requestCount()).isGreaterThan(1);
@@ -231,6 +256,8 @@ public class LmdbServiceReplayIT {
 		} finally {
 			queryExecutor.shutdownNow();
 			queryExecutor.awaitTermination(5, TimeUnit.SECONDS);
+			writerExecutor.shutdownNow();
+			writerExecutor.awaitTermination(5, TimeUnit.SECONDS);
 		}
 	}
 

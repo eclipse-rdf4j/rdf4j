@@ -191,6 +191,7 @@ class TripleStore implements Closeable {
 	private TxnReplayPolicy replayPolicy;
 	private long valueEnvironmentGeneration;
 	private TxnReplayPolicy.Decision replayDecision;
+	private final Object capacityOrigin = new Object();
 	private final TxnManager txnManager;
 	private volatile LmdbSailStore.MapGrowthAttemptSupplier mapGrowthAttemptSupplier;
 	private volatile LmdbSailStore.MapGrowthRequestListener mapGrowthRequestListener;
@@ -1749,8 +1750,13 @@ class TripleStore implements Closeable {
 		return autoGrow && replayDecision != null && replayDecision.frozenReplay;
 	}
 
-	private FrozenStatementCapacityException frozenCapacity(Throwable cause) {
-		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, cause);
+	FrozenStatementCapacityException frozenCapacity(Throwable cause) {
+		return new FrozenStatementCapacityException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, capacityOrigin,
+				replayDecision, cause);
+	}
+
+	boolean ownsFrozenCapacity(FrozenStatementCapacityException failure, TxnReplayPolicy.Decision decision) {
+		return failure.kind() == LmdbSailStore.MapResizeKind.TRIPLE_STORE && failure.matches(capacityOrigin, decision);
 	}
 
 	private void checkReplayFailure() throws IOException {

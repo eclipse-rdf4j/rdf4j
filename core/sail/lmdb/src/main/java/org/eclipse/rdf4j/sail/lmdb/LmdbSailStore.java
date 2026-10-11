@@ -408,7 +408,8 @@ class LmdbSailStore implements SailStore {
 		private final GrowthEpisode episode;
 		private final Object warningOwner;
 		private final Object nativeWriterOwner;
-		private final long nativeGeneration;
+		private volatile long nativeGeneration;
+		private long statementReplayGeneration;
 		private final AtomicBoolean closed = new AtomicBoolean();
 		private Runnable completion;
 		private QueryExecutionDeadline.Scope deadlineScope;
@@ -446,6 +447,10 @@ class LmdbSailStore implements SailStore {
 			if (!closed.get()) {
 				coordinator.requestQuiescence(episode, kind);
 			}
+		}
+
+		void startStatementReplay(long generation) throws IOException {
+			coordinator.startStatementReplay(this, generation);
 		}
 
 		long deadlineNanos() {
@@ -1140,6 +1145,26 @@ class LmdbSailStore implements SailStore {
 				} finally {
 					lock.unlock();
 				}
+			}
+		}
+
+		private void startStatementReplay(MapGrowthAttempt attempt, long generation) throws IOException {
+			lock.lock();
+			try {
+				checkAdmission(QueryExecutionDeadline.current());
+				throwIfGrowthFailed(attempt.episode);
+				if (attempt.closed.get() || episode != attempt.episode || episode.owner != attempt.nativeWriterOwner
+						|| episode.quiescenceRunning || generation == 0L
+						|| generation == attempt.statementReplayGeneration) {
+					throw new IOException("No new certified statement attempt for this retained growth episode");
+				}
+				attempt.nativeGeneration = generation;
+				attempt.statementReplayGeneration = generation;
+				// Retain admission and the overall query deadline; grant grace once per successfully aborted attempt.
+				episode.deadlineNanos = System.nanoTime() + readDrainTimeoutNanos;
+				changePhase(episode, GrowthPhase.EMERGENCY);
+			} finally {
+				lock.unlock();
 			}
 		}
 
@@ -3122,12 +3147,19 @@ class LmdbSailStore implements SailStore {
 		private boolean changed;
 		private boolean commitRequested;
 		private boolean failed;
+		// Explicit failure/rollback survives recovery of an individual physical attempt.
+		private boolean logicalFailure;
 		private RetainedFlushPublication retainedFlush;
 
 		private PublicationContext(Object owner, WriterLease writerLease, boolean ownsOwner) {
 			this.owner = owner;
 			this.writerLease = writerLease;
 			this.ownsOwner = ownsOwner;
+		}
+
+		private void fail() {
+			logicalFailure = true;
+			failed = true;
 		}
 	}
 
@@ -3143,7 +3175,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void fail() {
-			context.failed = true;
+			context.fail();
 		}
 
 		@Override
@@ -4100,6 +4132,9 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void commit() {
 			checkActive();
+			if (context.failed) {
+				throw new SailException("A failed retained publication cannot commit");
+			}
 			try {
 				commitPendingPublication(context.owner);
 			} catch (RuntimeException | Error failure) {
@@ -4119,7 +4154,7 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void fail() {
-			context.failed = true;
+			context.fail();
 		}
 
 		@Override
@@ -4170,7 +4205,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private record StatementReplayCertificate(TemporaryFlushingException failure, Object owner, Object graphOwner,
-			long generation) {
+			long generation, MapResizeKind kind) {
 	}
 
 	private boolean frozenReplayPublication(Object owner) {
@@ -4185,16 +4220,21 @@ class LmdbSailStore implements SailStore {
 		if (!frozenReplayPublication(owner) || namespacePersistenceFailure != null) {
 			return null;
 		}
-		boolean capacity = false;
+		FrozenStatementCapacityException capacity = null;
 		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
 			if (cause instanceof Error || cause instanceof QueryInterruptedException
 					|| cause instanceof SailConflictException || cause instanceof CancellationException
 					|| cause.getSuppressed().length != 0) {
 				return null;
 			}
-			capacity |= cause instanceof FrozenStatementCapacityException || cause instanceof LmdbUtil.MapFullException;
+			if (cause instanceof FrozenStatementCapacityException marker) {
+				if (capacity != null) {
+					return null;
+				}
+				capacity = marker;
+			}
 		}
-		if (!capacity) {
+		if (capacity == null) {
 			return null;
 		}
 		RetainedFlushPublication retained = context.retainedFlush;
@@ -4203,7 +4243,10 @@ class LmdbSailStore implements SailStore {
 		sinkStoreAccessLock.lock();
 		try {
 			if (!storeTxnStarted.get() || storeTransactionOwner != owner || storeReplayDecision == null
-					|| !storeReplayDecision.frozenReplay || retained.retry != null) {
+					|| !storeReplayDecision.frozenReplay || retained.retry != null
+					|| !(capacity.kind() == MapResizeKind.TRIPLE_STORE
+							? tripleStore.ownsFrozenCapacity(capacity, storeReplayDecision)
+							: valueStore.ownsFrozenCapacity(capacity, storeReplayDecision))) {
 				return null;
 			}
 			failedGeneration = storeTxnGeneration;
@@ -4212,7 +4255,7 @@ class LmdbSailStore implements SailStore {
 		}
 		try {
 			// Async rollback finishes the worker and discards its queue before returning. Any abort error is terminal.
-			rollback(owner);
+			rollbackPhysicalAttempt(owner);
 		} catch (RuntimeException | Error abortFailure) {
 			retainRollbackFailure(failure, abortFailure);
 			return null;
@@ -4222,8 +4265,8 @@ class LmdbSailStore implements SailStore {
 		TemporaryFlushingException temporary = new TemporaryFlushingException(
 				"The native attempt was aborted; its complete frozen statement input remains retained", failure);
 		retained.retry = new StatementReplayCertificate(temporary, owner, retained.coverage.publicationOwner(),
-				failedGeneration);
-		context.failed = false;
+				failedGeneration, capacity.kind());
+		context.failed = context.logicalFailure;
 		context.commitRequested = false;
 		return temporary;
 	}
@@ -4246,14 +4289,21 @@ class LmdbSailStore implements SailStore {
 				retained.growth = mapGrowthCoordinator.begin(owner, certificate.generation());
 			}
 			MapGrowthAttempt growth = retained.growth;
-			growth.requestQuiescence(MapResizeKind.TRIPLE_STORE);
-			growth.requestQuiescence(MapResizeKind.VALUE_STORE);
-			long tripleBefore = tripleStore.mapSizeBytes();
-			long valueBefore = valueStore.mapSizeBytes();
-			tripleStore.growMapForEstimatedWrite(tripleBefore, growth);
-			valueStore.growMapForEstimatedWrite(valueBefore, growth);
-			if (tripleStore.mapSizeBytes() <= tripleBefore || valueStore.mapSizeBytes() <= valueBefore) {
-				throw new SailException("Frozen statement replay requires actual paired map-size progress", failure);
+			growth.startStatementReplay(certificate.generation());
+			growth.requestQuiescence(certificate.kind());
+			long before;
+			long after;
+			if (certificate.kind() == MapResizeKind.TRIPLE_STORE) {
+				before = tripleStore.mapSizeBytes();
+				tripleStore.growMapForEstimatedWrite(before, growth);
+				after = tripleStore.mapSizeBytes();
+			} else {
+				before = valueStore.mapSizeBytes();
+				valueStore.growMapForEstimatedWrite(before, growth);
+				after = valueStore.mapSizeBytes();
+			}
+			if (after <= before) {
+				throw new SailException("Frozen statement replay requires actual affected map-size progress", failure);
 			}
 			checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
 			retained.retry = null;
@@ -5185,14 +5235,30 @@ class LmdbSailStore implements SailStore {
 	}
 
 	void rollback(Object owner) throws SailException {
+		rollbackOwnedAttempt(owner, true);
+	}
+
+	private void rollbackPhysicalAttempt(Object owner) throws SailException {
+		try {
+			rollbackOwnedAttempt(owner, false);
+		} catch (RuntimeException | Error failure) {
+			PublicationContext context = publicationContext.get();
+			if (context != null && context.owner == owner) {
+				context.fail();
+			}
+			throw failure;
+		}
+	}
+
+	private void rollbackOwnedAttempt(Object owner, boolean failPublication) throws SailException {
 		sinkStoreAccessLock.lock();
 		try {
 			if (storeTransactionOwner == owner || namespaceTransactionOwner == owner) {
 				checkNativeContinuationAdmission();
 			}
 			PublicationContext context = publicationContext.get();
-			if (context != null && context.owner == owner) {
-				context.failed = true;
+			if (failPublication && context != null && context.owner == owner) {
+				context.fail();
 			}
 			if ((storeTxnStarted.get() && storeTransactionOwner != owner)
 					|| (namespaceTransactionOwner != null && namespaceTransactionOwner != owner)) {
@@ -5217,7 +5283,7 @@ class LmdbSailStore implements SailStore {
 			checkNativeContinuationAdmission();
 			PublicationContext context = publicationContext.get();
 			if (context != null && context.owner == owner) {
-				context.failed = true;
+				context.fail();
 			}
 			rollback();
 		} finally {
@@ -7613,7 +7679,8 @@ class LmdbSailStore implements SailStore {
 			captureNoneNamespaces(state);
 			state.recovering = true;
 			try {
-				rollback(writerOwner());
+				// Retiring a retryable native attempt does not cancel its enclosing logical publication.
+				rollbackPhysicalAttempt(writerOwner());
 				backingTransactionGeneration = 0L;
 				while (true) {
 					growNoneMaps(0L, 0L, capacity.environment);
@@ -7656,10 +7723,11 @@ class LmdbSailStore implements SailStore {
 							throw retryFailure;
 						}
 						capacity = next;
-						rollback(writerOwner());
+						rollbackPhysicalAttempt(writerOwner());
 					}
 				}
 			} catch (IOException | RuntimeException | Error recoveryFailure) {
+				markPublicationFailed();
 				retainRollbackFailure(failure, recoveryFailure);
 				if (failure instanceof IOException io) {
 					throw io;
