@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -58,6 +59,7 @@ class LmdbNativeComparisonCompilerTest {
 		when(source.nativeValueCodec()).thenReturn(codec);
 		when(source.idOf(any(Value.class))).thenAnswer(invocation -> LmdbNativeValueCodec
 				.packInline(LmdbNativeValueCodec.fromValue(invocation.getArgument(0)), false));
+		when(source.idOf(any(Value.class), anyInt())).thenAnswer(invocation -> source.idOf(invocation.getArgument(0)));
 
 		compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		compiler.slot("a");
@@ -250,6 +252,7 @@ class LmdbNativeComparisonCompilerTest {
 		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));
 		when(store.nativeValueCodec()).thenReturn(codec);
 		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		when(store.idOf(any(Value.class), anyInt())).thenAnswer(invocation -> store.idOf(invocation.getArgument(0)));
 		SyntheticValueSource compiledSource = new SyntheticValueSource(store, PlanValueCatalog.EMPTY);
 		long seven = LmdbNativeValueCodec.packInline(
 				LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(7)), false);
@@ -285,6 +288,7 @@ class LmdbNativeComparisonCompilerTest {
 		LmdbNativeValueCodec codec = new LmdbNativeValueCodec(mock(ValueStore.class));
 		when(store.nativeValueCodec()).thenReturn(codec);
 		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		when(store.idOf(any(Value.class), anyInt())).thenAnswer(invocation -> store.idOf(invocation.getArgument(0)));
 		SyntheticValueSource evaluation = new SyntheticValueSource(store, PlanValueCatalog.EMPTY).forEvaluation();
 		long seven = LmdbNativeValueCodec.packInline(
 				LmdbNativeValueCodec.fromValue(SimpleValueFactory.getInstance().createLiteral(7)), false);
@@ -318,6 +322,7 @@ class LmdbNativeComparisonCompilerTest {
 	void valueSetDoesNotReuseRuntimeIdVerdictAcrossEvaluations() {
 		NativeLmdbQuerySource store = mock(NativeLmdbQuerySource.class);
 		when(store.idOf(any(Value.class))).thenReturn(LmdbNativeAggregateCompiler.UNKNOWN);
+		when(store.idOf(any(Value.class), anyInt())).thenAnswer(invocation -> store.idOf(invocation.getArgument(0)));
 		SyntheticValueSource compiledSource = new SyntheticValueSource(store, PlanValueCatalog.EMPTY);
 		Value seven = SimpleValueFactory.getInstance().createLiteral(7);
 		ValueSetFilter filter = new ValueSetFilter(compiledSource, 0,

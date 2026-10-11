@@ -114,7 +114,9 @@ import org.eclipse.rdf4j.sail.lmdb.RecordIterator; import java.util.concurrent.a
     text=(source_root/PKG/'LmdbSyntheticValueSource.java').read_text()
     start=text.index('class SyntheticValueSource');end=text.index('\n\t@Override\n\tpublic long idOf(Value value)')
     part=text[start:end]
-    for decl in ('public long idOf(Value value)','public Object valueLookupScope()', 'public Value lazyValue(long id)'):
+    for decl in ('public long idOf(Value value)', 'public long idOf(Value value, int positionMask)',
+                 'public Object valueLookupScope()', 'public Value lazyValue(long id)',
+                 'public Value lazyValue(long id, int positionMask)'):
         part+='\n'+body(text,decl)
     part+='\n}\n'
     write(PKG+'SyntheticValueSource.java',header+part,'exact production fields/constructors/evaluation/ingress/key/probe-guard/value-resolution methods; unrelated I/O adapters omitted')

@@ -119,6 +119,11 @@ final class LmdbNativeValueCodec {
 		return cache[bank].length();
 	}
 
+	/** Exact dictionary ownership for returning a decoded input's original store ID. */
+	boolean decodesIdSpace(Object idSpace) {
+		return valueStore != null && valueStore == idSpace;
+	}
+
 	DecodedValue decode(long id) {
 		return decode(id, ValuePosition.NONE);
 	}

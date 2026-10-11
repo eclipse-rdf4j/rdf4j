@@ -21,8 +21,10 @@ import org.eclipse.rdf4j.model.Value;
 
 /**
  * Terminal-only RDF term keys over the evaluation's runtime table. Interning, output payload, ownership, unresolved
- * membership, and the canonical key share one publication record. The common path creates no spelling key, boxed ID,
- * representative object, map entry, or second canonicalization cache. Upstream probes retain the ordinary authority.
+ * membership, and the canonical key share one publication record. Ordinary immutable values need no spelling key, boxed
+ * ID, representative object, map entry, or second canonicalization cache. First mutable LMDB admission snapshots its
+ * spelling, while query-scoped registrations preserve their representative. Upstream probes retain the ordinary
+ * authority.
  *
  * An unexpected stored/plan key is normalized defensively by reading its Value once (never by value-to-ID lookup). Only
  * such exceptional IDs need a separate memoization map. This path cannot run for proven all-generated keys.
@@ -42,7 +44,7 @@ final class NativeGeneratedKeyAuthority implements NativeTermAuthority, AutoClos
 
 	long intern(Value value) {
 		checkOpen();
-		return values.intern(value, true);
+		return context.internGeneratedKey(value);
 	}
 
 	long internString(String label) {
@@ -126,7 +128,7 @@ final class NativeGeneratedKeyAuthority implements NativeTermAuthority, AutoClos
 		if (value == null) {
 			throw new IllegalStateException("Unresolvable generated key ID: " + id);
 		}
-		long key = values.key(values.intern(value, true));
+		long key = values.key(context.internGeneratedKey(value));
 		exceptionalKeys.put(id, key);
 		return key;
 	}

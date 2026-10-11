@@ -21,9 +21,8 @@ import java.util.List;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
  * Immutable compile-time table of plan-synthetic constants (values referenced by a compiled plan but absent from the
@@ -38,19 +37,19 @@ final class PlanValueCatalog {
 
 	static final PlanValueCatalog EMPTY = new PlanValueCatalog(Map.of(), List.of());
 
-	private final Map<NativeValueKey, Long> idsByValue;
+	private final Map<RdfTermKey, Long> idsByValue;
 	private final List<Value> valuesInOrder;
 
-	private PlanValueCatalog(Map<NativeValueKey, Long> idsByValue, List<Value> valuesInOrder) {
+	private PlanValueCatalog(Map<RdfTermKey, Long> idsByValue, List<Value> valuesInOrder) {
 		this.idsByValue = idsByValue;
 		this.valuesInOrder = valuesInOrder;
 	}
 
 	long idOf(Value value) {
-		return idOfKey(NativeValueKey.of(value));
+		return idOfKey(RdfTermKey.of(value));
 	}
 
-	long idOfKey(NativeValueKey key) {
+	long idOfKey(RdfTermKey key) {
 		Long id = idsByValue.get(key);
 		return id != null ? id : UNKNOWN;
 	}
@@ -79,12 +78,12 @@ final class PlanValueCatalog {
 	}
 
 	static final class Builder {
-		private final Map<NativeValueKey, Long> idsByValue = new HashMap<>();
+		private final Map<RdfTermKey, Long> idsByValue = new HashMap<>();
 		private final List<Value> valuesInOrder = new ArrayList<>();
 
 		/** Returns the stable synthetic id for the constant, allocating one on first sight of its exact spelling. */
 		long internConstant(Value value) {
-			NativeValueKey key = NativeValueKey.of(value);
+			RdfTermKey key = RdfTermKey.of(value);
 			Long existing = idsByValue.get(key);
 			if (existing != null) {
 				return existing;
@@ -97,7 +96,7 @@ final class PlanValueCatalog {
 
 		/** Pure lookup: the already-allocated id for the constant, or {@code UNKNOWN} — never allocates. */
 		long idOf(Value value) {
-			Long id = idsByValue.get(NativeValueKey.of(value));
+			Long id = idsByValue.get(RdfTermKey.of(value));
 			return id != null ? id : UNKNOWN;
 		}
 
@@ -109,69 +108,4 @@ final class PlanValueCatalog {
 			return new PlanValueCatalog(new HashMap<>(idsByValue), List.copyOf(valuesInOrder));
 		}
 	}
-}
-
-/** Structural, spelling-preserving key for native synthetic values, including nested triple terms. */
-record NativeValueKey(Value.Type type, String lexical, String language, String datatype,
-		Literal.BaseDirection direction, NativeValueKey subject, NativeValueKey predicate, NativeValueKey object) {
-
-	static NativeValueKey of(Value value) {
-		if (value == null) {
-			return null;
-		}
-		if (value instanceof Literal literal) {
-			return new NativeValueKey(Value.Type.Literal, literal.getLabel(), literal.getLanguage().orElse(null),
-					literal.getDatatype().stringValue(), literal.getBaseDirection(), null, null, null);
-		}
-		if (value instanceof TripleTerm triple) {
-			return new NativeValueKey(Value.Type.TripleTerm, null, null, null, null, of(triple.getSubject()),
-					of(triple.getPredicate()), of(triple.getObject()));
-		}
-		return new NativeValueKey(value.getType(), value.stringValue(), null, null, null, null, null, null);
-	}
-
-	/** Cache probe without allocating a temporary key. Every field tested here is also captured by of(Value). */
-	boolean matches(Value value) {
-		if (value instanceof Literal literal) {
-			return type == Value.Type.Literal && lexical.equals(literal.getLabel())
-					&& java.util.Objects.equals(language, literal.getLanguage().orElse(null))
-					&& datatype.equals(literal.getDatatype().stringValue()) && direction == literal.getBaseDirection();
-		}
-		if (value instanceof TripleTerm triple) {
-			return type == Value.Type.TripleTerm && subject.matches(triple.getSubject())
-					&& predicate.matches(triple.getPredicate()) && object.matches(triple.getObject());
-		}
-		return value != null && type == value.getType() && lexical.equals(value.stringValue());
-	}
-
-	static int spellingHash(Value value) {
-		if (value instanceof Literal literal) {
-			return literalHash(literal.getLabel(), literal.getLanguage().orElse(null),
-					literal.getDatatype().stringValue(), literal.getBaseDirection());
-		}
-		if (value instanceof TripleTerm triple) {
-			return 31 * (31 * (31 * Value.Type.TripleTerm.ordinal() + spellingHash(triple.getSubject()))
-					+ spellingHash(triple.getPredicate())) + spellingHash(triple.getObject());
-		}
-		return value == null ? 0 : 31 * value.getType().ordinal() + value.stringValue().hashCode();
-	}
-
-	int spellingHash() {
-		if (type == Value.Type.Literal) {
-			return literalHash(lexical, language, datatype, direction);
-		}
-		if (type == Value.Type.TripleTerm) {
-			return 31 * (31 * (31 * type.ordinal() + subject.spellingHash()) + predicate.spellingHash())
-					+ object.spellingHash();
-		}
-		return 31 * type.ordinal() + lexical.hashCode();
-	}
-
-	private static int literalHash(String lexical, String language, String datatype, Literal.BaseDirection direction) {
-		int hash = 31 * Value.Type.Literal.ordinal() + lexical.hashCode();
-		hash = 31 * hash + datatype.hashCode();
-		hash = 31 * hash + (language == null ? 0 : language.hashCode());
-		return 31 * hash + (direction == null ? 0 : direction.ordinal() + 1);
-	}
-
 }

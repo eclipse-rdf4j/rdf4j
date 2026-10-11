@@ -19,9 +19,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
- * A proof about one terminal's producer, not a guess from the first batch. Only assignments whose result has no
- * consumer other than keying/output (and simple aliases) are admitted. It is deliberately not an optimizer strategy:
- * the same proof and assignments survive ordinary cursors, interpreted IR and emitted IR.
+ * A proof about one terminal's producer, not a guess from the first batch. Terminal keys require exclusively generated
+ * provenance; unused assignment results may omit normalization in the terminal producer suffix. It is deliberately not
+ * an optimizer strategy: the same proof and assignments survive ordinary cursors, interpreted IR and emitted IR.
  *
  * An unresolved local value must never be confused with a value proved absent from the dictionary. Joins, OPTIONAL,
  * opaque filters, mixed-provenance UNION arms and entry-bound assignment targets keep store-first identity.
@@ -29,25 +29,36 @@ import org.eclipse.rdf4j.query.BindingSet;
 final class NativeGeneratedKeyPlan {
 	/** One increment per activated evaluation, never per key or row. */
 	static final AtomicLong ACTIVATIONS = new AtomicLong();
+	static final AtomicLong UNUSED_RESULT_ACTIVATIONS = new AtomicLong();
 	static final String PROPERTY = "rdf4j.lmdb.generatedKeys.enabled";
-	static final NativeGeneratedKeyPlan NONE = new NativeGeneratedKeyPlan(Set.of(), 0L);
+	static final NativeGeneratedKeyPlan NONE = new NativeGeneratedKeyPlan(Set.of(), Set.of(), 0L);
 	private final Set<Object> assignments;
+	private final Set<Object> unusedAssignments;
 	private final long targetMask;
 
-	private NativeGeneratedKeyPlan(Set<Object> assignments, long targetMask) {
+	private NativeGeneratedKeyPlan(Set<Object> assignments, Set<Object> unusedAssignments, long targetMask) {
 		this.assignments = assignments;
+		this.unusedAssignments = unusedAssignments;
 		this.targetMask = targetMask;
 	}
 
 	static NativeGeneratedKeyPlan distinct(SlotPlan arg, int[] keys) {
-		return prove(arg, mask(keys));
+		return prove(arg, mask(keys), 0L);
 	}
 
 	static NativeGeneratedKeyPlan group(SlotPlan arg, int[] keys, AggregateSpec[] aggregates) {
 		long needed = mask(keys);
+		long canonicalInputs = 0L;
 		// Every DISTINCT channel is a key consumer too, including hidden expression slots. Do not activate an
 		// all-generated proof while a stored DISTINCT input would require a different key policy.
 		for (AggregateSpec aggregate : aggregates) {
+			if (!aggregate.distinct) {
+				// Other collectors retain their current input identity contract. In particular custom aggregates
+				// can have opaque dependencies that this optional optimization does not attempt to discover.
+				canonicalInputs |= aggregate.custom != null ? -1L
+						: aggregate.rowSlots != null ? mask(aggregate.rowSlots)
+								: aggregate.slot >= 0 ? 1L << aggregate.slot : 0L;
+			}
 			if (aggregate.distinct) {
 				if (aggregate.rowSlots != null) {
 					needed |= mask(aggregate.rowSlots);
@@ -58,7 +69,7 @@ final class NativeGeneratedKeyPlan {
 				}
 			}
 		}
-		return prove(arg, needed);
+		return prove(arg, needed, canonicalInputs);
 	}
 
 	private static long mask(int[] slots) {
@@ -72,7 +83,7 @@ final class NativeGeneratedKeyPlan {
 		return result;
 	}
 
-	private static NativeGeneratedKeyPlan prove(SlotPlan arg, long needed) {
+	private static NativeGeneratedKeyPlan prove(SlotPlan arg, long needed, long canonicalInputs) {
 		if (needed == 0L) {
 			return NONE;
 		}
@@ -80,7 +91,18 @@ final class NativeGeneratedKeyPlan {
 		if (!proof.visit(arg, needed, 0L) || proof.assignments.isEmpty()) {
 			return NONE;
 		}
-		return new NativeGeneratedKeyPlan(Collections.unmodifiableSet(proof.assignments), proof.targetMask);
+		// Keep the all-generated terminal provenance proof independent of the optional optimization below.
+		// Stored inputs to an expression are valid dependencies, even though they cannot be terminal local keys.
+		proof.admitUnusedResults(arg, needed | canonicalInputs);
+		return new NativeGeneratedKeyPlan(Collections.unmodifiableSet(proof.assignments),
+				Collections.unmodifiableSet(proof.unusedAssignments), proof.targetMask);
+	}
+
+	void activated() {
+		ACTIVATIONS.incrementAndGet();
+		if (!unusedAssignments.isEmpty()) {
+			UNUSED_RESULT_ACTIVATIONS.incrementAndGet();
+		}
 	}
 
 	boolean isEmpty() {
@@ -89,6 +111,10 @@ final class NativeGeneratedKeyPlan {
 
 	boolean accepts(CopyBinding copy) {
 		return (targetMask & (1L << copy.targetSlot)) != 0L && assignments.contains(copy.generatedKeyProof);
+	}
+
+	boolean discards(CopyBinding copy) {
+		return unusedAssignments.contains(copy.generatedKeyProof);
 	}
 
 	boolean enabled(NativeSlotLayout layout, BindingSet entry) {
@@ -109,7 +135,53 @@ final class NativeGeneratedKeyPlan {
 
 	private static final class Builder {
 		final Set<Object> assignments = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Set<Object> unusedAssignments = Collections.newSetFromMap(new IdentityHashMap<>());
 		long targetMask;
+
+		/**
+		 * Track every terminal, collector and expression read backwards through the producer suffix. Only fresh results
+		 * that nobody reads can skip normalization. The expression itself still executes, including errors and volatile
+		 * effects. Unknown reads keep all dependencies live; physical operators stop the proof. No optional payload is
+		 * retained, so this optimization cannot consume the budget required by later mandatory keys.
+		 */
+		void admitUnusedResults(SlotPlan plan, long live) {
+			if (plan instanceof FilterPlan filter) {
+				if (filter.filterMask >= 0L) {
+					admitUnusedResults(filter.arg, live | filter.filterMask);
+				}
+				return;
+			}
+			if (plan instanceof UnionPlan union) {
+				admitUnusedResults(union.left, live);
+				admitUnusedResults(union.right, live);
+				return;
+			}
+			if (!(plan instanceof ExtensionPlan extension)) {
+				return;
+			}
+			long targets = 0L;
+			long repeated = 0L;
+			for (CopyBinding copy : extension.copies) {
+				long target = 1L << copy.targetSlot;
+				repeated |= targets & target;
+				targets |= target;
+			}
+			live |= repeated;
+			for (int i = extension.copies.length - 1; i >= 0; i--) {
+				CopyBinding copy = extension.copies[i];
+				long target = 1L << copy.targetSlot;
+				if ((copy.computedValue != null || copy.semanticValue != null) && !copy.termChecked
+						&& (live & target) == 0L && (extension.arg.producedMask() & target) == 0L) {
+					unusedAssignments.add(copy.generatedKeyProof);
+					targetMask |= target;
+				}
+				live |= copy.keyReadMask();
+				if (copy.termChecked || (extension.arg.producedMask() & target) != 0L) {
+					live |= target;
+				}
+			}
+			admitUnusedResults(extension.arg, live);
+		}
 
 		boolean visit(SlotPlan plan, long needed, long observed) {
 			if (needed == 0L) {

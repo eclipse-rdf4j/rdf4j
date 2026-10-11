@@ -12,15 +12,20 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import java.util.Arrays;
+import java.util.function.Supplier;
 import java.util.concurrent.atomic.AtomicLong;
 final class LmdbNativeAggregateCompiler { static final long UNKNOWN=-1, NULL_CONTEXT_ID=0;
  static final long SYNTHETIC_VALUE_BASE=Long.MIN_VALUE+1024;
  static final long RUNTIME_INTERN_BASE=SYNTHETIC_VALUE_BASE+(1L<<40); static final int MAX_NATIVE_SLOTS=60; }
 interface NativeLmdbQuerySource { long idOf(Value v); Value lazyValue(long id);
+ default long idOf(Value v,int positionMask){ValuePosition.validateMask(positionMask);return idOf(v);}
+ default Value lazyValue(long id,int positionMask){ValuePosition.validateMask(positionMask);return lazyValue(id);}
  default Object valueLookupScope(){return this;} default boolean hasCanonicalIds(){return true;}
  default LmdbNativeValueCodec nativeValueCodec(){return null;} }
-final class GenericSubplanDescriptor {}
+final class GenericSubplanDescriptor { <T> T prepare(Supplier<T> factory){return factory.get();} }
 final class LmdbNativeExpressionCompiler {static final AtomicLong LAZY_VALUE_CALLS=new AtomicLong();}
 final class LmdbNativeValueCodec {
  record DecodedValue(Value value,boolean error,String text) {
@@ -42,7 +47,8 @@ final class UnionPlan implements SlotPlan { final SlotPlan left,right; UnionPlan
  public long producedMask(){return left.producedMask()|right.producedMask();} }
 final class FilterPlan implements SlotPlan { final SlotPlan arg; final long filterMask; FilterPlan(SlotPlan arg,long mask){this.arg=arg;filterMask=mask;}
  public long producedMask(){return arg.producedMask();} }
-final class AggregateSpec { final boolean distinct;final int slot;final int[] rowSlots;AggregateSpec(boolean d,int s,int[] r){distinct=d;slot=s;rowSlots=r;} }
+final class AggregateSpec { final boolean distinct;final int slot;final int[] rowSlots;final Object custom;
+ AggregateSpec(boolean d,int s,int[] r){distinct=d;slot=s;rowSlots=r;custom=null;} }
 interface LmdbNativeCompiledInlineId {long id(RowState row); default boolean encounterOrderReplaySafe(){return true;} default long requiredMask(){return 0;}}
 final class LmdbNativeCompiledValue {interface Eval {LmdbNativeValueCodec.DecodedValue eval(RowState row);} final long requiredMask; final Eval evaluator;
  LmdbNativeCompiledValue(long mask,Eval e){requiredMask=mask;evaluator=e;} }
@@ -53,7 +59,9 @@ interface NativeBindingSetValueEvaluator {
 }
 record NativeValueOutcome(Value value) {boolean isBound(){return value!=null;} }
 final class RowState {final NativeLmdbQuerySource source; final BindingSet view; final long[] slots;
- RowState(NativeLmdbQuerySource s, BindingSet b, int width){source=s;view=b;slots=new long[width];Arrays.fill(slots,-1);} }
+ RowState(NativeLmdbQuerySource s, BindingSet b, int width){source=s;view=b;slots=new long[width];Arrays.fill(slots,-1);}
+ int positionMask(int slot){if(slot<0||slot>=slots.length)throw new IndexOutOfBoundsException(slot);return ValuePosition.NONE;}
+ long unchangedStoredInputId(LmdbNativeValueCodec.DecodedValue value){return LmdbNativeAggregateCompiler.UNKNOWN;} }
 final class NativeBatch {final int capacity; final long[] slots;
  NativeBatch(int width,int capacity){this.capacity=capacity;slots=new long[width*capacity];}
  long get(int col,int row){return slots[col*capacity+row];} void set(int col,int row,long id){slots[col*capacity+row]=id;} }
@@ -67,4 +75,9 @@ final class LmdbNativeAttemptMetrics {
  static LmdbNativeAttemptMetrics direct(){return new LmdbNativeAttemptMetrics();}
  void recordNativeSort(){} void recordNativeSortPackedRow(int n){} void recordNativeTopKCandidate(){} void recordNativeTopKReplacement(){}
 void recordSpillRun(long rows){} void recordSpilledRows(long rows){}
- void recordNativeSpill(long rows){} void recordNativeSortRows(long rows){} }
+void recordNativeSpill(long rows){} void recordNativeSortRows(long rows){} }
+
+record NativeValueKey(RdfTermKey term) {
+ static NativeValueKey of(Value value){return new NativeValueKey(RdfTermKey.of(value));}
+ boolean matches(Value value){return term.matches(value);}
+}

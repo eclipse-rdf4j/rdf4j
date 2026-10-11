@@ -180,6 +180,29 @@ final class RowState implements LmdbNativeSlotReader {
 		return value;
 	}
 
+	/** Reuses only the exact decoded object still owned by an unchanged canonical store input in this row. */
+	long unchangedStoredInputId(LmdbNativeValueCodec.DecodedValue value) {
+		NativeTermAuthority authority = termAuthority();
+		SyntheticValueSource scope = evaluationScope();
+		if (decodedValues == null || decodedAuthority != authority || authority == null
+				|| !authority.supportsCanonicalTermKeys() || scope == null || scope.executionContext().isClosed()
+				|| decodedCodec == null || !decodedCodec.decodesIdSpace(scope.delegate.idSpace())
+				|| value.triple() || value.language().isPresent()) {
+			return UNKNOWN;
+		}
+		long result = UNKNOWN;
+		for (int slot = 0; slot < decodedValues.length; slot++) {
+			if (decodedValues[slot] == value && decodedIds[slot] == slots[slot]
+					&& authority.kind(slots[slot]) == NativeIdKind.STORE) {
+				if (result != UNKNOWN && result != slots[slot]) {
+					return UNKNOWN;
+				}
+				result = slots[slot];
+			}
+		}
+		return result;
+	}
+
 	/** Conservative fixed storage for the lazy decoded-input arrays and their ownership fields. */
 	static long decodedInputMemoryBytes(int slots) {
 		return Math.addExact(64L, Math.multiplyExact((long) slots, 2L * Long.BYTES));
@@ -1077,7 +1100,8 @@ final class CopyBinding {
 			if (!outcome.isBound() || !(row.source instanceof SyntheticValueSource)) {
 				return UNKNOWN;
 			}
-			return ((SyntheticValueSource) row.source).internComputedValue(this, outcome.value());
+			return ((SyntheticValueSource) row.source).internComputedValue(this, outcome.value(),
+					row.positionMask(targetSlot));
 		}
 		if (computedValue != null) {
 			LmdbNativeValueCodec.DecodedValue decoded = computedValue.evaluator.eval(row);
@@ -1085,7 +1109,8 @@ final class CopyBinding {
 				return UNKNOWN;
 			}
 			return row.source instanceof SyntheticValueSource
-					? ((SyntheticValueSource) row.source).internComputedValue(this, decoded)
+					? ((SyntheticValueSource) row.source).internComputedValue(this, decoded,
+							row.positionMask(targetSlot), row)
 					: UNKNOWN;
 		}
 		return computed != null ? computed.id(row) : sourceSlot >= 0 ? row.slots[sourceSlot] : constant;

@@ -83,7 +83,9 @@ public final class GeneratedKeyRegression {
         check(source.lazyValue(id)==existing,"materialization retains original Value");
         check(source.authority().probeDisposition(id)==TermProbeDisposition.VALUE_GUARDED_PROBE,"local is not proved absent");
         fails(IllegalStateException.class,()->source.anySynthetic(id,-1,-1,-1));
-        eq(source.internComputedValue(copy,(Value)null),-1,"null result");
+        eq(source.internComputedValue(copy, (Value) null, 0), -1, "null Value result");
+        eq(source.internComputedValue(copy, (LmdbNativeValueCodec.DecodedValue) null, 0), -1,
+                "null decoded result");
         eq(store.lookups.get(),0,"no membership resolution");eq(store.reads.get(),0,"no store value reads");
         store.forbid=false;
         eq(source.idOf(existing),persisted,"lookup-only API is still storage facing");

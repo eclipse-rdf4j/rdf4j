@@ -70,6 +70,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 	}
 
 	@Override
+	public long idOf(Value value, int positionMask) throws QueryEvaluationException {
+		return sources.get(0).idOf(value, positionMask);
+	}
+
+	@Override
+	public Object valueLookupScope() {
+		return sources.get(0).valueLookupScope();
+	}
+
+	@Override
 	public Value lazyValue(long id) throws QueryEvaluationException {
 		return sources.get(0).lazyValue(id);
 	}
@@ -931,6 +941,16 @@ final class CompositeNativeLmdbQuerySource implements NativeLmdbQuerySource {
 		@Override
 		public long idOf(Value value) throws QueryEvaluationException {
 			return delegate.idOf(value);
+		}
+
+		@Override
+		public long idOf(Value value, int positionMask) throws QueryEvaluationException {
+			return delegate.idOf(value, positionMask);
+		}
+
+		@Override
+		public Object valueLookupScope() {
+			return delegate.valueLookupScope();
 		}
 
 		@Override

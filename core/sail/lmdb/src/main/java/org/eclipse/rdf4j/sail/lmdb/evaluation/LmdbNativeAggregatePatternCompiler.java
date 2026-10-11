@@ -574,7 +574,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 				if (value == null) {
 					return null;
 				}
-				long id = idOf(value);
+				long id = idOf(value, layout.positionMask(variable));
 				if (id == UNKNOWN) {
 					return null;
 				}
@@ -606,7 +606,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 		if (value == null) {
 			return null;
 		}
-		long id = idOf(value);
+		long id = idOf(value, layout.positionMask(((Var) varExpr).getName()));
 		if (id == UNKNOWN) {
 			return null;
 		}
@@ -744,7 +744,7 @@ abstract class LmdbNativeAggregatePatternCompiler extends LmdbNativeAggregatePla
 			int size = 0;
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
-				long id = idOf(value);
+				long id = idOf(value, layout.positionMask(binding.getName()));
 				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)

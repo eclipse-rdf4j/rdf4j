@@ -225,6 +225,108 @@ public class GeneratedValueKeysIntegrationTest {
 	}
 
 	@Test
+	void unusedResultProofActivatesInEveryNativeExecutionMode() {
+		String query = "SELECT (COUNT(DISTINCT ?k) AS ?count) WHERE { ?s ex:label ?v "
+				+ "BIND(LCASE(?v) AS ?middle) FILTER(STRLEN(?middle) > 3) "
+				+ "BIND(CONCAT(?middle, '-suffix') AS ?k) BIND(IRI(CONCAT('urn:unused:', ?middle)) AS ?unused) }";
+		Map<BindingSet, Long> expected = bag(rows(query, Mode.GENERIC));
+		for (Mode mode : List.of(Mode.LOCAL_NATIVE, Mode.LOCAL_INTERPRETED, Mode.LOCAL_COMPILED)) {
+			long before = NativeGeneratedKeyPlan.UNUSED_RESULT_ACTIVATIONS.get();
+			assertEquals(expected, bag(rows(query, mode)));
+			assertTrue(NativeGeneratedKeyPlan.UNUSED_RESULT_ACTIVATIONS.get() > before,
+					mode + " must activate the unused-result proof rather than pass through fallback");
+		}
+	}
+
+	@Test
+	void mixedCollectorsPreserveDuplicateMultiplicityAndBoundInputs() {
+		String body = " WHERE { VALUES ?repeat { 1 1 2 } ?s ex:label ?v "
+				+ "BIND(LCASE(?v) AS ?middle) BIND(CONCAT(?middle, '-suffix') AS ?k) }";
+		for (String projection : List.of(
+				"SELECT (COUNT(*) AS ?rows) (COUNT(?middle) AS ?bound) (COUNT(DISTINCT ?k) AS ?distinct)",
+				"SELECT ?k (COUNT(*) AS ?rows) (COUNT(?middle) AS ?bound)")) {
+			String query = projection + body + (projection.contains("SELECT ?k") ? " GROUP BY ?k" : "");
+			Map<BindingSet, Long> expected = bag(rows(query, Mode.GENERIC));
+			for (Mode mode : Mode.values()) {
+				if (mode != Mode.GENERIC) {
+					assertEquals(expected, bag(rows(query, mode)), mode + ": " + query);
+				}
+			}
+		}
+		BindingSet counts = rows("SELECT (COUNT(*) AS ?rows) (COUNT(?middle) AS ?bound) "
+				+ "(COUNT(DISTINCT ?k) AS ?distinct)" + body, Mode.GENERIC).get(0);
+		assertEquals(18L, ((Literal) counts.getValue("rows")).longValue());
+		assertEquals(18L, ((Literal) counts.getValue("bound")).longValue());
+		assertEquals(3L, ((Literal) counts.getValue("distinct")).longValue());
+	}
+
+	@Test
+	void entryBoundIntermediateTargetsPreserveGenericCompatibility() {
+		String query = "SELECT DISTINCT ?k WHERE { ?s ex:label ?v BIND(LCASE(?v) AS ?middle) "
+				+ "BIND(CONCAT(?middle, '-suffix') AS ?k) }";
+		for (String binding : List.of("alpha-long-label", "absent-long-label")) {
+			Map<BindingSet, Long> expected = null;
+			for (Mode mode : Mode.values()) {
+				configure(mode);
+				List<BindingSet> actual;
+				try (var connection = repository.getConnection()) {
+					var prepared = connection.prepareTupleQuery(PREFIX + query);
+					prepared.setBinding("middle", connection.getValueFactory().createLiteral(binding));
+					try (var result = prepared.evaluate()) {
+						actual = QueryResults.asList(result);
+					}
+				}
+				if (mode == Mode.GENERIC) {
+					expected = bag(actual);
+				} else {
+					assertEquals(expected, bag(actual), mode + ": " + binding);
+				}
+			}
+		}
+	}
+
+	@Test
+	void intermediatePipelinesPreserveFullResultBagsAcrossConsumers() {
+		String chain = "?s ex:label ?v BIND(LCASE(?v) AS ?middle) ";
+		String key = "BIND(CONCAT(?middle, '-suffix') AS ?k) ";
+		List<String> bodies = List.of(
+				chain + "FILTER(STRLEN(?middle) > 3) " + key + "BIND(IRI(CONCAT('urn:unused:', ?middle)) AS ?unused)",
+				"{ " + chain + key + " } UNION { ?t ex:label ?w BIND(LCASE(?w) AS ?middle) " + key + " }",
+				"?s ex:label ?v OPTIONAL { ?s ex:missing ?optional } BIND(COALESCE(?optional, LCASE(?v)) AS ?middle) "
+						+ key,
+				chain + "FILTER(EXISTS { ?other ex:stored ?middle }) " + key,
+				chain + "FILTER(NOT EXISTS { ?other ex:stored ?middle }) " + key,
+				chain + "MINUS { ?other ex:stored ?middle } " + key,
+				chain + "?other ex:stored ?middle " + key,
+				"{ SELECT ?middle WHERE { " + chain + " } } ?other ex:stored ?middle " + key,
+				chain + "FILTER(sameTerm(?middle, 'alpha-long-label')) " + key,
+				chain + "FILTER(?middle IN ('alpha-long-label', 'beta-long-label')) " + key,
+				chain + "FILTER(?middle NOT IN ('alpha-long-label', 'beta-long-label')) " + key,
+				chain + "BIND(?middle AS ?alias) FILTER(?alias = 'beta-long-label') " + key,
+				chain + "BIND(IF(sameTerm(?middle, 'alpha-long-label'), ?middle, 'other-label') AS ?choice) "
+						+ "BIND(CONCAT(?choice, '-suffix') AS ?k)",
+				chain + "BIND(COALESCE(IF(?middle = 'alpha-long-label', ?middle, 1/0), 'fallback') AS ?choice) "
+						+ "BIND(CONCAT(?choice, '-suffix') AS ?k)",
+				"VALUES ?middle { 'alpha-long-label' } { SELECT ?middle WHERE { " + chain + " } } " + key,
+				"VALUES ?spelling { '01' '1' '2' } BIND(STRDT(?spelling, <http://www.w3.org/2001/XMLSchema#integer>) AS ?middle) "
+						+ "FILTER(?middle = 1) BIND(CONCAT(STR(?middle), '-suffix') AS ?k)",
+				"?s ex:directional ?v BIND(LCASE(?v) AS ?middle) BIND(CONCAT(?middle, '-suffix') AS ?k)",
+				chain + "BIND(IF(?middle = 'beta-long-label', 1/0, ?middle) AS ?checked) "
+						+ "BIND(CONCAT(?checked, '-suffix') AS ?k)");
+		for (String body : bodies) {
+			for (String projection : List.of("SELECT DISTINCT ?k", "SELECT (COUNT(DISTINCT ?k) AS ?count)")) {
+				String query = projection + " WHERE { " + body + " }";
+				Map<BindingSet, Long> expected = bag(rows(query, Mode.GENERIC));
+				for (Mode mode : Mode.values()) {
+					if (mode != Mode.GENERIC) {
+						assertEquals(expected, bag(rows(query, mode)), mode + ": " + query);
+					}
+				}
+			}
+		}
+	}
+
+	@Test
 	void distinctBatchSkipsDuplicateOnlyMiddleUnionAndReachesLaterNovelRows() {
 		String query = "SELECT DISTINCT ?k WHERE { "
 				+ "{ { ?s ex:label ?v BIND(LCASE(?v) AS ?k) FILTER(?v = 'ALPHA-LONG-LABEL') } "

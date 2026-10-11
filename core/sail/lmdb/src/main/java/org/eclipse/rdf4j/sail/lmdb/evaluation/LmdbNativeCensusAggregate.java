@@ -188,7 +188,7 @@ final class LmdbNativeCensusAggregate implements QueryEvaluationStep {
 				return null;
 			}
 			if (var.hasValue()) {
-				constants[field] = source.idOf(var.getValue());
+				constants[field] = source.idOf(var.getValue(), 1 << field);
 				if (constants[field] == UNKNOWN) {
 					return null;
 				}

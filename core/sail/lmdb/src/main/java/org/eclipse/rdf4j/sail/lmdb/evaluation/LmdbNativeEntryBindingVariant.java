@@ -77,7 +77,7 @@ final class NativeEntryBindingVariant {
 			if (value == null) {
 				return null;
 			}
-			long id = source.idOf(value);
+			long id = source.idOf(value, layout.positionMask(slot));
 			if (id == UNKNOWN) {
 				return null;
 			}

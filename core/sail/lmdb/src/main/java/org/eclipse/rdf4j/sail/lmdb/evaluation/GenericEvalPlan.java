@@ -249,13 +249,8 @@ final class GenericEvalPlan implements SlotPlan {
 		return input;
 	}
 
-	long idOfOrIntern(RowState row, Value value) {
-		long id = row.source.idOf(value);
-		if (id != UNKNOWN) {
-			return id;
-		}
-		NativeExecutionContext context = ((SyntheticValueSource) row.source).executionContext();
-		return context.internValue(value);
+	long idOfOrIntern(RowState row, Value value, int targetSlot) {
+		return ((SyntheticValueSource) row.source).internComputedValue(value, row.positionMask(targetSlot));
 	}
 
 	@Override
@@ -403,7 +398,7 @@ final class IslandCursor implements RowCursor {
 					if (value == null) {
 						continue;
 					}
-					long id = plan.idOfOrIntern(row, value);
+					long id = plan.idOfOrIntern(row, value, plan.outSlots[i]);
 					if (!row.bindOrCheckTerm(plan.outSlots[i], id)) {
 						ok = false;
 						break;

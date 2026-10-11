@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 @Experimental
 abstract class LmdbNativeAggregatePlannerBase {
@@ -572,7 +573,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 				for (BindingSet bindings : node.getBindingSets()) {
 					for (Binding binding : bindings) {
 						Value value = binding.getValue();
-						long id = idOf(value);
+						long id = idOf(value, layout.positionMask(binding.getName()));
 						boolean unknown = id == UNKNOWN;
 						boolean unsafeEligible = !unknown && !valueProbeSafeId(id, value)
 								&& !patternOrCopyVars.contains(binding.getName());
@@ -1152,7 +1153,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (graph == null || RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
 				id = NULL_CONTEXT_ID;
 			} else {
-				id = idOf(graph);
+				id = idOf(graph, ValuePosition.CONTEXT);
 				if (id == UNKNOWN) {
 					continue;
 				}
@@ -1177,7 +1178,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 			if (field == NativePatternField.CONTEXT && isNullContextValue(value)) {
 				return Term.constant(NULL_CONTEXT_ID);
 			}
-			long id = idOf(value);
+			long id = idOf(value, 1 << field.ordinal());
 			if (id == UNKNOWN) {
 				return null;
 			}
@@ -1284,6 +1285,10 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return source.idOf(value);
 	}
 
+	long idOf(Value value, int positionMask) {
+		return source.idOf(value, positionMask);
+	}
+
 	/**
 	 * Resolves a constant introduced by an Extension (SPARQL BIND), assigning a plan-local id when its exact term is
 	 * provably absent from the store. This keeps true constants on the replayable alias path instead of misclassifying
@@ -1291,7 +1296,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 	 * dictionary miss does not prove term absence for them.
 	 */
 	long idOfExtensionConstant(Value value, String targetName) {
-		long id = idOf(value);
+		long id = idOf(value, layout.positionMask(targetName));
 		if (id != UNKNOWN || !termSafeAbsenceProof(value)) {
 			return id;
 		}

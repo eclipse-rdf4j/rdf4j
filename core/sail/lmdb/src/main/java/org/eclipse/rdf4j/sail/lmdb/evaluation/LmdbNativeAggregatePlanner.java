@@ -86,6 +86,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 @Experimental
 final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler {
@@ -865,7 +866,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		for (int i = 0; i < positions.length; i++) {
 			Var var = positions[i];
 			if (var.hasValue()) {
-				long id = idOf(var.getValue());
+				long id = idOf(var.getValue(), 1 << i);
 				if (id == UNKNOWN) {
 					return null;
 				}
@@ -978,7 +979,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		for (int i = 0; i < positions.length; i++) {
 			Var var = positions[i];
 			if (var.hasValue()) {
-				long id = idOf(var.getValue());
+				long id = idOf(var.getValue(), 1 << i);
 				if (id == UNKNOWN) {
 					return null;
 				}
@@ -1592,7 +1593,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			if (var.hasValue()) {
 				slots[i] = -1;
-				long id = idOf(var.getValue());
+				long id = idOf(var.getValue(), i < 3 ? 1 << i : layout.positionMask(var.getName()));
 				constants[i] = id;
 				if (id == UNKNOWN) {
 					// a constant the store does not know can never match a stored triple term
@@ -2152,7 +2153,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!contextVar.hasValue()) {
 			return DECLINED_CONTEXTS;
 		}
-		long ctxConst = idOf(contextVar.getValue());
+		long ctxConst = idOf(contextVar.getValue(), ValuePosition.CONTEXT);
 		if (ctxConst == UNKNOWN || !constraint.contains(ctxConst)) {
 			// absent graph, or a constant graph outside the dataset's named graphs: enumeration finds nothing
 			return new long[0];
@@ -2163,7 +2164,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	/** One endpoint as {slot, constant-id}; named fixed variables retain both so the result row binds their name. */
 	private long[] zeroLengthEndpoint(Var var) {
 		if (var.hasValue()) {
-			long id = idOf(var.getValue());
+			long id = idOf(var.getValue(), ValuePosition.SUBJECT | ValuePosition.OBJECT);
 			if (id == UNKNOWN) {
 				if (!termSafeAbsenceProof(var.getValue())) {
 					return null;
@@ -2190,7 +2191,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		Var contextVar = alp.getContextVar();
-		if (contextVar != null && contextVar.hasValue() && idOf(contextVar.getValue()) == UNKNOWN) {
+		if (contextVar != null && contextVar.hasValue()
+				&& idOf(contextVar.getValue(), ValuePosition.CONTEXT) == UNKNOWN) {
 			return SlotPlan.empty();
 		}
 		ContextConstraint contextConstraint = compileContextConstraint(
@@ -2202,7 +2204,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (contextVar == null) {
 			enumerationContexts = contextConstraint.ids;
 		} else if (contextVar.hasValue()) {
-			long contextId = idOf(contextVar.getValue());
+			long contextId = idOf(contextVar.getValue(), ValuePosition.CONTEXT);
 			enumerationContexts = contextConstraint.contains(contextId) ? new long[] { contextId } : new long[0];
 			if (!contextVar.isAnonymous()) {
 				contextSlot = slot(contextVar.getName());

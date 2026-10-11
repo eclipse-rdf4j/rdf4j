@@ -108,7 +108,7 @@ final class TupleFunctionCursor implements RowCursor {
 						throw new IllegalStateException(
 								"tuple function results require an evaluation-scoped term authority");
 					}
-					long id = synthetic.internComputedValue(result);
+					long id = synthetic.internComputedValue(result, row.positionMask(resultSlots[i]));
 					if (!row.bindOrCheckTerm(resultSlots[i], id)) {
 						compatible = false;
 						break;

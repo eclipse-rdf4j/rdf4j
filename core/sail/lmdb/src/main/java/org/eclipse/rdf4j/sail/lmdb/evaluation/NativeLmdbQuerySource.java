@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 import org.eclipse.rdf4j.sail.lmdb.ValueStore;
 import org.eclipse.rdf4j.sail.lmdb.factor.BorrowedFactorBatch;
 
@@ -43,6 +44,12 @@ public interface NativeLmdbQuerySource {
 	long UNKNOWN_ID = org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.UNKNOWN_ID;
 
 	long idOf(Value value) throws QueryEvaluationException;
+
+	/** Resolves a spelling with its destination role; the mask affects cache retention, never RDF identity. */
+	default long idOf(Value value, int positionMask) throws QueryEvaluationException {
+		ValuePosition.validateMask(positionMask);
+		return idOf(value);
+	}
 
 	/**
 	 * Optional dictionary-lookup cache token. Identical non-null tokens certify the same visible value-to-id mapping,

@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -25,11 +26,23 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
+import org.eclipse.rdf4j.sail.lmdb.ValueStore;
+import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import org.junit.jupiter.api.Test;
 
 /** Real source/interner/authority contracts. Count source-boundary lookups rather than assuming every call is I/O. */
@@ -58,15 +71,16 @@ public class NativeValueResolutionContractTest {
 	}
 
 	public static class Source implements NativeLmdbQuerySource {
-		final Map<NativeValueKey, Long> ids = new ConcurrentHashMap<>();
+		final Map<RdfTermKey, Long> ids = new ConcurrentHashMap<>();
 		final AtomicLong calls = new AtomicLong();
+		final AtomicLong scopeCalls = new AtomicLong();
 		volatile Object scope = new Object();
 		volatile Runnable duringLookup = () -> {
 		};
 		boolean canonical = true;
 
 		void put(Value v, long id) {
-			ids.put(NativeValueKey.of(v), id);
+			ids.put(RdfTermKey.of(v), id);
 		}
 
 		void renew() {
@@ -75,6 +89,7 @@ public class NativeValueResolutionContractTest {
 
 		@Override
 		public Object valueLookupScope() {
+			scopeCalls.incrementAndGet();
 			return scope;
 		}
 
@@ -82,7 +97,7 @@ public class NativeValueResolutionContractTest {
 		public long idOf(Value v) {
 			calls.incrementAndGet();
 			duringLookup.run();
-			return ids.getOrDefault(NativeValueKey.of(v), UNKNOWN);
+			return ids.getOrDefault(RdfTermKey.of(v), UNKNOWN);
 		}
 
 		@Override
@@ -131,6 +146,322 @@ public class NativeValueResolutionContractTest {
 
 	static SyntheticValueSource eval(Source s) {
 		return new SyntheticValueSource(s, PlanValueCatalog.EMPTY).forEvaluation();
+	}
+
+	@Test
+	public void initializedUnknownLmdbMissesShareQueryResolution() {
+		Source source = new Source();
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			String label = "initialized-lmdb-computed-result-not-in-dictionary";
+			long first = evaluation.internComputedValue(new LmdbLiteral(null, label, VF.createIRI("urn:datatype")));
+			for (int i = 0; i < 100; i++) {
+				equal(first,
+						evaluation.internComputedValue(new LmdbLiteral(null, label, VF.createIRI("urn:datatype"))));
+			}
+			equal(UNKNOWN, evaluation.idOf(new LmdbLiteral(null, label, VF.createIRI("urn:datatype"))));
+			equal(1, source.calls.get());
+			check(evaluation.executionContext().contains(first));
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void firstResolutionUsesOneBeforeAndOneAfterScopeRead() {
+		for (boolean present : new boolean[] { false, true }) {
+			Source source = new Source();
+			String lexical = "urn:scope:computed-result";
+			long expected = present ? 123L : UNKNOWN;
+			if (present) {
+				source.put(VF.createIRI(lexical), expected);
+			}
+			SyntheticValueSource evaluation = eval(source);
+			try {
+				equal(expected, evaluation.idOf(new LmdbIRI(null, lexical)));
+				equal(2, source.scopeCalls.get());
+				equal(1, source.calls.get());
+				equal(expected, evaluation.idOf(new LmdbIRI(null, lexical)));
+				equal(3, source.scopeCalls.get());
+				equal(1, source.calls.get());
+				source.renew();
+				equal(expected, evaluation.idOf(new LmdbIRI(null, lexical)));
+				equal(5, source.scopeCalls.get());
+				equal(2, source.calls.get());
+			} finally {
+				evaluation.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	public void initializedUnknownLmdbHitsShareQueryResolution() {
+		Source source = new Source();
+		String iri = "urn:initialized-lmdb-known-result";
+		source.put(VF.createIRI(iri), 123L);
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			for (int i = 0; i < 100; i++) {
+				equal(123L, evaluation.internComputedValue(new LmdbIRI(null, iri)));
+				equal(123L, evaluation.idOf(new LmdbIRI(null, iri)));
+			}
+			equal(1, source.calls.get());
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void computedAndImportedValuesUseDestinationPositions() {
+		List<Integer> masks = new ArrayList<>();
+		Source source = new Source() {
+			public long idOf(Value value, int positionMask) {
+				masks.add(positionMask);
+				return idOf(value);
+			}
+		};
+		Value computed = VF.createIRI("urn:computed-role"), imported = VF.createIRI("urn:imported-role");
+		source.put(computed, 123L);
+		source.put(imported, 456L);
+		Map<String, Integer> slots = new LinkedHashMap<>();
+		slots.put("input", 0);
+		slots.put("result", 1);
+		NativeSlotLayout layout = new NativeSlotLayout(slots, null);
+		layout.positionMasks(Map.of("input", 4, "result", 9), Map.of("input", 4, "result", 9));
+		layout.freeze(List.of("input", "result"));
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			RowState row = new RowState(evaluation, layout, EmptyBindingSet.getInstance());
+			CopyBinding assignment = CopyBinding.semanticValue(1,
+					bindings -> NativeValueOutcome.bound(computed), true);
+			equal(123L, assignment.value(row));
+			long[] seeded = new long[2];
+			check(NativeRowSeeder.seed(seeded, layout,
+					new ListBindingSet(List.of("input"), imported), evaluation));
+			equal(456L, seeded[0]);
+			check(masks.equals(List.of(9, 4)));
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void compositeResolutionUsesFirstDictionaryScope() {
+		Source first = new Source();
+		Source second = new Source() {
+			@Override
+			public Object idSpace() {
+				return first;
+			}
+		};
+		NativeLmdbQuerySource composite = CompositeNativeLmdbQuerySource.combine(List.of(first, second));
+		SyntheticValueSource evaluation = new SyntheticValueSource(composite, PlanValueCatalog.EMPTY).forEvaluation();
+		try {
+			Value value = VF.createIRI("urn:composite-dictionary");
+			equal(UNKNOWN, evaluation.idOf(value));
+			equal(UNKNOWN, evaluation.idOf(value));
+			equal(1L, first.calls.get());
+			first.put(value, 777L);
+			first.renew();
+			equal(777L, evaluation.idOf(value));
+			equal(2L, first.calls.get());
+			equal(0L, second.calls.get());
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void compositeParallelSourcesForwardRolesAndDictionaryScope() throws Exception {
+		Object space = new Object();
+		class Dictionary extends Source implements NativeLmdbQuerySource.ParallelSource {
+			final List<Integer> masks = new ArrayList<>();
+			final List<Dictionary> children = new ArrayList<>();
+			int closes;
+
+			@Override
+			public Object idSpace() {
+				return space;
+			}
+
+			@Override
+			public long idOf(Value value, int positionMask) {
+				masks.add(positionMask);
+				return idOf(value);
+			}
+
+			@Override
+			public NativeLmdbQuerySource.ParallelSource[] openParallelSources(int count) {
+				Dictionary[] result = new Dictionary[count];
+				for (int i = 0; i < count; i++) {
+					result[i] = new Dictionary();
+					result[i].ids.putAll(ids);
+					children.add(result[i]);
+				}
+				return result;
+			}
+
+			@Override
+			public void close() {
+				closes++;
+			}
+		}
+		Dictionary first = new Dictionary(), second = new Dictionary();
+		Value value = VF.createIRI("urn:parallel-composite");
+		first.put(value, 123L);
+		second.put(value, 123L);
+		NativeLmdbQuerySource composite = CompositeNativeLmdbQuerySource.combine(List.of(first, second));
+		NativeLmdbQuerySource.ParallelSource parallel = composite.openParallelSources(1)[0];
+		SyntheticValueSource evaluation = new SyntheticValueSource(parallel, PlanValueCatalog.EMPTY).forEvaluation();
+		try {
+			check(parallel.valueLookupScope() == first.children.get(0).scope);
+			equal(123L, parallel.idOf(value, 9));
+			equal(123L, evaluation.internComputedValue(value, 6));
+			equal(123L, evaluation.internComputedValue(value, 15));
+			check(first.children.get(0).masks.equals(List.of(9, 6)));
+			equal(0L, second.children.get(0).calls.get());
+		} finally {
+			evaluation.executionContext().close();
+			parallel.close();
+		}
+		equal(1L, first.children.get(0).closes);
+		equal(1L, second.children.get(0).closes);
+	}
+
+	@Test
+	public void runtimeAdmissionFreezesMutableLmdbPayloadRecursively() {
+		SyntheticValueSource evaluation = eval(new Source());
+		try {
+			LmdbLiteral mutable = new LmdbLiteral(null, "before", VF.createIRI("urn:datatype"));
+			Value nested = VF.createTripleTerm(VF.createIRI("urn:subject"), VF.createIRI("urn:predicate"),
+					new LmdbTripleTerm(null, VF.createIRI("urn:nested-subject"), VF.createIRI("urn:nested-predicate"),
+							mutable));
+			RdfTermKey oldSpelling = RdfTermKey.of(nested);
+			long first = evaluation.internComputedValue(nested);
+			mutable.setLabel("after");
+			check(oldSpelling.matches(evaluation.lazyValue(first)));
+			long second = evaluation.internComputedValue(nested);
+			check(first != second);
+			check(RdfTermKey.of(nested).matches(evaluation.lazyValue(second)));
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void immutableSpellingSnapshotsRoundTripAllRdfTermKinds() {
+		List<Value> values = new ArrayList<>(List.of(VF.createIRI("urn:iri"), VF.createBNode("blank"),
+				VF.createLiteral("001", VF.createIRI("urn:custom-datatype")), VF.createLiteral("text", "eN")));
+		for (Literal.BaseDirection direction : Literal.BaseDirection.values()) {
+			values.add(VF.createLiteral("directional", "eN", direction));
+		}
+		values.add(VF.createTripleTerm(VF.createIRI("urn:s"), VF.createIRI("urn:p"),
+				VF.createTripleTerm(VF.createIRI("urn:s2"), VF.createIRI("urn:p2"), values.get(3))));
+		for (Value value : values) {
+			RdfTermKey key = RdfTermKey.of(value);
+			check(key.matches(key.toValue()));
+			check(key.equals(RdfTermKey.of(key.toValue())));
+			equal(RdfTermKey.spellingHash(value), key.spellingHash());
+			check(key.lexicalLength() > 0);
+		}
+		check(!RdfTermKey.of(VF.createLiteral("text", "EN")).matches(VF.createLiteral("text", "en")));
+	}
+
+	@Test
+	public void rolesShareOneQueryIdentityAndLookupNeverReturnsRuntimeIds() {
+		List<Integer> masks = new ArrayList<>();
+		Source source = new Source() {
+			@Override
+			public long idOf(Value value, int positionMask) {
+				masks.add(positionMask);
+				return idOf(value);
+			}
+		};
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			Value value = new LmdbLiteral(null, "promoted-role", VF.createIRI("urn:datatype"));
+			long id = evaluation.internComputedValue(value, 0);
+			for (int mask = 0; mask < 16; mask++) {
+				equal(id, evaluation.internComputedValue(value, mask));
+				equal(UNKNOWN, evaluation.idOf(value, mask));
+			}
+			check(masks.equals(List.of(0)));
+			equal(1L, source.calls.get());
+			masks.clear();
+			List<Integer> expected = new ArrayList<>();
+			for (int mask = 0; mask < 16; mask++) {
+				evaluation.internComputedValue(new LmdbIRI(null, "urn:mask-" + mask), mask);
+				expected.add(mask);
+			}
+			check(masks.equals(expected));
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void unknownOuterValueResolvesNestedLazyPayloadOnce() {
+		AtomicLong decodes = new AtomicLong();
+		ValueStoreRevision revision = new ValueStoreRevision() {
+			@Override
+			public long getRevisionId() {
+				return 1L;
+			}
+
+			@Override
+			public ValueStore getValueStore() {
+				return null;
+			}
+
+			@Override
+			public boolean resolveValue(long id, LmdbValue value) {
+				decodes.incrementAndGet();
+				value.setFromInitializedValue(new LmdbIRI(null, "urn:nested-lazy-datatype"));
+				return true;
+			}
+		};
+		Source source = new Source();
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			LmdbLiteral value = new LmdbLiteral(null, "computed-with-lazy-datatype", new LmdbIRI(revision, 123L));
+			long id = evaluation.internComputedValue(value);
+			equal(id, evaluation.internComputedValue(value));
+			equal(1L, decodes.get());
+			equal(1L, source.calls.get());
+			check(RdfTermKey.of(value).matches(evaluation.lazyValue(id)));
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void registeredLmdbQueryScopedRepresentativeKeepsObjectIdentity() {
+		SyntheticValueSource evaluation = eval(new Source());
+		try {
+			Value representative = new LmdbLiteral(null, "registered-clock", VF.createIRI("urn:clock-type"));
+			evaluation.retainQueryScopedValue(representative);
+			long id = evaluation.internComputedValue(
+					new LmdbLiteral(null, "registered-clock", VF.createIRI("urn:clock-type")));
+			check(evaluation.lazyValue(id) == representative);
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void generatedAuthorityPreservesRegisteredLmdbQueryScopedIdentity() {
+		SyntheticValueSource evaluation = eval(new Source());
+		NativeGeneratedKeyAuthority generated = new NativeGeneratedKeyAuthority(evaluation.authority(),
+				evaluation.executionContext());
+		try {
+			Value representative = new LmdbLiteral(null, "generated-clock", VF.createIRI("urn:clock-type"));
+			evaluation.retainQueryScopedValue(representative);
+			long id = generated.intern(representative);
+			check(generated.valueOf(id) == representative);
+		} finally {
+			generated.close();
+			evaluation.executionContext().close();
+		}
 	}
 
 	@Test
@@ -290,7 +621,7 @@ public class NativeValueResolutionContractTest {
 		int set = -1;
 		for (int i = 0; values.size() < 7; i++) {
 			Value v = VF.createLiteral("collision-" + i);
-			int k = NativeValueResolver.setIndex(NativeValueKey.of(v));
+			int k = NativeValueResolver.setIndex(RdfTermKey.of(v));
 			if (set < 0)
 				set = k;
 			if (k == set) {
@@ -364,6 +695,56 @@ public class NativeValueResolutionContractTest {
 	}
 
 	@Test
+	public void differentSpellingInOneSetDoesNotWaitForDictionaryIo() throws Exception {
+		List<Value> values = new ArrayList<>();
+		int set = -1;
+		for (int i = 0; values.size() < 2; i++) {
+			Value value = VF.createLiteral("independent-load-" + i);
+			int candidate = NativeValueResolver.setIndex(RdfTermKey.of(value));
+			if (set < 0) {
+				set = candidate;
+			}
+			if (candidate == set) {
+				values.add(value);
+			}
+		}
+		CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+		Source source = new Source() {
+			@Override
+			public long idOf(Value value) {
+				if (RdfTermKey.of(values.get(0)).matches(value)) {
+					entered.countDown();
+					try {
+						release.await();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(interrupted);
+					}
+				}
+				return super.idOf(value);
+			}
+		};
+		source.put(values.get(0), 101L);
+		source.put(values.get(1), 102L);
+		SyntheticValueSource evaluation = eval(source);
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			Future<Long> blocked = pool.submit(() -> evaluation.idOf(values.get(0)));
+			check(entered.await(10, TimeUnit.SECONDS));
+			Future<Long> independent = pool.submit(() -> evaluation.idOf(values.get(1)));
+			equal(102L, independent.get(10, TimeUnit.SECONDS));
+			release.countDown();
+			equal(101L, blocked.get(10, TimeUnit.SECONDS));
+			equal(2, source.calls.get());
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+			check(pool.awaitTermination(10, TimeUnit.SECONDS));
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
 	public void closingDuringAMissPreventsPublication() throws Exception {
 		Source s = new Source();
 		SyntheticValueSource q = eval(s);
@@ -391,6 +772,106 @@ public class NativeValueResolutionContractTest {
 		} finally {
 			release.countDown();
 			pool.shutdownNow();
+		}
+	}
+
+	@Test
+	public void failedInFlightLookupReleasesEqualKeyWaiters() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+		CountDownLatch waiterScope = new CountDownLatch(1);
+		AtomicReference<Thread> waiterThread = new AtomicReference<>();
+		Source source = new Source() {
+			@Override
+			public Object valueLookupScope() {
+				Object result = super.valueLookupScope();
+				if (Thread.currentThread() == waiterThread.get()) {
+					waiterScope.countDown();
+				}
+				return result;
+			}
+		};
+		source.duringLookup = () -> {
+			if (source.calls.get() == 1L) {
+				entered.countDown();
+				try {
+					release.await();
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new IllegalStateException(interrupted);
+				}
+				throw new IllegalStateException("failed owner lookup");
+			}
+		};
+		SyntheticValueSource evaluation = eval(source);
+		Value value = VF.createLiteral("failed-in-flight");
+		ExecutorService pool = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> owner = pool.submit(() -> fails(IllegalStateException.class, () -> evaluation.idOf(value)));
+			check(entered.await(10, TimeUnit.SECONDS));
+			Future<Long> waiter = pool.submit(() -> {
+				waiterThread.set(Thread.currentThread());
+				return evaluation.idOf(value);
+			});
+			check(waiterScope.await(10, TimeUnit.SECONDS));
+			release.countDown();
+			owner.get(10, TimeUnit.SECONDS);
+			equal(UNKNOWN, waiter.get(10, TimeUnit.SECONDS));
+			equal(UNKNOWN, evaluation.idOf(VF.createLiteral("failed-in-flight")));
+			equal(2L, source.calls.get());
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+			check(pool.awaitTermination(10, TimeUnit.SECONDS));
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
+	public void closeReleasesEqualKeyWaitersBeforeDictionaryIoCompletes() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1), release = new CountDownLatch(1);
+		CountDownLatch waiterScope = new CountDownLatch(1);
+		AtomicReference<Thread> waiterThread = new AtomicReference<>();
+		Source source = new Source() {
+			@Override
+			public Object valueLookupScope() {
+				Object result = super.valueLookupScope();
+				if (Thread.currentThread() == waiterThread.get()) {
+					waiterScope.countDown();
+				}
+				return result;
+			}
+		};
+		source.duringLookup = () -> {
+			entered.countDown();
+			try {
+				release.await();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException(interrupted);
+			}
+		};
+		SyntheticValueSource evaluation = eval(source);
+		Value value = VF.createLiteral("closing-in-flight");
+		ExecutorService pool = Executors.newFixedThreadPool(3);
+		try {
+			Future<?> owner = pool.submit(() -> fails(IllegalStateException.class, () -> evaluation.idOf(value)));
+			check(entered.await(10, TimeUnit.SECONDS));
+			Future<?> waiter = pool.submit(() -> {
+				waiterThread.set(Thread.currentThread());
+				fails(IllegalStateException.class, () -> evaluation.idOf(value));
+			});
+			check(waiterScope.await(10, TimeUnit.SECONDS));
+			Future<?> close = pool.submit(() -> evaluation.executionContext().close());
+			close.get(10, TimeUnit.SECONDS);
+			waiter.get(10, TimeUnit.SECONDS);
+			release.countDown();
+			owner.get(10, TimeUnit.SECONDS);
+			equal(0L, evaluation.authority().valueResolver().retainedEntries());
+		} finally {
+			release.countDown();
+			pool.shutdownNow();
+			check(pool.awaitTermination(10, TimeUnit.SECONDS));
+			evaluation.executionContext().close();
 		}
 	}
 
@@ -574,21 +1055,21 @@ public class NativeValueResolutionContractTest {
 			}
 		}
 		for (Value v : values) {
-			NativeValueKey key = NativeValueKey.of(v);
+			RdfTermKey key = RdfTermKey.of(v);
 			check(key.matches(v));
-			equal(key.spellingHash(), NativeValueKey.spellingHash(v));
+			equal(key.spellingHash(), RdfTermKey.spellingHash(v));
 		}
 		for (int i = 0; i < 20000; i++) {
 			Value a = values.get(random.nextInt(values.size())), b = values.get(random.nextInt(values.size()));
-			NativeValueKey key = NativeValueKey.of(a);
-			check(key.matches(b) == key.equals(NativeValueKey.of(b)));
+			RdfTermKey key = RdfTermKey.of(a);
+			check(key.matches(b) == key.equals(RdfTermKey.of(b)));
 		}
 	}
 
 	@Test
 	public void identicalFingerprintsStillRequireExactSpelling() {
 		Value a = VF.createLiteral("Aa"), b = VF.createLiteral("BB");
-		equal(NativeValueKey.spellingHash(a), NativeValueKey.spellingHash(b));
+		equal(RdfTermKey.spellingHash(a), RdfTermKey.spellingHash(b));
 		Source s = new Source();
 		s.put(a, 19);
 		s.put(b, 23);
@@ -611,7 +1092,7 @@ public class NativeValueResolutionContractTest {
 		int set = -1;
 		for (int i = 0; values.size() < 13; i++) {
 			Value v = VF.createLiteral("churn-" + i);
-			int k = NativeValueResolver.setIndex(NativeValueKey.of(v));
+			int k = NativeValueResolver.setIndex(RdfTermKey.of(v));
 			if (set < 0)
 				set = k;
 			if (k == set) {
@@ -644,6 +1125,45 @@ public class NativeValueResolutionContractTest {
 	}
 
 	@Test
+	public void saturatedFreshSpellingsBypassUnneededScopeReaders() {
+		Source source = new Source();
+		List<Value> values = new ArrayList<>();
+		int set = -1;
+		for (int i = 0; values.size() < 13; i++) {
+			Value value = VF.createLiteral("bypass-scope-" + i);
+			int candidate = NativeValueResolver.setIndex(RdfTermKey.of(value));
+			if (set < 0) {
+				set = candidate;
+			}
+			if (candidate == set) {
+				values.add(value);
+				source.put(value, 100L + values.size());
+			}
+		}
+		SyntheticValueSource evaluation = eval(source);
+		try {
+			for (int i = 0; i < 12; i++) {
+				equal(101L + i, evaluation.idOf(values.get(i)));
+			}
+			source.scopeCalls.set(0L);
+			for (int i = 0; i < 32; i++) {
+				equal(113L, evaluation.idOf(values.get(12)));
+			}
+			equal(0L, source.scopeCalls.get());
+			equal(44L, source.calls.get());
+			equal(112L, evaluation.idOf(values.get(11)));
+			equal(1L, source.scopeCalls.get());
+			source.put(values.get(11), 999L);
+			source.renew();
+			equal(999L, evaluation.idOf(values.get(11)));
+			equal(999L, evaluation.idOf(values.get(11)));
+			equal(45L, source.calls.get());
+		} finally {
+			evaluation.executionContext().close();
+		}
+	}
+
+	@Test
 	public void catalogsRemainIsolatedEvenWithinOneExecutionAndSource() {
 		Source s = new Source();
 		Value v = VF.createLiteral("catalog-local");
@@ -670,6 +1190,12 @@ public class NativeValueResolutionContractTest {
 		Value value = (Value) java.lang.reflect.Proxy.newProxyInstance(getClass().getClassLoader(),
 				new Class<?>[] { org.eclipse.rdf4j.sail.lmdb.model.LmdbValue.class },
 				(proxy, method, args) -> {
+					if (method.getName().equals("getInternalID")) {
+						return 1234L;
+					}
+					if (method.getName().equals("isInitialized")) {
+						return false;
+					}
 					throw new AssertionError("unexpected lazy value access: " + method);
 				});
 		Source s = new Source() {

@@ -278,6 +278,11 @@ final class LmdbNativeFunctionLibrary {
 			// the generic LCASE/UCASE keep the input's kind: language tag and base direction survive;
 			// default-locale casing mirrors the generic functions exactly
 			String label = lower ? decoded.label().toLowerCase() : decoded.label().toUpperCase();
+			if (label.equals(decoded.label())) {
+				// The supported input and actual locale-sensitive result have identical RDF spelling and metadata.
+				// Preserve its decoded identity so the binding layer can reuse an owned stored input ID.
+				return decoded;
+			}
 			return LmdbNativeValueCodec.DecodedValue.literal(label, decoded.language().orElse(null),
 					decoded.datatypeIri(), decoded.coreDatatype(), decoded.baseDirection());
 		};

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
  * Per-evaluation state of one native query execution. Created inside {@code evaluate(...)} and closed when the returned
@@ -41,11 +42,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
  * compiled step may be evaluated repeatedly and concurrently and two evaluations may mint the same numeric RUNTIME id
  * for different values.
  *
- * Owns the compact runtime-value table (IDs from {@code RUNTIME_INTERN_BASE}). Exact spellings retain their original
- * Values; a separate primitive canonical ordinal coalesces RDF-equal language variants for local keying. Membership is
- * established by an acquire-read publication word, never by a bare numeric interval. Also owns the bounded per-source
- * dictionary resolution caches (including read-view-scoped misses), as well as per-evaluation generic preparation
- * (M-A1a): one evaluation-local generic context carrying the query scope (NOW, BNODE labels) and one prepared step per
+ * Owns the compact runtime-value table (IDs from {@code RUNTIME_INTERN_BASE}). Exact spellings retain stable Values,
+ * detaching mutable LMDB payloads except for registered query-scoped representatives; a separate primitive canonical
+ * ordinal coalesces RDF-equal language variants for local keying. Membership is established by an acquire-read
+ * publication word, never by a bare numeric interval. Also owns the bounded per-source dictionary resolution caches
+ * (including read-view-scoped misses), as well as per-evaluation generic preparation (M-A1a): one evaluation-local
+ * generic context carrying the query scope (NOW, BNODE labels) and one prepared step per
  * {@link GenericSubplanDescriptor} per evaluation.
  */
 @Experimental
@@ -65,7 +67,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	/** One admission budget across the separately owned runtime-ID spaces of nested native roots. */
 	private volatile NativeRuntimeValueTable.Budget runtimeValueBudget;
 	/** Query-scoped representatives (notably NOW), shared by nested native catalogs of this evaluation. */
-	private final ConcurrentHashMap<NativeValueKey, Value> queryScopedValues = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<RdfTermKey, Value> queryScopedValues = new ConcurrentHashMap<>();
 	/** Authoritative representatives for canonical store ids whose decoder would otherwise allocate a fresh Value. */
 	private final ConcurrentHashMap<Long, Value> queryScopedStoreValuesById = new ConcurrentHashMap<>();
 	/** Whether the query owner retains canonical store representatives in addition to its runtime payload table. */
@@ -370,24 +372,42 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (value == null) {
 			return UNKNOWN;
 		}
-		return runtimeValueTable().intern(value, false);
+		return internValue(value, null);
 	}
 
-	/** Local terminal identity: no store, catalog, structural spelling-key allocation, or overlay lookup. */
+	/**
+	 * Local terminal identity without store/catalog lookup; only first mutable admission or query scope needs a key.
+	 */
 	long internGeneratedKey(Value value) {
 		if (value == null) {
 			return UNKNOWN;
 		}
-		return runtimeValueTable().intern(value, true);
+		return internRuntimeValue(value, true, null);
 	}
 
-	/** Compatibility for callers that already captured a spelling; the table compares original Values directly. */
-	long internGeneratedKey(Value value, NativeValueKey spelling) {
-		return internGeneratedKey(value);
+	/** Reuses a caller's immutable spelling if first admission must detach a mutable LMDB payload. */
+	long internGeneratedKey(Value value, RdfTermKey spelling) {
+		return internRuntimeValue(value, true, spelling);
 	}
 
-	long internValue(Value value, NativeValueKey spelling) {
-		return internValue(value);
+	long internValue(Value value, RdfTermKey spelling) {
+		return internRuntimeValue(value, false, spelling);
+	}
+
+	private long internRuntimeValue(Value value, boolean unresolved, RdfTermKey spelling) {
+		if (value == null) {
+			return UNKNOWN;
+		}
+		boolean preserveRepresentative = false;
+		if (!queryScopeOwner.queryScopedValues.isEmpty()) {
+			RdfTermKey key = spelling != null ? spelling : RdfTermKey.of(value);
+			Value representative = queryScopeOwner.queryScopedValues.get(key);
+			if (representative != null) {
+				value = representative;
+				preserveRepresentative = true;
+			}
+		}
+		return runtimeValueTable().intern(value, unresolved, spelling, preserveRepresentative);
 	}
 
 	NativeRuntimeValueTable runtimeValueTable() {
@@ -474,7 +494,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (closed) {
 			throw new IllegalStateException("execution context is closed");
 		}
-		Value representative = queryScopedValues.computeIfAbsent(NativeValueKey.of(value), ignored -> value);
+		Value representative = queryScopedValues.computeIfAbsent(RdfTermKey.of(value), ignored -> value);
 		if (storeId != UNKNOWN) {
 			hasQueryScopedStoreValues = true;
 			queryScopedStoreValuesById.putIfAbsent(storeId, representative);
@@ -490,7 +510,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		if (queryScopeOwner.queryScopedValues.isEmpty()) {
 			return value;
 		}
-		Value representative = queryScopeOwner.queryScopedValues.get(NativeValueKey.of(value));
+		Value representative = queryScopeOwner.queryScopedValues.get(RdfTermKey.of(value));
 		return representative != null ? representative : value;
 	}
 

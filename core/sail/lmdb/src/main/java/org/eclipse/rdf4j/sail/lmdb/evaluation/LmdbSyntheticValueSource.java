@@ -142,7 +142,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 			result.generatedKeyPlan = proof;
 			result.generatedKeyAuthority = result.context.nativeState(proof,
 					() -> new NativeGeneratedKeyAuthority(result.authority, result.context));
-			NativeGeneratedKeyPlan.ACTIVATIONS.incrementAndGet();
+			proof.activated();
 		}
 		return result;
 	}
@@ -165,21 +165,40 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		generatedKeyAuthority = new NativeGeneratedKeyAuthority(authority, context);
 	}
 
-	long internComputedValue(CopyBinding assignment, Value value) {
+	long internComputedValue(CopyBinding assignment, Value value, int positionMask) {
 		if (value == null) {
 			return UNKNOWN;
 		}
+		if (generatedKeyAuthority != null && generatedKeyPlan.discards(assignment)) {
+			return LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
+		}
 		return generatedKeyAuthority != null && generatedKeyPlan.accepts(assignment)
 				? generatedKeyAuthority.intern(context.authoritativeQueryScopedValue(value))
-				: internComputedValue(value);
+				: internComputedValue(value, positionMask);
 	}
 
-	long internComputedValue(CopyBinding assignment, LmdbNativeValueCodec.DecodedValue value) {
+	long internComputedValue(CopyBinding assignment, LmdbNativeValueCodec.DecodedValue value, int positionMask) {
+		return internComputedValue(assignment, value, positionMask, null);
+	}
+
+	long internComputedValue(CopyBinding assignment, LmdbNativeValueCodec.DecodedValue value, int positionMask,
+			RowState row) {
+		if (generatedKeyAuthority != null && generatedKeyPlan.discards(assignment)) {
+			return LmdbNativeAggregateCompiler.NULL_CONTEXT_ID;
+		}
 		if (value != null && value.plainStringLiteral() && generatedKeyAuthority != null
 				&& generatedKeyPlan.accepts(assignment) && !context.hasQueryScopedValues()) {
 			return generatedKeyAuthority.internString(value.label());
 		}
-		return internComputedValue(assignment, toValue(value));
+		if (generatedKeyAuthority != null && generatedKeyPlan.accepts(assignment)) {
+			return internComputedValue(assignment, toValue(value), positionMask);
+		}
+		// Terminal and discarded outputs never need a row-origin search. Ordinary inputs retain store-first identity.
+		long unchangedStoredInputId = row == null ? UNKNOWN : row.unchangedStoredInputId(value);
+		if (unchangedStoredInputId != UNKNOWN) {
+			return unchangedStoredInputId;
+		}
+		return internComputedValue(assignment, toValue(value), positionMask);
 	}
 
 	/** Makes this evaluation's context inheritable by semantic-native steps invoked recursively on the same thread. */
@@ -247,6 +266,10 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	/** Store-first interning for semantic row evaluators that already produce an authoritative RDF value. */
 	long internComputedValue(Value value) {
+		return internComputedValue(value, 0);
+	}
+
+	long internComputedValue(Value value, int positionMask) {
 		if (value == null) {
 			return UNKNOWN;
 		}
@@ -255,7 +278,7 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 					"compile-scoped synthetic source cannot intern computed values; use forEvaluation()");
 		}
 		value = context.authoritativeQueryScopedValue(value);
-		return authority.valueResolver().intern(value);
+		return authority.valueResolver().intern(value, positionMask);
 	}
 
 	/**
@@ -313,10 +336,15 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 
 	@Override
 	public long idOf(Value value) throws QueryEvaluationException {
+		return idOf(value, 0);
+	}
+
+	@Override
+	public long idOf(Value value, int positionMask) throws QueryEvaluationException {
 		if (authority != null && value != null && !context.isClosed()) {
-			return authority.valueResolver().lookup(value);
+			return authority.valueResolver().lookup(value, positionMask);
 		}
-		long id = delegate.idOf(value);
+		long id = delegate.idOf(value, positionMask);
 		if (id != UNKNOWN) {
 			return id;
 		}

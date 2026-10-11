@@ -152,7 +152,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				return null;
 			}
 			logicalProbeCount++;
-			long id = idOf(value);
+			long id = idOf(value, layout.positionMask(variable));
 			if (id == UNKNOWN) {
 				// A dictionary value absent from the current snapshot cannot match a statement. Dropping it is
 				// equivalent to the optimizer-produced VALUES join and keeps mixed present/missing domains useful.
@@ -368,7 +368,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				if (expression instanceof Var) {
 					Var sourceVar = (Var) expression;
 					if (sourceVar.hasValue()) {
-						long id = idOf(sourceVar.getValue());
+						long id = idOf(sourceVar.getValue(), layout.positionMask(elem.getName()));
 						if (id == UNKNOWN) {
 							return null;
 						}
@@ -453,7 +453,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 				if (value == null) {
 					continue;
 				}
-				long id = idOf(value);
+				long id = idOf(value, layout.positionMask(filteredVariable));
 				if (id == UNKNOWN) {
 					return null;
 				}
@@ -466,7 +466,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 		if (constant == null) {
 			return null;
 		}
-		long id = idOf(constant);
+		long id = idOf(constant, layout.positionMask(filteredVariable));
 		if (id == UNKNOWN) {
 			return null;
 		}
@@ -496,7 +496,7 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			int size = 0;
 			for (Binding binding : bindings) {
 				Value value = binding.getValue();
-				long id = idOf(value);
+				long id = idOf(value, layout.positionMask(binding.getName()));
 				if (id == UNKNOWN || !valueProbeSafeId(id, value)) {
 					// allocated by collectSyntheticValues before compilation started; only variables it
 					// marked may carry synthetic ids (others must keep raw-id semantics and fall back)

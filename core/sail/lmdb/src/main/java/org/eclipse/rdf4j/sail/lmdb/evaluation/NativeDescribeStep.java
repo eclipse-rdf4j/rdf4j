@@ -225,7 +225,7 @@ final class NativeDescribeStep implements QueryEvaluationStep, LmdbNativePhysica
 		}
 
 		private NativeDescribeRecordCursor open(Value value, Mode mode) {
-			long id = source.idOf(value);
+			long id = source.idOf(value, mode == Mode.OUTGOING ? ValuePosition.SUBJECT : ValuePosition.OBJECT);
 			if (id == UNKNOWN || contexts.isEmpty()) {
 				return NativeDescribeRecordCursor.empty();
 			}

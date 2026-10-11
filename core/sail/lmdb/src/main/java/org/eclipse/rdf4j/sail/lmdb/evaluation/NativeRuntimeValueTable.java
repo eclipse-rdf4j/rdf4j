@@ -29,12 +29,16 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 
 /**
  * Append-only, evaluation-owned runtime values. A hash slot is one primitive word: a cached 32-bit hash and an unsigned
- * ordinal+1. The payload pages keep the original Value and one publication word containing the canonical term ordinal
- * and the unresolved-membership bit. No boxed IDs, structural keys, per-term nodes, or separate canonicalization cache
- * are allocated. Spelling and RDF-term equality are deliberately separate.
+ * ordinal+1. The payload pages keep a stable Value and one publication word containing the canonical term ordinal and
+ * the unresolved-membership bit. First admission detaches mutable LMDB-backed payloads through an immutable spelling;
+ * registered query-scoped representatives keep their authoritative identity. Ordinary immutable payloads need no
+ * structural key, boxed ID, per-term node, or separate canonicalization cache. Spelling and RDF-term equality are
+ * deliberately separate.
  *
  * Readers acquire a published slot (or payload word); duplicates take no monitor. A new spelling locks only its hash
  * stripe and reuses the already-probed empty slot when it is still valid. Growth rehashes cached hashes, never moves
@@ -80,6 +84,11 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	long intern(Value value, boolean unresolved) {
+		return intern(value, unresolved, null, false);
+	}
+
+	/** Snapshots LMDB-backed payloads only for a new spelling; registered query-scoped objects retain identity. */
+	long intern(Value value, boolean unresolved, RdfTermKey spelling, boolean preserveRepresentative) {
 		checkOpen();
 		if (value == null) {
 			return UNKNOWN;
@@ -90,7 +99,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		int hash = index.hardened ? contentHash(value, stripe.seed) : cheapHash;
 		long[] slots = index.slots;
 		if (slots.length == 0) {
-			return insert(stripe, index, value, unresolved, hash, -1, 0L);
+			return insert(stripe, index, value, unresolved, hash, -1, 0L, spelling, preserveRepresentative);
 		}
 		int mask = slots.length - 1;
 		int slot = hash & mask;
@@ -98,7 +107,8 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 		for (int probes = 0, hashCollisions = 0;; probes++) {
 			long entry = (long) LONGS.getAcquire(slots, slot);
 			if (entry == 0L) {
-				return insert(stripe, index, value, unresolved, hash, slot, canonical);
+				return insert(stripe, index, value, unresolved, hash, slot, canonical, spelling,
+						preserveRepresentative);
 			}
 			if ((int) (entry >>> 32) == hash) {
 				hashCollisions++;
@@ -113,7 +123,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				throw probeLimit();
 			}
 			if ((hashCollisions >= HARDEN_AFTER || probes >= 512) && !index.hardened) {
-				return hardenAndIntern(stripe, value, unresolved);
+				return hardenAndIntern(stripe, value, unresolved, spelling, preserveRepresentative);
 			}
 			slot = (slot + 1) & mask;
 		}
@@ -167,6 +177,11 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 
 	private long insert(Stripe stripe, Index seen, Value value, boolean unresolved, int hash,
 			int emptySlot, long canonical) {
+		return insert(stripe, seen, value, unresolved, hash, emptySlot, canonical, null, false);
+	}
+
+	private long insert(Stripe stripe, Index seen, Value value, boolean unresolved, int hash,
+			int emptySlot, long canonical, RdfTermKey spelling, boolean preserveRepresentative) {
 		synchronized (stripe) {
 			checkOpen();
 			Index index = stripe.index;
@@ -195,7 +210,7 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 						throw probeLimit();
 					}
 					if ((hashCollisions >= HARDEN_AFTER || probes >= 512) && !index.hardened) {
-						return hardenAndIntern(stripe, value, unresolved);
+						return hardenAndIntern(stripe, value, unresolved, spelling, preserveRepresentative);
 					}
 					emptySlot = (emptySlot + 1) & mask;
 				}
@@ -210,6 +225,9 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 				while (index.slots[emptySlot] != 0L) {
 					emptySlot = (emptySlot + 1) & mask;
 				}
+			}
+			if (!preserveRepresentative && hasLmdbPayload(value)) {
+				value = (spelling != null ? spelling : RdfTermKey.of(value)).toValue();
 			}
 			long payloadBytes = retainedValueBytes(value, 0);
 			reserve(payloadBytes);
@@ -242,13 +260,30 @@ final class NativeRuntimeValueTable implements AutoCloseable {
 	}
 
 	private long hardenAndIntern(Stripe stripe, Value value, boolean unresolved) {
+		return hardenAndIntern(stripe, value, unresolved, null, false);
+	}
+
+	private long hardenAndIntern(Stripe stripe, Value value, boolean unresolved, RdfTermKey spelling,
+			boolean preserveRepresentative) {
 		synchronized (stripe) {
 			checkOpen();
 			if (!stripe.index.hardened) {
 				resize(stripe, stripe.index.slots.length, true);
 			}
-			return intern(value, unresolved);
+			return intern(value, unresolved, spelling, preserveRepresentative);
 		}
+	}
+
+	/** Called only after duplicate probing, when first admission needs a stable retained payload. */
+	private static boolean hasLmdbPayload(Value value) {
+		if (value instanceof LmdbValue) {
+			return true;
+		}
+		if (value instanceof Literal literal) {
+			return literal.getDatatype() instanceof LmdbValue;
+		}
+		return value instanceof TripleTerm triple && (hasLmdbPayload(triple.getSubject())
+				|| hasLmdbPayload(triple.getPredicate()) || hasLmdbPayload(triple.getObject()));
 	}
 
 	/** Caller owns the stripe. Stored full hashes make ordinary growth payload-free. */

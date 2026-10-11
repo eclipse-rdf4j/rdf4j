@@ -98,10 +98,13 @@ final class LmdbNativeScalarExpressionCompiler {
 			return value(0L, row -> constant);
 		}
 		if (expr instanceof Str) {
-			LmdbNativeCompiledString string = compileString(expr);
-			return string == null ? null : value(string.requiredMask, row -> {
-				String result = string.evaluator.eval(row);
-				return stringLiteral(result);
+			LmdbNativeCompiledValue arg = compileValue(((Str) expr).getArg());
+			return arg == null ? null : value(arg.requiredMask, row -> {
+				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
+				// STR preserves the exact RDF term only for a plain xsd:string input. Other kinds still lose their
+				// datatype, language or direction as required by the existing plain-string result channel.
+				return decoded.plainStringLiteral() ? decoded
+						: stringLiteral(decoded.error() ? null : decoded.stringValue());
 			});
 		}
 		if (expr instanceof Lang) {

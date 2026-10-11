@@ -90,6 +90,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.StampedLock;
 import java.util.function.BooleanSupplier;
 import java.util.function.Consumer;
@@ -126,6 +127,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbResource;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbTripleTerm;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayCapacityException;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget;
@@ -787,7 +789,7 @@ public class ValueStore extends AbstractValueFactory {
 	/**
 	 * A simple cache containing the [ID_CACHE_SIZE] most-recently used value-IDs stored by their value.
 	 */
-	private final ConcurrentCache<LmdbValue, Long> valueIDCache;
+	private final ReverseIdCache<RdfTermKey, Value> valueIDCache;
 	/**
 	 * A simple cache containing the [NAMESPACE_CACHE_SIZE] most-recently used namespaces stored by their ID.
 	 */
@@ -796,14 +798,45 @@ public class ValueStore extends AbstractValueFactory {
 	 * A simple cache containing the [NAMESPACE_ID_CACHE_SIZE] most-recently used namespace-IDs stored by their
 	 * namespace.
 	 */
-	private final ConcurrentCache<String, Long> namespaceIDCache;
+	private final ReverseIdCache<NamespaceKey, Object> namespaceIDCache;
 	private final ObjectLongHashMap<Value> transactionValueIds = new ObjectLongHashMap<>();
 	private final ObjectLongHashMap<String> transactionNamespaceIds = new ObjectLongHashMap<>();
 	private FreshValueSession activeFreshValueSession;
 	private final int transactionValueCacheLimit = calculateTransactionValueCacheLimit(
 			Runtime.getRuntime().maxMemory());
 	private final Map<Long, Long> refCountsTxCache = new HashMap<>();
-	private final ConcurrentHashMap<Value, Long> commonVocabulary = new ConcurrentHashMap<>();
+	private final ConcurrentHashMap<String, VocabularyId> commonVocabulary = new ConcurrentHashMap<>();
+
+	private record VocabularyId(ReverseIdCache.Entry<RdfTermKey> entry, Object epoch) {
+	}
+
+	private static final ReverseIdCache.KeyAdapter<RdfTermKey, Value> VALUE_ID_KEYS = new ReverseIdCache.KeyAdapter<>() {
+		@Override
+		public int hash(Value value) {
+			return RdfTermKey.spellingHash(value);
+		}
+
+		@Override
+		public int keyHash(RdfTermKey key) {
+			return key.spellingHash();
+		}
+
+		@Override
+		public boolean matches(RdfTermKey key, Value value) {
+			return key.matches(value);
+		}
+
+		@Override
+		public RdfTermKey snapshot(Value value) {
+			return RdfTermKey.of(value);
+		}
+
+		@Override
+		public long lexicalLength(RdfTermKey key) {
+			return key.lexicalLength();
+		}
+	};
+
 	/**
 	 * Used to do the actual storage of values, once they're translated to byte arrays.
 	 */
@@ -1024,9 +1057,11 @@ public class ValueStore extends AbstractValueFactory {
 		valueHashCacheHash = new int[hashCacheSize];
 		valueHashCacheMask = hashCacheSize - 1;
 
-		valueIDCache = new ConcurrentCache<>(config.getValueIDCacheSize());
+		valueIDCache = new ReverseIdCache<>(config.getValueIDCacheSize(), true,
+				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, VALUE_ID_KEYS);
 		namespaceCache = new ConcurrentCache<>(config.getNamespaceCacheSize());
-		namespaceIDCache = new ConcurrentCache<>(config.getNamespaceIDCacheSize());
+		namespaceIDCache = new ReverseIdCache<>(config.getNamespaceIDCacheSize(), false,
+				MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS, NamespaceKey.KEYS);
 
 		open(deferAuxiliaryDatabases);
 		setNewRevision();
@@ -4107,7 +4142,15 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype) throws IOException {
+		return findId(data, create, coreDatatype, null);
+	}
+
+	private long findId(byte[] data, boolean create, CoreDatatype coreDatatype, ValueLookupContext lookup)
+			throws IOException {
 		Long id = readTransaction(env, (stack, txn) -> {
+			if (lookup != null) {
+				lookup.captureScope(txn);
+			}
 			if (!create) {
 				try (ValueOverlayRegistry.SnapshotLease overlay = borrowValueOverlay(txn)) {
 					if (overlay != null) {
@@ -4123,7 +4166,7 @@ public class ValueStore extends AbstractValueFactory {
 		return id != null ? id : LmdbValue.UNKNOWN_ID;
 	}
 
-	private Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype,
+	Long findIdInTransaction(byte[] data, boolean create, CoreDatatype coreDatatype,
 			MemoryStack stack, long txn) throws IOException {
 		if (data.length <= MAX_KEY_SIZE) {
 			MDBVal dataVal = MDBVal.calloc(stack);
@@ -4131,6 +4174,10 @@ public class ValueStore extends AbstractValueFactory {
 			MDBVal idVal = MDBVal.calloc(stack);
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
+			}
+			long alternativeId = findAlternativeIriId(data, stack, txn);
+			if (alternativeId != LmdbValue.UNKNOWN_ID) {
+				return alternativeId;
 			}
 			if (!create) {
 				return null;
@@ -4175,6 +4222,10 @@ public class ValueStore extends AbstractValueFactory {
 				}
 			} else {
 				// no value for hash exists
+				long alternativeId = findAlternativeIriId(data, stack, txn);
+				if (alternativeId != LmdbValue.UNKNOWN_ID) {
+					return alternativeId;
+				}
 				if (!create) {
 					return null;
 				}
@@ -4233,6 +4284,10 @@ public class ValueStore extends AbstractValueFactory {
 				}
 			}
 
+			long alternativeId = findAlternativeIriId(data, stack, txn);
+			if (alternativeId != LmdbValue.UNKNOWN_ID) {
+				return alternativeId;
+			}
 			if (!create) {
 				return null;
 			}
@@ -4270,6 +4325,522 @@ public class ValueStore extends AbstractValueFactory {
 			});
 			return newId;
 		}
+	}
+
+	/** Resolve the same lexical IRI even when its writer preserved a different namespace/local-name boundary. */
+	private long findAlternativeIriId(byte[] data, MemoryStack stack, long txn) throws IOException {
+		if (data[0] != URI_VALUE) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		stack.push();
+		try {
+			ByteBuffer encoded = ByteBuffer.wrap(data);
+			encoded.position(1);
+			long namespaceId = Varint.readUnsignedHeap(encoded);
+			MDBVal key = MDBVal.malloc(stack);
+			key.mv_data(id2data(idBuffer(stack), namespaceId).flip());
+			MDBVal namespace = MDBVal.malloc(stack);
+			int rc = probeIriAlternative(txn, key, namespace);
+			if (rc == MDB_NOTFOUND) {
+				throw new IOException("Missing namespace record for IRI namespace ID " + namespaceId);
+			}
+			E(rc);
+			ByteBuffer namespaceData = namespace.mv_data();
+			if (!namespaceData.hasRemaining() || namespaceData.get(namespaceData.position()) != NAMESPACE_VALUE) {
+				throw new IOException("Invalid namespace record for IRI namespace ID " + namespaceId);
+			}
+			int namespaceLength = namespaceData.remaining() - 1;
+			byte[] lexical = new byte[namespaceLength + encoded.remaining()];
+			namespaceData.position(namespaceData.position() + 1);
+			namespaceData.get(lexical, 0, namespaceLength);
+			encoded.get(lexical, namespaceLength, encoded.remaining());
+			return findAlternativeIriId(lexical, namespaceLength, namespaceId, stack, txn);
+		} finally {
+			stack.pop();
+		}
+	}
+
+	private long findAlternativeIriId(IRI iri, ValueLookupContext lookup) throws IOException {
+		byte[] lexical = iri.stringValue().getBytes(StandardCharsets.UTF_8);
+		return readTransaction(env, (stack, txn) -> {
+			if (lookup != null) {
+				lookup.captureScope(txn);
+			}
+			return findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
+		});
+	}
+
+	/**
+	 * Short namespace keys form a lexicographic prefix tree in the existing dictionary. A predecessor that is not a
+	 * prefix lets us jump straight to its common prefix; a matched namespace lets us continue with a shorter bound.
+	 * Long namespace keys are hash indexed. Compute their prefix hashes once, without copying or reencoding prefixes.
+	 */
+	private long findAlternativeIriId(byte[] lexical, int excludedNamespaceLength, long excludedNamespaceId,
+			MemoryStack stack, long txn)
+			throws IOException {
+		try (AlternativeIriLookup lookup = new AlternativeIriLookup(lexical, stack, txn)) {
+			long result = lookup.find(excludedNamespaceLength, excludedNamespaceId);
+			lookup.publish();
+			return result;
+		}
+	}
+
+	private static boolean isUtf8Boundary(byte[] lexical, int length) {
+		return length == lexical.length || (lexical[length] & 0xC0) != 0x80;
+	}
+
+	/** Fixed native buffers and a mutable prefix query belong to one dictionary snapshot, never to a shared cache. */
+	private final class AlternativeIriLookup implements AutoCloseable {
+		private final byte[] lexical;
+		private final long txn;
+		private final MemoryStack stack;
+		private final MDBVal key;
+		private final MDBVal value;
+		private MDBVal id;
+		private ByteBuffer namespacePrefix;
+		private ByteBuffer iriPrefix;
+		private ByteBuffer hashKey;
+		private ByteBuffer smallKey;
+		private ByteBuffer boundKey;
+		private PointerBuffer cursorHandle;
+		private final CRC32 crc = new CRC32();
+		private final Object generation = valueLookupGeneration;
+		private final ValueStoreRevision lookupRevision = revision;
+		private final ReverseIdCache.State<NamespaceKey> cacheState = namespaceIDCache.state();
+		private final Object scope;
+		private final NamespaceKey.Prefix namespaceQuery;
+		private int namespaceSeparator;
+		private boolean namespaceSlashPhase;
+		private NamespacePrefixProof reusedProof;
+		private int reuseLimit = -1;
+		private boolean reused;
+		private int examinedFrom;
+		private int[] presentLengths;
+		private long[] presentIds;
+		private int presentCount;
+		private long namespaceCursor;
+		private long hashCursor;
+
+		private AlternativeIriLookup(byte[] lexical, MemoryStack stack, long txn) {
+			this.lexical = lexical;
+			this.txn = txn;
+			this.stack = stack;
+			key = MDBVal.malloc(stack);
+			value = MDBVal.malloc(stack);
+			scope = valueLookupScope(generation, txn);
+			namespaceQuery = scope == null ? null
+					: new NamespaceKey.Prefix(lexical, MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS);
+			examinedFrom = lexical.length + 1;
+			if (namespaceQuery != null) {
+				selectNamespaceProof();
+			}
+		}
+
+		private long find(int excludedNamespaceLength, long excludedNamespaceId) throws IOException {
+			int directLimit = MAX_KEY_SIZE - 1;
+			if (lexical.length > directLimit) {
+				namespacePrefix = stack.bytes(NAMESPACE_VALUE);
+				int[] prefixHashes = new int[lexical.length - directLimit];
+				crc.update(NAMESPACE_VALUE);
+				for (int i = 0; i < lexical.length; i++) {
+					crc.update(lexical[i]);
+					if (i >= directLimit) {
+						prefixHashes[i - directLimit] = (int) crc.getValue();
+					}
+				}
+				int length = lexical.length;
+				while (length > directLimit) {
+					if (canReuse(length)) {
+						long iriId = reuseNamespaces(length, excludedNamespaceLength);
+						if (iriId != LmdbValue.UNKNOWN_ID) {
+							return iriId;
+						}
+						length = reusedProof.minimumLength() - 1;
+						if (length < 0) {
+							return LmdbValue.UNKNOWN_ID;
+						}
+						continue;
+					}
+					if (isUtf8Boundary(lexical, length)) {
+						long namespaceId = length == excludedNamespaceLength ? excludedNamespaceId
+								: findRecord(namespacePrefix, 0, length,
+										Integer.toUnsignedLong(prefixHashes[length - directLimit - 1]));
+						examinedFrom = Math.min(examinedFrom, length);
+						if (namespaceId != LmdbValue.UNKNOWN_ID) {
+							recordNamespace(length, namespaceId);
+							if (length != excludedNamespaceLength) {
+								long iriId = findIri(length, namespaceId);
+								if (iriId != LmdbValue.UNKNOWN_ID) {
+									return iriId;
+								}
+							}
+						}
+					}
+					length--;
+				}
+				if (reused && reusedProof.minimumLength() <= directLimit) {
+					return findDirectNamespaces(reusedProof.minimumLength() - 1, excludedNamespaceLength);
+				}
+			}
+			return findDirectNamespaces(Math.min(directLimit, lexical.length), excludedNamespaceLength);
+		}
+
+		private long findDirectNamespaces(int bound, int excludedNamespaceLength) throws IOException {
+			if (bound < 0) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			while (bound >= 0) {
+				while (!isUtf8Boundary(lexical, bound)) {
+					bound--;
+				}
+				if (canReuse(bound)) {
+					long iriId = reuseNamespaces(bound, excludedNamespaceLength);
+					if (iriId != LmdbValue.UNKNOWN_ID) {
+						return iriId;
+					}
+					bound = reusedProof.minimumLength() - 1;
+					continue;
+				}
+				if (namespaceCursor == 0) {
+					E(mdb_cursor_open(txn, dbi, cursorHandle()));
+					namespaceCursor = cursorHandle.get(0);
+					boundKey = stack.malloc(MAX_KEY_SIZE);
+				}
+				boundKey.clear();
+				boundKey.put(NAMESPACE_VALUE).put(lexical, 0, bound).flip();
+				key.mv_data(boundKey);
+				int rc = seekIriAlternative(namespaceCursor, key, value, MDB_SET_RANGE);
+				if (rc == MDB_NOTFOUND) {
+					rc = seekIriAlternative(namespaceCursor, key, value, MDB_LAST);
+				} else {
+					E(rc);
+					if (key.mv_data().compareTo(boundKey) != 0) {
+						rc = seekIriAlternative(namespaceCursor, key, value, MDB_PREV);
+					}
+				}
+				if (rc == MDB_NOTFOUND) {
+					examinedFrom = 0;
+					return LmdbValue.UNKNOWN_ID;
+				}
+				E(rc);
+				ByteBuffer candidate = key.mv_data();
+				int position = candidate.position();
+				if (!candidate.hasRemaining() || candidate.get(position) != NAMESPACE_VALUE) {
+					examinedFrom = 0;
+					return LmdbValue.UNKNOWN_ID;
+				}
+				int length = candidate.remaining() - 1;
+				int common = 0;
+				while (common < length && common < lexical.length
+						&& candidate.get(position + 1 + common) == lexical[common]) {
+					common++;
+				}
+				if (common == length) {
+					long namespaceId = data2id(value.mv_data());
+					examinedFrom = Math.min(examinedFrom, length);
+					recordNamespace(length, namespaceId);
+					if (length != excludedNamespaceLength) {
+						long iriId = findIri(length, namespaceId);
+						if (iriId != LmdbValue.UNKNOWN_ID) {
+							return iriId;
+						}
+					}
+					bound = length - 1;
+				} else {
+					bound = Math.min(bound - 1, common);
+				}
+				examinedFrom = Math.min(examinedFrom, bound + 1);
+			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		private boolean cacheIsCurrent() {
+			return scope != null && valueLookupGeneration == generation && namespaceIDCache.isCurrent(cacheState)
+					&& sameRevision(lookupRevision, revision);
+		}
+
+		/** URIUtil's first '#', otherwise last '/', otherwise last ':' rule, then the genuine parent namespaces. */
+		private int resetNamespaceBoundaries() {
+			namespaceQuery.reset();
+			namespaceSeparator = -1;
+			for (int i = 0; i < lexical.length; i++) {
+				if (lexical[i] == '#') {
+					namespaceSeparator = i;
+					break;
+				}
+			}
+			namespaceSlashPhase = true;
+			if (namespaceSeparator < 0) {
+				namespaceSeparator = previousSeparator((byte) '/', lexical.length);
+				if (namespaceSeparator < 0) {
+					namespaceSlashPhase = false;
+					namespaceSeparator = previousSeparator((byte) ':', lexical.length);
+				}
+			}
+			return namespaceSeparator < 0 ? -1 : namespaceSeparator + 1;
+		}
+
+		private int nextNamespaceBoundary() {
+			int previousBound = namespaceSeparator;
+			if (namespaceSlashPhase) {
+				namespaceSeparator = previousSeparator((byte) '/', previousBound);
+				if (namespaceSeparator < 0) {
+					namespaceSlashPhase = false;
+					namespaceSeparator = previousSeparator((byte) ':', previousBound);
+				}
+			} else {
+				namespaceSeparator = previousSeparator((byte) ':', previousBound);
+			}
+			return namespaceSeparator < 0 ? -1 : namespaceSeparator + 1;
+		}
+
+		private void selectNamespaceProof() {
+			for (int length = resetNamespaceBoundaries(); length >= 0; length = nextNamespaceBoundary()) {
+				namespaceQuery.shorten(length);
+				if (namespaceQuery.canRetain()) {
+					ReverseIdCache.Entry<NamespaceKey> cached = namespaceIDCache.get(cacheState, namespaceQuery,
+							ValuePosition.NONE);
+					if (cached instanceof NamespaceEntry namespace && namespace.proof != reusedProof
+							&& namespace.proof.scope() == scope
+							&& sameRevision(cached.revision(), lookupRevision) && cacheIsCurrent()
+							&& namespace.proof.covers(length)) {
+						int common = namespace.proof.commonPrefixLength(lexical);
+						if (common > reuseLimit || common == reuseLimit
+								&& namespace.proof.minimumLength() < reusedProof.minimumLength()) {
+							reusedProof = namespace.proof;
+							reuseLimit = common;
+						}
+					}
+				}
+			}
+		}
+
+		private int previousSeparator(byte separator, int exclusiveEnd) {
+			for (int i = exclusiveEnd - 1; i >= 0; i--) {
+				if (lexical[i] == separator) {
+					return i;
+				}
+			}
+			return -1;
+		}
+
+		private boolean canReuse(int length) {
+			return !reused && reusedProof != null && length <= reuseLimit && reusedProof.covers(length)
+					&& cacheIsCurrent();
+		}
+
+		private long reuseNamespaces(int upperLength, int excludedNamespaceLength) throws IOException {
+			reused = true;
+			examinedFrom = Math.min(examinedFrom, reusedProof.minimumLength());
+			// Record every present answer before a URI match can return early. The proof already examined this
+			// whole interval in this exact native snapshot, including its shorter prefixes.
+			int firstNew = presentCount;
+			for (int i = 0; i < reusedProof.presentCount(); i++) {
+				int length = reusedProof.presentLength(i);
+				if (length <= upperLength) {
+					recordNamespace(length, reusedProof.presentId(i));
+				}
+			}
+			for (int i = firstNew; i < presentCount; i++) {
+				if (presentLengths[i] != excludedNamespaceLength) {
+					long iriId = findIri(presentLengths[i], presentIds[i]);
+					if (iriId != LmdbValue.UNKNOWN_ID) {
+						return iriId;
+					}
+				}
+			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		private void recordNamespace(int length, long namespaceId) {
+			if (namespaceQuery == null) {
+				return;
+			}
+			assert presentCount == 0 || presentLengths[presentCount - 1] > length;
+			if (presentLengths == null) {
+				presentLengths = new int[4];
+				presentIds = new long[4];
+			} else if (presentCount == presentLengths.length) {
+				presentLengths = Arrays.copyOf(presentLengths, presentCount * 2);
+				presentIds = Arrays.copyOf(presentIds, presentCount * 2);
+			}
+			presentLengths[presentCount] = length;
+			presentIds[presentCount++] = namespaceId;
+		}
+
+		private void publish() {
+			if (namespaceQuery == null || !cacheIsCurrent()) {
+				return;
+			}
+			int length = resetNamespaceBoundaries();
+			if (length < 0 || valueLookupScope(generation, txn) != scope) {
+				return;
+			}
+			int retainedLimit = namespaceQuery.retainedByteLength();
+			if (examinedFrom > retainedLimit) {
+				return;
+			}
+			NamespacePrefixProof proof = NamespacePrefixProof.copyOf(lexical, retainedLimit, examinedFrom,
+					presentLengths, presentIds, presentCount, scope);
+			for (; length >= 0; length = nextNamespaceBoundary()) {
+				if (!cacheIsCurrent()) {
+					return;
+				}
+				namespaceQuery.shorten(length);
+				if (namespaceQuery.canRetain() && proof.covers(length)) {
+					ReverseIdCache.Entry<NamespaceKey> cached = namespaceIDCache.get(cacheState, namespaceQuery,
+							ValuePosition.NONE);
+					NamespaceKey retained = cached == null ? namespaceQuery.retainedKey() : cached.key();
+					long namespaceId = proof.namespaceId(length);
+					namespaceIDCache.putEntry(cacheState, new NamespaceEntry(retained, namespaceId,
+							lookupRevision, namespaceId == LmdbValue.UNKNOWN_ID ? scope : null, proof),
+							ValuePosition.NONE);
+				}
+			}
+		}
+
+		private long findIri(int namespaceLength, long namespaceId) throws IOException {
+			if (iriPrefix == null) {
+				iriPrefix = stack.malloc(1 + MAX_UNSIGNED_ID_BYTES);
+			}
+			iriPrefix.clear().put(URI_VALUE);
+			Varint.writeUnsigned(iriPrefix, namespaceId);
+			iriPrefix.flip();
+			crc.reset();
+			for (int i = 0; i < iriPrefix.remaining(); i++) {
+				crc.update(iriPrefix.get(i));
+			}
+			int suffixLength = lexical.length - namespaceLength;
+			// Each existing namespace requires its own encoded IRI hash: dense prefix dictionaries can have a
+			// quadratic sum of suffix lengths, while namespace prefix hashing and the probe count stay linear.
+			crc.update(lexical, namespaceLength, suffixLength);
+			return findRecord(iriPrefix, namespaceLength, suffixLength, crc.getValue());
+		}
+
+		private long findRecord(ByteBuffer prefix, int offset, int length, long hash) throws IOException {
+			int recordLength = prefix.remaining() + length;
+			if (recordLength <= MAX_KEY_SIZE) {
+				if (smallKey == null) {
+					smallKey = stack.malloc(MAX_KEY_SIZE);
+				}
+				smallKey.clear();
+				for (int i = prefix.position(); i < prefix.limit(); i++) {
+					smallKey.put(prefix.get(i));
+				}
+				smallKey.put(lexical, offset, length).flip();
+				key.mv_data(smallKey);
+				int rc = probeIriAlternative(txn, key, value);
+				if (rc == MDB_NOTFOUND) {
+					return LmdbValue.UNKNOWN_ID;
+				}
+				E(rc);
+				return data2id(value.mv_data());
+			}
+			if (hashKey == null) {
+				hashKey = stack.malloc(2 + 2 * Long.BYTES + 2);
+			}
+			hashKey.clear().put(HASH_KEY);
+			Varint.writeUnsigned(hashKey, hash);
+			hashKey.flip();
+			int hashLength = hashKey.remaining();
+			key.mv_data(hashKey);
+			int rc = probeIriAlternative(txn, key, value);
+			if (rc == MDB_NOTFOUND) {
+				return LmdbValue.UNKNOWN_ID;
+			}
+			E(rc);
+			if (id == null) {
+				id = MDBVal.malloc(stack);
+			}
+			id.mv_data(value.mv_data());
+			rc = probeIriAlternative(txn, id, value);
+			if (rc != MDB_NOTFOUND) {
+				E(rc);
+				if (matchesAlternativeRecord(value.mv_data(), prefix, lexical, offset, length)) {
+					return data2id(id.mv_data());
+				}
+			}
+			hashKey.put(0, HASHID_KEY);
+			key.mv_data(hashKey);
+			if (hashCursor == 0) {
+				E(mdb_cursor_open(txn, dbi, cursorHandle()));
+				hashCursor = cursorHandle.get(0);
+			}
+			rc = seekIriAlternative(hashCursor, key, value, MDB_SET_RANGE);
+			while (rc != MDB_NOTFOUND) {
+				E(rc);
+				ByteBuffer candidate = key.mv_data();
+				if (candidate.remaining() < hashLength || compareRegion(candidate, 0, hashKey, 0, hashLength) != 0) {
+					break;
+				}
+				ByteBuffer candidateId = candidate.duplicate();
+				candidateId.position(hashLength);
+				id.mv_data(candidateId);
+				int candidateRc = probeIriAlternative(txn, id, value);
+				if (candidateRc != MDB_NOTFOUND) {
+					E(candidateRc);
+					if (matchesAlternativeRecord(value.mv_data(), prefix, lexical, offset, length)) {
+						return data2id(candidateId);
+					}
+				}
+				rc = seekIriAlternative(hashCursor, key, value, MDB_NEXT);
+			}
+			return LmdbValue.UNKNOWN_ID;
+		}
+
+		private PointerBuffer cursorHandle() {
+			if (cursorHandle == null) {
+				cursorHandle = stack.mallocPointer(1);
+			}
+			return cursorHandle;
+		}
+
+		@Override
+		public void close() {
+			if (namespaceCursor != 0) {
+				mdb_cursor_close(namespaceCursor);
+			}
+			if (hashCursor != 0) {
+				mdb_cursor_close(hashCursor);
+			}
+		}
+	}
+
+	private static final class NamespaceEntry extends ReverseIdCache.Entry<NamespaceKey> {
+		private final NamespacePrefixProof proof;
+
+		private NamespaceEntry(NamespaceKey key, long id, ValueStoreRevision revision, Object negativeScope,
+				NamespacePrefixProof proof) {
+			super(key, id, key.spellingHash(), revision, negativeScope);
+			this.proof = proof;
+		}
+	}
+
+	private static boolean matchesAlternativeRecord(ByteBuffer record, ByteBuffer prefix, byte[] lexical, int offset,
+			int length) {
+		int prefixLength = prefix.remaining();
+		if (record.remaining() != prefixLength + length) {
+			return false;
+		}
+		for (int i = 0; i < prefixLength; i++) {
+			if (record.get(record.position() + i) != prefix.get(prefix.position() + i)) {
+				return false;
+			}
+		}
+		for (int i = 0; i < length; i++) {
+			if (record.get(record.position() + prefixLength + i) != lexical[offset + i]) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	int probeIriAlternative(long txn, MDBVal key, MDBVal value) {
+		return mdb_get(txn, dbi, key, value);
+	}
+
+	int seekIriAlternative(long cursor, MDBVal key, MDBVal value, int operation) {
+		return mdb_cursor_get(cursor, key, value, operation);
 	}
 
 	private void findIds(byte[][] data, CoreDatatype[] coreDatatypes, int[] indexes, long[] ids, int count)
@@ -4428,6 +4999,10 @@ public class ValueStore extends AbstractValueFactory {
 			if (mdb_get(txn, dbi, dataVal, idVal) == MDB_SUCCESS) {
 				return data2id(idVal.mv_data());
 			}
+			long alternativeId = findAlternativeIriId(data, stack, txn);
+			if (alternativeId != LmdbValue.UNKNOWN_ID) {
+				return alternativeId;
+			}
 
 			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
@@ -4492,6 +5067,10 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		private long storeFirstLargeId(byte[] data, CoreDatatype coreDatatype) throws IOException {
+			long alternativeId = findAlternativeIriId(data, stack, txn);
+			if (alternativeId != LmdbValue.UNKNOWN_ID) {
+				return alternativeId;
+			}
 			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
 			idVal.mv_data(id2data(idBuffer, newId).flip());
@@ -4506,6 +5085,10 @@ public class ValueStore extends AbstractValueFactory {
 		}
 
 		private long storeHashCollisionId(byte[] data, int hashLength, CoreDatatype coreDatatype) throws IOException {
+			long alternativeId = findAlternativeIriId(data, stack, txn);
+			if (alternativeId != LmdbValue.UNKNOWN_ID) {
+				return alternativeId;
+			}
 			long newId = nextId(data[0], coreDatatype);
 			idBuffer.clear();
 			ByteBuffer idBb = id2data(idBuffer, newId).flip();
@@ -4592,7 +5175,15 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	long findTripleTermId(long subj, long pred, long obj, boolean create) throws IOException {
+		return findTripleTermId(subj, pred, obj, create, null);
+	}
+
+	private long findTripleTermId(long subj, long pred, long obj, boolean create, ValueLookupContext lookup)
+			throws IOException {
 		return readTransaction(env, (stack, txn) -> {
+			if (lookup != null) {
+				lookup.captureScope(txn);
+			}
 			final TripleIndex mainIndex = tripleTermSpocIndex;
 
 			PointerBuffer pp = stack.mallocPointer(1);
@@ -4867,6 +5458,8 @@ public class ValueStore extends AbstractValueFactory {
 		return result;
 	}
 
+	static Map<Value, AtomicLong> refCountMap = new ConcurrentHashMap<>(256, 0.75f, 4);
+
 	/**
 	 * Gets the ID for the specified value.
 	 *
@@ -4875,6 +5468,15 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long getId(Value value) throws IOException {
+//		var t = refCountMap.compute(value, (k, v) -> {
+//			if (v == null) {
+//				return new AtomicLong(1);
+//			} else {
+//				v.incrementAndGet();
+//				return v;
+//			}
+//		});
+//		System.out.println("getId called for value: " + value + ", current ref count: " + t.get());
 		return getId(value, false);
 	}
 
@@ -4891,20 +5493,26 @@ public class ValueStore extends AbstractValueFactory {
 		if (generation == null) {
 			return null;
 		}
-		return readTransaction(env, (stack, txn) -> {
-			long snapshotId = mdb_txn_id(txn);
-			DictionaryLookupScope token = dictionaryLookupScope;
-			if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
-				synchronized (this) {
-					token = dictionaryLookupScope;
-					if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
-						token = new DictionaryLookupScope(generation, snapshotId);
-						dictionaryLookupScope = token;
-					}
+		return readTransaction(env, (stack, txn) -> valueLookupScope(generation, txn));
+	}
+
+	/** Reuse an already open native snapshot when validating lookup-local absence and namespace prefix proofs. */
+	private Object valueLookupScope(Object generation, long txn) {
+		if (generation == null || valueLookupGeneration != generation) {
+			return null;
+		}
+		long snapshotId = mdb_txn_id(txn);
+		DictionaryLookupScope token = dictionaryLookupScope;
+		if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
+			synchronized (this) {
+				token = dictionaryLookupScope;
+				if (token == null || token.generation() != generation || token.snapshotId() != snapshotId) {
+					token = new DictionaryLookupScope(generation, snapshotId);
+					dictionaryLookupScope = token;
 				}
 			}
-			return valueLookupGeneration == generation ? token : null;
-		});
+		}
+		return valueLookupGeneration == generation ? token : null;
 	}
 
 	/** Current-view delta accounting; use retained stats for base/history/compaction reservations. */
@@ -5117,6 +5725,19 @@ public class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public long getId(Value value, boolean create) throws IOException {
+		return getId(value, create, ValuePosition.NONE);
+	}
+
+	public long getId(Value value, int positionMask) throws IOException {
+		return getId(value, false, positionMask);
+	}
+
+	public long getId(Value value, boolean create, int positionMask) throws IOException {
+		ValuePosition.validateMask(positionMask);
+		return getId(value, create, positionMask, null);
+	}
+
+	private long getId(Value value, boolean create, int positionMask, ValueLookupContext lookup) throws IOException {
 		// Try to get the internal ID from the value itself
 		boolean isOwnValue = isOwnValue(value);
 		if (isOwnValue) {
@@ -5139,49 +5760,61 @@ public class ValueStore extends AbstractValueFactory {
 
 		long stamp = revisionLock.readLock();
 		try {
-			// Check cache
-			Long cachedID = valueIDCache.get(value);
-			if (cachedID == null) {
-				cachedID = commonVocabulary.get(value);
-			}
-
+			ReverseIdCache.State<RdfTermKey> cacheState = valueIDCache.state();
+			ReverseIdCache.Entry<?> cachedID = cachedValueId(value, create, positionMask, lookup, cacheState);
 			if (cachedID != null) {
-				long id = cachedID;
-				cacheTransactionValueId(value, id);
-				if (isOwnValue) {
+				long id = cachedID.id();
+				if (id != LmdbValue.UNKNOWN_ID) {
+					cacheTransactionValueId(value, id);
+				}
+				if (isOwnValue && id != LmdbValue.UNKNOWN_ID) {
 					// Store id in value for fast access in any consecutive calls
 					((LmdbValue) value).setInternalID(id, revision);
 				}
 				return id;
 			}
 
-			long id = format.isLegacy() && LegacySemanticScope.containsLanguage(value)
-					? findLegacySemanticId(value)
-					: LmdbValue.UNKNOWN_ID;
-			if (id == LmdbValue.UNKNOWN_ID && value instanceof Literal literal) {
-				id = format.tryInline(literal);
+			boolean legacyLanguage = format.isLegacy() && LegacySemanticScope.containsLanguage(value);
+			if (!legacyLanguage && value instanceof Literal literal) {
+				long inlineId = format.tryInline(literal);
+				if (inlineId != LmdbValue.UNKNOWN_ID) {
+					cacheStoredId(value, inlineId, isOwnValue);
+					return inlineId;
+				}
 			}
 
+			Object generation = valueLookupGeneration;
+			boolean ownsLookup = !create && lookup == null;
+			if (ownsLookup) {
+				lookup = new ValueLookupContext(generation);
+			}
+			long id = legacyLanguage ? findLegacySemanticId(value, lookup) : LmdbValue.UNKNOWN_ID;
+			if (id == LmdbValue.UNKNOWN_ID && legacyLanguage && value instanceof Literal literal) {
+				id = format.tryInline(literal);
+			}
 			if (id == LmdbValue.UNKNOWN_ID) {
 				if (value.isTripleTerm()) {
 					TripleTerm tripleTerm = (TripleTerm) value;
-					long subjectId = getId(tripleTerm.getSubject(), create);
-					long predicateId = getId(tripleTerm.getPredicate(), create);
-					long objectId = getId(tripleTerm.getObject(), create);
+					long subjectId = getId(tripleTerm.getSubject(), create, ValuePosition.SUBJECT, lookup);
+					long predicateId = getId(tripleTerm.getPredicate(), create, ValuePosition.PREDICATE, lookup);
+					long objectId = getId(tripleTerm.getObject(), create, ValuePosition.OBJECT, lookup);
 
 					if (subjectId == LmdbValue.UNKNOWN_ID || predicateId == LmdbValue.UNKNOWN_ID
 							|| objectId == LmdbValue.UNKNOWN_ID) {
-						return LmdbValue.UNKNOWN_ID;
+						id = LmdbValue.UNKNOWN_ID;
+					} else {
+						id = findTripleTermId(subjectId, predicateId, objectId, create, lookup);
 					}
-					id = findTripleTermId(subjectId, predicateId, objectId, create);
 				} else {
 					// not inlined or ID not cached, search in index
-					byte[] data = value2data(value, create);
+					byte[] data = value2data(value, create, lookup);
 					if (data != null) {
 						CoreDatatype coreDatatype = value instanceof Literal literal
 								? literal.getCoreDatatype()
 								: CoreDatatype.NONE;
-						id = findId(data, create, coreDatatype);
+						id = findId(data, create, coreDatatype, lookup);
+					} else if (value instanceof IRI iri) {
+						id = findAlternativeIriId(iri, lookup);
 					}
 				}
 			}
@@ -5196,51 +5829,164 @@ public class ValueStore extends AbstractValueFactory {
 						throw failure;
 					}
 				}
-				cacheTransactionValueId(value, id);
-				if (isOwnValue) {
-					// Store id in value for fast access in any consecutive calls
-					((LmdbValue) value).setInternalID(id, revision);
-					// Store id in cache
-					valueIDCache.put((LmdbValue) value, id);
-				} else {
-					// Store id in cache
-					LmdbValue nv = getLmdbValue(value);
-					nv.setInternalID(id, revision);
-
-					if (nv.isIRI() && isCommonVocabulary(((IRI) nv))) {
-						commonVocabulary.put(value, id);
-					}
-					valueIDCache.put(nv, id);
-				}
-				// only store hash for non-inlined values
-				if (!ValueIds.isInlined(id)) {
-					storeHashIfAbsent(id, value);
-				}
-				return id;
+				cacheStoredId(value, id, isOwnValue, positionMask, generation, cacheState);
+			} else if (lookup != null) {
+				lookup.missingValue(value, positionMask, cacheState);
 			}
+			if (ownsLookup) {
+				lookup.complete();
+			}
+			return id;
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
-		return LmdbValue.UNKNOWN_ID;
+	}
+
+	private ReverseIdCache.Entry<?> cachedValueId(Value value, boolean create, int positionMask,
+			ValueLookupContext lookup,
+			ReverseIdCache.State<RdfTermKey> cacheState) throws IOException {
+		Object generation = valueLookupGeneration;
+		if (generation == null) {
+			return null;
+		}
+		ReverseIdCache.Entry<RdfTermKey> entry = valueIDCache.get(cacheState, value, positionMask);
+		if (entry != null && sameRevision(entry.revision(), revision)) {
+			if (entry.id() != LmdbValue.UNKNOWN_ID) {
+				if (valueIDCache.isCurrent(cacheState) && valueLookupGeneration == generation) {
+					return entry;
+				}
+			} else if (!create) {
+				Object scope = lookup == null ? valueLookupScope() : lookup.scope();
+				if (scope != null && entry.negativeScope() == scope && valueIDCache.isCurrent(cacheState)
+						&& valueLookupGeneration == generation) {
+					return entry;
+				}
+			}
+		}
+		if (value instanceof IRI iri) {
+			VocabularyId vocabulary = commonVocabulary.get(iri.stringValue());
+			if (vocabulary != null && vocabulary.epoch() == cacheState.epoch()
+					&& sameRevision(vocabulary.entry().revision(), revision) && valueIDCache.isCurrent(cacheState)
+					&& valueLookupGeneration == generation) {
+				return vocabulary.entry();
+			}
+		}
+		return null;
+	}
+
+	int valueIDCacheCapacity(int positionMask) {
+		return valueIDCache.capacity(positionMask);
+	}
+
+	/** The first physical reader supplies the before token for all nested lookups and early absence proofs. */
+	private final class ValueLookupContext {
+		private final Object generation;
+		private final ValueStoreRevision lookupRevision = revision;
+		private Object scope;
+		private boolean invalid;
+		private ArrayList<ValueMiss> values;
+		private ArrayList<NamespaceMiss> namespaces;
+
+		private ValueLookupContext(Object generation) {
+			this.generation = generation;
+			invalid = generation == null;
+		}
+
+		void captureScope(long txn) {
+			if (!invalid) {
+				acceptScope(valueLookupScope(generation, txn));
+			}
+		}
+
+		Object scope() throws IOException {
+			if (invalid || valueLookupGeneration != generation) {
+				invalidate();
+				return null;
+			}
+			if (scope == null) {
+				// A cached absence may be consulted before any physical lookup. It still needs a native view check.
+				acceptScope(valueLookupScope());
+			}
+			return scope;
+		}
+
+		private void acceptScope(Object observed) {
+			if (observed == null || valueLookupGeneration != generation || scope != null && scope != observed) {
+				invalidate();
+			} else {
+				scope = observed;
+			}
+		}
+
+		private void invalidate() {
+			invalid = true;
+			scope = null;
+		}
+
+		void missingValue(Value value, int positionMask, ReverseIdCache.State<RdfTermKey> state) {
+			if (scope != null) {
+				if (values == null) {
+					values = new ArrayList<>();
+				}
+				values.add(new ValueMiss(RdfTermKey.of(value), positionMask, state));
+			}
+		}
+
+		void missingNamespace(String namespace, ReverseIdCache.State<NamespaceKey> state) {
+			if (scope != null) {
+				if (namespaces == null) {
+					namespaces = new ArrayList<>();
+				}
+				namespaces.add(new NamespaceMiss(namespace, state));
+			}
+		}
+
+		void complete() throws IOException {
+			if (scope == null || valueLookupGeneration != generation || values == null && namespaces == null
+					|| valueLookupScope() != scope
+					|| !sameRevision(lookupRevision, revision)) {
+				return;
+			}
+			if (values != null) {
+				for (ValueMiss miss : values) {
+					valueIDCache.put(miss.state(), miss.key(), LmdbValue.UNKNOWN_ID, lookupRevision, scope,
+							miss.positionMask());
+				}
+			}
+			if (namespaces != null) {
+				for (NamespaceMiss miss : namespaces) {
+					cacheNamespaceResult(miss.namespace(), LmdbValue.UNKNOWN_ID, lookupRevision, scope, miss.state());
+				}
+			}
+		}
+	}
+
+	private record ValueMiss(RdfTermKey key, int positionMask, ReverseIdCache.State<RdfTermKey> state) {
+	}
+
+	private record NamespaceMiss(String namespace, ReverseIdCache.State<NamespaceKey> state) {
 	}
 
 	/** Find a live RDF-equal owner without changing the byte-preserving legacy dictionary. */
-	private long findLegacySemanticId(Value value) throws IOException {
+	private long findLegacySemanticId(Value value, ValueLookupContext lookup) throws IOException {
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			return findLegacyWriterSemanticId(value);
 		}
 		if (value instanceof TripleTerm term) {
-			long subject = getId(term.getSubject());
-			long predicate = getId(term.getPredicate());
+			long subject = getId(term.getSubject(), false, ValuePosition.SUBJECT, lookup);
+			long predicate = getId(term.getPredicate(), false, ValuePosition.PREDICATE, lookup);
 			if (subject == LmdbValue.UNKNOWN_ID || predicate == LmdbValue.UNKNOWN_ID) {
 				return LmdbValue.UNKNOWN_ID;
 			}
 			long object = LegacySemanticScope.containsLanguage(term.getObject()) ? LmdbValue.UNKNOWN_ID
-					: getId(term.getObject());
+					: getId(term.getObject(), false, ValuePosition.OBJECT, lookup);
 			if (object == LmdbValue.UNKNOWN_ID && !LegacySemanticScope.containsLanguage(term.getObject())) {
 				return LmdbValue.UNKNOWN_ID;
 			}
 			return readTransaction(env, (stack, txn) -> {
+				if (lookup != null) {
+					lookup.captureScope(txn);
+				}
 				TripleIndex index = TripleIndex.getBestIndex(tripleTermIndexes, subject, predicate, object, -1);
 				long visited = 0;
 				try (RecordIterator records = new LmdbRecordIterator(index,
@@ -5260,6 +6006,9 @@ public class ValueStore extends AbstractValueFactory {
 			});
 		}
 		return readTransaction(env, (stack, txn) -> {
+			if (lookup != null) {
+				lookup.captureScope(txn);
+			}
 			PointerBuffer pointer = stack.mallocPointer(1);
 			E(mdb_cursor_open(txn, dbi, pointer));
 			long cursor = pointer.get(0);
@@ -5804,13 +6553,14 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	void publishPreparedValues(PreparedValueBatch prepared) {
-		int namespaceCapacity = namespaceIDCache.capacity();
-		int valueCapacity = valueIDCache.capacity();
+		int namespaceCapacity = namespaceIDCache.isUnbounded() ? prepared.namespaceRecords.size()
+				: namespaceIDCache.capacity();
+		int valueCapacity = valueIDCache.isUnbounded() ? prepared.records.size() : valueIDCache.capacity();
 		int namespaceStart = Math.max(0, prepared.namespaceRecords.size() - namespaceCapacity);
 		int publishedValues = 0;
 		for (int i = namespaceStart; i < prepared.namespaceRecords.size(); i++) {
 			PreparedValueRecord record = prepared.namespaceRecords.get(i);
-			namespaceIDCache.put(record.namespace, record.id);
+			cacheNamespaceId(record.namespace, record.id, valueLookupGeneration, namespaceIDCache.state());
 		}
 		for (int i = prepared.records.size() - 1; i >= 0 && publishedValues < valueCapacity; i--) {
 			PreparedValueRecord record = prepared.records.get(i);
@@ -5820,7 +6570,7 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 		for (PreparedValueRecord record : prepared.commonVocabularyRecords) {
-			commonVocabulary.put(record.value, record.id);
+			cacheStoredId(record.value, record.id, isOwnValue(record.value));
 		}
 		if (valueHashCacheEnabled) {
 			for (PreparedValueRecord record : prepared.records) {
@@ -5902,7 +6652,7 @@ public class ValueStore extends AbstractValueFactory {
 		}
 	}
 
-	private long getKnownOrInlineId(Value value, boolean isOwnValue) {
+	private long getKnownOrInlineId(Value value, boolean isOwnValue) throws IOException {
 		if (isOwnValue) {
 			LmdbValue lmdbValue = (LmdbValue) value;
 			if (revisionIsCurrent(lmdbValue)) {
@@ -5925,12 +6675,9 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		Long cachedID = valueIDCache.get(value);
-		if (cachedID == null) {
-			cachedID = commonVocabulary.get(value);
-		}
+		ReverseIdCache.Entry<?> cachedID = cachedValueId(value, true, ValuePosition.NONE, null, valueIDCache.state());
 		if (cachedID != null) {
-			return cachedID;
+			return cachedID.id();
 		}
 
 		return getInlineId(value);
@@ -5941,23 +6688,48 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private void cacheStoredId(Value value, long id, boolean isOwnValue) {
+		cacheStoredId(value, id, isOwnValue, ValuePosition.NONE, valueLookupGeneration, valueIDCache.state());
+	}
+
+	private void cacheStoredId(Value value, long id, boolean isOwnValue, int positionMask, Object generation,
+			ReverseIdCache.State<RdfTermKey> state) {
 		cacheTransactionValueId(value, id);
 		if (isOwnValue) {
 			LmdbValue lmdbValue = (LmdbValue) value;
 			lmdbValue.setInternalID(id, revision);
-			valueIDCache.put(lmdbValue, id);
-		} else {
-			LmdbValue nv = getLmdbValue(value);
-			nv.setInternalID(id, revision);
-
-			if (nv.isIRI() && isCommonVocabulary((IRI) nv)) {
-				commonVocabulary.put(value, id);
-			}
-			valueIDCache.put(nv, id);
 		}
 		if (!ValueIds.isInlined(id)) {
 			storeHashIfAbsent(id, value);
+			if (generation != null && valueLookupGeneration == generation && valueIDCache.isCurrent(state)) {
+				RdfTermKey key = RdfTermKey.of(value);
+				if (key.lexicalLength() <= MAX_SHARED_VALUE_CACHE_LEXICAL_CHARS) {
+					ValueStoreRevision cachedRevision = revision;
+					ReverseIdCache.Entry<RdfTermKey> entry = valueIDCache.put(state, key, id, cachedRevision, null,
+							positionMask);
+					if (entry != null && value instanceof IRI iri && isCommonVocabulary(iri)) {
+						commonVocabulary.put(key.lexical(), new VocabularyId(entry, state.epoch()));
+					}
+				}
+			}
 		}
+	}
+
+	private void cacheNamespaceId(String namespace, long id, Object generation,
+			ReverseIdCache.State<NamespaceKey> state) {
+		if (generation != null && valueLookupGeneration == generation && namespaceIDCache.isCurrent(state)) {
+			cacheNamespaceResult(namespace, id, revision, null, state);
+		}
+	}
+
+	/** Ordinary namespace admission must preserve a same-view prefix proof published by the physical fallback. */
+	private void cacheNamespaceResult(String namespace, long id, ValueStoreRevision lookupRevision, Object scope,
+			ReverseIdCache.State<NamespaceKey> state) {
+		ReverseIdCache.Entry<NamespaceKey> cached = namespaceIDCache.get(state, namespace, ValuePosition.NONE);
+		if (cached != null && cached.id() == id && sameRevision(cached.revision(), lookupRevision)
+				&& (id != LmdbValue.UNKNOWN_ID || cached.negativeScope() == scope)) {
+			return;
+		}
+		namespaceIDCache.put(state, NamespaceKey.of(namespace), id, lookupRevision, scope, ValuePosition.NONE);
 	}
 
 	private void invalidateRefCountIntegrity(String reason) {
@@ -7263,18 +8035,23 @@ public class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] value2data(Value value, boolean create) throws IOException {
+		return value2data(value, create, null);
+	}
+
+	private byte[] value2data(Value value, boolean create, ValueLookupContext lookup)
+			throws IOException {
 		Value.Type type = value.getType();
 		return switch (type) {
-		case Value.Type.IRI -> uri2data((IRI) value, create);
+		case Value.Type.IRI -> uri2data((IRI) value, create, lookup);
 		case Value.Type.BNode -> bnode2data((BNode) value, create);
-		case Value.Type.Literal -> literal2data((Literal) value, create);
+		case Value.Type.Literal -> literal2data((Literal) value, create, lookup);
 		default -> throw new IllegalArgumentException("value parameter should be a URI, BNode or Literal");
 		};
 
 	}
 
-	private byte[] uri2data(IRI uri, boolean create) throws IOException {
-		long nsID = getNamespaceID(uri.getNamespace(), create);
+	private byte[] uri2data(IRI uri, boolean create, ValueLookupContext lookup) throws IOException {
+		long nsID = getNamespaceID(uri.getNamespace(), create, lookup);
 
 		if (nsID == -1) {
 			// Unknown namespace means unknown URI
@@ -7288,18 +8065,18 @@ public class ValueStore extends AbstractValueFactory {
 		return ValueStoreRecordCodec.bnodeData(bNode);
 	}
 
-	private byte[] literal2data(Literal literal, boolean create) throws IOException {
+	private byte[] literal2data(Literal literal, boolean create, ValueLookupContext lookup) throws IOException {
 		return literal2data(literal.getLabel(), literal.getLanguage(), literal.getBaseDirection(),
-				literal.getDatatype(), create);
+				literal.getDatatype(), create, lookup);
 	}
 
 	private byte[] literal2data(String label, Optional<String> lang, Literal.BaseDirection baseDirection, IRI dt,
-			boolean create) throws IOException {
+			boolean create, ValueLookupContext lookup) throws IOException {
 		// Get datatype ID
 		long datatypeID = 0L;
 
 		if (dt != null) {
-			datatypeID = getId(dt, create);
+			datatypeID = getId(dt, create, ValuePosition.NONE, lookup);
 
 			if (datatypeID == LmdbValue.UNKNOWN_ID) {
 				// Unknown datatype means unknown literal
@@ -7456,7 +8233,7 @@ public class ValueStore extends AbstractValueFactory {
 		return new String(data, 1, data.length - 1, StandardCharsets.UTF_8);
 	}
 
-	private long getNamespaceID(String namespace, boolean create) throws IOException {
+	private long getNamespaceID(String namespace, boolean create, ValueLookupContext lookup) throws IOException {
 		if (isWriteTransactionOwner()) {
 			long transactionId = transactionNamespaceIds.getIfAbsent(namespace, LmdbValue.UNKNOWN_ID);
 			if (transactionId != LmdbValue.UNKNOWN_ID) {
@@ -7471,12 +8248,23 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		Long cacheID = namespaceIDCache.get(namespace);
-		if (cacheID != null) {
-			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
-				transactionNamespaceIds.put(namespace, cacheID);
+		Object generation = valueLookupGeneration;
+		ReverseIdCache.State<NamespaceKey> cacheState = namespaceIDCache.state();
+		if (generation != null) {
+			ReverseIdCache.Entry<NamespaceKey> cached = namespaceIDCache.get(cacheState, namespace, ValuePosition.NONE);
+			if (cached != null && sameRevision(cached.revision(), revision)) {
+				if (cached.id() != LmdbValue.UNKNOWN_ID) {
+					if (namespaceIDCache.isCurrent(cacheState) && valueLookupGeneration == generation) {
+						return cached.id();
+					}
+				} else if (!create) {
+					Object scope = lookup == null ? valueLookupScope() : lookup.scope();
+					if (scope != null && cached.negativeScope() == scope && namespaceIDCache.isCurrent(cacheState)
+							&& valueLookupGeneration == generation) {
+						return LmdbValue.UNKNOWN_ID;
+					}
+				}
 			}
-			return cacheID;
 		}
 
 		byte[] namespaceBytes = namespace.getBytes(StandardCharsets.UTF_8);
@@ -7484,12 +8272,14 @@ public class ValueStore extends AbstractValueFactory {
 		namespaceData[0] = NAMESPACE_VALUE;
 		System.arraycopy(namespaceBytes, 0, namespaceData, 1, namespaceBytes.length);
 
-		long id = findId(namespaceData, create);
+		long id = findId(namespaceData, create, CoreDatatype.NONE, lookup);
 		if (id != LmdbValue.UNKNOWN_ID) {
 			if (isWriteTransactionOwner() && transactionNamespaceIds.size() < transactionValueCacheLimit) {
 				transactionNamespaceIds.put(namespace, id);
 			}
-			namespaceIDCache.put(namespace, id);
+			cacheNamespaceId(namespace, id, generation, cacheState);
+		} else if (lookup != null) {
+			lookup.missingNamespace(namespace, cacheState);
 		}
 
 		return id;

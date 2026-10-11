@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.*;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import org.junit.jupiter.api.Test;
 
 /** Actual authority/interner/catalog, native tables, kernel runtime, generated Java and interpreter. */
@@ -57,7 +58,7 @@ public class NativeIdHashContractTest {
 		final boolean canonical;
 		final Map<Long, Value> values = new HashMap<>();
 		final Map<Value, Long> semanticIds = new HashMap<>();
-		final Map<NativeValueKey, Long> spellingIds = new HashMap<>();
+		final Map<RdfTermKey, Long> spellingIds = new HashMap<>();
 		long reads, lookups;
 		boolean forbidReads, forbidLookups;
 
@@ -68,7 +69,7 @@ public class NativeIdHashContractTest {
 		void put(long id, Value value) {
 			values.put(id, value);
 			semanticIds.putIfAbsent(value, id);
-			spellingIds.put(NativeValueKey.of(value), id);
+			spellingIds.put(RdfTermKey.of(value), id);
 		}
 
 		@Override
@@ -76,8 +77,8 @@ public class NativeIdHashContractTest {
 			lookups++;
 			if (forbidLookups)
 				throw new AssertionError("dictionary lookup during raw-id operation");
-			return (canonical ? semanticIds.get(value) : spellingIds.get(NativeValueKey.of(value))) == null ? UNKNOWN
-					: (canonical ? semanticIds.get(value) : spellingIds.get(NativeValueKey.of(value)));
+			return (canonical ? semanticIds.get(value) : spellingIds.get(RdfTermKey.of(value))) == null ? UNKNOWN
+					: (canonical ? semanticIds.get(value) : spellingIds.get(RdfTermKey.of(value)));
 		}
 
 		@Override

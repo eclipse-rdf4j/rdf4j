@@ -129,12 +129,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 		throw new IllegalStateException("native subquery evaluated without an evaluation-scoped term authority");
 	}
 
-	private long idOfOrIntern(RowState row, Value value) {
-		long id = row.source.idOf(value);
-		if (id != UNKNOWN) {
-			return id;
-		}
-		return ((SyntheticValueSource) row.source).internComputedValue(value);
+	private long idOfOrIntern(RowState row, Value value, int targetSlot) {
+		return ((SyntheticValueSource) row.source).internComputedValue(value, row.positionMask(targetSlot));
 	}
 
 	private record NativeSubqueryState(List<BindingSet> rows) {
@@ -162,7 +158,8 @@ final class NativeSubqueryPlan implements SlotPlan {
 				boolean compatible = true;
 				for (int i = 0; i < plan.outSlots.length; i++) {
 					Value value = solution.getValue(plan.outNames[i]);
-					if (value != null && !row.bindOrCheckTerm(plan.outSlots[i], plan.idOfOrIntern(row, value))) {
+					if (value != null && !row.bindOrCheckTerm(plan.outSlots[i],
+							plan.idOfOrIntern(row, value, plan.outSlots[i]))) {
 						compatible = false;
 						break;
 					}
