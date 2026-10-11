@@ -137,8 +137,17 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     const form = harness.document.querySelectorAll('form[action="query"]')[0];
 
     form.formControls = [];
-    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'), /action=explain/);
-    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2'), /explain-format=json/);
+    const explainData = new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'));
+    assert.equal(explainData.get('action'), 'explain');
+    assert.equal(explainData.get('explain'), 'Optimized');
+    assert.equal(explainData.get('explain-format'), 'json');
+    assert.equal(explainData.get('infer'), 'false',
+        'Explain must preserve the explicit no-inference selection when unchecked controls are omitted');
+    assert.equal(explainData.get('query'), 'ASK {}');
+    assert.equal(explainData.get('explain-request-id'), 'server-1');
+    assert.equal(new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2')).get('explain-format'), 'json');
     assert.equal(testing.serializeCancelExplainFormData('server-1'), 'action=cancel-explain&explain-request-id=server-1');
 
     assert.equal(testing.getExplanationDownloadMimeType('dot'), 'text/vnd.graphviz');
@@ -453,7 +462,7 @@ test('query diff view renders nested spans for changed words', () => {
     assert.equal(diffRows[1].children[1].children[1].classList.contains('query-diff-row__segment--changed'), true);
 });
 
-test('query testing helpers cover save error and overwrite branches', () => {
+test('query testing helpers cover save error and overwrite branches', async () => {
     const harness = createQueryBrowserHarness({
         confirmResponses: [true, false]
     });
@@ -471,11 +480,16 @@ test('query testing helpers cover save error and overwrite branches', () => {
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: false });
     assert.equal(harness.getText('save-feedback'), 'Repository was not accessible (check your permissions).');
 
+    // An existing name asks in a confirmation dialog (plan task M6.2); confirming saves again with overwrite.
     testing.ajaxSave(false);
+    const requestsBeforeOverwrite = harness.ajaxRequests.length;
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: false, existed: true });
-    assert.equal(harness.ajaxRequests.length >= 4, true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(harness.ajaxRequests.length, requestsBeforeOverwrite + 1);
+    assert.match(harness.confirms[0], /Replace saved query\?/);
 
     testing.ajaxSave(false);
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: false, existed: true });
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(harness.getText('save-feedback'), 'Cancelled overwriting existing query.');
 });

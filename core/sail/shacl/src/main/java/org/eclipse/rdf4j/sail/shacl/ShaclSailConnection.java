@@ -125,7 +125,8 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 
 	private volatile List<Future<ValidationResultIterator>> futures;
 
-	private List<ShapeValidationContainer> shapeValidatorContainers;
+	private volatile List<ShapeValidationContainer> shapeValidatorContainers;
+	private final Object shapeValidatorContainersLock = new Object();
 
 	ShaclSailConnection(ShaclSail sail, NotifyingSailConnection connection, SailConnection previousStateConnection,
 			SailRepositoryConnection shapesRepoConnection, SailConnection serializableConnection) {
@@ -777,7 +778,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						if (closed) {
 							throw new SailException("Connection is closed");
 						}
-						synchronized (shapeValidatorContainers) {
+						synchronized (shapeValidatorContainersLock) {
 							try {
 								if (closed) {
 									try {
@@ -843,7 +844,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						})
 						.filter(Objects::nonNull)
 						.forEach(f -> {
-							synchronized (futures) {
+							synchronized (shapeValidatorContainersLock) {
 								try {
 									if (closed) {
 										f.cancel(true);
@@ -863,7 +864,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				boolean done = false;
 
 				ArrayDeque<Future<ValidationResultIterator>> futures1;
-				synchronized (futures) {
+				synchronized (shapeValidatorContainersLock) {
 					futures1 = new ArrayDeque<>(futures);
 				}
 
@@ -913,7 +914,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 				}
 			} finally {
 				var originalFutures = this.futures;
-				synchronized (originalFutures) {
+				synchronized (shapeValidatorContainersLock) {
 					for (Future<ValidationResultIterator> future : originalFutures) {
 						future.cancel(true);
 					}
@@ -1190,7 +1191,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 		try {
 			var originalFutures = this.futures;
 			if (originalFutures != null) {
-				synchronized (originalFutures) {
+				synchronized (shapeValidatorContainersLock) {
 					for (Future<ValidationResultIterator> future : futures) {
 						future.cancel(true);
 					}
@@ -1201,7 +1202,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			try {
 				var originalShapeValidatorContainers = this.shapeValidatorContainers;
 				if (originalShapeValidatorContainers != null) {
-					synchronized (originalShapeValidatorContainers) {
+					synchronized (shapeValidatorContainersLock) {
 						for (ShapeValidationContainer shapeValidatorContainer : originalShapeValidatorContainers) {
 							try {
 								shapeValidatorContainer.forceClose();

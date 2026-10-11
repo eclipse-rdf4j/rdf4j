@@ -185,40 +185,29 @@ public abstract class RepositoryTest {
 	@Test
 	public void getAllStatements() {
 		try (RepositoryConnection conn = testRepository.getConnection()) {
-			addStatementsForGetAllStatementsTest(conn);
-			assertStatementPatterns(conn, 1);
+			conn.add(bob, mbox, mboxBob);
+			conn.add(bob, RDF.TYPE, FOAF.PERSON);
+
+			assertStatementCount(conn, null, 2);
+			assertStatementCount(conn, RDF.TYPE, 1);
+			assertStatementCount(conn, null, 2);
 		}
 	}
 
-	/**
-	 * Runs the high-volume iterator stress coverage in in-process repository fixtures.
-	 * <p>
-	 * The shared contract test checks the same statement patterns once for every implementation, so remote transport
-	 * latency does not determine whether a repository passes compliance.
-	 */
 	protected void runGetAllStatementsStressTest() {
 		try (RepositoryConnection conn = testRepository.getConnection()) {
-			addStatementsForGetAllStatementsTest(conn);
-			assertStatementPatterns(conn, 1024 * 32);
-		}
-	}
+			conn.add(bob, mbox, mboxBob);
+			conn.add(bob, RDF.TYPE, FOAF.PERSON);
 
-	private void addStatementsForGetAllStatementsTest(RepositoryConnection conn) {
-		conn.add(bob, mbox, mboxBob);
-		conn.add(bob, RDF.TYPE, FOAF.PERSON);
-	}
-
-	private void assertStatementPatterns(RepositoryConnection conn, int iterations) {
-		for (int i = 0; i < iterations; i++) {
-			assertStatementCount(conn, null, 2, i);
-		}
-
-		for (int i = 0; i < iterations; i++) {
-			assertStatementCount(conn, RDF.TYPE, 1, i);
-		}
-
-		for (int i = 0; i < iterations; i++) {
-			assertStatementCount(conn, null, 2, i);
+			for (int i = 0; i < 1024 * 32; i++) {
+				assertStatementCount(conn, null, 2, i);
+			}
+			for (int i = 0; i < 1024 * 32; i++) {
+				assertStatementCount(conn, RDF.TYPE, 1, i);
+			}
+			for (int i = 0; i < 1024 * 32; i++) {
+				assertStatementCount(conn, null, 2, i);
+			}
 		}
 	}
 
@@ -229,4 +218,13 @@ public abstract class RepositoryTest {
 					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 		}
 	}
+
+	private void assertStatementCount(RepositoryConnection conn, IRI predicate, int expected) {
+		try (RepositoryResult<Statement> statements = conn.getStatements(null, predicate, null)) {
+			List<Statement> collect = statements.stream().collect(Collectors.toList());
+			assertEquals(expected, collect.size(), "Unexpected statements for predicate " + predicate + ":\n"
+					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
+		}
+	}
+
 }

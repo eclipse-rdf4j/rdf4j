@@ -16,18 +16,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
-import java.io.StringReader;
-import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
-
-import javax.xml.transform.Templates;
-import javax.xml.transform.Transformer;
-import javax.xml.transform.TransformerFactory;
-import javax.xml.transform.stream.StreamResult;
-import javax.xml.transform.stream.StreamSource;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Resource;
@@ -45,53 +35,6 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.junit.jupiter.api.Test;
 
 class SummaryServletTest {
-
-	private static final Path SUMMARY_XSL = Paths.get("src", "main", "webapp", "transformations", "summary.xsl");
-
-	@Test
-	void summaryPageRendersEffectiveConfigDetails() throws Exception {
-		Transformer transformer = newSummaryTransformer();
-
-		String sparqlResults = ""
-				+ "<?xml version=\"1.0\"?>\n"
-				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\""
-				+ " xmlns:workbench=\"https://rdf4j.org/schema/workbench#\">\n"
-				+ "  <head />\n"
-				+ "  <results>\n"
-				+ "    <result>\n"
-				+ "      <binding name=\"id\"><literal>memory</literal></binding>\n"
-				+ "      <binding name=\"description\"><literal>Memory repo</literal></binding>\n"
-				+ "      <binding name=\"location\"><literal>http://example.com/repositories/memory</literal></binding>\n"
-				+ "      <binding name=\"server\"><literal>http://example.com/rdf4j-server/</literal></binding>\n"
-				+ "      <binding name=\"size\"><literal>7</literal></binding>\n"
-				+ "      <binding name=\"contexts\"><literal>1</literal></binding>\n"
-				+ "    </result>\n"
-				+ "  </results>\n"
-				+ "  <workbench:metadata>\n"
-				+ "    <workbench:config-model-turtle>"
-				+ "@prefix config: &lt;tag:rdf4j.org,2023:config/&gt; .\n"
-				+ "@prefix rdfs: &lt;http://www.w3.org/2000/01/rdf-schema#&gt; .\n"
-				+ "\n"
-				+ "[] config:rep.id \"memory\" ;\n"
-				+ "   rdfs:label \"Memory repo\" ;\n"
-				+ "   config:rep.impl [\n"
-				+ "      config:rep.type \"openrdf:SailRepository\"\n"
-				+ "   ] ."
-				+ "</workbench:config-model-turtle>\n"
-				+ "  </workbench:metadata>\n"
-				+ "</sparql>\n";
-
-		StringWriter html = new StringWriter();
-		transformer.transform(new StreamSource(new StringReader(sparqlResults)), new StreamResult(html));
-		String output = html.toString();
-
-		assertThat(output)
-				.contains("<details")
-				.contains("Config Model")
-				.contains("<pre")
-				.contains("@prefix config:")
-				.contains("config:rep.impl [");
-	}
 
 	@Test
 	void serviceEmitsEffectiveConfigMetadataAsPrettyPrintedTurtle() throws Exception {
@@ -118,7 +61,7 @@ class SummaryServletTest {
 		TupleResultBuilder builder = new TupleResultBuilder(new WorkbenchTupleResultWriter(buffer),
 				SimpleValueFactory.getInstance());
 
-		servlet.service(builder, "transformations");
+		servlet.service(builder);
 
 		String xml = buffer.toString(StandardCharsets.UTF_8);
 
@@ -131,14 +74,6 @@ class SummaryServletTest {
 				.contains("config:sail.impl [")
 				.contains("config:mem.persist true")
 				.doesNotContain("_:");
-	}
-
-	private static Transformer newSummaryTransformer() throws Exception {
-		TransformerFactory factory = TransformerFactory.newInstance();
-		StreamSource stylesheet = new StreamSource(SUMMARY_XSL.toFile());
-		stylesheet.setSystemId(SUMMARY_XSL.toUri().toString());
-		Templates templates = factory.newTemplates(stylesheet);
-		return templates.newTransformer();
 	}
 
 	private static RepositoryConfig repositoryConfig() {

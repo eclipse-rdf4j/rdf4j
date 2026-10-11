@@ -201,7 +201,7 @@ final class BindingAnalyzer {
 			return empty();
 		}
 		if (!(source instanceof Collection<?>)) {
-			return new BindingInfo(new LinkedHashSet<>(assignment.getBindingNames()), Collections.emptySet());
+			return new BindingInfo(new LinkedHashSet<>(assignment.getPossibleBindingNames()), Collections.emptySet());
 		}
 
 		Set<String> may = new LinkedHashSet<>();

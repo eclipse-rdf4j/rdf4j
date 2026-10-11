@@ -134,10 +134,10 @@ final class SlowReferenceAnalyzer {
 			return;
 		}
 		if (node instanceof BindingSetAssignment assignment) {
-			result.addAll(SemanticMask.SCOPE_OUT, assignment.getDeclaredBindingNames());
-			result.addAll(SemanticMask.MAY_BIND, assignment.getBindingNames());
+			result.addAll(SemanticMask.SCOPE_OUT, ScopeResolver.valuesOutputNames(assignment));
+			result.addAll(SemanticMask.MAY_BIND, assignment.getPossibleBindingNames());
 			result.addAll(SemanticMask.MUST_BIND, assignment.getAssuredBindingNames());
-			result.addAll(SemanticMask.DEFINES, assignment.getBindingNames());
+			result.addAll(SemanticMask.DEFINES, assignment.getPossibleBindingNames());
 			return;
 		}
 		if (node instanceof Join join) {

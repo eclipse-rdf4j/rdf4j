@@ -14,11 +14,13 @@ package org.eclipse.rdf4j.workbench.base;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Set;
@@ -26,6 +28,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.common.platform.Platform;
 import org.eclipse.rdf4j.common.platform.PlatformFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.QueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultWriter;
@@ -33,6 +36,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.rio.WriterConfig;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
@@ -96,7 +100,7 @@ class AbstractServletTest {
 	}
 
 	@Test
-	void tupleResultBuilderUsesBrowserFriendlyXmlAndHonorsWorkbenchAcceptParameter() throws Exception {
+	void tupleResultBuilderPreservesSparqlXmlForBrowserUserAgentsAndWorkbenchAcceptParameter() throws Exception {
 		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
 		servlet.init(new TestServletConfig("example", new MockServletContext(), java.util.Map.of()));
 
@@ -106,24 +110,60 @@ class AbstractServletTest {
 
 		servlet.exposeGetTupleResultBuilder(browserRequest, browserResponse, new ByteArrayOutputStream());
 
-		assertThat(browserResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_XML);
+		assertThat(browserResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_SPARQL_RESULTS_XML);
 
 		WorkbenchRequest workbenchRequest = mock(WorkbenchRequest.class);
 		when(workbenchRequest.getParameter(AbstractServlet.ACCEPT))
 				.thenReturn(AbstractServlet.APPLICATION_SPARQL_RESULTS_XML);
 		when(workbenchRequest.getHeader(AbstractServlet.ACCEPT)).thenReturn(null);
-		when(workbenchRequest.getHeader(AbstractServlet.USER_AGENT)).thenReturn("Mozilla/5.0");
+		when(workbenchRequest.getHeader("User-Agent")).thenReturn("Mozilla/5.0");
 		CapturingResponse explicitResponse = new CapturingResponse();
 
 		servlet.exposeGetTupleResultBuilder(workbenchRequest, explicitResponse, new ByteArrayOutputStream());
 
 		assertThat(servlet.exposeGetTupleResultFormat(workbenchRequest))
 				.isEqualTo(TupleQueryResultFormat.SPARQL);
-		assertThat(explicitResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_XML);
+		assertThat(explicitResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_SPARQL_RESULTS_XML);
 	}
 
 	@Test
-	void tupleResultBuilderHandlesExplicitSparqlXmlHtmlFallbackAndJsonpResponses() throws Exception {
+	void structuredPageResponsesCannotReuseTheHtmlCacheVariant() throws Exception {
+		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
+		servlet.init(new TestServletConfig("example", new MockServletContext(), java.util.Map.of()));
+
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.addHeader(AbstractServlet.ACCEPT, WorkbenchPageProtocol.ACCEPT);
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		servlet.exposeGetTupleResultBuilder(request, response, new ByteArrayOutputStream());
+
+		verify(response).setContentType(WorkbenchPageProtocol.CONTENT_TYPE);
+		verify(response).setHeader("Cache-Control", "no-cache, no-store");
+		verify(response).addHeader("Vary", "Accept");
+	}
+
+	@Test
+	void queryCompactAcceptDoesNotPromoteGenericPageWriters() throws Exception {
+		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
+		servlet.init(new TestServletConfig("example", new MockServletContext(), java.util.Map.of()));
+		MockHttpServletRequest request = new MockHttpServletRequest();
+		request.addHeader(AbstractServlet.ACCEPT,
+				"application/vnd.rdf4j.workbench-query-v2+ndjson," + WorkbenchPageProtocol.ACCEPT);
+		CapturingResponse response = new CapturingResponse();
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		var builder = servlet.exposeGetTupleResultBuilder(request, response, output);
+
+		builder.start("value");
+		builder.result(SimpleValueFactory.getInstance().createIRI("urn:generic-page"));
+		builder.end();
+
+		assertThat(response.getContentType()).isEqualTo(WorkbenchPageProtocol.CONTENT_TYPE);
+		assertThat(output.toString(StandardCharsets.UTF_8)).contains("\"version\":1", "\"kind\":\"iri\"")
+				.doesNotContain("\"term-encoding\"");
+	}
+
+	@Test
+	void tupleResultBuilderPreservesSparqlXmlForHtmlAcceptAndJsonpResponses() throws Exception {
 		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
 		servlet.init(new TestServletConfig("example", new MockServletContext(), java.util.Map.of()));
 
@@ -137,7 +177,7 @@ class AbstractServletTest {
 		htmlRequest.addHeader(AbstractServlet.ACCEPT, AbstractServlet.TEXT_HTML);
 		CapturingResponse htmlResponse = new CapturingResponse();
 		servlet.exposeGetTupleResultBuilder(htmlRequest, htmlResponse, new ByteArrayOutputStream());
-		assertThat(htmlResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_XML);
+		assertThat(htmlResponse.getContentType()).isEqualTo(AbstractServlet.APPLICATION_SPARQL_RESULTS_XML);
 
 		servlet.appConfig.getProperties().setProperty(AbstractServlet.JSONP_ENABLED, "true");
 		MockHttpServletRequest jsonpRequest = new MockHttpServletRequest();
@@ -181,7 +221,7 @@ class AbstractServletTest {
 
 		MockHttpServletRequest request = new MockHttpServletRequest();
 		request.addHeader(AbstractServlet.ACCEPT, "application/not-real");
-		request.addHeader(AbstractServlet.USER_AGENT, "curl/8.0");
+		request.addHeader("User-Agent", "curl/8.0");
 		CapturingResponse response = new CapturingResponse();
 
 		servlet.exposeGetTupleResultBuilder(request, response, new ByteArrayOutputStream());
@@ -192,7 +232,7 @@ class AbstractServletTest {
 	}
 
 	@Test
-	void tupleResultBuilderTreatsApplicationXmlAcceptHeadersAsBrowserFriendly() throws Exception {
+	void tupleResultBuilderPreservesSparqlXmlForApplicationXmlAcceptHeaders() throws Exception {
 		ExposedAbstractServlet servlet = new ExposedAbstractServlet();
 		QueryResultWriter writer = mock(QueryResultWriter.class);
 		WriterConfig writerConfig = new WriterConfig();
@@ -202,12 +242,12 @@ class AbstractServletTest {
 		servlet.resultWriter = writer;
 
 		MockHttpServletRequest request = new MockHttpServletRequest();
-		request.addHeader(AbstractServlet.ACCEPT, AbstractServlet.APPLICATION_XML);
+		request.addHeader(AbstractServlet.ACCEPT, "application/xml");
 		CapturingResponse response = new CapturingResponse();
 
 		servlet.exposeGetTupleResultBuilder(request, response, new ByteArrayOutputStream());
 
-		assertThat(response.getContentType()).isEqualTo(AbstractServlet.APPLICATION_XML);
+		assertThat(response.getContentType()).isEqualTo(AbstractServlet.APPLICATION_SPARQL_RESULTS_XML);
 	}
 
 	@Test

@@ -21,13 +21,13 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class LmdbStoreRepositoryTest extends RepositoryTest {
-	@TempDir
-	public File dataDir;
-
 	@Test
 	public void getAllStatementsRepeatedly() {
 		runGetAllStatementsStressTest();
 	}
+
+	@TempDir
+	public File dataDir;
 
 	@Override
 	protected Repository createRepository() {

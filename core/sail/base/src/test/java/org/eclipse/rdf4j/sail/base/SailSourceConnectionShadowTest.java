@@ -104,6 +104,25 @@ class SailSourceConnectionShadowTest {
 	}
 
 	@Test
+	void candidatePrecompileFailureReturnsLegacyRows() throws Exception {
+		TupleExpr candidate = new EmptySet();
+		ShadowOptimizationPlan plan = newPlan(candidate, 10L, false, false);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.precompile(candidate)).thenThrow(new IllegalStateException("candidate precompile defect"));
+
+		QueryBindingSet row = binding("x", 1);
+		QueryEvaluationStep legacy = bindings -> new CloseableIteratorIteration<>(
+				List.<BindingSet>of(row).iterator());
+		long mismatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH);
+
+		List<BindingSet> rows = drain(invokeShadow(strategy, legacy, plan));
+
+		assertThat(rows).containsExactly(row);
+		assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MISMATCH))
+				.isEqualTo(mismatchesBefore + 1L);
+	}
+
+	@Test
 	void candidateRowOverflowOfCompleteLegacyResultIsAMismatch() throws Exception {
 		TupleExpr candidate = new EmptySet();
 		ShadowOptimizationPlan plan = newPlan(candidate, 1L, false, false);

@@ -15,8 +15,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -227,7 +229,7 @@ final class ScopeResolver {
 				}
 			}
 			if (node instanceof BindingSetAssignment assignment) {
-				for (String name : new TreeSet<>(assignment.getDeclaredBindingNames())) {
+				for (String name : new TreeSet<>(valuesOutputNames(assignment))) {
 					declareIfAbsent(name, frameId);
 				}
 			}
@@ -235,6 +237,16 @@ final class ScopeResolver {
 				primarySymbol[nodeId] = declareIfAbsent(var.getName(), frameId);
 			}
 		}
+	}
+
+	/**
+	 * The names a VALUES node can expose: its declared header plus any name its rows actually bind. Rows built through
+	 * the API may bind columns outside the header, so the header alone does not cover them.
+	 */
+	static Set<String> valuesOutputNames(BindingSetAssignment assignment) {
+		Set<String> names = new LinkedHashSet<>(assignment.getDeclaredBindingNames());
+		names.addAll(assignment.getPossibleBindingNames());
+		return names;
 	}
 
 	private int declareIfAbsent(String name, int frameId) {
@@ -377,7 +389,7 @@ final class ScopeResolver {
 			if (node instanceof Var var && !var.hasValue()) {
 				primarySymbol[nodeId] = declareIfAbsent(var.getName(), frameId);
 			} else if (node instanceof BindingSetAssignment assignment) {
-				for (String name : new TreeSet<>(assignment.getDeclaredBindingNames())) {
+				for (String name : new TreeSet<>(valuesOutputNames(assignment))) {
 					declareIfAbsent(name, frameId);
 				}
 			} else if (node instanceof ExtensionElem extension) {

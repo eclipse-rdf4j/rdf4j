@@ -247,10 +247,10 @@ public class ArbitraryLengthPath extends AbstractQueryModelNode implements Tuple
 		if (contextVar != null) {
 			result ^= contextVar.hashCode();
 		}
+		result ^= Long.hashCode(minLength);
 		if (scope == Scope.NAMED_CONTEXTS) {
 			result = ~result;
 		}
-		result ^= Long.hashCode(minLength);
 		return result;
 	}
 

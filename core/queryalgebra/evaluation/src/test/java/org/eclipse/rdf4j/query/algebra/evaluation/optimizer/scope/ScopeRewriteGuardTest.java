@@ -15,9 +15,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.lang.reflect.Method;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -25,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class ScopeRewriteGuardTest {
@@ -60,6 +63,42 @@ public class ScopeRewriteGuardTest {
 		ScopeAnalysis directionalAnalysis = ScopeAnalysis.analyze(new QueryRoot(directional));
 		Object directionalGuard = createGuard(directionalAnalysis);
 		assertThat(canSwapJoin(directionalGuard, provider, dependent)).isPositive();
+	}
+
+	@Test
+	public void valuesRowColumnsOutsideTheDeclaredHeaderAreAnalyzed() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(row("x", 1, "v", 2), row("x", 3)));
+		QueryRoot root = new QueryRoot(new Join(pattern("s", "o"), assignment));
+
+		ScopeAnalysis analysis = ScopeAnalysis.analyze(root);
+
+		assertThat(analysis.names(SemanticMask.MAY_BIND, assignment)).containsExactlyInAnyOrder("x", "v");
+		assertThat(analysis.names(SemanticMask.SCOPE_OUT, assignment)).containsExactlyInAnyOrder("x", "v");
+		assertThat(SlowReferenceAnalyzer.analyze(root).names(SemanticMask.SCOPE_OUT, assignment))
+				.containsExactlyInAnyOrder("x", "v");
+	}
+
+	@Test
+	public void oneShotValuesRowsBlockFilterMovementAcrossThem() throws Exception {
+		BindingSetAssignment oneShot = new BindingSetAssignment();
+		List<BindingSet> rows = List.of(row("v", 1));
+		oneShot.setBindingSets(rows::iterator);
+		StatementPattern destination = pattern("s", "o");
+		Filter filter = new Filter(new Join(destination, oneShot), Var.of("v"));
+		ScopeAnalysis analysis = ScopeAnalysis.analyze(new QueryRoot(filter));
+
+		assertThat(filterBelowJoin(createGuard(analysis), filter, destination, oneShot)).isPositive();
+	}
+
+	private static BindingSet row(Object... namesAndValues) {
+		MapBindingSet row = new MapBindingSet();
+		for (int i = 0; i < namesAndValues.length; i += 2) {
+			row.addBinding((String) namesAndValues[i],
+					SimpleValueFactory.getInstance().createLiteral((Integer) namesAndValues[i + 1]));
+		}
+		return row;
 	}
 
 	private static ScopeAnalysis analysisWithSymbols(int count) {

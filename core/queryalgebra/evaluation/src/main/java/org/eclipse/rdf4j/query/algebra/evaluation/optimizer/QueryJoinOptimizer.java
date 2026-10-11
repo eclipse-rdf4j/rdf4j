@@ -27,59 +27,41 @@ import java.util.function.BiFunction;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
-import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
-import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
-import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Difference;
-import org.eclipse.rdf4j.query.algebra.Distinct;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
-import org.eclipse.rdf4j.query.algebra.IsBNode;
-import org.eclipse.rdf4j.query.algebra.IsLiteral;
-import org.eclipse.rdf4j.query.algebra.IsNumeric;
-import org.eclipse.rdf4j.query.algebra.IsResource;
-import org.eclipse.rdf4j.query.algebra.IsTriple;
-import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
-import org.eclipse.rdf4j.query.algebra.QueryRoot;
-import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Service;
-import org.eclipse.rdf4j.query.algebra.SingletonSet;
-import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.Str;
-import org.eclipse.rdf4j.query.algebra.TripleRef;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
-import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -88,8 +70,11 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSe
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.StatementPatternVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * A query optimizer that re-orders nested Joins.
@@ -112,6 +97,7 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
 
 	private static final int FULL_PAIRWISE_START_LIMIT = 6;
+	private static final double FILTERED_PATTERN_COST_MULTIPLIER = 0.8d;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -142,7 +128,41 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor());
+		tupleExpr.visit(new JoinVisitor(tupleExpr, bindings));
+	}
+
+	/**
+	 * Mutable names used only to estimate the cost of a physical join prefix. This deliberately cannot be passed to
+	 * {@link QueryAlgebraBindingAnalysis}: a name in this prefix is not proof that an expression is semantically bound.
+	 */
+	private static final class PhysicalCostPrefix {
+		private final long scopeIdentity;
+		private final Set<String> bindingNames;
+
+		private PhysicalCostPrefix(long scopeIdentity, Set<String> bindingNames) {
+			this.scopeIdentity = scopeIdentity;
+			this.bindingNames = new HashSet<>(bindingNames);
+		}
+
+		private PhysicalCostPrefix copy() {
+			return new PhysicalCostPrefix(scopeIdentity, bindingNames);
+		}
+
+		private void addAll(Set<String> names) {
+			bindingNames.addAll(names);
+		}
+
+		private boolean contains(String name) {
+			return bindingNames.contains(name);
+		}
+
+		private boolean isEmpty() {
+			return bindingNames.isEmpty();
+		}
+
+		private Set<String> snapshot() {
+			return Set.copyOf(bindingNames);
+		}
 	}
 
 	@Override
@@ -157,46 +177,162 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 	@SuppressWarnings("InnerClassMayBeStatic")
 	protected class JoinVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
-		private Set<String> boundVars = new HashSet<>();
+		private PhysicalCostPrefix boundVars;
 		private double currentHighestCost = 1;
-		private final Map<TupleExpr, Set<String>> externalServiceVariableCache = new IdentityHashMap<>();
-		private final Map<TupleExpr, BindingInfo> bindingInfoCache = new IdentityHashMap<>();
+		private final QueryAlgebraBindingAnalysis bindingAnalysis;
+		private QueryAlgebraBindingAnalysis.ReadOnlyContext currentContext;
+		private Set<StatementPattern> filterDiscountedPatterns;
 
 		protected JoinVisitor() {
+			this(QueryAlgebraBindingAnalysis.withBindingValues(null, EmptyBindingSet.getInstance()), null);
+		}
+
+		private JoinVisitor(TupleExpr root, BindingSet bindings) {
+			this(QueryAlgebraBindingAnalysis.withBindingValues(root, bindings), null);
+		}
+
+		private JoinVisitor(QueryAlgebraBindingAnalysis bindingAnalysis,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext initialContext) {
 			super(trackResultSize);
+			this.bindingAnalysis = bindingAnalysis;
+			this.currentContext = initialContext == null ? bindingAnalysis.rootContext() : initialContext;
+			this.boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
 
 		}
 
 		@Override
 		public void meet(LeftJoin leftJoin) {
-			leftJoin.getLeftArg().visit(this);
+			visitAt(leftJoin.getLeftArg());
 
-			Set<String> origBoundVars = boundVars;
+			PhysicalCostPrefix origBoundVars = boundVars;
+			QueryAlgebraBindingAnalysis.ReadOnlyContext origContext = currentContext;
 			try {
-				boundVars = new HashSet<>(boundVars);
+				boundVars = boundVars.copy();
 				boundVars.addAll(getBindingInfo(leftJoin.getLeftArg()).guaranteedOutput);
 
-				leftJoin.getRightArg().visit(this);
+				visitAt(leftJoin.getRightArg());
+				if (leftJoin.hasCondition()) {
+					PhysicalCostPrefix matchedBindings = boundVars.copy();
+					matchedBindings.addAll(getBindingInfo(leftJoin.getRightArg(),
+							bindingAnalysis.contextAt(leftJoin.getRightArg())).guaranteedOutput);
+					boundVars = matchedBindings;
+					visitAt(leftJoin.getCondition());
+				}
 			} finally {
 				boundVars = origBoundVars;
+				currentContext = origContext;
 			}
 		}
 
 		@Override
 		public void meet(Lateral lateral) {
-			lateral.getLeftArg().visit(this);
+			visitAt(lateral.getLeftArg());
 
-			Set<String> origBoundVars = boundVars;
+			PhysicalCostPrefix origBoundVars = boundVars;
+			QueryAlgebraBindingAnalysis.ReadOnlyContext origContext = currentContext;
 			try {
-				boundVars = new HashSet<>(boundVars);
+				boundVars = boundVars.copy();
 				Set<String> guaranteedLeftBindings = getBindingInfo(lateral.getLeftArg()).guaranteedOutput;
 				Set<String> rightInputBindings = new HashSet<>(lateral.getRightInputBindingNames());
 				rightInputBindings.retainAll(guaranteedLeftBindings);
 				boundVars.addAll(rightInputBindings);
 
-				lateral.getRightArg().visit(this);
+				visitAt(lateral.getRightArg());
 			} finally {
 				boundVars = origBoundVars;
+				currentContext = origContext;
+			}
+		}
+
+		@Override
+		public void meet(Union union) {
+			visitAt(union.getLeftArg());
+			visitAt(union.getRightArg());
+		}
+
+		@Override
+		public void meet(Difference difference) {
+			visitAt(difference.getLeftArg());
+			visitAt(difference.getRightArg());
+		}
+
+		@Override
+		public void meet(Intersection intersection) {
+			visitAt(intersection.getLeftArg());
+			visitAt(intersection.getRightArg());
+		}
+
+		@Override
+		public void meet(Service service) {
+			visitAt(service.getServiceExpr());
+		}
+
+		@Override
+		public void meet(ArbitraryLengthPath path) {
+			visitAt(path.getSubjectVar());
+			if (path.getPathExpression() != null) {
+				visitAt(path.getPathExpression());
+			}
+			visitAt(path.getObjectVar());
+			if (path.getContextVar() != null) {
+				visitAt(path.getContextVar());
+			}
+		}
+
+		@Override
+		public void meet(Filter filter) {
+			visitAt(filter.getCondition());
+			visitAt(filter.getArg());
+		}
+
+		@Override
+		public void meet(Extension extension) {
+			visitAt(extension.getArg());
+			for (ExtensionElem element : extension.getElements()) {
+				visitAt(element);
+			}
+		}
+
+		@Override
+		public void meet(Group group) {
+			visitAt(group.getArg());
+			for (GroupElem element : group.getGroupElements()) {
+				visitAt(element);
+			}
+		}
+
+		@Override
+		public void meet(Order order) {
+			for (OrderElem element : order.getElements()) {
+				visitAt(element);
+			}
+			visitAt(order.getArg());
+		}
+
+		@Override
+		public void meet(Projection projection) {
+			visitAt(projection.getProjectionElemList());
+			visitAt(projection.getArg());
+		}
+
+		@Override
+		public void meet(Exists exists) {
+			visitAt(exists.getSubQuery());
+		}
+
+		private void visitAt(QueryModelNode child) {
+			QueryAlgebraBindingAnalysis.ReadOnlyContext previous = currentContext;
+			PhysicalCostPrefix previousBoundVars = boundVars;
+			try {
+				currentContext = bindingAnalysis.contextAt(child);
+				boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), currentContext.guaranteedNames());
+				if (previousBoundVars.scopeIdentity == currentContext.scopeIdentity()) {
+					boundVars.addAll(previousBoundVars.snapshot());
+				}
+				child.visit(this);
+			} finally {
+				boundVars = previousBoundVars;
+				currentContext = previous;
 			}
 		}
 
@@ -207,10 +343,10 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 		private void optimizePriorityJoin(Set<String> origBoundVars, TupleExpr join) {
 
-			Set<String> saveBoundVars = boundVars;
+			PhysicalCostPrefix saveBoundVars = boundVars;
 			try {
-				boundVars = new HashSet<>(origBoundVars);
-				join.visit(this);
+				boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), origBoundVars);
+				visitAt(join);
 			} finally {
 				boundVars = saveBoundVars;
 			}
@@ -218,17 +354,31 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
+			initializeFilterDiscounts(node);
 			if (containsLateral(node)) {
 				node.visitChildren(this);
 				return;
 			}
 
-			Set<String> origBoundVars = boundVars;
+			PhysicalCostPrefix origBoundVars = boundVars;
 			try {
-				boundVars = new HashSet<>(boundVars);
+				boundVars = boundVars.copy();
 
 				// Recursively get the join arguments
 				List<TupleExpr> joinArgs = getJoinArgs(node, new ArrayList<>());
+				if (hasUnsafeOptionalReorder(node, joinArgs)) {
+					// Without reordering, a group-level BIND is not moved ahead of its siblings, so it must be
+					// evaluated in its own scope to keep sibling bindings out of its expressions.
+					for (TupleExpr extension : getExtensionTupleExprs(joinArgs)) {
+						if (extension instanceof Extension scopedExtension) {
+							scopedExtension.setVariableScopeChange(true);
+						}
+					}
+					bindingAnalysis.invalidate();
+					visitAt(node.getLeftArg());
+					visitAt(node.getRightArg());
+					return;
+				}
 
 				// get all extensions (BIND clause)
 				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
@@ -260,7 +410,7 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 				for (TupleExpr priorityArg : priorityArgs) {
 					boundVars.addAll(getBindingInfo(priorityArg).guaranteedOutput);
 				}
-				Set<String> ordinaryEntryBoundVars = new HashSet<>(boundVars);
+				Set<String> ordinaryEntryBoundVars = boundVars.snapshot();
 
 				// Reorder the (recursive) join arguments to a more optimal sequence
 				Deque<TupleExpr> orderedJoinArgs = new ArrayDeque<>(joinArgs.size());
@@ -396,22 +546,203 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 					}
 
 					// Replace old join hierarchy
-					node.replaceWith(right);
+					replacePreservingScope(node, right);
+					bindingAnalysis.invalidate();
 
 					// we optimize after the right call above in case the optimize call below
 					// recurses back into this function and we need all the node's parent/child pointers
 					// set up correctly for right to work on subsequent calls
 					if (priorityJoins != null) {
-						optimizePriorityJoin(origBoundVars, priorityJoins);
+						optimizePriorityJoin(origBoundVars.snapshot(), priorityJoins);
 					}
 
 				} else {
 					// only subselect/priority joins involved in this query.
-					node.replaceWith(priorityJoins);
+					replacePreservingScope(node, priorityJoins);
+					bindingAnalysis.invalidate();
 				}
 			} finally {
 				boundVars = origBoundVars;
 			}
+		}
+
+		/**
+		 * A rebuilt join hierarchy must keep a nested group's scope boundary; otherwise an enclosing join would
+		 * evaluate it with its sibling bindings injected.
+		 */
+		private void replacePreservingScope(Join node, TupleExpr replacement) {
+			if (node.isVariableScopeChange() && replacement instanceof VariableScopeChange scopeChange) {
+				scopeChange.setVariableScopeChange(true);
+			}
+			node.replaceWith(replacement);
+		}
+
+		/**
+		 * Cost-based join ordering can inject a sibling's values into a LeftJoin evaluator. Keep the current join order
+		 * when that would change a binding read, output, or result-modifier input of the OPTIONAL.
+		 */
+		private boolean hasUnsafeOptionalReorder(Join join, List<TupleExpr> joinArgs) {
+			if (joinArgs.size() < 2) {
+				return false;
+			}
+
+			QueryAlgebraBindingAnalysis.ReadOnlyContext joinInput = bindingAnalysis.contextAt(join);
+			Set<TupleExpr> priorityArgs = Collections.newSetFromMap(new IdentityHashMap<>());
+			priorityArgs.addAll(getExtensionTupleExprs(joinArgs));
+			priorityArgs.addAll(getSubSelects(joinArgs));
+			for (TupleExpr candidate : joinArgs) {
+				if (!(candidate instanceof LeftJoin leftJoin)) {
+					// Priority arguments are evaluated first. Any other argument may be evaluated with a sibling's row
+					// injected by JoinIterator, which changes nested BIND inputs and sub-select/MINUS/GROUP scopes.
+					if (!priorityArgs.contains(candidate)) {
+						Set<String> sensitiveNames = new HashSet<>();
+						collectInjectionSensitiveNames(candidate, sensitiveNames);
+						if (!sensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
+								sensitiveNames, joinInput.guaranteedNames())) {
+							return true;
+						}
+					}
+					continue;
+				}
+
+				QueryAlgebraBindingAnalysis optionalAnalysis = QueryAlgebraBindingAnalysis
+						.withInputContextAndPossibleInputs(leftJoin, joinInput, Set.of());
+				QueryAlgebraBindingAnalysis.ReadOnlyContext leftInput = optionalAnalysis
+						.contextAt(leftJoin.getLeftArg());
+				QueryAlgebraBindingAnalysis.OutputFacts leftFacts = optionalAnalysis
+						.outputFacts(leftJoin.getLeftArg(), leftInput);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext rightInput = optionalAnalysis
+						.contextAt(leftJoin.getRightArg());
+				QueryAlgebraBindingAnalysis.OutputFacts rightFacts = optionalAnalysis
+						.outputFacts(leftJoin.getRightArg(), rightInput);
+				boolean scopedOperand = TupleExprs.containsSubquery(leftJoin.getLeftArg())
+						|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.containsResultSetModifier(leftJoin.getLeftArg(), optionalAnalysis)
+						|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), optionalAnalysis);
+
+				Set<String> sensitiveNames = possibleAndRetainedNames(leftJoin.getRightArg(), rightFacts);
+				addBindingReferences(leftJoin.getRightArg(), optionalAnalysis, rightInput, sensitiveNames);
+				if (leftJoin.hasCondition()) {
+					addBindingReferences(leftJoin.getCondition(), optionalAnalysis,
+							optionalAnalysis.contextAt(leftJoin.getCondition()), sensitiveNames);
+				}
+
+				Set<String> guaranteedByLeft = effectiveGuaranteedNames(leftFacts);
+				if (scopedOperand) {
+					sensitiveNames.addAll(possibleAndRetainedNames(leftJoin.getLeftArg(), leftFacts));
+					addBindingReferences(leftJoin.getLeftArg(), optionalAnalysis, leftInput, sensitiveNames);
+				}
+				Set<String> leftSensitiveNames = new HashSet<>();
+				collectInjectionSensitiveNames(leftJoin.getLeftArg(), leftSensitiveNames);
+				if (!leftSensitiveNames.isEmpty() && siblingChangesNames(candidate, joinArgs, joinInput,
+						leftSensitiveNames, joinInput.guaranteedNames())) {
+					return true;
+				}
+
+				if (siblingChangesNames(candidate, joinArgs, joinInput, sensitiveNames,
+						scopedOperand ? joinInput.guaranteedNames() : guaranteedByLeft)) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		private boolean siblingChangesNames(TupleExpr candidate, List<TupleExpr> joinArgs,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext joinInput, Set<String> sensitiveNames,
+				Set<String> stableNames) {
+			for (TupleExpr sibling : joinArgs) {
+				if (sibling == candidate) {
+					continue;
+				}
+
+				QueryAlgebraBindingAnalysis.OutputFacts siblingFacts = bindingAnalysis.outputFacts(sibling, joinInput);
+				Set<String> siblingNames = possibleAndRetainedNames(sibling, siblingFacts);
+				Set<String> stableInputs = new HashSet<>(stableNames);
+				if (!siblingFacts.possibleOutputsKnown()) {
+					stableInputs.clear();
+				}
+				stableInputs.removeAll(siblingFacts.overwrittenInputNames());
+
+				Set<String> changedNames = new HashSet<>(sensitiveNames);
+				changedNames.retainAll(siblingNames);
+				changedNames.removeAll(stableInputs);
+				if (!changedNames.isEmpty()) {
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/**
+		 * Collects names whose meaning changes when a sibling's row is injected into the expression: BIND inputs, every
+		 * name inside nested sub-selects and aggregates, and names only a MINUS right operand uses.
+		 */
+		private void collectInjectionSensitiveNames(TupleExpr expression, Set<String> names) {
+			expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+				@Override
+				public void meet(ExtensionElem node) {
+					names.addAll(VarNameCollector.process(node.getExpr()));
+				}
+
+				@Override
+				public void meet(Projection node) {
+					if (node.isSubquery()) {
+						names.addAll(VarNameCollector.process(node));
+					} else {
+						super.meet(node);
+					}
+				}
+
+				@Override
+				public void meet(Group node) {
+					names.addAll(VarNameCollector.process(node));
+				}
+
+				@Override
+				public void meet(Difference node) {
+					node.getLeftArg().visit(this);
+					// Names the left operand always binds are fixed by compatibility; only right-only names change
+					// which rows MINUS removes when injected.
+					Set<String> rightOnly = new HashSet<>(VarNameCollector.process(node.getRightArg()));
+					rightOnly.removeAll(node.getLeftArg().getAssuredBindingNames());
+					names.addAll(rightOnly);
+				}
+			});
+		}
+
+		private Set<String> possibleAndRetainedNames(TupleExpr expression,
+				QueryAlgebraBindingAnalysis.OutputFacts facts) {
+			Set<String> names = new HashSet<>(facts.possibleOutputsKnown() ? facts.possibleOutputs()
+					: expression.getBindingNames());
+			names.addAll(facts.retainedInputNames());
+			return names;
+		}
+
+		private Set<String> effectiveGuaranteedNames(QueryAlgebraBindingAnalysis.OutputFacts facts) {
+			Set<String> names = new HashSet<>();
+			if (facts.guaranteedOutputsKnown()) {
+				names.addAll(facts.guaranteedOutputs());
+			}
+			Set<String> retainedGuaranteedInputs = new HashSet<>(facts.inheritedInputNames());
+			retainedGuaranteedInputs.retainAll(facts.retainedInputNames());
+			retainedGuaranteedInputs.removeAll(facts.overwrittenInputNames());
+			names.addAll(retainedGuaranteedInputs);
+			return names;
+		}
+
+		private void addBindingReferences(QueryModelNode expression, QueryAlgebraBindingAnalysis analysis,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input, Set<String> names) {
+			analysis.visitScoped(expression, input, (node, nodeInput) -> {
+				if (node instanceof Projection projection && projection.isSubquery()) {
+					return false;
+				}
+				if (node instanceof Var var && !var.isConstant() && !var.hasValue() && var.getName() != null) {
+					names.add(var.getName());
+				} else if (node instanceof ProjectionElem projectionElem) {
+					names.add(projectionElem.getName());
+				}
+				return true;
+			});
 		}
 
 		private boolean containsLateral(TupleExpr tupleExpr) {
@@ -447,7 +778,7 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 			Deque<TupleExpr> ret = new ArrayDeque<>();
 			Set<String> prefixBindingNames = new HashSet<>(entryBoundVars);
 
-			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
+			// Memo table for pairwise planning scores, including each pattern's filter discount.
 			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
 
 			// Helper to look up or compute & cache the cardinality of Join(a,b).
@@ -459,7 +790,8 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 				if (cached != null) {
 					return cached;
 				}
-				double c = statistics.getCardinality(new Join(a, b));
+				double c = statistics.getCardinality(new Join(a, b))
+						* filterCostMultiplier(a) * filterCostMultiplier(b);
 				inner.put(b, c);
 				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
 				return c;
@@ -537,7 +869,7 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 					}
 
 					if (Double.isInfinite(candidateCost) && connectedToPrefix) {
-						candidateCost = normalizeCost(statistics.getCardinality(cand));
+						candidateCost = normalizeCost(statistics.getCardinality(cand) * filterCostMultiplier(cand));
 					}
 
 					if (bestCandidate == null || isBetterCandidate(candidateCost, candidateConnected, bestCost,
@@ -580,9 +912,9 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 				fillVarFreqMap(vars, varFreqMap);
 			}
 
-			Set<String> previousBoundVars = boundVars;
+			PhysicalCostPrefix previousBoundVars = boundVars;
 			double previousHighestCost = currentHighestCost;
-			boundVars = new HashSet<>(prefixBindingNames);
+			boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(), prefixBindingNames);
 			currentHighestCost = 1;
 			TupleExpr best = null;
 			double bestCost = Double.POSITIVE_INFINITY;
@@ -623,7 +955,8 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
 			for (TupleExpr candidate : candidates) {
-				singleCard.put(candidate, normalizeCost(statistics.getCardinality(candidate)));
+				singleCard.put(candidate,
+						normalizeCost(statistics.getCardinality(candidate) * filterCostMultiplier(candidate)));
 			}
 
 			List<TupleExpr> primary = new ArrayList<>(candidates);
@@ -723,7 +1056,20 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
-				subSelect.visit(new JoinVisitor());
+				QueryAlgebraBindingAnalysis.ReadOnlyContext originalContext = currentContext;
+				PhysicalCostPrefix originalBoundVars = boundVars;
+				double originalHighestCost = currentHighestCost;
+				try {
+					currentContext = bindingAnalysis.contextAt(subSelect);
+					boundVars = new PhysicalCostPrefix(currentContext.scopeIdentity(),
+							currentContext.guaranteedNames());
+					currentHighestCost = 1;
+					subSelect.visit(this);
+				} finally {
+					currentContext = originalContext;
+					boundVars = originalBoundVars;
+					currentHighestCost = originalHighestCost;
+				}
 			}
 		}
 
@@ -919,7 +1265,7 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 
 			// select the pair that has the highest union size.
 			for (TupleExpr[] tupleTuple : list) {
-				Set<String> names = tupleTuple[0].getBindingNames();
+				Set<String> names = new HashSet<>(tupleTuple[0].getBindingNames());
 				names.addAll(tupleTuple[1].getBindingNames());
 				int unionSize = names.size();
 
@@ -960,7 +1306,8 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 			int currentUnionSize = -1;
 			int currentJoinSize = -1;
 			for (TupleExpr candidate : joinArgs) {
-				if (!currentList.contains(candidate)) {
+				// Identity check: structurally equal sub-selects are still distinct join arguments.
+				if (currentList.stream().noneMatch(selectedExpr -> selectedExpr == candidate)) {
 
 					Set<String> names = candidate.getBindingNames();
 					int joinSize = getJoinSize(currentListNames, names);
@@ -1043,426 +1390,24 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 		}
 
 		private BindingInfo getBindingInfo(TupleExpr tupleExpr) {
-			BindingInfo cached = bindingInfoCache.get(tupleExpr);
-			if (cached != null) {
-				return cached;
-			}
-
-			BindingInfo result;
-			if (tupleExpr instanceof StatementPattern statementPattern) {
-				Set<String> names = realVariableNames(statementPattern.getVarList());
-				result = new BindingInfo(names, names);
-			} else if (tupleExpr instanceof ZeroLengthPath zeroLengthPath) {
-				Set<String> names = realVariableNames(zeroLengthPath.getVarList());
-				result = new BindingInfo(names, names);
-			} else if (tupleExpr instanceof ArbitraryLengthPath path) {
-				Set<String> may = realVariableNames(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
-				Set<String> guaranteed = new HashSet<>(may);
-				Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>();
-				if (path.getPathExpression() != null) {
-					BindingInfo pathInfo = getBindingInfo(path.getPathExpression());
-					may.addAll(pathInfo.mayOutput);
-					if (path.getMinLength() > 0) {
-						guaranteed.addAll(pathInfo.guaranteedOutput);
-						guaranteedValueKinds.putAll(pathInfo.guaranteedValueKinds);
-					}
-				}
-				result = new BindingInfo(may, guaranteed, guaranteedValueKinds);
-			} else if (tupleExpr instanceof TripleRef tripleRef) {
-				Set<String> names = realVariableNames(tripleRef.getVarList());
-				result = new BindingInfo(names, names);
-			} else if (tupleExpr instanceof BindingSetAssignment assignment) {
-				result = bindingInfoForAssignment(assignment);
-			} else if (tupleExpr instanceof Projection projection) {
-				result = mapProjectionInfo(getBindingInfo(projection.getArg()), projection.getProjectionElemList());
-			} else if (tupleExpr instanceof MultiProjection multiProjection) {
-				result = bindingInfoForMultiProjection(multiProjection);
-			} else if (tupleExpr instanceof Extension extension) {
-				result = bindingInfoForExtension(extension);
-			} else if (tupleExpr instanceof Filter filter) {
-				result = bindingInfoForFilter(filter);
-			} else if (tupleExpr instanceof LeftJoin leftJoin) {
-				BindingInfo left = getBindingInfo(leftJoin.getLeftArg());
-				BindingInfo right = getBindingInfo(leftJoin.getRightArg());
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), left.guaranteedOutput,
-						retainValueKinds(left.guaranteedValueKinds, left.guaranteedOutput));
-			} else if (tupleExpr instanceof Union union) {
-				BindingInfo left = getBindingInfo(union.getLeftArg());
-				BindingInfo right = getBindingInfo(union.getRightArg());
-				Set<String> guaranteed = intersection(left.guaranteedOutput, right.guaranteedOutput);
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
-						mergeValueKindsForUnion(left, right, guaranteed));
-			} else if (tupleExpr instanceof Intersection intersection) {
-				BindingInfo left = getBindingInfo(intersection.getLeftArg());
-				BindingInfo right = getBindingInfo(intersection.getRightArg());
-				Set<String> guaranteed = intersection(left.guaranteedOutput, right.guaranteedOutput);
-				result = new BindingInfo(intersection(left.mayOutput, right.mayOutput), guaranteed,
-						mergeValueKindsForJoin(left, right, guaranteed));
-			} else if (tupleExpr instanceof Difference difference) {
-				result = getBindingInfo(difference.getLeftArg());
-			} else if (tupleExpr instanceof Join join) {
-				BindingInfo left = getBindingInfo(join.getLeftArg());
-				BindingInfo right = getBindingInfo(join.getRightArg());
-				Set<String> guaranteed = union(left.guaranteedOutput, right.guaranteedOutput);
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
-						mergeValueKindsForJoin(left, right, guaranteed));
-			} else if (tupleExpr instanceof Lateral lateral) {
-				BindingInfo left = getBindingInfo(lateral.getLeftArg());
-				BindingInfo right = getBindingInfo(lateral.getRightArg());
-				Set<String> guaranteed = union(left.guaranteedOutput, right.guaranteedOutput);
-				result = new BindingInfo(union(left.mayOutput, right.mayOutput), guaranteed,
-						mergeValueKindsForJoin(left, right, guaranteed));
-			} else if (tupleExpr instanceof Group group) {
-				Set<String> groupNames = new HashSet<>(group.getGroupBindingNames());
-				BindingInfo child = getBindingInfo(group.getArg());
-				Set<String> may = new HashSet<>(groupNames);
-				may.addAll(group.getAggregateBindingNames());
-				Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
-				guaranteed.retainAll(groupNames);
-				result = new BindingInfo(may, guaranteed, retainValueKinds(child.guaranteedValueKinds, guaranteed));
-			} else if (tupleExpr instanceof TupleFunctionCall tupleFunctionCall) {
-				result = new BindingInfo(realVariableNames(tupleFunctionCall.getResultVars()), Set.of());
-			} else if (tupleExpr instanceof EmptySet || tupleExpr instanceof SingletonSet) {
-				result = new BindingInfo(Set.of(), Set.of());
-			} else if (tupleExpr instanceof Service service) {
-				BindingInfo serviceInfo = getBindingInfo(service.getServiceExpr());
-				result = service.isSilent()
-						? new BindingInfo(serviceInfo.mayOutput, Set.of())
-						: serviceInfo;
-			} else if (tupleExpr instanceof Distinct || tupleExpr instanceof Reduced || tupleExpr instanceof Slice
-					|| tupleExpr instanceof Order || tupleExpr instanceof QueryRoot) {
-				result = getBindingInfo(((org.eclipse.rdf4j.query.algebra.UnaryTupleOperator) tupleExpr).getArg());
-			} else {
-				// Unknown tuple operators may expose names with semantics that are not safe to infer here.
-				result = new BindingInfo(Set.of(), Set.of());
-			}
-
-			bindingInfoCache.put(tupleExpr, result);
-			return result;
+			return getBindingInfo(tupleExpr, currentContext);
 		}
 
-		private BindingInfo bindingInfoForAssignment(BindingSetAssignment assignment) {
-			Set<String> may = new HashSet<>();
-			Set<String> guaranteed = new HashSet<>();
+		private BindingInfo getBindingInfo(TupleExpr tupleExpr,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+			QueryAlgebraBindingAnalysis.OutputFacts facts = bindingAnalysis.outputFacts(tupleExpr, input);
+			Set<String> possible = facts.possibleOutputsKnown() ? facts.possibleOutputs() : tupleExpr.getBindingNames();
+			Set<String> guaranteed = facts.guaranteedOutputsKnown() ? facts.guaranteedOutputs()
+					: tupleExpr.getAssuredBindingNames();
 			Map<String, Set<ValueKind>> valueKinds = new HashMap<>();
-			Set<String> unknownValueKinds = new HashSet<>();
-			boolean firstRow = true;
-			Iterable<BindingSet> bindingSets = assignment.getBindingSets();
-			if (bindingSets != null) {
-				for (BindingSet bindingSet : bindingSets) {
-					Set<String> rowNames = new HashSet<>();
-					for (String name : bindingSet.getBindingNames()) {
-						Value value = bindingSet.getValue(name);
-						if (value != null) {
-							rowNames.add(name);
-							ValueKind kind = valueKind(value);
-							if (kind == ValueKind.UNKNOWN) {
-								unknownValueKinds.add(name);
-							} else {
-								valueKinds.computeIfAbsent(name, ignored -> new HashSet<>()).add(kind);
-							}
-						}
-					}
-					may.addAll(rowNames);
-					if (firstRow) {
-						guaranteed.addAll(rowNames);
-						firstRow = false;
-					} else {
-						guaranteed.retainAll(rowNames);
-					}
+			facts.valueKinds().forEach((name, kinds) -> {
+				Set<ValueKind> converted = new HashSet<>();
+				for (QueryAlgebraBindingAnalysis.ValueKind kind : kinds) {
+					converted.add(ValueKind.valueOf(kind.name()));
 				}
-			}
-			valueKinds.keySet().removeAll(unknownValueKinds);
-			return new BindingInfo(may, guaranteed, retainValueKinds(valueKinds, guaranteed));
-		}
-
-		private BindingInfo bindingInfoForMultiProjection(MultiProjection multiProjection) {
-			if (multiProjection.getProjections().isEmpty()) {
-				return new BindingInfo(Set.of(), Set.of());
-			}
-			BindingInfo child = getBindingInfo(multiProjection.getArg());
-			Set<String> may = new HashSet<>();
-			Set<String> guaranteed = null;
-			Map<String, Set<ValueKind>> guaranteedValueKinds = null;
-			for (ProjectionElemList projection : multiProjection.getProjections()) {
-				Set<String> projectedMay = projection.getProjectedNamesFor(child.mayOutput);
-				Set<String> projectedGuaranteed = projection.getProjectedNamesFor(child.guaranteedOutput);
-				may.addAll(projectedMay);
-				Map<String, Set<ValueKind>> projectedValueKinds = projectValueKinds(child.guaranteedValueKinds,
-						projection, projectedGuaranteed);
-				if (guaranteed == null) {
-					guaranteed = new HashSet<>(projectedGuaranteed);
-					guaranteedValueKinds = projectedValueKinds;
-				} else {
-					guaranteed.retainAll(projectedGuaranteed);
-					guaranteedValueKinds.keySet().retainAll(projectedValueKinds.keySet());
-					for (String name : guaranteedValueKinds.keySet()) {
-						Set<ValueKind> kinds = new HashSet<>(guaranteedValueKinds.get(name));
-						kinds.addAll(projectedValueKinds.get(name));
-						guaranteedValueKinds.put(name, kinds);
-					}
-				}
-			}
-			Set<String> guaranteedNames = guaranteed == null ? Set.of() : guaranteed;
-			return new BindingInfo(may, guaranteedNames,
-					guaranteedValueKinds == null ? Map.of() : guaranteedValueKinds);
-		}
-
-		private BindingInfo mapProjectionInfo(BindingInfo child, ProjectionElemList projection) {
-			return new BindingInfo(projection.getProjectedNamesFor(child.mayOutput),
-					projection.getProjectedNamesFor(child.guaranteedOutput),
-					projectValueKinds(child.guaranteedValueKinds, projection,
-							projection.getProjectedNamesFor(child.guaranteedOutput)));
-		}
-
-		private BindingInfo bindingInfoForExtension(Extension extension) {
-			BindingInfo child = getBindingInfo(extension.getArg());
-			Set<String> may = new HashSet<>(child.mayOutput);
-			Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
-			Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>(child.guaranteedValueKinds);
-			for (ExtensionElem element : extension.getElements()) {
-				String name = element.getName();
-				if (name == null) {
-					continue;
-				}
-				may.add(name);
-				Set<String> expressionBindings = new HashSet<>(guaranteed);
-				Map<String, Set<ValueKind>> expressionValueKinds = new HashMap<>(guaranteedValueKinds);
-				guaranteed.remove(name);
-				guaranteedValueKinds.remove(name);
-				if (isGuaranteedValueExpr(element.getExpr(), expressionBindings, expressionValueKinds)) {
-					guaranteed.add(name);
-					Set<ValueKind> resultKinds = guaranteedValueKinds(element.getExpr(), expressionBindings,
-							expressionValueKinds);
-					if (resultKinds != null) {
-						guaranteedValueKinds.put(name, resultKinds);
-					}
-				}
-			}
-			return new BindingInfo(may, guaranteed, guaranteedValueKinds);
-		}
-
-		private BindingInfo bindingInfoForFilter(Filter filter) {
-			BindingInfo child = getBindingInfo(filter.getArg());
-			Set<String> guaranteed = new HashSet<>(child.guaranteedOutput);
-			Map<String, Set<ValueKind>> guaranteedValueKinds = new HashMap<>(child.guaranteedValueKinds);
-			applyFilterFacts(filter.getCondition(), child.mayOutput, guaranteed, guaranteedValueKinds);
-			return new BindingInfo(child.mayOutput, guaranteed, guaranteedValueKinds);
-		}
-
-		private void applyFilterFacts(ValueExpr condition, Set<String> mayOutput, Set<String> guaranteed,
-				Map<String, Set<ValueKind>> guaranteedValueKinds) {
-			if (condition instanceof And and) {
-				applyFilterFacts(and.getLeftArg(), mayOutput, guaranteed, guaranteedValueKinds);
-				applyFilterFacts(and.getRightArg(), mayOutput, guaranteed, guaranteedValueKinds);
-				return;
-			}
-			if (condition instanceof Bound bound) {
-				addFilterBindingFact(bound.getArg(), mayOutput, guaranteed, null, guaranteedValueKinds);
-				return;
-			}
-			if (condition instanceof IsBNode || condition instanceof IsLiteral || condition instanceof IsNumeric
-					|| condition instanceof IsResource || condition instanceof IsTriple || condition instanceof IsURI) {
-				Set<ValueKind> kinds = switch (condition) {
-				case IsBNode ignored -> Set.of(ValueKind.BNODE);
-				case IsLiteral ignored -> Set.of(ValueKind.LITERAL);
-				case IsNumeric ignored -> Set.of(ValueKind.LITERAL);
-				case IsResource ignored -> Set.of(ValueKind.IRI, ValueKind.BNODE);
-				case IsTriple ignored -> Set.of(ValueKind.TRIPLE);
-				case IsURI ignored -> Set.of(ValueKind.IRI);
-				default -> Set.of();
-				};
-				addFilterBindingFact(((UnaryValueOperator) condition).getArg(), mayOutput, guaranteed, kinds,
-						guaranteedValueKinds);
-			}
-		}
-
-		private void addFilterBindingFact(ValueExpr expression, Set<String> mayOutput, Set<String> guaranteed,
-				Set<ValueKind> valueKinds, Map<String, Set<ValueKind>> guaranteedValueKinds) {
-			if (!(expression instanceof Var var) || var.hasValue() || var.getName() == null
-					|| !mayOutput.contains(var.getName())) {
-				return;
-			}
-			guaranteed.add(var.getName());
-			if (valueKinds != null) {
-				guaranteedValueKinds.put(var.getName(), valueKinds);
-			}
-		}
-
-		private boolean isGuaranteedValueExpr(ValueExpr valueExpr, Set<String> guaranteedBindings) {
-			return isGuaranteedValueExpr(valueExpr, guaranteedBindings, Map.of());
-		}
-
-		private boolean isGuaranteedValueExpr(ValueExpr valueExpr, Set<String> guaranteedBindings,
-				Map<String, Set<ValueKind>> guaranteedValueKinds) {
-			if (valueExpr instanceof ValueConstant) {
-				return true;
-			}
-			if (valueExpr instanceof Bound) {
-				return true;
-			}
-			if (valueExpr instanceof Var var) {
-				return var.hasValue() || var.getName() != null && guaranteedBindings.contains(var.getName());
-			}
-			if (valueExpr instanceof IsBNode || valueExpr instanceof IsLiteral || valueExpr instanceof IsNumeric
-					|| valueExpr instanceof IsResource || valueExpr instanceof IsTriple || valueExpr instanceof IsURI) {
-				return isGuaranteedValueExpr(((UnaryValueOperator) valueExpr).getArg(), guaranteedBindings,
-						guaranteedValueKinds);
-			}
-			if (valueExpr instanceof Str) {
-				Set<ValueKind> kinds = guaranteedValueKinds(((Str) valueExpr).getArg(), guaranteedBindings,
-						guaranteedValueKinds);
-				return kinds != null && kinds.stream().allMatch(this::strAccepts);
-			}
-			return false;
-		}
-
-		private Set<ValueKind> guaranteedValueKinds(ValueExpr valueExpr, Set<String> guaranteedBindings,
-				Map<String, Set<ValueKind>> guaranteedValueKinds) {
-			if (valueExpr instanceof ValueConstant valueConstant) {
-				return Set.of(valueKind(valueConstant.getValue()));
-			}
-			if (valueExpr instanceof Var var) {
-				if (var.hasValue()) {
-					return Set.of(valueKind(var.getValue()));
-				}
-				if (var.getName() != null && guaranteedBindings.contains(var.getName())) {
-					return guaranteedValueKinds.get(var.getName());
-				}
-				return null;
-			}
-			if (valueExpr instanceof Bound || valueExpr instanceof IsBNode || valueExpr instanceof IsLiteral
-					|| valueExpr instanceof IsNumeric || valueExpr instanceof IsResource
-					|| valueExpr instanceof IsTriple
-					|| valueExpr instanceof IsURI) {
-				return isGuaranteedValueExpr(valueExpr, guaranteedBindings, guaranteedValueKinds)
-						? Set.of(ValueKind.LITERAL)
-						: null;
-			}
-			if (valueExpr instanceof Str str) {
-				Set<ValueKind> argumentKinds = guaranteedValueKinds(str.getArg(), guaranteedBindings,
-						guaranteedValueKinds);
-				return argumentKinds != null && argumentKinds.stream().allMatch(this::strAccepts)
-						? Set.of(ValueKind.LITERAL)
-						: null;
-			}
-			return null;
-		}
-
-		private boolean strAccepts(ValueKind kind) {
-			return kind == ValueKind.IRI || kind == ValueKind.LITERAL || kind == ValueKind.TRIPLE;
-		}
-
-		private Set<String> realVariableNames(Iterable<Var> vars) {
-			Set<String> names = new HashSet<>();
-			for (Var var : vars) {
-				if (var != null && !var.isConstant() && var.getName() != null) {
-					names.add(var.getName());
-				}
-			}
-			return names;
-		}
-
-		private Set<String> realVariableNames(Var... vars) {
-			Set<String> names = new HashSet<>();
-			for (Var var : vars) {
-				if (var != null && !var.isConstant() && var.getName() != null) {
-					names.add(var.getName());
-				}
-			}
-			return names;
-		}
-
-		private Set<String> union(Set<String> left, Set<String> right) {
-			Set<String> result = new HashSet<>(left);
-			result.addAll(right);
-			return result;
-		}
-
-		private Set<String> intersection(Set<String> left, Set<String> right) {
-			Set<String> result = new HashSet<>(left);
-			result.retainAll(right);
-			return result;
-		}
-
-		private Map<String, Set<ValueKind>> retainValueKinds(Map<String, Set<ValueKind>> valueKinds,
-				Set<String> names) {
-			Map<String, Set<ValueKind>> result = new HashMap<>();
-			for (String name : names) {
-				Set<ValueKind> kinds = valueKinds.get(name);
-				if (kinds != null) {
-					result.put(name, Set.copyOf(kinds));
-				}
-			}
-			return result;
-		}
-
-		private Map<String, Set<ValueKind>> mergeValueKindsForJoin(BindingInfo left, BindingInfo right,
-				Set<String> guaranteed) {
-			Map<String, Set<ValueKind>> result = new HashMap<>();
-			for (String name : guaranteed) {
-				Set<ValueKind> leftKinds = left.guaranteedValueKinds.get(name);
-				Set<ValueKind> rightKinds = right.guaranteedValueKinds.get(name);
-				if (leftKinds == null && rightKinds == null) {
-					continue;
-				}
-				Set<ValueKind> kinds = new HashSet<>();
-				if (leftKinds != null) {
-					kinds.addAll(leftKinds);
-				}
-				if (rightKinds != null) {
-					kinds.addAll(rightKinds);
-				}
-				result.put(name, kinds);
-			}
-			return result;
-		}
-
-		private Map<String, Set<ValueKind>> mergeValueKindsForUnion(BindingInfo left, BindingInfo right,
-				Set<String> guaranteed) {
-			Map<String, Set<ValueKind>> result = new HashMap<>();
-			for (String name : guaranteed) {
-				Set<ValueKind> leftKinds = left.guaranteedValueKinds.get(name);
-				Set<ValueKind> rightKinds = right.guaranteedValueKinds.get(name);
-				if (leftKinds != null && rightKinds != null) {
-					Set<ValueKind> kinds = new HashSet<>(leftKinds);
-					kinds.addAll(rightKinds);
-					result.put(name, kinds);
-				}
-			}
-			return result;
-		}
-
-		private Map<String, Set<ValueKind>> projectValueKinds(Map<String, Set<ValueKind>> valueKinds,
-				ProjectionElemList projection, Set<String> projectedNames) {
-			Map<String, Set<ValueKind>> result = new HashMap<>();
-			for (var projectionElem : projection.getElements()) {
-				String projectedName = projectionElem.getProjectionAlias().orElse(projectionElem.getName());
-				if (!projectedNames.contains(projectedName)) {
-					continue;
-				}
-				Set<ValueKind> kinds = valueKinds.get(projectionElem.getName());
-				if (kinds != null) {
-					result.put(projectedName, kinds);
-				}
-			}
-			return result;
-		}
-
-		private ValueKind valueKind(Value value) {
-			if (value instanceof IRI) {
-				return ValueKind.IRI;
-			}
-			if (value instanceof BNode) {
-				return ValueKind.BNODE;
-			}
-			if (value instanceof Literal) {
-				return ValueKind.LITERAL;
-			}
-			if (value instanceof TripleTerm) {
-				return ValueKind.TRIPLE;
-			}
-			return ValueKind.UNKNOWN;
+				valueKinds.put(name, converted);
+			});
+			return new BindingInfo(possible, guaranteed, valueKinds);
 		}
 
 		private enum ValueKind {
@@ -1486,169 +1431,33 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 					Map<String, Set<ValueKind>> guaranteedValueKinds) {
 				this.mayOutput = Set.copyOf(mayOutput);
 				this.guaranteedOutput = Set.copyOf(guaranteedOutput);
-				this.guaranteedValueKinds = Map.copyOf(retainValueKinds(guaranteedValueKinds, this.guaranteedOutput));
+				Map<String, Set<ValueKind>> retained = new HashMap<>();
+				for (String name : this.guaranteedOutput) {
+					Set<ValueKind> kinds = guaranteedValueKinds.get(name);
+					if (kinds != null) {
+						retained.put(name, Set.copyOf(kinds));
+					}
+				}
+				this.guaranteedValueKinds = Map.copyOf(retained);
 			}
-
 		}
 
 		private Set<String> getExternalServiceVariables(TupleExpr tupleExpr) {
-			Set<String> cached = externalServiceVariableCache.get(tupleExpr);
-			if (cached != null) {
-				return cached;
-			}
-
-			Set<String> result = collectExternalServiceVariables(tupleExpr, Set.of());
-			result = result.isEmpty() ? Set.of() : Set.copyOf(result);
-			externalServiceVariableCache.put(tupleExpr, result);
-			return result;
-		}
-
-		private Set<String> collectExternalServiceVariables(TupleExpr tupleExpr, Set<String> incomingBindings) {
-			if (tupleExpr instanceof StatementPattern || tupleExpr instanceof BindingSetAssignment) {
-				return Set.of();
-			}
-
-			if (tupleExpr instanceof Projection projection) {
-				if (projection.isSubquery()) {
-					return Set.of();
+			Set<String> dependencies = new HashSet<>();
+			bindingAnalysis.visitScoped(tupleExpr, currentContext, (node, input) -> {
+				if (node instanceof Projection projection && projection.isSubquery()) {
+					return false;
 				}
-				return collectExternalServiceVariables(projection.getArg(), incomingBindings);
-			}
-
-			if (tupleExpr instanceof Service service) {
-				Set<String> result = new HashSet<>();
-				Var serviceRef = service.getServiceRef();
-				if (serviceRef != null && !serviceRef.hasValue() && serviceRef.getName() != null
-						&& !incomingBindings.contains(serviceRef.getName())) {
-					result.add(serviceRef.getName());
-				}
-				// A nested SERVICE ?inner inside the service expression is evaluated by the remote endpoint with the
-				// bindings supplied by this join, so its endpoint variable is an external dependency too.
-				result.addAll(collectExternalServiceVariables(service.getServiceExpr(), incomingBindings));
-				return result;
-			}
-
-			if (tupleExpr instanceof Join join) {
-				Set<String> result = new HashSet<>(
-						collectExternalServiceVariables(join.getLeftArg(), incomingBindings));
-				Set<String> rightIncoming = incomingBindings;
-				if (join.getRightArg() instanceof Service || !isOutOfScopeForLeftArgBindings(join.getRightArg())) {
-					rightIncoming = withBindings(incomingBindings,
-							getBindingInfo(join.getLeftArg()).guaranteedOutput);
-				}
-				result.addAll(collectExternalServiceVariables(join.getRightArg(), rightIncoming));
-				return result;
-			}
-
-			if (tupleExpr instanceof LeftJoin leftJoin) {
-				Set<String> result = new HashSet<>(
-						collectExternalServiceVariables(leftJoin.getLeftArg(), incomingBindings));
-				Set<String> rightIncoming = incomingBindings;
-				if (!TupleExprs.containsSubquery(leftJoin.getRightArg())) {
-					rightIncoming = withBindings(incomingBindings,
-							getBindingInfo(leftJoin.getLeftArg()).guaranteedOutput);
-				}
-				result.addAll(collectExternalServiceVariables(leftJoin.getRightArg(), rightIncoming));
-				if (leftJoin.hasCondition()) {
-					Set<String> conditionIncoming = withBindings(incomingBindings,
-							getBindingInfo(leftJoin).guaranteedOutput);
-					result.addAll(collectExternalServiceVariables(leftJoin.getCondition(), conditionIncoming));
-				}
-				return result;
-			}
-
-			if (tupleExpr instanceof Lateral lateral) {
-				Set<String> result = new HashSet<>(
-						collectExternalServiceVariables(lateral.getLeftArg(), incomingBindings));
-				Set<String> rightInputBindings = new HashSet<>(lateral.getRightInputBindingNames());
-				rightInputBindings.retainAll(getBindingInfo(lateral.getLeftArg()).guaranteedOutput);
-				Set<String> rightIncoming = withBindings(incomingBindings, rightInputBindings);
-				result.addAll(collectExternalServiceVariables(lateral.getRightArg(), rightIncoming));
-				return result;
-			}
-
-			if (tupleExpr instanceof Union union) {
-				return collectIndependentTupleChildren(union.getLeftArg(), union.getRightArg(), incomingBindings);
-			}
-
-			if (tupleExpr instanceof Difference difference) {
-				return collectIndependentTupleChildren(difference.getLeftArg(), difference.getRightArg(),
-						incomingBindings);
-			}
-
-			if (tupleExpr instanceof Intersection intersection) {
-				return collectIndependentTupleChildren(intersection.getLeftArg(), intersection.getRightArg(),
-						incomingBindings);
-			}
-
-			if (tupleExpr instanceof Filter filter) {
-				Set<String> result = new HashSet<>(
-						collectExternalServiceVariables(filter.getArg(), incomingBindings));
-				Set<String> conditionIncoming = withBindings(incomingBindings,
-						getBindingInfo(filter.getArg()).guaranteedOutput);
-				result.addAll(collectExternalServiceVariables(filter.getCondition(), conditionIncoming));
-				return result;
-			}
-
-			if (tupleExpr instanceof Extension extension) {
-				Set<String> result = new HashSet<>(
-						collectExternalServiceVariables(extension.getArg(), incomingBindings));
-				Set<String> expressionIncoming = withBindings(incomingBindings,
-						getBindingInfo(extension.getArg()).guaranteedOutput);
-				for (ExtensionElem element : extension.getElements()) {
-					result.addAll(collectExternalServiceVariables(element.getExpr(), expressionIncoming));
-					String name = element.getName();
-					if (name != null) {
-						Set<String> expressionBindings = new HashSet<>(expressionIncoming);
-						expressionIncoming = new HashSet<>(expressionIncoming);
-						expressionIncoming.remove(name);
-						if (isGuaranteedValueExpr(element.getExpr(), expressionBindings)) {
-							expressionIncoming.add(name);
-						}
+				if (node instanceof Service service) {
+					Var serviceRef = service.getServiceRef();
+					if (serviceRef != null && !serviceRef.hasValue() && serviceRef.getName() != null
+							&& !input.guaranteedNames().contains(serviceRef.getName())) {
+						dependencies.add(serviceRef.getName());
 					}
 				}
-				return result;
-			}
-
-			return collectQueryModelChildren(tupleExpr, incomingBindings);
-		}
-
-		private boolean isOutOfScopeForLeftArgBindings(TupleExpr tupleExpr) {
-			return TupleExprs.isVariableScopeChange(tupleExpr) || TupleExprs.containsSubquery(tupleExpr);
-		}
-
-		private Set<String> collectIndependentTupleChildren(TupleExpr left, TupleExpr right,
-				Set<String> incomingBindings) {
-			Set<String> result = new HashSet<>(collectExternalServiceVariables(left, incomingBindings));
-			result.addAll(collectExternalServiceVariables(right, incomingBindings));
-			return result;
-		}
-
-		private Set<String> withBindings(Set<String> incomingBindings, Set<String> additionalBindings) {
-			Set<String> result = new HashSet<>(incomingBindings);
-			result.addAll(additionalBindings);
-			return result;
-		}
-
-		private Set<String> collectExternalServiceVariables(ValueExpr valueExpr, Set<String> incomingBindings) {
-			return collectQueryModelChildren(valueExpr, incomingBindings);
-		}
-
-		private Set<String> collectQueryModelChildren(QueryModelNode node, Set<String> incomingBindings) {
-			Set<String> result = new HashSet<>();
-			node.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
-				@Override
-				protected void meetNode(QueryModelNode child) {
-					if (child instanceof TupleExpr tupleExpr) {
-						result.addAll(collectExternalServiceVariables(tupleExpr, incomingBindings));
-					} else if (child instanceof ValueExpr valueExpr) {
-						result.addAll(collectExternalServiceVariables(valueExpr, incomingBindings));
-					} else {
-						child.visitChildren(this);
-					}
-				}
+				return true;
 			});
-			return result;
+			return Set.copyOf(dependencies);
 		}
 
 		private boolean isConnectedToBoundVars(TupleExpr tupleExpr) {
@@ -1728,7 +1537,105 @@ public class QueryJoinOptimizer implements ContextAwareQueryOptimizer {
 				}
 			}
 
-			return cost;
+			return cost * filterCostMultiplier(tupleExpr);
+		}
+
+		private double filterCostMultiplier(TupleExpr expression) {
+			// A filter around a single pattern is still that pattern's join factor.
+			while (expression instanceof Filter filter) {
+				expression = filter.getArg();
+			}
+			if (!(expression instanceof StatementPattern pattern)) {
+				return 1.0d;
+			}
+			initializeFilterDiscounts(pattern);
+			return filterDiscountedPatterns.contains(pattern) ? FILTERED_PATTERN_COST_MULTIPLIER : 1.0d;
+		}
+
+		private void initializeFilterDiscounts(QueryModelNode node) {
+			if (filterDiscountedPatterns != null) {
+				return;
+			}
+			QueryModelNode root = node;
+			while (root.getParentNode() != null) {
+				root = root.getParentNode();
+			}
+			FilterCostCollector collector = new FilterCostCollector();
+			collector.visitGroup(root);
+			filterDiscountedPatterns = collector.discountedPatterns;
+		}
+
+		/** Snapshots lexical filter groups before join rebuilding changes their parent links. */
+		private final class FilterCostCollector extends AbstractQueryModelVisitor<RuntimeException> {
+			private final Set<StatementPattern> discountedPatterns = Collections.newSetFromMap(new IdentityHashMap<>());
+			private List<StatementPattern> patterns;
+			private Set<String> filterVariables;
+			private QueryModelNode groupRoot;
+
+			private void visitGroup(QueryModelNode root) {
+				List<StatementPattern> previousPatterns = patterns;
+				Set<String> previousVariables = filterVariables;
+				QueryModelNode previousRoot = groupRoot;
+				patterns = new ArrayList<>();
+				filterVariables = new HashSet<>();
+				groupRoot = root;
+				try {
+					// The parser lifts a filter in an OPTIONAL group into the LeftJoin condition.
+					if (root.getParentNode()instanceof LeftJoin optional && root == optional.getRightArg()
+							&& optional.hasCondition()) {
+						addFilterVariables(optional.getCondition());
+					}
+					root.visit(this);
+					for (StatementPattern pattern : patterns) {
+						for (Var variable : pattern.getVarList()) {
+							if (!variable.hasValue() && filterVariables.contains(variable.getName())) {
+								discountedPatterns.add(pattern);
+								break;
+							}
+						}
+					}
+				} finally {
+					patterns = previousPatterns;
+					filterVariables = previousVariables;
+					groupRoot = previousRoot;
+				}
+			}
+
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node != groupRoot && node instanceof TupleExpr expression && startsGroup(expression)) {
+					visitGroup(node);
+					return;
+				}
+				if (node instanceof StatementPattern pattern) {
+					patterns.add(pattern);
+				} else if (node instanceof Filter filter) {
+					addFilterVariables(filter.getCondition());
+				}
+				super.meetNode(node);
+			}
+
+			private void addFilterVariables(ValueExpr condition) {
+				QueryAlgebraBindingAnalysis.Dependencies dependencies = bindingAnalysis.dependencies(condition,
+						bindingAnalysis.contextAt(condition));
+				filterVariables.addAll(dependencies.directReferences());
+				filterVariables.addAll(dependencies.correlatedInputs());
+			}
+
+			private boolean startsGroup(TupleExpr expression) {
+				if (TupleExprs.isVariableScopeChange(expression)) {
+					return true;
+				}
+				QueryModelNode parent = expression.getParentNode();
+				return parent instanceof Union || parent instanceof Intersection
+						|| parent instanceof SubQueryValueOperator
+						|| parent instanceof Service || parent instanceof Group
+						|| parent instanceof Projection projection && projection.isSubquery()
+						|| parent instanceof LeftJoin optional && expression == optional.getRightArg()
+						|| parent instanceof Difference difference && expression == difference.getRightArg()
+						|| parent instanceof Lateral lateral && expression == lateral.getRightArg()
+						|| parent instanceof ArbitraryLengthPath path && expression == path.getPathExpression();
+			}
 		}
 
 		private int countConstantVars(List<Var> vars) {

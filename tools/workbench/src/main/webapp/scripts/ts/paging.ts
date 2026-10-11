@@ -21,14 +21,6 @@ module workbench {
 
         var AMP = decodeURIComponent('%26');
 
-        function addCookieToUrlQueryIfPresent(url: string, name: string){
-            var value = workbench.getCookie(name);
-            if (value) {
-                url = url + AMP + name + '=' + value;
-            }
-            return url;
-        }
-
         function createHiddenInput(name: string, value: string): HTMLInputElement {
             var input = document.createElement('input');
             input.type = 'hidden';
@@ -85,6 +77,14 @@ module workbench {
             addCookieToFormIfPresent(form, 'ref');
         }
 
+        function addQueryOptionsToForm(form: HTMLFormElement) {
+            addCookieToFormIfPresent(form, 'owner');
+            addCookieToFormIfPresent(form, 'queryLn');
+            addCookieToFormIfPresent(form, 'infer');
+            addCookieToFormIfPresent(form, 'limit_query');
+            addCookieToFormIfPresent(form, 'query-timeout');
+        }
+
         function submitGraphParamRequest(name: string, value: string) {
             var form = document.createElement('form');
             form.method = 'POST';
@@ -93,11 +93,7 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            addQueryOptionsToForm(form);
             if (name == 'Accept') {
                 addElementValueToFormIfPresent(form, 'download_limit');
             }
@@ -116,11 +112,7 @@ module workbench {
 
             form.appendChild(createHiddenInput('action', 'exec'));
             addQueryReferenceToForm(form);
-            addCookieToFormIfPresent(form, 'owner');
-            addCookieToFormIfPresent(form, 'queryLn');
-            addCookieToFormIfPresent(form, 'infer');
-            addCookieToFormIfPresent(form, 'limit_query');
-            addCookieToFormIfPresent(form, 'query-timeout');
+            addQueryOptionsToForm(form);
             if (!hasQueryParameter(KT) || 'false' == getQueryParameter(KT)) {
                 form.appendChild(createHiddenInput(KT, String(getTotalResultCount())));
             }
@@ -132,7 +124,7 @@ module workbench {
         }
 
         /**
-         * Invoked in graph.xsl and tuple.xsl for download functionality. Takes a
+         * Invoked in the graph and tuple result views for download functionality. Takes a
          * document element by name, and creates a request with it as a parameter.
          */
         export function addGraphParam(name: string) {
@@ -143,9 +135,22 @@ module workbench {
                 return;
             }
             if (name == 'Accept') {
+                // A download: the browser saves the answer as a file.
                 url = addElementValueToUrlIfPresent(url, 'download_limit');
+                document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+                return;
             }
-            document.location.href = appendParamToUrl(url, name, encodeURIComponent(value));
+            go(appendParamToUrl(url, name, encodeURIComponent(value)));
+        }
+
+        /** Show url: in the page when the router runs (M10.1), by a page load otherwise. */
+        function go(url: string) {
+            var router: any = (<any>workbench).router;
+            if (router && typeof router.isRunning === 'function' && router.isRunning()) {
+                router.navigate(url, { history: 'push' });
+            } else {
+                document.location.href = url;
+            }
         }
         
         class StringMap {
@@ -182,7 +187,6 @@ module workbench {
             return rval;
         }
 
-
         /**
          * First, adds the given parameter to the URL query string. Second,
          * adds a 'know_total' parameter if its current value is 'false' or
@@ -208,20 +212,11 @@ module workbench {
                 url += AMP + 'query=' + encodeURIComponent(workbench.getCookie('query'));
                 url += AMP + 'ref=' + encodeURIComponent(workbench.getCookie('ref'));
             }
-            document.location.href = simplifyParameters(url);
+            go(simplifyParameters(url));
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Changes the limit query
-         * parameter and navigates to the new URL.
-         */
-        export function addLimit(page: string) {
-            var suffix = '_' + page;
-            addPagingParam(LIMIT + suffix, $(LIM_ID + suffix).val());
-        }
-
-        /**
-         * Invoked in tuple.xsl and explore.xsl. Increments the offset query
+         * Invoked in the tuple and explore views. Increments the offset query
          * parameter, and navigates to the new URL.
          */
         export function nextOffset(page: string) {
@@ -229,7 +224,7 @@ module workbench {
         }
 
         /**
-         * Invoked in tuple.xsl and explore.xsl. Decrements the offset query
+         * Invoked in the tuple and explore views. Decrements the offset query
          * parameter and navigates to the new URL.
          */
         export function previousOffset(page: string) {
@@ -245,9 +240,23 @@ module workbench {
         }
 
         /**
-         * @returns {number} The value of the limit query parameter.
+         * @returns {number} The limit applied to the shown page: its limit URL parameter, else the limit the page was
+         *          rendered with. The limit select only applies when its form is submitted, so a value chosen in it
+         *          but not applied must not change how far Previous and Next step.
          */
         export function getLimit(page: string): number {
+            var name = LIMIT + '_' + page;
+            var applied = parseInt(getQueryParameter(name), 10);
+            if (!isNaN(applied)) {
+                return applied;
+            }
+            var select = <HTMLSelectElement>document.getElementById(name);
+            var options = select && select.options;
+            for (var i = 0; options && i < options.length; i++) {
+                if (options[i].defaultSelected) {
+                    return parseInt(options[i].value, 10);
+                }
+            }
             return parseInt($(LIM_ID + '_' + page).val(), 10);
         }
 
@@ -366,28 +375,38 @@ module workbench {
                 exdate.setDate(exdate.getDate() + exdays);
                 document.cookie = c_name + "=" + value + 
                     ((exdays == null) ? "" : 
-                    "; expires=" + exdate.toUTCString());
+                    "; expires=" + exdate.toUTCString()) + "; SameSite=Lax";
             }
 
-            export function setShow(show: boolean) {
+            /**
+             * Datatype tags (span.rdf-datatype) are hidden by a class on the page's own outlet (root), so no cell
+             * needs re-rendering and the pages shown later are not affected (the body only without a root).
+             */
+            export function apply(show: boolean, root?: HTMLElement) {
+                var target = root || document.body;
+                if (target && target.classList) {
+                    target.classList.toggle('workbench-hide-datatypes', !show);
+                }
+            }
+
+            export function setShow(show: boolean, root?: HTMLElement) {
                 setCookie('show-datatypes', show, 365);
-                var data = show ? 'data-longform' : 'data-shortform';
-                $('div.resource[' + data + ']').each(function() {
-                    var me = $(this);
-                    me.find('a:first').text(decodeURIComponent(me.attr(data)));
-                });
+                apply(show, root);
             }
         }
 
-        export function setShowDataTypesCheckboxAndSetChangeEvent() {
+        /** Bind the "Show datatypes" checkbox (inside root when given) in the .wbRoute event namespace. */
+        export function setShowDataTypesCheckboxAndSetChangeEvent(root?: HTMLElement) {
             var hideDataTypes = (workbench.getCookie('show-datatypes') == 'false');
-            var showDTcb = $("input[name='show-datatypes']");
+            var selector = "input[name='show-datatypes']";
+            var showDTcb = root ? $(root).find(selector) : $(selector);
             if (hideDataTypes) {
                 showDTcb.prop('checked', false);
-                DataTypeVisibility.setShow(false);
             }
-            showDTcb.on('change', function() {
-                DataTypeVisibility.setShow(showDTcb.prop('checked'));
+            // Both ways: the next page may be rendered into the same outlet.
+            DataTypeVisibility.apply(!hideDataTypes, root);
+            showDTcb.on('change.wbRoute', function() {
+                DataTypeVisibility.setShow(showDTcb.prop('checked'), root);
             });
         }
     }

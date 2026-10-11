@@ -9,9 +9,17 @@ var workbench;
     var update;
     (function (update) {
         var yasqe = null;
-        function initYasqe() {
+        var releaseSizing = null;
+        /** Cmd/Ctrl+Enter submits the update form through its submit handler (which saves the editor text). */
+        function submitUpdateForm() {
+            var form = document.getElementById('update-form');
+            if (form && typeof form.requestSubmit === 'function') {
+                form.requestSubmit();
+            }
+        }
+        function initYasqe(root) {
             workbench.yasqeHelper.setupCompleters(namespaces);
-            yasqe = YASQE.fromTextArea(document.getElementById('update'), {
+            yasqe = YASQE.fromTextArea(root.querySelector('#update'), {
                 createShareLink: function () {
                     return { update: yasqe.getValue() };
                 },
@@ -23,26 +31,20 @@ var workbench;
                 // regular query interface, and we show the most recent
                 // -update- query.
                 persistent: "update",
+                // Updates run through the Workbench form; YASQE must never send them to its default endpoint.
+                sparql: { endpoint: '', showQueryButton: false },
+                extraKeys: {
+                    'Ctrl-Enter': submitUpdateForm,
+                    'Cmd-Enter': submitUpdateForm
+                }
             });
-            var $wrapper = $(yasqe.getWrapperElement());
-            // Style the outer wrapper
-            $wrapper.css({
-                "fontSize": "14px",
-                "width": "900px"
-            });
-            // Style the actual CodeMirror elements inside YASQE
-            $wrapper.find(".CodeMirror").css({
-                "height": "auto"
-            });
-            $wrapper.find(".CodeMirror-scroll").css({
-                "height": "auto",
-                "max-height": "55vh",
-                "overflow-y": "auto",
-                "overflow-x": "auto"
-            });
-            // We made a change to the css wrapper element (and did so after
-            // initialization). So, force a manual update of the yasqe
-            // instance.
+            // The editor frame grows with its content like the Query editor (styles/query.css) and can be
+            // resized with the handle under it.
+            var sizing = workbench.editorSizing;
+            var handle = root.querySelector('#update-editor-resize');
+            if (sizing && typeof sizing.install === 'function' && handle) {
+                releaseSizing = sizing.install(yasqe, handle, 'rdf4j.workbench.update-editor-height.v1');
+            }
             yasqe.refresh();
             // If the text area we instantiated YASQE on has no query val,
             // then show a regular default update query.
@@ -51,7 +53,26 @@ var workbench;
                     '<http://examplePred> <http://exampleObj> .\n}');
             }
         }
-        update.initYasqe = initYasqe;
+        /** Route mount (plan task M9.1): open the editor; the returned function closes it again. */
+        function mount(outlet) {
+            initYasqe(outlet);
+            return function () {
+                if (typeof releaseSizing === 'function') {
+                    releaseSizing();
+                }
+                releaseSizing = null;
+                if (yasqe) {
+                    // Full screen hides the document's scrollbars (CodeMirror's add-on); closing the editor alone
+                    // would leave the next page unable to scroll.
+                    if (typeof yasqe.getOption === 'function' && yasqe.getOption('fullScreen')) {
+                        yasqe.setOption('fullScreen', false);
+                    }
+                    yasqe.toTextArea();
+                    yasqe = null;
+                }
+            };
+        }
+        update.mount = mount;
         /**
          * Invoked upon form submission.
          *
@@ -67,7 +88,4 @@ var workbench;
         update.doSubmit = doSubmit;
     })(update = workbench.update || (workbench.update = {}));
 })(workbench || (workbench = {}));
-workbench.addLoad(function updatePageLoaded() {
-    workbench.update.initYasqe();
-});
 //# sourceMappingURL=update.js.map

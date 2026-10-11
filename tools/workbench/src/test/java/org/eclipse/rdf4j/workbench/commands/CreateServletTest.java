@@ -460,13 +460,13 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		ConfigTemplate template = CreateServlet.getConfigTemplate("lmdb");
 
 		assertThat(xml)
-				.contains("create-template.xsl")
+				.doesNotContain("create-template.xsl", "<?xml-stylesheet")
 				.contains("fieldId")
 				.contains("fieldProperty")
 				.contains("fieldRole")
@@ -495,13 +495,13 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		ConfigTemplate template = CreateServlet.getConfigTemplate("native");
 
 		assertThat(xml)
-				.contains("create-template.xsl")
+				.doesNotContain("create-template.xsl", "<?xml-stylesheet")
 				.contains("fieldId")
 				.contains("fieldProperty")
 				.contains("fieldRole")
@@ -524,7 +524,7 @@ public class CreateServletTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "transformations");
+		servlet.service(request, response);
 
 		String xml = outputStream.asString();
 		assertThat(extractBindingValues(xml, "type")).containsExactlyElementsOf(expectedCatalogTypes());

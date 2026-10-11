@@ -176,10 +176,10 @@ final class SemanticFactAnalyzer {
 			return;
 		}
 		if (node instanceof BindingSetAssignment assignment) {
-			setNames(SemanticMask.SCOPE_OUT, nodeId, assignment.getDeclaredBindingNames());
-			setNames(SemanticMask.MAY_BIND, nodeId, assignment.getBindingNames());
+			setNames(SemanticMask.SCOPE_OUT, nodeId, ScopeResolver.valuesOutputNames(assignment));
+			setNames(SemanticMask.MAY_BIND, nodeId, assignment.getPossibleBindingNames());
 			setNames(SemanticMask.MUST_BIND, nodeId, assignment.getAssuredBindingNames());
-			setNames(SemanticMask.DEFINES, nodeId, assignment.getBindingNames());
+			setNames(SemanticMask.DEFINES, nodeId, assignment.getPossibleBindingNames());
 			return;
 		}
 		if (node instanceof Join join) {
@@ -608,6 +608,11 @@ final class SemanticFactAnalyzer {
 			flags |= FactFlags.HAS_EXISTS | FactFlags.HAS_CORRELATION;
 		} else if (node instanceof TupleFunctionCall) {
 			flags |= FactFlags.HAS_TUPLE_FUNCTION | FactFlags.HARD_REWRITE_BARRIER;
+		} else if (node instanceof BindingSetAssignment assignment && !assignment.hasRepeatableBindingSets()) {
+			// Rows that cannot be inspected without consuming them may bind names outside the declared header, so
+			// the derived binding facts are not exact and nothing may move across the node.
+			flags |= FactFlags.HAS_UNKNOWN_NODE | FactFlags.NON_DUPLICABLE | FactFlags.NON_MOVABLE
+					| FactFlags.HARD_REWRITE_BARRIER;
 		}
 		return flags;
 	}

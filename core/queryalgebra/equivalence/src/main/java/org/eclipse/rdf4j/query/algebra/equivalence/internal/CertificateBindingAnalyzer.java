@@ -201,7 +201,7 @@ final class CertificateBindingAnalyzer {
 			return empty();
 		}
 		if (!(source instanceof Collection<?>)) {
-			return new CertificateBindingInfo(new LinkedHashSet<>(assignment.getBindingNames()),
+			return new CertificateBindingInfo(new LinkedHashSet<>(assignment.getPossibleBindingNames()),
 					Collections.emptySet());
 		}
 

@@ -45,7 +45,7 @@ class TupleServletCoverageTest {
 
 		NoOpTupleServlet servlet = new NoOpTupleServlet(builder);
 		servlet.setRepository(repository);
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		verify(builder).start("name");
 		verify(builder).link(java.util.List.of("info"));
@@ -57,7 +57,7 @@ class TupleServletCoverageTest {
 		private final TupleResultBuilder builder;
 
 		private NoOpTupleServlet(TupleResultBuilder builder) {
-			super(null, "name");
+			super("name");
 			this.builder = builder;
 		}
 

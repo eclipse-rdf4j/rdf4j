@@ -12,25 +12,27 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
-import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationStep {
 	private final BindingSetAssignment node;
@@ -41,7 +43,9 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	public BindingSetAssignmentQueryEvaluationStep(BindingSetAssignment node, QueryEvaluationContext context) {
 		this.node = node;
 		bsMaker = context::createBindingSet;
-		bindingNames = node.getBindingNames()
+		Set<String> names = new HashSet<>(node.getBindingNames());
+		names.addAll(node.getPossibleBindingNames());
+		bindingNames = names
 				.stream()
 				.map(bindingName -> new BindingNameAccess(bindingName, context))
 				.toArray(BindingNameAccess[]::new);
@@ -57,15 +61,43 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 		final Iterator<BindingSet> assignments = node.getBindingSets().iterator();
 		CloseableIteration<BindingSet> result;
 		if (bindings.isEmpty()) {
-			// we can just return the assignments directly without checking existing bindings,
-			// but stored rows may carry declared-but-UNDEF columns as names with null values
-			// (e.g. parser-built ListBindingSets). Such a column is not a binding, and leaking it
-			// into the pipeline makes downstream hasBinding/name checks behave differently from an
-			// equal row without the name.
-			result = new CloseableIteratorIteration<>(assignments) {
+			// Return ordinary rows without copying, but don't expose null slots as result bindings.
+			result = new LookAheadIteration<>() {
+
 				@Override
-				public BindingSet next() {
-					return stripUndefColumns(super.next());
+				protected BindingSet getNextElement() throws QueryEvaluationException {
+					if (!assignments.hasNext()) {
+						return null;
+					}
+					BindingSet assignedBindings = assignments.next();
+					int assignedValueCount = 0;
+					for (Binding ignored : assignedBindings) {
+						assignedValueCount++;
+					}
+					if (assignedValueCount == assignedBindings.getBindingNames().size()) {
+						return assignedBindings;
+					}
+
+					MutableBindingSet nextResult = bsMaker.apply(EmptyBindingSet.getInstance());
+					for (Binding binding : assignedBindings) {
+						String name = binding.getName();
+						Value assignedValue = binding.getValue();
+						if (assignedValue == null) {
+							continue;
+						}
+						BindingNameAccess bindingName = bindingNamesByName.get(name);
+						if (bindingName == null) {
+							nextResult.addBinding(name, assignedValue);
+						} else {
+							bindingName.addBinding.accept(assignedValue, nextResult);
+						}
+					}
+					return nextResult;
+				}
+
+				@Override
+				protected void handleClose() {
+
 				}
 			};
 		} else {
@@ -109,43 +141,38 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 
 					@Override
 					protected BindingSet getNextElement() throws QueryEvaluationException {
-						while (assignments.hasNext()) {
+						MutableBindingSet nextResult = null;
+						while (nextResult == null && assignments.hasNext()) {
 							final BindingSet assignedBindings = assignments.next();
+							nextResult = bsMaker.apply(bindings);
 
-							// The empty mapping (and a row whose every column is a declared-but-UNDEF
-							// null) is compatible with anything and joins as the identity: it must
-							// yield the incoming bindings, not be dropped.
-							MutableBindingSet nextResult = bsMaker.apply(bindings);
-							boolean compatible = true;
 							for (String name : assignedBindings.getBindingNames()) {
 								final Value assignedValue = assignedBindings.getValue(name);
-								if (assignedValue == null) {
-									continue;
-								}
-								BindingNameAccess bindingName = bindingNamesByName.get(name);
+								if (assignedValue != null) {
+									BindingNameAccess bindingName = bindingNamesByName.get(name);
 
-								// check that the binding assignment does not overwrite existing bindings.
-								Value existingValue = bindingName == null ? bindings.getValue(name)
-										: bindingName.getValue.apply(bindings);
-								if (existingValue == null) {
-									// we are not overwriting an existing binding.
-									if (bindingName == null) {
-										nextResult.addBinding(name, assignedValue);
+									// check that the binding assignment does not overwrite existing bindings.
+									Value existingValue = bindingName == null ? bindings.getValue(name)
+											: bindingName.getValue.apply(bindings);
+									if (existingValue == null || assignedValue.equals(existingValue)) {
+										if (existingValue == null) {
+											// we are not overwriting an existing binding.
+											if (bindingName == null) {
+												nextResult.addBinding(name, assignedValue);
+											} else {
+												bindingName.addBinding.accept(assignedValue, nextResult);
+											}
+										}
 									} else {
-										bindingName.addBinding.accept(assignedValue, nextResult);
+										// if values are not equal there is no compatible merge and we should return no
+										// next element.
+										nextResult = null;
+										break;
 									}
-								} else if (!assignedValue.equals(existingValue)) {
-									// if values are not equal there is no compatible merge and this
-									// row contributes no solution.
-									compatible = false;
-									break;
 								}
-							}
-							if (compatible) {
-								return nextResult;
 							}
 						}
-						return null;
+						return nextResult;
 					}
 
 					@Override
@@ -184,33 +211,16 @@ public class BindingSetAssignmentQueryEvaluationStep implements QueryEvaluationS
 	}
 
 	private boolean hasParentOverlap(BindingSet bindings) {
+		if (!node.hasRepeatableBindingSets()) {
+			// An uninspected source may contain names outside its declared header.
+			return true;
+		}
 		for (BindingNameAccess bindingName : bindingNames) {
 			if (bindingName.hasBinding.test(bindings)) {
 				return true;
 			}
 		}
 		return false;
-	}
-
-	private static BindingSet stripUndefColumns(BindingSet row) {
-		boolean clean = true;
-		for (String name : row.getBindingNames()) {
-			if (row.getValue(name) == null) {
-				clean = false;
-				break;
-			}
-		}
-		if (clean) {
-			return row;
-		}
-		QueryBindingSet stripped = new QueryBindingSet(row.size());
-		for (String name : row.getBindingNames()) {
-			Value value = row.getValue(name);
-			if (value != null) {
-				stripped.addBinding(name, value);
-			}
-		}
-		return stripped;
 	}
 
 	private static final class BindingNameAccess {

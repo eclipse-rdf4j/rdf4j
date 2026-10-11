@@ -16,13 +16,16 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
@@ -35,7 +38,6 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 
 /**
  * Utility methods for {@link TupleExpr} objects.
@@ -45,9 +47,21 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 public class TupleExprs {
 
 	/**
+	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
+	 * Group and are skipped by the evaluator. This does not change the Extension's declared bindings or classify the
+	 * expression's repeatability.
+	 *
+	 * @param element an Extension element
+	 * @return whether the element is an executed assignment rather than an aggregate placeholder
+	 */
+	public static boolean isEvaluatedExtensionElement(ExtensionElem element) {
+		return !(element.getExpr() instanceof AggregateOperator);
+	}
+
+	/**
 	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true. If
 	 * the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's arguments
-	 * will not be taken into account.
+	 * will not be taken into account. Remote SERVICE bodies are evaluated separately and are not inspected.
 	 * <p>
 	 * The {@link Projection#isSubquery()} flag is authoritative here: parsed sub-selects carry {@code true}, while the
 	 * top-level projection and internal optimizer-introduced projections carry {@code false} and are deliberately
@@ -66,7 +80,7 @@ public class TupleExprs {
 		do {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
-			} else if (!(n instanceof Join)) {
+			} else if (!(n instanceof Join) && !(n instanceof Service)) {
 				// projections already inside a Join need not be taken into account (that Join's own
 				// evaluation is responsible for them), so a Join subtree is opaque — but the scan must
 				// go on with the queued siblings, otherwise the answer would depend on operand order
@@ -87,50 +101,60 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a result-set modifier that is unstable under binding
-	 * push-down: a {@link Slice}, or a {@link Distinct}/{@link Reduced} whose argument can produce solutions with
-	 * differing domains. These operators observe the shape of the solutions they deduplicate or truncate, so merging a
-	 * sibling's bindings into their argument changes their result: two DISTINCT solutions that differ only in an
-	 * unbound variable collapse into one once the pushed binding fills the gap, and a LIMIT truncates the filtered
-	 * instead of the unfiltered solutions. Join operands containing one must be evaluated without sibling bindings,
-	 * like subqueries. A {@link Distinct}/{@link Reduced} over uniform-domain solutions (every possible name is
-	 * assuredly bound, e.g. the parser's encoding of a {@code path?} expression) is push-down-stable — extending every
-	 * solution with the same bindings is injective there — and is deliberately NOT flagged, because operators like
-	 * {@link ZeroLengthPath} inside it depend on correlation for their semantics. Unlike
-	 * {@link #containsSubquery(TupleExpr)} this scan does descend into {@link Join} operands, because a nested join
-	 * passes its input bindings straight to its own operands.
+	 * Tests whether a tuple expression contains a result-set modifier that cannot safely receive bindings from a join
+	 * sibling. A slice is always sensitive to pushed bindings. DISTINCT and REDUCED are sensitive when their argument's
+	 * solution domain is heterogeneous or cannot be determined from the supplied binding analysis.
 	 *
-	 * @param t a tuple expression.
-	 * @return <code>true</code> if the TupleExpr contains a {@link Slice}, or a {@link Distinct}/{@link Reduced} over
-	 *         possibly-heterogeneous solution domains, <code>false</code> otherwise.
+	 * <p>
+	 * The expression is analyzed with the supplied analysis's root input, excluding bindings from its containing join
+	 * sibling while retaining scopes and correlations inside the expression. Legacy {@link TupleExpr#getBindingNames()}
+	 * summaries do not prove that a name is bound in every solution and are deliberately not used here. Modifiers
+	 * inside a remote SERVICE body do not constrain local sibling input and are not inspected.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param analysis  invocation-local binding analysis rooted at its containing query expression
+	 * @return whether sibling binding pushdown must stop before this expression
 	 */
-	public static boolean containsResultSetModifier(TupleExpr t) {
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis analysis) {
+		return containsResultSetModifier(tupleExpr, analysis.rootContext());
+	}
 
-		TupleExpr n = t;
-		Deque<TupleExpr> queue = null;
-
-		do {
-			if (n instanceof Slice) {
+	/**
+	 * Tests whether an expression contains a result-set modifier that is unsafe for the supplied input frame.
+	 *
+	 * @param tupleExpr the expression to inspect
+	 * @param input     the input visible before evaluating the expression
+	 * @return whether sibling binding pushdown must stop before this expression
+	 */
+	public static boolean containsResultSetModifier(TupleExpr tupleExpr,
+			QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+		QueryAlgebraBindingAnalysis scopedAnalysis = QueryAlgebraBindingAnalysis
+				.withInputContextAndPossibleInputs(tupleExpr, input, Set.of());
+		Deque<TupleExpr> queue = new ArrayDeque<>();
+		queue.add(tupleExpr);
+		while (!queue.isEmpty()) {
+			TupleExpr current = queue.removeFirst();
+			if (current instanceof Service) {
+				// SERVICE evaluates its body at the remote endpoint. Its modifiers do not constrain local input.
+				continue;
+			}
+			if (current instanceof Slice) {
 				return true;
 			}
-			if ((n instanceof Distinct || n instanceof Reduced)
-					&& !((UnaryTupleOperator) n).getArg()
-							.getBindingNames()
-							.equals(((UnaryTupleOperator) n).getArg().getAssuredBindingNames())) {
-				return true;
-			}
-			List<TupleExpr> children = getChildren(n);
-			if (!children.isEmpty()) {
-				if (queue == null) {
-					queue = new ArrayDeque<>();
+			if (current instanceof Distinct || current instanceof Reduced) {
+				TupleExpr argument = ((UnaryTupleOperator) current).getArg();
+				QueryAlgebraBindingAnalysis.ReadOnlyContext modifierInput = scopedAnalysis.contextAt(current);
+				QueryAlgebraBindingAnalysis.ReadOnlyContext argumentInput = scopedAnalysis.childInput(current, argument,
+						modifierInput);
+				QueryAlgebraBindingAnalysis.OutputFacts facts = scopedAnalysis.outputFacts(argument, argumentInput);
+				if (!facts.possibleOutputsKnown() || !facts.guaranteedOutputsKnown()
+						|| !facts.possibleOutputs().equals(facts.guaranteedOutputs())) {
+					return true;
 				}
-				queue.addAll(children);
 			}
-
-			n = queue != null ? queue.poll() : null;
-
-		} while (n != null);
-
+			queue.addAll(getChildren(current));
+		}
 		return false;
 	}
 

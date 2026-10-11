@@ -785,7 +785,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 						if (operator.equals(valueExpr)) {
 							group.addGroupElement(new GroupElem(alias, operator));
-							extension.setArg(group);
 						} else {
 							ValueExpr expr = (ValueExpr) operator.getParentNode();
 
@@ -2478,7 +2477,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			}
 		}
 
-		bsa.setBindingNames(bindingNames);
+		bsa.setDeclaredBindingNames(bindingNames);
 		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
@@ -2510,7 +2509,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			bindingNames.add(var.getName());
 		}
 
-		bsa.setBindingNames(bindingNames);
+		bsa.setDeclaredBindingNames(bindingNames);
 		verifyLateralAssignments(bindingNames, "VALUES clause");
 
 		List<ASTBindingSet> bindingNodes = node.jjtGetChildren(ASTBindingSet.class);
