@@ -67,7 +67,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyMode;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
