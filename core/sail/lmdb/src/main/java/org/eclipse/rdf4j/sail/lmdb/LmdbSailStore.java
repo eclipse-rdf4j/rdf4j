@@ -3376,6 +3376,14 @@ class LmdbSailStore implements SailStore {
 					&& capturedPublicationVersion == latestCommittedPublicationVersion && !publicationFinalizing;
 		}
 
+		boolean isCurrentForStatistics() {
+			long currentPublicationVersion = publicationVersion;
+			// A still-open publication can already have committed and reset statistics. Its preceding even
+			// version remains suitable for dataset currentness, but cannot certify a shared-cache sample.
+			return (currentPublicationVersion & 1L) == 0L && capturedPublicationVersion == currentPublicationVersion
+					&& isSnapshotCurrent() && publicationVersion == currentPublicationVersion;
+		}
+
 		void ensureNativeSnapshotsValid() throws SailException {
 			growthLease.ensureNotInvalidated();
 			ensureNamespacePersistenceCertain();

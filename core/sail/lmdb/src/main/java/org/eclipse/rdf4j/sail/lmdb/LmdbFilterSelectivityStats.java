@@ -29,6 +29,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
@@ -100,6 +102,7 @@ class LmdbFilterSelectivityStats
 
 	private boolean dirty;
 	private long backgroundSamplingSequence;
+	private long statisticsRevision;
 
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore) {
 		this(estimatorPath, tripleStore, valueStore, true, LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_MILLIS,
@@ -133,6 +136,7 @@ class LmdbFilterSelectivityStats
 
 	@Override
 	public synchronized void reset() {
+		statisticsRevision++;
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
 				|| !learnedByPattern.isEmpty() || !sampledByFilter.isEmpty();
 		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
@@ -283,16 +287,25 @@ class LmdbFilterSelectivityStats
 			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
+		long revision = currentStatisticsRevision();
 		SampledPassRatio sampled = sampleFilterPassRatio(candidate, true, 0L);
 		if (!isUsableSampledPassRatio(sampled)) {
 			return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
-		synchronized (this) {
+		cacheSampleIfCurrent(key, sampled, revision);
+		return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
+	}
+
+	private synchronized long currentStatisticsRevision() {
+		return statisticsRevision;
+	}
+
+	private synchronized void cacheSampleIfCurrent(PatternFilterKey key, SampledPassRatio sampled, long revision) {
+		if (sampled.cacheableSnapshot && statisticsRevision == revision) {
 			sampledByFilter.put(key, sampled);
 			dirty = true;
 		}
-		return new SketchBasedJoinEstimator.PatternFilterSampleEstimate(sampled.passRatio, sampled.sampleSize);
 	}
 
 	synchronized List<BackgroundSamplingRequest> drainBackgroundSamplingRequests(int maxCount) {
@@ -333,6 +346,7 @@ class LmdbFilterSelectivityStats
 			}
 			BackgroundSamplingRequest request = requests.getFirst();
 			attemptedCount++;
+			long revision = currentStatisticsRevision();
 			SampledPassRatio sampled = sampleFilterPassRatio(request.toSamplingCandidate(), false, deadlineNanos);
 			if (!isUsableSampledPassRatio(sampled)) {
 				logger.info(
@@ -341,10 +355,7 @@ class LmdbFilterSelectivityStats
 						request.expectedRuntimeRows(), request.expectedBenefitRows());
 				continue;
 			}
-			synchronized (this) {
-				sampledByFilter.put(request.key, sampled);
-				dirty = true;
-			}
+			cacheSampleIfCurrent(request.key, sampled, revision);
 			logger.info(
 					"LMDB background filter sampling sampled request: predicate={}, filterKey={}, passRatio={}, sampleSize={}, votes={}, foregroundNeeded={}, expectedRuntimeRows={}, expectedBenefitRows={}",
 					request.predicateIri(), request.filterKey(), sampled.passRatio, sampled.sampleSize,
@@ -537,7 +548,21 @@ class LmdbFilterSelectivityStats
 		int eligibleRows = 0;
 		int scannedRows = 0;
 
-		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+		QueryExecutionDeadline callerDeadline = QueryExecutionDeadline.current();
+		long remainingNanos = deadlineNanos - System.nanoTime();
+		if (remainingNanos <= 0L) {
+			return null;
+		}
+		boolean needsLocalDeadline = callerDeadline == null || remainingNanos < callerDeadline.remainingNanos();
+		long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+		if (TimeUnit.MILLISECONDS.toNanos(remainingMillis) < remainingNanos) {
+			remainingMillis++;
+		}
+		try (QueryExecutionDeadline localDeadline = needsLocalDeadline
+				? QueryExecutionDeadline.start(remainingMillis)
+				: null;
+				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(localDeadline);
+				LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
 			LmdbSailStore.ReadView view = admission.view();
 			ValueStore.ReadSnapshot values = view.valueSnapshot();
 			// A queued request contains RDF terms, not authority to reuse IDs from an earlier dictionary epoch.
@@ -587,10 +612,16 @@ class LmdbFilterSelectivityStats
 			// Lazy literals and triple terms may resolve while evaluating the condition, after cursor exhaustion.
 			int passed = 0;
 			for (BindingSet sample : samples) {
+				QueryExecutionDeadline activeDeadline = QueryExecutionDeadline.current();
+				if (activeDeadline != null && activeDeadline.isExpired()) {
+					throw new QueryInterruptedException("Query evaluation took too long");
+				}
 				try {
 					if (strategy.isTrue(condition, sample)) {
 						passed++;
 					}
+				} catch (QueryInterruptedException failure) {
+					throw failure;
 				} catch (ValueExprEvaluationException e) {
 					// Per-row evaluation failures behave like filtered rows during query execution.
 				} catch (RuntimeException e) {
@@ -600,7 +631,16 @@ class LmdbFilterSelectivityStats
 			if (passed == 0 && samples.size() < ZERO_HIT_SAMPLE_MIN_EVIDENCE) {
 				return null;
 			}
-			return new SampledPassRatio((double) passed / samples.size(), samples.size());
+			return new SampledPassRatio((double) passed / samples.size(), samples.size(),
+					view.isCurrentForStatistics());
+		} catch (QueryInterruptedException failure) {
+			if (Thread.currentThread().isInterrupted() || callerDeadline != null && callerDeadline.isExpired()) {
+				throw failure;
+			}
+			if (needsLocalDeadline && samplingDeadlineExceeded(deadlineNanos)) {
+				return null;
+			}
+			throw failure;
 		} catch (IOException e) {
 			return null;
 		}
@@ -683,17 +723,22 @@ class LmdbFilterSelectivityStats
 
 	private double expectedRuntimeRows(long subjId, long predId, long objId, long contextId) {
 		RuntimeRowsKey key = new RuntimeRowsKey(subjId, predId, objId, contextId);
+		long revision;
 		synchronized (this) {
 			Double cached = expectedRuntimeRowsByPattern.get(key);
 			if (cached != null) {
 				return cached;
 			}
+			revision = statisticsRevision;
 		}
 
 		try {
 			double rows = tripleStore.cardinality(subjId, predId, objId, contextId);
 			double sanitizedRows = Double.isFinite(rows) && rows > 0.0d ? rows : 0.0d;
 			synchronized (this) {
+				if (statisticsRevision != revision) {
+					return sanitizedRows;
+				}
 				Double cached = expectedRuntimeRowsByPattern.putIfAbsent(key, sanitizedRows);
 				return cached == null ? sanitizedRows : cached;
 			}
@@ -1133,7 +1178,11 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private record SampledPassRatio(double passRatio, int sampleSize) {
+	private record SampledPassRatio(double passRatio, int sampleSize, boolean cacheableSnapshot) {
+
+		private SampledPassRatio(double passRatio, int sampleSize) {
+			this(passRatio, sampleSize, true);
+		}
 
 		private void writeTo(DataOutputStream out) throws IOException {
 			out.writeDouble(passRatio);
