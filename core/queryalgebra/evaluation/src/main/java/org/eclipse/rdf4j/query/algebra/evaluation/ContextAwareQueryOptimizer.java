@@ -59,8 +59,6 @@ public interface ContextAwareQueryOptimizer extends QueryOptimizer {
 	 * {@code RUN_LEGACY} runs the (scope-safe) legacy pass and invalidates the session facts.</li>
 	 * <li>AUDIT: legacy pass + invalidate + eager refresh — the refresh IS the audit mechanism, because rebuilding the
 	 * analysis triggers the fail-fast parity assertions.</li>
-	 * <li>SHADOW: legacy pass + invalidate only — nothing consumes the root run's analysis in SHADOW, so an eager
-	 * rebuild per optimizer would be pure waste; the candidate ENFORCE run rebuilds lazily on demand.</li>
 	 * </ul>
 	 */
 	static void dispatch(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session,
@@ -81,10 +79,6 @@ public interface ContextAwareQueryOptimizer extends QueryOptimizer {
 			legacy.optimize(tupleExpr, dataset, bindings);
 			session.afterLegacyOptimizer();
 			session.refresh();
-			return;
-		case SHADOW:
-			legacy.optimize(tupleExpr, dataset, bindings);
-			session.afterLegacyOptimizer();
 			return;
 		default:
 			throw new AssertionError("Unhandled scope-safety mode: " + session.mode());

@@ -28,9 +28,7 @@ The proof calculus is intentionally incomplete. Operators without a checked sema
 
 The `org.eclipse.rdf4j.query.scopeSafety.mode` system property selects how the optimizer pipeline
 uses this machinery: `OFF` (default, legacy pipeline only), `AUDIT` (legacy plans, fail-fast
-cross-check of the scope analysis — a diagnostic/canary mode), `ENFORCE`, and `SHADOW` (legacy
-results always returned; a sampled fraction of queries additionally runs a scope-safe candidate
-plan and divergences are recorded as telemetry; set `shadowStrict=true` to make them fatal in CI).
+cross-check of the scope analysis — a diagnostic/canary mode), and `ENFORCE`.
 
 `ENFORCE` runs ONLY scope-safe rewrites. Legacy optimizers without a scope-safe replacement are
 skipped — notably join reordering (`QueryJoinOptimizer`) and query-model normalization — so a

@@ -34,8 +34,6 @@ public class OptimizationSessionTest {
 		assertThat(invoke(configuration, "shapeCap")).isEqualTo(8);
 		assertThat(invoke(configuration, "periodicAuditRebuild")).isEqualTo(0);
 		assertThat(invoke(configuration, "telemetry")).isEqualTo(false);
-		assertThat(invoke(configuration, "shadowSampleRate")).isEqualTo(0.0d);
-		assertThat(invoke(configuration, "shadowMaxRows")).isEqualTo(10_000L);
 
 		QueryRoot root = new QueryRoot(new SingletonSet());
 		Object session = open(root, configuration);
@@ -50,9 +48,7 @@ public class OptimizationSessionTest {
 				PREFIX + "mode", "enforce",
 				PREFIX + "shapeCap", "12",
 				PREFIX + "periodicAuditRebuild", "17",
-				PREFIX + "telemetry", "true",
-				PREFIX + "shadowSampleRate", "0.25",
-				PREFIX + "shadowMaxRows", "321"));
+				PREFIX + "telemetry", "true"));
 		assertThat(invoke(configuration, "mode").toString()).isEqualTo("ENFORCE");
 		assertThat(invoke(configuration, "shapeCap")).isEqualTo(12);
 
@@ -68,9 +64,9 @@ public class OptimizationSessionTest {
 		assertThatThrownBy(() -> configuration(Map.of(PREFIX + "shapeCap", "1")))
 				.isInstanceOf(IllegalArgumentException.class)
 				.hasMessageContaining(PREFIX + "shapeCap");
-		assertThatThrownBy(() -> configuration(Map.of(PREFIX + "shadowSampleRate", "1.1")))
+		assertThatThrownBy(() -> configuration(Map.of(PREFIX + "telemetry", "sometimes")))
 				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessageContaining(PREFIX + "shadowSampleRate");
+				.hasMessageContaining(PREFIX + "telemetry");
 	}
 
 	@Test

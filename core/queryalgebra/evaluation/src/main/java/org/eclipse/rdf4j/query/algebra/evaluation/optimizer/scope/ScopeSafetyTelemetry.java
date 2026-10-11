@@ -26,7 +26,6 @@ public final class ScopeSafetyTelemetry {
 		QUERY_OFF,
 		QUERY_AUDIT,
 		QUERY_ENFORCE,
-		QUERY_SHADOW,
 		ANALYSIS_BUILD,
 		ANALYSIS_INVALIDATION,
 		AUDIT_REBUILD,
@@ -42,19 +41,7 @@ public final class ScopeSafetyTelemetry {
 		GUARD_DENIED_EXTERNAL_OR_UNKNOWN_EFFECT,
 		GUARD_DENIED_INVOCATION_PARTITION_CHANGED,
 		GUARD_DENIED_SHAPE_PROOF_INCONCLUSIVE,
-		GUARD_DENIED_INTERNAL_INVARIANT,
-		SHADOW_SKIP_NOT_SAMPLED,
-		SHADOW_SKIP_VOLATILE,
-		SHADOW_SKIP_EXTERNAL,
-		SHADOW_SKIP_SERVICE,
-		SHADOW_SKIP_UNSUPPORTED,
-		SHADOW_SKIP_ROW_LIMIT,
-		SHADOW_SKIP_PARTIAL_CONSUMPTION,
-		SHADOW_SKIP_NONDETERMINISTIC,
-		SHADOW_SKIP_CANDIDATE_ERROR,
-		SHADOW_MATCH,
-		SHADOW_MISMATCH,
-		SHADOW_ORDER_DIVERGENCE
+		GUARD_DENIED_INTERNAL_INVARIANT
 	}
 
 	private static final Counter[] COUNTERS = Counter.values();
@@ -101,28 +88,6 @@ public final class ScopeSafetyTelemetry {
 		if (enabled) {
 			record(Counter.valueOf("GUARD_DENIED_" + reason.name()));
 		}
-	}
-
-	static void recordShadowSkip(ShadowSkipReason reason, boolean enabled) {
-		if (enabled && reason != ShadowSkipReason.NONE) {
-			record(Counter.valueOf("SHADOW_SKIP_" + reason.name()));
-		}
-	}
-
-	public static void recordShadowRowLimit(boolean enabled) {
-		recordIfEnabled(Counter.SHADOW_SKIP_ROW_LIMIT, enabled);
-	}
-
-	public static void recordShadowMatch(boolean enabled) {
-		recordIfEnabled(Counter.SHADOW_MATCH, enabled);
-	}
-
-	public static void recordShadowMismatch(boolean enabled) {
-		recordIfEnabled(Counter.SHADOW_MISMATCH, enabled);
-	}
-
-	public static void recordShadowOrderDivergence(boolean enabled) {
-		recordIfEnabled(Counter.SHADOW_ORDER_DIVERGENCE, enabled);
 	}
 
 	static void resetForTests() {

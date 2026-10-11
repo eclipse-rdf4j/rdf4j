@@ -21,14 +21,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Compare;
-import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.Join;
-import org.eclipse.rdf4j.query.algebra.Order;
-import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
-import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -69,144 +64,20 @@ public class OptimizerPipelineRunnerTest {
 	}
 
 	@Test
-	public void shadowReturnsLegacyTreeAndAttachesAnEnforcedCandidateClone() throws Exception {
-		QueryRoot root = new QueryRoot(new SingletonSet());
-		ContextAwareQueryOptimizer optimizer = (tupleExpr, dataset, bindings, session) -> {
-			if (session.mode() == ScopeSafetyMode.ENFORCE) {
-				((QueryRoot) tupleExpr).setArg(new EmptySet());
-			}
-		};
-		run(root, List.of(optimizer),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
-
-		assertThat(root.getArg()).isInstanceOf(SingletonSet.class);
-		Class<?> type = Class.forName(
-				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ShadowOptimizationPlan");
-		Method take = type.getDeclaredMethod("take", TupleExpr.class);
-		Object plan = take.invoke(null, root);
-		Method candidate = type.getDeclaredMethod("candidate");
-		TupleExpr candidateRoot = (TupleExpr) candidate.invoke(plan);
-		assertThat(((QueryRoot) candidateRoot).getArg()).isInstanceOf(EmptySet.class);
-	}
-
-	@Test
-	public void shadowEvaluatesKnownConservativeNodesWithoutWeakeningTheirBarrier() throws Exception {
+	public void knownConservativeNodesKeepTheirBarrierWithoutBeingUnknown() {
 		Compare comparison = new Compare(Var.of("x"),
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(1)));
 		QueryRoot root = new QueryRoot(new Filter(new SingletonSet(), comparison));
-		run(root, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
 
-		Class<?> type = Class.forName(
-				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ShadowOptimizationPlan");
-		Method take = type.getDeclaredMethod("take", TupleExpr.class);
-		Object plan = take.invoke(null, root);
-		Method candidate = type.getDeclaredMethod("candidate");
-		TupleExpr candidateRoot = (TupleExpr) candidate.invoke(plan);
-		assertThat(candidateRoot).isNotNull();
-
-		ScopeAnalysis analysis = ScopeAnalysis.analyze(candidateRoot);
-		Compare candidateComparison = (Compare) ((Filter) ((QueryRoot) candidateRoot).getArg()).getCondition();
-		int flags = analysis.facts().flags(analysis.arena().id(candidateComparison));
+		ScopeAnalysis analysis = ScopeAnalysis.analyze(root);
+		int flags = analysis.facts().flags(analysis.arena().id(comparison));
 		assertThat(flags & FactFlags.HARD_REWRITE_BARRIER).isNotZero();
 		assertThat(flags & FactFlags.HAS_UNKNOWN_NODE).isZero();
 	}
 
-	@Test
-	public void shadowCandidateOptimizationFailureDoesNotFailTheQuery() throws Exception {
-		QueryRoot root = new QueryRoot(new SingletonSet());
-		ContextAwareQueryOptimizer throwingInEnforce = (tupleExpr, dataset, bindings, session) -> {
-			if (session.mode() == ScopeSafetyMode.ENFORCE) {
-				throw new IllegalStateException("candidate pipeline defect");
-			}
-		};
-		long errorsBefore = ScopeSafetyTelemetry.snapshot()
-				.get(ScopeSafetyTelemetry.Counter.SHADOW_SKIP_CANDIDATE_ERROR);
-
-		run(root, List.of(throwingInEnforce),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 1.0, 10_000, false));
-
-		assertThat(ScopeSafetyTelemetry.snapshot().get(ScopeSafetyTelemetry.Counter.SHADOW_SKIP_CANDIDATE_ERROR))
-				.isEqualTo(errorsBefore + 1L);
-		Object plan = takePlan(root);
-		assertThat(candidateOf(plan)).isNull();
-	}
-
-	@Test
-	public void shadowCandidateOptimizationFailureIsFatalWhenStrict() {
-		QueryRoot root = new QueryRoot(new SingletonSet());
-		ContextAwareQueryOptimizer throwingInEnforce = (tupleExpr, dataset, bindings, session) -> {
-			if (session.mode() == ScopeSafetyMode.ENFORCE) {
-				throw new IllegalStateException("candidate pipeline defect");
-			}
-		};
-
-		org.junit.jupiter.api.Assertions.assertThrows(Exception.class, () -> run(root, List.of(throwingInEnforce),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 1.0, 10_000, true)));
-	}
-
-	@Test
-	public void sliceWithoutBackingOrderIsSkippedAsNondeterministic() throws Exception {
-		QueryRoot root = new QueryRoot(new Slice(new SingletonSet(), 0, 1));
-		long skipsBefore = ScopeSafetyTelemetry.snapshot()
-				.get(ScopeSafetyTelemetry.Counter.SHADOW_SKIP_NONDETERMINISTIC);
-
-		run(root, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 1.0, 10_000, false));
-
-		assertThat(ScopeSafetyTelemetry.snapshot().get(ScopeSafetyTelemetry.Counter.SHADOW_SKIP_NONDETERMINISTIC))
-				.isEqualTo(skipsBefore + 1L);
-		assertThat(candidateOf(takePlan(root))).isNull();
-	}
-
-	@Test
-	public void sliceBackedByOrderIsComparedAndOrdered() throws Exception {
-		Order order = new Order(new SingletonSet());
-		order.addElement(new OrderElem(Var.of("x"), true));
-		QueryRoot root = new QueryRoot(new Slice(order, 0, 1));
-
-		run(root, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
-
-		Object plan = takePlan(root);
-		assertThat(candidateOf(plan)).isNotNull();
-		assertThat(orderedOf(plan)).isTrue();
-	}
-
-	@Test
-	public void nestedOrderDoesNotForceSequenceComparisonAtTheRoot() throws Exception {
-		// The Order sits under a Join operand: the root's result order is NOT guaranteed, so the
-		// shadow comparison must not be strict-sequence.
-		Order order = new Order(new SingletonSet());
-		order.addElement(new OrderElem(Var.of("x"), true));
-		QueryRoot root = new QueryRoot(new Join(order, new SingletonSet()));
-
-		run(root, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, false, 1.0, 10_000, false));
-
-		Object plan = takePlan(root);
-		assertThat(candidateOf(plan)).isNotNull();
-		assertThat(orderedOf(plan)).isFalse();
-	}
-
-	private static Object takePlan(TupleExpr root) throws Exception {
-		Class<?> type = Class.forName(
-				"org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ShadowOptimizationPlan");
-		Method take = type.getDeclaredMethod("take", TupleExpr.class);
-		return take.invoke(null, root);
-	}
-
-	private static TupleExpr candidateOf(Object plan) throws Exception {
-		return (TupleExpr) plan.getClass().getDeclaredMethod("candidate").invoke(plan);
-	}
-
-	private static boolean orderedOf(Object plan) throws Exception {
-		return (boolean) plan.getClass().getDeclaredMethod("ordered").invoke(plan);
-	}
-
 	private static void run(TupleExpr root, Iterable<QueryOptimizer> optimizers, ScopeSafetyMode mode)
 			throws Exception {
-		run(root, optimizers, new ScopeSafetyConfiguration(mode, 8, 0, false, 0.0, 10_000, false));
+		run(root, optimizers, new ScopeSafetyConfiguration(mode, 8, 0, false));
 	}
 
 	private static void run(TupleExpr root, Iterable<? extends QueryOptimizer> optimizers,

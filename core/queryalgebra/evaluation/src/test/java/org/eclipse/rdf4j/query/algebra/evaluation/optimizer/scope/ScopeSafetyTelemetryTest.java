@@ -35,24 +35,23 @@ class ScopeSafetyTelemetryTest {
 	}
 
 	@Test
-	void recordsModesReasonCodedSkipsAndPeriodicAuditRebuilds() throws Exception {
+	void recordsModesRewritesAndPeriodicAuditRebuilds() throws Exception {
 		QueryRoot enforceRoot = identityProjection();
 		ContextAwareQueryOptimizer rewrite = (tupleExpr, dataset, bindings, session) -> ScopeSafeRewritePass
 				.projections((QueryRoot) tupleExpr, session);
 		OptimizerPipelineRunner.run(enforceRoot, null, null, List.of(rewrite),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 1, true, 0.0, 10_000, false));
+				new ScopeSafetyConfiguration(ScopeSafetyMode.ENFORCE, 8, 1, true));
 
-		QueryRoot shadowRoot = new QueryRoot(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
-		OptimizerPipelineRunner.run(shadowRoot, null, null, List.of(),
-				new ScopeSafetyConfiguration(ScopeSafetyMode.SHADOW, 8, 0, true, 0.0, 10_000, false));
+		QueryRoot offRoot = new QueryRoot(new StatementPattern(new Var("s"), new Var("p"), new Var("o")));
+		OptimizerPipelineRunner.run(offRoot, null, null, List.of(),
+				new ScopeSafetyConfiguration(ScopeSafetyMode.OFF, 8, 0, true));
 
 		Map<?, ?> snapshot = (Map<?, ?>) telemetryMethod("snapshot").invoke(null);
 		assertThat(counter(snapshot, "QUERY_ENFORCE")).isEqualTo(1L);
-		assertThat(counter(snapshot, "QUERY_SHADOW")).isEqualTo(1L);
+		assertThat(counter(snapshot, "QUERY_OFF")).isEqualTo(1L);
 		assertThat(counter(snapshot, "ANALYSIS_BUILD")).isGreaterThanOrEqualTo(1L);
 		assertThat(counter(snapshot, "REWRITE_ACCEPTED")).isEqualTo(1L);
 		assertThat(counter(snapshot, "AUDIT_REBUILD")).isEqualTo(1L);
-		assertThat(counter(snapshot, "SHADOW_SKIP_NOT_SAMPLED")).isEqualTo(1L);
 	}
 
 	private static QueryRoot identityProjection() {

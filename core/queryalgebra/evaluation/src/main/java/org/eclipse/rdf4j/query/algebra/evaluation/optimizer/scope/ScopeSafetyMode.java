@@ -20,8 +20,7 @@ public enum ScopeSafetyMode {
 	OFF,
 	/**
 	 * Fail-fast diagnostic mode: legacy plans run unchanged while the fast scope analysis is cross-checked against an
-	 * independent reference analyzer, and any parity failure throws. Intended for canary/CI runs — use SHADOW for
-	 * production observation.
+	 * independent reference analyzer, and any parity failure throws. Intended for canary/CI runs.
 	 */
 	AUDIT,
 	/**
@@ -29,11 +28,5 @@ public enum ScopeSafetyMode {
 	 * reordering and query-model normalization — so unoptimized join orders can be dramatically slower. This mode
 	 * trades optimization for provable scope safety; it is not a general-purpose production configuration.
 	 */
-	ENFORCE,
-	/**
-	 * Production observation mode: legacy results are always returned, while a scope-safe candidate plan is prepared
-	 * and compared for a sampled fraction of queries ({@code shadowSampleRate}). Divergences and candidate failures are
-	 * recorded as telemetry and never fail the user's query unless {@code shadowStrict=true}.
-	 */
-	SHADOW
+	ENFORCE
 }

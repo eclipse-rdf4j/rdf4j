@@ -31,8 +31,6 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyTelemetry;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafetyTelemetry.Counter;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.sail.Sail;
@@ -47,7 +45,7 @@ public abstract class ScopeSafetyStoreTest {
 
 	private static final Object PROPERTY_LOCK = new Object();
 	private static final String PREFIX = "org.eclipse.rdf4j.query.scopeSafety.";
-	private static final List<String> MODES = List.of("off", "audit", "enforce", "shadow");
+	private static final List<String> MODES = List.of("off", "audit", "enforce");
 
 	@TempDir
 	protected Path dataDirectory;
@@ -73,7 +71,6 @@ public abstract class ScopeSafetyStoreTest {
 					boolean ordered = number == 49;
 					for (String mode : MODES) {
 						configure(mode);
-						long shadowMatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MATCH);
 						List<String> actual;
 						try {
 							actual = evaluate(repository, query);
@@ -84,12 +81,6 @@ public abstract class ScopeSafetyStoreTest {
 							assertThat(actual).as(id + " in " + mode).containsExactlyElementsOf(expected);
 						} else {
 							assertThat(multiset(actual)).as(id + " in " + mode).isEqualTo(multiset(expected));
-						}
-						if ("shadow".equals(mode)) {
-							Map<Counter, Long> telemetry = ScopeSafetyTelemetry.snapshot();
-							assertThat(ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MATCH))
-									.as(id + " sampled SHADOW candidate comparison; telemetry=" + telemetry)
-									.isEqualTo(shadowMatchesBefore + 1);
 						}
 					}
 				}
@@ -124,7 +115,6 @@ public abstract class ScopeSafetyStoreTest {
 					List<String> expected = readExpectedRows(resultResource);
 					for (String mode : MODES) {
 						configure(mode);
-						long shadowMatchesBefore = ScopeSafetyTelemetry.snapshot().get(Counter.SHADOW_MATCH);
 						QueryResultSnapshot actual;
 						try {
 							actual = evaluateExact(repository, query);
@@ -138,12 +128,6 @@ public abstract class ScopeSafetyStoreTest {
 						softly.assertThat(multiset(actual.rows()))
 								.as("adversarial " + id + " in " + mode)
 								.isEqualTo(multiset(expected));
-						if ("shadow".equals(mode)) {
-							Map<Counter, Long> telemetry = ScopeSafetyTelemetry.snapshot();
-							softly.assertThat(telemetry.get(Counter.SHADOW_MATCH))
-									.as(id + " sampled SHADOW candidate comparison; telemetry=" + telemetry)
-									.isEqualTo(shadowMatchesBefore + 1);
-						}
 					}
 				}
 				softly.assertAll();
@@ -297,14 +281,12 @@ public abstract class ScopeSafetyStoreTest {
 
 	private static void configure(String mode) {
 		System.setProperty(PREFIX + "mode", mode);
-		System.setProperty(PREFIX + "shadowSampleRate", "shadow".equals(mode) ? "1.0" : "0.0");
-		System.setProperty(PREFIX + "shadowMaxRows", "10000");
-		System.setProperty(PREFIX + "telemetry", "shadow".equals(mode) ? "true" : "false");
+		System.setProperty(PREFIX + "telemetry", "false");
 	}
 
 	private static Map<String, String> saveProperties() {
 		Map<String, String> values = new HashMap<>();
-		for (String name : List.of("mode", "shadowSampleRate", "shadowMaxRows", "telemetry")) {
+		for (String name : List.of("mode", "telemetry")) {
 			values.put(name, System.getProperty(PREFIX + name));
 		}
 		return values;

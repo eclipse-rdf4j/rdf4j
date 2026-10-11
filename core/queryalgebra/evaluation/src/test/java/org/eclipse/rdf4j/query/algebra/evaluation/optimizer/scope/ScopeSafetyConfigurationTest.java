@@ -29,7 +29,7 @@ import org.junit.jupiter.api.Test;
 public class ScopeSafetyConfigurationTest {
 
 	private static final String MODE = "org.eclipse.rdf4j.query.scopeSafety.mode";
-	private static final String SAMPLE_RATE = "org.eclipse.rdf4j.query.scopeSafety.shadowSampleRate";
+	private static final String SHAPE_CAP = "org.eclipse.rdf4j.query.scopeSafety.shapeCap";
 
 	@Test
 	public void malformedPropertiesDisableInsteadOfFailingQueries() {
@@ -42,7 +42,7 @@ public class ScopeSafetyConfigurationTest {
 			assertDoesNotThrow(() -> OptimizerPipelineRunner.run(
 					new QueryRoot(new SingletonSet()), null, null, List.of()));
 		});
-		withProperty(SAMPLE_RATE, "5%", () -> {
+		withProperty(SHAPE_CAP, "big", () -> {
 			ScopeSafetyConfiguration configuration = assertDoesNotThrow(
 					ScopeSafetyConfiguration::readSystemPropertiesSafely);
 			assertEquals(ScopeSafetyMode.OFF, configuration.mode());
@@ -54,7 +54,10 @@ public class ScopeSafetyConfigurationTest {
 		withProperty(MODE, "enforce", () -> assertEquals(ScopeSafetyMode.ENFORCE,
 				ScopeSafetyConfiguration.readSystemPropertiesSafely().mode()));
 		assertEquals(ScopeSafetyMode.OFF, ScopeSafetyConfiguration.readSystemPropertiesSafely().mode());
-		withProperty(MODE, "shadow", () -> assertEquals(ScopeSafetyMode.SHADOW,
+		withProperty(MODE, "audit", () -> assertEquals(ScopeSafetyMode.AUDIT,
+				ScopeSafetyConfiguration.readSystemPropertiesSafely().mode()));
+		// the removed SHADOW mode is an unknown value now, which disables scope safety
+		withProperty(MODE, "shadow", () -> assertEquals(ScopeSafetyMode.OFF,
 				ScopeSafetyConfiguration.readSystemPropertiesSafely().mode()));
 	}
 
