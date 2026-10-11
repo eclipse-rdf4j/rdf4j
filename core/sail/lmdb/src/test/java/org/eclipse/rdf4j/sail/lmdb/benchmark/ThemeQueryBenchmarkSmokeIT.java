@@ -481,9 +481,16 @@ class ThemeQueryBenchmarkSmokeIT {
 								+ mandatoryLeafOrder);
 				StatementPattern typePattern = findPatternByLabel(optimized, MEDICAL_TYPE_LABEL);
 				StatementPattern handledByPattern = findPatternByLabel(optimized, MEDICAL_HANDLED_BY_LABEL);
-				assertTrue(typePattern.getCostEstimate() > handledByPattern.getCostEstimate(),
+				// Both lookups carry a cost for their position. The selective recordedOn date filter leads the join,
+				// so the type lookup is a bound probe rather than the scan it used to be; handledBy still follows it
+				// with ?enc bound, which keeps its cost below its unbound row estimate.
+				assertTrue(typePattern.getCostEstimate() >= 0 && handledByPattern.getCostEstimate() >= 0,
 						"Expected the reordered q2 patterns to carry costs for the reordered bindings; type="
 								+ typePattern.getCostEstimate() + ", handledBy=" + handledByPattern.getCostEstimate());
+				assertTrue(handledByPattern.getCostEstimate() < handledByPattern.getResultSizeEstimate(),
+						"Expected the handledBy lookup to be costed with ?enc bound by the preceding type lookup; cost="
+								+ handledByPattern.getCostEstimate() + ", rows="
+								+ handledByPattern.getResultSizeEstimate());
 			} finally {
 				benchmark.tearDown();
 			}

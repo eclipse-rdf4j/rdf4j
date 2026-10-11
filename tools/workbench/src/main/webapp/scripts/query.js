@@ -4214,7 +4214,12 @@ var workbench;
                         checkbox.prop('disabled', false);
                     });
                 });
-                row.append(copy).append($('<div class="lmdb-runtime-property__control"></div>').append(checkbox));
+                // A compact control owns a complete control row through its wrapping label (spacing system S13);
+                // the visible text label in the copy column also targets the switch.
+                var control = $('<label class="lmdb-runtime-switch-label"></label>')
+                    .attr('aria-label', property.label)
+                    .append(checkbox);
+                row.append(copy).append($('<div class="lmdb-runtime-property__control"></div>').append(control));
                 groupElement.append(row);
             });
         }
@@ -4247,7 +4252,8 @@ var workbench;
             $('#lmdb-runtime-refresh').click(function () {
                 loadLmdbRuntimeProperties();
             });
-            // The panel is expanded by default, so load without waiting for a toggle event.
+            // The list is collapsed by default so the query settings pane keeps its natural size; a page that renders
+            // it open (or a browser restoring the open state) still loads without waiting for a toggle event.
             loadLmdbRuntimePropertiesIfPanelOpen(details);
         }
         query_1.initializeLmdbRuntimeFeatures = initializeLmdbRuntimeFeatures;

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -53,10 +54,14 @@ class GeometricFunctionDeterminismTest {
 		intersects.addArg(new ValueConstant(
 				SimpleValueFactory.getInstance().createLiteral("POINT(4.9 52.37)", GEO.WKT_LITERAL)));
 		Filter filter = new Filter(join, intersects);
+		// Optimizers relocate filters by replacing them in their parent, so the filter needs a query root above it,
+		// exactly as the parser provides for every real query.
+		QueryRoot root = new QueryRoot(filter);
 
-		QueryEvaluationUtility.pinFunctions(filter);
-		new FilterOptimizer(null, false, false).optimize(filter, null, EmptyBindingSet.getInstance());
+		QueryEvaluationUtility.pinFunctions(root);
+		new FilterOptimizer(null, false, false).optimize(root, null, EmptyBindingSet.getInstance());
 
+		assertThat(root.getArg()).isSameAs(join);
 		assertThat(filter.getArg()).isSameAs(geometryPattern);
 		assertThat(join.getLeftArg()).isSameAs(filter);
 		assertThat(join.getRightArg()).isSameAs(typePattern);

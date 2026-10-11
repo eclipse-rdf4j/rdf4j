@@ -4204,20 +4204,18 @@ module workbench {
                         ?hidden=${!inferEnabled} ?disabled=${!inferEnabled} />
                         <span>Include inferred statements</span></label>
                 </div>
-                <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field">
-                    <label for="lmdb-forced-strategy">Forced execution strategy</label>
-                    <select id="lmdb-forced-strategy" name="lmdb-forced-strategy"
-                        aria-describedby="lmdb-forced-strategy-help">
-                        <option value="" selected></option>
-                    </select>
-                    <p id="lmdb-forced-strategy-help" class="workbench-field__help">Pin one named LMDB execution strategy for this query instead of letting the store choose. Leave empty to let the store choose, as usual. The query fails with an explanation when the strategy does not apply to it.</p>
-                </div>
-                <details id="lmdb-runtime-features" class="lmdb-runtime-features workbench-disclosure__field" open>
-                    <summary>
-                        <span>LMDB runtime features</span>
-                        <span class="lmdb-runtime-features__scope">Changes apply globally to subsequent LMDB queries on this server.</span>
-                    </summary>
+                <details id="lmdb-runtime-features" class="lmdb-runtime-features workbench-disclosure__field">
+                    <summary><span>LMDB options</span></summary>
+                    <div id="lmdb-forced-strategy-field" class="workbench-disclosure__field lmdb-runtime-features__field">
+                        <label for="lmdb-forced-strategy">Forced execution strategy</label>
+                        <select id="lmdb-forced-strategy" name="lmdb-forced-strategy"
+                            aria-describedby="lmdb-forced-strategy-help">
+                            <option value="" selected></option>
+                        </select>
+                        <p id="lmdb-forced-strategy-help" class="workbench-field__help">Pin one named LMDB execution strategy for this query instead of letting the store choose. Leave empty to let the store choose, as usual. The query fails with an explanation when the strategy does not apply to it.</p>
+                    </div>
                     <div class="lmdb-runtime-features__toolbar">
+                        <span class="lmdb-runtime-features__scope">Runtime features apply globally to subsequent LMDB queries on this server.</span>
                         <button id="lmdb-runtime-refresh" class="workbench-action workbench-action--secondary" type="button">Refresh</button>
                         <span id="lmdb-runtime-status" role="status" aria-live="polite"></span>
                     </div>

@@ -182,7 +182,7 @@ class LmdbAutogrowIsolationIT {
 
 	@Test
 	@Timeout(60)
-	void snapshotReadQueryRetainsSnapshotAndFreshQuerySeesGrowth() throws Exception {
+	void snapshotReadQueryWithAdjacencyAbortsAfterRealMapGrowthAndFreshQuerySeesGrowth() throws Exception {
 		assertPinnedReaderAbortsAfterRealMapGrowth(IsolationLevels.SNAPSHOT_READ, "snapshot-read-subject:",
 				"snapshot-read-value:", autoGrowConfigWithPreferredAdjacency(), true);
 	}
@@ -244,9 +244,14 @@ class LmdbAutogrowIsolationIT {
 				"serializable-value:");
 	}
 
+	/**
+	 * A pinned SNAPSHOT dataset holds a dictionary reader next to its triple reader. Growing only the value map renews
+	 * that dictionary reader onto a newer snapshot, so the whole dataset is invalidated for retry even though the
+	 * triple map never resized (LmdbSnapshotLifetimeTest pins the same contract at the store level).
+	 */
 	@Test
 	@Timeout(60)
-	void pinnedTripleReaderSurvivesValueMapGrowthWithoutTripleResize() throws Exception {
+	void pinnedTripleReaderAbortsAfterValueMapGrowthWithoutTripleResize() throws Exception {
 		LmdbStore store = new LmdbStore(dataDir.toFile(), autoGrowConfigWithoutDirectAdjacency()
 				.setTripleDBSize(16L * 1024 * 1024));
 		SailRepository repository = new SailRepository(store);
@@ -281,14 +286,22 @@ class LmdbAutogrowIsolationIT {
 							.as("value-only commit must not resize the triple map")
 							.isEmpty();
 
-					while (statements.hasNext()) {
-						assertKnownAndUnique(expectedStatements, seen, statements.next());
-					}
-					assertThat(seen).as("value-only growth must preserve every pinned statement exactly")
-							.isEqualTo(expectedStatements);
-					assertThat(dataset.getStatementCount(null, PREDICATE, null))
-							.as("the pinned triple dataset remains usable after value-only growth")
-							.isEqualTo(initialRows);
+					assertThatThrownBy(statements::hasNext)
+							.as("a pinned SNAPSHOT reader must reject a renewed dictionary snapshot for retry")
+							.isInstanceOf(SailException.class)
+							.hasMessageContaining("SNAPSHOT")
+							.hasMessageContaining("retry the transaction");
+					assertThatThrownBy(() -> dataset.getStatementCount(null, PREDICATE, null))
+							.as("the invalidated dataset must not serve counts either")
+							.isInstanceOf(SailException.class)
+							.hasMessageContaining("SNAPSHOT");
+				}
+				try (SailDataset fresh = store.getBackingStore()
+						.getExplicitSailSource()
+						.dataset(IsolationLevels.SNAPSHOT)) {
+					assertThat(fresh.getStatementCount(null, PREDICATE, null))
+							.as("a fresh snapshot sees the value-only commit after retry")
+							.isEqualTo(initialRows + VALUE_ONLY_ROWS);
 				}
 			}
 		} finally {
@@ -382,13 +395,15 @@ class LmdbAutogrowIsolationIT {
 								.isInstanceOf(RepositoryException.class)
 								.hasMessageContaining("SNAPSHOT");
 					} else {
-						int remaining = 0;
-						while (openResult.hasNext()) {
-							openResult.next();
-							remaining++;
-						}
-						assertThat(remaining).as("an open SNAPSHOT_READ query keeps its original snapshot")
-								.isEqualTo(initialRows - 1);
+						// SNAPSHOT_READ pins one snapshot per query: the remapped store tears the open result, which
+						// aborts for retry, while a new query in the same transaction already sees the committed
+						// growth. An exact adjacency view cannot keep the old rows alive either, because their values
+						// resolve through the renewed dictionary reader.
+						assertThatThrownBy(openResult::hasNext)
+								.as("an open SNAPSHOT_READ query must reject a remapped snapshot for retry")
+								.isInstanceOf(RepositoryException.class)
+								.hasMessageContaining("SNAPSHOT")
+								.hasMessageContaining("retry the transaction");
 						assertThat(reader.size()).as("a new SNAPSHOT_READ query sees committed map growth")
 								.isEqualTo(initialRows + LIVE_TRIPLE_GROWTH_ROWS);
 					}

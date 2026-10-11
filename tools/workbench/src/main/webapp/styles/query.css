@@ -99,7 +99,15 @@
     min-width: 14em;
 }
 
+/* The LMDB controls fold into one closed disclosure so the query settings pane keeps its natural size below its
+ * toggle (workbench-motion and round-2 disclosure specs); the long strategy help and the runtime switches only take
+ * room once an operator opens them. */
 .lmdb-runtime-features {
+    border: 0;
+    padding: 0;
+}
+
+.lmdb-runtime-features[open] {
     border-top: 1px solid #c8d1d8;
     border-bottom: 1px solid #c8d1d8;
     padding: 0.7rem 0;
@@ -111,16 +119,21 @@
     font-weight: 700;
 }
 
+.lmdb-runtime-features__field {
+    margin-top: 0.8rem;
+}
+
 .lmdb-runtime-features__scope {
     color: #53616b;
+    flex-basis: 100%;
     font-size: 0.88em;
     font-weight: 400;
-    margin-left: 0.65rem;
 }
 
 .lmdb-runtime-features__toolbar {
     align-items: center;
     display: flex;
+    flex-wrap: wrap;
     gap: 0.75rem;
     margin: 0.8rem 0;
 }
@@ -173,15 +186,23 @@
     font-size: 0.86em;
 }
 
+.lmdb-runtime-switch-label {
+    align-items: center;
+    display: inline-flex;
+    min-height: var(--workbench-control-height, 36px);
+}
+
 .lmdb-runtime-switch {
     height: 1.2rem;
+    margin: 0;
     width: 1.2rem;
 }
 
 @media (max-width: 42rem) {
-    .lmdb-runtime-features__scope {
-        display: block;
-        margin: 0.3rem 0 0 1rem;
+    /* On a phone the query settings pane only has the room below its toggle, which the base settings already use;
+     * the operator-level LMDB controls stay a wider-screen feature there. */
+    #lmdb-runtime-features.lmdb-runtime-features {
+        display: none;
     }
 
     .lmdb-runtime-property {
