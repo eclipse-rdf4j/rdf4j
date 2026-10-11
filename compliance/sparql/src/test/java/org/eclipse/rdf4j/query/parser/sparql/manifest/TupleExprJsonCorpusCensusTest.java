@@ -27,11 +27,11 @@ import org.junit.jupiter.api.Test;
 
 class TupleExprJsonCorpusCensusTest {
 
-	private static final int EXPECTED_QUERY_CASES = 607;
+	private static final int EXPECTED_QUERY_CASES = 612;
 	private static final int EXPECTED_SYNTAX_ONLY_CASES = 5;
 	private static final int EXPECTED_ENTAILMENT_CASES = 66;
 	private static final int EXPECTED_PROTOCOL_CASES = 34;
-	private static final int EXPECTED_MANIFEST_ENTRIES = 712;
+	private static final int EXPECTED_MANIFEST_ENTRIES = 717;
 
 	@Test
 	void containsEveryRepositoryBackedQueryCase() throws Exception {

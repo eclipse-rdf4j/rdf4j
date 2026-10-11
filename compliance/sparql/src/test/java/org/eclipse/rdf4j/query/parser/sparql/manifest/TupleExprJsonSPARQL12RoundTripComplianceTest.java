@@ -24,7 +24,7 @@ import org.junit.jupiter.api.TestFactory;
 class TupleExprJsonSPARQL12RoundTripComplianceTest extends AbstractTupleExprJsonRoundTripComplianceTest {
 
 	static final int EXPECTED_LOCAL_CASES = 9;
-	static final int EXPECTED_W3C_CASES = 57;
+	static final int EXPECTED_W3C_CASES = 62;
 	static final int EXPECTED_CASES = EXPECTED_LOCAL_CASES + EXPECTED_W3C_CASES;
 
 	@TestFactory
