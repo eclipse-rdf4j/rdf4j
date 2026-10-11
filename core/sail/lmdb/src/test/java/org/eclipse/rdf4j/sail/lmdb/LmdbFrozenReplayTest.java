@@ -143,14 +143,24 @@ class LmdbFrozenReplayTest {
 		SailRepository repository = new SailRepository(store);
 		List<Statement> baselineExplicit = List.of(
 				mutationStatement("old-view-explicit-0", "baseline explicit 0", null),
-				mutationStatement("old-view-explicit-1", "baseline explicit 1", null));
+				mutationStatement("old-view-explicit-1", "baseline explicit 1", null),
+				mutationStatement("old-view-removed", "baseline row removed by writer", null),
+				mutationStatement("old-view-cleared", "baseline row cleared by writer",
+						SimpleValueFactory.getInstance().createIRI("urn:m3:old-view-cleared-context")),
+				mutationStatement("old-view-retained", "baseline row outside cleared context",
+						SimpleValueFactory.getInstance().createIRI("urn:m3:old-view-retained-context")));
 		List<Statement> baselineInferred = List.of(
 				mutationStatement("old-view-inferred-0", "baseline inferred 0", null),
 				mutationStatement("old-view-inferred-1", "baseline inferred 1", null));
+		Statement removedExplicit = baselineExplicit.get(2);
+		Statement clearedExplicit = baselineExplicit.get(3);
+		Resource clearedContext = clearedExplicit.getContext();
 		Statement stagedExplicit = mutationStatement("old-view-staged-explicit", "staged explicit", null);
 		Statement stagedInferred = mutationStatement("old-view-staged-inferred", "staged inferred", null);
 		Set<Statement> expectedExplicit = Set.copyOf(baselineExplicit);
 		Set<Statement> expectedInferred = Set.copyOf(baselineInferred);
+		Map<String, String> expectedNamespaces = Map.of("replace", "urn:m3:old-view:baseline:",
+				"remove", "urn:m3:old-view:removed:");
 		CountDownLatch preNativeCommitPauseEntered = new CountDownLatch(1);
 		CountDownLatch releasePreNativeCommitPause = new CountDownLatch(1);
 		RuntimeException terminalMarker = new IllegalStateException("terminal failure before frozen native commit");
@@ -162,16 +172,21 @@ class LmdbFrozenReplayTest {
 		AtomicReference<String> oldViewObservationPhase = new AtomicReference<>("waiting for pre-native-commit pause");
 		AtomicReference<List<Statement>> writerOwnExplicit = new AtomicReference<>(List.of());
 		AtomicReference<List<Statement>> writerOwnAll = new AtomicReference<>(List.of());
+		AtomicReference<Map<String, String>> writerOwnNamespaces = new AtomicReference<>(Map.of());
 		List<Statement> explicitCursorRows = new ArrayList<>();
 		List<Statement> inferredCursorRows = new ArrayList<>();
 		List<Statement> explicitRowsWhilePaused = List.of();
 		List<Statement> inferredRowsWhilePaused = List.of();
 		List<Statement> explicitRowsAfterCancellation = List.of();
 		List<Statement> inferredRowsAfterCancellation = List.of();
+		Map<String, String> oldViewNamespacesWhilePaused = Map.of();
+		Map<String, String> oldViewNamespacesAfterCancellation = Map.of();
 		List<Statement> freshExplicitRows = List.of();
 		List<Statement> freshAllRows = List.of();
+		Map<String, String> freshNamespaces = Map.of();
 		List<Statement> reopenedExplicitRows = List.of();
 		List<Statement> reopenedAllRows = List.of();
+		Map<String, String> reopenedNamespaces = Map.of();
 		long nativeGenerationBeforeWriter = -1L;
 		long nativeGenerationAfterWriter = -1L;
 
@@ -187,6 +202,8 @@ class LmdbFrozenReplayTest {
 					inferencer.addInferredStatement(statement.getSubject(), statement.getPredicate(),
 							statement.getObject(), statement.getContext());
 				}
+				seed.setNamespace("replace", "urn:m3:old-view:baseline:");
+				seed.setNamespace("remove", "urn:m3:old-view:removed:");
 				seed.commit();
 			}
 			store.probe.reset();
@@ -206,11 +223,17 @@ class LmdbFrozenReplayTest {
 				writerFuture = executor.submit(() -> {
 					try (NotifyingSailConnection writer = store.getConnection()) {
 						writer.begin(IsolationLevels.SNAPSHOT_READ);
+						remove(writer, removedExplicit);
+						writer.clear(clearedContext);
+						writer.setNamespace("replace", "urn:m3:old-view:updated:");
+						writer.removeNamespace("remove");
+						writer.setNamespace("added", "urn:m3:old-view:added:");
 						approve(writer, stagedExplicit);
 						((InferencerConnection) writer).addInferredStatement(stagedInferred.getSubject(),
 								stagedInferred.getPredicate(), stagedInferred.getObject(), stagedInferred.getContext());
 						writerOwnExplicit.set(readAllStatementRows(writer, false));
 						writerOwnAll.set(readAllStatementRows(writer, true));
+						writerOwnNamespaces.set(readAllNamespaces(writer));
 						writer.commit();
 						return null;
 					} catch (Throwable failure) {
@@ -250,6 +273,7 @@ class LmdbFrozenReplayTest {
 										oldViewObservationPhase
 												.set("first rows consumed; reading paused explicit dataset");
 										explicitRowsWhilePaused = readAllStatementRows(explicitDataset);
+										oldViewNamespacesWhilePaused = readAllNamespaces(explicitDataset);
 										oldViewObservationPhase
 												.set("paused explicit dataset read; reading paused inferred dataset");
 										inferredRowsWhilePaused = readAllStatementRows(inferredDataset);
@@ -272,6 +296,7 @@ class LmdbFrozenReplayTest {
 										oldViewObservationPhase
 												.set("both cursors drained; rereading explicit old dataset");
 										explicitRowsAfterCancellation = readAllStatementRows(explicitDataset);
+										oldViewNamespacesAfterCancellation = readAllNamespaces(explicitDataset);
 										oldViewObservationPhase
 												.set("explicit old dataset reread; rereading inferred old dataset");
 										inferredRowsAfterCancellation = readAllStatementRows(inferredDataset);
@@ -302,6 +327,7 @@ class LmdbFrozenReplayTest {
 			try (RepositoryConnection fresh = repository.getConnection()) {
 				freshExplicitRows = readAllStatementRows(fresh, false);
 				freshAllRows = readAllStatementRows(fresh, true);
+				freshNamespaces = readAllNamespaces(fresh);
 			}
 		} finally {
 			releasePreNativeCommitPause.countDown();
@@ -314,6 +340,7 @@ class LmdbFrozenReplayTest {
 			try (RepositoryConnection reader = reopened.getConnection()) {
 				reopenedExplicitRows = readAllStatementRows(reader, false);
 				reopenedAllRows = readAllStatementRows(reader, true);
+				reopenedNamespaces = readAllNamespaces(reader);
 			}
 		} finally {
 			reopened.shutDown();
@@ -322,24 +349,35 @@ class LmdbFrozenReplayTest {
 		Set<Statement> expectedAll = new HashSet<>(expectedExplicit);
 		expectedAll.addAll(expectedInferred);
 		Set<Statement> expectedWriterExplicit = new HashSet<>(expectedExplicit);
+		expectedWriterExplicit.remove(removedExplicit);
+		expectedWriterExplicit.remove(clearedExplicit);
 		expectedWriterExplicit.add(stagedExplicit);
 		Set<Statement> expectedWriterAll = new HashSet<>(expectedAll);
+		expectedWriterAll.remove(removedExplicit);
+		expectedWriterAll.remove(clearedExplicit);
 		expectedWriterAll.add(stagedExplicit);
 		expectedWriterAll.add(stagedInferred);
+		Map<String, String> expectedWriterNamespaces = Map.of("replace", "urn:m3:old-view:updated:",
+				"added", "urn:m3:old-view:added:");
 		boolean observedPreNativeCommitPauseReached = preNativeCommitPauseReached;
 		Throwable observedWriterFailure = writerFailure;
 		long observedNativeGenerationBeforeWriter = nativeGenerationBeforeWriter;
 		long observedNativeGenerationAfterWriter = nativeGenerationAfterWriter;
 		List<Statement> observedWriterOwnExplicit = writerOwnExplicit.get();
 		List<Statement> observedWriterOwnAll = writerOwnAll.get();
+		Map<String, String> observedWriterOwnNamespaces = writerOwnNamespaces.get();
 		List<Statement> observedExplicitRowsWhilePaused = explicitRowsWhilePaused;
 		List<Statement> observedInferredRowsWhilePaused = inferredRowsWhilePaused;
 		List<Statement> observedExplicitRowsAfterCancellation = explicitRowsAfterCancellation;
 		List<Statement> observedInferredRowsAfterCancellation = inferredRowsAfterCancellation;
+		Map<String, String> observedOldViewNamespacesWhilePaused = oldViewNamespacesWhilePaused;
+		Map<String, String> observedOldViewNamespacesAfterCancellation = oldViewNamespacesAfterCancellation;
 		List<Statement> observedFreshExplicitRows = freshExplicitRows;
 		List<Statement> observedFreshAllRows = freshAllRows;
+		Map<String, String> observedFreshNamespaces = freshNamespaces;
 		List<Statement> observedReopenedExplicitRows = reopenedExplicitRows;
 		List<Statement> observedReopenedAllRows = reopenedAllRows;
+		Map<String, String> observedReopenedNamespaces = reopenedNamespaces;
 		int observedFrozenDecisions = store.probe.frozenReplayDecisionStarts.get();
 		int observedTerminalCommitFailures = store.probe.terminalCommitFailures.get();
 		int observedSuccessfulTerminalRollbacks = store.probe.successfulTerminalPreNativeRollbacks.get();
@@ -361,6 +399,8 @@ class LmdbFrozenReplayTest {
 						"the writer's own buffered view must contain its explicit and inferred rows"),
 				() -> assertEquals(expectedWriterAll.size(), observedWriterOwnAll.size(),
 						"the writer's own combined view must contain each row exactly once"),
+				() -> assertEquals(expectedWriterNamespaces, observedWriterOwnNamespaces,
+						"the writer's own namespace view must contain replacement, removal, and addition"),
 				() -> assertEquals(1, observedFrozenDecisions,
 						"the paused attempt must use the normal frozen replay decision"),
 				() -> assertEquals(1, observedTerminalCommitFailures,
@@ -397,6 +437,8 @@ class LmdbFrozenReplayTest {
 						"the old inferred dataset must exclude the staged row before cancellation"),
 				() -> assertEquals(expectedInferred, new HashSet<>(observedInferredRowsWhilePaused),
 						"the old inferred dataset must preserve exactly its baseline while the writer is paused"),
+				() -> assertEquals(expectedNamespaces, observedOldViewNamespacesWhilePaused,
+						"the old namespace view must hide staged replacement, removal, and addition"),
 				() -> assertEquals(expectedExplicit.size(), observedExplicitRowsAfterCancellation.size(),
 						"the same old explicit dataset must exclude the canceled clone"),
 				() -> assertEquals(expectedExplicit, new HashSet<>(observedExplicitRowsAfterCancellation),
@@ -405,12 +447,16 @@ class LmdbFrozenReplayTest {
 						"the same old inferred dataset must exclude the canceled clone"),
 				() -> assertEquals(expectedInferred, new HashSet<>(observedInferredRowsAfterCancellation),
 						"the same old inferred dataset must retain only its baseline after cancellation"),
+				() -> assertEquals(expectedNamespaces, observedOldViewNamespacesAfterCancellation,
+						"the same old namespace view must retain its baseline after cancellation"),
 				() -> assertEquals(expectedExplicit.size(), observedFreshExplicitRows.size(),
 						"a fresh explicit observer must see the exact baseline after cancellation"),
 				() -> assertEquals(expectedExplicit, new HashSet<>(observedFreshExplicitRows)),
 				() -> assertEquals(expectedAll.size(), observedFreshAllRows.size(),
 						"a fresh explicit/inferred observer must see the exact baseline after cancellation"),
 				() -> assertEquals(expectedAll, new HashSet<>(observedFreshAllRows)),
+				() -> assertEquals(expectedNamespaces, observedFreshNamespaces,
+						"a fresh observer must retain the exact baseline namespaces after cancellation"),
 				() -> assertEquals(0, observedNotifications,
 						"a failed native publication must not send a logical change notification"),
 				() -> assertEquals(expectedExplicit.size(), observedReopenedExplicitRows.size(),
@@ -418,7 +464,195 @@ class LmdbFrozenReplayTest {
 				() -> assertEquals(expectedExplicit, new HashSet<>(observedReopenedExplicitRows)),
 				() -> assertEquals(expectedAll.size(), observedReopenedAllRows.size(),
 						"reopen must preserve the exact combined explicit/inferred baseline count"),
-				() -> assertEquals(expectedAll, new HashSet<>(observedReopenedAllRows)));
+				() -> assertEquals(expectedAll, new HashSet<>(observedReopenedAllRows)),
+				() -> assertEquals(expectedNamespaces, observedReopenedNamespaces,
+						"reopen must preserve the exact namespace baseline after cancellation"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void retainedPairedReadViewRemainsBaselineAfterSuccessfulFrozenCommit(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig();
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> baselineExplicit = List.of(
+				mutationStatement("committed-old-view-explicit-0", "baseline explicit 0", null),
+				mutationStatement("committed-old-view-explicit-1", "baseline explicit 1", null));
+		List<Statement> baselineInferred = List.of(
+				mutationStatement("committed-old-view-inferred-0", "baseline inferred 0", null),
+				mutationStatement("committed-old-view-inferred-1", "baseline inferred 1", null));
+		Statement stagedExplicit = mutationStatement("committed-old-view-staged-explicit", "staged explicit", null);
+		Statement stagedInferred = mutationStatement("committed-old-view-staged-inferred", "staged inferred", null);
+		Map<String, String> baselineNamespaces = Map.of("m3", "urn:m3:baseline:");
+		Map<String, String> committedNamespaces = Map.of("m3", "urn:m3:committed:",
+				"added", "urn:m3:committed:added:");
+		AtomicInteger notifications = new AtomicInteger();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<Throwable> writerFuture = null;
+		Throwable writerFailure = null;
+		List<Statement> oldExplicitBeforeCommit = List.of();
+		List<Statement> oldInferredBeforeCommit = List.of();
+		Map<String, String> oldNamespacesBeforeCommit = Map.of();
+		List<Statement> oldExplicitAfterCommit = List.of();
+		List<Statement> oldInferredAfterCommit = List.of();
+		Map<String, String> oldNamespacesAfterCommit = Map.of();
+		AtomicReference<List<Statement>> writerOwnExplicit = new AtomicReference<>(List.of());
+		AtomicReference<List<Statement>> writerOwnAll = new AtomicReference<>(List.of());
+		AtomicReference<Map<String, String>> writerOwnNamespaces = new AtomicReference<>(Map.of());
+		List<Statement> freshExplicit = List.of();
+		List<Statement> freshAll = List.of();
+		Map<String, String> freshNamespaces = Map.of();
+		List<Statement> reopenedExplicit = List.of();
+		List<Statement> reopenedAll = List.of();
+		Map<String, String> reopenedNamespaces = Map.of();
+		long generationBeforeWriter = -1L;
+		long generationAfterWriter = -1L;
+
+		try {
+			repository.init();
+			try (NotifyingSailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT_READ);
+				for (Statement statement : baselineExplicit) {
+					approve(seed, statement);
+				}
+				InferencerConnection inferencer = (InferencerConnection) seed;
+				for (Statement statement : baselineInferred) {
+					inferencer.addInferredStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(), statement.getContext());
+				}
+				seed.setNamespace("m3", baselineNamespaces.get("m3"));
+				seed.commit();
+			}
+			store.probe.reset();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			LmdbSailStore backing = store.getBackingStore();
+			SailStore snapshotStore = store.getSailStore();
+			SailSource explicitRoot = snapshotStore.getExplicitSailSource();
+			SailSource inferredRoot = snapshotStore.getInferredSailSource();
+			LmdbSailStore.MapGrowthObserver noReplay = (kind, token, deadlineNanos, attempts, views) -> false;
+			try (LmdbSailStore.ReadAttemptLease readAttempt = backing.registerReadAttempt(noReplay);
+					LmdbSailStore.ReadView oldView = backing.createTransactionReadView(noReplay, readAttempt);
+					LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+							IsolationLevels.SNAPSHOT_READ, oldView);
+					SailDataset explicitDataset = explicitRoot.dataset(IsolationLevels.SNAPSHOT_READ);
+					SailDataset inferredDataset = inferredRoot.dataset(IsolationLevels.SNAPSHOT_READ)) {
+				generationBeforeWriter = store.probe.tripleStore.get().getNativeCommitGeneration();
+				oldExplicitBeforeCommit = readAllStatementRows(explicitDataset);
+				oldInferredBeforeCommit = readAllStatementRows(inferredDataset);
+				oldNamespacesBeforeCommit = readAllNamespaces(explicitDataset);
+
+				writerFuture = executor.submit(() -> {
+					try (NotifyingSailConnection writer = store.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT_READ);
+						approve(writer, stagedExplicit);
+						((InferencerConnection) writer).addInferredStatement(stagedInferred.getSubject(),
+								stagedInferred.getPredicate(), stagedInferred.getObject(), stagedInferred.getContext());
+						writer.setNamespace("m3", committedNamespaces.get("m3"));
+						writer.setNamespace("added", committedNamespaces.get("added"));
+						writerOwnExplicit.set(readAllStatementRows(writer, false));
+						writerOwnAll.set(readAllStatementRows(writer, true));
+						writerOwnNamespaces.set(readAllNamespaces(writer));
+						writer.commit();
+						return null;
+					} catch (Throwable failure) {
+						return failure;
+					}
+				});
+				writerFailure = writerFuture.get(15, TimeUnit.SECONDS);
+				oldExplicitAfterCommit = readAllStatementRows(explicitDataset);
+				oldInferredAfterCommit = readAllStatementRows(inferredDataset);
+				oldNamespacesAfterCommit = readAllNamespaces(explicitDataset);
+			} finally {
+				try {
+					if (writerFuture != null && !writerFuture.isDone()) {
+						writerFailure = writerFuture.get(10, TimeUnit.SECONDS);
+					}
+				} finally {
+					executor.shutdownNow();
+					executor.awaitTermination(5, TimeUnit.SECONDS);
+				}
+			}
+
+			generationAfterWriter = store.probe.tripleStore.get().getNativeCommitGeneration();
+			try (RepositoryConnection fresh = repository.getConnection()) {
+				freshExplicit = readAllStatementRows(fresh, false);
+				freshAll = readAllStatementRows(fresh, true);
+				freshNamespaces = readAllNamespaces(fresh);
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedExplicit = readAllStatementRows(reader, false);
+				reopenedAll = readAllStatementRows(reader, true);
+				reopenedNamespaces = readAllNamespaces(reader);
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Set<Statement> expectedExplicit = new HashSet<>(baselineExplicit);
+		expectedExplicit.add(stagedExplicit);
+		Set<Statement> expectedAll = new HashSet<>(expectedExplicit);
+		expectedAll.addAll(baselineInferred);
+		expectedAll.add(stagedInferred);
+		Throwable observedWriterFailure = writerFailure;
+		long observedGenerationBeforeWriter = generationBeforeWriter;
+		long observedGenerationAfterWriter = generationAfterWriter;
+		List<Statement> observedOldExplicitBeforeCommit = oldExplicitBeforeCommit;
+		List<Statement> observedOldInferredBeforeCommit = oldInferredBeforeCommit;
+		Map<String, String> observedOldNamespacesBeforeCommit = oldNamespacesBeforeCommit;
+		List<Statement> observedOldExplicitAfterCommit = oldExplicitAfterCommit;
+		List<Statement> observedOldInferredAfterCommit = oldInferredAfterCommit;
+		Map<String, String> observedOldNamespacesAfterCommit = oldNamespacesAfterCommit;
+		List<Statement> observedWriterOwnExplicit = writerOwnExplicit.get();
+		List<Statement> observedWriterOwnAll = writerOwnAll.get();
+		Map<String, String> observedWriterOwnNamespaces = writerOwnNamespaces.get();
+		List<Statement> observedFreshExplicit = freshExplicit;
+		List<Statement> observedFreshAll = freshAll;
+		Map<String, String> observedFreshNamespaces = freshNamespaces;
+		List<Statement> observedReopenedExplicit = reopenedExplicit;
+		List<Statement> observedReopenedAll = reopenedAll;
+		Map<String, String> observedReopenedNamespaces = reopenedNamespaces;
+		assertAll("a retained paired LMDB epoch stays fixed after a successful frozen commit",
+				() -> assertNull(observedWriterFailure, "the frozen writer must commit successfully"),
+				() -> assertTrue(store.probe.frozenReplayDecisionStarts.get() > 0,
+						"the successful write must use the frozen statement replay path"),
+				() -> assertEquals(0, store.probe.journalAllocations.get(),
+						"the successful frozen write must not allocate a mutation journal"),
+				() -> assertTrue(observedGenerationAfterWriter > observedGenerationBeforeWriter,
+						"successful publication must advance the authoritative native generation"),
+				() -> assertEquals(1, notifications.get(), "successful publication sends one logical notification"),
+				() -> assertExactStatementRows(Set.copyOf(baselineExplicit), observedOldExplicitBeforeCommit,
+						"old explicit view before commit"),
+				() -> assertExactStatementRows(Set.copyOf(baselineInferred), observedOldInferredBeforeCommit,
+						"old inferred view before commit"),
+				() -> assertEquals(baselineNamespaces, observedOldNamespacesBeforeCommit),
+				() -> assertExactStatementRows(expectedExplicit, observedWriterOwnExplicit,
+						"writer own explicit read includes its staged explicit row"),
+				() -> assertEquals(expectedAll.size(), observedWriterOwnAll.size(),
+						"writer own combined read returns each staged and baseline row once"),
+				() -> assertEquals(expectedAll, new HashSet<>(observedWriterOwnAll)),
+				() -> assertEquals(committedNamespaces, observedWriterOwnNamespaces),
+				() -> assertExactStatementRows(Set.copyOf(baselineExplicit), observedOldExplicitAfterCommit,
+						"retained explicit view after commit"),
+				() -> assertExactStatementRows(Set.copyOf(baselineInferred), observedOldInferredAfterCommit,
+						"retained inferred view after commit"),
+				() -> assertEquals(baselineNamespaces, observedOldNamespacesAfterCommit),
+				() -> assertExactStatementRows(expectedExplicit, observedFreshExplicit, "fresh explicit view"),
+				() -> assertEquals(expectedAll.size(), observedFreshAll.size(), "fresh combined view exact count"),
+				() -> assertEquals(expectedAll, new HashSet<>(observedFreshAll)),
+				() -> assertEquals(committedNamespaces, observedFreshNamespaces),
+				() -> assertExactStatementRows(expectedExplicit, observedReopenedExplicit, "reopened explicit view"),
+				() -> assertEquals(expectedAll.size(), observedReopenedAll.size(),
+						"reopened combined view exact count"),
+				() -> assertEquals(expectedAll, new HashSet<>(observedReopenedAll)),
+				() -> assertEquals(committedNamespaces, observedReopenedNamespaces));
 	}
 
 	@Test
@@ -3697,6 +3931,28 @@ class LmdbFrozenReplayTest {
 			}
 		}
 		return List.copyOf(statements);
+	}
+
+	private static Map<String, String> readAllNamespaces(SailDataset dataset) throws SailException {
+		Map<String, String> namespaces = new LinkedHashMap<>();
+		try (CloseableIteration<? extends Namespace> result = dataset.getNamespaces()) {
+			while (result.hasNext()) {
+				Namespace namespace = result.next();
+				namespaces.put(namespace.getPrefix(), namespace.getName());
+			}
+		}
+		return Map.copyOf(namespaces);
+	}
+
+	private static Map<String, String> readAllNamespaces(NotifyingSailConnection connection) throws SailException {
+		Map<String, String> namespaces = new LinkedHashMap<>();
+		try (CloseableIteration<? extends Namespace> result = connection.getNamespaces()) {
+			while (result.hasNext()) {
+				Namespace namespace = result.next();
+				namespaces.put(namespace.getPrefix(), namespace.getName());
+			}
+		}
+		return Map.copyOf(namespaces);
 	}
 
 	private static Map<String, String> readAllNamespaces(RepositoryConnection connection) {

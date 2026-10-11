@@ -507,6 +507,58 @@ class FrozenFlushBatchTest {
 	}
 
 	@Test
+	void cancellingNestedStagedCopiesKeepsVisibilityAtEveryParentDepth() throws Exception {
+		RecordingSource backing = new RecordingSource();
+		try (SailSourceBranch root = branch(backing);
+				SailSourceBranch intermediate = branch(root);
+				SailSourceBranch leaf = branch(intermediate)) {
+			Statement rootPrefix = statement("root-prefix");
+			Statement intermediatePrefix = statement("intermediate-prefix");
+			Statement leafInput = statement("leaf-original");
+			write(root, "root-prefix");
+			write(intermediate, "intermediate-prefix");
+			write(leaf, "leaf-original");
+
+			List<Statement> rootView = List.of(rootPrefix);
+			List<Statement> intermediateView = List.of(rootPrefix, intermediatePrefix);
+			List<Statement> leafView = List.of(rootPrefix, intermediatePrefix, leafInput);
+			assertEquals(rootView, readStatements(root), "the root sees its own published prefix");
+			assertEquals(intermediateView, readStatements(intermediate),
+					"the intermediate sees both published prefixes");
+			assertEquals(leafView, readStatements(leaf), "the leaf sees ancestor prefixes and its own original input");
+
+			SailSource.FlushBatch batch = freeze(leaf);
+			batch.flush();
+			assertEquals(List.of(), backing.committed, "staging a nested batch does not publish to the backing source");
+			assertEquals(rootView, readStatements(root), "staged leaf copies stay hidden from the root reader");
+			assertEquals(intermediateView, readStatements(intermediate),
+					"staged leaf copies stay hidden from the intermediate reader");
+			assertEquals(leafView, readStatements(leaf),
+					"the leaf retains its original input while the batch is staged");
+
+			int attemptsBeforeCancellation = backing.attempts.size();
+			batch.close();
+			assertEquals(rootView, readStatements(root), "cancellation leaves the root prefix unchanged");
+			assertEquals(intermediateView, readStatements(intermediate),
+					"cancellation leaves the intermediate prefix unchanged");
+			assertEquals(leafView, readStatements(leaf), "cancellation retains the leaf's original input");
+			assertTrue(root.isChanged(), "the root prefix remains pending until ordinary publication");
+			assertTrue(intermediate.isChanged(), "the intermediate prefix remains pending until ordinary publication");
+			assertTrue(leaf.isChanged(), "the leaf input remains pending after cancellation");
+
+			leaf.flush();
+			intermediate.flush();
+			root.flush();
+			assertEquals(attemptsBeforeCancellation + 1, backing.attempts.size(),
+					"ordinary retry reaches the backing source once after cancellation");
+			assertEquals(List.of("add:root-prefix", "add:intermediate-prefix", "add:leaf-original"),
+					backing.attempts.get(backing.attempts.size() - 1),
+					"ordinary retry publishes every nested contribution exactly once and in order");
+			batch.close();
+		}
+	}
+
+	@Test
 	void independentlyFrozenParentKeepsFailedChildBatchUnacknowledgeable() throws Exception {
 		RecordingSource backing = new RecordingSource();
 		try (SailSourceBranch parent = branch(backing); SailSourceBranch child = branch(parent)) {
@@ -1758,6 +1810,12 @@ class FrozenFlushBatchTest {
 	private static List<Statement> readStatements(SailDataset dataset) throws Exception {
 		try (CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
 			return readStatements(statements);
+		}
+	}
+
+	private static List<Statement> readStatements(SailSource source) throws Exception {
+		try (SailDataset dataset = source.dataset(IsolationLevels.NONE)) {
+			return readStatements(dataset);
 		}
 	}
 
