@@ -73,12 +73,20 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.EnumSource;
 
 class LmdbFrozenReplayTest {
 
 	private static final IRI SUBJECT = SimpleValueFactory.getInstance().createIRI("urn:m3:subject");
 	private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI("urn:m3:predicate");
 	private static final Value OBJECT = SimpleValueFactory.getInstance().createLiteral("journal-free replay");
+
+	private enum IsolatedCommitContinuation {
+		ADD,
+		PREPARE,
+		COMMIT
+	}
 
 	@Test
 	void coveredSnapshotCommitPersistsWithoutMutationJournal(@TempDir Path directory) throws Exception {
@@ -1005,6 +1013,215 @@ class LmdbFrozenReplayTest {
 						"the failed commit and retry must each start through the public-attempt entry point"),
 				() -> assertEquals(0, store.probe.journalAllocations.get(),
 						"a covered frozen retry must not allocate a whole-transaction mutation journal"));
+	}
+
+	@ParameterizedTest(name = "isolated native commit failure rejects {0}")
+	@EnumSource(IsolatedCommitContinuation.class)
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void isolatedCommitInternalFailureClearsAttemptAndRejectsContinuation(
+			IsolatedCommitContinuation continuation, @TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2).setAutoGrow(false);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		Statement failedAttemptRow = SimpleValueFactory.getInstance()
+				.createStatement(SimpleValueFactory.getInstance().createIRI("urn:m3:isolated-failure:original"),
+						PREDICATE, SimpleValueFactory.getInstance().createLiteral("must be rolled back"));
+		Statement continuationRow = SimpleValueFactory.getInstance()
+				.createStatement(SimpleValueFactory.getInstance().createIRI("urn:m3:isolated-failure:continuation"),
+						PREDICATE, SimpleValueFactory.getInstance().createLiteral("must be rejected"));
+		Statement followupRow = SimpleValueFactory.getInstance()
+				.createStatement(SimpleValueFactory.getInstance().createIRI("urn:m3:isolated-failure:followup"),
+						PREDICATE, SimpleValueFactory.getInstance().createLiteral("fresh attempt"));
+		AtomicInteger notifications = new AtomicInteger();
+		RuntimeException initialCommitFailure = null;
+		RuntimeException continuationFailure = null;
+		RuntimeException rollbackFailure = null;
+		RuntimeException followupFailure = null;
+		long nativeGenerationBeforeFailure = -1L;
+		long nativeGenerationAfterFailure = -1L;
+		long nativeGenerationAfterContinuation = -1L;
+		int startsAfterFailure = -1;
+		int startsAfterContinuation = -1;
+		int appliedRowsAfterFailure = -1;
+		int injectedCommitFailures = -1;
+		int notificationsAfterFailure = -1;
+		int notificationsAfterContinuation = -1;
+		int notificationsAfterRollback = -1;
+		int notificationsAfterFollowup = -1;
+		boolean activeAfterFailure = false;
+		boolean writeAttemptClearedAfterFailure = false;
+		boolean writeAttemptRemainedClearedAfterContinuation = false;
+		boolean followupCommitted = false;
+		Set<Statement> afterRollback = Set.of();
+		String failedNamespaceAfterRollback = null;
+		Set<Statement> afterFollowup = Set.of();
+		String failedNamespaceAfterFollowup = null;
+		String followupNamespaceAfterFollowup = null;
+		Set<Statement> reopenedStatements = Set.of();
+		String reopenedFailedNamespace = null;
+		String reopenedFollowupNamespace = null;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+			CountingTripleStore tripleStore = store.probe.tripleStore.get();
+			assertNotNull(tripleStore, "the counted TripleStore must be initialized");
+
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(failedAttemptRow);
+				writer.setNamespace("isolated-failed", "urn:m3:isolated-failure:failed:");
+				LmdbStoreConnection sailConnection = (LmdbStoreConnection) ((SailRepositoryConnection) writer)
+						.getSailConnection();
+				nativeGenerationBeforeFailure = tripleStore.getNativeCommitGeneration();
+				store.probe.failNextCommit.set(true);
+				try {
+					writer.commit();
+				} catch (RuntimeException failure) {
+					initialCommitFailure = failure;
+				}
+				nativeGenerationAfterFailure = tripleStore.getNativeCommitGeneration();
+				startsAfterFailure = store.probe.transactionStarts.get();
+				appliedRowsAfterFailure = store.probe.explicitRowsApplied.get();
+				injectedCommitFailures = store.probe.injectedCommitFailures.get();
+				notificationsAfterFailure = notifications.get();
+				activeAfterFailure = writer.isActive();
+				writeAttemptClearedAfterFailure = sailConnection.writeAttempt() == null;
+
+				try {
+					switch (continuation) {
+					case ADD -> writer.add(continuationRow);
+					case PREPARE -> writer.prepare();
+					case COMMIT -> writer.commit();
+					}
+				} catch (RuntimeException failure) {
+					continuationFailure = failure;
+				}
+				nativeGenerationAfterContinuation = tripleStore.getNativeCommitGeneration();
+				startsAfterContinuation = store.probe.transactionStarts.get();
+				notificationsAfterContinuation = notifications.get();
+				writeAttemptRemainedClearedAfterContinuation = sailConnection.writeAttempt() == null;
+
+				if (writer.isActive()) {
+					try {
+						writer.rollback();
+					} catch (RuntimeException failure) {
+						rollbackFailure = failure;
+					}
+				}
+				notificationsAfterRollback = notifications.get();
+				try (RepositoryConnection reader = repository.getConnection()) {
+					afterRollback = readAllStatements(reader);
+					failedNamespaceAfterRollback = reader.getNamespace("isolated-failed");
+				}
+
+				try {
+					writer.begin(IsolationLevels.SNAPSHOT_READ);
+					writer.add(followupRow);
+					writer.setNamespace("isolated-followup", "urn:m3:isolated-failure:followup:");
+					writer.commit();
+					followupCommitted = true;
+				} catch (RuntimeException failure) {
+					followupFailure = failure;
+				}
+				notificationsAfterFollowup = notifications.get();
+				try (RepositoryConnection reader = repository.getConnection()) {
+					afterFollowup = readAllStatements(reader);
+					failedNamespaceAfterFollowup = reader.getNamespace("isolated-failed");
+					followupNamespaceAfterFollowup = reader.getNamespace("isolated-followup");
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedFailedNamespace = reader.getNamespace("isolated-failed");
+				reopenedFollowupNamespace = reader.getNamespace("isolated-followup");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		RuntimeException observedInitialCommitFailure = initialCommitFailure;
+		RuntimeException observedContinuationFailure = continuationFailure;
+		RuntimeException observedRollbackFailure = rollbackFailure;
+		RuntimeException observedFollowupFailure = followupFailure;
+		long observedNativeGenerationBeforeFailure = nativeGenerationBeforeFailure;
+		long observedNativeGenerationAfterFailure = nativeGenerationAfterFailure;
+		long observedNativeGenerationAfterContinuation = nativeGenerationAfterContinuation;
+		int observedStartsAfterFailure = startsAfterFailure;
+		int observedStartsAfterContinuation = startsAfterContinuation;
+		int observedAppliedRowsAfterFailure = appliedRowsAfterFailure;
+		int observedInjectedCommitFailures = injectedCommitFailures;
+		int observedNotificationsAfterFailure = notificationsAfterFailure;
+		int observedNotificationsAfterContinuation = notificationsAfterContinuation;
+		int observedNotificationsAfterRollback = notificationsAfterRollback;
+		int observedNotificationsAfterFollowup = notificationsAfterFollowup;
+		boolean observedActiveAfterFailure = activeAfterFailure;
+		boolean observedWriteAttemptClearedAfterFailure = writeAttemptClearedAfterFailure;
+		boolean observedWriteAttemptRemainedClearedAfterContinuation = writeAttemptRemainedClearedAfterContinuation;
+		boolean observedFollowupCommitted = followupCommitted;
+		Set<Statement> observedAfterRollback = afterRollback;
+		String observedFailedNamespaceAfterRollback = failedNamespaceAfterRollback;
+		Set<Statement> observedAfterFollowup = afterFollowup;
+		String observedFailedNamespaceAfterFollowup = failedNamespaceAfterFollowup;
+		String observedFollowupNamespaceAfterFollowup = followupNamespaceAfterFollowup;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		String observedReopenedFailedNamespace = reopenedFailedNamespace;
+		String observedReopenedFollowupNamespace = reopenedFollowupNamespace;
+		assertAll("a failed isolated commit clears its attempt stamp and rejects later continuations",
+				() -> assertNotNull(observedInitialCommitFailure,
+						"the injected native commit failure must reach the public caller"),
+				() -> assertEquals(1, observedInjectedCommitFailures,
+						"the commitWriteTransaction seam must consume exactly one native handle"),
+				() -> assertTrue(observedAppliedRowsAfterFailure > 0,
+						"the covered input must be applied before the native commit failure"),
+				() -> assertEquals(observedNativeGenerationBeforeFailure, observedNativeGenerationAfterFailure,
+						"the failed native commit must not advance the authoritative generation"),
+				() -> assertTrue(observedActiveAfterFailure,
+						"the public writer remains active after its commit call fails"),
+				() -> assertTrue(observedWriteAttemptClearedAfterFailure,
+						"commitInternal must clear the failed isolated WriteAttempt"),
+				() -> assertEquals(observedStartsAfterFailure, observedStartsAfterContinuation,
+						"a rejected continuation must not start another native transaction"),
+				() -> assertEquals(observedNativeGenerationAfterFailure, observedNativeGenerationAfterContinuation,
+						"a rejected continuation must not commit another native generation"),
+				() -> assertEquals(observedNotificationsAfterFailure, observedNotificationsAfterContinuation,
+						"a rejected continuation must not publish a logical event"),
+				() -> assertNotNull(observedContinuationFailure,
+						"the public " + continuation + " continuation must be rejected"),
+				() -> assertTrue(observedWriteAttemptRemainedClearedAfterContinuation,
+						"a rejected continuation must not restore or replace the failed attempt stamp"),
+				() -> assertNull(observedRollbackFailure,
+						"explicit rollback must release the failed active connection"),
+				() -> assertEquals(observedNotificationsAfterFailure, observedNotificationsAfterRollback,
+						"rollback of a failed native commit must not report an uncommitted change"),
+				() -> assertTrue(observedFollowupCommitted,
+						"the same connection must start and commit a fresh isolated attempt"),
+				() -> assertNull(observedFollowupFailure, "the fresh isolated attempt must complete normally"),
+				() -> assertEquals(observedNotificationsAfterRollback + 1, observedNotificationsAfterFollowup,
+						"the fresh isolated commit must notify exactly once"),
+				() -> assertEquals(Set.of(), observedAfterRollback,
+						"rollback must remove the failed row before the follow-up attempt"),
+				() -> assertNull(observedFailedNamespaceAfterRollback,
+						"rollback must remove the failed namespace"),
+				() -> assertEquals(Set.of(followupRow), observedAfterFollowup,
+						"only the fresh follow-up row may be visible after the fresh commit"),
+				() -> assertNull(observedFailedNamespaceAfterFollowup,
+						"the failed namespace must not be restored by the follow-up"),
+				() -> assertEquals("urn:m3:isolated-failure:followup:", observedFollowupNamespaceAfterFollowup),
+				() -> assertEquals(Set.of(followupRow), observedReopenedStatements,
+						"only the fresh follow-up row must survive reopening"),
+				() -> assertNull(observedReopenedFailedNamespace,
+						"the failed namespace must remain absent after reopening"),
+				() -> assertEquals("urn:m3:isolated-failure:followup:", observedReopenedFollowupNamespace));
 	}
 
 	@Test

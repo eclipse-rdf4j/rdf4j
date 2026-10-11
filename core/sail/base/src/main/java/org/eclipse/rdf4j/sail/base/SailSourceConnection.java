@@ -144,6 +144,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 */
 	private volatile SailSource includeInferredBranch;
 
+	/** Exact roots from which this isolated transaction's branches were created. */
+	private volatile SailSource transactionExplicitRoot;
+	private volatile SailSource transactionInferredRoot;
+
 	/**
 	 * {@link EvaluationStrategyFactory} to use.
 	 */
@@ -670,10 +674,22 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		IsolationLevel level = getTransactionIsolation();
 		if (!IsolationLevels.NONE.isCompatibleWith(level)) {
 			// only create transaction branches if transaction is isolated
-			explicitOnlyBranch = store.getExplicitSailSource().fork(this);
-			inferredOnlyBranch = store.getInferredSailSource().fork(this);
+			transactionExplicitRoot = store.getExplicitSailSource();
+			explicitOnlyBranch = transactionExplicitRoot.fork(this);
+			transactionInferredRoot = store.getInferredSailSource();
+			inferredOnlyBranch = transactionInferredRoot.fork(this);
 			includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);
 		}
+	}
+
+	/** Returns the original explicit root of the attached isolated transaction, or null for NONE. */
+	protected final SailSource getTransactionExplicitRoot() {
+		return transactionExplicitRoot;
+	}
+
+	/** Returns the original inferred root of the attached isolated transaction, or null for NONE. */
+	protected final SailSource getTransactionInferredRoot() {
+		return transactionInferredRoot;
 	}
 
 	@Override
@@ -705,6 +721,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
 			includeInferredBranch = null;
+			transactionExplicitRoot = null;
+			transactionInferredRoot = null;
 			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.close();
@@ -816,6 +834,8 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
+			transactionExplicitRoot = null;
+			transactionInferredRoot = null;
 
 			if (resetQueryEvaluationMode) {
 				queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();

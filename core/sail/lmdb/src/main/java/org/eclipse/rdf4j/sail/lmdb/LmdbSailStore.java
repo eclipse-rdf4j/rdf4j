@@ -975,11 +975,12 @@ class LmdbSailStore implements SailStore {
 			return false;
 		}
 
-		private void failWriter(Object owner) {
+		private void failWriter(Object owner, LmdbStoreConnection.WriteAttempt failedAttempt) {
 			lock.lock();
 			try {
 				ReadAttemptLease attempt = transactions.get(owner);
-				if (attempt != null) {
+				if (attempt != null && (!(owner instanceof LmdbStoreConnection connection)
+						|| connection.ownsWriteAttempt(failedAttempt))) {
 					attempt.failed = true;
 				}
 				changed.signalAll();
@@ -2314,7 +2315,11 @@ class LmdbSailStore implements SailStore {
 	private volatile AsyncDrainOperation completedAsyncDrain;
 	private volatile boolean nextTransactionAsync;
 	private volatile TxnReplayPolicy.Decision storeReplayDecision;
-	private final IdentityHashMap<Object, LmdbTransactionRetryException> failedWriterTransactions = new IdentityHashMap<>();
+
+	private record FailedWriterTransaction(LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
+	}
+
+	private final IdentityHashMap<Object, FailedWriterTransaction> failedWriterTransactions = new IdentityHashMap<>();
 	private volatile boolean hasFailedWriterTransactions;
 	private volatile NativeContinuationSuspension suspendedNativeContinuation;
 	private volatile boolean mayHaveInferred;
@@ -4321,8 +4326,10 @@ class LmdbSailStore implements SailStore {
 	/** Materialize a NONE batch before opening the final public publication/commit scope. */
 	void flushNonePending(Object owner) {
 		sinkStoreAccessLock.lock();
+		NoneWriteState state = null;
 		try {
-			NoneWriteState state = noneWriteStates.get(owner);
+			checkWriterTransaction(owner);
+			state = noneWriteStates.get(owner);
 			if (state != null && state.pending != null) {
 				LmdbSailSink sink = state.pendingSink;
 				try (SailWriteContinuation.Scope continuation = state.continuationController()
@@ -4340,8 +4347,15 @@ class LmdbSailStore implements SailStore {
 					controller.checkpointNoneChunk();
 				}
 			}
-		} catch (IOException failure) {
-			throw new SailException(failure);
+		} catch (IOException | RuntimeException | Error failure) {
+			abortFailedNoneAttempt(state, failure);
+			if (failure instanceof IOException io) {
+				throw new SailException(io);
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw (RuntimeException) failure;
 		} finally {
 			sinkStoreAccessLock.unlock();
 		}
@@ -4350,12 +4364,48 @@ class LmdbSailStore implements SailStore {
 	void discardNonePending(Object owner) {
 		sinkStoreAccessLock.lock();
 		try {
-			noneWriteStates.remove(owner);
+			NoneWriteState discarded = noneWriteStates.remove(owner);
+			if (discarded != null) {
+				discarded.published();
+				discarded.pending = null;
+				discarded.pendingSink = null;
+				discarded.pendingBytes = 0L;
+			}
 			if (noneWriteState != null && noneWriteState.owner == owner) {
 				noneWriteState = null;
 			}
 		} finally {
 			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/** A terminal logical failure cannot retain a suffix eligible for later NONE capacity replay. */
+	private void abortFailedNoneAttempt(NoneWriteState state, Throwable failure) {
+		assert sinkStoreAccessLock.isHeldByCurrentThread();
+		if (failure instanceof NativeContinuationAdmissionException || state == null
+				|| noneWriteStates.get(state.owner) != state
+				|| state.owner instanceof LmdbStoreConnection connection
+						&& !connection.ownsWriteAttempt(state.writeAttempt)) {
+			return;
+		}
+		try {
+			recordWriterFailure(state.owner, state.writeAttempt, failure);
+		} catch (RuntimeException | Error cleanupFailure) {
+			retainRollbackFailure(failure, cleanupFailure);
+		}
+		PublicationContext context = publicationContext.get();
+		if (context != null && context.owner == state.owner) {
+			context.fail();
+		}
+		try {
+			if (state.nativeGeneration != 0L && storeTxnStarted.get() && storeTransactionOwner == state.owner) {
+				rollback(state.owner, state.nativeGeneration);
+			} else if (!storeTxnStarted.get() && namespaceTransactionOwner == state.owner) {
+				rollback(state.owner);
+			}
+			discardNonePending(state.owner);
+		} catch (RuntimeException | Error cleanupFailure) {
+			retainRollbackFailure(failure, cleanupFailure);
 		}
 	}
 
@@ -4380,13 +4430,31 @@ class LmdbSailStore implements SailStore {
 		if (!hasFailedWriterTransactions) {
 			return;
 		}
-		LmdbTransactionRetryException failure;
+		FailedWriterTransaction failed;
 		synchronized (failedWriterTransactions) {
-			failure = failedWriterTransactions.get(owner);
+			failed = failedWriterTransactions.get(owner);
 		}
-		if (failure != null) {
-			throw new SailException(failure.getMessage(), failure);
+		if (failed != null && (!(owner instanceof LmdbStoreConnection connection)
+				|| connection.ownsWriteAttempt(failed.attempt()))) {
+			throw new SailException(failed.failure().getMessage(), failed.failure());
 		}
+	}
+
+	private void recordWriterFailure(Object owner, LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
+		if (owner == null || owner instanceof LmdbStoreConnection connection && !connection.ownsWriteAttempt(attempt)) {
+			return;
+		}
+		synchronized (failedWriterTransactions) {
+			if (owner instanceof LmdbStoreConnection connection && !connection.ownsWriteAttempt(attempt)) {
+				return;
+			}
+			FailedWriterTransaction previous = failedWriterTransactions.get(owner);
+			if (previous == null || previous.attempt() != attempt) {
+				failedWriterTransactions.put(owner, new FailedWriterTransaction(attempt, failure));
+			}
+			hasFailedWriterTransactions = true;
+		}
+		mapGrowthCoordinator.failWriter(owner, attempt);
 	}
 
 	void completeWriterRollback(Object owner) {
@@ -4419,11 +4487,9 @@ class LmdbSailStore implements SailStore {
 		}
 		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
 			if (cause instanceof LmdbTransactionRetryException retry) {
-				synchronized (failedWriterTransactions) {
-					failedWriterTransactions.putIfAbsent(owner, retry);
-					hasFailedWriterTransactions = true;
-				}
-				mapGrowthCoordinator.failWriter(owner);
+				recordWriterFailure(owner,
+						owner instanceof LmdbStoreConnection connection ? connection.writeAttempt() : null,
+						retry);
 				return;
 			}
 		}
@@ -6745,6 +6811,7 @@ class LmdbSailStore implements SailStore {
 				throw new NativeContinuationAdmissionException(
 						"LMDB sink belongs to a completed logical transaction attempt");
 			}
+			checkWriterTransaction(writerOwner());
 			checkNoneContinuationAdmission();
 		}
 
@@ -6875,6 +6942,9 @@ class LmdbSailStore implements SailStore {
 				// An attempt-local sink cannot certify or destroy that retained transaction's input.
 				releaseMutationLease();
 				return;
+			}
+			if (nativeCheckpoints) {
+				abortFailedNoneAttempt(admittedNoneState, failure);
 			}
 			try {
 				recordWriterCapacityFailure(owner, failure);

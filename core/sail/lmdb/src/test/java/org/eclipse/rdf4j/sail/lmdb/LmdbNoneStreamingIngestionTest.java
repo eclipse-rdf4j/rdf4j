@@ -36,7 +36,9 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -54,6 +56,7 @@ import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Function;
 import java.util.function.IntConsumer;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -96,7 +99,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbNoneStreamingIngestionTest {
@@ -1863,6 +1868,662 @@ class LmdbNoneStreamingIngestionTest {
 		} finally {
 			reopened.shutDown();
 		}
+	}
+
+	@ParameterizedTest(name = "terminal NONE continuation is rejected: {0}, async={1}")
+	@MethodSource("terminalNoneContinuationModes")
+	@Timeout(value = 90, unit = TimeUnit.SECONDS)
+	void terminalAlignedIoFailureRejectsPublicNoneContinuations(NoneContinuation continuation,
+			boolean enableMultiThreading, @TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setBulkOperationSize(2)
+				.setTripleDBSize(16L << 20)
+				.setValueDBSize(16L << 20)
+				.setMapGrowthThreshold(0.99d);
+		ObservingLmdbStore store = new ObservingLmdbStore(dataDir.toFile(), config);
+		Statement durablePrefix = statement("none-terminal-prefix", 0);
+		List<Statement> failedRows = List.of(statement("none-terminal-suffix", 1),
+				statement("none-terminal-suffix", 2));
+		Statement laterRow = statement("none-terminal-followup", 0);
+		IOException terminalFailure = new IOException("injected aligned IO failure after native writes");
+		Throwable flushFailure = null;
+		Throwable continuationFailure = null;
+		Throwable rollbackFailure = null;
+		Throwable followupFailure = null;
+		Set<Statement> afterContinuation = Set.of();
+		Set<Statement> afterRollback = Set.of();
+		Set<Statement> afterFollowup = Set.of();
+		Set<Statement> reopenedStatements = Set.of();
+		int injectedAlignedFailures = 0;
+		int alignedStatementsAfterFailure = 0;
+		boolean followupCommitted = false;
+
+		try {
+			store.init();
+			store.getBackingStore().enableMultiThreading = enableMultiThreading;
+			ObservingTripleStore triples = store.triples.get();
+			assertNotNull(triples, "the instrumented TripleStore factory must be used");
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				writer.addStatement(durablePrefix.getSubject(), durablePrefix.getPredicate(), durablePrefix.getObject(),
+						durablePrefix.getContext());
+				writer.flush();
+				assertEquals(Set.of(durablePrefix), readStatements(store.getBackingStore()),
+						"the prefix must be durably published before the injected failure");
+
+				triples.failNextAlignedBatch(terminalFailure);
+				try {
+					for (Statement statement : failedRows) {
+						writer.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+								statement.getContext());
+					}
+					writer.flush();
+				} catch (RuntimeException failure) {
+					flushFailure = failure;
+				}
+				injectedAlignedFailures = triples.injectedAlignedIoFailureCount.get();
+				alignedStatementsAfterFailure = triples.alignedStatementCount.get();
+
+				try {
+					switch (continuation) {
+					case ADD -> writer.addStatement(laterRow.getSubject(), laterRow.getPredicate(),
+							laterRow.getObject(),
+							laterRow.getContext());
+					case REMOVE -> writer.removeStatements(durablePrefix.getSubject(), durablePrefix.getPredicate(),
+							durablePrefix.getObject(), durablePrefix.getContext());
+					case CLEAR -> writer.clear();
+					case SET_NAMESPACE -> writer.setNamespace("terminal", "urn:none-streaming:terminal:");
+					case PREPARE -> writer.prepare();
+					case COMMIT -> writer.commit();
+					}
+				} catch (RuntimeException | Error failure) {
+					continuationFailure = failure;
+				}
+				afterContinuation = readStatements(store.getBackingStore());
+
+				if (writer.isActive()) {
+					try {
+						writer.rollback();
+					} catch (RuntimeException | Error failure) {
+						rollbackFailure = failure;
+					}
+				}
+				afterRollback = readStatements(store.getBackingStore());
+
+				try {
+					if (!writer.isActive()) {
+						writer.begin(IsolationLevels.NONE);
+					}
+					writer.addStatement(laterRow.getSubject(), laterRow.getPredicate(), laterRow.getObject(),
+							laterRow.getContext());
+					writer.commit();
+					followupCommitted = true;
+				} catch (RuntimeException | Error failure) {
+					followupFailure = failure;
+				}
+				afterFollowup = readStatements(store.getBackingStore());
+			}
+		} finally {
+			store.shutDown();
+		}
+
+		ObservingLmdbStore reopened = new ObservingLmdbStore(dataDir.toFile(), config);
+		try {
+			reopened.init();
+			reopenedStatements = readStatements(reopened.getBackingStore());
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedFlushFailure = flushFailure;
+		Throwable observedContinuationFailure = continuationFailure;
+		Throwable observedRollbackFailure = rollbackFailure;
+		Throwable observedFollowupFailure = followupFailure;
+		Set<Statement> observedAfterContinuation = afterContinuation;
+		Set<Statement> observedAfterRollback = afterRollback;
+		Set<Statement> observedAfterFollowup = afterFollowup;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		int observedInjectedAlignedFailures = injectedAlignedFailures;
+		int observedAlignedStatementsAfterFailure = alignedStatementsAfterFailure;
+		boolean observedFollowupCommitted = followupCommitted;
+		assertAll("a terminal NONE aligned-write failure rejects every public continuation",
+				() -> assertNotNull(observedFlushFailure, "the aligned write must report its injected failure"),
+				() -> assertTrue(containsCause(observedFlushFailure, terminalFailure),
+						"the original aligned-write marker must remain causal"),
+				() -> assertEquals(1, observedInjectedAlignedFailures,
+						"the failure must activate once after a real aligned write"),
+				() -> assertTrue(observedAlignedStatementsAfterFailure >= 3,
+						"the durable prefix and both failed rows must reach the native aligned writer"),
+				() -> assertNotNull(observedContinuationFailure,
+						"the public " + continuation + " continuation must be rejected"),
+				() -> assertTrue(containsCause(observedContinuationFailure, terminalFailure),
+						"the rejected continuation must preserve the original failure"),
+				() -> assertEquals(Set.of(durablePrefix), observedAfterContinuation,
+						"no failed suffix or continuation may publish before rollback"),
+				() -> assertNull(observedRollbackFailure, "explicit rollback must release the failed NONE attempt"),
+				() -> assertEquals(Set.of(durablePrefix), observedAfterRollback,
+						"rollback must preserve only the already durable prefix"),
+				() -> assertTrue(observedFollowupCommitted, "the same connection must accept a fresh NONE attempt"),
+				() -> assertNull(observedFollowupFailure, "the same connection follow-up must commit normally"),
+				() -> assertEquals(Set.of(durablePrefix, laterRow), observedAfterFollowup,
+						"the follow-up must publish only its own row in addition to the prefix"),
+				() -> assertEquals(Set.of(durablePrefix, laterRow), observedReopenedStatements,
+						"only the prefix and fresh follow-up may survive reopening"));
+	}
+
+	private static Stream<Arguments> terminalNoneContinuationModes() {
+		return Stream.of(false, true)
+				.flatMap(enableMultiThreading -> Stream.of(NoneContinuation.values())
+						.map(continuation -> Arguments.of(continuation, enableMultiThreading)));
+	}
+
+	@ParameterizedTest(name = "post-commit NONE continuation is rejected: {0}")
+	@EnumSource(NativeCommitContinuation.class)
+	@Timeout(value = 60, unit = TimeUnit.SECONDS)
+	void postNativeCommitCheckpointFailureRejectsPublicNoneContinuations(NativeCommitContinuation continuation,
+			@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setBulkOperationSize(256)
+				.setTripleDBSize(16L << 20)
+				.setValueDBSize(16L << 20)
+				.setMapGrowthThreshold(0.99d);
+		ObservingLmdbStore store = new ObservingLmdbStore(dataDir.toFile(), config);
+		Statement committedBeforeFailure = statement("none-post-commit-failure", 1);
+		Statement continuationRow = statement("none-post-commit-continuation", 1);
+		Statement followupRow = statement("none-post-commit-followup", 1);
+		IOException postCommitFailure = new IOException("injected failure after native NONE commit");
+		CopyOnWriteArrayList<SailChangedEvent> changes = new CopyOnWriteArrayList<>();
+		Throwable initialCommitFailure = null;
+		Throwable continuationFailure = null;
+		Throwable rollbackFailure = null;
+		Throwable followupFailure = null;
+		long generationBefore = -1L;
+		long generationAfterFailedCommit = -1L;
+		long generationAfterContinuation = -1L;
+		int eventsAfterFailedCommit = -1;
+		int eventsAfterContinuation = -1;
+		int eventsAfterRollback = -1;
+		int eventsAfterFollowup = -1;
+		Set<Statement> afterRollback = Set.of();
+		Set<Statement> afterFollowup = Set.of();
+		Set<Statement> reopenedStatements = Set.of();
+		boolean transactionActiveAfterFailure = false;
+		boolean followupCommitted = false;
+
+		try {
+			store.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.addSailChangedListener(changes::add);
+			ObservingTripleStore triples = store.triples.get();
+			assertNotNull(triples, "the instrumented TripleStore factory must be used");
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				writer.addStatement(committedBeforeFailure.getSubject(), committedBeforeFailure.getPredicate(),
+						committedBeforeFailure.getObject(), committedBeforeFailure.getContext());
+				generationBefore = triples.getNativeCommitGeneration();
+				triples.failAfterNextNativeCommit(postCommitFailure);
+				try {
+					writer.commit();
+				} catch (RuntimeException failure) {
+					initialCommitFailure = failure;
+				}
+				generationAfterFailedCommit = triples.getNativeCommitGeneration();
+				eventsAfterFailedCommit = changes.size();
+				transactionActiveAfterFailure = writer.isActive();
+
+				try {
+					switch (continuation) {
+					case ADD -> writer.addStatement(continuationRow.getSubject(), continuationRow.getPredicate(),
+							continuationRow.getObject(), continuationRow.getContext());
+					case PREPARE -> writer.prepare();
+					case COMMIT -> writer.commit();
+					}
+				} catch (RuntimeException | Error failure) {
+					continuationFailure = failure;
+				}
+				generationAfterContinuation = triples.getNativeCommitGeneration();
+				eventsAfterContinuation = changes.size();
+
+				if (writer.isActive()) {
+					try {
+						writer.rollback();
+					} catch (RuntimeException | Error failure) {
+						rollbackFailure = failure;
+					}
+				}
+				eventsAfterRollback = changes.size();
+				afterRollback = readStatements(store.getBackingStore());
+
+				try {
+					if (!writer.isActive()) {
+						writer.begin(IsolationLevels.NONE);
+					}
+					writer.addStatement(followupRow.getSubject(), followupRow.getPredicate(), followupRow.getObject(),
+							followupRow.getContext());
+					writer.commit();
+					followupCommitted = true;
+				} catch (RuntimeException | Error failure) {
+					followupFailure = failure;
+				}
+				eventsAfterFollowup = changes.size();
+				afterFollowup = readStatements(store.getBackingStore());
+			}
+		} finally {
+			store.shutDown();
+		}
+
+		ObservingLmdbStore reopened = new ObservingLmdbStore(dataDir.toFile(), config);
+		try {
+			reopened.init();
+			reopenedStatements = readStatements(reopened.getBackingStore());
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedInitialCommitFailure = initialCommitFailure;
+		Throwable observedContinuationFailure = continuationFailure;
+		Throwable observedRollbackFailure = rollbackFailure;
+		Throwable observedFollowupFailure = followupFailure;
+		long observedGenerationBefore = generationBefore;
+		long observedGenerationAfterFailedCommit = generationAfterFailedCommit;
+		long observedGenerationAfterContinuation = generationAfterContinuation;
+		int observedEventsAfterFailedCommit = eventsAfterFailedCommit;
+		int observedEventsAfterContinuation = eventsAfterContinuation;
+		int observedEventsAfterRollback = eventsAfterRollback;
+		int observedEventsAfterFollowup = eventsAfterFollowup;
+		Set<Statement> observedAfterRollback = afterRollback;
+		Set<Statement> observedAfterFollowup = afterFollowup;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		boolean observedTransactionActiveAfterFailure = transactionActiveAfterFailure;
+		boolean observedFollowupCommitted = followupCommitted;
+		assertAll("a post-native-commit checkpoint failure rejects continuations until rollback",
+				() -> assertNotNull(observedInitialCommitFailure,
+						"the actual native commit seam must report its marker"),
+				() -> assertTrue(containsCause(observedInitialCommitFailure, postCommitFailure),
+						"the original post-commit marker must remain causal"),
+				() -> assertTrue(observedGenerationAfterFailedCommit > observedGenerationBefore,
+						"the injected failure must follow an actual native commit"),
+				() -> assertTrue(observedTransactionActiveAfterFailure,
+						"the public transaction remains active when the commit hook reports failure"),
+				() -> assertNotNull(observedContinuationFailure,
+						"the public " + continuation + " continuation must be rejected"),
+				() -> assertTrue(containsCause(observedContinuationFailure, postCommitFailure),
+						"the rejected continuation must preserve the failed commit's marker"),
+				() -> assertEquals(observedGenerationAfterFailedCommit, observedGenerationAfterContinuation,
+						"continuation must not start another native commit"),
+				() -> assertEquals(observedEventsAfterFailedCommit, observedEventsAfterContinuation,
+						"continuation must not publish another logical change event"),
+				() -> assertNull(observedRollbackFailure, "explicit rollback must release the failed public attempt"),
+				() -> assertEquals(observedEventsAfterFailedCommit + 1, observedEventsAfterRollback,
+						"rollback must deliver exactly one notification for the already durable prefix"),
+				() -> assertEquals(Set.of(committedBeforeFailure), observedAfterRollback,
+						"rollback must leave only the row committed before the reported failure"),
+				() -> assertTrue(observedFollowupCommitted,
+						"the connection must accept a fresh NONE attempt after rollback"),
+				() -> assertNull(observedFollowupFailure, "the fresh NONE attempt must commit normally"),
+				() -> assertEquals(observedEventsAfterRollback + 1, observedEventsAfterFollowup,
+						"the fresh commit must deliver exactly one event after the durable-prefix notification"),
+				() -> assertEquals(Set.of(committedBeforeFailure, followupRow), observedAfterFollowup,
+						"only the earlier committed row and fresh follow-up may be present"),
+				() -> assertEquals(Set.of(committedBeforeFailure, followupRow), observedReopenedStatements,
+						"the accepted physical commit and fresh follow-up must survive reopening"));
+	}
+
+	@Test
+	@Timeout(value = 90, unit = TimeUnit.SECONDS)
+	void publicNoneCapacityRecoveryFailureRejectsContinuationAndPreservesPrefix(@TempDir Path dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setBulkOperationSize(2)
+				.setTripleDBSize(16L << 20)
+				.setValueDBSize(16L << 20)
+				.setMapGrowthThreshold(0.99d)
+				.setMapGrowthReadDrainTimeoutMillis(0L);
+		ObservingLmdbStore store = new ObservingLmdbStore(dataDir.toFile(), config);
+		Statement durablePrefix = statement("none-capacity-terminal-prefix", 1);
+		List<Statement> failedRows = List.of(statement("none-capacity-terminal-suffix", 1),
+				statement("none-capacity-terminal-suffix", 2),
+				statement("none-capacity-terminal-suffix", 3),
+				statement("none-capacity-terminal-suffix", 4));
+		Statement followup = statement("none-capacity-terminal-followup", 1);
+		IOException terminalFailure = new IOException("injected terminal failure after capacity replay");
+		CopyOnWriteArrayList<SailChangedEvent> changes = new CopyOnWriteArrayList<>();
+		Throwable mutationOrCommitFailure = null;
+		Throwable continuationFailure = null;
+		Throwable rollbackFailure = null;
+		Throwable followupFailure = null;
+		int alignedBatchesAfterFailure = -1;
+		int alignedBatchesAfterContinuation = -1;
+		int alignedBatchesBeforeUncommittedPrefix = -1;
+		int alignedBatchesAfterUncommittedPrefix = -1;
+		int capacityFailures = 0;
+		int alignedIoFailures = 0;
+		long capacityReplays = 0L;
+		long growthEpisodesBefore = 0L;
+		long growthEpisodesAfter = 0L;
+		long generationBeforeUncommittedPrefix = -1L;
+		long generationAfterUncommittedPrefix = -1L;
+		long generationAfterUncommittedNamespace = -1L;
+		String namespaceBeforeCapacityFailure = null;
+		int eventsAfterFailure = -1;
+		int eventsAfterContinuation = -1;
+		Set<Statement> afterRollback = Set.of();
+		Set<Statement> afterFollowup = Set.of();
+		Set<Statement> reopenedStatements = Set.of();
+		String failedNamespaceAfterRollback = null;
+		String failedNamespaceAfterReopen = null;
+		boolean followupCommitted = false;
+
+		try {
+			store.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.addSailChangedListener(changes::add);
+			LmdbSailStore backing = store.getBackingStore();
+			ObservingTripleStore triples = store.triples.get();
+			assertNotNull(triples, "the instrumented TripleStore factory must be used");
+			growthEpisodesBefore = backing.growthMetricsSnapshot().growthEpisodes();
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				add(writer, durablePrefix);
+				writer.flush();
+				assertEquals(Set.of(durablePrefix), readStatements(backing),
+						"the prefix must be durable before the failing capacity replay begins");
+
+				try {
+					alignedBatchesBeforeUncommittedPrefix = triples.alignedBatchCount.get();
+					generationBeforeUncommittedPrefix = triples.getNativeCommitGeneration();
+					for (int index = 0; index < 2; index++) {
+						Statement statement = failedRows.get(index);
+						add(writer, statement);
+					}
+					alignedBatchesAfterUncommittedPrefix = triples.alignedBatchCount.get();
+					generationAfterUncommittedPrefix = triples.getNativeCommitGeneration();
+					writer.setNamespace("failed-replay", "urn:none-streaming:failed-replay:");
+					generationAfterUncommittedNamespace = triples.getNativeCommitGeneration();
+					namespaceBeforeCapacityFailure = readNamespace(backing, "failed-replay");
+					triples.failNextAlignedBatchWithMapFullAfterMutation();
+					triples.failNextAlignedBatchAfterCapacityFailure(terminalFailure);
+					for (int index = 2; index < failedRows.size(); index++) {
+						add(writer, failedRows.get(index));
+					}
+					writer.flush();
+					writer.commit();
+				} catch (RuntimeException failure) {
+					mutationOrCommitFailure = failure;
+				}
+				alignedBatchesAfterFailure = triples.alignedBatchCount.get();
+				capacityFailures = triples.alignedMapFullFailureCount.get();
+				alignedIoFailures = triples.injectedAlignedIoFailureCount.get();
+				capacityReplays = backing.noneIngestionMetrics().capacityReplays();
+				growthEpisodesAfter = backing.growthMetricsSnapshot().growthEpisodes();
+				eventsAfterFailure = changes.size();
+
+				try {
+					writer.commit();
+				} catch (RuntimeException | Error failure) {
+					continuationFailure = failure;
+				}
+				alignedBatchesAfterContinuation = triples.alignedBatchCount.get();
+				eventsAfterContinuation = changes.size();
+
+				if (writer.isActive()) {
+					try {
+						writer.rollback();
+					} catch (RuntimeException | Error failure) {
+						rollbackFailure = failure;
+					}
+				}
+				afterRollback = readStatements(backing);
+				failedNamespaceAfterRollback = readNamespace(backing, "failed-replay");
+
+				try {
+					if (!writer.isActive()) {
+						writer.begin(IsolationLevels.NONE);
+					}
+					add(writer, followup);
+					writer.commit();
+					followupCommitted = true;
+				} catch (RuntimeException | Error failure) {
+					followupFailure = failure;
+				}
+				afterFollowup = readStatements(backing);
+			}
+		} finally {
+			store.shutDown();
+		}
+
+		ObservingLmdbStore reopened = new ObservingLmdbStore(dataDir.toFile(), config);
+		try {
+			reopened.init();
+			reopenedStatements = readStatements(reopened.getBackingStore());
+			failedNamespaceAfterReopen = readNamespace(reopened.getBackingStore(), "failed-replay");
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedMutationOrCommitFailure = mutationOrCommitFailure;
+		Throwable observedContinuationFailure = continuationFailure;
+		Throwable observedRollbackFailure = rollbackFailure;
+		Throwable observedFollowupFailure = followupFailure;
+		int observedAlignedBatchesAfterFailure = alignedBatchesAfterFailure;
+		int observedAlignedBatchesAfterContinuation = alignedBatchesAfterContinuation;
+		int observedAlignedBatchesBeforeUncommittedPrefix = alignedBatchesBeforeUncommittedPrefix;
+		int observedAlignedBatchesAfterUncommittedPrefix = alignedBatchesAfterUncommittedPrefix;
+		int observedCapacityFailures = capacityFailures;
+		int observedAlignedIoFailures = alignedIoFailures;
+		long observedCapacityReplays = capacityReplays;
+		long observedGrowthEpisodesBefore = growthEpisodesBefore;
+		long observedGrowthEpisodesAfter = growthEpisodesAfter;
+		long observedGenerationBeforeUncommittedPrefix = generationBeforeUncommittedPrefix;
+		long observedGenerationAfterUncommittedPrefix = generationAfterUncommittedPrefix;
+		long observedGenerationAfterUncommittedNamespace = generationAfterUncommittedNamespace;
+		String observedNamespaceBeforeCapacityFailure = namespaceBeforeCapacityFailure;
+		int observedEventsAfterFailure = eventsAfterFailure;
+		int observedEventsAfterContinuation = eventsAfterContinuation;
+		Set<Statement> observedAfterRollback = afterRollback;
+		Set<Statement> observedAfterFollowup = afterFollowup;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		String observedFailedNamespaceAfterRollback = failedNamespaceAfterRollback;
+		String observedFailedNamespaceAfterReopen = failedNamespaceAfterReopen;
+		boolean observedFollowupCommitted = followupCommitted;
+		assertAll("a public NONE capacity retry that terminates cannot be committed by a later call",
+				() -> assertNotNull(observedMutationOrCommitFailure,
+						"the aligned capacity recovery must reach its injected terminal replay failure"),
+				() -> assertTrue(throwableGraphContainsIdentity(observedMutationOrCommitFailure, terminalFailure),
+						"the exact terminal replay marker must remain in the cause/suppressed graph"),
+				() -> assertEquals(1, observedCapacityFailures,
+						"the test must activate one real aligned MAP_FULL after native writes"),
+				() -> assertEquals(1, observedAlignedIoFailures,
+						"the non-capacity marker must fire after the capacity failure during replay"),
+				() -> assertEquals(observedAlignedBatchesBeforeUncommittedPrefix + 1,
+						observedAlignedBatchesAfterUncommittedPrefix,
+						"the first suffix pair must reach one successful aligned native batch"),
+				() -> assertEquals(observedGenerationBeforeUncommittedPrefix,
+						observedGenerationAfterUncommittedPrefix,
+						"the first suffix batch must remain uncommitted before the injected failure"),
+				() -> assertEquals(observedGenerationAfterUncommittedPrefix,
+						observedGenerationAfterUncommittedNamespace,
+						"the namespace must remain in the same uncommitted native attempt"),
+				() -> assertNull(observedNamespaceBeforeCapacityFailure,
+						"the abandoned namespace must remain unpublished before the capacity failure"),
+				() -> assertTrue(observedAlignedBatchesAfterFailure >= 3,
+						"initial prefix, failed capacity attempt and replay must traverse the native aligned writer"),
+				() -> assertTrue(observedCapacityReplays > 0,
+						"the public NONE path must enter managed capacity replay"),
+				() -> assertTrue(observedGrowthEpisodesAfter > observedGrowthEpisodesBefore,
+						"the injected native capacity failure must complete a real growth episode"),
+				() -> assertNotNull(observedContinuationFailure,
+						"a later public commit must be rejected after terminal replay failure"),
+				() -> assertTrue(throwableGraphContainsIdentity(observedContinuationFailure, terminalFailure),
+						"the rejected commit must retain the terminal marker in the cause/suppressed graph"),
+				() -> assertEquals(observedAlignedBatchesAfterFailure, observedAlignedBatchesAfterContinuation,
+						"rejected continuation must not replay or write another native batch"),
+				() -> assertEquals(observedEventsAfterFailure, observedEventsAfterContinuation,
+						"rejected continuation must not publish another logical event"),
+				() -> assertNull(observedRollbackFailure,
+						"explicit rollback must retire the failed public transaction"),
+				() -> assertEquals(Set.of(durablePrefix), observedAfterRollback,
+						"rollback must preserve only the already durable prefix"),
+				() -> assertNull(observedFailedNamespaceAfterRollback,
+						"the terminal failed suffix namespace must remain unpublished"),
+				() -> assertTrue(observedFollowupCommitted, "a fresh NONE attempt must commit after rollback"),
+				() -> assertNull(observedFollowupFailure, "the follow-up transaction must not be stranded"),
+				() -> assertEquals(Set.of(durablePrefix, followup), observedAfterFollowup,
+						"the follow-up must add only its own row to the durable prefix"),
+				() -> assertEquals(Set.of(durablePrefix, followup), observedReopenedStatements,
+						"only the prefix and fresh follow-up must survive reopening"),
+				() -> assertNull(observedFailedNamespaceAfterReopen,
+						"the terminal failed suffix namespace must remain absent after reopening"));
+	}
+
+	@Test
+	@Timeout(value = 60, unit = TimeUnit.SECONDS)
+	void staleNoneSinkCannotMutateOrCloseAFreshPublicAttempt(@TempDir Path dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setBulkOperationSize(2)
+				.setTripleDBSize(16L << 20)
+				.setValueDBSize(16L << 20);
+		ObservingLmdbStore store = new ObservingLmdbStore(dataDir.toFile(), config);
+		Statement durablePrefix = statement("none-stale-sink-prefix", 1);
+		Statement failedRowOne = statement("none-stale-sink-failed", 1);
+		Statement failedRowTwo = statement("none-stale-sink-failed", 2);
+		Statement staleRow = statement("none-stale-sink-stale", 1);
+		Statement freshRow = statement("none-stale-sink-fresh", 1);
+		IOException terminalFailure = new IOException("injected failure before stale attempt rollback");
+		Throwable initialFailure = null;
+		Throwable staleAdmissionFailure = null;
+		Throwable staleCloseFailure = null;
+		Throwable freshFailure = null;
+		Throwable rollbackFailure = null;
+		int injectedFailures = 0;
+		Set<Statement> afterRollback = Set.of();
+		Set<Statement> afterFreshCommit = Set.of();
+		Set<Statement> reopenedStatements = Set.of();
+		boolean freshCommitted = false;
+
+		try {
+			store.init();
+			store.getBackingStore().enableMultiThreading = false;
+			ObservingTripleStore triples = store.triples.get();
+			assertNotNull(triples, "the instrumented TripleStore factory must be used");
+			try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection()) {
+				writer.begin(IsolationLevels.NONE);
+				SailSink stale = writer.getExplicitSailSource().sink(IsolationLevels.NONE);
+				try {
+					add(writer, durablePrefix);
+					writer.flush();
+					assertEquals(Set.of(durablePrefix), readStatements(store.getBackingStore()),
+							"the native prefix must be committed before the old sink is retained across failure");
+
+					triples.failNextAlignedBatch(terminalFailure);
+					try {
+						add(writer, failedRowOne);
+						add(writer, failedRowTwo);
+						writer.flush();
+					} catch (RuntimeException failure) {
+						initialFailure = failure;
+					}
+					injectedFailures = triples.injectedAlignedIoFailureCount.get();
+					if (writer.isActive()) {
+						try {
+							writer.rollback();
+						} catch (RuntimeException | Error failure) {
+							rollbackFailure = failure;
+						}
+					}
+					afterRollback = readStatements(store.getBackingStore());
+
+					if (!writer.isActive()) {
+						writer.begin(IsolationLevels.NONE);
+					}
+					SailSink fresh = writer.getExplicitSailSource().sink(IsolationLevels.NONE);
+					try {
+						try {
+							stale.approve(staleRow);
+						} catch (RuntimeException | Error failure) {
+							staleAdmissionFailure = failure;
+						}
+						try {
+							stale.close();
+							stale = null;
+						} catch (RuntimeException | Error failure) {
+							staleCloseFailure = failure;
+						}
+						try {
+							fresh.approve(freshRow);
+							fresh.flush();
+							writer.commit();
+							freshCommitted = true;
+						} catch (RuntimeException | Error failure) {
+							freshFailure = failure;
+						}
+					} finally {
+						try {
+							fresh.close();
+						} catch (RuntimeException | Error failure) {
+							if (freshFailure == null) {
+								freshFailure = failure;
+							} else {
+								freshFailure.addSuppressed(failure);
+							}
+						}
+					}
+					afterFreshCommit = readStatements(store.getBackingStore());
+				} finally {
+					if (stale != null) {
+						try {
+							stale.close();
+						} catch (RuntimeException | Error failure) {
+							if (staleCloseFailure == null) {
+								staleCloseFailure = failure;
+							} else {
+								staleCloseFailure.addSuppressed(failure);
+							}
+						}
+					}
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+
+		ObservingLmdbStore reopened = new ObservingLmdbStore(dataDir.toFile(), config);
+		try {
+			reopened.init();
+			reopenedStatements = readStatements(reopened.getBackingStore());
+		} finally {
+			reopened.shutDown();
+		}
+
+		Throwable observedInitialFailure = initialFailure;
+		Throwable observedRollbackFailure = rollbackFailure;
+		Throwable observedStaleAdmissionFailure = staleAdmissionFailure;
+		Throwable observedStaleCloseFailure = staleCloseFailure;
+		Throwable observedFreshFailure = freshFailure;
+		int observedInjectedFailures = injectedFailures;
+		Set<Statement> observedAfterRollback = afterRollback;
+		Set<Statement> observedAfterFreshCommit = afterFreshCommit;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		boolean observedFreshCommitted = freshCommitted;
+		assertAll("a stale sink from an aborted NONE attempt cannot join or retire a fresh attempt",
+				() -> assertNotNull(observedInitialFailure, "the old attempt must observe its injected native failure"),
+				() -> assertTrue(containsCause(observedInitialFailure, terminalFailure),
+						"the old attempt's exact native failure must remain causal"),
+				() -> assertEquals(1, observedInjectedFailures, "the old attempt failure must activate exactly once"),
+				() -> assertNull(observedRollbackFailure,
+						"rollback must release the failed attempt before a new attempt starts"),
+				() -> assertEquals(Set.of(durablePrefix), observedAfterRollback,
+						"rollback must leave only the previously committed prefix"),
+				() -> assertNotNull(observedStaleAdmissionFailure,
+						"the old sink must reject mutation after a fresh attempt begins"),
+				() -> assertNull(observedStaleCloseFailure,
+						"closing the old sink must retire only its completed attempt"),
+				() -> assertTrue(observedFreshCommitted, "the fresh sink must still be able to commit"),
+				() -> assertNull(observedFreshFailure, "the fresh sink must not be damaged by stale sink cleanup"),
+				() -> assertEquals(Set.of(durablePrefix, freshRow), observedAfterFreshCommit,
+						"only the prior prefix and fresh row may be visible"),
+				() -> assertEquals(Set.of(durablePrefix, freshRow), observedReopenedStatements,
+						"stale admission must not persist across reopening"));
 	}
 
 	@Test
@@ -5305,6 +5966,30 @@ class LmdbNoneStreamingIngestionTest {
 		return containsSuppressed(failure.getCause(), expected);
 	}
 
+	private static boolean throwableGraphContainsIdentity(Throwable failure, Throwable expected) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		return throwableGraphContainsIdentity(failure, expected, visited);
+	}
+
+	private static boolean throwableGraphContainsIdentity(Throwable failure, Throwable expected,
+			Set<Throwable> visited) {
+		if (failure == expected) {
+			return true;
+		}
+		if (failure == null || !visited.add(failure)) {
+			return false;
+		}
+		if (throwableGraphContainsIdentity(failure.getCause(), expected, visited)) {
+			return true;
+		}
+		for (Throwable suppressed : failure.getSuppressed()) {
+			if (throwableGraphContainsIdentity(suppressed, expected, visited)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static Set<Statement> statements(int count) {
 		Set<Statement> statements = new HashSet<>(count);
 		for (int i = 0; i < count; i++) {
@@ -6197,5 +6882,20 @@ class LmdbNoneStreamingIngestionTest {
 	}
 
 	private record PersistentSetMutation(String name, String operation) {
+	}
+
+	private enum NoneContinuation {
+		ADD,
+		REMOVE,
+		CLEAR,
+		SET_NAMESPACE,
+		PREPARE,
+		COMMIT
+	}
+
+	private enum NativeCommitContinuation {
+		ADD,
+		PREPARE,
+		COMMIT
 	}
 }

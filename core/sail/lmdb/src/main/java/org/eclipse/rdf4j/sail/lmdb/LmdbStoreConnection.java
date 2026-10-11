@@ -367,8 +367,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected void prepareTransaction(SailSource source) throws SailException {
 		if (frozenTransaction == null) {
 			// fork() may erase a wrapper whose original root still owns finalization callbacks.
-			frozenTransaction = FrozenReplayCoverage.supports(sourceStore.getExplicitSailSource())
-					&& FrozenReplayCoverage.supports(sourceStore.getInferredSailSource());
+			frozenTransaction = FrozenReplayCoverage.supports(getTransactionExplicitRoot())
+					&& FrozenReplayCoverage.supports(getTransactionInferredRoot());
 		}
 		if (frozenTransaction && flushBatch == null) {
 			flushBatch = source.freezeForFlush();
@@ -412,6 +412,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected void commitInternal() throws SailException {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		WriteAttempt completedWriteAttempt = writeAttempt;
+		SailSource explicitRoot = getTransactionExplicitRoot();
+		SailSource inferredRoot = getTransactionInferredRoot();
+		if (explicitRoot == null) {
+			explicitRoot = sourceStore.getExplicitSailSource();
+			inferredRoot = sourceStore.getInferredSailSource();
+		}
 		boolean committed = false;
 		boolean notifiedFrozenCommit = false;
 		Throwable primary = null;
@@ -424,8 +430,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				try (SailClosable publication = lmdbStore.getBackingStore().beginPublication(this)) {
 					try {
 						super.commitInternal();
-						sourceStore.getExplicitSailSource().flush();
-						sourceStore.getInferredSailSource().flush();
+						explicitRoot.flush();
+						inferredRoot.flush();
 					} catch (RuntimeException | Error failure) {
 						SailSource.failPublication(publication);
 						throw failure;

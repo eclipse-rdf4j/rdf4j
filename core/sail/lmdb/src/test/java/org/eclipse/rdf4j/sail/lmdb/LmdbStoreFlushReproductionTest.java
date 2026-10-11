@@ -190,6 +190,135 @@ class LmdbStoreFlushReproductionTest {
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void committedIsolatedWriteIsVisibleToIdleNoneConnectionBeforeSnapshotReaderCloses(@TempDir Path dataDir)
+			throws Exception {
+		GenerationRecordingStore store = new GenerationRecordingStore(dataDir);
+		Statement seed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:none-reader:seed"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("seed"));
+		Statement committed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:none-reader:committed"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("committed"));
+		Statement inferred = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:none-reader:inferred"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("inferred"));
+		long generationBefore = -1L;
+		long generationAfter = -1L;
+		List<Statement> visibleThroughNone = new ArrayList<>();
+		List<Statement> inferredThroughNone = new ArrayList<>();
+		String namespaceThroughNone = null;
+		Set<Statement> visibleAfterReaderCloses = Set.of();
+		Set<Statement> inferredAfterReaderCloses = Set.of();
+		String namespaceAfterReaderCloses = null;
+		Set<Statement> reopenedStatements = Set.of();
+		Set<Statement> reopenedInferred = Set.of();
+		String reopenedNamespace = null;
+		store.init();
+		try {
+			try (SailConnection seedWriter = store.getConnection()) {
+				seedWriter.begin(IsolationLevels.SNAPSHOT_READ);
+				seedWriter.addStatement(seed.getSubject(), seed.getPredicate(), seed.getObject(), seed.getContext());
+				seedWriter.commit();
+			}
+
+			GenerationRecordingTripleStore triples = store.triples.get();
+			assertTrue(triples != null, "the generation-observing TripleStore factory must be used");
+			try (SailConnection reader = store.getConnection();
+					SailConnection noneConnection = store.getConnection();
+					SailConnection writer = store.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT_READ);
+				try (CloseableIteration<? extends Statement> oldReader = reader.getStatements(null, PREDICATE, null,
+						false)) {
+					assertTrue(oldReader.hasNext(), "the seed must create a positive, still-open snapshot cursor");
+					writer.begin(IsolationLevels.SNAPSHOT_READ);
+					writer.addStatement(committed.getSubject(), committed.getPredicate(), committed.getObject(),
+							committed.getContext());
+					assertTrue(((InferencerConnection) writer).addInferredStatement(inferred.getSubject(),
+							inferred.getPredicate(), inferred.getObject(), inferred.getContext()),
+							"the writer must stage an actual inferred statement for the paired read check");
+					writer.setNamespace("none-reader", "urn:issue:6070:none-reader:committed:");
+					// Start NONE after the isolated writer has released its admission lock, then keep both active
+					// through the physical commit and the NONE read.
+					noneConnection.begin(IsolationLevels.NONE);
+					generationBefore = triples.getNativeCommitGeneration();
+					writer.commit();
+					generationAfter = triples.getNativeCommitGeneration();
+
+					try (CloseableIteration<? extends Statement> current = noneConnection.getStatements(
+							committed.getSubject(), committed.getPredicate(), committed.getObject(), false)) {
+						while (current.hasNext()) {
+							visibleThroughNone.add(current.next());
+						}
+					}
+					try (CloseableIteration<? extends Statement> current = noneConnection.getStatements(
+							inferred.getSubject(), inferred.getPredicate(), inferred.getObject(), true)) {
+						while (current.hasNext()) {
+							inferredThroughNone.add(current.next());
+						}
+					}
+					namespaceThroughNone = noneConnection.getNamespace("none-reader");
+					noneConnection.commit();
+					reader.commit();
+				}
+			}
+
+			visibleAfterReaderCloses = readBackingStatements(store);
+			inferredAfterReaderCloses = readBackingInferredStatements(store);
+			namespaceAfterReaderCloses = readBackingNamespace(store, "none-reader");
+		} finally {
+			store.shutDown();
+		}
+
+		LmdbStore reopened = newStore(dataDir);
+		reopened.init();
+		try {
+			reopenedStatements = readBackingStatements(reopened);
+			reopenedInferred = readBackingInferredStatements(reopened);
+			reopenedNamespace = readBackingNamespace(reopened, "none-reader");
+		} finally {
+			reopened.shutDown();
+		}
+
+		long observedGenerationBefore = generationBefore;
+		long observedGenerationAfter = generationAfter;
+		List<Statement> observedThroughNone = List.copyOf(visibleThroughNone);
+		List<Statement> observedInferredThroughNone = List.copyOf(inferredThroughNone);
+		String observedNamespaceThroughNone = namespaceThroughNone;
+		Set<Statement> observedAfterReaderCloses = visibleAfterReaderCloses;
+		Set<Statement> observedInferredAfterReaderCloses = inferredAfterReaderCloses;
+		String observedNamespaceAfterReaderCloses = namespaceAfterReaderCloses;
+		Set<Statement> observedReopened = reopenedStatements;
+		Set<Statement> observedReopenedInferred = reopenedInferred;
+		String observedReopenedNamespace = reopenedNamespace;
+		Set<Statement> expected = Set.of(seed, committed);
+		assertAll("an idle NONE connection observes an isolated commit while an older snapshot cursor remains open",
+				() -> assertTrue(observedGenerationAfter > observedGenerationBefore,
+						"the writer must complete an actual native commit while both readers stay open"),
+				() -> assertEquals(List.of(committed), observedThroughNone,
+						"the already-active NONE connection must see the committed row before the old reader closes"),
+				() -> assertEquals(List.of(inferred), observedInferredThroughNone,
+						"the already-active NONE connection must see the inferred row before the old reader closes"),
+				() -> assertEquals("urn:issue:6070:none-reader:committed:", observedNamespaceThroughNone,
+						"the already-active NONE connection must see the committed namespace before reader cleanup"),
+				() -> assertEquals(expected, observedAfterReaderCloses,
+						"the committed row and seed must remain present after the reader closes"),
+				() -> assertEquals(Set.of(inferred), observedInferredAfterReaderCloses,
+						"the committed inferred row must remain after the reader closes"),
+				() -> assertEquals("urn:issue:6070:none-reader:committed:", observedNamespaceAfterReaderCloses,
+						"the committed namespace must remain after the reader closes"),
+				() -> assertEquals(expected, observedReopened,
+						"the explicit committed rows must survive store reopen"),
+				() -> assertEquals(Set.of(inferred), observedReopenedInferred,
+						"the inferred committed row must survive store reopen"),
+				() -> assertEquals("urn:issue:6070:none-reader:committed:", observedReopenedNamespace,
+						"the committed namespace must survive store reopen"));
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void snapshotTransactionKeepsOneGenerationAcrossExplicitInferredAndNamespaceReads(@TempDir Path dataDir)
 			throws Exception {
 		LmdbStore store = newStore(dataDir);
@@ -1726,6 +1855,14 @@ class LmdbStoreFlushReproductionTest {
 		}
 	}
 
+	private static Set<Statement> readBackingInferredStatements(LmdbStore store) throws Exception {
+		try (SailDataset dataset = store.getBackingStore()
+				.getInferredSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
+			return readStatements(dataset);
+		}
+	}
+
 	private static String readBackingNamespace(LmdbStore store, String prefix) throws Exception {
 		try (SailDataset dataset = store.getBackingStore()
 				.getExplicitSailSource()
@@ -1749,6 +1886,33 @@ class LmdbStoreFlushReproductionTest {
 			} finally {
 				connection.close();
 			}
+		}
+	}
+
+	private static final class GenerationRecordingStore extends LmdbStore {
+		private final AtomicReference<GenerationRecordingTripleStore> triples = new AtomicReference<>();
+
+		private GenerationRecordingStore(Path dataDir) {
+			super(dataDir.toFile(), new LmdbStoreConfig("spoc,posc").setForceSync(true));
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, ValueStore::new,
+					(tripleDirectory, storeProperties, storeConfig, valueStore) -> {
+						GenerationRecordingTripleStore tripleStore = new GenerationRecordingTripleStore(tripleDirectory,
+								storeProperties, storeConfig, valueStore);
+						triples.set(tripleStore);
+						return tripleStore;
+					});
+		}
+	}
+
+	private static final class GenerationRecordingTripleStore extends TripleStore {
+		private GenerationRecordingTripleStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				ValueStore valueStore) throws IOException, SailException {
+			super(directory, properties, config, valueStore);
 		}
 	}
 
