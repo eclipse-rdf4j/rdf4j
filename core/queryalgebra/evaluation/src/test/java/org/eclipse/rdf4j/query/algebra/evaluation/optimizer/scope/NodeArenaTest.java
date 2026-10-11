@@ -294,7 +294,8 @@ public class NodeArenaTest {
 	}
 
 	private static StatementPattern pattern(String first, String second) {
-		return new StatementPattern(Var.of(first), Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p")),
+		return new StatementPattern(Var.of(first),
+				Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p"), true, true),
 				Var.of(second));
 	}
 

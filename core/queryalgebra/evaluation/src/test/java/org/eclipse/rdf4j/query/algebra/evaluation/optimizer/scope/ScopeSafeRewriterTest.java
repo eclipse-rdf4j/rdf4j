@@ -54,7 +54,7 @@ public class ScopeSafeRewriterTest {
 
 	private static StatementPattern pattern(String first, String second) {
 		return new StatementPattern(Var.of(first),
-				Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of(second));
+				Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p"), true, true), Var.of(second));
 	}
 
 	private static Object rewriter(QueryRoot root) throws Exception {

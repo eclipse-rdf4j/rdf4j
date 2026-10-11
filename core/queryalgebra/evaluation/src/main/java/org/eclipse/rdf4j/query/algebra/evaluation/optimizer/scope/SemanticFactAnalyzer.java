@@ -390,7 +390,9 @@ final class SemanticFactAnalyzer {
 	}
 
 	private void bindPatternVar(int nodeId, Var var) {
-		if (var == null || var.hasValue()) {
+		// The runtime binds every non-constant pattern variable, including one that carries a value from an incoming
+		// binding (e.g. a prepared-query binding inlined by BindingAssigner); only constants stay out of the output.
+		if (var == null || var.isConstant()) {
 			return;
 		}
 		int symbol = resolver.symbolAtNode(var.getName(), arena.id(var));

@@ -330,7 +330,7 @@ final class SlowReferenceAnalyzer {
 	}
 
 	private static void bindPatternVar(SlowFacts result, Var var) {
-		if (var == null || var.hasValue()) {
+		if (var == null || var.isConstant()) {
 			return;
 		}
 		result.add(SemanticMask.SCOPE_OUT, var.getName());

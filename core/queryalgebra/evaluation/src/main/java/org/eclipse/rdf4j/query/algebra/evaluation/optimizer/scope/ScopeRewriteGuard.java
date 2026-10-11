@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** A session-selected, allocation-free primitive rewrite guard. */
 abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewriteGuard128,ScopeRewriteGuardWide {
@@ -82,7 +83,9 @@ abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewrite
 		int childId = arena.id(projection.getArg());
 		if (projection.isSubquery() || projection.getProjectionContext() != null
 				|| hardBarrier(childId)
-				|| facts.resultKind(childId) == AbstractFactIndex.RESULT_SEQUENCE) {
+				|| facts.resultKind(childId) == AbstractFactIndex.RESULT_SEQUENCE
+				|| TupleExprs.isVariableScopeChange(projection.getArg())
+						&& !TupleExprs.isVariableScopeChange(projection)) {
 			return reject(RejectReason.HARD_BOUNDARY);
 		}
 		if (!facts.maskEquals(SemanticMask.SCOPE_OUT, projectionId, SemanticMask.SCOPE_OUT, childId)
@@ -116,6 +119,11 @@ abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewrite
 				|| facts.resultKind(childId) != AbstractFactIndex.RESULT_MULTISET) {
 			return reject(RejectReason.HARD_BOUNDARY);
 		}
+		if (!analysis.names(SemanticMask.REQUIRED_INPUT, projection.getArg()).isEmpty()) {
+			// The body reads names it does not bind itself. Inside the sub-select those reads are always unbound;
+			// once flattened they would resolve to the parent's variables of the same name.
+			return reject(RejectReason.DIRECTIONAL_INPUT);
+		}
 		if (!analysis.names(SemanticMask.SCOPE_OUT, projection)
 				.equals(analysis.names(SemanticMask.SCOPE_OUT, projection.getArg()))
 				|| !analysis.names(SemanticMask.MAY_BIND, projection)
@@ -141,6 +149,13 @@ abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewrite
 		int second = arena.id(inner.getRightArg());
 		int third = arena.id(outer.getRightArg());
 		if (hardBarrier(first) || hardBarrier(second) || hardBarrier(third)) {
+			return reject(RejectReason.HARD_BOUNDARY);
+		}
+		// B and C stop being evaluated with the outer join's input: B becomes a left operand fed by A's rows, and C
+		// a right operand of a join that is itself fed by A's rows. A scope-changed inner join would also isolate
+		// the regrouped pair from A.
+		if (inner.isVariableScopeChange() || isolatedJoinOperand(inner.getRightArg())
+				|| isolatedJoinOperand(outer.getRightArg())) {
 			return reject(RejectReason.HARD_BOUNDARY);
 		}
 		int firstContext = commonContext(first, second);
@@ -233,7 +248,7 @@ abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewrite
 		int rightId = arena.id(join.getRightArg());
 		if (projection.isSubquery() || projection.getProjectionContext() != null
 				|| join.getLeftArg() instanceof Projection || join.getRightArg() instanceof Projection
-				|| hardBarrier(leftId) || hardBarrier(rightId)
+				|| hardBarrier(leftId) || hardBarrier(rightId) || isolatedJoinOperand(join.getRightArg())
 				|| facts.resultKind(leftId) == AbstractFactIndex.RESULT_SEQUENCE
 				|| facts.resultKind(rightId) == AbstractFactIndex.RESULT_SEQUENCE) {
 			return reject(RejectReason.HARD_BOUNDARY);
@@ -272,6 +287,21 @@ abstract sealed class ScopeRewriteGuard permits ScopeRewriteGuard64,ScopeRewrite
 			}
 		}
 		return true;
+	}
+
+	/**
+	 * Whether RDF4J may evaluate this expression, as the right operand of a join, with the join's input instead of the
+	 * left operand's rows (see {@code JoinQueryEvaluationStep}). Rewrites that wrap or regroup such an operand change
+	 * which bindings it sees. Deliberately conservative: a nested subquery, result-set modifier, MINUS or SERVICE
+	 * anywhere below counts, even where the runtime would still feed it the left rows.
+	 */
+	final boolean isolatedJoinOperand(TupleExpr expression) {
+		if (TupleExprs.isVariableScopeChange(expression)) {
+			return true;
+		}
+		int isolating = FactFlags.HAS_SCOPE_BOUNDARY | FactFlags.HAS_SUBQUERY | FactFlags.HAS_DISTINCT
+				| FactFlags.HAS_REDUCED | FactFlags.HAS_SLICE | FactFlags.HAS_MINUS | FactFlags.HAS_SERVICE;
+		return (facts.flags(arena.id(expression)) & isolating) != 0;
 	}
 
 	final int commonContext(int sourceId, int destinationId) {

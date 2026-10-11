@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 
 /** Applies catalogued rewrites only after their primitive proof guard accepts. */
 final class ScopeSafeRewriter {
@@ -152,6 +153,11 @@ final class ScopeSafeRewriter {
 		return commit(projection, () -> {
 			TupleExpr replacement = projection.getArg().clone();
 			ScopeContextOverride.apply(replacement, frame, region, environment, true);
+			// A sub-select is evaluated with its join's input, not with its left sibling's rows. Keep that isolation
+			// so an OPTIONAL or BIND in the body never sees bindings it could not see inside the sub-select.
+			if (replacement instanceof VariableScopeChange scopeChange) {
+				scopeChange.setVariableScopeChange(true);
+			}
 			return replacement;
 		});
 	}
@@ -174,6 +180,7 @@ final class ScopeSafeRewriter {
 
 	boolean moveFilterBelowJoinRight(Filter filter) {
 		if (!(filter.getArg()instanceof Join join)
+				|| guard.isolatedJoinOperand(join.getRightArg())
 				|| guard.filterBelowJoin(filter, join.getRightArg(), join.getLeftArg()) != ScopeRewriteGuard.ACCEPT) {
 			return false;
 		}

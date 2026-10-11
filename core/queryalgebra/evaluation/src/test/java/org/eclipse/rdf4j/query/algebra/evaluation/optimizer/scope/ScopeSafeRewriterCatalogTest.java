@@ -255,17 +255,63 @@ public class ScopeSafeRewriterCatalogTest {
 	}
 
 	@Test
+	public void joinRewritesKeepIsolatedRightOperandsAsDirectJoinOperands() throws Exception {
+		// A scope-changed right operand is evaluated with the join's input, not with the left operand's rows, so
+		// re-association and wrapping must not turn it into a bind-joined operand.
+		Join nested = new Join(new Join(pattern("shared", "a"), pattern("shared", "b")), scopedBind("shared", "a"));
+		QueryRoot associationRoot = new QueryRoot(nested);
+		assertThat(rewrite(associationRoot, "associateJoinRight", nested)).isFalse();
+		assertThat(associationRoot.getArg()).isSameAs(nested);
+
+		Join scopedMiddle = new Join(new Join(pattern("shared", "a"), scopedBind("shared", "a")),
+				pattern("shared", "c"));
+		QueryRoot middleRoot = new QueryRoot(scopedMiddle);
+		assertThat(rewrite(middleRoot, "associateJoinRight", scopedMiddle)).isFalse();
+
+		Join scopedGroup = new Join(pattern("shared", "a"), pattern("shared", "b"));
+		scopedGroup.setVariableScopeChange(true);
+		Join groupLeft = new Join(scopedGroup, pattern("shared", "c"));
+		QueryRoot groupRoot = new QueryRoot(groupLeft);
+		assertThat(rewrite(groupRoot, "associateJoinRight", groupLeft)).isFalse();
+
+		Filter rightFilter = new Filter(new Join(pattern("shared", "a"), scopedBind("shared", "a")), Var.of("w"));
+		QueryRoot filterRoot = new QueryRoot(rightFilter);
+		assertThat(rewrite(filterRoot, "moveFilterBelowJoinRight", rightFilter)).isFalse();
+		assertThat(filterRoot.getArg()).isSameAs(rightFilter);
+
+		Projection outer = projection(new Join(pattern("x", "shared"), scopedBind("shared", "x")), false,
+				new ProjectionElem("x"), new ProjectionElem("w"));
+		QueryRoot projectionRoot = new QueryRoot(outer);
+		assertThat(rewrite(projectionRoot, "pushProjectionBelowJoin", outer)).isFalse();
+		assertThat(projectionRoot.getArg()).isSameAs(outer);
+
+		Projection identityOverScoped = projection(scopedBind("shared", "x"), false,
+				new ProjectionElem("shared"), new ProjectionElem("c"), new ProjectionElem("w"));
+		Join identityJoin = new Join(pattern("x", "shared"), identityOverScoped);
+		QueryRoot identityRoot = new QueryRoot(identityJoin);
+		assertThat(rewrite(identityRoot, "removeIdentityProjection", identityOverScoped)).isFalse();
+	}
+
+	@Test
 	public void transparentSubqueryFlatteningRequiresACompleteIdentityExport() throws Exception {
 		Projection transparent = projection(pattern("x", "y"), true,
 				new ProjectionElem("x"), new ProjectionElem("y"));
 		QueryRoot transparentRoot = new QueryRoot(transparent);
 		assertThat(rewrite(transparentRoot, "flattenTransparentSubquery", transparent)).isTrue();
 		assertThat(transparentRoot.getArg()).isInstanceOf(StatementPattern.class);
+		// the flattened body keeps the sub-select's isolation from its join sibling's rows
+		assertThat(((StatementPattern) transparentRoot.getArg()).isVariableScopeChange()).isTrue();
 
 		Projection hidden = projection(pattern("x", "y"), true, new ProjectionElem("x"));
 		QueryRoot hiddenRoot = new QueryRoot(hidden);
 		assertThat(rewrite(hiddenRoot, "flattenTransparentSubquery", hidden)).isFalse();
 		assertThat(hiddenRoot.getArg()).isSameAs(hidden);
+
+		Projection freeRead = projection(new Filter(pattern("x", "y"), Var.of("z")), true,
+				new ProjectionElem("x"), new ProjectionElem("y"));
+		QueryRoot freeReadRoot = new QueryRoot(freeRead);
+		assertThat(rewrite(freeReadRoot, "flattenTransparentSubquery", freeRead)).isFalse();
+		assertThat(freeReadRoot.getArg()).isSameAs(freeRead);
 
 		Projection distinct = projection(new Distinct(pattern("x", "y")), true,
 				new ProjectionElem("x"), new ProjectionElem("y"));
@@ -333,6 +379,13 @@ public class ScopeSafeRewriterCatalogTest {
 		return projection;
 	}
 
+	/** {@code { ?shared :p ?c BIND(?read AS ?w) }} as its own group: the BIND only sees the group's bindings. */
+	private static Extension scopedBind(String shared, String read) {
+		Extension extension = new Extension(pattern(shared, "c"), new ExtensionElem(Var.of(read), "w"));
+		extension.setVariableScopeChange(true);
+		return extension;
+	}
+
 	private static Extension unknownExtension(String input) {
 		return new Extension(pattern(input, "effectInput"),
 				new ExtensionElem(new FunctionCall("urn:unknown:scope-safety"), "effect"));
@@ -340,6 +393,6 @@ public class ScopeSafeRewriterCatalogTest {
 
 	private static StatementPattern pattern(String first, String second) {
 		return new StatementPattern(Var.of(first),
-				Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p")), Var.of(second));
+				Var.of("_p", SimpleValueFactory.getInstance().createIRI("urn:p"), true, true), Var.of(second));
 	}
 }
