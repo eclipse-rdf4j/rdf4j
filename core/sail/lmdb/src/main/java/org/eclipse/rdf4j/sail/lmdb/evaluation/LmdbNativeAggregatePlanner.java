@@ -1760,7 +1760,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (foldedValuesFilter != null) {
 				return foldedValuesFilter;
 			}
-			Set<String> shared = sharedBindingNames(join.getLeftArg(), join.getRightArg());
+			SlotPlan observedBelow = compileJoinWithValuesObservedBelow(join, duplicateInsensitive);
+			if (observedBelow != null) {
+				return observedBelow;
+			}
+			Set<String> shared = observedAcrossNames(join.getLeftArg(), join.getRightArg());
 			Set<String> previousRequired = requiredAggregateNames;
 			SlotPlan left;
 			SlotPlan right;
@@ -1795,9 +1799,24 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				// gated on discardability and the arm otherwise compiles normally (as an island if unsupported).
 				return compileTuple(leftJoin.getLeftArg(), true);
 			}
-			SlotPlan left = compileTupleOrIsland(leftJoin.getLeftArg(), duplicateInsensitive);
-			SlotPlan right = forceInteriorIslands ? islandPreferred(leftJoin.getRightArg(), duplicateInsensitive)
-					: compileTupleOrIsland(leftJoin.getRightArg(), duplicateInsensitive);
+			// Arm bindings observed across the operator (join keys, the other arm's expressions, the OPTIONAL
+			// condition) must survive each arm's own duplicate-insensitive pruning, exactly as for an inner join.
+			Set<String> observed = observedAcrossNames(leftJoin.getLeftArg(), leftJoin.getRightArg());
+			if (leftJoin.hasCondition()) {
+				observed = withRequired(observed, VarNameCollector.process(leftJoin.getCondition()));
+			}
+			Set<String> previousRequired = requiredAggregateNames;
+			SlotPlan left;
+			SlotPlan right;
+			try {
+				requiredAggregateNames = withRequired(previousRequired, observed);
+				left = compileTupleOrIsland(leftJoin.getLeftArg(), duplicateInsensitive);
+				requiredAggregateNames = withRequired(previousRequired, observed);
+				right = forceInteriorIslands ? islandPreferred(leftJoin.getRightArg(), duplicateInsensitive)
+						: compileTupleOrIsland(leftJoin.getRightArg(), duplicateInsensitive);
+			} finally {
+				requiredAggregateNames = previousRequired;
+			}
 			if (left == null || right == null) {
 				return null;
 			}
@@ -1851,7 +1870,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Difference) {
 			Difference difference = (Difference) expr;
-			Set<String> shared = sharedBindingNames(difference.getLeftArg(), difference.getRightArg());
+			Set<String> shared = observedAcrossNames(difference.getLeftArg(), difference.getRightArg());
 			Set<String> previousRequired = requiredAggregateNames;
 			SlotPlan left;
 			SlotPlan right;

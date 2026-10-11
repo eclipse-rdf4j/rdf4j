@@ -157,7 +157,7 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		boolean conditionFolded = false;
 		try {
 			java.util.HashSet<String> required = new java.util.HashSet<>(previousRequired);
-			required.addAll(sharedBindingNames(leftArg, leftJoin.getRightArg()));
+			required.addAll(observedAcrossNames(leftArg, leftJoin.getRightArg()));
 			required.addAll(VarNameCollector.process(filter.getCondition()));
 			if (leftJoin.hasCondition()) {
 				required.addAll(VarNameCollector.process(leftJoin.getCondition()));

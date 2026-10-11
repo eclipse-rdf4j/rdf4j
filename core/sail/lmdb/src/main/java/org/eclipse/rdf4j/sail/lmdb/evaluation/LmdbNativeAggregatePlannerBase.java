@@ -1152,6 +1152,33 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return required;
 	}
 
+	/**
+	 * Names one operand binds that the other operand observes: either as a binding of its own (a join key) or through
+	 * any value expression it contains (a FILTER condition, a BIND input, a LEFT JOIN condition). The second kind is
+	 * invisible to {@link #sharedBindingNames} because expression variables are not binding names. Compiling an operand
+	 * with only the binding-name intersection as required let a VALUES table whose variable is read solely by the
+	 * sibling's FILTER look unobserved, so the duplicate-insensitive identity shortcut dropped the table and the filter
+	 * degraded to a never-true unbound guard (MEDICAL_RECORDS q1: {@code VALUES ?target} joined with
+	 * {@code FILTER(?code = ?target || ...)}).
+	 */
+	Set<String> observedAcrossNames(TupleExpr left, TupleExpr right) {
+		Set<String> leftBound = left.getBindingNames();
+		Set<String> rightBound = right.getBindingNames();
+		HashSet<String> observed = new HashSet<>(leftBound);
+		observed.retainAll(rightBound);
+		for (String name : VarNameCollector.process(right)) {
+			if (leftBound.contains(name)) {
+				observed.add(name);
+			}
+		}
+		for (String name : VarNameCollector.process(left)) {
+			if (rightBound.contains(name)) {
+				observed.add(name);
+			}
+		}
+		return observed;
+	}
+
 	ContextConstraint compileContextConstraint(StatementPattern sp, Dataset dataset) {
 		return compileContextConstraint(sp.getScope(), dataset);
 	}
