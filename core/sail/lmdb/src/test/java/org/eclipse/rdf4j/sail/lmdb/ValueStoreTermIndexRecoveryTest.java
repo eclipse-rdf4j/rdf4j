@@ -48,7 +48,11 @@ import java.nio.IntBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -161,7 +165,7 @@ class ValueStoreTermIndexRecoveryTest {
 
 	@Test
 	@Timeout(value = 240, unit = TimeUnit.SECONDS)
-	void termIndexRebuildGrowsBeyondCertifiedReserveAndReopensFromCommittedTerms(@TempDir Path storeDir)
+	void termIndexRebuildFitsCurrentMapAndReopensFromCommittedTerms(@TempDir Path storeDir)
 			throws Exception {
 		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE, 20);
 		long initialMapSize = first.valueMapSizeBytes();
@@ -178,8 +182,8 @@ class ValueStoreTermIndexRecoveryTest {
 
 		MapSnapshot rebuiltMap = liveValueMapSnapshot(output);
 		long grownMapSize = rebuiltMap.mapSizeBytes();
-		assertTrue(grownMapSize >= initialMapSize * 2L,
-				"the complete native term-index rebuild must grow its map when demand exceeds certified reserve; initial map/occupied="
+		assertEquals(initialMapSize, grownMapSize,
+				"the original 4,000-term, ten-index workload fits the existing map and is a reopen control; initial="
 						+ initialMapSize + "/" + initialOccupiedBytes + ", after rebuild=" + grownMapSize + "/"
 						+ rebuiltMap.occupiedBytes());
 
@@ -195,6 +199,126 @@ class ValueStoreTermIndexRecoveryTest {
 			}
 			assertStatementAndSelectiveTermQuery(reopened, first);
 			assertAllBoundNestedTermLookup(reopened, first, "opsc");
+			exactOpscKey = exactOpscKey(reopened, first);
+		} finally {
+			reopened.shutDown();
+		}
+		assertExactTermIndexKey(storeDir.resolve("values"), "opsc", exactOpscKey);
+	}
+
+	@Test
+	@Timeout(value = 240, unit = TimeUnit.SECONDS)
+	void fixedValueMapCapacityFailurePreservesTermsBeforeGrowingReindex(@TempDir Path storeDir) throws Exception {
+		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE, 20);
+		LmdbStore fixedStore = new LmdbStore(storeDir.toFile(), smallMapConfig().setAutoGrow(false));
+		fixedStore.init();
+		long fixedMapSize;
+		int pageSize;
+		long valueResizesBefore;
+		int committedFillerRows = 0;
+		Throwable capacityFailure = null;
+		Set<Statement> fillerStatements = new HashSet<>();
+		Set<Statement> expectedStatements;
+		try {
+			ValueStore valueStore = (ValueStore) fixedStore.getValueFactory();
+			LmdbSailStore backing = fixedStore.getBackingStore();
+			expectedStatements = new HashSet<>(readStatementRows(fixedStore));
+			assertEquals(GROWTH_FIXTURE_SIZE, expectedStatements.size(),
+					"the fixed-capacity phase must start with the exact nested-term seed");
+			fixedMapSize = valueStore.mapSizeBytes();
+			long occupiedBytes = valueStore.occupiedBytes();
+			pageSize = fixedStore.getLmdbStats()
+					.valueDatabases()
+					.values()
+					.stream()
+					.mapToInt(LmdbStore.LmdbDatabaseStats::pageSize)
+					.findFirst()
+					.orElseThrow();
+			assertTrue(pageSize > 0 && fixedMapSize >= pageSize,
+					"the pressure bound must come from the opened native map's page size and capacity");
+			assertTrue(occupiedBytes > 0 && occupiedBytes < fixedMapSize,
+					"the existing term generation must begin below the fixed map's physical capacity");
+			valueResizesBefore = backing.growthMetricsSnapshot().valueStoreResizes();
+
+			int rowsPerPageBatch = Math.max(1, pageSize / 1024);
+			int maximumBatches = Math.toIntExact(fixedMapSize / pageSize + 1L);
+			String literalPadding = "x".repeat(pageSize);
+			for (int batch = 0; batch < maximumBatches && capacityFailure == null; batch++) {
+				int batchStart = committedFillerRows;
+				List<Statement> batchStatements = new ArrayList<>(rowsPerPageBatch);
+				try (SailConnection writer = fixedStore.getConnection()) {
+					writer.begin(IsolationLevels.SNAPSHOT);
+					try {
+						for (int offset = 0; offset < rowsPerPageBatch; offset++) {
+							Statement filler = VF.createStatement(
+									VF.createIRI("urn:value-term-index:capacity-filler:" + (batchStart + offset)),
+									PREDICATE,
+									VF.createLiteral(batchStart + offset + ":" + literalPadding));
+							writer.addStatement(filler.getSubject(), filler.getPredicate(), filler.getObject());
+							batchStatements.add(filler);
+						}
+						writer.commit();
+						fillerStatements.addAll(batchStatements);
+						committedFillerRows += batchStatements.size();
+					} catch (SailException failure) {
+						if (!containsCause(failure, LmdbUtil.MapFullException.class)) {
+							throw failure;
+						}
+						capacityFailure = failure;
+						if (writer.isActive()) {
+							writer.rollback();
+						}
+					}
+				}
+				assertEquals(fixedMapSize, valueStore.mapSizeBytes(),
+						"autoGrow=false must keep the actual ValueStore map fixed at every batch boundary");
+				assertEquals(valueResizesBefore, backing.growthMetricsSnapshot().valueStoreResizes(),
+						"the pressure fixture must not resize the ValueStore before its native capacity failure");
+			}
+			assertNotNull(capacityFailure,
+					"capacity pressure must reach the native MAP_FULL boundary within a page-derived batch bound; map="
+							+ fixedMapSize + ", page=" + pageSize + ", committedRows=" + committedFillerRows);
+			assertTrue(containsCause(capacityFailure, LmdbUtil.MapFullException.class),
+					"the observed pressure boundary must be an actual LMDB MapFullException: " + capacityFailure);
+			assertStatementAndSelectiveTermQuery(fixedStore, first);
+			expectedStatements.addAll(fillerStatements);
+			List<Statement> fixedRows = readStatementRows(fixedStore);
+			assertEquals(expectedStatements.size(), fixedRows.size(),
+					"fixed-capacity pressure must expose no partially committed filler rows");
+			assertEquals(expectedStatements, new HashSet<>(fixedRows),
+					"fixed-capacity pressure must preserve the seed and each committed filler row exactly");
+		} finally {
+			fixedStore.shutDown();
+		}
+
+		ChildProcess child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
+				smallMapConfig().getValueDBSize());
+		String output = awaitProcess(child, 180, TimeUnit.SECONDS);
+		assertEquals(0, child.process().exitValue(), "the reindex child must complete after actual capacity pressure: "
+				+ output);
+		assertTrue(output.contains("VALUE_TERM_INDEX_REBUILD_COMPLETE"),
+				"the child must finish the native reindex after capacity pressure: " + output);
+		MapSnapshot rebuiltMap = liveValueMapSnapshot(output);
+		assertTrue(rebuiltMap.mapSizeBytes() > fixedMapSize,
+				"the reindex must grow beyond the measured fixed-capacity boundary; before=" + fixedMapSize
+						+ ", after=" + rebuiltMap.mapSizeBytes() + ", occupied=" + rebuiltMap.occupiedBytes());
+
+		long[] exactOpscKey;
+		LmdbStore reopened = new LmdbStore(storeDir.toFile(), legacyConfig());
+		reopened.init();
+		try {
+			Map<String, LmdbStore.LmdbDatabaseStats> valueDatabases = reopened.getLmdbStats().valueDatabases();
+			for (String index : GROWN_TERM_INDEXES.split(",")) {
+				assertEquals(GROWTH_FIXTURE_SIZE * 2, valueDatabases.get(termIndexDatabaseName(index)).entries(),
+						"the grown reindex must preserve every exact term key: " + index);
+			}
+			assertStatementAndSelectiveTermQuery(reopened, first);
+			assertAllBoundNestedTermLookup(reopened, first, "opsc");
+			List<Statement> reopenedRows = readStatementRows(reopened);
+			assertEquals(expectedStatements.size(), reopenedRows.size(),
+					"reindex and reopen must preserve exact row cardinality without duplicates");
+			assertEquals(expectedStatements, new HashSet<>(reopenedRows),
+					"the seed and every committed filler row must survive reindex and reopen");
 			exactOpscKey = exactOpscKey(reopened, first);
 		} finally {
 			reopened.shutDown();
@@ -408,6 +532,27 @@ class ValueStoreTermIndexRecoveryTest {
 			assertEquals(seed.outer(), terms.next());
 			assertFalse(terms.hasNext());
 		}
+	}
+
+	private static List<Statement> readStatementRows(LmdbStore store) throws Exception {
+		List<Statement> result = new ArrayList<>();
+		try (SailConnection connection = store.getConnection();
+				CloseableIteration<? extends Statement> statements = connection.getStatements(null, null, null,
+						false)) {
+			while (statements.hasNext()) {
+				result.add(statements.next());
+			}
+		}
+		return result;
+	}
+
+	private static boolean containsCause(Throwable failure, Class<? extends Throwable> expected) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (expected.isInstance(current)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void assertAllBoundNestedTermLookup(LmdbStore store, Seed seed, String expectedIndex)

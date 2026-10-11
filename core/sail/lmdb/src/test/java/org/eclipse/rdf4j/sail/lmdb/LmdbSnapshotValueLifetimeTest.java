@@ -799,7 +799,24 @@ class LmdbSnapshotValueLifetimeTest {
 						}
 					});
 					assertTrue(writesBuffered.await(10, TimeUnit.SECONDS), "writer must buffer the growth batch");
-					awaitGrowthPhase(store, LmdbSailStore.GrowthPhase.DRAIN_READERS, 5_000);
+					long drainWaitDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+					MapGrowthMetrics.Snapshot duringDrain = store.getBackingStore().growthMetricsSnapshot();
+					while (duringDrain.readerDrainWaitCount() <= beforeGrowth.readerDrainWaitCount()) {
+						assertFalse(writer.isDone(),
+								"the writer must remain parked while its observed result is retained");
+						if (System.nanoTime() >= drainWaitDeadline) {
+							throw new AssertionError(
+									"the writer did not enter reader-drain wait; metrics=" + duringDrain);
+						}
+						Thread.yield();
+						duringDrain = store.getBackingStore().growthMetricsSnapshot();
+					}
+					assertTrue(store.getBackingStore().growthAdmissionClosed(),
+							"the observed reader must hold a closed growth admission while the writer drains");
+					assertFalse(writer.isDone(),
+							"the writer must remain pending until the observed result is released");
+					assertEquals(initialMapSize, mapSize(tripleStore),
+							"the TripleStore map must remain unchanged while reader grace is waiting");
 					assertTrue(
 							store.getBackingStore().growthMetricsSnapshot().growthEpisodes() > beforeGrowth
 									.growthEpisodes(),

@@ -122,7 +122,7 @@ final class TxnManager {
 	private final AtomicLong lastReaderCheck = new AtomicLong(Long.MIN_VALUE);
 
 	private final Pool[] pools = new Pool[CACHED_POOLS];
-	private final StampedLongAdderLockManager lockManager = new NativeBarrier();
+	private final NativeBarrier lockManager = new NativeBarrier();
 
 	private volatile boolean managerClosed;
 	// Deterministic admission-race seam; only the blocking path visits it.
@@ -461,6 +461,12 @@ final class TxnManager {
 		return doWith(transaction, true);
 	}
 
+	/** Runs a short committed-state read after renewing any recycled native snapshot. */
+	<T> T doWithFreshPriority(Transaction<T> transaction) throws IOException {
+		return doWithPriority(transaction, () -> () -> {
+		});
+	}
+
 	/**
 	 * Starts a short callback's reader inside a caller's scope, then releases that scope before invoking the callback.
 	 * Reader capacity is reserved before either gate is acquired, using the current query's absolute deadline.
@@ -605,6 +611,21 @@ final class TxnManager {
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new IOException("Interrupted while acquiring read lock", e);
+		}
+	}
+
+	/** Metadata reads may borrow this thread's exclusive native interval, but never another writer's. */
+	long acquireMetadataReadBarrier() throws IOException {
+		if (lockManager.ownedByCurrentThread()) {
+			checkQueryDeadline(QueryExecutionDeadline.current());
+			return 0L;
+		}
+		return acquireReadBarrier();
+	}
+
+	void releaseMetadataReadBarrier(long stamp) {
+		if (stamp != 0L) {
+			lockManager.unlockRead(stamp);
 		}
 	}
 
@@ -786,8 +807,38 @@ final class TxnManager {
 
 	/** A blocked pressure scan is retried at the actual native writer completion, without polling. */
 	private final class NativeBarrier extends StampedLongAdderLockManager {
+		private volatile Thread owner;
+		private volatile long ownerStamp;
+
+		@Override
+		public long writeLock() throws InterruptedException {
+			long stamp = super.writeLock();
+			ownerStamp = stamp;
+			owner = Thread.currentThread();
+			return stamp;
+		}
+
+		@Override
+		public long tryWriteLock() {
+			long stamp = super.tryWriteLock();
+			if (stamp != 0L) {
+				ownerStamp = stamp;
+				owner = Thread.currentThread();
+			}
+			return stamp;
+		}
+
+		boolean ownedByCurrentThread() {
+			return owner == Thread.currentThread();
+		}
+
 		@Override
 		public void unlockWrite(long stamp) {
+			if (stamp == 0L || stamp != ownerStamp) {
+				throw new IllegalMonitorStateException("Trying to release an unowned native write stamp");
+			}
+			owner = null;
+			ownerStamp = 0L;
 			super.unlockWrite(stamp);
 			if (ordinaryReaderAdmissions.get() != 0 && !managerClosed) {
 				try {

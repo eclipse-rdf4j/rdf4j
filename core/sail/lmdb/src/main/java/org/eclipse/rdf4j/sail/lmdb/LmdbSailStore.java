@@ -4205,7 +4205,7 @@ class LmdbSailStore implements SailStore {
 	}
 
 	private record StatementReplayCertificate(TemporaryFlushingException failure, Object owner, Object graphOwner,
-			long generation, MapResizeKind kind) {
+			long generation, MapResizeKind kind, long projectedUsedBytes) {
 	}
 
 	private boolean frozenReplayPublication(Object owner) {
@@ -4240,6 +4240,7 @@ class LmdbSailStore implements SailStore {
 		RetainedFlushPublication retained = context.retainedFlush;
 		retained.checkActive();
 		long failedGeneration;
+		long projectedUsedBytes;
 		sinkStoreAccessLock.lock();
 		try {
 			if (!storeTxnStarted.get() || storeTransactionOwner != owner || storeReplayDecision == null
@@ -4250,6 +4251,8 @@ class LmdbSailStore implements SailStore {
 				return null;
 			}
 			failedGeneration = storeTxnGeneration;
+			// Physical rollback retires this generation's registrations. Carry only its exact-owner numeric demand.
+			projectedUsedBytes = mapGrowthCoordinator.projectedUsedBytes(owner, failedGeneration, capacity.kind(), 0L);
 		} finally {
 			sinkStoreAccessLock.unlock();
 		}
@@ -4265,7 +4268,7 @@ class LmdbSailStore implements SailStore {
 		TemporaryFlushingException temporary = new TemporaryFlushingException(
 				"The native attempt was aborted; its complete frozen statement input remains retained", failure);
 		retained.retry = new StatementReplayCertificate(temporary, owner, retained.coverage.publicationOwner(),
-				failedGeneration, capacity.kind());
+				failedGeneration, capacity.kind(), projectedUsedBytes);
 		context.failed = context.logicalFailure;
 		context.commitRequested = false;
 		return temporary;
@@ -4290,16 +4293,19 @@ class LmdbSailStore implements SailStore {
 			}
 			MapGrowthAttempt growth = retained.growth;
 			growth.startStatementReplay(certificate.generation());
+			boolean triples = certificate.kind() == MapResizeKind.TRIPLE_STORE;
+			long before = triples ? tripleStore.mapSizeBytes() : valueStore.mapSizeBytes();
+			// Read occupancy before reader parking; the retained growth owner excludes another resize episode.
+			long occupied = triples ? tripleStore.occupiedBytes() : valueStore.occupiedBytes();
+			long remainingEstimate = Math.max(0L, certificate.projectedUsedBytes() - occupied);
+			long estimatedWriteBytes = Math.max(before, remainingEstimate);
 			growth.requestQuiescence(certificate.kind());
-			long before;
 			long after;
-			if (certificate.kind() == MapResizeKind.TRIPLE_STORE) {
-				before = tripleStore.mapSizeBytes();
-				tripleStore.growMapForEstimatedWrite(before, growth);
+			if (triples) {
+				tripleStore.growMapForEstimatedWrite(estimatedWriteBytes, growth);
 				after = tripleStore.mapSizeBytes();
 			} else {
-				before = valueStore.mapSizeBytes();
-				valueStore.growMapForEstimatedWrite(before, growth);
+				valueStore.growMapForEstimatedWrite(estimatedWriteBytes, growth);
 				after = valueStore.mapSizeBytes();
 			}
 			if (after <= before) {

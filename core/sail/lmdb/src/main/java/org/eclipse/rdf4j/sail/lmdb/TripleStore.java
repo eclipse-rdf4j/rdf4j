@@ -390,7 +390,7 @@ class TripleStore implements Closeable {
 	 * predates the authoritative namespace database and its legacy file should be imported.
 	 */
 	Map<String, String> readNamespaceSnapshot() throws IOException {
-		return readTransaction(env, this::readNamespaceSnapshot);
+		return txnManager.doWithFreshPriority(this::readNamespaceSnapshot);
 	}
 
 	/** Installs a legacy or empty namespace snapshot only if the authoritative marker is still absent. */
@@ -1072,7 +1072,7 @@ class TripleStore implements Closeable {
 	 * @throws IOException
 	 */
 	protected void filterUsedIds(Collection<Long> ids) throws IOException {
-		readTransaction(env, (stack, txn) -> {
+		txnManager.doWithFreshPriority((stack, txn) -> {
 			MDBVal maxKey = MDBVal.malloc(stack);
 			ByteBuffer maxKeyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
 			MDBVal keyData = MDBVal.malloc(stack);
@@ -1606,11 +1606,14 @@ class TripleStore implements Closeable {
 	}
 
 	long occupiedBytes() throws IOException {
+		long stamp = txnManager.acquireMetadataReadBarrier();
 		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
 			return saturatedMultiply(nextPageNo, pageSize);
+		} finally {
+			txnManager.releaseMetadataReadBarrier(stamp);
 		}
 	}
 
@@ -2721,12 +2724,7 @@ class TripleStore implements Closeable {
 
 	private void refreshCommittedHighWater() throws IOException {
 		committedHighWaterBytes = Long.MAX_VALUE;
-		try (MemoryStack stack = stackPush()) {
-			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			E(mdb_env_info(env, info));
-			long nextPage = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
-			committedHighWaterBytes = saturatedMultiply(nextPage, pageSize);
-		}
+		committedHighWaterBytes = occupiedBytes();
 	}
 
 	/**

@@ -557,9 +557,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 
 	private static void awaitReplayAccepted(LmdbSailStore backingStore, MapGrowthMetrics.Snapshot before,
 			Future<?> writer) throws Exception {
-		writer.get(20, TimeUnit.SECONDS);
 		long deadlineNanos = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
 		while (backingStore.growthMetricsSnapshot().replayAccepted() == before.replayAccepted()) {
+			if (writer.isDone()) {
+				writer.get();
+				throw new AssertionError("the writer completed before the query replay was accepted");
+			}
 			if (System.nanoTime() >= deadlineNanos) {
 				throw new AssertionError("timed out waiting for the query replay to be accepted");
 			}

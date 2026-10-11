@@ -3029,11 +3029,14 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	long occupiedBytes() throws IOException {
+		long stamp = txnManager.acquireMetadataReadBarrier();
 		try (MemoryStack stack = stackPush()) {
 			MDBEnvInfo info = MDBEnvInfo.calloc(stack);
 			E(mdb_env_info(env, info));
 			long nextPageNo = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
 			return saturatedEstimateMultiply(nextPageNo, pageSize);
+		} finally {
+			txnManager.releaseMetadataReadBarrier(stamp);
 		}
 	}
 
@@ -5753,12 +5756,7 @@ class ValueStore extends AbstractValueFactory {
 
 	private void refreshCommittedHighWater() throws IOException {
 		committedHighWaterBytes = Long.MAX_VALUE;
-		try (MemoryStack stack = stackPush()) {
-			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
-			E(mdb_env_info(env, info));
-			long nextPage = info.me_last_pgno() == Long.MAX_VALUE ? Long.MAX_VALUE : info.me_last_pgno() + 1L;
-			committedHighWaterBytes = nextPage > Long.MAX_VALUE / pageSize ? Long.MAX_VALUE : nextPage * pageSize;
-		}
+		committedHighWaterBytes = occupiedBytes();
 	}
 
 	/**

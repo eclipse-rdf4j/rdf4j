@@ -14,8 +14,12 @@ package org.eclipse.rdf4j.sail.memory;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.ref.Cleaner;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -143,6 +147,46 @@ class MemorySailStore implements SailStore {
 	/** Weak keys preserve the lock manager's reclamation of abandoned ordinary sinks. */
 	private final Map<MemorySailSink, Thread> preparedSinks = new WeakHashMap<>();
 	private volatile Object activeFrozenOwner;
+	/** Store-owned undo survives collection of an abandoned sink without retaining the sink or its lock. */
+	private MutationSegment mutationSegment;
+
+	private static final class MutationSegment {
+		final WeakReference<MemorySailSink> owner;
+		final Set<MemStatement> additions = Collections.newSetFromMap(new IdentityHashMap<>());
+		final Map<MemStatement, Integer> deprecations = new IdentityHashMap<>();
+		final Map<String, String> namespaces = new LinkedHashMap<>();
+
+		MutationSegment(MemorySailSink owner) {
+			this.owner = new WeakReference<>(owner);
+		}
+	}
+
+	/** Caller owns the transaction lock and registry guard; no live sink can mutate an abandoned segment. */
+	private void retireAbandonedSegment() {
+		if (mutationSegment != null && mutationSegment.owner.get() == null) {
+			undoSegment(mutationSegment);
+			mutationSegment = null;
+		}
+	}
+
+	private void undoSegment(MutationSegment segment) {
+		segment.deprecations.forEach(MemStatement::setTillSnapshot);
+		// These identities have never been published, even if component-list attachment failed midway.
+		for (MemStatement statement : segment.additions) {
+			statement.setTillSnapshot(0);
+		}
+		segment.namespaces.forEach((prefix, name) -> {
+			if (name == null) {
+				namespaceStore.removeNamespace(prefix);
+			} else {
+				namespaceStore.setNamespace(prefix, name);
+			}
+		});
+		invalidateCache();
+		if (!segment.additions.isEmpty()) {
+			scheduleSnapshotCleanup();
+		}
+	}
 
 	/**
 	 * Cleanup thread that removes deprecated statements when no other threads are accessing this list. Seee
@@ -597,6 +641,7 @@ class MemorySailStore implements SailStore {
 		private volatile Object frozenOwner;
 
 		private boolean requireCleanup;
+		private MutationSegment segment;
 
 		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {
 			this.explicit = explicit;
@@ -629,6 +674,9 @@ class MemorySailStore implements SailStore {
 		@Override
 		public synchronized void prepare() throws SailException {
 			acquireExclusiveTransactionLock();
+			if (segment == null) {
+				nextSnapshot = currentSnapshot + 1;
+			}
 			if (observations != null) {
 				for (StatementPattern p : observations) {
 					Resource subj = (Resource) p.getSubjectVar().getValue();
@@ -647,6 +695,9 @@ class MemorySailStore implements SailStore {
 							MemStatement st = iter.next();
 							int since = st.getSinceSnapshot();
 							int till = st.getTillSnapshot();
+							if (since >= till) {
+								continue;
+							}
 							if (serializable < since && since < nextSnapshot && !isOwnFlush(since)
 									|| serializable < till && till < nextSnapshot && !isOwnFlush(till)) {
 								throw new SailConflictException("Observed State has Changed");
@@ -675,6 +726,9 @@ class MemorySailStore implements SailStore {
 			}
 			if (!sink.flushCompleted) {
 				throw new IllegalStateException("Only a successful Memory flush has own-publication evidence");
+			}
+			if (sink.flushedSnapshot < 0) {
+				return;
 			}
 			if (ownFlushSnapshots == null) {
 				ownFlushSnapshots = new HashSet<>();
@@ -708,13 +762,25 @@ class MemorySailStore implements SailStore {
 		public synchronized void flush() throws SailException {
 			checkFrozenOwnership();
 			if (txnLock != null && txnLock.isActive()) {
-				invalidateCache();
-				currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
+				synchronized (preparedSinks) {
+					retireAbandonedSegment();
+					flushedSnapshot = -1;
+					if (segment != null) {
+						if (mutationSegment != segment) {
+							throw new SailConflictException("Memory mutation segment ownership changed");
+						}
+						invalidateCache();
+						currentSnapshot = nextSnapshot;
+						flushedSnapshot = nextSnapshot;
+						mutationSegment = null;
+						segment = null;
+					}
+				}
+				flushCompleted = true;
 				if (requireCleanup) {
 					scheduleSnapshotCleanup();
+					requireCleanup = false;
 				}
-				flushedSnapshot = nextSnapshot;
-				flushCompleted = true;
 			}
 		}
 
@@ -740,18 +806,42 @@ class MemorySailStore implements SailStore {
 		}
 
 		synchronized private void releaseLock() {
+			Throwable failure = null;
 			try {
-				if (txnLock != null) {
-					assert txnLock.isActive();
-					txnLock.release();
-					txnLock = null;
-				}
-			} finally {
 				synchronized (preparedSinks) {
-					preparedSinks.remove(this);
-					frozenOwner = null;
-					recomputeFrozenOwner();
+					if (segment != null && mutationSegment == segment) {
+						undoSegment(segment);
+						mutationSegment = null;
+						segment = null;
+					}
 				}
+			} catch (RuntimeException | Error undoFailure) {
+				failure = undoFailure;
+			} finally {
+				try {
+					if (txnLock != null) {
+						assert txnLock.isActive();
+						txnLock.release();
+					}
+				} catch (RuntimeException | Error releaseFailure) {
+					if (failure == null) {
+						failure = releaseFailure;
+					} else if (failure != releaseFailure) {
+						failure.addSuppressed(releaseFailure);
+					}
+				} finally {
+					txnLock = null;
+					synchronized (preparedSinks) {
+						preparedSinks.remove(this);
+						frozenOwner = null;
+						recomputeFrozenOwner();
+					}
+				}
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			} else if (failure instanceof Error error) {
+				throw error;
 			}
 		}
 
@@ -793,21 +883,26 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void setNamespace(String prefix, String name) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
+			recordNamespace(prefix);
 			namespaceStore.setNamespace(prefix, name);
 
 		}
 
 		@Override
 		public synchronized void removeNamespace(String prefix) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
+			recordNamespace(prefix);
 			namespaceStore.removeNamespace(prefix);
 
 		}
 
 		@Override
 		public synchronized void clearNamespaces() {
-			acquireExclusiveTransactionLock();
+			beginMutation();
+			for (Namespace namespace : namespaceStore) {
+				recordNamespace(namespace.getPrefix());
+			}
 			namespaceStore.clear();
 
 		}
@@ -833,14 +928,14 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void clear(Resource... contexts) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
 			invalidateCache();
 			requireCleanup = true;
 			try (CloseableIteration<MemStatement> iter = createStatementIterator(null, null, null,
 					explicit, nextSnapshot, contexts)) {
 				while (iter.hasNext()) {
 					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+					deprecateVersion(st);
 				}
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);
@@ -850,7 +945,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void approve(Resource subj, IRI pred, Value obj, Resource ctx) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
 			invalidateCache();
 			try {
 				addStatement(subj, pred, obj, ctx, explicit);
@@ -862,7 +957,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
 			invalidateCache();
 			try {
 				for (Statement statement : approved) {
@@ -877,7 +972,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void deprecateAll(Set<Statement> deprecated) {
-			acquireExclusiveTransactionLock();
+			beginMutation();
 			invalidateCache();
 			requireCleanup = true;
 			int nextSnapshot = this.nextSnapshot;
@@ -889,7 +984,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void deprecate(Statement statement) throws SailException {
-			acquireExclusiveTransactionLock();
+			beginMutation();
 			invalidateCache();
 			requireCleanup = true;
 			innerDeprecate(statement, nextSnapshot);
@@ -901,7 +996,7 @@ class MemorySailStore implements SailStore {
 				MemStatement toDeprecate = (MemStatement) statement;
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
-					toDeprecate.setTillSnapshot(nextSnapshot);
+					deprecateVersion(toDeprecate);
 				}
 			} else if (statement instanceof LinkedHashModel.ModelStatement
 					&& ((LinkedHashModel.ModelStatement) statement).getStatement() instanceof MemStatement) {
@@ -910,7 +1005,7 @@ class MemorySailStore implements SailStore {
 				MemStatement toDeprecate = (MemStatement) ((LinkedHashModel.ModelStatement) statement).getStatement();
 				if ((nextSnapshot < 0 || toDeprecate.isInSnapshot(nextSnapshot))
 						&& toDeprecate.isExplicit() == explicit) {
-					toDeprecate.setTillSnapshot(nextSnapshot);
+					deprecateVersion(toDeprecate);
 				}
 			} else {
 				try (CloseableIteration<MemStatement> iter = createStatementIterator(
@@ -918,7 +1013,7 @@ class MemorySailStore implements SailStore {
 						statement.getContext())) {
 					while (iter.hasNext()) {
 						MemStatement st = iter.next();
-						st.setTillSnapshot(nextSnapshot);
+						deprecateVersion(st);
 					}
 				} catch (InterruptedException e) {
 					throw convertToSailException(e);
@@ -927,6 +1022,9 @@ class MemorySailStore implements SailStore {
 		}
 
 		private void acquireExclusiveTransactionLock() throws SailException {
+			if (closed) {
+				throw new IllegalStateException("The Memory sink is closed");
+			}
 			checkFrozenOwnership();
 			if (txnLock == null) {
 				synchronized (this) {
@@ -958,6 +1056,32 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
+		private void beginMutation() {
+			acquireExclusiveTransactionLock();
+			synchronized (preparedSinks) {
+				retireAbandonedSegment();
+				if (mutationSegment != null && mutationSegment.owner.get() != this) {
+					throw new SailConflictException("Another Memory sink owns unpublished mutations");
+				}
+				if (mutationSegment == null) {
+					segment = mutationSegment = new MutationSegment(this);
+					nextSnapshot = currentSnapshot + 1;
+					flushCompleted = false;
+				}
+			}
+		}
+
+		private void recordNamespace(String prefix) {
+			if (!segment.namespaces.containsKey(prefix)) {
+				segment.namespaces.put(prefix, namespaceStore.getNamespace(prefix));
+			}
+		}
+
+		private void deprecateVersion(MemStatement statement) {
+			segment.deprecations.putIfAbsent(statement, statement.getTillSnapshot());
+			statement.setTillSnapshot(nextSnapshot);
+		}
+
 		private MemStatement addStatement(Resource subj, IRI pred, Value obj, Resource context, boolean explicit)
 				throws SailException, InterruptedException {
 			if (!explicit) {
@@ -982,6 +1106,7 @@ class MemorySailStore implements SailStore {
 
 			// completely new statement
 			MemStatement st = new MemStatement(memSubj, memPred, memObj, memContext, explicit, nextSnapshot);
+			segment.additions.add(st);
 			statements.add(st);
 			st.addToComponentLists();
 			invalidateCache();
@@ -998,7 +1123,7 @@ class MemorySailStore implements SailStore {
 			if (memStatement != null) {
 				if (!memStatement.isExplicit() && explicit) {
 					// Implicit statement is now added explicitly
-					memStatement.setTillSnapshot(this.nextSnapshot);
+					deprecateVersion(memStatement);
 				} else {
 					// statement already exists
 					return true;
@@ -1037,8 +1162,8 @@ class MemorySailStore implements SailStore {
 		}
 
 		@Override
-		public boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
-			acquireExclusiveTransactionLock();
+		public synchronized boolean deprecateByQuery(Resource subj, IRI pred, Value obj, Resource[] contexts) {
+			beginMutation();
 			boolean deprecated = false;
 			requireCleanup = true;
 			invalidateCache();
@@ -1048,7 +1173,7 @@ class MemorySailStore implements SailStore {
 				while (iter.hasNext()) {
 					deprecated = true;
 					MemStatement st = iter.next();
-					st.setTillSnapshot(nextSnapshot);
+					deprecateVersion(st);
 				}
 			} catch (InterruptedException e) {
 				throw convertToSailException(e);

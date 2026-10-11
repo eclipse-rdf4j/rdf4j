@@ -13,10 +13,15 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.io.IOException;
 import java.nio.file.Path;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -31,6 +36,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -45,18 +51,26 @@ class LmdbGrowthUpgradeTest {
 	private static final IRI REJECTED_SUBJECT = VF.createIRI("urn:lmdb:growth-upgrade:rejected-subject");
 	private static final IRI REJECTED_PREDICATE = VF.createIRI("urn:lmdb:growth-upgrade:rejected-predicate");
 	private static final IRI SEED_OBJECT = VF.createIRI("urn:lmdb:growth-upgrade:seed-object");
+	private static final IRI FOLLOWUP_SUBJECT = VF.createIRI("urn:lmdb:growth-upgrade:followup-subject");
+	private static final IRI FOLLOWUP_PREDICATE = VF.createIRI("urn:lmdb:growth-upgrade:followup-predicate");
 	private static final long INITIAL_MAP_BYTES = 8L * 1024L * 1024L;
 	private static final int GROWTH_ROWS = 10_000;
+	private static final int NAMESPACE_GROWTH_BYTES = 2 * 1024 * 1024;
+	private static final double GROWTH_THRESHOLD = 0.10d;
 	private static final long WAIT_SECONDS = 20L;
 
 	@Test
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void admittedReadCanUpgradeDuringWriterDrainAndDelaysReaderGrace(@TempDir Path dataDirectory) throws Exception {
-		LmdbStore store = newStore(dataDirectory);
+		InspectableLmdbStore store = newStore(dataDirectory);
 		store.init();
 		LmdbSailStore backingStore = store.getBackingStore();
 		seed(store);
 		MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
+		long initialTripleMapSize = store.tripleStore().mapSizeBytes();
+		long initialValueMapSize = store.valueStore().mapSizeBytes();
+		String namespace = namespaceGrowthValue();
+		assertNamespaceGrowthPressure(store.tripleStore(), namespace);
 
 		CountDownLatch ownerReadReady = new CountDownLatch(1);
 		CountDownLatch allowOwnerUpgrade = new CountDownLatch(1);
@@ -74,7 +88,7 @@ class LmdbGrowthUpgradeTest {
 						owner.addStatement(SEED_SUBJECT, SEED_PREDICATE, SEED_OBJECT);
 						ownerUpgraded.countDown();
 						await(allowOwnerCompletion, "the test must release the upgraded owner to finish");
-						owner.commit();
+						owner.rollback();
 					}
 				} finally {
 					if (owner.isActive()) {
@@ -92,9 +106,9 @@ class LmdbGrowthUpgradeTest {
 				try {
 					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
 							"the readonly attempt must register and open its snapshot before growth closes admission");
-					addGrowthStatements(trigger);
+					trigger.setNamespace("growth-demand", namespace);
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
-							"the buffered batch must start the writer-drain phase");
+							"the 2 MiB namespace demand must start the writer-drain phase");
 
 					allowOwnerUpgrade.countDown();
 					assertTrue(ownerUpgraded.await(5, TimeUnit.SECONDS),
@@ -115,6 +129,12 @@ class LmdbGrowthUpgradeTest {
 					graceRows.close();
 					awaitGrowthReopened(store, backingStore);
 					assertHasResizeSince(before, backingStore.growthMetricsSnapshot());
+					assertTrue(store.tripleStore().mapSizeBytes() > initialTripleMapSize,
+							"the managed namespace demand must advance the actual TripleStore map size");
+					assertEquals(initialValueMapSize, store.valueStore().mapSizeBytes(),
+							"TripleStore namespace growth must leave the ValueStore map unchanged");
+					assertEquals(namespace, getNamespace(store, "growth-demand"),
+							"the exact namespace payload must remain committed after reader grace");
 				} finally {
 					allowOwnerUpgrade.countDown();
 					allowOwnerCompletion.countDown();
@@ -140,11 +160,15 @@ class LmdbGrowthUpgradeTest {
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void upgradeAfterWriterDrainTransitionFailsPromptlyWithRetryableConflict(@TempDir Path dataDirectory)
 			throws Exception {
-		LmdbStore store = newStore(dataDirectory);
+		InspectableLmdbStore store = newStore(dataDirectory);
 		store.init();
 		LmdbSailStore backingStore = store.getBackingStore();
 		seed(store);
 		MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
+		long initialTripleMapSize = store.tripleStore().mapSizeBytes();
+		long initialValueMapSize = store.valueStore().mapSizeBytes();
+		String namespace = namespaceGrowthValue();
+		assertNamespaceGrowthPressure(store.tripleStore(), namespace);
 
 		CountDownLatch ownerReadReady = new CountDownLatch(1);
 		CountDownLatch allowUpgrade = new CountDownLatch(1);
@@ -179,9 +203,9 @@ class LmdbGrowthUpgradeTest {
 				try {
 					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
 							"the readonly attempt must register and open its snapshot before growth closes admission");
-					addGrowthStatements(trigger);
+					trigger.setNamespace("growth-demand", namespace);
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
-							"the buffered batch must start the writer-drain phase");
+							"the 2 MiB namespace demand must start the writer-drain phase");
 					trigger.commit();
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_READERS,
 							"the reader grace must be observable while an admitted snapshot remains open");
@@ -199,6 +223,12 @@ class LmdbGrowthUpgradeTest {
 					graceRows.close();
 					awaitGrowthReopened(store, backingStore);
 					assertHasResizeSince(before, backingStore.growthMetricsSnapshot());
+					assertTrue(store.tripleStore().mapSizeBytes() > initialTripleMapSize,
+							"the managed namespace demand must advance the actual TripleStore map size");
+					assertEquals(initialValueMapSize, store.valueStore().mapSizeBytes(),
+							"TripleStore namespace growth must leave the ValueStore map unchanged");
+					assertEquals(namespace, getNamespace(store, "growth-demand"),
+							"the exact namespace payload must remain committed after the late-upgrade refusal");
 				} finally {
 					allowUpgrade.countDown();
 					if (trigger.isActive()) {
@@ -218,12 +248,118 @@ class LmdbGrowthUpgradeTest {
 		}
 	}
 
-	private static LmdbStore newStore(Path dataDirectory) {
-		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
+	@Test
+	@Timeout(value = 45, unit = TimeUnit.SECONDS)
+	void mixedDemandRefusesToReplaceAnAdmittedUpgradedWriterAndReopens(@TempDir Path dataDirectory) throws Exception {
+		InspectableLmdbStore store = newStore(dataDirectory);
+		store.init();
+		LmdbSailStore backingStore = store.getBackingStore();
+		seed(store);
+		Statement seedStatement = VF.createStatement(SEED_SUBJECT, SEED_PREDICATE, SEED_OBJECT);
+
+		CountDownLatch ownerReadReady = new CountDownLatch(1);
+		CountDownLatch allowOwnerUpgrade = new CountDownLatch(1);
+		CountDownLatch ownerUpgraded = new CountDownLatch(1);
+		CountDownLatch allowOwnerRollback = new CountDownLatch(1);
+		ExecutorService ownerExecutor = Executors.newSingleThreadExecutor();
+		Future<?> ownerFinished = ownerExecutor.submit(() -> {
+			try (SailConnection owner = store.getConnection()) {
+				try {
+					try (CloseableIteration<? extends Statement> rows = beginReadSeed(owner)) {
+						ownerReadReady.countDown();
+						await(allowOwnerUpgrade, "the test must release the admitted readonly owner");
+						owner.addStatement(SEED_SUBJECT, SEED_PREDICATE, SEED_OBJECT);
+						ownerUpgraded.countDown();
+						await(allowOwnerRollback, "the test must release the upgraded owner to roll back");
+						owner.rollback();
+					}
+				} finally {
+					if (owner.isActive()) {
+						owner.rollback();
+					}
+				}
+			}
+			return null;
+		});
+
+		try {
+			try (SailConnection trigger = store.getConnection()) {
+				trigger.begin(IsolationLevels.SNAPSHOT);
+				try {
+					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
+							"the admitted owner must establish its snapshot before mixed demand starts");
+					addGrowthStatements(trigger);
+					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
+							"the original mixed row and namespace workload must activate writer drain");
+					allowOwnerUpgrade.countDown();
+					assertTrue(ownerUpgraded.await(5, TimeUnit.SECONDS),
+							"the already-admitted owner must complete its duplicate-write upgrade");
+
+					SailException refusal = assertThrows(SailException.class, trigger::commit,
+							"mixed capacity recovery must refuse to replace another admitted writer's continuation");
+					assertTrue(containsCause(refusal, LmdbTransactionRetryException.class),
+							"the conservative refusal must retain its retryable capacity cause: " + refusal);
+				} finally {
+					if (trigger.isActive()) {
+						trigger.rollback();
+					}
+					allowOwnerUpgrade.countDown();
+					allowOwnerRollback.countDown();
+				}
+			}
+			ownerFinished.get(WAIT_SECONDS, TimeUnit.SECONDS);
+			ownerExecutor.shutdown();
+			assertTrue(ownerExecutor.awaitTermination(5, TimeUnit.SECONDS),
+					"the admitted writer must finish rollback on its owner thread");
+			awaitGrowthReopened(store, backingStore);
+			assertEquals(Set.of(seedStatement), readStatements(store),
+					"the refused mixed batch must not publish any prefix of its 10,000 rows");
+			assertNull(getNamespace(store, "growth-demand"),
+					"the refused mixed batch must not publish its 2 MiB namespace payload");
+		} finally {
+			allowOwnerUpgrade.countDown();
+			allowOwnerRollback.countDown();
+			ownerExecutor.shutdownNow();
+			store.shutDown();
+		}
+
+		InspectableLmdbStore reopened = newStore(dataDirectory);
+		reopened.init();
+		try {
+			assertEquals(Set.of(seedStatement), readStatements(reopened),
+					"reopen must preserve the seed without any rejected mixed-batch row");
+			assertNull(getNamespace(reopened, "growth-demand"),
+					"reopen must preserve the namespace state preceding refusal");
+			try (SailConnection followup = reopened.getConnection()) {
+				followup.begin(IsolationLevels.SNAPSHOT);
+				followup.addStatement(FOLLOWUP_SUBJECT, FOLLOWUP_PREDICATE, SEED_OBJECT);
+				followup.commit();
+			}
+			Set<Statement> expected = Set.of(seedStatement,
+					VF.createStatement(FOLLOWUP_SUBJECT, FOLLOWUP_PREDICATE, SEED_OBJECT));
+			assertEquals(expected, readStatements(reopened),
+					"a fresh public writer must commit after the conservative refusal");
+		} finally {
+			reopened.shutDown();
+		}
+		InspectableLmdbStore finalReopen = newStore(dataDirectory);
+		finalReopen.init();
+		try {
+			Set<Statement> expected = Set.of(seedStatement,
+					VF.createStatement(FOLLOWUP_SUBJECT, FOLLOWUP_PREDICATE, SEED_OBJECT));
+			assertEquals(expected, readStatements(finalReopen),
+					"the follow-up write must persist exactly once across a second reopen");
+		} finally {
+			finalReopen.shutDown();
+		}
+	}
+
+	private static InspectableLmdbStore newStore(Path dataDirectory) {
+		return new InspectableLmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(INITIAL_MAP_BYTES)
 				.setValueDBSize(128L * 1024L * 1024L)
 				.setAutoGrow(true)
-				.setMapGrowthThreshold(0.10d)
+				.setMapGrowthThreshold(GROWTH_THRESHOLD)
 				.setMapGrowthReadDrainTimeoutMillis(30_000L));
 	}
 
@@ -251,7 +387,55 @@ class LmdbGrowthUpgradeTest {
 					VF.createLiteral("growth-value:" + index));
 		}
 		// Namespaces share the authoritative TripleStore map, whose readers require the reader-grace phase.
-		connection.setNamespace("growth-demand", "urn:lmdb:growth-upgrade:" + "n".repeat(2 * 1024 * 1024));
+		connection.setNamespace("growth-demand", namespaceGrowthValue());
+	}
+
+	private static String namespaceGrowthValue() {
+		return "urn:lmdb:growth-upgrade:" + "n".repeat(NAMESPACE_GROWTH_BYTES);
+	}
+
+	private static void assertNamespaceGrowthPressure(TripleStore triples, String namespace) throws IOException {
+		long mapSize = triples.mapSizeBytes();
+		long occupied = triples.occupiedBytes();
+		long estimatedBytes = ("growth-demand".length() + namespace.length() + 32L) * 4L + 256L;
+		assertEquals(INITIAL_MAP_BYTES, mapSize, "the fixture must use the configured 8 MiB TripleStore map");
+		assertTrue(occupied > 0 && occupied < mapSize,
+				"the managed growth fixture must begin with live TripleStore data inside its configured map");
+		assertTrue(triples.requiresResizeForEstimatedWrite(estimatedBytes),
+				"the namespace demand must exceed the configured 10% growth threshold; map=" + mapSize
+						+ ", occupied=" + occupied + ", estimate=" + estimatedBytes);
+	}
+
+	private static String getNamespace(LmdbStore store, String prefix) throws Exception {
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			String namespace = connection.getNamespace(prefix);
+			connection.rollback();
+			return namespace;
+		}
+	}
+
+	private static Set<Statement> readStatements(LmdbStore store) throws Exception {
+		Set<Statement> statements = new HashSet<>();
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.SNAPSHOT_READ);
+			try (CloseableIteration<? extends Statement> rows = connection.getStatements(null, null, null, true)) {
+				while (rows.hasNext()) {
+					statements.add(rows.next());
+				}
+			}
+			connection.rollback();
+		}
+		return statements;
+	}
+
+	private static boolean containsCause(Throwable failure, Class<? extends Throwable> expected) {
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (expected.isInstance(current)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static void await(CountDownLatch latch, String message) throws InterruptedException {
@@ -291,5 +475,36 @@ class LmdbGrowthUpgradeTest {
 				"the coordinated episode must complete an authoritative TripleStore map resize");
 		assertEquals(before.valueStoreResizes(), after.valueStoreResizes(),
 				"dictionary-only growth must not supply this reader-grace stimulus");
+	}
+
+	private static final class InspectableLmdbStore extends LmdbStore {
+		private TripleStore tripleStore;
+		private ValueStore valueStore;
+
+		private InspectableLmdbStore(File dataDir, LmdbStoreConfig config) {
+			super(dataDir, config);
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
+					(valueDir, valueProperties, valueConfig) -> {
+						valueStore = new ValueStore(valueDir, valueProperties, valueConfig);
+						return valueStore;
+					},
+					(tripleDir, tripleProperties, tripleConfig, values) -> {
+						tripleStore = new TripleStore(tripleDir, tripleProperties, tripleConfig, values);
+						return tripleStore;
+					});
+		}
+
+		private TripleStore tripleStore() {
+			return tripleStore;
+		}
+
+		private ValueStore valueStore() {
+			return valueStore;
+		}
 	}
 }

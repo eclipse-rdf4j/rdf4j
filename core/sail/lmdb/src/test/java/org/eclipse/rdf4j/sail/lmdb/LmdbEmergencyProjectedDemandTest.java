@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -34,6 +36,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -493,9 +496,29 @@ class LmdbEmergencyProjectedDemandTest {
 
 			assertCompletePublication(store, planned);
 			MapGrowthMetrics.Snapshot growthAfter = backing.growthMetricsSnapshot();
-			assertTrue(growthAfter.emergencyAttempts() > growthBefore.emergencyAttempts(),
-					"the grouped explicit/inferred write must reach native emergency sizing; before=" + growthBefore
+			ValueStoreGrowthWitness growthWitness = store.capturedValueGrowth();
+			assertNotNull(growthWitness,
+					"the grouped explicit/inferred write must reach the ValueStore growth hook; before=" + growthBefore
 							+ ", after=" + growthAfter);
+			assertEquals(LmdbSailStore.GrowthPhase.EMERGENCY, growthWitness.phase(),
+					"the frozen replay must grow the affected map during its certified emergency phase");
+			assertTrue(growthWitness.frozenReplay(),
+					"the ValueStore growth decision must be the distinct frozen-replay decision");
+			assertTrue(growthWitness.grew() && growthWitness.mapBytesAfter() > growthWitness.mapBytesBefore(),
+					"the ValueStore growth hook must report actual map progress; " + growthWitness);
+			List<StatementInputEstimateWitness> forecastsBeforeGrowth = growthWitness.inputEstimatesBeforeGrowth();
+			assertTrue(forecastsBeforeGrowth.stream()
+					.anyMatch(estimate -> estimate.hasStatements()
+							&& estimate.estimatedWriteBytes() == projectedValueBytes),
+					"the complete explicit+inferred list forecast must have reached the scalar StatementInput estimator before "
+							+ "native growth; projectedValueBytes=" + projectedValueBytes + ", observed="
+							+ forecastsBeforeGrowth);
+			long remainingProjectedBytes = Math.max(0L, projectedValueBytes - growthWitness.occupiedBytesBefore());
+			assertTrue(growthWitness.estimatedWriteBytes() >= remainingProjectedBytes,
+					"the emergency growth request must cover the still-unmet combined forecast; projectedValueBytes="
+							+ projectedValueBytes + ", occupiedBytesBefore=" + growthWitness.occupiedBytesBefore()
+							+ ", remainingProjectedBytes=" + remainingProjectedBytes + ", growthRequest="
+							+ growthWitness.estimatedWriteBytes() + ", forecasts=" + forecastsBeforeGrowth);
 			assertProjectedValueDemand(valueStore, initialValueMapBytes, initialOccupiedBytes, projectedValueBytes,
 					"the shared ValueStore must retain demand from both branches under their publishing owner; "
 							+ "emergencyAttempts=" + growthBefore.emergencyAttempts() + "->"
@@ -688,7 +711,7 @@ class LmdbEmergencyProjectedDemandTest {
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
 					(valueDir, valueProperties, valueConfig) -> {
-						capturedValueStore = new ValueStore(valueDir, valueProperties, valueConfig);
+						capturedValueStore = new CapturingValueStore(valueDir, valueProperties, valueConfig, this);
 						return capturedValueStore;
 					},
 					(tripleDir, tripleProperties, tripleConfig, valueStore) -> {
@@ -704,5 +727,62 @@ class LmdbEmergencyProjectedDemandTest {
 		private TripleStore capturedTripleStore() {
 			return capturedTripleStore;
 		}
+
+		private ValueStoreGrowthWitness capturedValueGrowth() {
+			return ((CapturingValueStore) capturedValueStore).growthWitness;
+		}
+	}
+
+	private static final class CapturingValueStore extends ValueStore {
+		private final InspectableLmdbStore owner;
+		private final List<StatementInputEstimateWitness> inputEstimateCalls = new CopyOnWriteArrayList<>();
+		private volatile boolean frozenReplayDecision;
+		private volatile ValueStoreGrowthWitness growthWitness;
+
+		private CapturingValueStore(File dir, StoreProperties properties, LmdbStoreConfig config,
+				InspectableLmdbStore owner) throws IOException {
+			super(dir, properties, config);
+			this.owner = owner;
+		}
+
+		@Override
+		void setReplayDecision(TxnReplayPolicy.Decision decision) {
+			frozenReplayDecision = decision != null && decision.frozenReplay;
+			super.setReplayDecision(decision);
+		}
+
+		@Override
+		long estimateWriteBytes(StatementInput input) {
+			int generationCount = input.generations().size();
+			boolean hasStatements = input.hasStatements();
+			boolean hasMetadataChanges = input.metadata().hasChanges();
+			long estimatedWriteBytes = super.estimateWriteBytes(input);
+			inputEstimateCalls
+					.add(new StatementInputEstimateWitness(estimatedWriteBytes, generationCount, hasStatements,
+							hasMetadataChanges));
+			return estimatedWriteBytes;
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+				throws IOException {
+			LmdbSailStore.GrowthPhase phase = owner.getBackingStore().growthMetricsSnapshot().currentPhase();
+			long mapBytesBefore = mapSizeBytes();
+			long occupiedBytesBefore = occupiedBytes();
+			List<StatementInputEstimateWitness> inputEstimatesBeforeGrowth = List.copyOf(inputEstimateCalls);
+			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
+			growthWitness = new ValueStoreGrowthWitness(phase, frozenReplayDecision, estimatedWriteBytes,
+					mapBytesBefore, occupiedBytesBefore, mapSizeBytes(), grew, inputEstimatesBeforeGrowth);
+			return grew;
+		}
+	}
+
+	private record StatementInputEstimateWitness(long estimatedWriteBytes, int generationCount, boolean hasStatements,
+			boolean hasMetadataChanges) {
+	}
+
+	private record ValueStoreGrowthWitness(LmdbSailStore.GrowthPhase phase, boolean frozenReplay,
+			long estimatedWriteBytes, long mapBytesBefore, long occupiedBytesBefore, long mapBytesAfter, boolean grew,
+			List<StatementInputEstimateWitness> inputEstimatesBeforeGrowth) {
 	}
 }
