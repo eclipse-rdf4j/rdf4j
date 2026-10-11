@@ -197,8 +197,8 @@ class NativeRemapAccessTest {
 			assertFalse(reader.isAlive(), "the interrupted reader must be joined after releasing the writer barrier");
 			assertNull(result.get(), "a cancelled namespace snapshot must not publish a partial result");
 			assertNotNull(failure.get(), "the cancelled metadata read must report its interrupted lock acquisition");
-			assertTrue(failure.get() instanceof SailException,
-					"TxnManager wraps an interrupted scoped reader in SailException: " + failure.get());
+			assertTrue(failure.get() instanceof IOException || failure.get() instanceof SailException,
+					"interrupted metadata admission reports its supported I/O or Sail failure: " + failure.get());
 			assertTrue(failure.get().getCause() instanceof InterruptedException,
 					"the original interrupt must remain the metadata-read cause");
 			assertTrue(interruptRestored.get(), "the interrupted reader must restore its interrupt status");

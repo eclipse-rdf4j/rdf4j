@@ -13,8 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
@@ -27,6 +27,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -75,9 +76,11 @@ class LmdbStandaloneQueryReplayTest {
 	void standaloneBooleanQueryReplaysAcrossGrowthBeforeReturningItsSingleResult(@TempDir Path dataDirectory)
 			throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
-			LmdbStore store = newStore(dataDirectory);
+			AtomicReference<TripleStore> capturedTriples = new AtomicReference<>();
+			LmdbStore store = newStore(dataDirectory, capturedTriples);
 			SailRepository repository = new SailRepository(store);
 			ExecutorService executor = Executors.newSingleThreadExecutor();
+			ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 			try {
 				repository.init();
 				try (RepositoryConnection seed = repository.getConnection()) {
@@ -85,7 +88,7 @@ class LmdbStandaloneQueryReplayTest {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 				}
 
-				TripleStore tripleStore = tripleStoreOf(store);
+				TripleStore tripleStore = capturedTriples.get();
 				long initialMapSize = mapSize(tripleStore);
 				LmdbSailStore backingStore = store.getBackingStore();
 				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
@@ -99,19 +102,29 @@ class LmdbStandaloneQueryReplayTest {
 				});
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
-				String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
+				Future<String> growth = writerExecutor.submit(
+						() -> publishGrowth(repository, initialMapSize, backingStore, before));
+				awaitGrowthEpisode(backingStore, before);
+				awaitReplayAccepted(backingStore, before);
+				assertThat(query.isDone()).as("the query remains held at its first SERVICE result").isFalse();
+				assertThat(growth.isDone()).as("the writer remains in the accepted replay while the query is held")
+						.isFalse();
 				serviceGate.releaseFirstRequest();
 				assertThat(serviceGate.awaitSecondRequest()).isTrue();
+				assertThat(query.isDone()).as("the replayed query remains held at its second SERVICE result").isFalse();
 				serviceGate.releaseAllRequests();
 
+				String namespace = growth.get(15, TimeUnit.SECONDS);
 				assertThat(query.get(15, TimeUnit.SECONDS)).isTrue();
 				awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 				assertThat(serviceGate.requestCount()).isGreaterThanOrEqualTo(2);
 			} finally {
 				serviceGate.releaseAllRequests();
 				executor.shutdownNow();
+				writerExecutor.shutdownNow();
 				try {
 					assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+					assertThat(writerExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 				} finally {
 					repository.shutDown();
 				}
@@ -123,16 +136,18 @@ class LmdbStandaloneQueryReplayTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void standaloneGraphQueryReturnsEachPostGrowthStatementOnce(@TempDir Path dataDirectory) throws Exception {
 		try (ServiceGate serviceGate = new ServiceGate()) {
-			LmdbStore store = newStore(dataDirectory);
+			AtomicReference<TripleStore> capturedTriples = new AtomicReference<>();
+			LmdbStore store = newStore(dataDirectory, capturedTriples);
 			SailRepository repository = new SailRepository(store);
 			ExecutorService executor = Executors.newSingleThreadExecutor();
+			ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 			try {
 				repository.init();
 				try (RepositoryConnection seed = repository.getConnection()) {
 					seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 				}
 
-				TripleStore tripleStore = tripleStoreOf(store);
+				TripleStore tripleStore = capturedTriples.get();
 				long initialMapSize = mapSize(tripleStore);
 				LmdbSailStore backingStore = store.getBackingStore();
 				MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
@@ -153,11 +168,20 @@ class LmdbStandaloneQueryReplayTest {
 				});
 
 				assertThat(serviceGate.awaitFirstRequest()).isTrue();
-				String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
+				Future<String> growth = writerExecutor.submit(
+						() -> publishGrowth(repository, initialMapSize, backingStore, before));
+				awaitGrowthEpisode(backingStore, before);
+				awaitReplayAccepted(backingStore, before);
+				assertThat(query.isDone()).as("the graph query remains held at its first SERVICE result").isFalse();
+				assertThat(growth.isDone()).as("the writer remains in the accepted replay while the query is held")
+						.isFalse();
 				serviceGate.releaseFirstRequest();
 				assertThat(serviceGate.awaitSecondRequest()).isTrue();
+				assertThat(query.isDone()).as("the replayed graph query remains held at its second SERVICE result")
+						.isFalse();
 				serviceGate.releaseAllRequests();
 
+				String namespace = growth.get(15, TimeUnit.SECONDS);
 				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder(
 						VF.createStatement(SUBJECT, VALUE_PREDICATE, Values.literal("before")),
 						VF.createStatement(SUBJECT, VALUE_PREDICATE, Values.literal("after")));
@@ -166,8 +190,10 @@ class LmdbStandaloneQueryReplayTest {
 			} finally {
 				serviceGate.releaseAllRequests();
 				executor.shutdownNow();
+				writerExecutor.shutdownNow();
 				try {
 					assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+					assertThat(writerExecutor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 				} finally {
 					repository.shutDown();
 				}
@@ -181,9 +207,11 @@ class LmdbStandaloneQueryReplayTest {
 		String functionIri = "urn:rdf4j:standalone-query-replay:function:" + UUID.randomUUID();
 		ReplayBarrierFunction function = new ReplayBarrierFunction(functionIri);
 		FunctionRegistry functionRegistry = FunctionRegistry.getInstance();
-		LmdbStore store = newStore(dataDirectory);
+		AtomicReference<TripleStore> capturedTriples = new AtomicReference<>();
+		LmdbStore store = newStore(dataDirectory, capturedTriples);
 		SailRepository repository = new SailRepository(store);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
+		ExecutorService writerExecutor = Executors.newSingleThreadExecutor();
 		try {
 			functionRegistry.add(function);
 			repository.init();
@@ -191,7 +219,7 @@ class LmdbStandaloneQueryReplayTest {
 				seed.add(SUBJECT, VALUE_PREDICATE, Values.literal("before"));
 			}
 
-			TripleStore tripleStore = tripleStoreOf(store);
+			TripleStore tripleStore = capturedTriples.get();
 			long initialMapSize = mapSize(tripleStore);
 			LmdbSailStore backingStore = store.getBackingStore();
 			MapGrowthMetrics.Snapshot before = backingStore.growthMetricsSnapshot();
@@ -211,34 +239,41 @@ class LmdbStandaloneQueryReplayTest {
 			});
 
 			assertThat(function.awaitFirstInvocation()).isTrue();
-			String namespace = publishGrowth(repository, initialMapSize, backingStore, before);
+			Future<String> growth = writerExecutor.submit(
+					() -> publishGrowth(repository, initialMapSize, backingStore, before));
+			awaitGrowthEpisode(backingStore, before);
+			awaitReplayAccepted(backingStore, before);
+			assertThat(query.isDone()).as("the query remains held at its first function invocation").isFalse();
+			assertThat(growth.isDone()).as("the writer remains in the accepted replay while the function is held")
+					.isFalse();
 			assertThat(function.invocationCount()).isEqualTo(1);
 			function.releaseFirstInvocation();
 			assertThat(function.awaitRepeatedInvocation()).isTrue();
 
+			String namespace = growth.get(15, TimeUnit.SECONDS);
 			assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder("before", "after");
 			awaitTripleStoreGrowth(repository, tripleStore, initialMapSize, namespace);
 			assertThat(function.invocationCount()).isGreaterThan(1);
 		} finally {
 			function.releaseFirstInvocation();
-			executor.shutdown();
-			boolean terminated;
+			executor.shutdownNow();
+			writerExecutor.shutdownNow();
+			boolean queryTerminated;
+			boolean writerTerminated;
 			try {
-				terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
-				if (!terminated) {
-					executor.shutdownNow();
-					terminated = executor.awaitTermination(5, TimeUnit.SECONDS);
-				}
+				queryTerminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+				writerTerminated = writerExecutor.awaitTermination(5, TimeUnit.SECONDS);
 			} finally {
 				functionRegistry.remove(function);
 				repository.shutDown();
 			}
-			assertThat(terminated).isTrue();
+			assertThat(queryTerminated).isTrue();
+			assertThat(writerTerminated).isTrue();
 		}
 	}
 
-	private static LmdbStore newStore(Path dataDirectory) {
-		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
+	private static LmdbStore newStore(Path dataDirectory, AtomicReference<TripleStore> capturedTriples) {
+		return new InspectingStore(dataDirectory, capturedTriples, new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
 				.setTripleDBSize(GROWTH_MAP_SIZE)
 				.setValueDBSize(GROWTH_MAP_SIZE)
@@ -303,16 +338,30 @@ class LmdbStandaloneQueryReplayTest {
 				+ "> ?remoteValue }";
 	}
 
-	private static TripleStore tripleStoreOf(LmdbStore store) throws ReflectiveOperationException {
-		Field field = LmdbSailStore.class.getDeclaredField("tripleStore");
-		field.setAccessible(true);
-		return (TripleStore) field.get(store.getBackingStore());
+	private static long mapSize(TripleStore tripleStore) {
+		return tripleStore.mapSizeBytes();
 	}
 
-	private static long mapSize(TripleStore tripleStore) throws ReflectiveOperationException {
-		Field field = TripleStore.class.getDeclaredField("mapSize");
-		field.setAccessible(true);
-		return field.getLong(tripleStore);
+	private static final class InspectingStore extends LmdbStore {
+		private final AtomicReference<TripleStore> capturedTriples;
+
+		private InspectingStore(Path dataDirectory, AtomicReference<TripleStore> capturedTriples,
+				LmdbStoreConfig config) {
+			super(dataDirectory.toFile(), config);
+			this.capturedTriples = capturedTriples;
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException {
+			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled, ValueStore::new,
+					(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> {
+						TripleStore triples = new TripleStore(tripleDirectory, tripleProperties, tripleConfig,
+								valueStore);
+						capturedTriples.set(triples);
+						return triples;
+					});
+		}
 	}
 
 	private static final class ReplayBarrierFunction implements Function {
