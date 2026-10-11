@@ -7,30 +7,11 @@ var workbench;
 (function (workbench) {
     var add;
     (function (add) {
-        function handleFormatSelection(selected) {
-            if (selected == 'application/x-trig' || selected == 'application/trix'
-                || selected == 'text/x-nquads') {
-                $('#useForContext').prop('checked', false);
-                $('#context').val('').prop('readOnly', false);
-            }
-        }
-        add.handleFormatSelection = handleFormatSelection;
-        function setContextFromBaseURI() {
-            var baseURI = $('#baseURI').val();
-            $('#context').prop('readOnly', true);
-            $('#context').val(baseURI == '' ? '' : '<' + baseURI + '>');
-        }
-        function handleBaseURIUse() {
-            if ($('#useForContext').prop('checked')) {
-                setContextFromBaseURI();
-            }
-            else {
-                $('#context').prop('readOnly', false);
-            }
-        }
-        add.handleBaseURIUse = handleBaseURIUse;
         function enabledInput(selected) {
             var istext = (selected == 'text');
+            $('#add-source-file-panel').prop('hidden', selected != 'file');
+            $('#add-source-url-panel').prop('hidden', selected != 'url');
+            $('#add-source-text-panel').prop('hidden', !istext);
             $('#text').prop('disabled', !istext);
             var contentType = $('#Content-Type');
             $('#source-' + selected).prop('checked', true);
@@ -54,24 +35,23 @@ var workbench;
             else {
                 autodetect.prop('disabled', false);
                 autodetect.prop('selected', true);
-                var baseURI = $('#baseURI');
-                var checked = $('#useForContext').prop('checked');
                 if (isfile) {
-                    baseURI.val(file.val() == '' ? '' : encodeURI('file://'
+                    $('#baseURI').val(file.val() == '' ? '' : encodeURI('file://'
                         + file.val().replace(/\\/g, '/')));
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
                 }
                 else if (isurl) {
-                    baseURI.val(url.val());
-                    if (checked) {
-                        setContextFromBaseURI();
-                    }
+                    $('#baseURI').val(url.val());
                 }
             }
         }
         add.enabledInput = enabledInput;
+        /** Route mount (plan task M7.2): show the panel of the source that is checked in this page. */
+        function mount(outlet) {
+            var selected = $(outlet).find("input[name='source']:checked").val() || 'file';
+            enabledInput(selected == 'contents' ? 'text' : selected);
+            return function () { };
+        }
+        add.mount = mount;
     })(add = workbench.add || (workbench.add = {}));
 })(workbench || (workbench = {}));
 //# sourceMappingURL=add.js.map

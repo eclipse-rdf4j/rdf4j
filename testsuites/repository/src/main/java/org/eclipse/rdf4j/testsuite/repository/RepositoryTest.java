@@ -189,36 +189,41 @@ public abstract class RepositoryTest {
 			conn.add(bob, mbox, mboxBob);
 			conn.add(bob, RDF.TYPE, FOAF.PERSON);
 
-			assertStatements(conn, null, 2, "All statement query");
-			assertStatements(conn, RDF.TYPE, 1, "RDF.TYPE statement query");
-			assertStatements(conn, null, 2, "All statement query after filtering");
+			assertStatementCount(conn, null, 2);
+			assertStatementCount(conn, RDF.TYPE, 1);
+			assertStatementCount(conn, null, 2);
 		}
 	}
 
-	@Experimental
 	protected void runGetAllStatementsStressTest() {
 		try (RepositoryConnection conn = testRepository.getConnection()) {
 			conn.add(bob, mbox, mboxBob);
 			conn.add(bob, RDF.TYPE, FOAF.PERSON);
 
 			for (int i = 0; i < 1024 * 32; i++) {
-				assertStatements(conn, null, 2, "Iteration " + i);
+				assertStatementCount(conn, null, 2, i);
 			}
-
 			for (int i = 0; i < 1024 * 32; i++) {
-				assertStatements(conn, RDF.TYPE, 1, "Iteration " + i);
+				assertStatementCount(conn, RDF.TYPE, 1, i);
 			}
-
 			for (int i = 0; i < 1024 * 32; i++) {
-				assertStatements(conn, null, 2, "Iteration " + i);
+				assertStatementCount(conn, null, 2, i);
 			}
 		}
 	}
 
-	private void assertStatements(RepositoryConnection conn, IRI predicate, int expectedSize, String context) {
+	private void assertStatementCount(RepositoryConnection conn, IRI predicate, int expected, int iteration) {
 		try (RepositoryResult<Statement> statements = conn.getStatements(null, predicate, null)) {
 			List<Statement> collect = statements.stream().collect(Collectors.toList());
-			assertEquals(expectedSize, collect.size(), context + " failed with data:\n"
+			assertEquals(expected, collect.size(), "Iteration " + iteration + " failed with data:\n"
+					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
+		}
+	}
+
+	private void assertStatementCount(RepositoryConnection conn, IRI predicate, int expected) {
+		try (RepositoryResult<Statement> statements = conn.getStatements(null, predicate, null)) {
+			List<Statement> collect = statements.stream().collect(Collectors.toList());
+			assertEquals(expected, collect.size(), "Unexpected statements for predicate " + predicate + ":\n"
 					+ collect.stream().map(Objects::toString).reduce((a, b) -> a + "\n" + b).orElse(""));
 		}
 	}

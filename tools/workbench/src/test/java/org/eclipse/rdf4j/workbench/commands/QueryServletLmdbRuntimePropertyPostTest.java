@@ -47,6 +47,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		String previous = System.getProperty(MARK_JOIN);
 		try {
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.isParameterPresent("action")).thenReturn(true);
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
@@ -57,7 +58,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-			new QueryServlet().doPost(request, response, "/transform");
+			new QueryServlet().doPost(request, response);
 
 			verify(response).setStatus(HttpServletResponse.SC_OK);
 			assertThat(body.toString())
@@ -79,6 +80,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		try {
 			System.setProperty(MARK_JOIN, "false");
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.isParameterPresent("action")).thenReturn(true);
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
@@ -88,7 +90,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-			new QueryServlet().doPost(request, response, "/transform");
+			new QueryServlet().doPost(request, response);
 
 			verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
 			assertThat(body.toString()).contains(ADMIN_REQUEST_HEADER);
@@ -108,6 +110,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		try {
 			System.setProperty(MARK_JOIN, "false");
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.isParameterPresent("action")).thenReturn(true);
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn("true");
@@ -117,7 +120,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-			new QueryServlet().doPost(request, response, "/transform");
+			new QueryServlet().doPost(request, response);
 
 			verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
 			assertThat(body.toString()).contains("rdf4j-admin");
@@ -137,6 +140,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		QueryServlet servlet = new QueryServlet();
 		servlet.setRepository(repository);
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.isParameterPresent("action")).thenReturn(true);
 		when(request.getParameter("action")).thenReturn("set-lmdb-property");
 		when(request.getParameter("name")).thenReturn(MARK_JOIN);
 		when(request.getParameter("enabled")).thenReturn("true");
@@ -146,7 +150,7 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(response).setStatus(HttpServletResponse.SC_FORBIDDEN);
 		verify(repository, never()).setLmdbRuntimeProperty(anyString(), anyBoolean());
@@ -158,13 +162,14 @@ class QueryServletLmdbRuntimePropertyPostTest {
 		String previous = System.getProperty(MARK_JOIN);
 		try {
 			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.isParameterPresent("action")).thenReturn(true);
 			when(request.getParameter("action")).thenReturn("set-lmdb-property");
 			when(request.getParameter("name")).thenReturn(MARK_JOIN);
 			when(request.getParameter("enabled")).thenReturn(Boolean.toString(!Boolean.parseBoolean(previous)));
 
 			HttpServletResponse response = mock(HttpServletResponse.class);
 			when(response.getWriter()).thenReturn(new PrintWriter(new StringWriter()));
-			new QueryServlet().service(request, response, "/transform");
+			new QueryServlet().service(request, response);
 
 			verify(response).setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
 			verify(response).setHeader("Allow", "POST");

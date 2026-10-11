@@ -158,12 +158,37 @@ final class LmdbNativeAggregateCompiler {
 	/** Compiles a nested semantic-native scope, rejecting any result that still contains a generic island. */
 	static QueryEvaluationStep tryCompileSemanticSubquery(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source) {
+		return tryCompileSemanticSubquery(expr, context, strategy, source, Set.of());
+	}
+
+	/**
+	 * Compiles a nested semantic-native scope whose evaluation frame carries the given outer-row names (the active
+	 * GRAPH frame or LATERAL inputs of the enclosing boundaries): a boundary nested inside this scope that reads one of
+	 * them as a context variable inherits it as a frame input even though nothing in this scope binds it.
+	 */
+	static QueryEvaluationStep tryCompileSemanticSubquery(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
+			Set<String> inheritedFrameInputNames) {
+		return tryCompileSemanticSubquery(expr, context, strategy, source, inheritedFrameInputNames, Set.of());
+	}
+
+	/**
+	 * Like
+	 * {@link #tryCompileSemanticSubquery(TupleExpr, QueryEvaluationContext, LmdbNativeEvaluationStrategy, NativeLmdbQuerySource, Set)},
+	 * additionally carrying the LATERAL inputs of the enclosing boundaries: unlike a GRAPH frame, a LATERAL input is
+	 * visible to every pattern of a nested boundary that projects it, so such a boundary inherits it as a frame input
+	 * and is re-evaluated per distinct outer value.
+	 */
+	static QueryEvaluationStep tryCompileSemanticSubquery(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
 		Set<TupleExpr> compileStack = SEMANTIC_SUBQUERY_COMPILE_STACK.get();
 		if (!compileStack.add(expr)) {
 			return null;
 		}
 		try {
-			CompileResult result = compile(expr, context, strategy, source, false);
+			CompileResult result = compile(expr, context, strategy, source, false, inheritedFrameInputNames,
+					inheritedLateralFrameInputNames);
 			return result.step != null && !result.sawIsland ? result.step : null;
 		} finally {
 			compileStack.remove(expr);
@@ -259,10 +284,18 @@ final class LmdbNativeAggregateCompiler {
 
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation) {
+		return compile(expr, context, strategy, source, rootEvaluation, Set.of(), Set.of());
+	}
+
+	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).
 		compiler.rootEvaluationScoped = rootEvaluation;
+		compiler.inheritedFrameInputNames = inheritedFrameInputNames;
+		compiler.inheritedLateralFrameInputNames = inheritedLateralFrameInputNames;
 		QueryEvaluationStep step = null;
 		String kind = LmdbNativeExplain.KIND_ROW;
 		if (expr instanceof Filter && ((Filter) expr).getArg() instanceof Group) {

@@ -30,7 +30,9 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 import java.io.StringReader;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
@@ -105,6 +107,34 @@ public class SPARQLParserTest {
 	@AfterEach
 	public void tearDown() {
 		parser = null;
+	}
+
+	@Test
+	public void aggregateProjectionPreservesParentOwnershipAcrossModifiers() {
+		String body = "WHERE { ?key <urn:tag> ?tag . OPTIONAL { ?key <urn:item> ?item } } ";
+		for (String query : List.of(
+				"SELECT ?key (COUNT(DISTINCT ?item) AS ?count) " + body + "GROUP BY ?key HAVING(COUNT(?item) > 1)",
+				"SELECT ?key (SUM(?item) AS ?total) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1) ORDER BY ?total",
+				"SELECT (COUNT(?item) AS ?count) " + body + "HAVING(COUNT(?item) > 1)",
+				"SELECT ?key (COUNT(?item) AS ?count) " + body + "GROUP BY ?key ORDER BY (COUNT(?item))",
+				"SELECT ?key (SUM(?item) + COUNT(?item) AS ?combined) " + body + "GROUP BY ?key HAVING(COUNT(*) > 1)",
+				"SELECT ?key WHERE { { SELECT ?key (COUNT(?item) AS ?count) " + body
+						+ "GROUP BY ?key HAVING(COUNT(*) > 1) } FILTER(?count > 1) }")) {
+			TupleExpr tupleExpr = parser.parseQuery(query, null).getTupleExpr();
+			tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				private final Deque<QueryModelNode> parents = new ArrayDeque<>();
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					assertThat(node.getParentNode())
+							.as("parent ownership for %s in %s", node.getClass().getSimpleName(), query)
+							.isSameAs(parents.peekLast());
+					parents.addLast(node);
+					super.meetNode(node);
+					parents.removeLast();
+				}
+			});
+		}
 	}
 
 	/**
@@ -243,6 +273,30 @@ public class SPARQLParserTest {
 	}
 
 	@Test
+	public void outerProjectionAndNestedSubselectHaveDifferentScopeFlags() {
+		String queryString = """
+				SELECT ?outer WHERE {
+				  { SELECT ?inner WHERE { ?inner <urn:inner> ?value } }
+				  ?outer <urn:outer> ?other
+				}
+				""";
+		ParsedTupleQuery query = (ParsedTupleQuery) parser.parseQuery(queryString, null);
+		Projection outerProjection = (Projection) ((QueryRoot) query.getTupleExpr()).getArg();
+		List<Projection> projections = new ArrayList<>();
+
+		query.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Projection node) {
+				projections.add(node);
+				super.meet(node);
+			}
+		});
+
+		assertFalse(outerProjection.isSubquery());
+		assertThat(projections).filteredOn(Projection::isSubquery).isNotEmpty();
+	}
+
+	@Test
 	public void testParsedGraphQueryRootNode() {
 		StringBuilder qb = new StringBuilder();
 		qb.append("CONSTRUCT WHERE {?a <foo:bar> \"test\"}");
@@ -376,11 +430,13 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testPrefixedFunctionWithRawUnicodeEscapeIsNotRewritten() {
+	public void testPrefixedFunctionWithRawUnicodeEscapeIsRejected() {
+		// Codepoint escapes are only recognized inside string and IRI literals (GH-6064), so a raw escape in a
+		// prefixed local name is a lexical error rather than an input for the STABLE_INDEX rewrite.
 		String query = "PREFIX ex: <urn:example:> SELECT (ex:\\u20ACSTABLE_INDEX(?x) AS ?v) "
 				+ "WHERE { VALUES ?x {1} }";
 
-		assertFunctionURI(query, "urn:example:\u20ACSTABLE_INDEX");
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
 	}
 
 	@Test

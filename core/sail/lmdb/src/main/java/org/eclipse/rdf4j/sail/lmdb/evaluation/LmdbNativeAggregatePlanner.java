@@ -96,6 +96,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * subselect boundaries filter this set to their projected domain before it becomes a runtime frame.
 	 */
 	private Set<String> lateralFrameInputNames = Set.of();
+	/**
+	 * Outer-row names that parameterize the lexical boundary this planner compiles (set by the compiler for nested
+	 * semantic subqueries): a boundary nested in here reading one of them as a context variable inherits it as a frame
+	 * input even though this scope allocates no slot for it on its own.
+	 */
+	Set<String> inheritedFrameInputNames = Set.of();
+	/**
+	 * LATERAL inputs of the enclosing boundaries that this planner's scope received as frame inputs. A nested boundary
+	 * that projects one of them reads the outer row's value, so it inherits the name as a frame input of its own (and
+	 * is therefore evaluated per distinct outer value) even though this scope binds nothing for it.
+	 */
+	Set<String> inheritedLateralFrameInputNames = Set.of();
 
 	LmdbNativeAggregatePlanner(QueryEvaluationContext context, LmdbNativeEvaluationStrategy strategy,
 			NativeLmdbQuerySource source) {
@@ -420,6 +432,12 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		Projection projection = node instanceof Projection ? (Projection) node : null;
 		if (projection != null) {
 			node = projection.getArg();
+		} else if (node instanceof Slice || node instanceof Order || node instanceof Distinct
+				|| node instanceof Reduced) {
+			// A second modifier stack below the one peeled above (Slice(Order(Slice(...)))) is outside this
+			// compiler's contract and would only island; NativeRootPipeline peels arbitrary stacks instead.
+			debugRowRootDecline("nested-modifier-stack", node);
+			return null;
 		}
 		if (orderElems.isEmpty() && node instanceof Order) {
 			// M-F5: below the projection every order-key shape is admitted — plain variables map to their slots,
@@ -1802,20 +1820,27 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				// memoize it by an incomplete local mask, or expose it to join reordering.
 				return SlotPlan.lexicalFrameLeftJoin(left, right, optionalProblemSlots(leftJoin));
 			}
+			// Mirrors LeftJoinQueryEvaluationStep: the right operand is re-evaluated per left row with the left
+			// bindings pushed in unless that re-evaluation is not replay-stable. Operands that must not see the
+			// left row's bindings are scope-marked by the shared optimizers (and a non-scoped Filter inside the
+			// right operand is the OPTIONAL condition relocated by ConjunctiveConstraintSplitterOptimizer, which
+			// must observe the left row), so the binding-injection contract is not consulted here.
 			TupleExpr rightArg = leftJoin.getRightArg();
 			boolean subqueryHashJoin = TupleExprs.containsSubquery(rightArg);
 			boolean materializedReplay = !subqueryHashJoin
 					&& !QueryEvaluationUtility.usesMappingParameterizedEvaluation(rightArg)
-					&& (!QueryEvaluationUtility.isRepeatable(rightArg)
-							|| !QueryEvaluationUtility.permitsBindingInjection(rightArg,
-									leftJoin.getLeftArg().getBindingNames()));
-			if (subqueryHashJoin || materializedReplay) {
+					&& !QueryEvaluationUtility.isRepeatable(rightArg);
+			if ((subqueryHashJoin || materializedReplay)
+					&& (subqueryFrameInputMask(right) & left.producedMask()) == 0L) {
 				long sharedMask = 0L;
 				for (String name : sharedBindingNames(leftJoin.getLeftArg(), leftJoin.getRightArg())) {
 					sharedMask |= 1L << slot(name);
 				}
 				return SlotPlan.lexicalLeftJoin(left, right, slotsOf(sharedMask), subqueryHashJoin);
 			}
+			// A lexical boundary inside the right arm that is parameterized by a frame the left arm binds (a subquery
+			// nested in GRAPH ?g whose ?g comes from the left) cannot be materialized once in the entry frame: it must
+			// be opened per left row so the active frame is bound when its subquery evaluates.
 			return SlotPlan.leftJoin(left, right);
 		}
 		if (expr instanceof org.eclipse.rdf4j.query.algebra.Union) {
@@ -1996,6 +2021,55 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return island(expr);
 	}
 
+	/**
+	 * Union of the frame-input slots of every {@link NativeSubqueryPlan} nested in {@code plan}: the outer-row slots
+	 * whose values parameterize a lexical boundary (its active GRAPH frame or LATERAL inputs) without being exported by
+	 * it. Unknown plan kinds contribute nothing.
+	 */
+	static long subqueryFrameInputMask(SlotPlan plan) {
+		if (plan instanceof NativeSubqueryPlan subquery) {
+			return subquery.frameInputMask();
+		}
+		if (plan instanceof MultiJoinPlan multiJoin) {
+			long mask = 0L;
+			for (SlotPlan child : multiJoin.children) {
+				mask |= subqueryFrameInputMask(child);
+			}
+			return mask;
+		}
+		if (plan instanceof JoinPlan join) {
+			return subqueryFrameInputMask(join.left) | subqueryFrameInputMask(join.right);
+		}
+		if (plan instanceof LeftJoinPlan leftJoin) {
+			return subqueryFrameInputMask(leftJoin.left) | subqueryFrameInputMask(leftJoin.right);
+		}
+		if (plan instanceof UnionPlan union) {
+			return subqueryFrameInputMask(union.left) | subqueryFrameInputMask(union.right);
+		}
+		if (plan instanceof OrderedUnionPlan union) {
+			return subqueryFrameInputMask(union.left) | subqueryFrameInputMask(union.right);
+		}
+		if (plan instanceof MinusPlan minus) {
+			return subqueryFrameInputMask(minus.left) | subqueryFrameInputMask(minus.right);
+		}
+		if (plan instanceof FilterPlan filter) {
+			return subqueryFrameInputMask(filter.arg);
+		}
+		if (plan instanceof ExtensionPlan extension) {
+			return subqueryFrameInputMask(extension.arg);
+		}
+		if (plan instanceof RowDistinctPlan distinct) {
+			return subqueryFrameInputMask(distinct.arg);
+		}
+		if (plan instanceof DrainGuardPlan guard) {
+			return subqueryFrameInputMask(guard.delegate) | subqueryFrameInputMask(guard.drained);
+		}
+		if (plan instanceof EntryBindingCompatibilityPlan entry) {
+			return subqueryFrameInputMask(entry.arg);
+		}
+		return 0L;
+	}
+
 	private int[] optionalProblemSlots(LeftJoin leftJoin) {
 		LinkedHashSet<String> problemNames = new LinkedHashSet<>(VarNameCollector.process(leftJoin.getRightArg()));
 		if (leftJoin.hasCondition()) {
@@ -2014,12 +2088,31 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		if (!lateralFrameInputNames.isEmpty()) {
 			frameInputNames.addAll(Arrays.asList(lateralSubqueryFrameInputNames(expr, lateralFrameInputNames)));
 		}
+		if (!inheritedLateralFrameInputNames.isEmpty()) {
+			frameInputNames
+					.addAll(Arrays.asList(lateralSubqueryFrameInputNames(expr, inheritedLateralFrameInputNames)));
+		}
 		return compileNativeSubquery(expr, frameInputNames.toArray(String[]::new));
 	}
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames) {
+		Set<String> nestedFrameInputNames = inheritedFrameInputNames;
+		Set<String> nestedLateralFrameInputNames = inheritedLateralFrameInputNames;
+		if (frameInputNames.length > 0) {
+			nestedFrameInputNames = new LinkedHashSet<>(inheritedFrameInputNames);
+			Collections.addAll(nestedFrameInputNames, frameInputNames);
+			nestedFrameInputNames = Collections.unmodifiableSet(nestedFrameInputNames);
+			// the LATERAL inputs this boundary receives stay visible to the boundaries nested inside it
+			LinkedHashSet<String> lateralInputs = new LinkedHashSet<>(inheritedLateralFrameInputNames);
+			for (String name : frameInputNames) {
+				if (lateralFrameInputNames.contains(name) || inheritedLateralFrameInputNames.contains(name)) {
+					lateralInputs.add(name);
+				}
+			}
+			nestedLateralFrameInputNames = Collections.unmodifiableSet(lateralInputs);
+		}
 		QueryEvaluationStep step = LmdbNativeAggregateCompiler.tryCompileSemanticSubquery(expr, context, strategy,
-				source);
+				source, nestedFrameInputNames, nestedLateralFrameInputNames);
 		if (step == null) {
 			return null;
 		}
@@ -2061,7 +2154,8 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 
 			private void addContext(Var contextVar) {
-				if (contextVar != null && !contextVar.hasValue() && slots.containsKey(contextVar.getName())) {
+				if (contextVar != null && !contextVar.hasValue() && (slots.containsKey(contextVar.getName())
+						|| inheritedFrameInputNames.contains(contextVar.getName()))) {
 					names.add(contextVar.getName());
 				}
 			}

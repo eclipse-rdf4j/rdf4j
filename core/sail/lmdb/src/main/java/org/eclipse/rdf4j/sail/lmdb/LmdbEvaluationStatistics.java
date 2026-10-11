@@ -824,6 +824,9 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return Double.NaN;
+			}
 			double rows = 0.0d;
 			for (Object ignored : assignment.getBindingSets()) {
 				rows += 1.0d;
@@ -842,6 +845,9 @@ class LmdbEvaluationStatistics
 			}
 		}
 		if (factor instanceof BindingSetAssignment assignment) {
+			if (!assignment.hasRepeatableBindingSets()) {
+				return Double.NaN;
+			}
 			double rows = 0.0d;
 			for (Object ignored : assignment.getBindingSets()) {
 				rows += 1.0d;

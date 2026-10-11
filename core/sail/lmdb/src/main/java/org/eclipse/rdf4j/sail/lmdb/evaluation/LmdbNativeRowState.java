@@ -962,8 +962,12 @@ final class CopyBinding {
 	 * ({@link RowState#bindOrCheckTerm}). Deterministic per row, so replay-safe; kernel lowering declines it.
 	 */
 	final boolean termChecked;
-	/** ExtensionIterator-compatible error mode; false only within a MINUS right operand. */
-	boolean setNullOnError = true;
+	/**
+	 * ExtensionIterator-compatible error mode: an expression error leaves the target slot absent so a later compatible
+	 * pattern may bind it (SPARQL Extend). {@code true} would install an occupied null marker instead; no planner
+	 * context requests that any more.
+	 */
+	boolean setNullOnError = false;
 
 	CopyBinding(int targetSlot, int sourceSlot, long constant) {
 		this(targetSlot, sourceSlot, constant, null);

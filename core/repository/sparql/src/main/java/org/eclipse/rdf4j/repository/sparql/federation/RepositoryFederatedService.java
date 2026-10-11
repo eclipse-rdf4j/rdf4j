@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
@@ -34,8 +35,11 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.Repository;
@@ -347,7 +351,11 @@ public class RepositoryFederatedService implements FederatedService {
 
 		// projection vars
 		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-		projectionVars.removeAll(allBindings.get(0).getBindingNames());
+		Set<String> guaranteedInputNames = new HashSet<>(allBindings.get(0).getBindingNames());
+		for (BindingSet input : allBindings) {
+			guaranteedInputNames.removeIf(name -> input.getValue(name) == null);
+		}
+		projectionVars.removeAll(guaranteedInputNames);
 
 		// Without a declared partition tolerance, one logical Invocation may not be split into several remote
 		// requests. When the input binding set does not fit a single request, evaluate the original service
@@ -390,8 +398,7 @@ public class RepositoryFederatedService implements FederatedService {
 			// collide with a user variable of the same name in the service pattern or the input bindings.
 			// When the user explicitly projects ?__rowIdx as the vectored-evaluation opt-in, that exact name
 			// IS the correlation contract and is used as-is.
-			String rowIdxVar = userRequestedRowCorrelation ? ROW_IDX_VAR
-					: freshRowIndexVariable(service, allBindings);
+			String rowIdxVar = userRequestedRowCorrelation ? ROW_IDX_VAR : getRowIndexVar(service, allBindings);
 			projectionVars.add(rowIdxVar);
 
 			String queryString = service.getSelectQueryString(projectionVars);
@@ -633,29 +640,6 @@ public class RepositoryFederatedService implements FederatedService {
 	 * the service's variables, from every input binding name, and from the serialized service pattern text (which
 	 * conservatively also covers string literals mentioning the candidate).
 	 */
-	private static String freshRowIndexVariable(Service service, List<BindingSet> allBindings) {
-		String expressionText = service.getServiceExpressionString();
-		String candidate = "__rowIdx";
-		int suffix = 0;
-		while (collides(candidate, service, allBindings, expressionText)) {
-			candidate = "__rowIdx" + (++suffix);
-		}
-		return candidate;
-	}
-
-	private static boolean collides(String candidate, Service service, List<BindingSet> allBindings,
-			String expressionText) {
-		if (service.getServiceVars().contains(candidate)
-				|| (expressionText != null && expressionText.contains(candidate))) {
-			return true;
-		}
-		for (BindingSet binding : allBindings) {
-			if (binding.hasBinding(candidate)) {
-				return true;
-			}
-		}
-		return false;
-	}
 
 	/**
 	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
@@ -692,6 +676,30 @@ public class RepositoryFederatedService implements FederatedService {
 		}
 		sb.insert(sb.indexOf("{") + 1, " " + valuesClause);
 		return sb.toString();
+	}
+
+	private String getRowIndexVar(Service service, List<BindingSet> inputs) {
+		Set<String> occupiedNames = new HashSet<>(service.getServiceVars());
+		service.getServiceExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				occupiedNames.addAll(assignment.getDeclaredBindingNames());
+			}
+
+			@Override
+			public void meet(ProjectionElem projection) {
+				occupiedNames.add(projection.getName());
+				projection.getProjectionAlias().ifPresent(occupiedNames::add);
+			}
+		});
+		for (BindingSet input : inputs) {
+			occupiedNames.addAll(input.getBindingNames());
+		}
+		String name = ROW_IDX_VAR;
+		for (int suffix = 1; occupiedNames.contains(name); suffix++) {
+			name = ROW_IDX_VAR + "_" + suffix;
+		}
+		return name;
 	}
 
 	@Override
@@ -809,17 +817,16 @@ public class RepositoryFederatedService implements FederatedService {
 	 */
 	private List<String> getRelevantBindingNames(List<BindingSet> bindings, Set<String> serviceVars) {
 
-		// get the bindings variables
-		// TODO CHECK: does the first bindingset give all relevant names
-
-		List<String> relevantBindingNames = new ArrayList<>(5);
-		for (String bName : bindings.get(0).getBindingNames()) {
-			if (serviceVars.contains(bName)) {
-				relevantBindingNames.add(bName);
+		Set<String> relevantBindingNames = new LinkedHashSet<>();
+		for (BindingSet input : bindings) {
+			for (String name : input.getBindingNames()) {
+				if (serviceVars.contains(name) && input.getValue(name) != null) {
+					relevantBindingNames.add(name);
+				}
 			}
 		}
 
-		return relevantBindingNames;
+		return new ArrayList<>(relevantBindingNames);
 	}
 
 	/**

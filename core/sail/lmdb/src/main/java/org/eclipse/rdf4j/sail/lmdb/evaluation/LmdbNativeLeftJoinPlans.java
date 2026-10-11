@@ -31,10 +31,15 @@ final class LeftJoinPlan implements SlotPlan {
 	final long producedMask;
 	/**
 	 * Statically shared slots for an OPTIONAL whose right operand contains a lexical scope boundary. A non-null array
-	 * selects independent right evaluation and hash-key compatibility, matching RDF4J's subquery-aware left join.
+	 * selects independent right evaluation joined by SPARQL solution compatibility on these slots, matching RDF4J's
+	 * scoped (subquery-aware) and materialized-replay left joins.
 	 */
 	final int[] lexicalSharedSlots;
-	/** True for RDF4J's subquery hash-left-join keys; false for compatible-mapping materialized replay. */
+	/**
+	 * Explain-only provenance: true when the lexical arm was chosen because the right operand contains a subquery,
+	 * false when it was chosen because the operand is not safe for bound (per-left-row) evaluation. Both arms match by
+	 * solution compatibility.
+	 */
 	final boolean lexicalHashKeys;
 	/** Optional variables removed from a non-well-designed OPTIONAL's dynamic entry frame. */
 	final int[] lexicalProblemSlots;
@@ -96,7 +101,7 @@ final class LeftJoinPlan implements SlotPlan {
 			return new LexicalFrameLeftJoinCursor(left, right, lexicalProblemSlots, row);
 		}
 		if (lexicalSharedSlots != null) {
-			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, lexicalHashKeys, row);
+			return new LexicalLeftJoinCursor(left, right, lexicalSharedSlots, row);
 		}
 		JoinSweepEstimates estimates = JoinSweepEstimates.forPlans(left, right, row);
 		RowCursor leftCursor = left.open(row);
@@ -311,10 +316,12 @@ final class LexicalFrameLeftJoinCursor implements RowCursor {
 }
 
 /**
- * Semantic native OPTIONAL for a right operand containing a subquery. The right relation is evaluated exactly once in
- * the operator-entry frame, before the left relation adds any bindings, and is then joined by the statically shared
- * binding domain. This is the native equivalent of {@code LeftJoinQueryEvaluationStep}'s subquery hash-left-join arm:
- * an unbound shared attribute hashes as unbound and therefore does not match a bound value from the left.
+ * Semantic native OPTIONAL for a right operand containing a subquery or another operand that must not observe the left
+ * row. The right relation is evaluated exactly once in the operator-entry frame, before the left relation adds any
+ * bindings, and is then joined by the statically shared binding domain using SPARQL solution compatibility: a shared
+ * attribute that is unbound on either side is compatible with any value on the other side. This is the native
+ * equivalent of {@code LeftJoinQueryEvaluationStep}'s scoped left-join arm ({@code ScopedLeftJoinIterator} over a
+ * partial-key lookup), which also null-extends a left row whenever the right relation holds no compatible row.
  */
 @Experimental
 final class LexicalLeftJoinCursor implements RowCursor {
@@ -323,21 +330,16 @@ final class LexicalLeftJoinCursor implements RowCursor {
 	private final int[] sharedSlots;
 	private final int[] rightSlots;
 	private final List<long[]> rightRows;
-	private final boolean hashKeys;
-	/** Native counterpart of HashJoinIteration's canonical EmptyBindingSet scan-row branch. */
-	private final boolean canonicalEmptyLeft;
 	private int rightIndex;
 	private int activeMark = -1;
 	private boolean haveLeft;
 	private boolean matchedLeft;
 	private int pollTick;
 
-	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, boolean hashKeys, RowState row)
+	LexicalLeftJoinCursor(SlotPlan leftPlan, SlotPlan rightPlan, int[] sharedSlots, RowState row)
 			throws IOException {
 		this.row = row;
 		this.sharedSlots = sharedSlots;
-		this.hashKeys = hashKeys;
-		this.canonicalEmptyLeft = leftPlan == SingletonPlan.INSTANCE && row.base.isEmpty();
 		this.rightSlots = slotsOf(rightPlan.producedMask());
 		this.rightRows = materializeRight(rightPlan);
 		this.left = leftPlan.open(row);
@@ -369,7 +371,7 @@ final class LexicalLeftJoinCursor implements RowCursor {
 				while (rightIndex < rightRows.size()) {
 					LmdbNativeProbeDeadline.poll(++pollTick);
 					long[] rightValues = rightRows.get(rightIndex++);
-					if ((canonicalEmptyLeft || sharedKeyMatches(rightValues)) && bindRight(rightValues)) {
+					if (sharedKeyMatches(rightValues) && bindRight(rightValues)) {
 						matchedLeft = true;
 						return true;
 					}
@@ -381,11 +383,6 @@ final class LexicalLeftJoinCursor implements RowCursor {
 			}
 			if (!left.next()) {
 				return false;
-			}
-			if (canonicalEmptyLeft && rightRows.isEmpty()) {
-				// HashJoinIteration does not null-extend its canonical EmptyBindingSet scan row when the subquery
-				// hash table is empty. The lexical native path must preserve that observable RDF4J contract.
-				continue;
 			}
 			haveLeft = true;
 			matchedLeft = false;
@@ -399,10 +396,10 @@ final class LexicalLeftJoinCursor implements RowCursor {
 			long leftValue = row.slots[sharedSlot];
 			long rightValue = valueForSlot(rightValues, sharedSlot);
 			if (leftValue == UNKNOWN || rightValue == UNKNOWN) {
-				if (hashKeys && leftValue != rightValue) {
-					return false;
-				}
-			} else if (leftValue != rightValue && !sameTerm(leftValue, rightValue)) {
+				// an unbound shared attribute is compatible with every value on the other side
+				continue;
+			}
+			if (leftValue != rightValue && !sameTerm(leftValue, rightValue)) {
 				return false;
 			}
 		}

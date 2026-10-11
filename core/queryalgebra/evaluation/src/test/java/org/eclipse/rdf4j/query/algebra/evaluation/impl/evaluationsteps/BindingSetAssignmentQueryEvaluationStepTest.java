@@ -12,10 +12,12 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -25,10 +27,29 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class BindingSetAssignmentQueryEvaluationStepTest {
+
+	@Test
+	void repeatableRowsCheckOverlapsOutsideTheDeclaredHeader() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("declared"));
+		assignment.setBindingSets(List.of(
+				new ListBindingSet(List.of("declared", "extra"),
+						SimpleValueFactory.getInstance().createLiteral("one"),
+						SimpleValueFactory.getInstance().createLiteral("parent")),
+				new ListBindingSet(List.of("declared", "extra"),
+						SimpleValueFactory.getInstance().createLiteral("two"),
+						SimpleValueFactory.getInstance().createLiteral("conflict"))));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		assertThat(assertDoesNotThrow(() -> results(step.evaluate(binding("extra", "parent"))))).singleElement()
+				.satisfies(row -> assertThat(row.getValue("declared"))
+						.isEqualTo(SimpleValueFactory.getInstance().createLiteral("one")));
+	}
 
 	@Test
 	void skipsBindingsProvidedMetricWhenRuntimeTelemetryDisabled() {
@@ -73,6 +94,51 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 		});
 		assertThat(parent.valueReadCount("b")).isZero();
 		assertThat(parent.hasBindingReadCount("b")).isEqualTo(1);
+	}
+
+	@Test
+	void duplicateEmptyRowsPreserveEveryOverlappingParentCandidate() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(EmptyBindingSet.getInstance(), EmptyBindingSet.getInstance()));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		for (String value : List.of("first", "second")) {
+			MapBindingSet parent = new MapBindingSet();
+			parent.addBinding("x", SimpleValueFactory.getInstance().createLiteral(value));
+
+			assertThat(results(step.evaluate(parent))).containsExactly(parent, parent);
+		}
+	}
+
+	@Test
+	void allUndefRowBehavesLikeEmptyRowForIncomingBindings() {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(new ListBindingSet(List.of("x"), (Value) null)));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		BindingSet parent = binding("x", "parent");
+
+		assertThat(results(step.evaluate(parent))).containsExactly(parent);
+	}
+
+	@Test
+	void undefColumnsDoNotLeakIntoResultsWithoutIncomingBindings() {
+		BindingSet row = new ListBindingSet(List.of("bound", "undef"),
+				SimpleValueFactory.getInstance().createLiteral("value"), null);
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("bound", "undef"));
+		assignment.setBindingSets(List.of(row));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+
+		List<BindingSet> actual = results(step.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(actual).hasSize(1);
+		assertThat(actual.get(0).getBindingNames()).containsExactly("bound");
+		assertThat(actual.get(0).hasBinding("undef")).isFalse();
 	}
 
 	private static List<BindingSet> results(CloseableIteration<BindingSet> iteration) {

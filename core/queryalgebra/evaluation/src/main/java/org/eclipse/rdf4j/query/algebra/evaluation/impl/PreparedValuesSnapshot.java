@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 
 /** Owns row snapshots at preparation, before any optimizer or evaluator binding-name analysis. */
@@ -77,7 +78,8 @@ final class PreparedValuesSnapshot {
 						return;
 					}
 					Iterable<BindingSet> source = assignment.getBindingSets();
-					if (source == null || source instanceof PreparedRows) {
+					if (source == null || source instanceof PreparedRows || isStableRowSource(source)) {
+						// An already stable source needs no defensive copy.
 						preparedNodes.put(assignment, assignment);
 						return;
 					}
@@ -118,7 +120,24 @@ final class PreparedValuesSnapshot {
 	}
 
 	/** The marker prevents recursive precompile and cloned prepared trees from recapturing rows. */
-	private static final class PreparedRows extends AbstractList<BindingSet> implements Serializable {
+	/** Immutable rows (or a source that declares itself repeatable) are stable without a preparation copy. */
+	private static boolean isStableRowSource(Iterable<BindingSet> source) {
+		if (source instanceof BindingSetAssignment.RepeatableBindingSetSource) {
+			return true;
+		}
+		if (!(source instanceof List<?> rows)) {
+			return false;
+		}
+		for (Object row : rows) {
+			if (row != EmptyBindingSet.getInstance() && (row == null || row.getClass() != ListBindingSet.class)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static final class PreparedRows extends AbstractList<BindingSet>
+			implements Serializable, BindingSetAssignment.RepeatableBindingSetSource {
 		private static final long serialVersionUID = 1L;
 		private final List<BindingSet> rows;
 

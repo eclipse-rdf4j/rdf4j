@@ -94,8 +94,7 @@ final class LmdbNativeFactorAlgebra {
 				SlotPlan right = new Boundary(optional.right);
 				RowCursor cursor = optional.lexicalProblemSlots != null
 						? new LexicalFrameLeftJoinCursor(left, right, optional.lexicalProblemSlots, row)
-						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots,
-								optional.lexicalHashKeys, row);
+						: new LexicalLeftJoinCursor(left, right, optional.lexicalSharedSlots, row);
 				return LmdbNativeFactorRows.scalar(cursor, row.slots.length);
 			}
 			return join(optional.left, optional.right, row, true);

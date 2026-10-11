@@ -87,7 +87,8 @@ class SailSourceBranch implements SailSource {
 
 	/**
 	 * Non-null when in {@link IsolationLevels#SNAPSHOT} (or higher) mode. The lease tracks observers that derived their
-	 * dataset from this exact backing snapshot.
+	 * dataset from this exact backing snapshot. Transaction branches keep the lease until they close; auto-flushing
+	 * roots share it among concurrent borrowers and release it once the last borrower closes or the branch flushes.
 	 */
 	private SnapshotLease snapshot;
 
@@ -316,9 +317,14 @@ class SailSourceBranch implements SailSource {
 
 	@Override
 	public SailDataset dataset(IsolationLevel level) throws SailException {
+		return dataset(level, true);
+	}
+
+	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
 		try {
 			semaphore.lock();
-			SailDataset dataset = new DelegatingSailDataset(derivedFromSerializable(level)) {
+			SailDataset dataset = new DelegatingSailDataset(
+					observe ? derivedFromSerializable(level) : derivedFromSnapshot(level)) {
 
 				@Override
 				public void close() throws SailException {
@@ -395,6 +401,14 @@ class SailSourceBranch implements SailSource {
 	@Override
 	public SailSource fork() {
 		return new SailSourceBranch(this, modelFactory, false, statementBufferSource);
+	}
+
+	/**
+	 * Preserves this branch's backing snapshot and changeset overlays while bypassing its own observation layer.
+	 * Observing datasets already retained by a backing source are left intact.
+	 */
+	SailDataset datasetWithoutObservations(IsolationLevel level) {
+		return dataset(level, false);
 	}
 
 	@Override
@@ -477,7 +491,19 @@ class SailSourceBranch implements SailSource {
 			throw new IllegalStateException("Snapshot lease has no borrowers to release");
 		}
 		lease.borrowers--;
-		if (lease.retired && lease.borrowers == 0) {
+		if (lease.borrowers > 0) {
+			return;
+		}
+		if (!lease.retired && autoFlush) {
+			// long-lived roots share one backing snapshot among concurrent borrowers only; once the last borrower
+			// leaves, release it so the backing store is not pinned to a stale snapshot indefinitely. Transaction
+			// branches (autoFlush=false) keep their snapshot until the branch closes.
+			if (snapshot == lease) {
+				snapshot = null;
+			}
+			lease.retired = true;
+		}
+		if (lease.retired) {
 			closeSnapshot(lease);
 		}
 	}
@@ -640,7 +666,7 @@ class SailSourceBranch implements SailSource {
 				};
 			} else {
 				derivedFrom = backingSource.dataset(level);
-				if (!autoFlush && level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
+				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 					this.snapshot = new SnapshotLease(derivedFrom);
 					// don't release snapshot until this SailSource is released
 					derivedFrom = new DelegatingSailDataset(derivedFrom) {

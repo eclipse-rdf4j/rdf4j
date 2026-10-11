@@ -4,7 +4,6 @@ module workbench {
 
         export interface ExplainControlIds {
             buttonId: string;
-            spinnerId: string;
             cancelId: string;
         }
 
@@ -12,20 +11,17 @@ module workbench {
             if (buttonId === 'rerun-explanation') {
                 return {
                     buttonId: 'rerun-explanation',
-                    spinnerId: 'rerun-explanation-spinner',
                     cancelId: 'rerun-explanation-cancel'
                 };
             }
             if (buttonId === 'explain-trigger') {
                 return {
                     buttonId: 'explain-trigger',
-                    spinnerId: 'explain-trigger-spinner',
                     cancelId: 'explain-trigger-cancel'
                 };
             }
             return {
                 buttonId: '',
-                spinnerId: '',
                 cancelId: ''
             };
         }

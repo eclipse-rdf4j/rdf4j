@@ -492,14 +492,17 @@ public class StrictEvaluationStrategyTest {
 			Filter filter = new Filter(new SingletonSet(), new Or(first, first.clone()));
 			QueryRoot query = new QueryRoot(filter);
 
+			// Preparation pins the registered implementation: the optimizer classifies the pinned call and the
+			// evaluation keeps using that implementation even after the registry swaps it out.
+			QueryEvaluationUtility.pinFunctions(query);
 			new QueryModelNormalizerOptimizer().optimize(query, null, EmptyBindingSet.getInstance());
 			registry.add(alternatingFunction);
 
 			List<BindingSet> results = QueryResults.asList(
 					strategy.precompile(query).evaluate(EmptyBindingSet.getInstance()));
 
-			assertThat(results).hasSize(1);
-			assertThat(invocations[0]).isEqualTo(2);
+			assertThat(results).isEmpty();
+			assertThat(invocations[0]).isZero();
 		} finally {
 			registry.remove(alternatingFunction);
 			if (previous != null) {

@@ -346,8 +346,10 @@ public class LmdbNativeInteriorIslandTest {
 	 */
 	@Test
 	public void independentNativeSubqueryKeepsPatternBagReorderable() {
+		// The sub-select projects an expression so the shared ProjectionRemovalOptimizer cannot inline it as an
+		// identity projection: the query keeps a genuine scope boundary between the two native patterns.
 		String query = "SELECT ?s ?o ?n ?c WHERE { ?s <" + EX + "p> ?o . "
-				+ "{ SELECT ?c WHERE { BIND(CONCAT(\"a\", \"b\") AS ?c) } } "
+				+ "{ SELECT (CONCAT(\"a\", \"b\") AS ?c) WHERE { } } "
 				+ "?s <" + EX + "q> ?n }";
 
 		withIslands(() -> {

@@ -192,9 +192,40 @@ abstract class LmdbNativeAggregateValuesCompiler extends LmdbNativeAggregatePatt
 			if (driven != null) {
 				return new DomainDrivenPlan(driven, true);
 			}
+			SlotPlan constantAnchored = compileConstantAnchoredPattern(expr, domain, logicalProbeCount);
+			if (constantAnchored != null) {
+				return new DomainDrivenPlan(constantAnchored, true);
+			}
 		}
 		SlotPlan ordinary = compileTuple(expr, duplicateInsensitive);
 		return ordinary == null ? null : new DomainDrivenPlan(ordinary, false);
+	}
+
+	/**
+	 * A single-row exact VALUES anchor over a statement pattern whose variable already carries that constant (the
+	 * shared optimizer rewrites {@code FILTER(?x = c)} into {@code VALUES ?x { c }} after having bound {@code ?x} to
+	 * {@code c} in the pattern) adds nothing: the pattern alone is the exact domain, and keeping it a plain pattern
+	 * leaves it index-orderable. A different constant can never match, so that join is empty.
+	 */
+	private SlotPlan compileConstantAnchoredPattern(TupleExpr expr, ConstantFilter domain, int logicalProbeCount) {
+		if (logicalProbeCount != 1 || domain.ids.length != 1 || !(expr instanceof StatementPattern pattern)) {
+			return null;
+		}
+		Var anchored = null;
+		for (Var var : pattern.getVarList()) {
+			if (var.hasValue() && !var.isAnonymous() && domain.variable.equals(var.getName())) {
+				anchored = var;
+				break;
+			}
+		}
+		if (anchored == null) {
+			return null;
+		}
+		long id = idOf(anchored.getValue(), layout.positionMask(domain.variable));
+		if (id != domain.ids[0]) {
+			return SlotPlan.empty();
+		}
+		return compileStatementPattern(pattern);
 	}
 
 	/** Returns the sole VALUES leaf of an inner-join tree, or null for zero/multiple/non-join occurrences. */

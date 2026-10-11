@@ -19,6 +19,7 @@ import java.io.OutputStream;
 import java.util.Map;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -29,6 +30,8 @@ import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
+import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriter;
+import org.eclipse.rdf4j.query.resultio.binary.QueryErrorType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,6 +160,9 @@ public class TupleQueryResultView extends QueryResultView {
 			return;
 		}
 		if (responseWasCommitted(model, response)) {
+			if (writeCommittedBinaryError(model, exception, message)) {
+				return;
+			}
 			abortResponseHeartbeat(model);
 			throw exception;
 		}
@@ -165,6 +171,30 @@ public class TupleQueryResultView extends QueryResultView {
 			sendServiceUnavailable(response, (QueryInterruptedException) exception, message);
 		} else {
 			response.sendError(SC_INTERNAL_SERVER_ERROR, message);
+		}
+	}
+
+	@SuppressWarnings("rawtypes")
+	private boolean writeCommittedBinaryError(Map model, RuntimeException exception, String message) {
+		if (!(exception instanceof QueryEvaluationException)
+				|| !(model.get(RESPONSE_WRITER_KEY)instanceof BinaryQueryResultWriter writer)) {
+			return false;
+		}
+
+		try {
+			QueryCircuitBreaker.CircuitBreakerException breakerException = QueryCircuitBreaker
+					.asCircuitBreakerException(exception);
+			String terminalMessage = breakerException == null ? message : breakerException.getMessage();
+			writer.error(QueryErrorType.QUERY_EVALUATION_ERROR, terminalMessage);
+			writer.getOutputStream().flush();
+			QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+			if (heartbeat != null) {
+				heartbeat.complete();
+			}
+			return true;
+		} catch (IOException e) {
+			exception.addSuppressed(e);
+			return false;
 		}
 	}
 }

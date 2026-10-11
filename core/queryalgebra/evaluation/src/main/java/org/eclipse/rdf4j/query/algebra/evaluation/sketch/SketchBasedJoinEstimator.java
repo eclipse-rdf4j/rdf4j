@@ -4272,6 +4272,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 		if (bindingSets == null) {
 			return true;
 		}
+		if (!assignment.hasRepeatableBindingSets()) {
+			return false;
+		}
 		double rows = 0.0d;
 		for (BindingSet ignored : bindingSets) {
 			rows++;
@@ -4358,6 +4361,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 	}
 
 	private TuplePlanEstimate computeBindingSetAssignmentEstimate(BindingSetAssignment assignment) {
+		if (!assignment.hasRepeatableBindingSets() && assignment.getBindingSets() != null) {
+			return null;
+		}
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		double rows = 0.0d;
 		Map<String, Set<Value>> valueSets = new HashMap<>();
@@ -4392,6 +4398,9 @@ public class SketchBasedJoinEstimator implements QueryOptimizationScopeProvider 
 
 	private TuplePlanEstimate exactFiniteBindingSetFilterPlan(Filter filter) {
 		if (!(filter.getArg()instanceof BindingSetAssignment assignment)) {
+			return null;
+		}
+		if (!assignment.hasRepeatableBindingSets()) {
 			return null;
 		}
 		ValueExpr condition = filter.getCondition();

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.AggregateOperator;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
@@ -262,6 +264,12 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 		for (int i = 0; i < copies.length; i++) {
 			ExtensionElem elem = extension.getElements().get(i);
 			ValueExpr expression = elem.getExpr();
+			if (containsAggregateOperator(expression)) {
+				// Aggregate-valued assignments belong to the aggregate root stack (NativeBindingSetExtensionStep over
+				// the Group step). The row tier cannot evaluate them per input row, so the Extension islands instead
+				// of failing the whole compile inside the semantic value compiler.
+				return null;
+			}
 			if (expression instanceof ValueConstant valueConstant) {
 				long id = idOfExtensionConstant(valueConstant.getValue(), elem.getName());
 				if (id != UNKNOWN) {
@@ -312,6 +320,21 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			}
 		}
 		return configureExtensionErrorMode(extension, copies);
+	}
+
+	private static boolean containsAggregateOperator(ValueExpr expression) {
+		boolean[] found = new boolean[1];
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof AggregateOperator) {
+					found[0] = true;
+				} else {
+					super.meetNode(node);
+				}
+			}
+		});
+		return found[0];
 	}
 
 	/**

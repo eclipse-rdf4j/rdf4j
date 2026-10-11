@@ -405,7 +405,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static void collectSmallLiteralAssignmentValues(BindingSetAssignment assignment,
 			Map<String, LinkedHashSet<Value>> valuesByBinding) {
-		if (assignment.getBindingNames().size() != 1) {
+		if (!assignment.hasRepeatableBindingSets() || assignment.getBindingNames().size() != 1) {
 			return;
 		}
 		String bindingName = assignment.getBindingNames().iterator().next();

@@ -73,7 +73,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private boolean empty;
 
 	private final Value[] values;
-	private final SortedBindingNamesCache sharedSortedBindingNamesCache;
+	// Evaluation-context state: not part of the serialized form when rows are spilled to disk.
+	private final transient SortedBindingNamesCache sharedSortedBindingNamesCache;
 	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
@@ -117,14 +118,15 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				if (this.values[i] == null) {
 					this.values[i] = NULL_VALUE;
 				}
-				size++;
 			} else if (hasBinding(this.bindingNames[i])) {
 				this.values[i] = NULL_VALUE;
+			}
+			if (isBoundValue(this.values[i])) {
 				size++;
 			}
 		}
-		this.empty = toCopy.isEmpty();
-		this.cachedSize = this.empty ? 0 : size;
+		this.empty = size == 0;
+		this.cachedSize = size;
 		if (sharedSortedBindingNamesCache != null) {
 			this.activeBindingMask = calculateActiveBindingMask();
 		}
@@ -172,8 +174,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		return (v, a) -> {
 			a.values[index] = v == null ? NULL_VALUE : v;
-			a.empty = false;
-			a.updateActiveBindingMask(index, true);
+			a.empty = v == null ? a.calculateEmpty() : false;
+			a.updateActiveBindingMask(index, v != null);
 			a.clearCache();
 		};
 	}
@@ -186,10 +188,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return null;
 		}
 		return (v, a) -> {
-			assert a.values[index] == null;
+			assert a.values[index] == null || a.values[index] == NULL_VALUE;
 			a.values[index] = v == null ? NULL_VALUE : v;
-			a.empty = false;
-			a.updateActiveBindingMask(index, true);
+			a.empty = v == null ? a.calculateEmpty() : false;
+			a.updateActiveBindingMask(index, v != null);
 			a.clearCache();
 		};
 
@@ -226,7 +228,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return null;
 		}
-		return a -> a.values[index] != null;
+		return a -> isBoundValue(a.values[index]);
 	}
 
 	private int getIndex(String bindingName) {
@@ -255,7 +257,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				this.bindingNamesSetCache = Collections.emptySet();
 			} else if (size == 1) {
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (isBoundValue(values[i])) {
 						this.bindingNamesSetCache = Collections.singleton(bindingNames[i]);
 						break;
 					}
@@ -264,7 +266,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			} else {
 				LinkedHashSet<String> bindingNamesSetCache = new LinkedHashSet<>(size * 2);
 				for (int i = 0; i < this.bindingNames.length; i++) {
-					if (values[i] != null) {
+					if (isBoundValue(values[i])) {
 						bindingNamesSetCache.add(bindingNames[i]);
 					}
 				}
@@ -323,7 +325,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		if (index == -1) {
 			return false;
 		}
-		return values[index] != null;
+		return isBoundValue(values[index]);
 	}
 
 	@Override
@@ -346,7 +348,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			int size = 0;
 
 			for (Value value : values) {
-				if (value != null) {
+				if (isBoundValue(value)) {
 					size++;
 				}
 			}
@@ -424,7 +426,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 
 				if (size == 1) {
 					for (int i = 0; i < bindingNames.length; i++) {
-						if (values[i] != null) {
+						if (isBoundValue(values[i])) {
 							sortedBindingNames = Collections.singletonList(bindingNames[i]);
 							break;
 						}
@@ -432,7 +434,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				} else {
 					ArrayList<String> names = new ArrayList<>(size);
 					for (int i = 0; i < bindingNames.length; i++) {
-						if (values[i] != null) {
+						if (isBoundValue(values[i])) {
 							names.add(bindingNames[i]);
 						}
 					}
@@ -457,10 +459,10 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 			return;
 		}
 
-		assert this.values[index] == null;
+		assert this.values[index] == null || this.values[index] == NULL_VALUE;
 		this.values[index] = value == null ? NULL_VALUE : value;
-		empty = false;
-		updateActiveBindingMask(index, true);
+		empty = value == null ? calculateEmpty() : false;
+		updateActiveBindingMask(index, value != null);
 		clearCache();
 	}
 
@@ -472,8 +474,8 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 		Value value = binding.getValue();
 		this.values[index] = value == null ? NULL_VALUE : value;
-		empty = false;
-		updateActiveBindingMask(index, true);
+		empty = value == null ? calculateEmpty() : false;
+		updateActiveBindingMask(index, value != null);
 		clearCache();
 	}
 
@@ -485,19 +487,14 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 		}
 
 		this.values[index] = value;
-		updateActiveBindingMask(index, value != null);
-		if (value == null) {
-			this.empty = true;
-			for (Value value1 : this.values) {
-				if (value1 != null) {
-					this.empty = false;
-					break;
-				}
-			}
-		} else {
-			this.empty = false;
-		}
+		updateActiveBindingMask(index, isBoundValue(value));
+		this.empty = value == null ? calculateEmpty() : false;
 		clearCache();
+	}
+
+	@Override
+	public void removeBinding(String name) {
+		setBinding(name, null);
 	}
 
 	@Override
@@ -515,7 +512,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	public void addAll(ArrayBindingSet other) {
 		if (other.bindingNames == bindingNames) {
 			for (int i = 0; i < bindingNames.length; i++) {
-				if (other.values[i] != null) {
+				if (isBoundValue(other.values[i])) {
 					this.values[i] = other.values[i];
 					this.empty = false;
 				}
@@ -553,11 +550,24 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private long calculateActiveBindingMask() {
 		long mask = 0L;
 		for (int i = 0; i < values.length; i++) {
-			if (values[i] != null) {
+			if (isBoundValue(values[i])) {
 				mask |= 1L << i;
 			}
 		}
 		return mask;
+	}
+
+	private boolean calculateEmpty() {
+		for (Value value : values) {
+			if (isBoundValue(value)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean isBoundValue(Value value) {
+		return value != null && value != NULL_VALUE;
 	}
 
 	@Override
@@ -604,11 +614,11 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 				if (index >= valuesLength) {
 					index -= valuesLength;
 				}
-				if (values[index] != o.values[index]) {
-					if (!Objects.equals(values[index], o.values[index])) {
-						LAST_EQUALS_MISMATCH_INDEX.setOpaque(index);
-						return false;
-					}
+				Value value = isBoundValue(values[index]) ? values[index] : null;
+				Value otherValue = isBoundValue(o.values[index]) ? o.values[index] : null;
+				if (!Objects.equals(value, otherValue)) {
+					LAST_EQUALS_MISMATCH_INDEX.setOpaque(index);
+					return false;
 				}
 			}
 			return true;

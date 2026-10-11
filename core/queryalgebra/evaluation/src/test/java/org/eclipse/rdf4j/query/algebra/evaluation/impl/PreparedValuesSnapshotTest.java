@@ -149,7 +149,8 @@ class PreparedValuesSnapshotTest {
 		assertEquals(Set.of("bound", "unbound"), row.getBindingNames());
 		assertEquals("value", row.getValue("bound").stringValue());
 		assertEquals(null, row.getValue("unbound"));
-		assertThrows(UnsupportedOperationException.class, () -> row.getBindingNames().clear());
+		// An immutable row list is used as-is, so the caller's rows stay the rows the plan reads.
+		assertSame(sourceRow, row);
 		assertEquals(Set.of("bound", "unbound"), captured.getBindingNames());
 		assertEquals(Set.of("bound"), captured.getAssuredBindingNames());
 	}

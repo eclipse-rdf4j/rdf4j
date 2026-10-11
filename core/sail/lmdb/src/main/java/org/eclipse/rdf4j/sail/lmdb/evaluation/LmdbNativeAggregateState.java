@@ -276,8 +276,9 @@ final class AggregateSpec {
 	}
 
 	/**
-	 * COUNT(*): retain the visible binding domain so the collector can skip empty mappings. Failed BIND assignments
-	 * occupy that domain even though their values remain unbound. DISTINCT uses {@link #starDistinct} instead.
+	 * COUNT(*): retain the visible binding domain so the collector can skip empty mappings. A failed BIND assignment
+	 * leaves an unbound placeholder in that domain and does not make a mapping countable. DISTINCT uses
+	 * {@link #starDistinct} instead.
 	 */
 	static AggregateSpec star(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, false, AggKind.COUNT, null, rowSlots);
@@ -292,9 +293,9 @@ final class AggregateSpec {
 
 	/**
 	 * COUNT(DISTINCT *) (M-F3): counts distinct full visible solution mappings — names, bound status and term identity
-	 * over {@code rowSlots}. Empty mappings are skipped; failed BIND assignments still occupy a mapping even though
-	 * their values remain unbound. Requires full logical mappings: composed packed algebra uses its serial aggregate
-	 * boundary.
+	 * over {@code rowSlots}. Empty mappings are skipped; a failed BIND assignment leaves an unbound placeholder that
+	 * does not make a mapping countable. Requires full logical mappings: composed packed algebra uses its serial
+	 * aggregate boundary.
 	 */
 	static AggregateSpec starDistinct(String name, int[] rowSlots) {
 		return new AggregateSpec(name, -1, NULL_CONTEXT_ID, true, AggKind.COUNT, null, rowSlots);
@@ -327,9 +328,11 @@ final class AggregateSpec {
 			}
 			for (int rowSlot : rowSlots) {
 				long value = row.slots[rowSlot];
-				// ExtensionIterator installs a null placeholder on error. It contributes to BindingSet.isEmpty(),
-				// which the generic wildcard collector checks, despite remaining unbound to COUNT(?variable).
-				if (value != UNKNOWN) {
+				// A failed BIND leaves a null placeholder in its slot (LmdbNativeRowPlans.bindCopies). The generic
+				// engine does not report such a placeholder as a binding (ArrayBindingSet.isEmpty() ignores
+				// null-valued entries), so WildCardCountAggregate skips a mapping whose only entries are failed
+				// assignments; the native domain check ignores the placeholder the same way.
+				if (value != UNKNOWN && value != NULL_CONTEXT_ID) {
 					return true;
 				}
 			}

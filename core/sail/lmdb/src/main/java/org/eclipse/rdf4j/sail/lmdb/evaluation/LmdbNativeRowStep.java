@@ -629,7 +629,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 				: inherited;
 		boolean completed = false;
 		try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime.attach(session)) {
-			List<BindingSet> result = evaluateAllInitialized(base, row);
+			List<BindingSet> result = withForeignBase(evaluateAllInitialized(base, row), base);
 			session.recordMaterializationBoundary(result.size());
 			completed = true;
 			return result;
@@ -1818,7 +1818,52 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 					Arrays.copyOf(slots, slots.length), true);
 			return containsEvaluationScopedId(values.source, slots, null) ? materialize(view) : view;
 		}
-		return project(slots, values);
+		return withForeignBase(project(slots, values), base);
+	}
+
+	/**
+	 * Whether rows of this evaluation must carry the input mapping's bindings for names the projection does not emit.
+	 * An interior step (an algebra fragment or sub-select hosted by a generic operator) is evaluated once per outer
+	 * input mapping, and generic operators rely on the child stream carrying that mapping (a bind join merges nothing
+	 * itself). The root step is the SELECT result boundary and emits projected names only.
+	 */
+	private boolean carriesForeignBase(BindingSet base) {
+		return !rootEvaluationScoped && base != null && !base.isEmpty();
+	}
+
+	/** Adds the base bindings whose names the projection does not emit; projected names win over the base. */
+	BindingSet withForeignBase(BindingSet projected, BindingSet base) {
+		if (!carriesForeignBase(base)) {
+			return projected;
+		}
+		boolean foreign = false;
+		for (String name : base.getBindingNames()) {
+			if (!projected.hasBinding(name)) {
+				foreign = true;
+				break;
+			}
+		}
+		if (!foreign) {
+			return projected;
+		}
+		QueryBindingSet merged = new QueryBindingSet(base.size() + projected.size());
+		merged.addAll(base);
+		for (Binding binding : projected) {
+			merged.setBinding(binding);
+		}
+		return merged;
+	}
+
+	/** {@link #withForeignBase(BindingSet, BindingSet)} over a materialized result list. */
+	List<BindingSet> withForeignBase(List<BindingSet> rows, BindingSet base) {
+		if (!carriesForeignBase(base) || rows.isEmpty()) {
+			return rows;
+		}
+		List<BindingSet> merged = new ArrayList<>(rows.size());
+		for (BindingSet row : rows) {
+			merged.add(withForeignBase(row, base));
+		}
+		return merged;
 	}
 
 	/**

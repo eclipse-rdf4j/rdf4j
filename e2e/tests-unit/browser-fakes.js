@@ -39,6 +39,22 @@ function createTextNode(ownerDocument, text) {
     };
 }
 
+function createStyle(initialValues) {
+    const style = Object.assign({}, initialValues);
+    style.setProperty = function (name, value) {
+        this[name] = String(value);
+    };
+    style.getPropertyValue = function (name) {
+        return this[name] || '';
+    };
+    style.removeProperty = function (name) {
+        const previous = this[name] || '';
+        delete this[name];
+        return previous;
+    };
+    return style;
+}
+
 class FakeClassList {
     constructor(element) {
         this.element = element;
@@ -93,12 +109,13 @@ class FakeElement {
         this.checked = !!options.checked;
         this.selected = !!options.selected;
         this.disabled = !!options.disabled;
+        this.hidden = !!options.hidden;
         this.readOnly = !!options.readOnly;
         this.visible = options.visible !== undefined ? options.visible : true;
         this.attributes = new Map();
         this.classes = new Set();
         this.classList = new FakeClassList(this);
-        this.style = Object.assign({}, options.style);
+        this.style = createStyle(options.style);
         this.children = [];
         this.parentNode = null;
         this.eventHandlers = new Map();
@@ -129,6 +146,9 @@ class FakeElement {
         }
         if (this.disabled) {
             this.attributes.set('disabled', 'disabled');
+        }
+        if (this.hidden) {
+            this.attributes.set('hidden', 'hidden');
         }
         if (this.readOnly) {
             this.attributes.set('readonly', 'readonly');
@@ -203,8 +223,13 @@ class FakeElement {
             this.selected = normalizedValue !== 'false';
         } else if (name === 'disabled') {
             this.disabled = normalizedValue !== 'false';
+        } else if (name === 'hidden') {
+            this.hidden = normalizedValue !== 'false';
         } else if (name === 'readonly') {
             this.readOnly = normalizedValue !== 'false';
+        }
+        if (name === 'name' && this.contentWindow) {
+            this.contentWindow.name = normalizedValue;
         }
     }
 
@@ -222,6 +247,8 @@ class FakeElement {
             this.selected = false;
         } else if (name === 'disabled') {
             this.disabled = false;
+        } else if (name === 'hidden') {
+            this.hidden = false;
         } else if (name === 'readonly') {
             this.readOnly = false;
         }
@@ -243,6 +270,16 @@ class FakeElement {
             return;
         }
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
+    }
+
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
+    }
+
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
     }
 
     removeAllEventListeners() {
@@ -285,12 +322,62 @@ class FakeElement {
         this.ownerDocument.activeElement = this;
     }
 
+    /** Calls this element's listeners, then its ancestors' when the event bubbles. */
+    dispatchEvent(event) {
+        const normalizedEvent = Object.assign({ target: this }, event);
+        for (let current = this; current; current = normalizedEvent.bubbles ? current.parentNode : null) {
+            normalizedEvent.currentTarget = current;
+            ((current.eventHandlers && current.eventHandlers.get(normalizedEvent.type)) || []).slice()
+                .forEach(handler => handler.call(current, normalizedEvent));
+        }
+        return true;
+    }
+
+    contains(node) {
+        for (let current = node; current; current = current.parentNode) {
+            if (current === this) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     appendChild(child) {
         const normalizedChild = typeof child === 'string'
             ? createTextNode(this.ownerDocument, child)
             : child;
+        if (normalizedChild.parentNode) {
+            normalizedChild.parentNode.removeChild(normalizedChild);
+        }
         this.ownerDocument.track(normalizedChild);
         this.children.push(normalizedChild);
+        normalizedChild.parentNode = this;
+        if (this.tagName === 'FORM' && normalizedChild.nodeType !== 3
+            && normalizedChild.name && !this.formControls.includes(normalizedChild)) {
+            this.formControls.push(normalizedChild);
+        }
+        return normalizedChild;
+    }
+
+    insertBefore(child, referenceChild) {
+        const normalizedChild = typeof child === 'string'
+            ? createTextNode(this.ownerDocument, child)
+            : child;
+        if (normalizedChild === referenceChild) {
+            return normalizedChild;
+        }
+        if (referenceChild == null) {
+            return this.appendChild(normalizedChild);
+        }
+        if (!this.children.includes(referenceChild)) {
+            throw new Error('The reference child is not a child of this element');
+        }
+        if (normalizedChild.parentNode) {
+            normalizedChild.parentNode.removeChild(normalizedChild);
+        }
+        const index = this.children.indexOf(referenceChild);
+        this.ownerDocument.track(normalizedChild);
+        this.children.splice(index, 0, normalizedChild);
         normalizedChild.parentNode = this;
         if (this.tagName === 'FORM' && normalizedChild.nodeType !== 3
             && normalizedChild.name && !this.formControls.includes(normalizedChild)) {
@@ -303,11 +390,16 @@ class FakeElement {
         this.children = this.children.filter((candidate) => candidate !== child);
         this.formControls = this.formControls.filter((candidate) => candidate !== child);
         child.parentNode = null;
+        this.ownerDocument.untrack(child);
         return child;
     }
 
     getBoundingClientRect() {
         return { top: 0, left: 0, width: 0, height: 0 };
+    }
+
+    getClientRects() {
+        return this.hidden ? [] : [this.getBoundingClientRect()];
     }
 
     getElementsByTagName(tagName) {
@@ -330,6 +422,26 @@ class FakeElement {
         return result;
     }
 
+    querySelectorAll(selector) {
+        return selectElements([this], selector, false);
+    }
+
+    querySelector(selector) {
+        return this.querySelectorAll(selector)[0] || null;
+    }
+
+    closest(selector) {
+        const selectors = String(selector || '').split(',').map(value => value.trim());
+        let current = this;
+        while (current) {
+            if (selectors.some(value => matchesSelectorToken(current, value))) {
+                return current;
+            }
+            current = current.parentNode;
+        }
+        return null;
+    }
+
     serializeArray() {
         return this.formControls
             .filter((control) => control.name && !control.disabled)
@@ -346,6 +458,32 @@ class FakeElement {
         if (typeof this.onsubmit === 'function') {
             this.onsubmit();
         }
+    }
+}
+
+/** A minimal HTMLDialogElement: showModal() and close() with the close event. */
+class FakeDialogElement extends FakeElement {
+    constructor(ownerDocument, tagName, options = {}) {
+        super(ownerDocument, tagName, options);
+        this.open = false;
+        this.returnValue = '';
+    }
+
+    showModal() {
+        this.open = true;
+        this.attributes.set('open', '');
+    }
+
+    close(returnValue) {
+        if (!this.open) {
+            return;
+        }
+        this.open = false;
+        this.attributes.delete('open');
+        if (returnValue !== undefined) {
+            this.returnValue = String(returnValue);
+        }
+        this.trigger('close');
     }
 }
 
@@ -374,6 +512,16 @@ class FakeWindow {
             return;
         }
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
+    }
+
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
+    }
+
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
     }
 
     dispatchEvent(event) {
@@ -519,7 +667,18 @@ class FakeDocument {
     }
 
     createElement(tagName) {
-        return this.track(new FakeElement(this, tagName));
+        const element = String(tagName).toLowerCase() === 'dialog'
+            ? new FakeDialogElement(this, tagName) : new FakeElement(this, tagName);
+        if (String(tagName).toLowerCase() === 'iframe') {
+            element.contentWindow = new FakeWindow('', 'about:blank');
+        }
+        return this.track(element);
+    }
+
+    createElementNS(namespace, tagName) {
+        const element = new FakeElement(this, tagName);
+        element.namespaceURI = namespace;
+        return this.track(element);
     }
 
     createTextNode(text) {
@@ -536,6 +695,15 @@ class FakeDocument {
         return this.elementsById.get(id) || null;
     }
 
+    untrack(node) {
+        this.elements = this.elements.filter((element) => element !== node);
+        for (const [id, element] of this.elementsById.entries()) {
+            if (element === node) {
+                this.elementsById.delete(id);
+            }
+        }
+    }
+
     getElementsByTagName(tagName) {
         const normalized = String(tagName).toUpperCase();
         const result = normalized === 'BODY' ? [this.body] : [];
@@ -544,6 +712,10 @@ class FakeDocument {
 
     querySelectorAll(selector) {
         return selectElements([this.body], selector, true);
+    }
+
+    querySelector(selector) {
+        return this.querySelectorAll(selector)[0] || null;
     }
 
     addEventListener(type, handler) {
@@ -564,6 +736,16 @@ class FakeDocument {
         this.eventHandlers.set(type, this.eventHandlers.get(type).filter((candidate) => candidate !== handler));
     }
 
+    /** The number of listeners currently registered for an event type. */
+    listenerCount(type) {
+        return (this.eventHandlers.get(type) || []).length;
+    }
+
+    /** The number of listeners per event type, for every type that has one. */
+    listenerCounts() {
+        return listenerCounts(this.eventHandlers);
+    }
+
     removeAllEventListeners() {
         this.eventHandlers.clear();
     }
@@ -578,6 +760,22 @@ class FakeDocument {
         handlers.forEach((handler) => handler.call(this, normalizedEvent));
         return normalizedEvent;
     }
+}
+
+function listenerCounts(eventHandlers) {
+    const counts = {};
+    eventHandlers.forEach((handlers, type) => {
+        if (handlers.length) {
+            counts[type] = handlers.length;
+        }
+    });
+    return counts;
+}
+
+/** A jQuery event name: 'keydown.wbRoute' is the type 'keydown' in the namespace 'wbRoute'. */
+function parseEventName(name) {
+    const parts = String(name).split('.');
+    return { type: parts[0], namespaces: parts.slice(1).filter(Boolean) };
 }
 
 function parseSelectorToken(selector) {
@@ -943,18 +1141,40 @@ class JQueryCollection {
     }
 
     on(eventNames, handler) {
-        return this.bind(eventNames, handler);
+        const events = String(eventNames || '').split(/\s+/).filter(Boolean).map(parseEventName);
+        return this.each((index, element) => {
+            events.forEach((event) => {
+                element.addEventListener(event.type, handler);
+                if (event.namespaces.length) {
+                    element.jqueryHandlers = (element.jqueryHandlers || []).concat([
+                        { type: event.type, namespaces: event.namespaces, handler }
+                    ]);
+                }
+            });
+        });
     }
 
+    /** Like jQuery: off() removes every handler, off('click') every click handler, off('.ns') a namespace. */
     off(eventNames) {
-        const eventTypes = String(eventNames || '').split(/\s+/).filter(Boolean);
+        const events = String(eventNames || '').split(/\s+/).filter(Boolean).map(parseEventName);
         return this.each((index, element) => {
-            if (!eventTypes.length) {
+            if (!events.length) {
                 element.removeAllEventListeners();
+                element.jqueryHandlers = [];
                 return;
             }
-            eventTypes.forEach((eventType) => {
-                element.removeEventListener(eventType);
+            events.forEach((event) => {
+                if (!event.namespaces.length) {
+                    element.removeEventListener(event.type);
+                    return;
+                }
+                (element.jqueryHandlers || []).filter((registered) =>
+                    (!event.type || registered.type === event.type)
+                    && event.namespaces.every((namespace) => registered.namespaces.indexOf(namespace) >= 0))
+                    .forEach((registered) => {
+                        element.removeEventListener(registered.type, registered.handler);
+                        element.jqueryHandlers = element.jqueryHandlers.filter((other) => other !== registered);
+                    });
             });
         });
     }

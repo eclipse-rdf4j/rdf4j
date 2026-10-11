@@ -306,32 +306,16 @@ abstract class LmdbNativeAggregatePlannerBase {
 
 	abstract long placeableFilterMask(ValueExpr condition);
 
-	/** Applies RDF4J's context-sensitive assignment-error contract to every copy in one Extension node. */
+	/**
+	 * Applies RDF4J's assignment-error contract to every copy in one Extension node. SPARQL Extend returns the input
+	 * mapping unchanged when its expression errors, so the target variable stays absent and a later compatible pattern
+	 * may bind it (mirrors {@code ExtensionIterator}); no occupied null marker is installed in any context.
+	 */
 	CopyBinding[] configureExtensionErrorMode(Extension extension, CopyBinding[] copies) {
-		boolean setNullOnError = !isWithinMinusRightArg(extension);
 		for (CopyBinding copy : copies) {
-			copy.setNullOnError = setNullOnError;
+			copy.setNullOnError = false;
 		}
 		return copies;
-	}
-
-	/** Mirrors DefaultEvaluationStrategy: only an Extension inside the right operand of MINUS skips null markers. */
-	private static boolean isWithinMinusRightArg(QueryModelNode node) {
-		QueryModelNode child = node;
-		QueryModelNode parent = node.getParentNode();
-		while (parent != null) {
-			if (parent instanceof Difference difference) {
-				if (difference.getRightArg() == child) {
-					return true;
-				}
-				if (difference.getLeftArg() == child) {
-					return false;
-				}
-			}
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		return false;
 	}
 
 	/**
@@ -356,10 +340,45 @@ abstract class LmdbNativeAggregatePlannerBase {
 				// EXISTS body variables are local witnesses or correlations resolved by the EXISTS compiler.
 			}
 		});
-		if (!filter.getArg().getBindingNames().containsAll(lexicalReads)) {
-			return -1L;
+		Set<String> visible = filter.getArg().getBindingNames();
+		if (!visible.containsAll(lexicalReads)) {
+			// The shared FilterOptimizer may place a condition directly over the operand binding its last variable,
+			// relying on the enclosing joins to have bound the others first (nested-loop order). A name assured by
+			// every earlier operand of an enclosing Join is bound at this position in both engines, so deferring the
+			// condition until all of its slots are bound can never turn a SPARQL error into a value for it. Any
+			// other name keeps the filter pinned in place.
+			Set<String> frame = enclosingAssuredBindingNames(filter);
+			for (String name : lexicalReads) {
+				if (!visible.contains(name) && !frame.contains(name)) {
+					return -1L;
+				}
+			}
 		}
 		return placeableFilterMask(filter.getCondition());
+	}
+
+	/**
+	 * Binding names every row entering {@code node} already carries from the enclosing evaluation frame: the assured
+	 * names of the left operands of enclosing {@link Join}s whose right arm contains {@code node}, collected through
+	 * Filter and Extension wrappers up to the nearest other operator (a scope boundary, an OPTIONAL arm, a MINUS or a
+	 * UNION arm contribute nothing).
+	 */
+	static Set<String> enclosingAssuredBindingNames(TupleExpr node) {
+		Set<String> names = new HashSet<>();
+		QueryModelNode child = node;
+		QueryModelNode parent = node.getParentNode();
+		while (parent instanceof TupleExpr) {
+			if (parent instanceof Join join) {
+				if (child == join.getRightArg()) {
+					names.addAll(join.getLeftArg().getAssuredBindingNames());
+				}
+			} else if (!(parent instanceof Filter || parent instanceof Extension)) {
+				break;
+			}
+			child = parent;
+			parent = parent.getParentNode();
+		}
+		return names;
 	}
 
 	NativeBooleanFilter recordFilterOutcomes(Filter filter, NativeBooleanFilter delegate) {
@@ -781,14 +800,24 @@ abstract class LmdbNativeAggregatePlannerBase {
 		return union;
 	}
 
+	/**
+	 * Whether an aggregate argument variable reads its input slot. The shared ConstantOptimizer annotates an argument
+	 * with the constant it is proven to carry ({@code Var(name, value)}) while the group input still binds that name (a
+	 * single-valued VALUES, a constant BIND); that slot then holds exactly this term on every row, so the slot form
+	 * stays the authoritative, kernel-eligible encoding. Only a constant no input binding supplies is a true constant.
+	 */
+	static boolean readsInputSlot(Var var, Group group) {
+		return !var.hasValue() || group.getArg().getBindingNames().contains(var.getName());
+	}
+
 	Set<String> aggregateRequiredNames(Group group) {
 		java.util.HashSet<String> names = new java.util.HashSet<>(group.getGroupBindingNames());
 		for (GroupElem elem : group.getGroupElements()) {
 			AggregateOperator op = elem.getOperator();
 			if (op instanceof AbstractAggregateOperator aggregate) {
 				ValueExpr arg = aggregate.getArg();
-				if (arg instanceof Var && !((Var) arg).hasValue()) {
-					names.add(((Var) arg).getName());
+				if (arg instanceof Var var && readsInputSlot(var, group)) {
+					names.add(var.getName());
 				} else if (arg != null) {
 					// aggregate over an expression: every variable the expression reads is required
 					names.addAll(VarNameCollector.process(arg));
@@ -965,7 +994,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 				continue;
 			}
 			Var var = (Var) arg;
-			if (var.hasValue()) {
+			if (!readsInputSlot(var, group)) {
 				if (kind != AggKind.COUNT) {
 					return null;
 				}
