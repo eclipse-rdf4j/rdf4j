@@ -5507,7 +5507,7 @@ class LmdbSailStore implements SailStore {
 				boolean stateUnknown = false;
 				if (namespacesChanged && !committed) {
 					try {
-						Map<String, String> persistedNamespaces = tripleStore.readNamespaceSnapshot();
+						Map<String, String> persistedNamespaces = readNamespacesAfterFailedCommit();
 						if (currentNamespaces.equals(persistedNamespaces)) {
 							committed = true;
 						} else if (!previousNamespaces.equals(persistedNamespaces)) {
@@ -5577,6 +5577,29 @@ class LmdbSailStore implements SailStore {
 			}
 		} finally {
 			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	private Map<String, String> readNamespacesAfterFailedCommit() throws IOException {
+		boolean interrupted = Thread.interrupted();
+		// Resolving the physical commit outcome is mandatory cleanup. Cancellation must remain the
+		// caller's primary failure without preventing a fresh, remap-protected reconciliation read.
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enterScopedContext(null)) {
+			while (true) {
+				try {
+					return tripleStore.readNamespaceSnapshot();
+				} catch (IOException | SailException admissionFailure) {
+					if (!(admissionFailure.getCause() instanceof InterruptedException)) {
+						throw admissionFailure;
+					}
+					interrupted = true;
+					Thread.interrupted();
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
 	}
 

@@ -28,9 +28,11 @@ import java.nio.file.Path;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -46,6 +48,7 @@ import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -63,6 +66,7 @@ import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -989,6 +993,132 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void mandatoryNamespaceReconciliationRestoresAnExpiredCallerDeadline(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 4)) {
+			fixture.events.interruptAfterValueCommit.set(true);
+			Set<Statement> input = statements("expired-reconciliation-deadline", 2);
+			CountDownLatch releaseReadOnExpiration = new CountDownLatch(1);
+			NamespaceReadProbe probe = new NamespaceReadProbe(releaseReadOnExpiration, null);
+			try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+				Future<?> commit = executor.submit(() -> {
+					try (RepositoryConnection writer = fixture.repository.getConnection()) {
+						writer.begin();
+						writer.add(input);
+						writer.setNamespace("abandoned", "urn:abandoned:");
+						fixture.events.namespaceReadProbe = probe;
+						QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000L);
+						try (deadline;
+								QueryExecutionDeadline.Registration ignored = deadline
+										.onExpiration(releaseReadOnExpiration::countDown);
+								QueryExecutionDeadline.Scope scope = deadline.enter()) {
+							RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+							assertNotNull(cause(failure, InterruptedException.class),
+									"the original interrupted commit failure remains primary");
+							assertNull(probe.observedDeadline.get(),
+									"mandatory namespace reconciliation temporarily clears the expired query deadline");
+							assertSame(deadline, QueryExecutionDeadline.current(),
+									"the caller's deadline scope is restored after mandatory reconciliation");
+							assertTrue(deadline.isExpired(),
+									"the restored caller deadline remains expired rather than being renewed");
+							assertTrue(Thread.currentThread().isInterrupted(),
+									"the original commit interrupt flag is restored after reconciliation");
+							assertEquals(1, probe.completedReads.get(),
+									"the mandatory read finishes after the caller deadline expires");
+						} finally {
+							fixture.events.namespaceReadProbe = null;
+							Thread.interrupted();
+						}
+						writer.rollback();
+					} finally {
+						Thread.interrupted();
+					}
+				});
+				try {
+					assertTrue(probe.entered.await(5, TimeUnit.SECONDS),
+							"the mandatory namespace read must begin before its caller deadline expires");
+					assertTrue(releaseReadOnExpiration.await(5, TimeUnit.SECONDS),
+							"the read barrier is released by the original deadline's expiration");
+					commit.get(10, TimeUnit.SECONDS);
+				} finally {
+					releaseReadOnExpiration.countDown();
+					commit.cancel(true);
+					executor.shutdownNow();
+					assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS),
+							"the deadline-scoped reconciliation worker must be joined");
+				}
+				assertUnpublished(fixture, input);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void failedNamespaceReconciliationKeepsStoreUncertainUntilReopen(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = config(Policy.DISABLED);
+		Set<Statement> input = statements("uncertain-reconciliation", 2);
+		IOException readFailure = new IOException("injected namespace reconciliation read failure");
+		Fixture fixture = new Fixture(directory, config);
+		boolean shutdownAttempted = false;
+		try {
+			fixture.events.failTripleCommit.set(true);
+			NamespaceReadProbe probe = new NamespaceReadProbe(null, readFailure);
+			try (RepositoryConnection writer = fixture.repository.getConnection()) {
+				writer.begin();
+				writer.add(input);
+				writer.setNamespace("uncertain", "urn:uncertain:");
+				fixture.events.namespaceReadProbe = probe;
+				RepositoryException failure = assertThrows(RepositoryException.class, writer::commit);
+				fixture.events.namespaceReadProbe = null;
+				assertEquals(1, fixture.events.injectedNativeCommitFailures.get(),
+						"the uncertain outcome follows an actual consumed native commit failure");
+				LmdbUtil.MapFullException nativeFailure = cause(failure, LmdbUtil.MapFullException.class);
+				assertNotNull(nativeFailure, "the original native capacity failure remains primary");
+				assertEquals(1, probe.attempts.get(), "a non-admission read error must not be retried");
+				assertEquals(0, probe.completedReads.get(), "the injected native namespace read did not complete");
+				assertTrue(containsThrowable(nativeFailure, readFailure),
+						"the reconciliation read failure is suppressed beneath the original native failure");
+				writer.rollback();
+			}
+			try (RepositoryConnection blocked = fixture.repository.getConnection()) {
+				blocked.begin();
+				RepositoryException uncertain = assertThrows(RepositoryException.class,
+						() -> blocked.getNamespace("uncertain"),
+						"a failed authoritative namespace reconciliation must fence authoritative reads");
+				SailException uncertainCause = cause(uncertain, SailException.class);
+				assertNotNull(uncertainCause);
+				assertTrue(uncertainCause.getMessage().contains("namespace commit outcome is uncertain"));
+				blocked.rollback();
+			}
+			fixture.store.getBackingStore().rollback();
+			shutdownAttempted = true;
+			RepositoryException shutdown = assertThrows(RepositoryException.class, fixture.repository::shutDown,
+					"an uncertain store must still close native resources before it is reopened");
+			SailException shutdownCause = cause(shutdown, SailException.class);
+			assertNotNull(shutdownCause);
+			assertTrue(shutdownCause.getMessage().contains("namespace commit outcome is uncertain"));
+		} finally {
+			if (!shutdownAttempted) {
+				fixture.close();
+			}
+		}
+
+		LmdbStore reopenedStore = new LmdbStore(directory.toFile(), config(Policy.DISABLED));
+		SailRepository reopened = new SailRepository(reopenedStore);
+		reopened.init();
+		try (RepositoryConnection reader = reopened.getConnection()) {
+			assertNull(reader.getNamespace("uncertain"),
+					"reopening recovers the still-persisted pre-failure namespace snapshot");
+			for (Statement statement : input) {
+				assertFalse(reader.hasStatement(statement, false),
+						"the aborted native transaction must not publish any input rows");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
 	@ParameterizedTest
 	@CsvSource({ "2,false", "2,true", "5,false", "5,true" })
 	void dictionaryIdFailureAbortsActualPartialWork(int count, boolean error, @TempDir Path directory)
@@ -1208,6 +1338,25 @@ class LmdbSynchronousIngestTest {
 		return null;
 	}
 
+	private static boolean containsThrowable(Throwable root, Throwable expected) {
+		return containsThrowable(root, expected, Collections.newSetFromMap(new IdentityHashMap<>()));
+	}
+
+	private static boolean containsThrowable(Throwable root, Throwable expected, Set<Throwable> visited) {
+		if (root == null || !visited.add(root)) {
+			return false;
+		}
+		if (root == expected || containsThrowable(root.getCause(), expected, visited)) {
+			return true;
+		}
+		for (Throwable suppressed : root.getSuppressed()) {
+			if (containsThrowable(suppressed, expected, visited)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void assertPoisoned(RepositoryConnection writer, Throwable failure) {
 		LmdbTransactionRetryException retry = cause(failure, LmdbTransactionRetryException.class);
 		assertNotNull(retry);
@@ -1379,6 +1528,32 @@ class LmdbSynchronousIngestTest {
 		}
 	}
 
+	private static final class NamespaceReadProbe {
+		private final CountDownLatch entered = new CountDownLatch(1);
+		private final CountDownLatch release;
+		private final IOException failure;
+		private final AtomicInteger attempts = new AtomicInteger();
+		private final AtomicInteger completedReads = new AtomicInteger();
+		private final AtomicReference<QueryExecutionDeadline> observedDeadline = new AtomicReference<>();
+
+		private NamespaceReadProbe(CountDownLatch release, IOException failure) {
+			this.release = release;
+			this.failure = failure;
+		}
+
+		private void beforeRead() throws IOException {
+			attempts.incrementAndGet();
+			observedDeadline.set(QueryExecutionDeadline.current());
+			entered.countDown();
+			if (release != null) {
+				await(release);
+			}
+			if (failure != null) {
+				throw failure;
+			}
+		}
+	}
+
 	private enum MutationRoute {
 		BULK,
 		DISABLED_BULK,
@@ -1538,6 +1713,7 @@ class LmdbSynchronousIngestTest {
 		private final AtomicBoolean interruptAfterValueCommit = new AtomicBoolean();
 		private final AtomicLong consumedValueHandle = new AtomicLong();
 		private final AtomicInteger abortsOfConsumedValueHandle = new AtomicInteger();
+		private volatile NamespaceReadProbe namespaceReadProbe;
 
 		private void clearWrites() {
 			starts.clear();
@@ -1552,6 +1728,7 @@ class LmdbSynchronousIngestTest {
 			successfulTripleCommitThreads.clear();
 			injectedNativeCommitFailures.set(0);
 			successfulTripleCommits = new CountDownLatch(0);
+			namespaceReadProbe = null;
 		}
 
 		private void expectSuccessfulTripleCommits(int count) {
@@ -1652,6 +1829,19 @@ class LmdbSynchronousIngestTest {
 				events.decisions.add(decision);
 				throwFailure(events.tripleStartFailure.getAndSet(null));
 			}
+		}
+
+		@Override
+		Map<String, String> readNamespaceSnapshot() throws IOException {
+			NamespaceReadProbe probe = events == null ? null : events.namespaceReadProbe;
+			if (probe != null) {
+				probe.beforeRead();
+			}
+			Map<String, String> snapshot = super.readNamespaceSnapshot();
+			if (probe != null) {
+				probe.completedReads.incrementAndGet();
+			}
+			return snapshot;
 		}
 
 		@Override
