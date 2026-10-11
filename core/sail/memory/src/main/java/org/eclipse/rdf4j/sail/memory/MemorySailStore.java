@@ -149,14 +149,24 @@ class MemorySailStore implements SailStore {
 	private volatile Object activeFrozenOwner;
 	/** Store-owned undo survives collection of an abandoned sink without retaining the sink or its lock. */
 	private MutationSegment mutationSegment;
+	private NamespaceSegment namespaceSegment;
 
 	private static final class MutationSegment {
 		final WeakReference<MemorySailSink> owner;
 		final Set<MemStatement> additions = Collections.newSetFromMap(new IdentityHashMap<>());
 		final Map<MemStatement, Integer> deprecations = new IdentityHashMap<>();
-		final Map<String, String> namespaces = new LinkedHashMap<>();
 
 		MutationSegment(MemorySailSink owner) {
+			this.owner = new WeakReference<>(owner);
+		}
+	}
+
+	/** Namespace publication is independent of the statement snapshot, including ordinary NONE imports. */
+	private static final class NamespaceSegment {
+		final WeakReference<MemorySailSink> owner;
+		final Map<String, String> originals = new LinkedHashMap<>();
+
+		NamespaceSegment(MemorySailSink owner) {
 			this.owner = new WeakReference<>(owner);
 		}
 	}
@@ -164,28 +174,36 @@ class MemorySailStore implements SailStore {
 	/** Caller owns the transaction lock and registry guard; no live sink can mutate an abandoned segment. */
 	private void retireAbandonedSegment() {
 		if (mutationSegment != null && mutationSegment.owner.get() == null) {
-			undoSegment(mutationSegment);
+			boolean cleanup = undoSegment(mutationSegment);
 			mutationSegment = null;
+			if (cleanup) {
+				scheduleSnapshotCleanup();
+			}
+		}
+		if (namespaceSegment != null && namespaceSegment.owner.get() == null) {
+			undoNamespaces(namespaceSegment);
+			namespaceSegment = null;
 		}
 	}
 
-	private void undoSegment(MutationSegment segment) {
+	private boolean undoSegment(MutationSegment segment) {
 		segment.deprecations.forEach(MemStatement::setTillSnapshot);
 		// These identities have never been published, even if component-list attachment failed midway.
 		for (MemStatement statement : segment.additions) {
 			statement.setTillSnapshot(0);
 		}
-		segment.namespaces.forEach((prefix, name) -> {
+		invalidateCache();
+		return !segment.additions.isEmpty();
+	}
+
+	private void undoNamespaces(NamespaceSegment segment) {
+		segment.originals.forEach((prefix, name) -> {
 			if (name == null) {
 				namespaceStore.removeNamespace(prefix);
 			} else {
 				namespaceStore.setNamespace(prefix, name);
 			}
 		});
-		invalidateCache();
-		if (!segment.additions.isEmpty()) {
-			scheduleSnapshotCleanup();
-		}
 	}
 
 	/**
@@ -642,6 +660,7 @@ class MemorySailStore implements SailStore {
 
 		private boolean requireCleanup;
 		private MutationSegment segment;
+		private NamespaceSegment namespaces;
 
 		public MemorySailSink(boolean explicit, boolean serializable) throws SailException {
 			this.explicit = explicit;
@@ -765,6 +784,9 @@ class MemorySailStore implements SailStore {
 				synchronized (preparedSinks) {
 					retireAbandonedSegment();
 					flushedSnapshot = -1;
+					if (namespaces != null && namespaceSegment != namespaces) {
+						throw new SailConflictException("Memory namespace segment ownership changed");
+					}
 					if (segment != null) {
 						if (mutationSegment != segment) {
 							throw new SailConflictException("Memory mutation segment ownership changed");
@@ -774,6 +796,13 @@ class MemorySailStore implements SailStore {
 						flushedSnapshot = nextSnapshot;
 						mutationSegment = null;
 						segment = null;
+					} else if (mutationSegment == null) {
+						// Preserve empty preparation's snapshot boundary without publishing another sink's rows.
+						currentSnapshot = Math.max(currentSnapshot, nextSnapshot);
+					}
+					if (namespaces != null) {
+						namespaceSegment = null;
+						namespaces = null;
 					}
 				}
 				flushCompleted = true;
@@ -807,12 +836,30 @@ class MemorySailStore implements SailStore {
 
 		synchronized private void releaseLock() {
 			Throwable failure = null;
+			boolean cleanup = false;
 			try {
 				synchronized (preparedSinks) {
-					if (segment != null && mutationSegment == segment) {
-						undoSegment(segment);
-						mutationSegment = null;
-						segment = null;
+					try {
+						if (segment != null && mutationSegment == segment) {
+							cleanup = undoSegment(segment);
+							mutationSegment = null;
+							segment = null;
+						}
+					} catch (RuntimeException | Error undoFailure) {
+						failure = undoFailure;
+					}
+					try {
+						if (namespaces != null && namespaceSegment == namespaces) {
+							undoNamespaces(namespaces);
+							namespaceSegment = null;
+							namespaces = null;
+						}
+					} catch (RuntimeException | Error namespaceFailure) {
+						if (failure == null) {
+							failure = namespaceFailure;
+						} else if (failure != namespaceFailure) {
+							failure.addSuppressed(namespaceFailure);
+						}
 					}
 				}
 			} catch (RuntimeException | Error undoFailure) {
@@ -835,6 +882,17 @@ class MemorySailStore implements SailStore {
 						preparedSinks.remove(this);
 						frozenOwner = null;
 						recomputeFrozenOwner();
+					}
+				}
+			}
+			if (cleanup) {
+				try {
+					scheduleSnapshotCleanup();
+				} catch (RuntimeException | Error schedulingFailure) {
+					if (failure == null) {
+						failure = schedulingFailure;
+					} else if (failure != schedulingFailure) {
+						failure.addSuppressed(schedulingFailure);
 					}
 				}
 			}
@@ -883,7 +941,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void setNamespace(String prefix, String name) {
-			beginMutation();
+			beginNamespaceMutation();
 			recordNamespace(prefix);
 			namespaceStore.setNamespace(prefix, name);
 
@@ -891,7 +949,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void removeNamespace(String prefix) {
-			beginMutation();
+			beginNamespaceMutation();
 			recordNamespace(prefix);
 			namespaceStore.removeNamespace(prefix);
 
@@ -899,7 +957,7 @@ class MemorySailStore implements SailStore {
 
 		@Override
 		public synchronized void clearNamespaces() {
-			beginMutation();
+			beginNamespaceMutation();
 			for (Namespace namespace : namespaceStore) {
 				recordNamespace(namespace.getPrefix());
 			}
@@ -1071,9 +1129,23 @@ class MemorySailStore implements SailStore {
 			}
 		}
 
+		private void beginNamespaceMutation() {
+			acquireExclusiveTransactionLock();
+			synchronized (preparedSinks) {
+				retireAbandonedSegment();
+				if (namespaceSegment != null && namespaceSegment.owner.get() != this) {
+					throw new SailConflictException("Another Memory sink owns unpublished namespaces");
+				}
+				if (namespaceSegment == null) {
+					namespaces = namespaceSegment = new NamespaceSegment(this);
+					flushCompleted = false;
+				}
+			}
+		}
+
 		private void recordNamespace(String prefix) {
-			if (!segment.namespaces.containsKey(prefix)) {
-				segment.namespaces.put(prefix, namespaceStore.getNamespace(prefix));
+			if (!namespaces.originals.containsKey(prefix)) {
+				namespaces.originals.put(prefix, namespaceStore.getNamespace(prefix));
 			}
 		}
 
