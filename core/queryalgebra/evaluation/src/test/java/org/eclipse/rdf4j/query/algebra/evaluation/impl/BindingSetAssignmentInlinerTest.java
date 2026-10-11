@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.model.util.Values.iri;
+import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.ArrayList;
 import java.util.Iterator;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Coalesce;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerTest;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -61,6 +64,53 @@ import org.junit.jupiter.api.Test;
  * @author Jeen
  */
 public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
+
+	@Test
+	public void nestedSubqueryValuesDoNotEscapeIntoParentProjectionExpression() {
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
+				SELECT ?x ?middle ?inner WHERE {
+				  VALUES ?x { "outer" }
+				  {
+				    SELECT (?x AS ?middle) ?inner WHERE {
+				      VALUES ?x { "middle" }
+				      { SELECT (?x AS ?inner) WHERE { VALUES ?x { "inner" } } }
+				    }
+				  }
+				}
+				""", null);
+
+		getOptimizer().optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		ExtensionElem middle = extensionElements(parsedQuery).stream()
+				.filter(element -> "middle".equals(element.getName()))
+				.findFirst()
+				.orElseThrow();
+		assertThat(middle.getExpr()).isInstanceOfSatisfying(Var.class,
+				variable -> assertThat(variable.getValue()).isEqualTo(literal("middle")));
+	}
+
+	@Test
+	public void existsLocalValuesDoNotEscapeIntoParentExpression() {
+		ParsedTupleQuery parsedQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
+				SELECT ?status WHERE {
+				  FILTER EXISTS { VALUES ?local { "inside" } }
+				  BIND(COALESCE(?local, "outside") AS ?status)
+				}
+				""", null);
+
+		getOptimizer().optimize(parsedQuery.getTupleExpr(), new SimpleDataset(), EmptyBindingSet.getInstance());
+
+		ExtensionElem status = extensionElements(parsedQuery).stream()
+				.filter(element -> "status".equals(element.getName()))
+				.findFirst()
+				.orElseThrow();
+		assertThat(status.getExpr()).isInstanceOfSatisfying(Coalesce.class, coalesce -> {
+			assertThat(coalesce.getArguments().getFirst()).isInstanceOfSatisfying(Var.class, variable -> {
+				assertThat(variable.getValue()).isNull();
+				assertThat(variable.getParentNode()).isSameAs(coalesce);
+			});
+		});
+	}
 
 	@Test
 	public void testOptimizeAssignsVars() {
@@ -439,6 +489,18 @@ public class BindingSetAssignmentInlinerTest extends QueryOptimizerTest {
 	@Override
 	public QueryOptimizer getOptimizer() {
 		return new BindingSetAssignmentInlinerOptimizer();
+	}
+
+	private static List<ExtensionElem> extensionElements(ParsedTupleQuery parsedQuery) {
+		List<ExtensionElem> elements = new ArrayList<>();
+		parsedQuery.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem node) {
+				elements.add(node);
+				super.meet(node);
+			}
+		});
+		return elements;
 	}
 
 	private static List<BindingSet> evaluate(TupleExpr expression, TripleSource tripleSource) throws Exception {

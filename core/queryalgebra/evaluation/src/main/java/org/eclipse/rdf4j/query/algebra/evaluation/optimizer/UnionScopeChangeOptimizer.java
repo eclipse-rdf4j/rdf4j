@@ -33,7 +33,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.Dependencies;
@@ -46,7 +47,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadO
  *
  * @author Jeen Broekstra
  */
-public class UnionScopeChangeOptimizer implements QueryOptimizer {
+public class UnionScopeChangeOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
@@ -80,6 +81,14 @@ public class UnionScopeChangeOptimizer implements QueryOptimizer {
 			clearSafeBranchScopes(union.getRightArg(), analysis);
 			analysis.invalidate(tupleExpr);
 		}
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		// The scope-flag relaxation only fires under its own guards and moves no nodes, so the
+		// legacy pass is scope-safe and may run in ENFORCE too.
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.RUN_LEGACY,
+				this::optimize, null);
 	}
 
 	private CandidateInputs candidateInputs(Union union, QueryAlgebraBindingAnalysis analysis) {

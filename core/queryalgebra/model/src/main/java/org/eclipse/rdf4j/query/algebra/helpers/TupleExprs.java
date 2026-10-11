@@ -59,9 +59,14 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true
-	 * (default). If the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's
-	 * arguments will not be taken into account. Remote SERVICE bodies are evaluated separately and are not inspected.
+	 * Verifies if the supplied {@link TupleExpr} contains a {@link Projection} with the subquery flag set to true. If
+	 * the supplied TupleExpr is a {@link Join} or contains a {@link Join}, projections inside that Join's arguments
+	 * will not be taken into account. Remote SERVICE bodies are evaluated separately and are not inspected.
+	 * <p>
+	 * The {@link Projection#isSubquery()} flag is authoritative here: parsed sub-selects carry {@code true}, while the
+	 * top-level projection and internal optimizer-introduced projections carry {@code false} and are deliberately
+	 * treated as transparent (correlated). Code that embeds a parsed top-level projection as a join operand must set
+	 * the flag itself — see {@link Projection#isSubquery()}.
 	 *
 	 * @param t a tuple expression.
 	 * @return <code>true</code> if the TupleExpr contains a subquery projection (outside of a Join), <code>false</code>
@@ -76,8 +81,9 @@ public class TupleExprs {
 			if (n instanceof Projection && ((Projection) n).isSubquery()) {
 				return true;
 			} else if (!(n instanceof Join) && !(n instanceof Service)) {
-				// projections already inside a Join need not be
-				// taken into account
+				// projections already inside a Join need not be taken into account (that Join's own
+				// evaluation is responsible for them), so a Join subtree is opaque — but the scan must
+				// go on with the queued siblings, otherwise the answer would depend on operand order
 				List<TupleExpr> children = getChildren(n);
 				if (!children.isEmpty()) {
 					if (queue == null) {

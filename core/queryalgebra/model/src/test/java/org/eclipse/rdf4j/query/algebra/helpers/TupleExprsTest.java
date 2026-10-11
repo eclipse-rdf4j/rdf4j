@@ -122,6 +122,71 @@ public class TupleExprsTest {
 	}
 
 	@Test
+	public void containsSubqueryHonoursTheAuthoritativeFlag() {
+		// The flag is set accurately at construction (parser: sub-selects true, top-level false;
+		// optimizers: internal transparent projections false). Flag-false projections are
+		// deliberately correlated — treating them positionally would break internal projections
+		// that must stay transparent. Composers embedding a top-level projection under a join
+		// must set the flag themselves.
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Projection transparent = new Projection(
+				new StatementPattern(new Var("s2"), new Var("p2"), new Var("o")),
+				new ProjectionElemList(new ProjectionElem("o")),
+				false);
+		Projection subselect = transparent.clone();
+		subselect.setSubquery(true);
+
+		assertThat(TupleExprs.containsSubquery(transparent)).isFalse();
+		assertThat(TupleExprs.containsSubquery(subselect)).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(pattern.clone(), subselect.clone()))).isTrue();
+		// Projections already inside a nested Join are that join's concern, not this operand's.
+		assertThat(TupleExprs.containsSubquery(new Join(subselect.clone(), pattern.clone()))).isFalse();
+	}
+
+	@Test
+	public void containsSubqueryScansSiblingsPastAJoinOperand() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		Projection subselect = new Projection(
+				new StatementPattern(new Var("s2"), new Var("p2"), new Var("o")),
+				new ProjectionElemList(new ProjectionElem("o")),
+				true);
+		Join joinOperand = new Join(pattern.clone(), pattern.clone());
+
+		// A Join operand is opaque, but it must not end the scan: the sibling sub-select is visible on
+		// either side of it, otherwise scope isolation would depend on Union branch order (GH-5905 fuzz
+		// find, pair seed 73613).
+		assertThat(TupleExprs.containsSubquery(new Union(subselect.clone(), joinOperand.clone()))).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(joinOperand.clone(), subselect.clone()))).isTrue();
+	}
+
+	@Test
+	public void containsResultSetModifierFlagsPushdownUnstableModifiers() {
+		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p"), new Var("o"));
+		// a LeftJoin's optional side makes the solution domains heterogeneous: dedup over such rows
+		// collapses solutions that differ only in an unbound variable once sibling bindings are pushed
+		LeftJoin heterogeneous = new LeftJoin(pattern.clone(),
+				new StatementPattern(new Var("s"), new Var("p2"), new Var("o2")));
+
+		assertThat(containsResultSetModifier(pattern.clone())).isFalse();
+		// uniform-domain dedup is push-down-stable (the parser's path? encoding relies on this)
+		assertThat(containsResultSetModifier(new Distinct(pattern.clone()))).isFalse();
+		assertThat(containsResultSetModifier(new Distinct(heterogeneous.clone()))).isTrue();
+		assertThat(containsResultSetModifier(new Reduced(heterogeneous.clone()))).isTrue();
+		// a Slice truncates the filtered instead of the unfiltered solutions, so it always isolates
+		assertThat(containsResultSetModifier(new Slice(pattern.clone(), 0, 1))).isTrue();
+		// binding push-down reaches a nested Join's operands directly, so the scan descends into Joins
+		assertThat(containsResultSetModifier(new Join(new Distinct(heterogeneous.clone()), pattern.clone())))
+				.isTrue();
+		assertThat(containsResultSetModifier(new Union(pattern.clone(), new Distinct(heterogeneous.clone()))))
+				.isTrue();
+	}
+
+	private static boolean containsResultSetModifier(TupleExpr expr) {
+		return TupleExprs.containsResultSetModifier(expr,
+				QueryAlgebraBindingAnalysis.withBindingValues(expr, EmptyBindingSet.getInstance()));
+	}
+
+	@Test
 	public void containsSubqueryContinuesPastJoinForRemainingSiblings() {
 		assertThat(TupleExprs.containsSubquery(new Union(join(), subquery()))).isTrue();
 		assertThat(TupleExprs.containsSubquery(new Union(subquery(), join()))).isTrue();

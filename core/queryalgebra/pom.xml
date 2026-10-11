@@ -12,7 +12,9 @@
 	<description>Query algebra model and evaluation.</description>
 	<modules>
 		<module>model</module>
+		<module>json</module>
 		<module>evaluation</module>
+		<module>equivalence</module>
 		<module>geosparql</module>
 	</modules>
 </project>

@@ -1,0 +1,109 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Join",
+    "leftArg": {
+      "type": "StatementPattern",
+      "subjectVar": {
+        "type": "Var",
+        "name": "s"
+      },
+      "predicateVar": {
+        "type": "Var",
+        "name": "probePredicate",
+        "value": {
+          "type": "IRI",
+          "value": "urn:counterexample:probe"
+        },
+        "constant": true
+      },
+      "objectVar": {
+        "type": "Var",
+        "name": "x"
+      }
+    },
+    "rightArg": {
+      "type": "LeftJoin",
+      "leftArg": {
+        "type": "Union",
+        "leftArg": {
+          "type": "StatementPattern",
+          "subjectVar": {
+            "type": "Var",
+            "name": "a"
+          },
+          "predicateVar": {
+            "type": "Var",
+            "name": "qPredicate",
+            "value": {
+              "type": "IRI",
+              "value": "urn:counterexample:q"
+            },
+            "constant": true
+          },
+          "objectVar": {
+            "type": "Var",
+            "name": "b"
+          }
+        },
+        "rightArg": {
+          "type": "StatementPattern",
+          "subjectVar": {
+            "type": "Var",
+            "name": "a"
+          },
+          "predicateVar": {
+            "type": "Var",
+            "name": "q2Predicate",
+            "value": {
+              "type": "IRI",
+              "value": "urn:counterexample:q2"
+            },
+            "constant": true
+          },
+          "objectVar": {
+            "type": "Var",
+            "name": "x"
+          }
+        }
+      },
+      "rightArg": {
+        "type": "StatementPattern",
+        "subjectVar": {
+          "type": "Var",
+          "name": "a"
+        },
+        "predicateVar": {
+          "type": "Var",
+          "name": "rPredicate",
+          "value": {
+            "type": "IRI",
+            "value": "urn:counterexample:r"
+          },
+          "constant": true
+        },
+        "objectVar": {
+          "type": "Var",
+          "name": "c"
+        }
+      },
+      "condition": {
+        "type": "Compare",
+        "operator": ">",
+        "leftArg": {
+          "type": "Var",
+          "name": "x"
+        },
+        "rightArg": {
+          "type": "ValueConstant",
+          "value": {
+            "type": "Literal",
+            "label": "5",
+            "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+          }
+        }
+      }
+    }
+  }
+}

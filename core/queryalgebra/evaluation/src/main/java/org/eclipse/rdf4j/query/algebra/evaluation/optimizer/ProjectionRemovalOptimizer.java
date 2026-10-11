@@ -19,7 +19,9 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.ScopeSafeRewritePass;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -28,12 +30,18 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * Removes identity projections only when the child's exported outputs and inherited inputs prove that no bindings would
  * be exposed or lost.
  */
-public class ProjectionRemovalOptimizer implements QueryOptimizer {
+public class ProjectionRemovalOptimizer implements ContextAwareQueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
 		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		tupleExpr.visit(new ProjectionFinder(analysis));
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.REPLACE,
+				this::optimize, ScopeSafeRewritePass::projections);
 	}
 
 	private static class ProjectionFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {

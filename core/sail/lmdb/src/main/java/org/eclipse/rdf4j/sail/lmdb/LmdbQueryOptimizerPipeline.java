@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ProjectionRemovalOpt
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryModelNormalizerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.RegexAsStringFunctionOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ScopeSafeAlgebraOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.UnionScopeChangeOptimizer;
 
 final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
@@ -50,6 +51,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
 	private static final UnionScopeChangeOptimizer UNION_SCOPE_CHANGE_OPTIMIZER = new UnionScopeChangeOptimizer();
 	private static final QueryModelNormalizerOptimizer QUERY_MODEL_NORMALIZER = new QueryModelNormalizerOptimizer();
+	private static final ScopeSafeAlgebraOptimizer SCOPE_SAFE_ALGEBRA_OPTIMIZER = new ScopeSafeAlgebraOptimizer();
 	private static final ProjectionRemovalOptimizer PROJECTION_REMOVAL_OPTIMIZER = new ProjectionRemovalOptimizer();
 	private static final IterativeEvaluationOptimizer ITERATIVE_EVALUATION_OPTIMIZER = new IterativeEvaluationOptimizer();
 	private static final OrderLimitOptimizer ORDER_LIMIT_OPTIMIZER = new OrderLimitOptimizer();
@@ -77,6 +79,7 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				SAME_TERM_FILTER_OPTIMIZER,
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
+				SCOPE_SAFE_ALGEBRA_OPTIMIZER,
 				PROJECTION_REMOVAL_OPTIMIZER,
 				new FilterOptimizer(null, false, false),
 				ITERATIVE_EVALUATION_OPTIMIZER,

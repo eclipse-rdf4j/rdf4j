@@ -300,6 +300,24 @@ class BindingSetAssignmentTest {
 	}
 
 	@Test
+	void derivedNameCachesAreInvalidatedWhenRowsChange() {
+		MapBindingSet initial = new MapBindingSet();
+		initial.addBinding("initial", SimpleValueFactory.getInstance().createLiteral(1));
+
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(List.of(initial));
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("initial");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("initial");
+
+		MapBindingSet replacement = new MapBindingSet();
+		replacement.addBinding("replacement", SimpleValueFactory.getInstance().createLiteral(2));
+		assignment.setBindingSets(List.of(replacement));
+
+		assertThat(assignment.getPossibleBindingNames()).containsExactly("replacement");
+		assertThat(assignment.getAssuredBindingNames()).containsExactly("replacement");
+	}
+
+	@Test
 	void derivedBindingNameCacheDoesNotAffectEqualityOrHashCode() {
 		MapBindingSet row = new MapBindingSet();
 		row.addBinding("x", SimpleValueFactory.getInstance().createIRI("urn:x"));

@@ -1,0 +1,26 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Join",
+    "leftArg": {
+      "type": "StatementPattern",
+      "subjectVar": {
+        "type": "Var",
+        "name": "s"
+      },
+      "predicateVar": {
+        "type": "Var",
+        "name": "p"
+      },
+      "objectVar": {
+        "type": "Var",
+        "name": "o"
+      },
+      "statementOrder": "S"
+    },
+    "rightArg": {
+      "type": "EmptySet"
+    }
+  }
+}

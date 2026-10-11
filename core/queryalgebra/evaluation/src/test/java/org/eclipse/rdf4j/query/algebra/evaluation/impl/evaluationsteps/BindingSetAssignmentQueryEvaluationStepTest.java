@@ -97,6 +97,23 @@ class BindingSetAssignmentQueryEvaluationStepTest {
 	}
 
 	@Test
+	void emptyRowPassesIncomingBindingsThroughWhenNamesOverlap() {
+		// Found by the equivalence differential fuzzer: incoming bindings overlapping the VALUES
+		// names route evaluation through the compatibility-checked path, which used to drop the
+		// empty row instead of joining it as the identity mapping.
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingNames(Set.of("x"));
+		assignment.setBindingSets(List.of(new MapBindingSet()));
+		BindingSetAssignmentQueryEvaluationStep step = new BindingSetAssignmentQueryEvaluationStep(assignment,
+				new QueryEvaluationContext.Minimal(null));
+		BindingSet incoming = binding("x", "bound");
+
+		List<BindingSet> results = results(step.evaluate(incoming));
+
+		assertThat(results).containsExactly(incoming);
+	}
+
+	@Test
 	void duplicateEmptyRowsPreserveEveryOverlappingParentCandidate() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(Set.of("x"));
