@@ -182,7 +182,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private LmdbSailStore.MapResizeKind pendingGrowthKind = LmdbSailStore.MapResizeKind.TRIPLE_STORE;
 	private LmdbSailStore.MapGrowthToken pendingGrowthToken;
 	private QueryExecutionDeadline pendingQueryDeadline;
-	private Throwable replayFailure;
+	private volatile Throwable replayFailure;
 	private long readAttemptGeneration;
 
 	/*--------------*
@@ -361,6 +361,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		// the paired read snapshot releases its native handles. Shared lazy value identity, branch changes, and
 		// serializable observations remain intact for the normal prepare path.
 		finishReadAttempt();
+		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		releaseReadDatasetsBeforePrepare();
 		releaseTransactionReadView();
 		retireSharedSnapshotsPreservingBorrowers();
@@ -2078,6 +2079,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 		if (failure instanceof Error error) {
 			throw error;
+		}
+	}
+
+	/** Whole-transaction recreation failure seals the logical transaction until rollback. */
+	void checkReadAttemptFailure() throws SailException {
+		if (isActive()) {
+			throwReplayFailureIfPresent();
 		}
 	}
 

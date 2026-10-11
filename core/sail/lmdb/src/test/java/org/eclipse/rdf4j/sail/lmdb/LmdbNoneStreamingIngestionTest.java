@@ -51,6 +51,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
@@ -3184,6 +3185,165 @@ class LmdbNoneStreamingIngestionTest {
 			startFirstWrites.countDown();
 			executor.shutdownNow();
 			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(NamespaceNoOp.class)
+	@Timeout(value = 90, unit = TimeUnit.SECONDS)
+	void admittedPeerPublishesWhileNoOpNamespaceOwnerGrows(NamespaceNoOp noOp, @TempDir Path dataDir)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setBulkOperationSize(2)
+				.setTripleDBSize(1L << 20)
+				.setValueDBSize(1L << 20)
+				.setMapGrowthThreshold(0.25d)
+				.setMapGrowthReadDrainTimeoutMillis(0L);
+		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
+		String stablePrefix = "noop-owner";
+		String stableNamespace = "urn:none-streaming:noop-owner:";
+		IRI predicate = VALUE_FACTORY.createIRI("urn:none-streaming:noop-owner:predicate");
+		Statement peer = VALUE_FACTORY.createStatement(
+				VALUE_FACTORY.createIRI("urn:none-streaming:noop-owner:peer"),
+				VALUE_FACTORY.createIRI("urn:none-streaming:noop-owner:peer-predicate"),
+				VALUE_FACTORY.createLiteral("peer-row"));
+		Object firstOwner = new Object();
+		Object peerOwner = new Object();
+		CountDownLatch noOpReady = new CountDownLatch(1);
+		CountDownLatch startFirstRows = new CountDownLatch(1);
+		CountDownLatch peerAdmitted = new CountDownLatch(1);
+		CountDownLatch allowPeerFlush = new CountDownLatch(1);
+		AtomicReference<Thread> peerThread = new AtomicReference<>();
+		AtomicReference<Throwable> firstFailure = new AtomicReference<>();
+		AtomicReference<Throwable> peerFailure = new AtomicReference<>();
+		AtomicBoolean firstFlushReturned = new AtomicBoolean();
+		AtomicBoolean peerFlushReturned = new AtomicBoolean();
+		AtomicLong peerGenerationBefore = new AtomicLong(-1L);
+		AtomicLong peerGenerationAfter = new AtomicLong(-1L);
+		Set<Statement> observedBeforeShutdown = Set.of();
+		Set<Statement> expected = Set.of();
+		String namespaceBeforeShutdown = null;
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			sail.init();
+			LmdbSailStore backing = sail.getBackingStore();
+			backing.enableMultiThreading = false;
+			ObservingTripleStore triples = sail.triples.get();
+			ObservingValueStore values = sail.values.get();
+			assertNotNull(triples, "the observed TripleStore factory must be used");
+			assertNotNull(values, "the observed ValueStore factory must be used");
+			if (noOp == NamespaceNoOp.SET_EXISTING) {
+				try (SailSink seed = backing.getExplicitSailSource(new Object()).sink(IsolationLevels.NONE)) {
+					seed.setNamespace(stablePrefix, stableNamespace);
+					seed.flush();
+				}
+			}
+			long generationBeforeGrowth = triples.getNativeCommitGeneration();
+			long valueMapBeforeGrowth = values.mapSizeBytes();
+			long literalLength = Math.max(1L,
+					Math.round(valueMapBeforeGrowth * config.getMapGrowthThreshold() * 2.0d));
+			Literal largeLiteral = VALUE_FACTORY.createLiteral("v".repeat(Math.toIntExact(literalLength)));
+			Statement first = VALUE_FACTORY.createStatement(
+					VALUE_FACTORY.createIRI("urn:none-streaming:noop-owner:first"), predicate, largeLiteral);
+			Statement second = VALUE_FACTORY.createStatement(
+					VALUE_FACTORY.createIRI("urn:none-streaming:noop-owner:second"), predicate, largeLiteral);
+			expected = Set.of(first, second, peer);
+			long episodesBefore = backing.growthMetricsSnapshot().growthEpisodes();
+
+			Future<?> firstWriter = executor.submit(() -> {
+				try (SailSink sink = backing.getExplicitSailSource(firstOwner).sink(IsolationLevels.NONE)) {
+					switch (noOp) {
+					case SET_EXISTING -> sink.setNamespace(stablePrefix, stableNamespace);
+					case REMOVE_MISSING -> sink.removeNamespace("missing-noop-prefix");
+					case CLEAR_EMPTY -> sink.clearNamespaces();
+					}
+					noOpReady.countDown();
+					if (!startFirstRows.await(30, TimeUnit.SECONDS)) {
+						throw new AssertionError(
+								"the test did not release the namespace owner to submit its pressure batch");
+					}
+					sink.approve(first);
+					sink.approve(second);
+					sink.flush();
+					firstFlushReturned.set(true);
+				} catch (Throwable failure) {
+					firstFailure.set(failure);
+					noOpReady.countDown();
+				}
+			});
+			assertTrue(noOpReady.await(15, TimeUnit.SECONDS),
+					"the owner must apply its namespace no-op before the pressure writer is admitted");
+			assertNull(firstFailure.get(), "the namespace no-op must be accepted before map growth starts");
+
+			Future<?> peerWriter = executor.submit(() -> {
+				peerThread.set(Thread.currentThread());
+				try (SailSink sink = backing.getExplicitSailSource(peerOwner).sink(IsolationLevels.NONE)) {
+					sink.approve(peer);
+					peerGenerationBefore.set(triples.getNativeCommitGeneration());
+					peerAdmitted.countDown();
+					if (!allowPeerFlush.await(30, TimeUnit.SECONDS)) {
+						throw new AssertionError("the test did not release the admitted peer to publish");
+					}
+					sink.flush();
+					peerGenerationAfter.set(triples.getNativeCommitGeneration());
+					peerFlushReturned.set(true);
+				} catch (Throwable failure) {
+					peerFailure.set(failure);
+					peerAdmitted.countDown();
+				}
+			});
+			awaitWriterLeaseWait(peerThread, peerWriter);
+
+			startFirstRows.countDown();
+			awaitGrowthAdmissionClosed(backing);
+			assertFalse(firstWriter.isDone(),
+					"the first owner must remain parked while the registered peer lease is admitted");
+			assertTrue(backing.growthMetricsSnapshot().growthEpisodes() > episodesBefore,
+					"the value estimate must open a real managed growth episode");
+			assertTrue(peerAdmitted.await(15, TimeUnit.SECONDS),
+					"the registered independent peer must acquire its writer during map growth");
+			assertNull(peerFailure.get(), "the peer row must be admitted while the first owner is parked");
+			assertEquals(generationBeforeGrowth, peerGenerationBefore.get(),
+					"admitting the peer row must not publish a native prefix yet");
+
+			allowPeerFlush.countDown();
+			peerWriter.get(30, TimeUnit.SECONDS);
+			firstWriter.get(45, TimeUnit.SECONDS);
+			assertNull(peerFailure.get(), "the admitted peer must publish and release its own native resources");
+			assertNull(firstFailure.get(), "the parked namespace owner must resume after peer publication");
+			assertTrue(peerFlushReturned.get(), "the peer flush must return while the namespace owner is parked");
+			assertTrue(peerGenerationAfter.get() > peerGenerationBefore.get(),
+					"the peer must advance the native generation before the parked owner resumes");
+			assertTrue(firstFlushReturned.get(), "the original pressure owner must complete after growth resumes");
+			assertTrue(values.mapSizeBytes() > valueMapBeforeGrowth,
+					"the real projected value demand must grow the dictionary map");
+			assertTrue(backing.growthMetricsSnapshot().valueStoreResizes() > 0,
+					"the growth episode must record a physical ValueStore resize");
+			observedBeforeShutdown = readStatements(backing);
+			namespaceBeforeShutdown = readNamespace(backing, stablePrefix);
+		} finally {
+			startFirstRows.countDown();
+			allowPeerFlush.countDown();
+			executor.shutdownNow();
+			boolean terminated = executor.awaitTermination(10, TimeUnit.SECONDS);
+			sail.shutDown();
+			assertTrue(terminated, "both raw NONE owners must release their sinks and leases during cleanup");
+		}
+
+		assertEquals(expected, observedBeforeShutdown,
+				"the no-op namespace owner and admitted peer must both publish exact rows");
+		assertEquals(noOp == NamespaceNoOp.SET_EXISTING ? stableNamespace : null, namespaceBeforeShutdown,
+				"namespace state must match the no-op operation after both owners publish");
+		ObservingLmdbStore reopened = new ObservingLmdbStore(dataDir.toFile(), config);
+		try {
+			reopened.init();
+			assertEquals(expected, readStatements(reopened.getBackingStore()),
+					"both admitted owners' exact statements must survive reopening");
+			assertEquals(noOp == NamespaceNoOp.SET_EXISTING ? stableNamespace : null,
+					readNamespace(reopened.getBackingStore(), stablePrefix),
+					"the no-op namespace result must survive reopening");
+		} finally {
+			reopened.shutDown();
 		}
 	}
 
@@ -6893,6 +7053,12 @@ class LmdbNoneStreamingIngestionTest {
 	}
 
 	private record PersistentSetMutation(String name, String operation) {
+	}
+
+	private enum NamespaceNoOp {
+		SET_EXISTING,
+		REMOVE_MISSING,
+		CLEAR_EMPTY
 	}
 
 	private enum NoneContinuation {

@@ -27,7 +27,10 @@ import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -61,9 +64,11 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.OwnerAwareForkFailureSource;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -76,6 +81,7 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
@@ -86,6 +92,15 @@ class LmdbStoreFlushReproductionTest {
 	private static final int COMMIT_COUNT = 8;
 	private static final int SEED_COUNT = 64;
 	private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI("urn:issue:6070:predicate");
+
+	private enum FailedReplayContinuation {
+		ADD,
+		REMOVE,
+		CLEAR,
+		NAMESPACE,
+		PREPARE,
+		COMMIT
+	}
 
 	@Test
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
@@ -315,6 +330,336 @@ class LmdbStoreFlushReproductionTest {
 						"the inferred committed row must survive store reopen"),
 				() -> assertEquals("urn:issue:6070:none-reader:committed:", observedReopenedNamespace,
 						"the committed namespace must survive store reopen"));
+	}
+
+	@ParameterizedTest
+	@EnumSource(FailedReplayContinuation.class)
+	@Timeout(value = 90, unit = TimeUnit.SECONDS)
+	void failedWholeSnapshotRecreationPoisonsTheLogicalReadAttempt(FailedReplayContinuation continuation,
+			@TempDir Path dataDir) throws Exception {
+		long tripleMapBytes = 8L << 20;
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(tripleMapBytes)
+				.setValueDBSize(128L << 20)
+				.setMapGrowthThreshold(0.10d)
+				.setMapGrowthReadDrainTimeoutMillis(0L)
+				.setReadOnlyReplayMaxRetries(2);
+		ReplayForkStore store = new ReplayForkStore(dataDir, config);
+		Statement seed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay:seed"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("seed"));
+		Statement rejectedMutation = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay:rejected"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("must not publish"));
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay:followup"), PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("fresh transaction"));
+		AtomicInteger notifications = new AtomicInteger();
+		Set<Statement> growthRows = new HashSet<>();
+		String namespaceValue = "urn:issue:6070:failed-replay:growth:" + "n".repeat((int) (tripleMapBytes * 0.15));
+		for (int index = 0; index < 1_500; index++) {
+			growthRows.add(SimpleValueFactory.getInstance()
+					.createStatement(
+							SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay:row:" + index),
+							PREDICATE,
+							SimpleValueFactory.getInstance().createLiteral("value-" + index)));
+		}
+		Throwable replayFailure = null;
+		Throwable continuationFailure = null;
+		long generationAfterWriter = -1L;
+		int notificationsAfterWriter = -1;
+		Set<Statement> visibleBeforeFollowup = Set.of();
+		int notificationsBeforeFollowup = -1;
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+			try (RepositoryConnection seedWriter = repository.getConnection()) {
+				seedWriter.begin(IsolationLevels.SNAPSHOT);
+				seedWriter.add(seed.getSubject(), seed.getPredicate(), seed.getObject(), seed.getContext());
+				seedWriter.commit();
+			}
+
+			GenerationRecordingTripleStore triples = store.triples.get();
+			assertTrue(triples != null, "the generation-recording TripleStore factory must be used");
+			long initialTripleMapBytes = triples.mapSizeBytes();
+			MapGrowthMetrics.Snapshot beforeGrowth = store.getBackingStore().growthMetricsSnapshot();
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (TupleQueryResult result = reader.prepareTupleQuery(
+						"SELECT ?object WHERE { <" + seed.getSubject().stringValue() + "> <" + PREDICATE.stringValue()
+								+ "> ?object }")
+						.evaluate()) {
+					store.armReplacementForkFailure((LmdbStoreConnection) ((SailRepositoryConnection) reader)
+							.getSailConnection());
+
+					try (RepositoryConnection writer = repository.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT);
+						writer.setNamespace("replay-growth", namespaceValue);
+						for (Statement statement : growthRows) {
+							writer.add(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+									statement.getContext());
+						}
+						writer.commit();
+					}
+
+					MapGrowthMetrics.Snapshot afterGrowth = store.getBackingStore().growthMetricsSnapshot();
+					assertTrue(triples.mapSizeBytes() > initialTripleMapBytes,
+							"the independent writer must perform a real TripleStore map resize");
+					assertTrue(afterGrowth.tripleStoreResizes() > beforeGrowth.tripleStoreResizes(),
+							"the writer must record the actual TripleStore resize");
+					assertTrue(afterGrowth.replayAccepted() > beforeGrowth.replayAccepted(),
+							"the active unobserved reader must be accepted for whole-transaction replay");
+					generationAfterWriter = triples.getNativeCommitGeneration();
+					notificationsAfterWriter = notifications.get();
+					try {
+						result.hasNext();
+					} catch (Throwable failure) {
+						replayFailure = failure;
+					}
+					assertEquals(1, store.replacementForkFailureCount(),
+							"the exact reader owner must reach the injected replacement-branch fork");
+					assertTrue(containsThrowableIdentity(replayFailure, store.replacementForkFailure()),
+							"the first unobserved result read must report the exact replacement-fork failure");
+					try {
+						switch (continuation) {
+						case ADD -> reader.add(rejectedMutation.getSubject(), rejectedMutation.getPredicate(),
+								rejectedMutation.getObject(), rejectedMutation.getContext());
+						case REMOVE -> reader.remove(rejectedMutation.getSubject(), rejectedMutation.getPredicate(),
+								rejectedMutation.getObject(), rejectedMutation.getContext());
+						case CLEAR -> reader.clear();
+						case NAMESPACE -> reader.setNamespace("rejected-replay-continuation", "urn:rejected:");
+						case PREPARE -> reader.prepare();
+						case COMMIT -> reader.commit();
+						}
+					} catch (Throwable failure) {
+						continuationFailure = failure;
+					}
+					assertTrue(containsThrowableIdentity(continuationFailure, store.replacementForkFailure()),
+							"every operation must retain the failed replay cause until rollback: " + continuation
+									+ "; actual continuation throwable=" + continuationFailure);
+					assertEquals(generationAfterWriter, triples.getNativeCommitGeneration(),
+							"a failed logical replay must not start or publish another native commit");
+					assertEquals(notificationsAfterWriter, notifications.get(),
+							"a failed replay continuation must not emit another logical notification");
+				}
+				reader.rollback();
+				visibleBeforeFollowup = readBackingStatements(store);
+				notificationsBeforeFollowup = notifications.get();
+				reader.begin(IsolationLevels.SNAPSHOT);
+				reader.add(followup.getSubject(), followup.getPredicate(), followup.getObject(), followup.getContext());
+				reader.commit();
+			}
+			assertEquals(notificationsBeforeFollowup + 1, notifications.get(),
+					"the same connection must publish exactly one fresh follow-up notification after rollback");
+		} finally {
+			repository.shutDown();
+		}
+
+		Set<Statement> expected = new HashSet<>(growthRows);
+		expected.add(seed);
+		expected.add(followup);
+		LmdbStore reopened = newStore(dataDir);
+		reopened.init();
+		try {
+			assertEquals(expected, readBackingStatements(reopened),
+					"writer and fresh follow-up rows must survive close and reopen exactly");
+			assertEquals(namespaceValue, readBackingNamespace(reopened, "replay-growth"),
+					"the committed growth namespace must survive close and reopen");
+			assertFalse(visibleBeforeFollowup.contains(rejectedMutation),
+					"the invalid read attempt must not publish a later mutation");
+			assertTrue(containsThrowableIdentity(replayFailure, store.replacementForkFailure()),
+					"the actual reader fork failure must reach the public result operation");
+			assertTrue(containsThrowableIdentity(continuationFailure, store.replacementForkFailure()),
+					"later mutations in the failed logical attempt must retain the original replay failure");
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 90, unit = TimeUnit.SECONDS)
+	void prepareWaitsForAndRetainsWholeSnapshotRecreationFailure(@TempDir Path dataDir) throws Exception {
+		long tripleMapBytes = 8L << 20;
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
+				.setForceSync(true)
+				.setTripleDBSize(tripleMapBytes)
+				.setValueDBSize(128L << 20)
+				.setMapGrowthThreshold(0.10d)
+				.setMapGrowthReadDrainTimeoutMillis(0L)
+				.setReadOnlyReplayMaxRetries(2);
+		ReplayForkStore store = new ReplayForkStore(dataDir, config);
+		Statement seed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay-prepare:seed"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("seed"));
+		Statement rejectedMutation = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay-prepare:rejected"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("must not publish"));
+		Statement followup = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:issue:6070:failed-replay-prepare:followup"),
+						PREDICATE,
+						SimpleValueFactory.getInstance().createLiteral("fresh transaction"));
+		AtomicInteger notifications = new AtomicInteger();
+		Set<Statement> growthRows = new HashSet<>();
+		String namespaceValue = "urn:issue:6070:failed-replay-prepare:growth:"
+				+ "n".repeat((int) (tripleMapBytes * 0.15));
+		for (int index = 0; index < 1_500; index++) {
+			growthRows.add(SimpleValueFactory.getInstance()
+					.createStatement(
+							SimpleValueFactory.getInstance()
+									.createIRI("urn:issue:6070:failed-replay-prepare:row:" + index),
+							PREDICATE,
+							SimpleValueFactory.getInstance().createLiteral("value-" + index)));
+		}
+		CountDownLatch replacementForkEntered = new CountDownLatch(1);
+		CountDownLatch releaseReplacementFork = new CountDownLatch(1);
+		CountDownLatch prepareStarted = new CountDownLatch(1);
+		AtomicReference<Thread> prepareThread = new AtomicReference<>();
+		AtomicReference<Throwable> readFailure = new AtomicReference<>();
+		AtomicReference<Throwable> prepareFailure = new AtomicReference<>();
+		AtomicBoolean readReturned = new AtomicBoolean();
+		AtomicBoolean prepareReturned = new AtomicBoolean();
+		long generationAfterWriter = -1L;
+		int notificationsAfterWriter = -1;
+		Set<Statement> visibleBeforeFollowup = Set.of();
+		int notificationsBeforeFollowup = -1;
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		SailRepository repository = new SailRepository(store);
+		try {
+			repository.init();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+			try (RepositoryConnection seedWriter = repository.getConnection()) {
+				seedWriter.begin(IsolationLevels.SNAPSHOT);
+				seedWriter.add(seed.getSubject(), seed.getPredicate(), seed.getObject(), seed.getContext());
+				seedWriter.commit();
+			}
+
+			GenerationRecordingTripleStore triples = store.triples.get();
+			assertTrue(triples != null, "the generation-recording TripleStore factory must be used");
+			long initialTripleMapBytes = triples.mapSizeBytes();
+			MapGrowthMetrics.Snapshot beforeGrowth = store.getBackingStore().growthMetricsSnapshot();
+			try (RepositoryConnection reader = repository.getConnection()) {
+				reader.begin(IsolationLevels.SNAPSHOT);
+				try (TupleQueryResult result = reader.prepareTupleQuery(
+						"SELECT ?object WHERE { <" + seed.getSubject().stringValue() + "> <" + PREDICATE.stringValue()
+								+ "> ?object }")
+						.evaluate()) {
+					LmdbStoreConnection connection = (LmdbStoreConnection) ((SailRepositoryConnection) reader)
+							.getSailConnection();
+					store.armReplacementForkFailure(connection, replacementForkEntered, releaseReplacementFork);
+
+					try (RepositoryConnection writer = repository.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT);
+						writer.setNamespace("replay-growth", namespaceValue);
+						for (Statement statement : growthRows) {
+							writer.add(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+									statement.getContext());
+						}
+						writer.commit();
+					}
+
+					MapGrowthMetrics.Snapshot afterGrowth = store.getBackingStore().growthMetricsSnapshot();
+					assertTrue(triples.mapSizeBytes() > initialTripleMapBytes,
+							"the independent writer must perform a real TripleStore map resize");
+					assertTrue(afterGrowth.tripleStoreResizes() > beforeGrowth.tripleStoreResizes(),
+							"the writer must record the actual TripleStore resize");
+					assertTrue(afterGrowth.replayAccepted() > beforeGrowth.replayAccepted(),
+							"the active unobserved reader must be accepted for whole-transaction replay");
+					generationAfterWriter = triples.getNativeCommitGeneration();
+					notificationsAfterWriter = notifications.get();
+
+					Future<?> readFuture = executor.submit(() -> {
+						try {
+							readReturned.set(result.hasNext());
+						} catch (Throwable failure) {
+							readFailure.set(failure);
+						}
+					});
+					assertTrue(replacementForkEntered.await(15, TimeUnit.SECONDS),
+							"the reader must reach its exact replacement-fork failure before it is released");
+					Future<?> prepareFuture = executor.submit(() -> {
+						prepareThread.set(Thread.currentThread());
+						prepareStarted.countDown();
+						try {
+							reader.prepare();
+							prepareReturned.set(true);
+						} catch (Throwable failure) {
+							prepareFailure.set(failure);
+						}
+					});
+					assertTrue(prepareStarted.await(15, TimeUnit.SECONDS),
+							"the concurrent prepare call must start while replacement fork is paused");
+					assertThrows(TimeoutException.class, () -> prepareFuture.get(250, TimeUnit.MILLISECONDS),
+							"prepare must wait for the active replay operation before the fork failure is published");
+					Thread waitingPrepare = prepareThread.get();
+					StackTraceElement[] prepareStack = waitingPrepare.getStackTrace();
+					assertTrue(waitingPrepare.getState() == Thread.State.WAITING
+							&& Arrays.stream(prepareStack)
+									.anyMatch(frame -> frame.getClassName()
+											.equals(LmdbStoreConnection.class.getName())
+											&& frame.getMethodName().equals("finishReadAttempt")),
+							"prepare must be waiting in finishReadAttempt before releasing fork; state="
+									+ waitingPrepare.getState() + "; stack=" + Arrays.toString(prepareStack));
+
+					releaseReplacementFork.countDown();
+					readFuture.get(30, TimeUnit.SECONDS);
+					prepareFuture.get(30, TimeUnit.SECONDS);
+					assertEquals(1, store.replacementForkFailureCount(),
+							"the reader must reach exactly one replacement-fork failure");
+					assertFalse(readReturned.get(), "the pending result read must fail rather than return a row");
+					assertFalse(prepareReturned.get(), "prepare must not succeed after the read attempt fails");
+					assertTrue(containsThrowableIdentity(readFailure.get(), store.replacementForkFailure()),
+							"the first result read must receive the exact replacement-fork failure");
+					assertTrue(containsThrowableIdentity(prepareFailure.get(), store.replacementForkFailure()),
+							"prepare waiting on that result must receive the same failure");
+					assertEquals(generationAfterWriter, triples.getNativeCommitGeneration(),
+							"failed prepare must not start or publish another native commit");
+					assertEquals(notificationsAfterWriter, notifications.get(),
+							"failed prepare must not emit another logical notification");
+
+					reader.rollback();
+					visibleBeforeFollowup = readBackingStatements(store);
+					notificationsBeforeFollowup = notifications.get();
+					reader.begin(IsolationLevels.SNAPSHOT);
+					reader.add(followup.getSubject(), followup.getPredicate(), followup.getObject(),
+							followup.getContext());
+					reader.commit();
+				}
+				assertEquals(notificationsBeforeFollowup + 1, notifications.get(),
+						"the same connection must publish one fresh follow-up notification after rollback");
+			}
+		} finally {
+			releaseReplacementFork.countDown();
+			executor.shutdown();
+			assertTrue(executor.awaitTermination(15, TimeUnit.SECONDS),
+					"both read and prepare workers must finish during cleanup");
+			repository.shutDown();
+		}
+
+		Set<Statement> expected = new HashSet<>(growthRows);
+		expected.add(seed);
+		expected.add(followup);
+		LmdbStore reopened = newStore(dataDir);
+		reopened.init();
+		try {
+			assertEquals(expected, readBackingStatements(reopened),
+					"writer and fresh follow-up rows must survive close and reopen exactly");
+			assertEquals(namespaceValue, readBackingNamespace(reopened, "replay-growth"),
+					"the committed growth namespace must survive close and reopen");
+			assertFalse(visibleBeforeFollowup.contains(rejectedMutation),
+					"the invalid read attempt must not publish a later mutation");
+		} finally {
+			reopened.shutDown();
+		}
 	}
 
 	@Test
@@ -1837,6 +2182,29 @@ class LmdbStoreFlushReproductionTest {
 		}
 	}
 
+	private static boolean containsThrowableIdentity(Throwable failure, Throwable expected) {
+		if (failure == null || expected == null) {
+			return false;
+		}
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		List<Throwable> pending = new ArrayList<>();
+		pending.add(failure);
+		while (!pending.isEmpty()) {
+			Throwable current = pending.remove(pending.size() - 1);
+			if (current == expected) {
+				return true;
+			}
+			if (!visited.add(current)) {
+				continue;
+			}
+			if (current.getCause() != null) {
+				pending.add(current.getCause());
+			}
+			Collections.addAll(pending, current.getSuppressed());
+		}
+		return false;
+	}
+
 	private static Set<Statement> readStatements(SailDataset dataset) throws Exception {
 		Set<Statement> result = new HashSet<>();
 		try (CloseableIteration<? extends Statement> statements = dataset.getStatements(null, null, null)) {
@@ -1906,6 +2274,91 @@ class LmdbStoreFlushReproductionTest {
 						triples.set(tripleStore);
 						return tripleStore;
 					});
+		}
+	}
+
+	private static final class ReplayForkStore extends LmdbStore {
+		private final AtomicReference<GenerationRecordingTripleStore> triples = new AtomicReference<>();
+		private final AtomicReference<SailStore> sailStoreFacade = new AtomicReference<>();
+		private final SailException replacementForkFailure = new SailException(
+				"injected whole-SNAPSHOT replacement fork failure");
+		private final OwnerAwareForkFailureSource.ForkFailure forkFailure = new OwnerAwareForkFailureSource.ForkFailure(
+				replacementForkFailure);
+
+		private ReplayForkStore(Path dataDir, LmdbStoreConfig config) {
+			super(dataDir.toFile(), config);
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, ValueStore::new,
+					(tripleDirectory, storeProperties, storeConfig, valueStore) -> {
+						GenerationRecordingTripleStore tripleStore = new GenerationRecordingTripleStore(tripleDirectory,
+								storeProperties, storeConfig, valueStore);
+						triples.set(tripleStore);
+						return tripleStore;
+					});
+		}
+
+		@Override
+		SailStore getSailStore() {
+			SailStore current = sailStoreFacade.get();
+			if (current != null) {
+				return current;
+			}
+			synchronized (sailStoreFacade) {
+				current = sailStoreFacade.get();
+				if (current == null) {
+					SailStore delegate = super.getSailStore();
+					SailSource explicit = new OwnerAwareForkFailureSource(delegate.getExplicitSailSource(),
+							forkFailure);
+					current = new SailStore() {
+						@Override
+						public void close() throws SailException {
+							delegate.close();
+						}
+
+						@Override
+						public ValueFactory getValueFactory() {
+							return delegate.getValueFactory();
+						}
+
+						@Override
+						public EvaluationStatistics getEvaluationStatistics() {
+							return delegate.getEvaluationStatistics();
+						}
+
+						@Override
+						public SailSource getExplicitSailSource() {
+							return explicit;
+						}
+
+						@Override
+						public SailSource getInferredSailSource() {
+							return delegate.getInferredSailSource();
+						}
+					};
+					sailStoreFacade.set(current);
+				}
+			}
+			return current;
+		}
+
+		private void armReplacementForkFailure(Object owner) {
+			forkFailure.arm(owner);
+		}
+
+		private void armReplacementForkFailure(Object owner, CountDownLatch entered, CountDownLatch release) {
+			forkFailure.arm(owner, entered, release);
+		}
+
+		private int replacementForkFailureCount() {
+			return forkFailure.failureCount();
+		}
+
+		private SailException replacementForkFailure() {
+			return replacementForkFailure;
 		}
 	}
 

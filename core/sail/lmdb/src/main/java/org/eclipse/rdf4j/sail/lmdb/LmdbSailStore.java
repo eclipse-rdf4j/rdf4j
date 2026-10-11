@@ -4427,6 +4427,9 @@ class LmdbSailStore implements SailStore {
 	}
 
 	void checkWriterTransaction(Object owner) throws SailException {
+		if (owner instanceof LmdbStoreConnection connection) {
+			connection.checkReadAttemptFailure();
+		}
 		if (!hasFailedWriterTransactions) {
 			return;
 		}
@@ -7931,7 +7934,9 @@ class LmdbSailStore implements SailStore {
 				return;
 			}
 			NoneWriteState state = noneState();
-			if (namespaceTransactionOwner == state.owner && !publishedNamespaces.equals(namespaceStore.snapshot())) {
+			if (namespaceTransactionOwner == state.owner) {
+				// Even an unchanged namespace snapshot owns publication policy. Complete it before yielding
+				// physical ownership, so an admitted peer cannot inherit a foreign namespace owner or decision.
 				checkpointNoneChunk();
 			}
 			// Native metadata belongs to the current mapping. Capture it before parking releases the writer's
