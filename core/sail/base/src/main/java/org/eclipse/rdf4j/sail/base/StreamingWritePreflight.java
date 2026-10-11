@@ -128,6 +128,9 @@ public final class StreamingWritePreflight implements SailClosable {
 		Map<GroupKey, Registration> previous;
 		synchronized (this) {
 			if (running) {
+				if (nonblocking) {
+					throw new Unavailable();
+				}
 				throw new SailConflictException("Concurrent write preflight on the same buffered source");
 			}
 			running = true;

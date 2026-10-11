@@ -957,6 +957,179 @@ class StreamingWritePreflightOwnershipTest {
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void concurrentAutoFlushReturnsWhileAdmissionIsAlreadyRunning() throws Exception {
+		assertConcurrentAutoFlushBehavior(true);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void explicitPrepareStillConflictsWhileAutoFlushAdmissionIsRunning() throws Exception {
+		assertConcurrentAutoFlushBehavior(false);
+	}
+
+	private static void assertConcurrentAutoFlushBehavior(boolean nonblockingContender) throws Exception {
+		RecordingStreamingSource backing = new RecordingStreamingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		Statement queued = statement(nonblockingContender
+				? "concurrent-auto-flush-during-admission"
+				: "explicit-prepare-during-auto-flush-admission");
+		SailDataset initialObserver = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		add(branch, queued);
+		try (SailDataset bufferedView = branch.dataset(IsolationLevels.NONE)) {
+			assertThat(readAll(bufferedView.getStatements(null, null, null)))
+					.as("the real row is published to the branch while the original observer remains open")
+					.containsExactly(queued);
+		}
+		assertThat(backing.committed).as("the observer holds the real published row in the branch")
+				.doesNotContain(queued);
+		assertThat(branch.isChanged()).as("the row is published to the branch and awaits backing application")
+				.isTrue();
+
+		CountDownLatch admissionReached = new CountDownLatch(1);
+		CountDownLatch releaseAdmission = new CountDownLatch(1);
+		AtomicReference<StatementInput> admittedInput = new AtomicReference<>();
+		AtomicInteger rowsAtAdmission = new AtomicInteger();
+		AtomicBoolean ordinaryGuardHeldAtAdmission = new AtomicBoolean(true);
+		backing.onEstimate = input -> {
+			if (backing.estimateCalls.get() == 1) {
+				admittedInput.set(input);
+				ordinaryGuardHeldAtAdmission.set(SailModelCleanup.holdsOrdinaryGuard());
+				try (CloseableIteration<Statement> cursor = input.openCursor()) {
+					while (cursor.hasNext()) {
+						cursor.next();
+						rowsAtAdmission.incrementAndGet();
+					}
+				}
+				admissionReached.countDown();
+				await(releaseAdmission, "first autoFlush admission release");
+			}
+		};
+
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> firstAutoFlush = executor.submit(initialObserver::close);
+		Future<?> contender = null;
+		Throwable firstFailure = null;
+		Throwable contenderFailure = null;
+		boolean contenderCompletedBeforeRelease = false;
+		boolean contenderReturnedNormally = false;
+		boolean firstStillPausedAtContenderReturn = false;
+		boolean pendingAtContenderReturn = false;
+		boolean appliedAtContenderReturn = false;
+		boolean inputStillOpenAtContenderReturn = false;
+		int livePreparationsAtContenderReturn = -1;
+		try {
+			await(admissionReached, "first autoFlush numeric admission callback");
+			contender = executor.submit(() -> {
+				if (nonblockingContender) {
+					branch.autoFlush();
+				} else {
+					branch.prepare();
+				}
+			});
+			try {
+				contender.get(2, TimeUnit.SECONDS);
+				contenderCompletedBeforeRelease = true;
+				contenderReturnedNormally = true;
+			} catch (java.util.concurrent.TimeoutException stillRunning) {
+				// Release the first admission before reporting that its contender failed to return promptly.
+			} catch (java.util.concurrent.ExecutionException failure) {
+				contenderCompletedBeforeRelease = true;
+				contenderFailure = failure.getCause();
+			}
+			if (contenderCompletedBeforeRelease) {
+				firstStillPausedAtContenderReturn = !firstAutoFlush.isDone();
+				pendingAtContenderReturn = branch.isChanged();
+				appliedAtContenderReturn = backing.committed.contains(queued);
+				livePreparationsAtContenderReturn = backing.liveSinkPreparations.get();
+				StatementInput input = admittedInput.get();
+				if (input != null) {
+					try (CloseableIteration<Statement> cursor = input.openCursor()) {
+						inputStillOpenAtContenderReturn = cursor.hasNext() && queued.equals(cursor.next())
+								&& !cursor.hasNext();
+					}
+				}
+			}
+		} finally {
+			releaseAdmission.countDown();
+			try {
+				firstAutoFlush.get(5, TimeUnit.SECONDS);
+			} catch (java.util.concurrent.ExecutionException failure) {
+				firstFailure = failure.getCause();
+			} catch (java.util.concurrent.TimeoutException failure) {
+				firstFailure = failure;
+			}
+			if (contender != null) {
+				try {
+					contender.get(5, TimeUnit.SECONDS);
+				} catch (java.util.concurrent.ExecutionException failure) {
+					if (contenderFailure == null) {
+						contenderFailure = failure.getCause();
+					}
+				} catch (java.util.concurrent.TimeoutException failure) {
+					if (contenderFailure == null) {
+						contenderFailure = failure;
+					}
+				}
+			}
+			try {
+				branch.close();
+			} catch (Throwable failure) {
+				if (firstFailure == null) {
+					firstFailure = failure;
+				} else {
+					firstFailure.addSuppressed(failure);
+				}
+			}
+			executor.shutdownNow();
+			if (!executor.awaitTermination(5, TimeUnit.SECONDS) && firstFailure == null) {
+				firstFailure = new AssertionError("concurrent preflight executor did not terminate");
+			}
+		}
+
+		assertThat(backing.estimateCalls).as("the first autoFlush reached numeric admission").hasValue(1);
+		assertThat(admittedInput.get()).as("the first admission retained its actual input").isNotNull();
+		assertThat(rowsAtAdmission).as("the admitted input contained the real buffered row").hasValue(1);
+		assertThat(ordinaryGuardHeldAtAdmission)
+				.as("numeric admission runs without holding an ordinary branch guard")
+				.isFalse();
+		assertThat(contenderCompletedBeforeRelease)
+				.as("the contender returns while the first admission remains paused")
+				.isTrue();
+		assertThat(firstStillPausedAtContenderReturn)
+				.as("the first autoFlush is still inside its admission callback when the contender returns")
+				.isTrue();
+		assertThat(pendingAtContenderReturn).as("the contender does not dispose the shared input").isTrue();
+		assertThat(appliedAtContenderReturn).as("neither contender applies the row during admission").isFalse();
+		assertThat(inputStillOpenAtContenderReturn)
+				.as("the first admission input stays open until its owner completes")
+				.isTrue();
+		assertThat(livePreparationsAtContenderReturn).as("no backing preparation started before admission returns")
+				.isZero();
+		assertThat(firstFailure).as("the first autoFlush succeeds after its admission is released").isNull();
+		if (nonblockingContender) {
+			assertThat(contenderReturnedNormally)
+					.as("a concurrent opportunistic autoFlush skips an already-running admission")
+					.withFailMessage("contending autoFlush failure=%s, admissionRows=%s, ordinaryGuardHeld=%s, "
+							+ "firstPaused=%s, pending=%s, applied=%s, inputOpen=%s",
+							contenderFailure, rowsAtAdmission, ordinaryGuardHeldAtAdmission,
+							firstStillPausedAtContenderReturn, pendingAtContenderReturn,
+							appliedAtContenderReturn, inputStillOpenAtContenderReturn)
+					.isTrue();
+			assertThat(contenderFailure).as("a concurrent opportunistic autoFlush does not fail").isNull();
+		} else {
+			assertThat(contenderFailure).as("explicit preparation retains the typed concurrency conflict")
+					.isInstanceOf(SailConflictException.class);
+		}
+		assertThat(backing.estimatedRows).hasValue(1);
+		assertThat(backing.committed).containsExactly(queued);
+		assertThat(backing.approvalCount(queued)).as("the shared row is applied exactly once").hasValue(1);
+		assertThat(backing.liveSinkPreparations).hasValue(0);
+		assertThat(backing.liveWriteReservations).hasValue(0);
+		assertThat(backing.retainedOwnerCount).hasValue(backing.retainedOwnerCloses.get());
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void concurrentPrepareCannotReuseCarrierWhileAutoFlushRetiresIt() throws Exception {
 		RecordingStreamingSource backing = new RecordingStreamingSource();
 		SailSourceBranch branch = new SailSourceBranch(new LegacyPreflightSource(backing), new DynamicModelFactory(),
