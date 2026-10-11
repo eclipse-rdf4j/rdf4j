@@ -40,6 +40,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
@@ -119,6 +120,127 @@ class LmdbFrozenReplayTest {
 
 		assertEquals(0, store.probe.journalAllocations.get(),
 				"The covered snapshot commit must not allocate a whole-transaction mutation journal");
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void alternatingValueThenTripleCapacityFailuresGrowOnlyTheAffectedMap(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig();
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> statements = replayStatements(3);
+		Set<Statement> expected = Set.copyOf(statements);
+		AtomicInteger notifications = new AtomicInteger();
+		AtomicInteger addedEvents = new AtomicInteger();
+		Set<Statement> immediatelyVisible = Set.of();
+		Set<Statement> reopenedStatements = Set.of();
+		String immediatelyVisibleNamespace = null;
+		String reopenedNamespace = null;
+		RuntimeException commitFailure = null;
+		long initialTripleMapSize = -1;
+		long initialValueMapSize = -1;
+
+		try {
+			repository.init();
+			store.getBackingStore().enableMultiThreading = false;
+			store.probe.reset();
+			store.probe.valueCommitCapacityFailureBudget.set(1);
+			store.probe.nativeCommitCapacityFailureBudget.set(1);
+			store.addSailChangedListener(event -> {
+				notifications.incrementAndGet();
+				if (event.statementsAdded()) {
+					addedEvents.incrementAndGet();
+				}
+			});
+
+			try (NotifyingSailConnection writer = store.getConnection();
+					RepositoryConnection observer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				for (Statement statement : statements) {
+					writer.addStatement(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							statement.getContext());
+				}
+				writer.setNamespace("alternating", "urn:m3:alternating:");
+				writer.prepare();
+				initialTripleMapSize = store.probe.tripleStore.get().mapSizeBytes();
+				initialValueMapSize = store.probe.valueStore.get().mapSizeBytes();
+				try {
+					writer.commit();
+				} catch (RuntimeException failure) {
+					commitFailure = failure;
+				}
+				immediatelyVisible = readAllStatements(observer);
+				immediatelyVisibleNamespace = observer.getNamespace("alternating");
+			}
+		} finally {
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedStatements = readAllStatements(reader);
+				reopenedNamespace = reader.getNamespace("alternating");
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		long valueMapAtFirstFailure = store.probe.valueMapAtCommitFailure.get();
+		long tripleMapAtFirstFailure = store.probe.tripleMapAtValueCommitFailure.get();
+		long tripleMapAtSecondFailure = store.probe.tripleMapAtNativeCommitFailure.get();
+		long valueMapAtSecondFailure = store.probe.valueMapAtNativeCommitFailure.get();
+		long finalTripleMapSize = store.probe.tripleStore.get().mapSizeBytes();
+		long finalValueMapSize = store.probe.valueStore.get().mapSizeBytes();
+		LmdbSailStore.MapGrowthToken valueGrowthToken = store.probe.valueGrowthToken.get();
+		LmdbSailStore.MapGrowthToken tripleGrowthToken = store.probe.tripleGrowthToken.get();
+		RuntimeException observedCommitFailure = commitFailure;
+		long observedInitialTripleMapSize = initialTripleMapSize;
+		long observedInitialValueMapSize = initialValueMapSize;
+		Set<Statement> observedImmediatelyVisible = immediatelyVisible;
+		Set<Statement> observedReopenedStatements = reopenedStatements;
+		String observedImmediatelyVisibleNamespace = immediatelyVisibleNamespace;
+		String observedReopenedNamespace = reopenedNamespace;
+
+		assertAll("alternating native capacity failures replay only the affected LMDB map",
+				() -> assertNull(observedCommitFailure,
+						"the complete transaction must commit after both certified retries"),
+				() -> assertEquals(1, store.probe.valueCommitCapacityFailures.get(),
+						"the first consumed native MDB_MAP_FULL must come from ValueStore"),
+				() -> assertEquals(1, store.probe.nativeCommitCapacityFailures.get(),
+						"the second consumed native MDB_MAP_FULL must come from TripleStore"),
+				() -> assertEquals(3, store.probe.transactionStarts.get(),
+						"each affected-map failure must start one fresh complete transaction attempt"),
+				() -> assertTrue(valueMapAtFirstFailure >= observedInitialValueMapSize,
+						"the ValueStore fault must observe its actual native map after preparation"),
+				() -> assertEquals(observedInitialTripleMapSize, tripleMapAtFirstFailure,
+						"the first ValueStore failure must leave the opposite TripleStore map unchanged"),
+				() -> assertEquals(observedInitialTripleMapSize, tripleMapAtSecondFailure,
+						"the TripleStore map must not grow before its own capacity failure"),
+				() -> assertTrue(valueMapAtSecondFailure > valueMapAtFirstFailure,
+						"the ValueStore map must grow between the two affected-map failures"),
+				() -> assertTrue(finalValueMapSize > observedInitialValueMapSize,
+						"the ValueStore map must grow for its actual native capacity failure"),
+				() -> assertEquals(valueMapAtSecondFailure, finalValueMapSize,
+						"the later TripleStore recovery must leave the grown ValueStore map unchanged"),
+				() -> assertTrue(finalTripleMapSize > observedInitialTripleMapSize,
+						"the TripleStore map must grow for its actual native capacity failure"),
+				() -> assertNotNull(valueGrowthToken, "the ValueStore growth must retain its coordinator token"),
+				() -> assertSame(valueGrowthToken, tripleGrowthToken,
+						"both affected maps must remain under the same logical growth episode"),
+				() -> assertEquals(0, store.probe.journalAllocations.get(),
+						"the whole transaction must remain journal-free across both attempts"),
+				() -> assertEquals(1, notifications.get(), "the logical commit must notify exactly once"),
+				() -> assertEquals(1, addedEvents.get(), "the commit must publish one addition event"),
+				() -> assertEquals(expected, observedImmediatelyVisible,
+						"the observer must see the complete transaction"),
+				() -> assertEquals(expected, observedReopenedStatements,
+						"the complete transaction must survive reopening without duplicates or loss"),
+				() -> assertEquals("urn:m3:alternating:", observedImmediatelyVisibleNamespace,
+						"the namespace must publish with the alternating-map transaction"),
+				() -> assertEquals("urn:m3:alternating:", observedReopenedNamespace,
+						"the namespace must survive reopening with the RDF rows"));
 	}
 
 	@Test
@@ -3157,9 +3279,53 @@ class LmdbFrozenReplayTest {
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled, ValueStore::new,
+			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+					(valueDirectory, valueProperties, valueConfig) -> new CountingValueStore(valueDirectory,
+							valueProperties,
+							valueConfig, probe),
 					(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new CountingTripleStore(
 							tripleDirectory, tripleProperties, tripleConfig, valueStore, probe));
+		}
+	}
+
+	private static final class CountingValueStore extends ValueStore {
+		private final RetryProbe probe;
+
+		private CountingValueStore(File directory, StoreProperties properties, LmdbStoreConfig config, RetryProbe probe)
+				throws IOException {
+			super(directory, properties, config);
+			this.probe = probe;
+			probe.valueStore.set(this);
+		}
+
+		@Override
+		int commitWriteTransaction(long transaction) {
+			if (probe == null) {
+				return super.commitWriteTransaction(transaction);
+			}
+			int remainingFailures = probe.valueCommitCapacityFailureBudget
+					.getAndUpdate(value -> value > 0 ? value - 1 : 0);
+			if (remainingFailures > 0) {
+				probe.valueCommitCapacityFailures.incrementAndGet();
+				probe.valueMapAtCommitFailure.set(mapSizeBytes());
+				CountingTripleStore tripleStore = probe.tripleStore.get();
+				if (tripleStore != null) {
+					probe.tripleMapAtValueCommitFailure.set(tripleStore.mapSizeBytes());
+				}
+				mdb_txn_abort(transaction);
+				return MDB_MAP_FULL;
+			}
+			return super.commitWriteTransaction(transaction);
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+				throws IOException {
+			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
+			if (probe != null && grew && growthAttempt != null && probe.valueCommitCapacityFailures.get() > 0) {
+				probe.valueGrowthToken.compareAndSet(null, growthAttempt.token());
+			}
+			return grew;
 		}
 	}
 
@@ -3190,10 +3356,19 @@ class LmdbFrozenReplayTest {
 		private final AtomicInteger explicitCapacityFailures = new AtomicInteger();
 		private final AtomicInteger nativeCommitCapacityFailures = new AtomicInteger();
 		private final AtomicInteger nativeCommitCapacityFailureBudget = new AtomicInteger();
+		private final AtomicInteger valueCommitCapacityFailures = new AtomicInteger();
+		private final AtomicInteger valueCommitCapacityFailureBudget = new AtomicInteger();
+		private final AtomicLong valueMapAtCommitFailure = new AtomicLong(-1);
+		private final AtomicLong tripleMapAtValueCommitFailure = new AtomicLong(-1);
+		private final AtomicLong tripleMapAtNativeCommitFailure = new AtomicLong(-1);
+		private final AtomicLong valueMapAtNativeCommitFailure = new AtomicLong(-1);
 		private final AtomicLongArray alignedRowsAtFailure = new AtomicLongArray(2);
 		private final AtomicLongArray tripleMapAtAlignedFailure = new AtomicLongArray(2);
 		private final AtomicLongArray valueMapAtAlignedFailure = new AtomicLongArray(2);
 		private final AtomicReference<CountingTripleStore> tripleStore = new AtomicReference<>();
+		private final AtomicReference<CountingValueStore> valueStore = new AtomicReference<>();
+		private final AtomicReference<LmdbSailStore.MapGrowthToken> valueGrowthToken = new AtomicReference<>();
+		private final AtomicReference<LmdbSailStore.MapGrowthToken> tripleGrowthToken = new AtomicReference<>();
 		private final AtomicReference<IOException> postCommitCleanupFailure = new AtomicReference<>();
 		private final AtomicReference<FrozenStatementCapacityException> observedFrozenCapacityMarker = new AtomicReference<>();
 		private final AtomicReference<IOException> retiredCapacityMarkerToInject = new AtomicReference<>();
@@ -3256,6 +3431,14 @@ class LmdbFrozenReplayTest {
 			explicitCapacityFailures.set(0);
 			nativeCommitCapacityFailures.set(0);
 			nativeCommitCapacityFailureBudget.set(0);
+			valueCommitCapacityFailures.set(0);
+			valueCommitCapacityFailureBudget.set(0);
+			valueMapAtCommitFailure.set(-1);
+			tripleMapAtValueCommitFailure.set(-1);
+			tripleMapAtNativeCommitFailure.set(-1);
+			valueMapAtNativeCommitFailure.set(-1);
+			valueGrowthToken.set(null);
+			tripleGrowthToken.set(null);
 			firstNativeGraceExpired.set(null);
 			secondNativeFailureGateProblem.set(null);
 			for (int i = 0; i < 2; i++) {
@@ -3390,6 +3573,11 @@ class LmdbFrozenReplayTest {
 			if (remainingFailures > 0) {
 				int failure = currentProbe.nativeCommitCapacityFailures.getAndIncrement();
 				currentProbe.injectedCommitFailures.incrementAndGet();
+				currentProbe.tripleMapAtNativeCommitFailure.set(mapSizeBytes());
+				CountingValueStore valueStore = currentProbe.valueStore.get();
+				if (valueStore != null) {
+					currentProbe.valueMapAtNativeCommitFailure.set(valueStore.mapSizeBytes());
+				}
 				mdb_txn_abort(transaction);
 				if (failure == 1) {
 					CountDownLatch firstGraceExpired = currentProbe.firstNativeGraceExpired.get();
@@ -3496,6 +3684,16 @@ class LmdbFrozenReplayTest {
 				}
 				throw new AssertionError("MDB_MAP_FULL must be classified as an LMDB map-capacity failure");
 			}
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
+				throws IOException {
+			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
+			if (grew && growthAttempt != null && probe.nativeCommitCapacityFailures.get() > 0) {
+				probe.tripleGrowthToken.compareAndSet(null, growthAttempt.token());
+			}
+			return grew;
 		}
 	}
 }

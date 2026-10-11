@@ -62,6 +62,12 @@ public final class StreamingWritePreflight implements SailClosable {
 		return frame != null && frame.graph.sources.contains(source);
 	}
 
+	/** Keep routed ancestor generations ordered until their own publication captures the complete prefix. */
+	static boolean canCompress(SailSource source) {
+		Frame frame = CURRENT.get();
+		return frame == null || !frame.graph.sources.contains(source) || frame.graph.frontiers.contains(source);
+	}
+
 	static void validate(SailSource source) {
 		Frame frame = CURRENT.get();
 		if (frame != null && frame.graph.sources.contains(source)) {
@@ -87,16 +93,37 @@ public final class StreamingWritePreflight implements SailClosable {
 	}
 
 	SailClosable enter() {
-		return enter(false);
+		return enter(false, null);
 	}
 
 	SailClosable enter(boolean nonblocking) {
+		return enter(nonblocking, null);
+	}
+
+	/** A sink preparation includes its private input; source publication includes only published generations. */
+	SailClosable enter(Changeset preparing) {
+		return enter(false, preparing);
+	}
+
+	private SailClosable enter(boolean nonblocking, Changeset preparing) {
 		if (!root.supportsStreamingWritePreflight()) {
 			return null;
 		}
-		if (covers(root)) {
-			validate(root);
-			return null;
+		Frame current = CURRENT.get();
+		if (current != null && current.graph.sources.contains(root)
+				&& (preparing != null || current.graph.frontiers.contains(root))) {
+			Frame frame = CURRENT.get();
+			SailClosable scope = frame.nonblockingScope(nonblocking);
+			try {
+				if (preparing != null) {
+					frame.selectPreparingSink((SailSourceBranch) root, preparing);
+				}
+				validate(root);
+				return scope;
+			} catch (RuntimeException | Error failure) {
+				closeAfter(scope, failure);
+				throw failure;
+			}
 		}
 		Map<GroupKey, Registration> previous;
 		synchronized (this) {
@@ -106,7 +133,7 @@ public final class StreamingWritePreflight implements SailClosable {
 			running = true;
 			previous = new LinkedHashMap<>(registrations);
 		}
-		Graph graph = new Graph(nonblocking);
+		Graph graph = new Graph(nonblocking, root, preparing);
 		Map<GroupKey, Registration> candidates = new LinkedHashMap<>();
 		List<SailSource.WriteOwner> acquiredOwners = new ArrayList<>();
 		boolean committed = false;
@@ -331,10 +358,13 @@ public final class StreamingWritePreflight implements SailClosable {
 
 	/** Called under both transfer guards, before the reusable wrapper exposes its fresh empty holder. */
 	static void transferred(SailSourceBranch branch, Changeset original, Changeset published,
-			StatementInput.Generation captured, StatementInput.Generation next) {
+			StatementInput.Generation captured, StatementInput.Generation next, boolean hasWrites) {
 		Frame frame = CURRENT.get();
 		if (frame != null && frame.graph.sources.contains(branch)) {
-			if (!List.of(captured).equals(frame.expected.get(original))) {
+			List<StatementInput.Generation> expected = frame.expected.get(original);
+			// Delayed reader close can publish new observations during snapshot retirement. They do not create a
+			// native prefix. The caller supplies this witness while still holding the exact model writer guard.
+			if (expected == null ? hasWrites : !List.of(captured).equals(expected)) {
 				SailConflictException failure = new SailConflictException(
 						"Uncovered logical work arrived before generation transfer");
 				frame.fail(failure);
@@ -342,7 +372,13 @@ public final class StreamingWritePreflight implements SailClosable {
 			}
 			frame.expected.put(published, List.of(captured));
 			frame.expected.put(original, List.of(next));
-			frame.members.computeIfAbsent(branch, ignored -> identitySet()).add(published);
+			Set<Changeset> members = frame.members.computeIfAbsent(branch, ignored -> identitySet());
+			// The captured work now belongs to the published clone. Closing the empty writer must not look like
+			// lost publication input; it still has an exact revision check while it remains a selected pending sink.
+			boolean required = members.remove(original);
+			if (required || hasWrites) {
+				members.add(published);
+			}
 		}
 	}
 
@@ -404,16 +440,37 @@ public final class StreamingWritePreflight implements SailClosable {
 
 	private static final class Graph implements SailClosable {
 		private final Set<SailSource> sources = identitySet();
+		private final Set<SailSource> frontiers = identitySet();
 		private final Set<SailSourceBranch> collected = identitySet();
 		private final Map<Changeset, StatementInput> inputs = new IdentityHashMap<>();
 		private final Map<SailSourceBranch, Set<Changeset>> members = new IdentityHashMap<>();
+		private final Map<SailSourceBranch, Set<Changeset>> preparing = new IdentityHashMap<>();
 		private final List<Route> routes = new ArrayList<>();
 		private final Map<GroupKey, Group> groups = new LinkedHashMap<>();
 		private final boolean nonblocking;
 		private final AtomicReference<Throwable> failure = new AtomicReference<>();
 
-		private Graph(boolean nonblocking) {
+		private Graph(boolean nonblocking, SailSource root, Changeset preparing) {
 			this.nonblocking = nonblocking;
+			publicationRoots(root);
+			if (preparing != null) {
+				Set<Changeset> selected = identitySet();
+				selected.add(preparing);
+				this.preparing.put((SailSourceBranch) root, selected);
+			}
+		}
+
+		/** Traversing an ancestor does not make its independently published prefix part of this operation. */
+		private void publicationRoots(SailSource source) {
+			if (!frontiers.add(source)) {
+				return;
+			}
+			if (source instanceof UnionSailSource union) {
+				publicationRoots(union.streamingPrimary());
+				publicationRoots(union.streamingAdditional());
+			} else if (source instanceof DelegatingSailSource delegating) {
+				publicationRoots(delegating.streamingDelegate());
+			}
 		}
 
 		private void collect(SailSource source, List<StatementInput> inherited, Object requestedOwner) {
@@ -421,7 +478,10 @@ public final class StreamingWritePreflight implements SailClosable {
 			if (source instanceof SailSourceBranch branch) {
 				boolean first = collected.add(branch);
 				SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner,
-						first, failure);
+						first, frontiers.contains(branch), preparing.getOrDefault(branch, Set.of()), failure);
+				if (snapshot.publicationFrontier()) {
+					frontiers.add(branch);
+				}
 				List<StatementInput> routed = new ArrayList<>();
 				if (first) {
 					Set<Changeset> own = identitySet();
@@ -512,10 +572,12 @@ public final class StreamingWritePreflight implements SailClosable {
 		private final Map<SailSource, Object> owners = new IdentityHashMap<>();
 		private final Map<Changeset, List<StatementInput.Generation>> expected = new IdentityHashMap<>();
 		private final Map<SailSourceBranch, Set<Changeset>> members = new IdentityHashMap<>();
+		private final Map<SailSourceBranch, Set<Changeset>> preparing = new IdentityHashMap<>();
 		private final Set<Changeset> retired = identitySet();
 		private List<Registration> admissions = List.of();
 		private Mutation permit;
 		private boolean failed;
+		private int nonblockingEntries;
 
 		private Frame(StreamingWritePreflight owner, Graph graph, Frame previous) {
 			this.owner = owner;
@@ -527,6 +589,25 @@ public final class StreamingWritePreflight implements SailClosable {
 				own.addAll(changes);
 				members.put(source, own);
 			});
+			graph.preparing.forEach((source, changes) -> {
+				Set<Changeset> selected = identitySet();
+				selected.addAll(changes);
+				preparing.put(source, selected);
+			});
+		}
+
+		private SailClosable nonblockingScope(boolean nonblocking) {
+			if (!nonblocking) {
+				return null;
+			}
+			nonblockingEntries++;
+			return () -> nonblockingEntries--;
+		}
+
+		private void selectPreparingSink(SailSourceBranch branch, Changeset sink) {
+			// A newly opened carrier may be empty. Nonempty private work needs its own captured input.
+			check(sink);
+			preparing.computeIfAbsent(branch, ignored -> identitySet()).add(sink);
 		}
 
 		private void check(Changeset change) {
@@ -580,19 +661,23 @@ public final class StreamingWritePreflight implements SailClosable {
 				}
 			}
 			if (source instanceof SailSourceBranch branch) {
-				branch.validateStreamingChanges(graph.nonblocking, current -> {
-					Set<Changeset> seen = identitySet();
-					for (Changeset change : current) {
-						check(change);
-						seen.add(change);
-					}
-					for (Changeset change : members.getOrDefault(branch, Set.of())) {
-						if (!seen.contains(change) && !retired.contains(change)) {
-							throw new SailConflictException(
-									"Captured logical work disappeared during write publication");
-						}
-					}
-				});
+				branch.validateStreamingChanges(graph.nonblocking || nonblockingEntries > 0,
+						graph.frontiers.contains(branch),
+						preparing.getOrDefault(branch, Set.of()), current -> {
+							Set<Changeset> seen = identitySet();
+							for (Changeset change : current) {
+								check(change);
+								seen.add(change);
+							}
+							for (Changeset change : graph.frontiers.contains(branch)
+									? members.getOrDefault(branch, Set.of())
+									: Set.<Changeset>of()) {
+								if (!seen.contains(change) && !retired.contains(change)) {
+									throw new SailConflictException(
+											"Captured logical work disappeared during write publication");
+								}
+							}
+						});
 			}
 		}
 

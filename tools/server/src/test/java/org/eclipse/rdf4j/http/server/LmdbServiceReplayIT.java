@@ -61,6 +61,18 @@ public class LmdbServiceReplayIT {
 	private static final long TRIPLE_GROWTH_VALUE_MAP_SIZE = 128L * 1024L * 1024L;
 	private static final long VALUE_GROWTH_MAP_SIZE = 32L * 1024L * 1024L;
 	private static final double GROWTH_THRESHOLD = 0.10d;
+	private static final int TRIPLE_GROWTH_INDEX_COUNT = 2;
+	private static final int TRIPLE_INDEX_NODE_SIZE_BYTES = 8;
+	private static final int TRIPLE_INDEX_NODE_SLOT_BYTES = 2;
+	private static final int MINIMUM_VARINT_BYTES = 1;
+	private static final int TRIPLE_INDEX_KEY_COMPONENTS = 4;
+	private static final long MINIMUM_TRIPLE_INDEX_BYTES_PER_ROW = TRIPLE_GROWTH_INDEX_COUNT
+			* (TRIPLE_INDEX_NODE_SIZE_BYTES + TRIPLE_INDEX_NODE_SLOT_BYTES
+					+ TRIPLE_INDEX_KEY_COMPONENTS * MINIMUM_VARINT_BYTES);
+	private static final long TRIPLE_GROWTH_SOFT_WATERMARK_BYTES = (long) Math
+			.ceil(TRIPLE_GROWTH_MAP_SIZE * GROWTH_THRESHOLD);
+	private static final int TRIPLE_GROWTH_STATEMENT_COUNT = Math.toIntExact(
+			Math.floorDiv(TRIPLE_GROWTH_SOFT_WATERMARK_BYTES, MINIMUM_TRIPLE_INDEX_BYTES_PER_ROW) + 1);
 	private static final String REPOSITORY_ID = "lmdb-service-replay";
 	private static final IRI SUBJECT = Values.iri("urn:rdf4j:lmdb-service-replay:subject");
 	private static final IRI VALUE_PREDICATE = Values.iri("urn:rdf4j:lmdb-service-replay:value");
@@ -173,7 +185,7 @@ public class LmdbServiceReplayIT {
 					try (RepositoryConnection writer = repository.getConnection()) {
 						writer.begin();
 						if (tripleGrowth) {
-							writer.add(growthStatements(10_000));
+							writer.add(growthStatements(TRIPLE_GROWTH_STATEMENT_COUNT));
 						} else {
 							writer.add(overflowSubject, GROWTH_PREDICATE, Values.literal(growthLiteral));
 						}
@@ -198,7 +210,7 @@ public class LmdbServiceReplayIT {
 					published.begin(IsolationLevels.SNAPSHOT);
 					assertThat(published.hasStatement(SUBJECT, VALUE_PREDICATE, Values.literal("after"), false))
 							.isTrue();
-					assertThat(published.size()).isEqualTo(tripleGrowth ? 10_003L : 4L);
+					assertThat(published.size()).isEqualTo(tripleGrowth ? TRIPLE_GROWTH_STATEMENT_COUNT + 3L : 4L);
 					if (!tripleGrowth) {
 						try (RepositoryResult<Statement> statements = published.getStatements(overflowSubject,
 								GROWTH_PREDICATE, null, false)) {
@@ -303,6 +315,9 @@ public class LmdbServiceReplayIT {
 	}
 
 	private static Model growthStatements(int count) {
+		// For the configured ordinary spoc and posc DBIs, each unique row occupies one leaf entry per index.
+		// Each entry has the 8-byte LmdbFormat.NODE_SIZE, a 2-byte leaf slot, and four nonempty varints of at least
+		// one byte each. The derived count therefore exceeds the 10% soft watermark even at minimum key encoding.
 		Model statements = new LinkedHashModel();
 		for (int i = 0; i < count; i++) {
 			statements.add(Values.iri("urn:rdf4j:lmdb-service-replay:growth:" + i), GROWTH_PREDICATE,

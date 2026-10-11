@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_BAD_TXN;
 import static org.lwjgl.util.lmdb.LMDB.MDB_CREATE;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOTLS;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
@@ -2325,6 +2326,118 @@ public class ValueStoreTest {
 						reopenedSharedComponentId),
 				() -> assertEquals("the reopened component count must match its remaining dependent", 1L,
 						reopenedReferenceCount));
+	}
+
+	@Test
+	public void testCheckpointRefCountMapFullRollsBackMappingsAndCounts() throws Exception {
+		valueStore.close();
+		File constrainedDirectory = new File(dataDir, "checkpoint-refcount-pressure");
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(1024L * 1024).setAutoGrow(false);
+		valueStore = new ValueStore(constrainedDirectory, config);
+
+		IRI datatype = Values.iri("urn:refcount:checkpoint-pressure:datatype");
+		Value firstDependent = Values.literal("first dependent " + "f".repeat(256), datatype);
+		Value checkpointDependent = Values.literal("checkpoint dependent " + "c".repeat(256), datatype);
+		valueStore.startTransaction(true);
+		long firstId = valueStore.storeValue(firstDependent);
+		valueStore.commit();
+		long datatypeId = valueStore.getId(datatype);
+		assertEquals("the seed establishes one committed datatype reference", 1L, persistedRefCount(datatypeId));
+
+		long generationBeforeCheckpoint = valueStore.nativeCommitGeneration();
+		valueStore.startTransaction(true);
+		long checkpointId = valueStore.storeValue(checkpointDependent);
+		int capacityDbi = valueStore.writeTransaction(
+				(stack, txn) -> openDatabaseWithTxn(txn, "checkpoint_refcount_capacity", MDB_CREATE));
+		long mapSize = valueStore.mapSizeBytes();
+		int pageSize = valueStore.writeTransaction((stack, txn) -> {
+			MDBStat stat = MDBStat.calloc(stack);
+			E(mdb_stat(txn, capacityDbi, stat));
+			return stat.ms_psize();
+		});
+		boolean fillerStoppedBeforeMapFull = false;
+		long remainingPagesBeforeCheckpoint = -1;
+		for (int entry = 0; entry < 20_000; entry++) {
+			int keyValue = entry;
+			long remainingPages = valueStore.writeTransaction((stack, txn) -> {
+				long highWater = LmdbUtil.getNewSize(pageSize, txn, 0L);
+				long pagesAvailable = Math.max(0L, (mapSize - highWater) / pageSize);
+				if (pagesAvailable <= 1L) {
+					return -pagesAvailable - 1L;
+				}
+				MDBVal key = MDBVal.calloc(stack);
+				key.mv_data(stack.malloc(Integer.BYTES).putInt(keyValue).flip());
+				MDBVal data = MDBVal.calloc(stack);
+				data.mv_data(stack.calloc(2_048));
+				E(mdb_put(txn, capacityDbi, key, data, 0));
+				long updatedHighWater = LmdbUtil.getNewSize(pageSize, txn, 0L);
+				return Math.max(0L, (mapSize - updatedHighWater) / pageSize);
+			});
+			if (remainingPages < 0L) {
+				fillerStoppedBeforeMapFull = true;
+				remainingPagesBeforeCheckpoint = -remainingPages - 1L;
+				break;
+			}
+		}
+
+		IOException checkpointFailure = null;
+		try {
+			valueStore.endTransaction(true, true);
+		} catch (IOException failure) {
+			checkpointFailure = failure;
+		}
+		String checkpointFailureDetails = checkpointFailure == null ? "<no checkpoint exception>"
+				: checkpointFailure.getClass().getName() + ": " + checkpointFailure.getMessage() + "\n"
+						+ Arrays.toString(checkpointFailure.getStackTrace());
+		String checkpointDiagnostic = "remainingPages=" + remainingPagesBeforeCheckpoint + "; "
+				+ checkpointFailureDetails;
+		System.out.println("Checkpoint capacity failure diagnostic: " + checkpointDiagnostic);
+		boolean countWriteWasTheFailingOperation = checkpointFailure != null
+				&& Arrays.stream(checkpointFailure.getStackTrace())
+						.anyMatch(frame -> frame.getClassName().equals(ValueStore.class.getName())
+								&& frame.getMethodName().equals("updateRefCounts"));
+		boolean checkpointWasMapFull = checkpointFailure instanceof LmdbUtil.MapFullException
+				&& checkpointFailure.getMessage() != null && checkpointFailure.getMessage().contains("MDB_MAP_FULL");
+		long generationAfterFailedCheckpoint = valueStore.nativeCommitGeneration();
+		valueStore.rollback();
+		valueStore.close();
+		valueStore = new ValueStore(constrainedDirectory, config);
+
+		long reopenedFirstId = valueStore.getId(firstDependent);
+		long reopenedDatatypeId = valueStore.getId(datatype);
+		long reopenedCheckpointId = valueStore.getId(checkpointDependent);
+		long reopenedDatatypeCount = persistedRefCount(reopenedDatatypeId);
+		boolean observedFillerStoppedBeforeMapFull = fillerStoppedBeforeMapFull;
+		long observedRemainingPagesBeforeCheckpoint = remainingPagesBeforeCheckpoint;
+		IOException observedCheckpointFailure = checkpointFailure;
+		boolean observedCountWriteFailure = countWriteWasTheFailingOperation;
+		boolean observedCheckpointWasMapFull = checkpointWasMapFull;
+		ValueStore reopenedStore = valueStore;
+		assertAll("a count-write capacity failure aborts the entire ValueStore checkpoint",
+				() -> assertTrue(
+						"bounded filler writes must stop before native MAP_FULL with at most one measured page remaining: "
+								+ observedRemainingPagesBeforeCheckpoint,
+						observedFillerStoppedBeforeMapFull && observedRemainingPagesBeforeCheckpoint <= 1L),
+				() -> assertNotNull("the checkpoint refcount write must fail when its native pages are exhausted",
+						observedCheckpointFailure),
+				() -> assertTrue("checkpoint failure must be the actual MDB_MAP_FULL exception from updateRefCounts: "
+						+ checkpointDiagnostic, observedCheckpointWasMapFull),
+				() -> assertTrue(
+						"the captured failure must originate in updateRefCounts rather than dictionary insertion: "
+								+ checkpointDiagnostic,
+						observedCountWriteFailure),
+				() -> assertEquals("the failed checkpoint must not advance ValueStore's native commit generation",
+						generationBeforeCheckpoint, generationAfterFailedCheckpoint),
+				() -> assertEquals("the prior committed dependent mapping must survive rollback and reopening",
+						firstId, reopenedFirstId),
+				() -> assertEquals("the shared datatype mapping must remain stable after rollback and reopening",
+						datatypeId, reopenedDatatypeId),
+				() -> assertEquals("the failed checkpoint's new dependent mapping must remain absent",
+						LmdbValue.UNKNOWN_ID, reopenedCheckpointId),
+				() -> assertEquals("the prior committed datatype count must remain exact after rollback and reopening",
+						1L, reopenedDatatypeCount),
+				() -> assertEquals("the original dependent value must decode exactly after reopening",
+						firstDependent, reopenedStore.getValue(reopenedFirstId)));
 	}
 
 	private long namespaceIdFromEncodedIri(long iriId, IRI expectedIri) throws IOException {

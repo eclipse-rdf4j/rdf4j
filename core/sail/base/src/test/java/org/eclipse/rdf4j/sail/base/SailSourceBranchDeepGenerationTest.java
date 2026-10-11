@@ -964,8 +964,10 @@ class SailSourceBranchDeepGenerationTest {
 
 		@Override
 		StreamingSnapshot streamingSnapshot(boolean nonblocking, Object inherited, boolean retainInputs,
-				AtomicReference<Throwable> failure) {
-			StreamingSnapshot snapshot = super.streamingSnapshot(nonblocking, inherited, retainInputs, failure);
+				boolean publicationFrontier, Set<Changeset> preparing, AtomicReference<Throwable> failure) {
+			StreamingSnapshot snapshot = super.streamingSnapshot(nonblocking, inherited, retainInputs,
+					publicationFrontier, preparing,
+					failure);
 			if (fired.compareAndSet(false, true)) {
 				afterSnapshot.run();
 			}
@@ -974,7 +976,7 @@ class SailSourceBranchDeepGenerationTest {
 	}
 
 	@Test
-	void ancestorSinkRetirementAfterStreamingSnapshotIsAConflict() throws Exception {
+	void preparingSinkRetirementAfterStreamingSnapshotIsAConflict() throws Exception {
 		HistoryBacking backing = new HistoryBacking();
 		TrackingModelFactory parentModelFactory = new TrackingModelFactory();
 		TrackingModelFactory childModelFactory = new TrackingModelFactory();
@@ -997,7 +999,7 @@ class SailSourceBranchDeepGenerationTest {
 		Throwable prepareFailure = null;
 		int closeCallsAfterPrepare = -1;
 		try {
-			child.prepare();
+			pendingAncestor.prepare();
 		} catch (Throwable failure) {
 			prepareFailure = failure;
 		} finally {

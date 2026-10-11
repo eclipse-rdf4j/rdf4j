@@ -16,6 +16,7 @@ import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Internal staging protocol: built-in wrappers forward it with the same semantics as their sink. */
@@ -79,11 +80,19 @@ interface FrozenFlush {
 		void releaseLocal(boolean acknowledged);
 	}
 
+	/** Prevents a carrier from being reused before its physical reservation release has completed. */
+	interface PreparationOwner {
+		void releaseStarted();
+
+		void releaseFinished();
+	}
+
 	/** One graph of retained branches, including shared ancestors, staged before any terminal application. */
 	final class Context {
 		private final Set<Batch> batches = new LinkedHashSet<>();
 		private final Set<Batch> terminals = new LinkedHashSet<>();
 		private final Set<SailSink> validationCarriers = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Map<SailSink, Set<PreparationOwner>> preparationOwners = new IdentityHashMap<>();
 		private final Set<FrozenFlush> discovered = Collections.newSetFromMap(new IdentityHashMap<>());
 		// Native stores can retain this identity without retaining the graph, its branches, or its models.
 		private final Object owner = new Object();
@@ -113,11 +122,19 @@ interface FrozenFlush {
 		}
 
 		void validationCarrier(SailSink carrier) {
+			validationCarrier(carrier, null);
+		}
+
+		void validationCarrier(SailSink carrier, PreparationOwner preparationOwner) {
 			if (carrier != null) {
-				carrier.beginFrozenFlush(owner);
 				synchronized (this) {
 					validationCarriers.add(carrier);
+					if (preparationOwner != null) {
+						preparationOwners.computeIfAbsent(carrier,
+								ignored -> Collections.newSetFromMap(new IdentityHashMap<>())).add(preparationOwner);
+					}
 				}
+				carrier.beginFrozenFlush(owner);
 			}
 		}
 
@@ -265,6 +282,7 @@ interface FrozenFlush {
 			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 				List<Batch> reverse;
 				List<SailSink> carriers;
+				Map<SailSink, Set<PreparationOwner>> owners;
 				synchronized (this) {
 					if (released && !acknowledged) {
 						return;
@@ -277,10 +295,15 @@ interface FrozenFlush {
 					released = true;
 					reverse = new ArrayList<>(batches);
 					carriers = List.copyOf(validationCarriers);
+					owners = new IdentityHashMap<>(preparationOwners);
 				}
 				Throwable failure = null;
 				// Include discovered ancestors whose staging failed before a batch could be registered for them.
 				for (SailSink carrier : carriers) {
+					Set<PreparationOwner> carrierOwners = owners.getOrDefault(carrier, Set.of());
+					for (PreparationOwner preparationOwner : carrierOwners) {
+						preparationOwner.releaseStarted();
+					}
 					try {
 						carrier.releasePrepared();
 					} catch (RuntimeException | Error cleanupFailure) {
@@ -288,6 +311,18 @@ interface FrozenFlush {
 							failure = cleanupFailure;
 						} else if (failure != cleanupFailure) {
 							failure.addSuppressed(cleanupFailure);
+						}
+					} finally {
+						for (PreparationOwner preparationOwner : carrierOwners) {
+							try {
+								preparationOwner.releaseFinished();
+							} catch (RuntimeException | Error cleanupFailure) {
+								if (failure == null) {
+									failure = cleanupFailure;
+								} else if (failure != cleanupFailure) {
+									failure.addSuppressed(cleanupFailure);
+								}
+							}
 						}
 					}
 				}

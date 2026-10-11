@@ -1031,7 +1031,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				try {
 					StreamingWritePreflight.transferred(branch, this, copy,
 							new StatementInput.Generation(state.identity, state.revision),
-							new StatementInput.Generation(next.identity, next.revision));
+							new StatementInput.Generation(next.identity, next.revision), hasWriteChanges(state));
 					transfer.intent = takeWriteIntent();
 					inheritedMutationBarriers = retainedBarriers;
 					transferred = true;
@@ -1209,15 +1209,20 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		ModelWriteState state = acquireModelReadLock();
 		try {
-			return !transferred && (modelWriteState.statementCleared || modelWriteState.namespaceCleared
-					|| (modelWriteState.approved != null && !modelWriteState.approvedEmpty)
-					|| (modelWriteState.deprecated != null && !modelWriteState.deprecatedEmpty)
-					|| (modelWriteState.deprecatedContexts != null && !modelWriteState.deprecatedContexts.isEmpty())
-					|| (modelWriteState.addedNamespaces != null && !modelWriteState.addedNamespaces.isEmpty())
-					|| (modelWriteState.removedPrefixes != null && !modelWriteState.removedPrefixes.isEmpty()));
+			return !transferred && hasWriteChanges(state);
 		} finally {
 			state.unlockReader();
 		}
+	}
+
+	/** Caller holds this exact state's read or write guard. */
+	private static boolean hasWriteChanges(ModelWriteState state) {
+		return state.statementCleared || state.namespaceCleared
+				|| (state.approved != null && !state.approvedEmpty)
+				|| (state.deprecated != null && !state.deprecatedEmpty)
+				|| (state.deprecatedContexts != null && !state.deprecatedContexts.isEmpty())
+				|| (state.addedNamespaces != null && !state.addedNamespaces.isEmpty())
+				|| (state.removedPrefixes != null && !state.removedPrefixes.isEmpty());
 	}
 
 	StatementInput.Generation statementGeneration() {
