@@ -2328,6 +2328,175 @@ public class ValueStoreTest {
 						reopenedReferenceCount));
 	}
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void testRetiredIdsRemainReclaimableWhenGrowthCheckpointsBeforeFreeingThem(
+			boolean rollbackReclamationBeforeRetry) throws Exception {
+		valueStore.close();
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(8L * 1024 * 1024)
+				.setAutoGrow(true)
+				.setInlineLiterals(false);
+		valueStore = createValueStore(config);
+
+		int cohortSize = 4_096;
+		String[] labels = new String[cohortSize];
+		for (int i = 0; i < labels.length; i++) {
+			labels[i] = "pre-free-checkpoint-" + i;
+		}
+		long[] retiredIds = storeBNodes(labels);
+		Set<Long> retiredIdSet = Arrays.stream(retiredIds).boxed().collect(Collectors.toSet());
+		long retainedId = retiredIds[0];
+		LmdbValue retainedValue = valueStore.getLazyValue(retainedId);
+		long retainedRevisionId = retainedValue.getValueStoreRevision().getRevisionId();
+		CountDownLatch retainedRevisionCollected = trackRevisionCollection(retainedValue);
+		retireValues(retiredIdSet);
+		assertEquals("the retirement transaction must remove the old dictionary mappings", LmdbValue.UNKNOWN_ID,
+				valueStore.getId(Values.bnode(labels[0])));
+		assertEquals("the full retired cohort must remain in the native unused-ID index until reclaimed", cohortSize,
+				countValueDatabaseEntries("unused_ids"));
+
+		long candidateGrowthBytes = countValueDatabaseEntries("unused_ids") * (2L + Long.BYTES);
+		int fillerValuesPerBatch = 4;
+		int fillerValueLength = Math.toIntExact(candidateGrowthBytes / (2L * fillerValuesPerBatch)) - 64;
+		assertTrue("the cohort must provide a bounded, nonempty native reclamation estimate",
+				candidateGrowthBytes > 0 && fillerValueLength > 0);
+		long fillerPayloadBytes = (long) fillerValuesPerBatch * fillerValueLength;
+		assertTrue("one committed filler batch must be smaller than the measured cohort reclamation estimate",
+				fillerPayloadBytes < candidateGrowthBytes);
+
+		long initialMapSize = valueStore.mapSizeBytes();
+		long initialMapGeneration = valueStore.nativeMapGeneration();
+		AtomicInteger preResizeCallbacks = new AtomicInteger();
+		IllegalStateException stopBeforeResize = new IllegalStateException("stop before native map resize");
+		valueStore.setResizeCheckpointListener(() -> {
+			preResizeCallbacks.incrementAndGet();
+			throw stopBeforeResize;
+		});
+
+		int maximumBatches = Math.toIntExact(initialMapSize / fillerPayloadBytes + 2L);
+		List<Value> committedFillers = new ArrayList<>();
+		int committedBatches = 0;
+		boolean stoppedBeforeResize = false;
+		long nativeGenerationBeforeFailedBatch = valueStore.nativeCommitGeneration();
+		for (int batch = 0; batch < maximumBatches && !stoppedBeforeResize; batch++) {
+			long nativeGenerationBeforeBatch = valueStore.nativeCommitGeneration();
+			List<Value> batchValues = new ArrayList<>(fillerValuesPerBatch);
+			try {
+				valueStore.startTransaction(true);
+				for (int index = 0; index < fillerValuesPerBatch; index++) {
+					String prefix = "pre-free-pressure-" + batch + "-" + index + ":";
+					Value filler = Values.literal(prefix + "x".repeat(fillerValueLength - prefix.length()));
+					valueStore.storeValue(filler);
+					batchValues.add(filler);
+				}
+				valueStore.commit();
+				committedFillers.addAll(batchValues);
+				committedBatches++;
+			} catch (IllegalStateException failure) {
+				valueStore.rollback();
+				if (failure != stopBeforeResize) {
+					throw failure;
+				}
+				nativeGenerationBeforeFailedBatch = nativeGenerationBeforeBatch;
+				stoppedBeforeResize = true;
+			}
+		}
+
+		long mapSizeAfterMarker = valueStore.mapSizeBytes();
+		long mapGenerationAfterMarker = valueStore.nativeMapGeneration();
+		long nativeGenerationAfterMarker = valueStore.nativeCommitGeneration();
+		long occupiedAfterMarker = valueStore.occupiedBytes();
+		boolean cohortDemandWouldResize = valueStore.requiresResizeForEstimatedWrite(candidateGrowthBytes);
+		String pressureDiagnostic = "map=" + initialMapSize + "->" + mapSizeAfterMarker + ", mapGeneration="
+				+ initialMapGeneration + "->" + mapGenerationAfterMarker + ", nativeGeneration="
+				+ nativeGenerationBeforeFailedBatch + "->" + nativeGenerationAfterMarker + ", occupied="
+				+ occupiedAfterMarker + ", candidateBytes=" + candidateGrowthBytes + ", fillerPayloadBytes="
+				+ fillerPayloadBytes + ", committedBatches=" + committedBatches + ", callbackCount="
+				+ preResizeCallbacks.get();
+		assertTrue("bounded committed values must reach a real growth checkpoint before map mutation: "
+				+ pressureDiagnostic, stoppedBeforeResize && committedBatches > 0 && preResizeCallbacks.get() == 1);
+		assertEquals("the marker must stop resize before changing native map capacity", initialMapSize,
+				mapSizeAfterMarker);
+		assertEquals("the marker must stop resize before advancing map generation", initialMapGeneration,
+				mapGenerationAfterMarker);
+		assertEquals("rolling back the marked filler batch must not commit native data",
+				nativeGenerationBeforeFailedBatch,
+				nativeGenerationAfterMarker);
+		assertTrue("the real cohort estimate must still request growth after the failed small batch: "
+				+ pressureDiagnostic, cohortDemandWouldResize);
+
+		Reference.reachabilityFence(retainedValue);
+		retainedValue = null;
+		awaitRevisionCollection(retainedRevisionCollected);
+		assertTrue("the collected lazy epoch must produce a real reclamation candidate",
+				valueStore.unusedRevisionIds.contains(retainedRevisionId));
+		valueStore.forceEvictionOfValues();
+
+		AtomicInteger growthCheckpoints = new AtomicInteger();
+		valueStore.setResizeCheckpointListener(growthCheckpoints::incrementAndGet);
+		long mapSizeBeforeReclamation = valueStore.mapSizeBytes();
+		long mapGenerationBeforeReclamation = valueStore.nativeMapGeneration();
+		long nativeGenerationBeforeReclamation = valueStore.nativeCommitGeneration();
+		assertTrue("the actual unused-ID cohort must require a resize before reclamation",
+				valueStore.requiresResizeForEstimatedWrite(candidateGrowthBytes));
+		valueStore.startTransaction(true);
+		long mapSizeAfterReclamation = valueStore.mapSizeBytes();
+		long mapGenerationAfterReclamation = valueStore.nativeMapGeneration();
+		long nativeGenerationAfterReclamation = valueStore.nativeCommitGeneration();
+		String checkpointDiagnostic = "map=" + mapSizeBeforeReclamation + "->" + mapSizeAfterReclamation
+				+ ", mapGeneration=" + mapGenerationBeforeReclamation + "->" + mapGenerationAfterReclamation
+				+ ", nativeGeneration=" + nativeGenerationBeforeReclamation + "->" + nativeGenerationAfterReclamation
+				+ ", checkpointCallbacks=" + growthCheckpoints.get() + ", cohortDemandBytes=" + candidateGrowthBytes;
+		assertTrue("the test must cross the real ValueStore checkpoint before reclamation: " + checkpointDiagnostic,
+				growthCheckpoints.get() > 0 && mapSizeAfterReclamation > mapSizeBeforeReclamation
+						&& mapGenerationAfterReclamation > mapGenerationBeforeReclamation
+						&& nativeGenerationAfterReclamation > nativeGenerationBeforeReclamation);
+		if (rollbackReclamationBeforeRetry) {
+			valueStore.rollback();
+			long unusedIdsAfterRollback = countValueDatabaseEntries("unused_ids");
+			boolean retainedCandidateAfterRollback = valueStore.unusedRevisionIds.contains(retainedRevisionId);
+			assertAll("rollback must keep the physically uncommitted reclamation cohort eligible",
+					() -> assertEquals(cohortSize, unusedIdsAfterRollback),
+					() -> assertTrue(retainedCandidateAfterRollback));
+
+			valueStore.forceEvictionOfValues();
+			valueStore.startTransaction(true);
+		}
+
+		Value replacement = Values.bnode("after-pre-free-checkpoint-replacement");
+		try {
+			long replacementId = valueStore.storeValue(replacement);
+			assertTrue("the committed retirement cohort must be reused after checkpoint growth; " + checkpointDiagnostic
+					+ ", rollbackRetry=" + rollbackReclamationBeforeRetry + ", replacementId=" + replacementId
+					+ ", retiredIdCount=" + retiredIdSet.size(),
+					retiredIdSet.contains(replacementId));
+			valueStore.commit();
+			assertEquals("the resize checkpoint must finish freeing the retired cohort", 0L,
+					countValueDatabaseEntries("unused_ids"));
+		} finally {
+			valueStore.rollback();
+		}
+
+		valueStore.close();
+		valueStore = createValueStore(config);
+		long reopenedReplacementId = valueStore.getId(replacement);
+		assertTrue("the exact reused ID must survive closing and reopening",
+				retiredIdSet.contains(reopenedReplacementId));
+		assertEquals(replacement, valueStore.getValue(reopenedReplacementId));
+		for (int i = 0; i < labels.length; i++) {
+			assertEquals("every retired original mapping must remain absent after its ID was reused",
+					LmdbValue.UNKNOWN_ID,
+					valueStore.getId(Values.bnode(labels[i])));
+		}
+		for (Value filler : committedFillers) {
+			long fillerId = valueStore.getId(filler);
+			assertNotEquals("every previously committed pressure value must survive growth and reopen",
+					LmdbValue.UNKNOWN_ID, fillerId);
+			assertEquals("growth and reopen must retain each exact pressure value", filler,
+					valueStore.getValue(fillerId));
+		}
+	}
+
 	@Test
 	public void testCheckpointRefCountMapFullRollsBackMappingsAndCounts() throws Exception {
 		valueStore.close();
@@ -2736,6 +2905,15 @@ public class ValueStoreTest {
 			key.mv_data(valueStore.id2data(valueStore.idBuffer(stack), id).flip());
 			MDBVal data = MDBVal.calloc(stack);
 			return mdb_get(txn, countsDbi, key, data) == MDB_SUCCESS ? Varint.readUnsigned(data.mv_data()) : 0L;
+		});
+	}
+
+	private long countValueDatabaseEntries(String databaseName) throws IOException {
+		return valueStore.writeTransaction((stack, txn) -> {
+			int database = openDatabaseWithTxn(txn, databaseName, 0);
+			MDBStat stat = MDBStat.calloc(stack);
+			E(mdb_stat(txn, database, stat));
+			return stat.ms_entries();
 		});
 	}
 

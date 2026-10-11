@@ -5261,6 +5261,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds) throws IOException {
+		boolean retiringCohorts = revisionIds != null;
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
 		MDBVal dataVal = MDBVal.calloc(stack);
@@ -5348,6 +5349,11 @@ class ValueStore extends AbstractValueFactory {
 			}
 		}
 		this.freeIdsAvailable |= freeIds;
+		if (retiringCohorts && txn == writeTxn) {
+			// Only the native writer that completed reclamation may retire the cohort at commit. A capacity
+			// checkpoint before this method must leave candidates eligible for its replacement writer.
+			reclaimedRevisionIds.addAll(revisionIds);
+		}
 	}
 
 	public void startTransaction(boolean resize) throws IOException {
@@ -5382,19 +5388,20 @@ class ValueStore extends AbstractValueFactory {
 			// this is also run after opening the database
 			if (lazyRevisions.nextValueEvictionTime >= 0
 					&& System.currentTimeMillis() >= lazyRevisions.nextValueEvictionTime) {
+				Set<Long> candidates;
 				synchronized (unusedRevisionIds) {
-					reclaimedRevisionIds.addAll(unusedRevisionIds);
+					candidates = new HashSet<>(unusedRevisionIds);
 					lazyRevisions.nextValueEvictionTime = -1;
 				}
 				// Eligible epochs cannot be resurrected. Copy the cohort under its tracker lock, then
 				// release it before publication/map growth; admission orders associationGate before tracker.
-				if (!reclaimedRevisionIds.isEmpty()) {
+				if (!candidates.isEmpty()) {
 					MDBStat stat = MDBStat.malloc(stack);
 					mdb_stat(writeTxn, unusedDbi, stat);
 					if (resize) {
 						resizeMap(writeTxn, stat.ms_entries() * (2L + Long.BYTES));
 					}
-					freeUnusedIdsAndValues(stack, writeTxn, reclaimedRevisionIds);
+					freeUnusedIdsAndValues(stack, writeTxn, candidates);
 				}
 			}
 		} catch (LmdbUtil.MapFullException mapFull) {

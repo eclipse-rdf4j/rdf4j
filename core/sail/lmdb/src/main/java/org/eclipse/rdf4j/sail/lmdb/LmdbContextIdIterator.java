@@ -135,6 +135,10 @@ class LmdbContextIdIterator implements Closeable {
 						if (lastResult != MDB_SUCCESS) {
 							// use MDB_SET_RANGE if key was deleted
 							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+							if (lastResult == MDB_SUCCESS) {
+								// SET_RANGE already positions at the inclusive successor.
+								fetchNext = false;
+							}
 						}
 						if (lastResult != MDB_SUCCESS) {
 							closeInternalUnderCurrentReadLock();

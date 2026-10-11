@@ -222,7 +222,6 @@ class LmdbRecordIterator implements RecordIterator {
 					if (readSnapshot != null) {
 						readSnapshot.ensureValid();
 					}
-					// TODO: None of the tests in the LMDB Store cover this case!
 					// cursor must be renewed
 					E(mdb_cursor_renew(txn, cursor));
 					if (fetchNext) {
@@ -238,6 +237,10 @@ class LmdbRecordIterator implements RecordIterator {
 						if (lastResult != MDB_SUCCESS) {
 							// use MDB_SET_RANGE if key was deleted
 							lastResult = mdb_cursor_get(cursor, keyData, valueData, MDB_SET_RANGE);
+							if (lastResult == MDB_SUCCESS) {
+								// SET_RANGE already positions at the inclusive successor.
+								fetchNext = false;
+							}
 						}
 						if (lastResult != MDB_SUCCESS) {
 							closeInternalUnderCurrentReadLock();
