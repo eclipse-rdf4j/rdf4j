@@ -17,7 +17,9 @@ Every SPARQL query with a FILTER is prepared through `DefaultEvaluationStrategy.
 - [x] (2026-10-11 20:25Z) Full module verifies green: `core/queryalgebra/evaluation` 1330 tests, 0 failures, 1 skipped; `core/queryalgebra/model` 85 tests, 0 failures, 1 skipped.
 - [x] (2026-10-11 20:35Z) Committed as 835288fb74 (test) and df0035e730 (fix); pushed; PR https://github.com/eclipse-rdf4j/rdf4j/pull/6144 against develop.
 - [x] (2026-10-11 21:00Z) Phase 2 constant-factor trims measured on a 30-second steady-state loop of the n=16 shape: 9143 to 11900 precompiles (3.28 ms to 2.52 ms each, 23% faster), growth 14.7x to 11.1x; `disjoint` short-circuits single-gate cuts; the shared skeleton reuses the `isCurrent()` snapshot instead of a second clone; binding-name and retained-name memos hold immutable sets so downstream `Set.copyOf` is free; `retainedBindingNames` returns the candidate's names directly when they already cover the condition; `conditionVisibility` copies only when a name must be dropped; `ReadOnlyContext.equals` has an identity fast path. 91 of 91 placement tests green.
-- [ ] Phase 2 module verifies, then commit and push to the PR branch.
+- [x] (2026-10-11 21:15Z) Phase 2 verified (evaluation 1330, model 85, zero failures), committed as 06b71aa735 and pushed.
+- [x] (2026-10-11 21:45Z) Phase 3 memos measured on the same 30-second loop: 11900 to 14758 precompiles (2.52 ms to 2.03 ms each, 24% faster), growth 11.1x to 10.6x; single-gate `Cut`s are memoized per node and moving the only gate skips the list rebuild; `Condition` memoizes `Dependencies` per condition frame; `PlanningContext.ordinary` memoizes `adaptiveBoundaryReason` per join. 91 of 91 placement tests green.
+- [x] (2026-10-11 21:55Z) Phase 3 verified (evaluation 1330 tests, zero failures), committed and pushed to the PR branch.
 
 ## Surprises & Discoveries
 
@@ -66,6 +68,14 @@ After the phase-2 trims (steady-state loop of 30 seconds, n=16; 9143 precompiles
     [profile] precompiles=11900
     [filter-planning] n=16 withFilters=5.392 ms plain=0.188 ms ratio=28.8
     [filter-planning] n=4 0.377 ms, n=16 4.168 ms, growth=11.1x
+
+After the phase-3 memos (same loop, 14758 precompiles):
+
+    [profile] precompiles=14758
+    [filter-planning] n=16 withFilters=3.883 ms plain=0.188 ms ratio=20.7
+    [filter-planning] n=4 0.341 ms, n=16 3.613 ms, growth=10.6x
+
+What remains is spread thin: first-time frame and facts construction for the island (inherent, about a fifth), the per-site rule evaluations, and the standard prepare path's own recursive `getBindingNames` calls in `JoinQueryEvaluationStep.isNoNewBindingGuard` and `FilterIterator.supply` (about a tenth, outside the planner).
 
 ## Context and Orientation
 

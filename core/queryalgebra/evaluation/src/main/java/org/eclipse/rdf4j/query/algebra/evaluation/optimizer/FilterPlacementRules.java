@@ -64,6 +64,8 @@ final class FilterPlacementRules {
 		/** Per candidate node, memoized for the many sites and filters that ask about the same candidate. */
 		private final Map<TupleExpr, Set<String>> retainedNames = new IdentityHashMap<>();
 		private final Map<TupleExpr, Boolean> subQueryMembership = new IdentityHashMap<>();
+		/** By condition frame identity: frames are memoized, so sites with the same frame share one analysis. */
+		private final Map<QueryAlgebraBindingAnalysis.ReadOnlyContext, QueryAlgebraBindingAnalysis.Dependencies> dependencies = new IdentityHashMap<>();
 
 		Condition(Filter filter) {
 			this.filter = Objects.requireNonNull(filter);
@@ -77,6 +79,16 @@ final class FilterPlacementRules {
 
 		Filter filter() {
 			return filter;
+		}
+
+		QueryAlgebraBindingAnalysis.Dependencies dependencies(QueryAlgebraBindingAnalysis analysis,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext frame) {
+			QueryAlgebraBindingAnalysis.Dependencies cached = dependencies.get(frame);
+			if (cached == null) {
+				cached = analysis.dependencies(expression, frame);
+				dependencies.put(frame, cached);
+			}
+			return cached;
 		}
 
 		/**
@@ -170,7 +182,7 @@ final class FilterPlacementRules {
 		this.analysis = analysis;
 		this.bindingNames = bindingNames;
 		this.filterContext = conditionFrame;
-		this.dependencies = analysis.dependencies(condition.expression, conditionFrame);
+		this.dependencies = condition.dependencies(analysis, conditionFrame);
 	}
 
 	boolean canMoveThroughExtension(Extension node) {

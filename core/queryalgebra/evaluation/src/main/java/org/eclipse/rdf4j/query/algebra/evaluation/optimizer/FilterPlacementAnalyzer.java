@@ -719,13 +719,29 @@ public final class FilterPlacementAnalyzer {
 	private record Cut(List<TupleExpr> arguments, List<Integer> ids) {
 	}
 
+	/** Single-gate cuts, by node: most of the enumeration moves one gate at a time through the same nodes. */
+	private final Map<TupleExpr, Cut> singletonCuts = new IdentityHashMap<>();
+
 	private Cut cut(List<TupleExpr> arguments) {
+		if (arguments.size() == 1) {
+			TupleExpr argument = arguments.get(0);
+			Cut cached = singletonCuts.get(argument);
+			if (cached == null) {
+				cached = new Cut(List.of(argument), List.of(nodeIds.get(argument)));
+				singletonCuts.put(argument, cached);
+			}
+			return cached;
+		}
 		List<TupleExpr> sorted = new ArrayList<>(arguments);
 		sorted.sort(Comparator.comparingInt(nodeIds::get));
 		return new Cut(List.copyOf(sorted), sorted.stream().map(nodeIds::get).toList());
 	}
 
 	private Cut replace(Cut source, List<TupleExpr> removed, List<TupleExpr> added) {
+		if (source.arguments.size() == 1 && removed.size() == 1 && source.arguments.get(0) == removed.get(0)) {
+			// Moving the only gate: the result is exactly the added sites.
+			return cut(added);
+		}
 		List<TupleExpr> changed = new ArrayList<>(source.arguments);
 		changed.removeIf(node -> containsIdentity(removed, node));
 		changed.addAll(added);
