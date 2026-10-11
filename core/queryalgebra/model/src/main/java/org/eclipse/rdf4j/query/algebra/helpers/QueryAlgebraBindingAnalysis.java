@@ -2103,6 +2103,9 @@ public final class QueryAlgebraBindingAnalysis {
 
 		@Override
 		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
 			return other instanceof ReadOnlyContext context && scopeIdentity == context.scopeIdentity
 					&& bindingDomainKnown == context.bindingDomainKnown
 					&& visibleNames.equals(context.visibleNames) && maybeBoundNames.equals(context.maybeBoundNames)

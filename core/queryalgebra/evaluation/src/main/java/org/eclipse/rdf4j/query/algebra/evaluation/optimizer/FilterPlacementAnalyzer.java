@@ -479,15 +479,16 @@ public final class FilterPlacementAnalyzer {
 			BinaryTupleOperator binary = (BinaryTupleOperator) original;
 			Set<String> union = new LinkedHashSet<>(bindingNamesOf(binary.getLeftArg()));
 			union.addAll(bindingNamesOf(binary.getRightArg()));
-			names = union;
+			names = Set.copyOf(union);
 		} else if (type == Filter.class && !(((Filter) original).getCondition() instanceof Exists)
 				|| type == Distinct.class || type == Reduced.class || type == Slice.class || type == Order.class
 				|| type == QueryRoot.class) {
 			// A Filter adds its EXISTS sub-query's names; every other listed operator reports its argument's names.
 			names = bindingNamesOf(((UnaryTupleOperator) original).getArg());
 		} else {
-			names = original.getBindingNames();
+			names = Set.copyOf(original.getBindingNames());
 		}
+		// Immutable memo values make the Set.copyOf calls downstream free when nothing was removed.
 		bindingNames.put(original, names);
 		return names;
 	}
@@ -506,7 +507,9 @@ public final class FilterPlacementAnalyzer {
 		};
 
 		private Skeleton(Filter detached) {
-			TupleExpr copiedRoot = snapshot.clone();
+			// The shared skeleton never changes structure (gate splices are undone within the call), so the snapshot
+			// taken for isCurrent() serves as-is; a detached filter needs a copy of its own.
+			TupleExpr copiedRoot = detached == null ? snapshot : snapshot.clone();
 			QueryRoot scratch = copiedRoot instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(copiedRoot);
 			List<QueryModelNode> copied = collectNodes(copiedRoot);
 			for (int i = 0; i < nodes.size(); i++) {
@@ -757,6 +760,10 @@ public final class FilterPlacementAnalyzer {
 	}
 
 	private boolean disjoint(List<TupleExpr> arguments, Filter filter) {
+		if (arguments.size() < 2) {
+			// A node is never its own ancestor; only cuts with several gates can nest.
+			return true;
+		}
 		for (TupleExpr argument : arguments) {
 			for (TupleExpr parent = effectiveParent(argument, filter); parent != null; parent = effectiveParent(parent,
 					filter)) {

@@ -15,7 +15,9 @@ Every SPARQL query with a FILTER is prepared through `DefaultEvaluationStrategy.
 - [x] (2026-10-11 20:05Z) Shared the skeleton across fact-transparent, non-scope-changing filters (the moving filter's own clone stands in for its argument as a child of a site); memoized `ReadOnlyContext.withOutput` by facts identity and `OutputFacts.only` by name set in `QueryAlgebraBindingAnalysis`; cached frame hash codes; combined memoized binding names for Join/LeftJoin/Union and pass-through unary operators. Result: 5.7 ms at n=16, ratio 31.5, growth 14.7x; 91 of 91 tests green.
 - [x] (2026-10-11 20:10Z) Spotless applied to both modules; copyright check clean; scratch profiling test removed.
 - [x] (2026-10-11 20:25Z) Full module verifies green: `core/queryalgebra/evaluation` 1330 tests, 0 failures, 1 skipped; `core/queryalgebra/model` 85 tests, 0 failures, 1 skipped.
-- [ ] Commit on branch `GH-6066-filter-placement-precompile-cost` and open the develop PR (user's call).
+- [x] (2026-10-11 20:35Z) Committed as 835288fb74 (test) and df0035e730 (fix); pushed; PR https://github.com/eclipse-rdf4j/rdf4j/pull/6144 against develop.
+- [x] (2026-10-11 21:00Z) Phase 2 constant-factor trims measured on a 30-second steady-state loop of the n=16 shape: 9143 to 11900 precompiles (3.28 ms to 2.52 ms each, 23% faster), growth 14.7x to 11.1x; `disjoint` short-circuits single-gate cuts; the shared skeleton reuses the `isCurrent()` snapshot instead of a second clone; binding-name and retained-name memos hold immutable sets so downstream `Set.copyOf` is free; `retainedBindingNames` returns the candidate's names directly when they already cover the condition; `conditionVisibility` copies only when a name must be dropped; `ReadOnlyContext.equals` has an identity fast path. 91 of 91 placement tests green.
+- [ ] Phase 2 module verifies, then commit and push to the PR branch.
 
 ## Surprises & Discoveries
 
@@ -58,6 +60,12 @@ Planning a 16-pattern BGP with 16 FILTERs went from 214 ms to 5.7 ms (37x), and 
     [filter-planning] n=16 withFilters=5.707 ms plain=0.181 ms ratio=31.5
     [filter-planning] n=4 0.343 ms, n=16 5.024 ms, growth=14.7x
     [mvnf] Summary: tests=91, failures=0, errors=0, skipped=0, time=0.931s
+
+After the phase-2 trims (steady-state loop of 30 seconds, n=16; 9143 precompiles before, 11900 after):
+
+    [profile] precompiles=11900
+    [filter-planning] n=16 withFilters=5.392 ms plain=0.188 ms ratio=28.8
+    [filter-planning] n=4 0.377 ms, n=16 4.168 ms, growth=11.1x
 
 ## Context and Orientation
 
