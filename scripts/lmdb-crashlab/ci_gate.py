@@ -151,6 +151,13 @@ def validate_powercut_report(report: dict[str, Any], expected_scenario: str) -> 
         record = external.get(name)
         _require(isinstance(record, dict), f"{expected_scenario} is missing preserved witness {name}")
         _require_sha256(record.get("sha256"), f"{expected_scenario} witness {name}")
+    if expected_scenario == "mixed-replay-before-native-commit":
+        frozen = witness["frozen_replay"]
+        record = external.get("actual-frozen-replay-ready-witness.json")
+        _require(isinstance(record, dict), "mixed replay is missing the preserved frozen readiness marker")
+        marker_hash = _require_sha256(record.get("sha256"), "mixed replay frozen readiness marker")
+        _require(marker_hash == frozen["marker_sha256"],
+                 "mixed replay frozen readiness marker hash does not match its cutpoint witness")
 
     recoveries: list[dict[str, Any]] = []
     for label in ("recovery_1", "recovery_2"):

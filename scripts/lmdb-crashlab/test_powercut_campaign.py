@@ -10,7 +10,7 @@ from run_powercut_campaign import (
 class PowerCutContractTests(unittest.TestCase):
     def witness(self, scenario):
         contract = SCENARIOS[scenario]
-        return {
+        witness = {
             "scenario": scenario,
             "cutpoint": contract["cutpoint"],
             "A_acknowledged": True,
@@ -19,6 +19,25 @@ class PowerCutContractTests(unittest.TestCase):
             "B_native_commit_returned": contract["native_commit_returned"],
             "B_acknowledged": False,
         }
+        if scenario == "mixed-replay-before-native-commit":
+            witness["frozen_replay"] = {
+                "frozen_starts": 2,
+                "main_capacity_failures": 1,
+                "successful_physical_aborts": 1,
+                "actual_map_growths": 1,
+                "map_before_bytes": 1024,
+                "map_after_bytes": 2048,
+                "mutation_journal_allocations": 0,
+                "explicit_input_rows": 4,
+                "inferred_input_rows": 1,
+                "expected_explicit_input_rows": 4,
+                "expected_inferred_input_rows": 1,
+                "current_frozen_decision": True,
+                "native_commit_attempts": 0,
+                "native_commit_returned": False,
+                "marker_sha256": "2" * 64,
+            }
+        return witness
 
     def result(self, outcome, digest="same-complete-state"):
         return {"outcome": outcome, "stateSha256": digest}
@@ -31,6 +50,16 @@ class PowerCutContractTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_cutpoint_witness("mixed-replay-before-native-commit", {
                 **self.witness("mixed-replay-before-native-commit"), "B_commit_invoked": False,
+            }, b_acknowledged=False)
+        with self.assertRaises(ValueError):
+            validate_cutpoint_witness("mixed-replay-before-native-commit", {
+                **self.witness("mixed-replay-before-native-commit"), "frozen_replay": None,
+            }, b_acknowledged=False)
+        invalid_frozen = {**self.witness("mixed-replay-before-native-commit")["frozen_replay"],
+                          "mutation_journal_allocations": 1}
+        with self.assertRaises(ValueError):
+            validate_cutpoint_witness("mixed-replay-before-native-commit", {
+                **self.witness("mixed-replay-before-native-commit"), "frozen_replay": invalid_frozen,
             }, b_acknowledged=False)
 
     def test_dictionary_cut_is_after_invocation_but_before_native_commit(self):

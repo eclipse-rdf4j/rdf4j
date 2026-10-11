@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.CrashPowerCutFixtures.apply;
 import static org.eclipse.rdf4j.sail.lmdb.CrashPowerCutFixtures.baseline;
 import static org.eclipse.rdf4j.sail.lmdb.CrashPowerCutFixtures.followup;
 import static org.eclipse.rdf4j.sail.lmdb.CrashPowerCutFixtures.serialize;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -27,33 +28,47 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /** Same-package guest writer with deterministic pauses around LMDB publication boundaries. */
 public final class CrashPowerCutWriterMain {
-	private static final Path RESULTS = Path.of(System.getenv().getOrDefault("RDF4J_CRASHLAB_RESULTS_DIR",
-			"/mnt/run-results"));
+	private static final Path RESULTS = Path.of(System.getenv()
+			.getOrDefault("RDF4J_CRASHLAB_RESULTS_DIR",
+					"/mnt/run-results"));
 	private static final String MIXED_REPLAY_BEFORE_NATIVE_COMMIT = "mixed-replay-before-native-commit";
 	private static final String DICTIONARY_BEFORE_TRIPLE_COMMIT = "dictionary-before-triple-commit";
 	private static final String COMMIT_RETURNED_BEFORE_ACK = "commit-returned-before-ack";
+	private static final String NATIVE_COMMIT_DIAGNOSTIC_TEST = "--native-commit-diagnostic-test";
 
 	private CrashPowerCutWriterMain() {
 	}
 
 	public static void main(String[] args) throws Exception {
+		if (args.length == 1 && NATIVE_COMMIT_DIAGNOSTIC_TEST.equals(args[0])) {
+			System.out.println("{\"before\":{" + nativeCommitDiagnostics(null)
+					+ "},\"success\":{" + nativeCommitDiagnostics(0)
+					+ "},\"map_full\":{" + nativeCommitDiagnostics(MDB_MAP_FULL) + "}}");
+			return;
+		}
 		if (args.length != 2) {
 			throw new IllegalArgumentException("usage: CrashPowerCutWriterMain <store-directory> <scenario>");
 		}
@@ -70,7 +85,8 @@ public final class CrashPowerCutWriterMain {
 		}
 
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
-				.setTripleDBSize(4096L * 10).setAutoGrow(true);
+				.setTripleDBSize(4096L * 10)
+				.setAutoGrow(true);
 		PausingLmdbStore store = new PausingLmdbStore(storeDir.toFile(), config, scenario);
 		store.init();
 		try {
@@ -90,7 +106,7 @@ public final class CrashPowerCutWriterMain {
 			System.out.println("CRASHLAB:B_ATTEMPT_FSYNCED");
 			awaitController(controller, "CONTINUE_AFTER_B_WITNESS");
 
-			store.armPause();
+			store.armPause(expectedAppliedRows(b, true), expectedAppliedRows(b, false));
 			try (SailConnection connection = store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				apply(connection, b);
@@ -106,6 +122,14 @@ public final class CrashPowerCutWriterMain {
 		} finally {
 			store.shutDown();
 		}
+	}
+
+	private static String nativeCommitDiagnostics(Integer nativeCommitResult) {
+		String phase = nativeCommitResult == null ? "BEFORE_NATIVE_COMMIT" : "NATIVE_COMMIT_RESULT";
+		String result = nativeCommitResult == null ? "null" : nativeCommitResult.toString();
+		boolean returnedSuccessfully = nativeCommitResult != null && nativeCommitResult == 0;
+		return "\"native_commit_phase\":\"" + phase + "\",\"native_commit_result_code\":" + result
+				+ ",\"native_commit_returned\":" + returnedSuccessfully;
 	}
 
 	private static void awaitController(BufferedReader input, String expected) throws IOException {
@@ -161,7 +185,8 @@ public final class CrashPowerCutWriterMain {
 	private static void runContinuous(Path storeDir, String trial) throws Exception {
 		String profile = CrashPowerCutFixtures.runningProfile(trial);
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
-				.setTripleDBSize(4096L * 10).setAutoGrow(true);
+				.setTripleDBSize(4096L * 10)
+				.setAutoGrow(true);
 		StreamingLmdbStore store = new StreamingLmdbStore(storeDir.toFile(), config, profile);
 		store.init();
 		try {
@@ -177,7 +202,7 @@ public final class CrashPowerCutWriterMain {
 					"CONTINUE_AFTER_A_ACK");
 			store.startSpillObserver();
 			boolean ready = false;
-			for (int generation = 1; ; generation = Math.incrementExact(generation)) {
+			for (int generation = 1;; generation = Math.incrementExact(generation)) {
 				String payload = CrashPowerCutFixtures.serializeRunning(trial, generation);
 				publishAtomic(RESULTS.resolve("running-" + generation + "-attempt.tsv"), payload, false);
 				store.progress.startGeneration(generation);
@@ -187,10 +212,16 @@ public final class CrashPowerCutWriterMain {
 						+ ",\"writer_pid\":" + ProcessHandle.current().pid()
 						+ ",\"last_published_phase\":\"before_transaction\"}\n", true);
 				store.progress.transactionStarted();
-				try (SailConnection connection = store.getConnection()) {
-					connection.begin(IsolationLevels.SNAPSHOT);
-					apply(connection, CrashPowerCutFixtures.runningTransaction(trial, generation));
-					connection.commit();
+				List<CrashPowerCutFixtures.Operation> transaction = CrashPowerCutFixtures.runningTransaction(trial,
+						generation);
+				if (profile.equals("journal-replay")) {
+					applyDirectBacking(store, transaction);
+				} else {
+					try (SailConnection connection = store.getConnection()) {
+						connection.begin(IsolationLevels.SNAPSHOT);
+						apply(connection, transaction);
+						connection.commit();
+					}
 				}
 				store.progress.commitReturned();
 				int spilledReplays = store.progress.spilledReplays();
@@ -199,7 +230,8 @@ public final class CrashPowerCutWriterMain {
 				}
 				publishAtomic(RESULTS.resolve("running-" + generation + "-returned.json"), "{\"trial\":\"" + trial
 						+ "\",\"generation\":" + generation + ",\"commit_returned\":true,\"payload_sha256\":\""
-						+ CrashPowerCutFixtures.sha256(payload) + "\",\"spilled_replays\":" + spilledReplays + "}\n", false);
+						+ CrashPowerCutFixtures.sha256(payload) + "\",\"spilled_replays\":" + spilledReplays + "}\n",
+						false);
 				if (!ready && store.progress.ready(profile)) {
 					publishAtomic(RESULTS.resolve("actual-running-ready.json"), "{\"trial\":\"" + trial
 							+ "\",\"profile\":\"" + profile + "\",\"returned_generation\":" + generation
@@ -213,6 +245,53 @@ public final class CrashPowerCutWriterMain {
 			store.observing.set(false);
 			store.shutDown();
 		}
+	}
+
+	/** Apply the fixture's ordered operations through independent raw sinks to exercise the legacy journal path. */
+	private static void applyDirectBacking(LmdbStore store, List<CrashPowerCutFixtures.Operation> operations)
+			throws SailException {
+		LmdbSailStore backing = store.getBackingStore();
+		Object owner = new Object();
+		SailSource explicitSource = backing.getExplicitSailSource(owner);
+		SailSource inferredSource = backing.getInferredSailSource(owner);
+		try (SailClosable publication = backing.beginPublication(owner);
+				SailSink explicit = explicitSource.sink(IsolationLevels.SNAPSHOT);
+				SailSink inferred = inferredSource.sink(IsolationLevels.SNAPSHOT)) {
+			for (CrashPowerCutFixtures.Operation operation : operations) {
+				Statement statement = operation.statement();
+				switch (operation.kind()) {
+				case "ADD_EXPLICIT" -> {
+					inferred.deprecate(statement);
+					explicit.approve(statement);
+				}
+				case "ADD_INFERRED" -> inferred.approve(statement);
+				case "DELETE_EXPLICIT" -> explicit.deprecate(statement);
+				case "PROMOTE_INFERRED_TO_EXPLICIT" -> {
+					inferred.deprecate(statement);
+					explicit.approve(statement);
+				}
+				case "NAMESPACE" -> explicit.setNamespace(operation.prefix(), operation.value());
+				default -> throw new IllegalArgumentException(
+						"Unsupported direct backing operation " + operation.kind());
+				}
+			}
+			// Keep the established replay-journal ordering: inferred input is staged before explicit publication.
+			inferred.flush();
+			explicit.flush();
+		}
+	}
+
+	private static int expectedAppliedRows(List<CrashPowerCutFixtures.Operation> operations, boolean explicit) {
+		int rows = 0;
+		for (CrashPowerCutFixtures.Operation operation : operations) {
+			if (explicit && (operation.kind().equals("ADD_EXPLICIT")
+					|| operation.kind().equals("PROMOTE_INFERRED_TO_EXPLICIT"))) {
+				rows++;
+			} else if (!explicit && operation.kind().equals("ADD_INFERRED")) {
+				rows++;
+			}
+		}
+		return rows;
 	}
 
 	/** Progress shared by the sequential writer, spill observer, and native replay callback. */
@@ -283,8 +362,8 @@ public final class CrashPowerCutWriterMain {
 						tripleDirectory = dir.toPath();
 						return new TripleStore(dir, storeProperties, storeConfig, valueStore) {
 							@Override
-							long estimateWriteBytes(SailSource.WritePreflight preflight) {
-								return profile.equals("journal-replay") ? 0L : super.estimateWriteBytes(preflight);
+							long estimateWriteBytes(StatementInput input) {
+								return profile.equals("journal-replay") ? 0L : super.estimateWriteBytes(input);
 							}
 
 							@Override
@@ -301,7 +380,8 @@ public final class CrashPowerCutWriterMain {
 					int current = progress.generation();
 					try (DirectoryStream<Path> files = Files.newDirectoryStream(tripleDirectory, "txn-replay-*.bin")) {
 						for (Path file : files) {
-							if (Files.isRegularFile(file) && !Files.isSymbolicLink(file) && current == progress.generation()) {
+							if (Files.isRegularFile(file) && !Files.isSymbolicLink(file)
+									&& current == progress.generation()) {
 								progress.spillObserved(current);
 							}
 						}
@@ -324,6 +404,7 @@ public final class CrashPowerCutWriterMain {
 		private final String scenario;
 		private final AtomicBoolean armed = new AtomicBoolean();
 		private final AtomicInteger commitCount = new AtomicInteger();
+		private PausingTripleStore tripleStore;
 
 		private PausingLmdbStore(File dataDir, LmdbStoreConfig config, String scenario) {
 			super(dataDir, config);
@@ -335,14 +416,24 @@ public final class CrashPowerCutWriterMain {
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 			LmdbSailStore backingStore = new LmdbSailStore(dataDir, properties, config,
 					sketchBasedJoinEstimatorEnabled, ValueStore::new,
-					(dir, storeProperties, storeConfig, valueStore) -> new PausingTripleStore(dir, storeProperties,
-							storeConfig, valueStore, scenario, armed));
+					(dir, storeProperties, storeConfig, valueStore) -> {
+						tripleStore = new PausingTripleStore(dir, storeProperties, storeConfig, valueStore, scenario,
+								armed);
+						return tripleStore;
+					});
 			backingStore.enableMultiThreading = false;
 			return backingStore;
 		}
 
-		private void armPause() {
+		private void armPause(int expectedExplicitRows, int expectedInferredRows) {
+			if (MIXED_REPLAY_BEFORE_NATIVE_COMMIT.equals(scenario)) {
+				tripleStore.armFrozenReplay(expectedExplicitRows, expectedInferredRows);
+			}
 			armed.set(true);
+		}
+
+		private String frozenReplayDiagnostics(Integer nativeCommitResult) {
+			return tripleStore.frozenReplayDiagnostics(nativeCommitResult);
 		}
 
 		@Override
@@ -377,49 +468,193 @@ public final class CrashPowerCutWriterMain {
 	}
 
 	private static final class PausingTripleStore extends TripleStore {
-		private final Path tripleStoreDirectory;
 		private final String scenario;
 		private final AtomicBoolean armed;
 		private final AtomicBoolean paused = new AtomicBoolean();
+		private final AtomicBoolean frozenProbeArmed = new AtomicBoolean();
+		private final AtomicInteger frozenStarts = new AtomicInteger();
+		private final AtomicInteger mainCapacityFailures = new AtomicInteger();
+		private final AtomicInteger successfulPhysicalAborts = new AtomicInteger();
+		private final AtomicInteger actualMapGrowths = new AtomicInteger();
+		private final AtomicInteger mutationJournalAllocations = new AtomicInteger();
+		private final AtomicInteger explicitInputRows = new AtomicInteger();
+		private final AtomicInteger inferredInputRows = new AtomicInteger();
+		private final AtomicInteger nativeCommitAttempts = new AtomicInteger();
+		private final AtomicBoolean capacityAwaitingAbort = new AtomicBoolean();
+		private final AtomicLong growthMapBefore = new AtomicLong();
+		private final AtomicLong growthMapAfter = new AtomicLong();
+		private volatile boolean currentFrozenDecision;
+		private volatile int expectedExplicitRows;
+		private volatile int expectedInferredRows;
 
 		private PausingTripleStore(File dir, StoreProperties properties, LmdbStoreConfig config, ValueStore valueStore,
 				String scenario, AtomicBoolean armed) throws IOException, SailException {
 			super(dir, properties, config, valueStore);
-			this.tripleStoreDirectory = dir.toPath();
 			this.scenario = scenario;
 			this.armed = armed;
 		}
 
 		@Override
-		long estimateWriteBytes(SailSource.WritePreflight preflight) {
-			if (scenario.equals(MIXED_REPLAY_BEFORE_NATIVE_COMMIT)) {
-				// Exercise the native MAP_FULL replay boundary instead of whole-write preflight.
+		long estimateWriteBytes(StatementInput input) {
+			if (MIXED_REPLAY_BEFORE_NATIVE_COMMIT.equals(scenario)) {
+				// The mixed cut must exercise actual native capacity failure and complete frozen replay.
 				return 0L;
 			}
-			return super.estimateWriteBytes(preflight);
+			return super.estimateWriteBytes(input);
+		}
+
+		private boolean isFrozenProbeArmed() {
+			AtomicBoolean probe = frozenProbeArmed;
+			return probe != null && probe.get();
+		}
+
+		private void armFrozenReplay(int expectedExplicitRows, int expectedInferredRows) {
+			this.expectedExplicitRows = expectedExplicitRows;
+			this.expectedInferredRows = expectedInferredRows;
+			frozenStarts.set(0);
+			mainCapacityFailures.set(0);
+			successfulPhysicalAborts.set(0);
+			actualMapGrowths.set(0);
+			mutationJournalAllocations.set(0);
+			explicitInputRows.set(0);
+			inferredInputRows.set(0);
+			nativeCommitAttempts.set(0);
+			capacityAwaitingAbort.set(false);
+			growthMapBefore.set(0L);
+			growthMapAfter.set(0L);
+			frozenProbeArmed.set(true);
+		}
+
+		private boolean isPauseArmed() {
+			AtomicBoolean pause = armed;
+			return pause != null && pause.get();
+		}
+
+		private String frozenReplayDiagnostics(Integer nativeCommitResult) {
+			return "{\"frozen_starts\":" + frozenStarts.get()
+					+ ",\"main_capacity_failures\":" + mainCapacityFailures.get()
+					+ ",\"successful_physical_aborts\":" + successfulPhysicalAborts.get()
+					+ ",\"actual_map_growths\":" + actualMapGrowths.get()
+					+ ",\"map_before_bytes\":" + growthMapBefore.get()
+					+ ",\"map_after_bytes\":" + growthMapAfter.get()
+					+ ",\"mutation_journal_allocations\":" + mutationJournalAllocations.get()
+					+ ",\"explicit_input_rows\":" + explicitInputRows.get()
+					+ ",\"inferred_input_rows\":" + inferredInputRows.get()
+					+ ",\"expected_explicit_input_rows\":" + expectedExplicitRows
+					+ ",\"expected_inferred_input_rows\":" + expectedInferredRows
+					+ ",\"current_frozen_decision\":" + currentFrozenDecision
+					+ ",\"native_commit_attempts\":" + nativeCommitAttempts.get()
+					+ ",\"current_map_size_bytes\":" + mapSizeBytes()
+					+ "," + nativeCommitDiagnostics(nativeCommitResult) + "}\n";
+		}
+
+		@Override
+		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			super.startTransaction(decision);
+			currentFrozenDecision = decision != null && decision.frozenReplay;
+			AtomicBoolean probe = frozenProbeArmed;
+			if (probe != null && probe.get() && currentFrozenDecision) {
+				frozenStarts.incrementAndGet();
+				explicitInputRows.set(0);
+				inferredInputRows.set(0);
+			}
+		}
+
+		@Override
+		public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count,
+				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			try {
+				super.storeTriplesAligned(subj, pred, obj, context, count, explicit, addedIndexConsumer);
+				if (isFrozenProbeArmed() && currentFrozenDecision) {
+					(explicit ? explicitInputRows : inferredInputRows).addAndGet(count);
+				}
+			} catch (IOException | RuntimeException | Error failure) {
+				if (isFrozenProbeArmed() && currentFrozenDecision
+						&& failure instanceof FrozenStatementCapacityException) {
+					mainCapacityFailures.incrementAndGet();
+					capacityAwaitingAbort.set(true);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		TxnMutationJournal createMutationJournal() throws IOException {
+			if (isFrozenProbeArmed()) {
+				mutationJournalAllocations.incrementAndGet();
+			}
+			return super.createMutationJournal();
+		}
+
+		@Override
+		public void rollback() throws IOException {
+			boolean failedCapacity = isFrozenProbeArmed() && currentFrozenDecision && capacityAwaitingAbort.get();
+			super.rollback();
+			if (failedCapacity) {
+				successfulPhysicalAborts.incrementAndGet();
+				capacityAwaitingAbort.set(false);
+			}
+			currentFrozenDecision = false;
+		}
+
+		@Override
+		boolean growMapForEstimatedWrite(long estimatedWriteBytes,
+				LmdbSailStore.MapGrowthAttempt growthAttempt) throws IOException {
+			long before = mapSizeBytes();
+			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
+			long after = mapSizeBytes();
+			if (isFrozenProbeArmed() && mainCapacityFailures.get() > 0
+					&& successfulPhysicalAborts.get() > actualMapGrowths.get() && after > before) {
+				if (actualMapGrowths.getAndIncrement() == 0) {
+					growthMapBefore.set(before);
+				}
+				growthMapAfter.set(after);
+			}
+			return grew;
 		}
 
 		@Override
 		public void commit() throws IOException {
-			if (armed.get() && scenario.equals(DICTIONARY_BEFORE_TRIPLE_COMMIT)
-					&& paused.compareAndSet(false, true)) {
+			AtomicBoolean pause = paused;
+			if (isPauseArmed() && DICTIONARY_BEFORE_TRIPLE_COMMIT.equals(scenario) && pause != null
+					&& pause.compareAndSet(false, true)) {
 				pauseAt("AFTER_DICTIONARY_COMMIT_BEFORE_TRIPLESTORE_COMMIT");
 			}
 			super.commit();
 		}
 
 		@Override
-		protected void afterMapGrowthReplay() throws IOException {
-			if (armed.get() && scenario.equals(MIXED_REPLAY_BEFORE_NATIVE_COMMIT) && hasSpilledReplayJournal()
-					&& paused.compareAndSet(false, true)) {
-				pauseAt("AFTER_FULL_REPLAY_BEFORE_AUTHORITATIVE_COMMIT");
+		int commitWriteTransaction(long transaction) {
+			AtomicBoolean pause = paused;
+			if (isPauseArmed() && isFrozenProbeArmed() && currentFrozenDecision && frozenStarts.get() >= 2
+					&& mainCapacityFailures.get() > 0 && successfulPhysicalAborts.get() > 0
+					&& actualMapGrowths.get() > 0
+					&& explicitInputRows.get() == expectedExplicitRows
+					&& inferredInputRows.get() == expectedInferredRows && pause != null
+					&& pause.compareAndSet(false, true)) {
+				try {
+					writeForced(RESULTS.resolve("actual-frozen-replay-ready-child.json"),
+							frozenReplayDiagnostics(null));
+					pauseAt("AFTER_FULL_REPLAY_BEFORE_AUTHORITATIVE_COMMIT");
+				} catch (IOException failure) {
+					throw new IllegalStateException("Unable to persist the frozen replay boundary", failure);
+				}
 			}
-		}
-
-		private boolean hasSpilledReplayJournal() throws IOException {
-			try (DirectoryStream<Path> files = Files.newDirectoryStream(tripleStoreDirectory, "txn-replay-*.bin")) {
-				return files.iterator().hasNext();
+			int result = super.commitWriteTransaction(transaction);
+			if (isFrozenProbeArmed() && currentFrozenDecision && result == MDB_MAP_FULL) {
+				mainCapacityFailures.incrementAndGet();
+				capacityAwaitingAbort.set(true);
 			}
+			if (isFrozenProbeArmed()) {
+				nativeCommitAttempts.incrementAndGet();
+				try {
+					publishAtomic(RESULTS.resolve("actual-frozen-replay-diagnostic-child.json"),
+							frozenReplayDiagnostics(result), true);
+				} catch (IOException failure) {
+					throw new IllegalStateException("Unable to persist frozen replay diagnostics", failure);
+				}
+			}
+			return result;
 		}
 	}
 }

@@ -80,6 +80,7 @@ PRESERVED_WITNESS_NAMES = (
     "actual-cutpoint-child.marker",
     "actual-cutpoint-child-witness.txt",
     "actual-cutpoint-witness.json",
+    "actual-frozen-replay-ready-witness.json",
     "actual-powercut-scenario.txt",
     "actual-powercut-writer-controller.log",
     "actual-powercut-writer-events.jsonl",
@@ -95,6 +96,43 @@ def scenario_contract(scenario: str) -> dict[str, Any]:
         raise ValueError(f"unknown scenario: {scenario}") from error
 
 
+def validate_frozen_replay_witness(witness: Any) -> None:
+    if not isinstance(witness, dict):
+        raise ValueError("mixed replay cutpoint has no frozen replay telemetry")
+    integer_fields = (
+        "frozen_starts", "main_capacity_failures", "successful_physical_aborts", "actual_map_growths",
+        "mutation_journal_allocations", "explicit_input_rows", "inferred_input_rows",
+        "expected_explicit_input_rows", "expected_inferred_input_rows", "native_commit_attempts",
+        "map_before_bytes", "map_after_bytes",
+    )
+    for name in integer_fields:
+        value = witness.get(name)
+        if type(value) is not int or value < 0:
+            raise ValueError(f"frozen replay witness has invalid integer field {name}")
+    if witness["frozen_starts"] < 2 or witness["main_capacity_failures"] < 1:
+        raise ValueError("frozen replay witness lacks a capacity failure and retry attempt")
+    if witness["successful_physical_aborts"] < 1 or witness["actual_map_growths"] < 1:
+        raise ValueError("frozen replay witness lacks a successful abort and target-map growth")
+    if witness["map_before_bytes"] <= 0 or witness["map_after_bytes"] <= witness["map_before_bytes"]:
+        raise ValueError("frozen replay witness has no positive target-map size advance")
+    if witness["mutation_journal_allocations"] != 0:
+        raise ValueError("frozen replay allocated a mutation journal")
+    if witness["explicit_input_rows"] != witness["expected_explicit_input_rows"]:
+        raise ValueError("frozen replay omitted expected explicit input rows")
+    if witness["inferred_input_rows"] != witness["expected_inferred_input_rows"]:
+        raise ValueError("frozen replay omitted expected inferred input rows")
+    if witness["explicit_input_rows"] + witness["inferred_input_rows"] == 0:
+        raise ValueError("frozen replay witness contains no statement input")
+    if witness.get("current_frozen_decision") is not True:
+        raise ValueError("frozen replay witness did not observe a frozen attempt")
+    if witness["native_commit_attempts"] != 0 or witness.get("native_commit_returned") is not False:
+        raise ValueError("frozen replay witness is not before the authoritative native commit")
+    digest = witness.get("marker_sha256")
+    if (not isinstance(digest, str) or len(digest) != 64
+            or any(character not in "0123456789abcdef" for character in digest)):
+        raise ValueError("frozen replay marker SHA-256 is invalid")
+
+
 def validate_cutpoint_witness(scenario: str, witness: dict[str, Any], *, b_acknowledged: bool) -> None:
     contract = scenario_contract(scenario)
     if witness.get("scenario") != scenario or witness.get("cutpoint") != contract["cutpoint"]:
@@ -107,6 +145,10 @@ def validate_cutpoint_witness(scenario: str, witness: dict[str, Any], *, b_ackno
         raise ValueError("native commit return marker contradicts the requested cutpoint")
     if b_acknowledged or witness.get("B_acknowledged") is not False:
         raise ValueError("B must remain unacknowledged at all requested cutpoints")
+    if scenario == "mixed-replay-before-native-commit":
+        validate_frozen_replay_witness(witness.get("frozen_replay"))
+    elif "frozen_replay" in witness:
+        raise ValueError("only the mixed replay cutpoint may report frozen replay telemetry")
 
 
 def validate_recovery_pair(scenario: str, first: dict[str, Any], second: dict[str, Any]) -> None:
@@ -410,6 +452,10 @@ def main() -> int:
         else:
             validate_cutpoint_witness(args.scenario, cut_witness,
                                       b_acknowledged=(paths["results"] / "actual-B-acknowledged-witness.tsv").exists())
+            if args.scenario == "mixed-replay-before-native-commit":
+                ready_marker = paths["results"] / "actual-frozen-replay-ready-witness.json"
+                if sha256_file(ready_marker) != cut_witness["frozen_replay"]["marker_sha256"]:
+                    raise RuntimeError("frozen replay marker hash differs from the cutpoint witness")
         writer_status = backend_control(Path(sys.executable), inputs["backend"], writer_control, "status")
         write_json_exclusive(paths["results"] / "actual-writer-backend-status-before-cut.json", writer_status)
         if running:

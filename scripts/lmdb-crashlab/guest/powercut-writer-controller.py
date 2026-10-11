@@ -65,6 +65,42 @@ def write_exclusive(path, value):
     fsync_directory(path.parent)
 
 
+def frozen_replay_witness():
+    child = ROOT / "actual-frozen-replay-ready-child.json"
+    witness = ROOT / "actual-frozen-replay-ready-witness.json"
+    force_copy(child, witness)
+    details = json.loads(witness.read_text(encoding="utf-8"))
+    integer_fields = (
+        "frozen_starts", "main_capacity_failures", "successful_physical_aborts", "actual_map_growths",
+        "mutation_journal_allocations", "explicit_input_rows", "inferred_input_rows",
+        "expected_explicit_input_rows", "expected_inferred_input_rows", "native_commit_attempts",
+        "map_before_bytes", "map_after_bytes",
+    )
+    for name in integer_fields:
+        if type(details.get(name)) is not int or details[name] < 0:
+            raise ValueError("frozen replay witness has invalid integer field: " + name)
+    if details["frozen_starts"] < 2 or details["main_capacity_failures"] < 1:
+        raise ValueError("frozen replay witness lacks a capacity failure and retry attempt")
+    if details["successful_physical_aborts"] < 1 or details["actual_map_growths"] < 1:
+        raise ValueError("frozen replay witness lacks a successful abort and target-map growth")
+    if details["map_before_bytes"] <= 0 or details["map_after_bytes"] <= details["map_before_bytes"]:
+        raise ValueError("frozen replay witness has no positive target-map size advance")
+    if details["mutation_journal_allocations"] != 0:
+        raise ValueError("frozen replay allocated a mutation journal")
+    if details["explicit_input_rows"] != details["expected_explicit_input_rows"]:
+        raise ValueError("frozen replay did not submit every expected explicit input row")
+    if details["inferred_input_rows"] != details["expected_inferred_input_rows"]:
+        raise ValueError("frozen replay did not submit every expected inferred input row")
+    if details["explicit_input_rows"] + details["inferred_input_rows"] == 0:
+        raise ValueError("frozen replay witness contains no statement input")
+    if details.get("current_frozen_decision") is not True:
+        raise ValueError("frozen replay witness did not observe a frozen attempt")
+    if details["native_commit_attempts"] != 0 or details.get("native_commit_returned") is not False:
+        raise ValueError("frozen replay witness is not before the authoritative native commit")
+    details["marker_sha256"] = hashlib.sha256(witness.read_bytes()).hexdigest()
+    return details
+
+
 def fail(message, child=None):
     with LOG.open("a", encoding="utf-8") as stream:
         stream.write("FAIL: " + message + "\n")
@@ -112,6 +148,8 @@ def main():
         "actual-B-commit-invoked-witness.marker", "actual-B-native-commit-returned-child.marker",
         "actual-B-native-commit-returned-witness.marker", "actual-cutpoint-child.marker",
         "actual-cutpoint-child-witness.txt", "actual-cutpoint-witness.json",
+        "actual-frozen-replay-ready-child.json", "actual-frozen-replay-ready-witness.json",
+        "actual-frozen-replay-diagnostic-child.json",
         "actual-powercut-writer-controller.log", "actual-powercut-writer-events.jsonl",
         "actual-powercut-writer-failed",
     )
@@ -195,7 +233,8 @@ def main():
                         raise RuntimeError("commit-boundary witness markers do not match cutpoint contract")
                     if (ROOT / "actual-B-acknowledged-witness.tsv").exists():
                         raise RuntimeError("B must remain unacknowledged at every cutpoint")
-                    write_exclusive(ROOT / "actual-cutpoint-witness.json", {
+                    frozen = frozen_replay_witness() if SCENARIO == "mixed-replay-before-native-commit" else None
+                    cutpoint_witness = {
                         "scenario": SCENARIO,
                         "cutpoint": cutpoint,
                         "A_acknowledged": True,
@@ -203,7 +242,10 @@ def main():
                         "B_commit_invoked": b_commit_invoked,
                         "B_native_commit_returned": b_commit_returned,
                         "B_acknowledged": False,
-                    })
+                    }
+                    if frozen is not None:
+                        cutpoint_witness["frozen_replay"] = frozen
+                    write_exclusive(ROOT / "actual-cutpoint-witness.json", cutpoint_witness)
                     record("CUTPOINT_WITNESS_FSYNCED", cutpoint=cutpoint,
                            b_commit_invoked=b_commit_invoked, b_native_commit_returned=b_commit_returned)
                     cutpoint_reached = True

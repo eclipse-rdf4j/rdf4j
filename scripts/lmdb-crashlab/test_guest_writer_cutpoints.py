@@ -1,4 +1,5 @@
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -143,8 +144,53 @@ class GuestWriterCutpointTests(unittest.TestCase):
                 self.assertTrue((results / "actual-cutpoint-child-witness.txt").is_file())
                 self.assertFalse((results / "actual-B-acknowledged-witness.tsv").exists())
                 self.assertFalse((results / "actual-powercut-writer-failed").exists())
+                if scenario == "mixed-replay-before-native-commit":
+                    frozen = witness["frozen_replay"]
+                    self.assertGreaterEqual(frozen["frozen_starts"], 2)
+                    self.assertGreaterEqual(frozen["main_capacity_failures"], 1)
+                    self.assertGreaterEqual(frozen["successful_physical_aborts"], 1)
+                    self.assertGreaterEqual(frozen["actual_map_growths"], 1)
+                    self.assertGreater(frozen["map_after_bytes"], frozen["map_before_bytes"])
+                    self.assertEqual(frozen["mutation_journal_allocations"], 0)
+                    self.assertEqual(frozen["explicit_input_rows"], frozen["expected_explicit_input_rows"])
+                    self.assertEqual(frozen["inferred_input_rows"], frozen["expected_inferred_input_rows"])
+                    self.assertIs(frozen["current_frozen_decision"], True)
+                    self.assertEqual(frozen["native_commit_attempts"], 0)
+                    self.assertIs(frozen["native_commit_returned"], False)
+                    ready_marker = results / "actual-frozen-replay-ready-witness.json"
+                    self.assertTrue(ready_marker.is_file())
+                    self.assertEqual(frozen["marker_sha256"], hashlib.sha256(ready_marker.read_bytes()).hexdigest())
+                    self.assertFalse((results / "actual-B-native-commit-returned-witness.marker").exists())
+                else:
+                    self.assertNotIn("frozen_replay", witness)
             finally:
                 stop_process(process, signal.SIGTERM, timeout=5)
+
+    def test_native_commit_result_diagnostic_mapping(self):
+        completed = subprocess.run(
+            [
+                self.java,
+                "-cp",
+                str(self.class_dir) + os.pathsep + self.host_classpath,
+                "org.eclipse.rdf4j.sail.lmdb.CrashPowerCutWriterMain",
+                "--native-commit-diagnostic-test",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        self.assertEqual(completed.returncode, 0, completed.stdout + completed.stderr)
+        diagnostics = json.loads(completed.stdout)
+        self.assertEqual(diagnostics["before"]["native_commit_phase"], "BEFORE_NATIVE_COMMIT")
+        self.assertIsNone(diagnostics["before"]["native_commit_result_code"])
+        self.assertIs(diagnostics["before"]["native_commit_returned"], False)
+        self.assertEqual(diagnostics["success"]["native_commit_phase"], "NATIVE_COMMIT_RESULT")
+        self.assertEqual(diagnostics["success"]["native_commit_result_code"], 0)
+        self.assertIs(diagnostics["success"]["native_commit_returned"], True)
+        self.assertEqual(diagnostics["map_full"]["native_commit_phase"], "NATIVE_COMMIT_RESULT")
+        self.assertIs(type(diagnostics["map_full"]["native_commit_result_code"]), int)
+        self.assertIs(diagnostics["map_full"]["native_commit_returned"], False)
 
 
     def test_mixed_replay_before_native_commit(self):

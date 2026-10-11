@@ -67,30 +67,53 @@ def powercut_report(scenario):
         "recoveryId": recovery_id,
     }
 
+    cutpoint_witness = {
+        "scenario": scenario,
+        "cutpoint": contract["cutpoint"],
+        "A_acknowledged": True,
+        "B_attempted": True,
+        "B_commit_invoked": contract["commit_invoked"],
+        "B_native_commit_returned": contract["native_commit_returned"],
+        "B_acknowledged": False,
+    }
+    external_names = [
+        "actual-A-ack-witness.tsv",
+        "actual-B-attempt-witness.tsv",
+        "actual-cutpoint-witness.json",
+    ]
+    if scenario == "mixed-replay-before-native-commit":
+        cutpoint_witness["frozen_replay"] = {
+            "frozen_starts": 2,
+            "main_capacity_failures": 1,
+            "successful_physical_aborts": 1,
+            "actual_map_growths": 1,
+            "map_before_bytes": 1024,
+            "map_after_bytes": 2048,
+            "mutation_journal_allocations": 0,
+            "explicit_input_rows": 4,
+            "inferred_input_rows": 1,
+            "expected_explicit_input_rows": 4,
+            "expected_inferred_input_rows": 1,
+            "current_frozen_decision": True,
+            "native_commit_attempts": 0,
+            "native_commit_returned": False,
+            "marker_sha256": "2" * 64,
+        }
+        external_names.append("actual-frozen-replay-ready-witness.json")
+
+    external_witnesses = {
+        name: {"sha256": "2" * 64 if name == "actual-frozen-replay-ready-witness.json" else "1" * 64}
+        for name in external_names
+    }
     return {
         "result": "POWER_CUT_RECOVERY_STABLE",
         "scenario": scenario,
         "scenario_contract": json.loads(json.dumps(contract)),
-        "cutpoint_witness": {
-            "scenario": scenario,
-            "cutpoint": contract["cutpoint"],
-            "A_acknowledged": True,
-            "B_attempted": True,
-            "B_commit_invoked": contract["commit_invoked"],
-            "B_native_commit_returned": contract["native_commit_returned"],
-            "B_acknowledged": False,
-        },
+        "cutpoint_witness": cutpoint_witness,
         "cut_report": {"off": True, "survival": "drop", "kept_sectors": 0},
         "pre_recovery_image": {"sha256": "f" * 64},
         "pre_recovery_image_sha256_after_both_recoveries": "f" * 64,
-        "external_witnesses": {
-            name: {"sha256": "1" * 64}
-            for name in (
-                "actual-A-ack-witness.tsv",
-                "actual-B-attempt-witness.tsv",
-                "actual-cutpoint-witness.json",
-            )
-        },
+        "external_witnesses": external_witnesses,
         "writer_nbd_flush_done_count": 1,
         "writer_nbd_fua_done_count": 0,
         "writer_backend_status_before_cut": {"ignore_flush": False},
