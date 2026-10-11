@@ -321,9 +321,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				return new PrefixIteration(legacyRows, legacy);
 			}
 
-			QueryEvaluationStep candidateStep = strategy.precompile(plan.candidate());
 			List<BindingSet> candidateRows;
 			try {
+				QueryEvaluationStep candidateStep = strategy.precompile(plan.candidate());
 				try (CloseableIteration<BindingSet> candidate = candidateStep.evaluate(EmptyBindingSet.getInstance())) {
 					candidateRows = readAtMost(candidate, plan.maxRows());
 				}
