@@ -27,6 +27,12 @@ import org.openjdk.jol.info.GraphLayout;
 class ScopeLayoutBudgetTest {
 	private static final String SCOPE_SAFETY_MODE_PROPERTY = "org.eclipse.rdf4j.query.scopeSafety.mode";
 
+	static {
+		// JOL otherwise attaches the HotSpot Serviceability Agent to this JVM, which leaves the test JVM stopped
+		// under ptrace on macOS. Object sizes come from Unsafe and do not need the agent.
+		System.setProperty("jol.skipHotspotSAAttach", "true");
+	}
+
 	@Test
 	void narrowScopeStateFitsPerNodeBudget() {
 		QueryRoot root = representativeAlgebra(512);
