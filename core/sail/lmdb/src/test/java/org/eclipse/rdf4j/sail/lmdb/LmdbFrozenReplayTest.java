@@ -35,7 +35,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -46,6 +48,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -65,8 +68,10 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.inferencer.InferencerConnection;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -128,6 +133,292 @@ class LmdbFrozenReplayTest {
 
 		assertEquals(0, store.probe.journalAllocations.get(),
 				"The covered snapshot commit must not allocate a whole-transaction mutation journal");
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void oldPairedReadViewExcludesUnpublishedFrozenExplicitAndInferredClones(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig();
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> baselineExplicit = List.of(
+				mutationStatement("old-view-explicit-0", "baseline explicit 0", null),
+				mutationStatement("old-view-explicit-1", "baseline explicit 1", null));
+		List<Statement> baselineInferred = List.of(
+				mutationStatement("old-view-inferred-0", "baseline inferred 0", null),
+				mutationStatement("old-view-inferred-1", "baseline inferred 1", null));
+		Statement stagedExplicit = mutationStatement("old-view-staged-explicit", "staged explicit", null);
+		Statement stagedInferred = mutationStatement("old-view-staged-inferred", "staged inferred", null);
+		Set<Statement> expectedExplicit = Set.copyOf(baselineExplicit);
+		Set<Statement> expectedInferred = Set.copyOf(baselineInferred);
+		CountDownLatch preNativeCommitPauseEntered = new CountDownLatch(1);
+		CountDownLatch releasePreNativeCommitPause = new CountDownLatch(1);
+		RuntimeException terminalMarker = new IllegalStateException("terminal failure before frozen native commit");
+		AtomicInteger notifications = new AtomicInteger();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<Throwable> writerFuture = null;
+		Throwable writerFailure = null;
+		boolean preNativeCommitPauseReached = false;
+		AtomicReference<String> oldViewObservationPhase = new AtomicReference<>("waiting for pre-native-commit pause");
+		AtomicReference<List<Statement>> writerOwnExplicit = new AtomicReference<>(List.of());
+		AtomicReference<List<Statement>> writerOwnAll = new AtomicReference<>(List.of());
+		List<Statement> explicitCursorRows = new ArrayList<>();
+		List<Statement> inferredCursorRows = new ArrayList<>();
+		List<Statement> explicitRowsWhilePaused = List.of();
+		List<Statement> inferredRowsWhilePaused = List.of();
+		List<Statement> explicitRowsAfterCancellation = List.of();
+		List<Statement> inferredRowsAfterCancellation = List.of();
+		List<Statement> freshExplicitRows = List.of();
+		List<Statement> freshAllRows = List.of();
+		List<Statement> reopenedExplicitRows = List.of();
+		List<Statement> reopenedAllRows = List.of();
+		long nativeGenerationBeforeWriter = -1L;
+		long nativeGenerationAfterWriter = -1L;
+
+		try {
+			repository.init();
+			try (NotifyingSailConnection seed = store.getConnection()) {
+				seed.begin(IsolationLevels.SNAPSHOT_READ);
+				for (Statement statement : baselineExplicit) {
+					approve(seed, statement);
+				}
+				InferencerConnection inferencer = (InferencerConnection) seed;
+				for (Statement statement : baselineInferred) {
+					inferencer.addInferredStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(), statement.getContext());
+				}
+				seed.commit();
+			}
+			store.probe.reset();
+			store.addSailChangedListener(event -> notifications.incrementAndGet());
+
+			LmdbSailStore backing = store.getBackingStore();
+			SailStore snapshotStore = store.getSailStore();
+			SailSource explicitRoot = snapshotStore.getExplicitSailSource();
+			SailSource inferredRoot = snapshotStore.getInferredSailSource();
+			LmdbSailStore.MapGrowthObserver noReplay = (kind, token, deadlineNanos, attempts, views) -> false;
+			try (LmdbSailStore.ReadAttemptLease readAttempt = backing.registerReadAttempt(noReplay);
+					LmdbSailStore.ReadView oldView = backing.createTransactionReadView(noReplay, readAttempt)) {
+				nativeGenerationBeforeWriter = store.probe.tripleStore.get().getNativeCommitGeneration();
+				store.probe.armTerminalCommitFailure(terminalMarker, preNativeCommitPauseEntered,
+						releasePreNativeCommitPause,
+						oldViewObservationPhase);
+				writerFuture = executor.submit(() -> {
+					try (NotifyingSailConnection writer = store.getConnection()) {
+						writer.begin(IsolationLevels.SNAPSHOT_READ);
+						approve(writer, stagedExplicit);
+						((InferencerConnection) writer).addInferredStatement(stagedInferred.getSubject(),
+								stagedInferred.getPredicate(), stagedInferred.getObject(), stagedInferred.getContext());
+						writerOwnExplicit.set(readAllStatementRows(writer, false));
+						writerOwnAll.set(readAllStatementRows(writer, true));
+						writer.commit();
+						return null;
+					} catch (Throwable failure) {
+						return failure;
+					}
+				});
+
+				preNativeCommitPauseReached = preNativeCommitPauseEntered.await(5, TimeUnit.SECONDS);
+				if (preNativeCommitPauseReached) {
+					oldViewObservationPhase.set("opening old-view dataset admission");
+					try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+							IsolationLevels.SNAPSHOT_READ, oldView)) {
+						oldViewObservationPhase.set("admission opened; opening explicit root dataset");
+						try (SailDataset explicitDataset = explicitRoot.dataset(IsolationLevels.SNAPSHOT_READ)) {
+							oldViewObservationPhase.set("explicit root opened; opening inferred root dataset");
+							try (SailDataset inferredDataset = inferredRoot.dataset(IsolationLevels.SNAPSHOT_READ)) {
+								oldViewObservationPhase.set("both root datasets opened; opening explicit cursor");
+								try (CloseableIteration<? extends Statement> explicitCursor = explicitDataset
+										.getStatements(null, null, null)) {
+									oldViewObservationPhase.set("explicit cursor opened; opening inferred cursor");
+									try (CloseableIteration<? extends Statement> inferredCursor = inferredDataset
+											.getStatements(null, null, null)) {
+										oldViewObservationPhase
+												.set("both cursors opened; reading first explicit cursor row");
+										assertTrue(explicitCursor.hasNext(),
+												"the retained explicit baseline cursor must be nonempty");
+										oldViewObservationPhase
+												.set("explicit cursor primed; reading first inferred cursor row");
+										assertTrue(inferredCursor.hasNext(),
+												"the retained inferred baseline cursor must be nonempty");
+										oldViewObservationPhase
+												.set("both cursors primed; consuming first explicit row");
+										explicitCursorRows.add(explicitCursor.next());
+										oldViewObservationPhase
+												.set("first explicit row consumed; consuming first inferred row");
+										inferredCursorRows.add(inferredCursor.next());
+										oldViewObservationPhase
+												.set("first rows consumed; reading paused explicit dataset");
+										explicitRowsWhilePaused = readAllStatementRows(explicitDataset);
+										oldViewObservationPhase
+												.set("paused explicit dataset read; reading paused inferred dataset");
+										inferredRowsWhilePaused = readAllStatementRows(inferredDataset);
+
+										oldViewObservationPhase
+												.set("old-view results captured; releasing pre-native-commit pause");
+										releasePreNativeCommitPause.countDown();
+										writerFailure = writerFuture.get(10, TimeUnit.SECONDS);
+
+										oldViewObservationPhase
+												.set("writer finished; draining retained explicit cursor");
+										while (explicitCursor.hasNext()) {
+											explicitCursorRows.add(explicitCursor.next());
+										}
+										oldViewObservationPhase
+												.set("explicit cursor drained; draining retained inferred cursor");
+										while (inferredCursor.hasNext()) {
+											inferredCursorRows.add(inferredCursor.next());
+										}
+										oldViewObservationPhase
+												.set("both cursors drained; rereading explicit old dataset");
+										explicitRowsAfterCancellation = readAllStatementRows(explicitDataset);
+										oldViewObservationPhase
+												.set("explicit old dataset reread; rereading inferred old dataset");
+										inferredRowsAfterCancellation = readAllStatementRows(inferredDataset);
+										oldViewObservationPhase.set("old datasets reread after writer completion");
+									}
+								}
+							}
+						}
+					}
+				}
+			} finally {
+				releasePreNativeCommitPause.countDown();
+				try {
+					if (writerFuture != null && !writerFuture.isDone()) {
+						writerFailure = writerFuture.get(10, TimeUnit.SECONDS);
+					}
+				} finally {
+					executor.shutdownNow();
+					try {
+						executor.awaitTermination(5, TimeUnit.SECONDS);
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+					}
+				}
+			}
+
+			nativeGenerationAfterWriter = store.probe.tripleStore.get().getNativeCommitGeneration();
+			try (RepositoryConnection fresh = repository.getConnection()) {
+				freshExplicitRows = readAllStatementRows(fresh, false);
+				freshAllRows = readAllStatementRows(fresh, true);
+			}
+		} finally {
+			releasePreNativeCommitPause.countDown();
+			repository.shutDown();
+		}
+
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				reopenedExplicitRows = readAllStatementRows(reader, false);
+				reopenedAllRows = readAllStatementRows(reader, true);
+			}
+		} finally {
+			reopened.shutDown();
+		}
+
+		Set<Statement> expectedAll = new HashSet<>(expectedExplicit);
+		expectedAll.addAll(expectedInferred);
+		Set<Statement> expectedWriterExplicit = new HashSet<>(expectedExplicit);
+		expectedWriterExplicit.add(stagedExplicit);
+		Set<Statement> expectedWriterAll = new HashSet<>(expectedAll);
+		expectedWriterAll.add(stagedExplicit);
+		expectedWriterAll.add(stagedInferred);
+		boolean observedPreNativeCommitPauseReached = preNativeCommitPauseReached;
+		Throwable observedWriterFailure = writerFailure;
+		long observedNativeGenerationBeforeWriter = nativeGenerationBeforeWriter;
+		long observedNativeGenerationAfterWriter = nativeGenerationAfterWriter;
+		List<Statement> observedWriterOwnExplicit = writerOwnExplicit.get();
+		List<Statement> observedWriterOwnAll = writerOwnAll.get();
+		List<Statement> observedExplicitRowsWhilePaused = explicitRowsWhilePaused;
+		List<Statement> observedInferredRowsWhilePaused = inferredRowsWhilePaused;
+		List<Statement> observedExplicitRowsAfterCancellation = explicitRowsAfterCancellation;
+		List<Statement> observedInferredRowsAfterCancellation = inferredRowsAfterCancellation;
+		List<Statement> observedFreshExplicitRows = freshExplicitRows;
+		List<Statement> observedFreshAllRows = freshAllRows;
+		List<Statement> observedReopenedExplicitRows = reopenedExplicitRows;
+		List<Statement> observedReopenedAllRows = reopenedAllRows;
+		int observedFrozenDecisions = store.probe.frozenReplayDecisionStarts.get();
+		int observedTerminalCommitFailures = store.probe.terminalCommitFailures.get();
+		int observedSuccessfulTerminalRollbacks = store.probe.successfulTerminalPreNativeRollbacks.get();
+		int observedJournalAllocations = store.probe.journalAllocations.get();
+		int observedExplicitPrefixRows = store.probe.explicitRowsApplied.get();
+		int observedInferredPrefixRows = store.probe.inferredRowsApplied.get();
+		int observedNotifications = notifications.get();
+		String observedOldViewObservationPhase = oldViewObservationPhase.get();
+		boolean observedPreNativeCommitHookReleased = store.probe.terminalCommitReleaseObserved.get();
+		String observedReadPhaseAtHookWaitCompletion = store.probe.terminalCommitPhaseAtWaitCompletion.get();
+		assertAll("a retained paired LMDB epoch excludes unpublished frozen explicit and inferred clones",
+				() -> assertTrue(observedPreNativeCommitPauseReached,
+						"the writer must reach the pre-commit pause after applying its frozen input"),
+				() -> assertEquals(expectedWriterExplicit, new HashSet<>(observedWriterOwnExplicit),
+						"the writer's own buffered explicit view must contain the baseline and staged row"),
+				() -> assertEquals(expectedWriterExplicit.size(), observedWriterOwnExplicit.size(),
+						"the writer's own explicit view must contain each row exactly once"),
+				() -> assertEquals(expectedWriterAll, new HashSet<>(observedWriterOwnAll),
+						"the writer's own buffered view must contain its explicit and inferred rows"),
+				() -> assertEquals(expectedWriterAll.size(), observedWriterOwnAll.size(),
+						"the writer's own combined view must contain each row exactly once"),
+				() -> assertEquals(1, observedFrozenDecisions,
+						"the paused attempt must use the normal frozen replay decision"),
+				() -> assertEquals(1, observedTerminalCommitFailures,
+						"the terminal marker must activate at commit entry before authoritative native commit"),
+				() -> assertEquals(1, observedExplicitPrefixRows,
+						"the terminal failure must follow one real explicit native-prefix row"),
+				() -> assertEquals(1, observedInferredPrefixRows,
+						"the terminal failure must follow one real inferred native-prefix row"),
+				() -> assertEquals(observedNativeGenerationBeforeWriter, observedNativeGenerationAfterWriter,
+						"the canceled write transaction must not advance the authoritative commit generation"),
+				() -> assertEquals(1, observedSuccessfulTerminalRollbacks,
+						"terminal cancellation must complete the ordinary rollback of its live native transaction"),
+				() -> assertEquals(0, observedJournalAllocations,
+						"the frozen covered path must not allocate a mutation journal"),
+				() -> assertTrue(throwableGraphContainsIdentity(observedWriterFailure, terminalMarker),
+						"the original pre-native-commit marker must remain reachable by identity; writer failure graph: "
+								+ throwableGraphDiagnostic(observedWriterFailure) + "; old-view phase: "
+								+ observedOldViewObservationPhase + "; pre-native-commit hook observed release: "
+								+ observedPreNativeCommitHookReleased + "; old-view phase when hook wait returned: "
+								+ observedReadPhaseAtHookWaitCompletion),
+				() -> assertEquals(expectedExplicit.size(), explicitCursorRows.size(),
+						"the retained explicit cursor must return each old row exactly once"),
+				() -> assertEquals(expectedExplicit, new HashSet<>(explicitCursorRows),
+						"the retained explicit cursor must contain only the old explicit rows"),
+				() -> assertEquals(expectedInferred.size(), inferredCursorRows.size(),
+						"the retained inferred cursor must return each old row exactly once"),
+				() -> assertEquals(expectedInferred, new HashSet<>(inferredCursorRows),
+						"the retained inferred cursor must contain only the old inferred rows"),
+				() -> assertEquals(expectedExplicit.size(), observedExplicitRowsWhilePaused.size(),
+						"the old explicit dataset must exclude the staged row before cancellation"),
+				() -> assertEquals(expectedExplicit, new HashSet<>(observedExplicitRowsWhilePaused),
+						"the old explicit dataset must preserve exactly its baseline while the writer is paused"),
+				() -> assertEquals(expectedInferred.size(), observedInferredRowsWhilePaused.size(),
+						"the old inferred dataset must exclude the staged row before cancellation"),
+				() -> assertEquals(expectedInferred, new HashSet<>(observedInferredRowsWhilePaused),
+						"the old inferred dataset must preserve exactly its baseline while the writer is paused"),
+				() -> assertEquals(expectedExplicit.size(), observedExplicitRowsAfterCancellation.size(),
+						"the same old explicit dataset must exclude the canceled clone"),
+				() -> assertEquals(expectedExplicit, new HashSet<>(observedExplicitRowsAfterCancellation),
+						"the same old explicit dataset must retain only its baseline after cancellation"),
+				() -> assertEquals(expectedInferred.size(), observedInferredRowsAfterCancellation.size(),
+						"the same old inferred dataset must exclude the canceled clone"),
+				() -> assertEquals(expectedInferred, new HashSet<>(observedInferredRowsAfterCancellation),
+						"the same old inferred dataset must retain only its baseline after cancellation"),
+				() -> assertEquals(expectedExplicit.size(), observedFreshExplicitRows.size(),
+						"a fresh explicit observer must see the exact baseline after cancellation"),
+				() -> assertEquals(expectedExplicit, new HashSet<>(observedFreshExplicitRows)),
+				() -> assertEquals(expectedAll.size(), observedFreshAllRows.size(),
+						"a fresh explicit/inferred observer must see the exact baseline after cancellation"),
+				() -> assertEquals(expectedAll, new HashSet<>(observedFreshAllRows)),
+				() -> assertEquals(0, observedNotifications,
+						"a failed native publication must not send a logical change notification"),
+				() -> assertEquals(expectedExplicit.size(), observedReopenedExplicitRows.size(),
+						"reopen must preserve the exact explicit baseline count"),
+				() -> assertEquals(expectedExplicit, new HashSet<>(observedReopenedExplicitRows)),
+				() -> assertEquals(expectedAll.size(), observedReopenedAllRows.size(),
+						"reopen must preserve the exact combined explicit/inferred baseline count"),
+				() -> assertEquals(expectedAll, new HashSet<>(observedReopenedAllRows)));
 	}
 
 	@Test
@@ -2657,6 +2948,52 @@ class LmdbFrozenReplayTest {
 		return throwableGraphContainsIdentity(failure, expected, visited);
 	}
 
+	private static String throwableGraphDiagnostic(Throwable failure) {
+		StringBuilder diagnostic = new StringBuilder();
+		Map<Throwable, Integer> visited = new IdentityHashMap<>();
+		appendThrowableGraphDiagnostic("writer", failure, 0, visited, diagnostic);
+		return diagnostic.toString();
+	}
+
+	private static void appendThrowableGraphDiagnostic(String edge, Throwable failure, int depth,
+			Map<Throwable, Integer> visited, StringBuilder diagnostic) {
+		if (failure == null) {
+			diagnostic.append(edge).append("=<none>");
+			return;
+		}
+		Integer seenAs = visited.get(failure);
+		if (seenAs != null) {
+			diagnostic.append(edge).append("=<reference #").append(seenAs).append('>');
+			return;
+		}
+		if (visited.size() >= 16 || depth >= 8) {
+			diagnostic.append(edge).append("=<truncated>");
+			return;
+		}
+		int identity = visited.size() + 1;
+		visited.put(failure, identity);
+		String message = String.valueOf(failure.getMessage()).replace('\n', ' ').replace('\r', ' ');
+		if (message.length() > 300) {
+			message = message.substring(0, 300) + "...";
+		}
+		diagnostic.append(edge)
+				.append("=#")
+				.append(identity)
+				.append(' ')
+				.append(failure.getClass().getName())
+				.append(": ")
+				.append(message);
+		if (failure.getCause() != null) {
+			diagnostic.append("; ");
+			appendThrowableGraphDiagnostic("cause", failure.getCause(), depth + 1, visited, diagnostic);
+		}
+		Throwable[] suppressed = failure.getSuppressed();
+		for (int i = 0; i < suppressed.length; i++) {
+			diagnostic.append("; ");
+			appendThrowableGraphDiagnostic("suppressed[" + i + "]", suppressed[i], depth + 1, visited, diagnostic);
+		}
+	}
+
 	private static <T extends Throwable> T throwableGraphOfType(Throwable failure, Class<T> type) {
 		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
 		return throwableGraphOfType(failure, type, visited);
@@ -3340,6 +3677,28 @@ class LmdbFrozenReplayTest {
 		return List.copyOf(statements);
 	}
 
+	private static List<Statement> readAllStatementRows(NotifyingSailConnection connection, boolean includeInferred)
+			throws SailException {
+		List<Statement> statements = new ArrayList<>();
+		try (CloseableIteration<? extends Statement> result = connection.getStatements(null, null, null,
+				includeInferred)) {
+			while (result.hasNext()) {
+				statements.add(result.next());
+			}
+		}
+		return List.copyOf(statements);
+	}
+
+	private static List<Statement> readAllStatementRows(SailDataset dataset) throws SailException {
+		List<Statement> statements = new ArrayList<>();
+		try (CloseableIteration<? extends Statement> result = dataset.getStatements(null, null, null)) {
+			while (result.hasNext()) {
+				statements.add(result.next());
+			}
+		}
+		return List.copyOf(statements);
+	}
+
 	private static Map<String, String> readAllNamespaces(RepositoryConnection connection) {
 		Map<String, String> namespaces = new LinkedHashMap<>();
 		try (RepositoryResult<Namespace> result = connection.getNamespaces()) {
@@ -3640,9 +3999,18 @@ class LmdbFrozenReplayTest {
 		private final AtomicReference<IOException> injectedCapacityFailure = new AtomicReference<>();
 		private final AtomicReference<Error> terminalAfterPrefixMarker = new AtomicReference<>();
 		private final AtomicReference<Error> observedTerminalAfterPrefixMarker = new AtomicReference<>();
+		private final AtomicReference<RuntimeException> terminalNativeCommitMarker = new AtomicReference<>();
+		private final AtomicReference<CountDownLatch> terminalNativeCommitEntered = new AtomicReference<>();
+		private final AtomicReference<CountDownLatch> releaseTerminalNativeCommit = new AtomicReference<>();
+		private final AtomicReference<AtomicReference<String>> terminalCommitObservationPhase = new AtomicReference<>();
+		private final AtomicReference<String> terminalCommitPhaseAtWaitCompletion = new AtomicReference<>();
+		private final AtomicBoolean terminalCommitReleaseObserved = new AtomicBoolean();
 		private final AtomicReference<CountDownLatch> expireDeadlineAfterAlignedPrefix = new AtomicReference<>();
 		private final AtomicReference<CountDownLatch> firstNativeGraceExpired = new AtomicReference<>();
 		private final AtomicReference<Throwable> secondNativeFailureGateProblem = new AtomicReference<>();
+		private final AtomicInteger terminalCommitFailures = new AtomicInteger();
+		private final AtomicBoolean terminalPreNativeRollbackPending = new AtomicBoolean();
+		private final AtomicInteger successfulTerminalPreNativeRollbacks = new AtomicInteger();
 		private final AtomicBoolean failNextCommit = new AtomicBoolean();
 		private final AtomicBoolean failAfterNativeCommitWithoutReceipt = new AtomicBoolean();
 		private final AtomicBoolean failAfterAlignedPrefix = new AtomicBoolean();
@@ -3674,6 +4042,15 @@ class LmdbFrozenReplayTest {
 			injectedCapacityFailure.set(null);
 			terminalAfterPrefixMarker.set(null);
 			observedTerminalAfterPrefixMarker.set(null);
+			terminalNativeCommitMarker.set(null);
+			terminalNativeCommitEntered.set(null);
+			releaseTerminalNativeCommit.set(null);
+			terminalCommitObservationPhase.set(null);
+			terminalCommitPhaseAtWaitCompletion.set(null);
+			terminalCommitReleaseObserved.set(false);
+			terminalCommitFailures.set(0);
+			terminalPreNativeRollbackPending.set(false);
+			successfulTerminalPreNativeRollbacks.set(0);
 			expireDeadlineAfterAlignedPrefix.set(null);
 			alignedCapacityFailures.set(0);
 			alignedCapacityFailureBudget.set(0);
@@ -3711,6 +4088,14 @@ class LmdbFrozenReplayTest {
 			failBeforeExplicitAfterInferred.set(false);
 			failAfterSuccessfulCommit.set(false);
 			failRollbackAfterSuccessfulAbort.set(false);
+		}
+
+		private void armTerminalCommitFailure(RuntimeException marker, CountDownLatch entered, CountDownLatch release,
+				AtomicReference<String> observationPhase) {
+			terminalNativeCommitMarker.set(marker);
+			terminalNativeCommitEntered.set(entered);
+			releaseTerminalNativeCommit.set(release);
+			terminalCommitObservationPhase.set(observationPhase);
 		}
 
 		private void armNativeCommitCapacityFailures(int failures, CountDownLatch firstGraceExpired) {
@@ -3769,6 +4154,34 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		public void commit() throws IOException {
+			RetryProbe currentProbe = probe;
+			RuntimeException terminalFailure = currentProbe == null ? null
+					: currentProbe.terminalNativeCommitMarker.getAndSet(null);
+			if (terminalFailure != null) {
+				CountDownLatch entered = currentProbe.terminalNativeCommitEntered.get();
+				CountDownLatch release = currentProbe.releaseTerminalNativeCommit.get();
+				currentProbe.terminalCommitFailures.incrementAndGet();
+				currentProbe.terminalPreNativeRollbackPending.set(true);
+				if (entered == null || release == null) {
+					throw new AssertionError("the pre-native-commit barrier must be fully armed");
+				}
+				entered.countDown();
+				boolean released;
+				try {
+					released = release.await(15, TimeUnit.SECONDS);
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("interrupted before authoritative native commit", interrupted);
+				}
+				AtomicReference<String> observationPhase = currentProbe.terminalCommitObservationPhase.get();
+				currentProbe.terminalCommitPhaseAtWaitCompletion.set(
+						observationPhase == null ? "<unavailable>" : observationPhase.get());
+				currentProbe.terminalCommitReleaseObserved.set(released);
+				if (!released) {
+					throw new AssertionError("the test did not release the pre-native-commit pause");
+				}
+				throw terminalFailure;
+			}
 			try {
 				super.commit();
 			} catch (FrozenStatementCapacityException capacityFailure) {
@@ -3786,6 +4199,9 @@ class LmdbFrozenReplayTest {
 		@Override
 		public void rollback() throws IOException {
 			super.rollback();
+			if (probe.terminalPreNativeRollbackPending.compareAndSet(true, false)) {
+				probe.successfulTerminalPreNativeRollbacks.incrementAndGet();
+			}
 			if (probe.failRollbackAfterSuccessfulAbort.compareAndSet(true, false)) {
 				probe.rollbackFailures.incrementAndGet();
 				IOException marker = probe.abortFailureMarker.get();
