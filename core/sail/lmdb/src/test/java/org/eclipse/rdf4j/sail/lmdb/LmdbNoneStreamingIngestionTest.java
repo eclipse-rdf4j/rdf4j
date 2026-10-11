@@ -2203,8 +2203,9 @@ class LmdbNoneStreamingIngestionTest {
 		long growthEpisodesAfter = 0L;
 		long generationBeforeUncommittedPrefix = -1L;
 		long generationAfterUncommittedPrefix = -1L;
-		long generationAfterUncommittedNamespace = -1L;
+		long generationAfterNamespaceCheckpoint = -1L;
 		String namespaceBeforeCapacityFailure = null;
+		Set<Statement> afterNamespaceCheckpoint = Set.of();
 		int eventsAfterFailure = -1;
 		int eventsAfterContinuation = -1;
 		Set<Statement> afterRollback = Set.of();
@@ -2239,8 +2240,9 @@ class LmdbNoneStreamingIngestionTest {
 					alignedBatchesAfterUncommittedPrefix = triples.alignedBatchCount.get();
 					generationAfterUncommittedPrefix = triples.getNativeCommitGeneration();
 					writer.setNamespace("failed-replay", "urn:none-streaming:failed-replay:");
-					generationAfterUncommittedNamespace = triples.getNativeCommitGeneration();
+					generationAfterNamespaceCheckpoint = triples.getNativeCommitGeneration();
 					namespaceBeforeCapacityFailure = readNamespace(backing, "failed-replay");
+					afterNamespaceCheckpoint = readStatements(backing);
 					triples.failNextAlignedBatchWithMapFullAfterMutation();
 					triples.failNextAlignedBatchAfterCapacityFailure(terminalFailure);
 					for (int index = 2; index < failedRows.size(); index++) {
@@ -2316,8 +2318,9 @@ class LmdbNoneStreamingIngestionTest {
 		long observedGrowthEpisodesAfter = growthEpisodesAfter;
 		long observedGenerationBeforeUncommittedPrefix = generationBeforeUncommittedPrefix;
 		long observedGenerationAfterUncommittedPrefix = generationAfterUncommittedPrefix;
-		long observedGenerationAfterUncommittedNamespace = generationAfterUncommittedNamespace;
+		long observedGenerationAfterNamespaceCheckpoint = generationAfterNamespaceCheckpoint;
 		String observedNamespaceBeforeCapacityFailure = namespaceBeforeCapacityFailure;
+		Set<Statement> observedAfterNamespaceCheckpoint = afterNamespaceCheckpoint;
 		int observedEventsAfterFailure = eventsAfterFailure;
 		int observedEventsAfterContinuation = eventsAfterContinuation;
 		Set<Statement> observedAfterRollback = afterRollback;
@@ -2340,12 +2343,14 @@ class LmdbNoneStreamingIngestionTest {
 						"the first suffix pair must reach one successful aligned native batch"),
 				() -> assertEquals(observedGenerationBeforeUncommittedPrefix,
 						observedGenerationAfterUncommittedPrefix,
-						"the first suffix batch must remain uncommitted before the injected failure"),
-				() -> assertEquals(observedGenerationAfterUncommittedPrefix,
-						observedGenerationAfterUncommittedNamespace,
-						"the namespace must remain in the same uncommitted native attempt"),
-				() -> assertNull(observedNamespaceBeforeCapacityFailure,
-						"the abandoned namespace must remain unpublished before the capacity failure"),
+						"the first suffix batch must remain uncommitted before the namespace checkpoint"),
+				() -> assertTrue(observedGenerationAfterNamespaceCheckpoint > observedGenerationAfterUncommittedPrefix,
+						"setNamespace must checkpoint the preceding aligned prefix in a new native generation"),
+				() -> assertEquals(Set.of(durablePrefix, failedRows.get(0), failedRows.get(1)),
+						observedAfterNamespaceCheckpoint,
+						"the namespace checkpoint must publish the durable prefix and only the first suffix pair"),
+				() -> assertEquals("urn:none-streaming:failed-replay:", observedNamespaceBeforeCapacityFailure,
+						"setNamespace must publish its namespace with the first suffix pair"),
 				() -> assertTrue(observedAlignedBatchesAfterFailure >= 3,
 						"initial prefix, failed capacity attempt and replay must traverse the native aligned writer"),
 				() -> assertTrue(observedCapacityReplays > 0,
@@ -2362,18 +2367,24 @@ class LmdbNoneStreamingIngestionTest {
 						"rejected continuation must not publish another logical event"),
 				() -> assertNull(observedRollbackFailure,
 						"explicit rollback must retire the failed public transaction"),
-				() -> assertEquals(Set.of(durablePrefix), observedAfterRollback,
-						"rollback must preserve only the already durable prefix"),
-				() -> assertNull(observedFailedNamespaceAfterRollback,
-						"the terminal failed suffix namespace must remain unpublished"),
+				() -> assertEquals(Set.of(durablePrefix, failedRows.get(0), failedRows.get(1)), observedAfterRollback,
+						"rollback must preserve the exact prefix committed by setNamespace"),
+				() -> assertEquals("urn:none-streaming:failed-replay:", observedFailedNamespaceAfterRollback,
+						"rollback must preserve the namespace committed before the terminal suffix failure"),
 				() -> assertTrue(observedFollowupCommitted, "a fresh NONE attempt must commit after rollback"),
 				() -> assertNull(observedFollowupFailure, "the follow-up transaction must not be stranded"),
-				() -> assertEquals(Set.of(durablePrefix, followup), observedAfterFollowup,
-						"the follow-up must add only its own row to the durable prefix"),
-				() -> assertEquals(Set.of(durablePrefix, followup), observedReopenedStatements,
-						"only the prefix and fresh follow-up must survive reopening"),
-				() -> assertNull(observedFailedNamespaceAfterReopen,
-						"the terminal failed suffix namespace must remain absent after reopening"));
+				() -> assertEquals(Set.of(durablePrefix, failedRows.get(0), failedRows.get(1), followup),
+						observedAfterFollowup, "the follow-up must add only its own row to the checkpointed prefix"),
+				() -> assertEquals(Set.of(durablePrefix, failedRows.get(0), failedRows.get(1), followup),
+						observedReopenedStatements, "the checkpoint and fresh follow-up must survive reopening"),
+				() -> assertEquals("urn:none-streaming:failed-replay:", observedFailedNamespaceAfterReopen,
+						"the namespace checkpoint must remain present after reopening"),
+				() -> assertFalse(observedAfterRollback.contains(failedRows.get(2))
+						|| observedAfterRollback.contains(failedRows.get(3)),
+						"the later terminally failed pair must remain absent after rollback"),
+				() -> assertFalse(observedReopenedStatements.contains(failedRows.get(2))
+						|| observedReopenedStatements.contains(failedRows.get(3)),
+						"the later terminally failed pair must remain absent after reopening"));
 	}
 
 	@Test

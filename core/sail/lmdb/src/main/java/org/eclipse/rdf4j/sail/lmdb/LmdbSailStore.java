@@ -4435,17 +4435,29 @@ class LmdbSailStore implements SailStore {
 			failed = failedWriterTransactions.get(owner);
 		}
 		if (failed != null && (!(owner instanceof LmdbStoreConnection connection)
-				|| connection.ownsWriteAttempt(failed.attempt()))) {
+				|| connection.retainsFailedWriteAttempt(failed.attempt()))) {
 			throw new SailException(failed.failure().getMessage(), failed.failure());
 		}
 	}
 
 	private void recordWriterFailure(Object owner, LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
-		if (owner == null || owner instanceof LmdbStoreConnection connection && !connection.ownsWriteAttempt(attempt)) {
+		recordWriterFailure(owner, attempt, failure, false);
+	}
+
+	/**
+	 * The commit hook can fail after revoking its native authority; only its still-active logical attempt is sealed.
+	 */
+	void recordFailedCommit(LmdbStoreConnection owner, LmdbStoreConnection.WriteAttempt attempt, Throwable failure) {
+		recordWriterFailure(owner, attempt, failure, true);
+	}
+
+	private void recordWriterFailure(Object owner, LmdbStoreConnection.WriteAttempt attempt, Throwable failure,
+			boolean retiredCommitAuthority) {
+		if (owner == null || !mayRecordWriterFailure(owner, attempt, retiredCommitAuthority)) {
 			return;
 		}
 		synchronized (failedWriterTransactions) {
-			if (owner instanceof LmdbStoreConnection connection && !connection.ownsWriteAttempt(attempt)) {
+			if (!mayRecordWriterFailure(owner, attempt, retiredCommitAuthority)) {
 				return;
 			}
 			FailedWriterTransaction previous = failedWriterTransactions.get(owner);
@@ -4455,6 +4467,13 @@ class LmdbSailStore implements SailStore {
 			hasFailedWriterTransactions = true;
 		}
 		mapGrowthCoordinator.failWriter(owner, attempt);
+	}
+
+	private static boolean mayRecordWriterFailure(Object owner, LmdbStoreConnection.WriteAttempt attempt,
+			boolean retiredCommitAuthority) {
+		return !(owner instanceof LmdbStoreConnection connection) || (retiredCommitAuthority
+				? connection.retainsFailedWriteAttempt(attempt)
+				: connection.ownsWriteAttempt(attempt));
 	}
 
 	void completeWriterRollback(Object owner) {

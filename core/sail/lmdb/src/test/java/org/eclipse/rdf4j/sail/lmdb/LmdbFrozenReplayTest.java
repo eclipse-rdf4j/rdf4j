@@ -1150,6 +1150,8 @@ class LmdbFrozenReplayTest {
 		}
 
 		RuntimeException observedInitialCommitFailure = initialCommitFailure;
+		LmdbUtil.MapFullException observedNativeCommitFailure = throwableGraphOfType(observedInitialCommitFailure,
+				LmdbUtil.MapFullException.class);
 		RuntimeException observedContinuationFailure = continuationFailure;
 		RuntimeException observedRollbackFailure = rollbackFailure;
 		RuntimeException observedFollowupFailure = followupFailure;
@@ -1179,6 +1181,11 @@ class LmdbFrozenReplayTest {
 		assertAll("a failed isolated commit clears its attempt stamp and rejects later continuations",
 				() -> assertNotNull(observedInitialCommitFailure,
 						"the injected native commit failure must reach the public caller"),
+				() -> assertNotNull(observedNativeCommitFailure,
+						"the initial failure must retain its concrete native MAP_FULL IOException"),
+				() -> assertTrue(observedNativeCommitFailure != null
+						&& throwableGraphContainsIdentity(observedInitialCommitFailure, observedNativeCommitFailure),
+						"the concrete native failure must remain reachable from the original public failure"),
 				() -> assertEquals(1, observedInjectedCommitFailures,
 						"the commitWriteTransaction seam must consume exactly one native handle"),
 				() -> assertTrue(observedAppliedRowsAfterFailure > 0,
@@ -1197,6 +1204,10 @@ class LmdbFrozenReplayTest {
 						"a rejected continuation must not publish a logical event"),
 				() -> assertNotNull(observedContinuationFailure,
 						"the public " + continuation + " continuation must be rejected"),
+				() -> assertTrue(observedNativeCommitFailure != null && observedContinuationFailure != null
+						&& throwableGraphContainsIdentity(observedContinuationFailure, observedNativeCommitFailure),
+						"the rejected " + continuation
+								+ " must retain the original concrete native failure by identity"),
 				() -> assertTrue(observedWriteAttemptRemainedClearedAfterContinuation,
 						"a rejected continuation must not restore or replace the failed attempt stamp"),
 				() -> assertNull(observedRollbackFailure,
@@ -2639,6 +2650,37 @@ class LmdbFrozenReplayTest {
 			}
 		}
 		return false;
+	}
+
+	private static boolean throwableGraphContainsIdentity(Throwable failure, Throwable expected) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		return throwableGraphContainsIdentity(failure, expected, visited);
+	}
+
+	private static <T extends Throwable> T throwableGraphOfType(Throwable failure, Class<T> type) {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		return throwableGraphOfType(failure, type, visited);
+	}
+
+	private static <T extends Throwable> T throwableGraphOfType(Throwable failure, Class<T> type,
+			Set<Throwable> visited) {
+		if (failure == null || !visited.add(failure)) {
+			return null;
+		}
+		if (type.isInstance(failure)) {
+			return type.cast(failure);
+		}
+		T cause = throwableGraphOfType(failure.getCause(), type, visited);
+		if (cause != null) {
+			return cause;
+		}
+		for (Throwable suppressed : failure.getSuppressed()) {
+			T nested = throwableGraphOfType(suppressed, type, visited);
+			if (nested != null) {
+				return nested;
+			}
+		}
+		return null;
 	}
 
 	@Test

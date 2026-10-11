@@ -167,6 +167,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		return attempt != null && writeAttempt == attempt && isActive();
 	}
 
+	/** Logical failure survives retirement of physical writer authority until rollback ends this transaction. */
+	boolean retainsFailedWriteAttempt(WriteAttempt attempt) {
+		WriteAttempt current = writeAttempt;
+		return attempt != null && isActive() && (current == attempt || current == null);
+	}
+
 	private final Set<RepositoryValueIteration<?>> repositoryValueIterations = Collections
 			.newSetFromMap(new IdentityHashMap<>());
 	private boolean repositoryExposureClosed;
@@ -412,6 +418,21 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected void commitInternal() throws SailException {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
 		WriteAttempt completedWriteAttempt = writeAttempt;
+		try {
+			commitTransaction(completedWriteAttempt);
+		} catch (RuntimeException | Error failure) {
+			try {
+				lmdbStore.getBackingStore().recordFailedCommit(this, completedWriteAttempt, failure);
+			} catch (RuntimeException | Error recordingFailure) {
+				if (recordingFailure != failure) {
+					failure.addSuppressed(recordingFailure);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	private void commitTransaction(WriteAttempt completedWriteAttempt) throws SailException {
 		SailSource explicitRoot = getTransactionExplicitRoot();
 		SailSource inferredRoot = getTransactionInferredRoot();
 		if (explicitRoot == null) {
@@ -537,7 +558,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	@Override
 	protected void endUpdateInternal(UpdateContext op) throws SailException {
 		if (op != null) {
-			verifyNotPrepared();
+			verifyMutationAdmission();
 		}
 		if (isActive() && IsolationLevels.NONE.isCompatibleWith(getTransactionIsolation())) {
 			lmdbStore.getBackingStore().flushNonePending(this);
@@ -551,7 +572,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	public void startUpdate(UpdateContext op) throws SailException {
-		verifyNotPrepared();
+		verifyMutationAdmission();
 		if (op != null) {
 			markTransactionWriteAttempted();
 		}
@@ -2362,9 +2383,13 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		return isolationLevel != null && isolationLevel.isCompatibleWith(IsolationLevels.SNAPSHOT);
 	}
 
-	private void markTransactionWriteAttempted() {
-		verifyNotPrepared();
+	private void verifyMutationAdmission() {
 		lmdbStore.getBackingStore().checkWriterTransaction(this);
+		verifyNotPrepared();
+	}
+
+	private void markTransactionWriteAttempted() {
+		verifyMutationAdmission();
 		LmdbSailStore.ReadAttemptLease admission = transactionAdmissionLease;
 		if (admission != null) {
 			admission.markWriteIntent();
