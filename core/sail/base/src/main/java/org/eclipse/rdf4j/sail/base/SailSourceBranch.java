@@ -1168,7 +1168,29 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			try {
 				resource.close();
 			} catch (RuntimeException | Error closeFailure) {
-				return addFailure(failure, closeFailure);
+				return addFailure(failure, cleanupFailure(closeFailure));
+			}
+		}
+		return failure;
+	}
+
+	/** Resource disposal cannot authorize a nonblocking admission skip. */
+	private static Throwable cleanupFailure(Throwable failure) {
+		return failure instanceof StreamingWritePreflight.Unavailable
+				? new SailException("Buffered publication cleanup failed", failure)
+				: failure;
+	}
+
+	private static Throwable preApplicationFailure(Throwable failure) {
+		if (failure instanceof StreamingWritePreflight.Unavailable) {
+			Throwable[] suppressed = failure.getSuppressed();
+			if (suppressed.length > 0) {
+				// The busy signal is control flow. Do not attach it back to its own suppressed cleanup failure.
+				Throwable primary = cleanupFailure(suppressed[0]);
+				for (int i = 1; i < suppressed.length; i++) {
+					primary = addFailure(primary, cleanupFailure(suppressed[i]));
+				}
+				return primary;
 			}
 		}
 		return failure;
@@ -2822,12 +2844,13 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					return;
 				}
 				boolean applicationStarted = false;
-				try (SailClosable preflight = streamingPreflight.enter(true)) {
+				try (SailClosable preflight = automaticPreflight()) {
 					try {
 						boolean startedPreflight = ensureWritePreflight();
 						SailClosable publication;
 						try {
-							publication = tryBeginPublication();
+							SailClosable admitted = tryBeginPublication();
+							publication = admitted == null ? null : new AutomaticPublication(admitted);
 						} catch (Throwable failure) {
 							StreamingWritePreflight.failed(SailSourceBranch.this, failure);
 							if (startedPreflight) {
@@ -2893,7 +2916,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 								}
 							}
 						} catch (RuntimeException | Error failure) {
-							StreamingWritePreflight.failed(SailSourceBranch.this, failure);
+							Throwable primary = applicationStarted ? failure : preApplicationFailure(failure);
+							StreamingWritePreflight.failed(SailSourceBranch.this, primary);
+							if (primary != failure) {
+								rethrow(primary);
+							}
 							throw failure;
 						} finally {
 							if (startedPreflight && !flushed) {
@@ -2908,11 +2935,53 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					if (applicationStarted) {
 						throw busyAncestor;
 					}
+					Throwable primary = preApplicationFailure(busyAncestor);
+					if (primary != busyAncestor) {
+						rethrow(primary);
+					}
 					// Only an unapplied reader cleanup may skip an ancestor's retained preparation.
 					return;
 				}
 			}
 
+		}
+	}
+
+	private SailClosable automaticPreflight() {
+		SailClosable admitted = streamingPreflight.enter(true);
+		return () -> {
+			Throwable failure = closeResource(null, admitted);
+			if (failure != null) {
+				rethrow(failure);
+			}
+		};
+	}
+
+	/** Records disposal failure before the enclosing streaming frame is retired. */
+	private final class AutomaticPublication implements PublicationScope {
+		private final SailClosable delegate;
+		private boolean failed;
+
+		private AutomaticPublication(SailClosable delegate) {
+			this.delegate = delegate;
+		}
+
+		@Override
+		public void fail() {
+			if (!failed) {
+				failed = true;
+				SailSource.failPublication(delegate);
+			}
+		}
+
+		@Override
+		public void close() {
+			Throwable failure = closeResource(null, delegate);
+			if (failure != null) {
+				StreamingWritePreflight.failed(SailSourceBranch.this, failure, true);
+				failure = closeResource(failure, this::fail);
+				rethrow(failure);
+			}
 		}
 	}
 

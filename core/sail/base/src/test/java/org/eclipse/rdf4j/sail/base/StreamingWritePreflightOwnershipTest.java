@@ -20,8 +20,11 @@ import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -1890,16 +1893,36 @@ class StreamingWritePreflightOwnershipTest {
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void autoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy() throws Exception {
-		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(false);
+		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(BusySkipCleanupFailure.NONE);
 	}
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void autoFlushReportsReleaseFailureAfterBusyReacquisition() throws Exception {
-		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(true);
+		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(BusySkipCleanupFailure.RELEASE_FAILURE);
 	}
 
-	private static void assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(boolean failRelease)
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void autoFlushSurfacesPublicationScopeCloseFailureAfterBusySkip() throws Exception {
+		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(BusySkipCleanupFailure.SCOPE_CLOSE_FAILURE);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void autoFlushTreatsUnavailableFromCarrierCleanupAsFailure() throws Exception {
+		assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(BusySkipCleanupFailure.RELEASE_UNAVAILABLE);
+	}
+
+	private enum BusySkipCleanupFailure {
+		NONE,
+		RELEASE_FAILURE,
+		SCOPE_CLOSE_FAILURE,
+		RELEASE_UNAVAILABLE
+	}
+
+	private static void assertAutoFlushReleasesNewCarrierWhenSecondBranchLockIsBusy(
+			BusySkipCleanupFailure failureKind)
 			throws Exception {
 		RecordingStreamingSource backing = new RecordingStreamingSource();
 		SailSourceBranch branch = new SailSourceBranch(new LegacyPreflightSource(backing), new DynamicModelFactory(),
@@ -1928,10 +1951,25 @@ class StreamingWritePreflightOwnershipTest {
 		AtomicInteger failedScopesAtSkip = new AtomicInteger(-1);
 		AtomicInteger closedScopesAtSkip = new AtomicInteger(-1);
 		RuntimeException releaseMarker = new RuntimeException("prepared carrier release failed after busy admission");
+		StreamingWritePreflight.Unavailable releaseUnavailable = new StreamingWritePreflight.Unavailable();
+		RuntimeException publicationCloseMarker = new RuntimeException(
+				"publication scope close failed after busy skip");
 		AtomicBoolean releaseMarkerThrown = new AtomicBoolean();
+		AtomicBoolean publicationCloseMarkerThrown = new AtomicBoolean();
 		backing.onSinkPreparationRelease = () -> {
-			if (failRelease && releaseMarkerThrown.compareAndSet(false, true)) {
-				throw releaseMarker;
+			if (releaseMarkerThrown.compareAndSet(false, true)) {
+				if (failureKind == BusySkipCleanupFailure.RELEASE_FAILURE) {
+					throw releaseMarker;
+				}
+				if (failureKind == BusySkipCleanupFailure.RELEASE_UNAVAILABLE) {
+					throw releaseUnavailable;
+				}
+			}
+		};
+		backing.onPublicationScopeClose = () -> {
+			if (failureKind == BusySkipCleanupFailure.SCOPE_CLOSE_FAILURE
+					&& publicationCloseMarkerThrown.compareAndSet(false, true)) {
+				throw publicationCloseMarker;
 			}
 		};
 		backing.onSinkPrepare = () -> {
@@ -2009,24 +2047,77 @@ class StreamingWritePreflightOwnershipTest {
 				.isGreaterThan(0);
 		assertThat(closedScopesAtSkip.get()).as("the opened publication scope closes before autoFlush returns")
 				.isEqualTo(scopesAtSkip.get());
-		if (failRelease) {
-			assertThat(releaseMarkerThrown).as("releasePrepared was reached after the busy reacquisition")
-					.isTrue();
-			assertThat(autoFlushFailure.get()).as("cleanup failure remains primary over discarded Unavailable")
-					.isSameAs(releaseMarker);
-			assertThat(failedScopesAtSkip).as("cleanup failure marks the opened publication scope failed")
-					.isEqualTo(1);
-		} else {
+		switch (failureKind) {
+		case NONE:
 			assertThat(autoFlushFailure.get()).as("a clean busy skip is not reported as a failure").isNull();
 			assertThat(rawPreparationsAtSkip).as("the skipped autoFlush releases its raw carrier").hasValue(0);
 			assertThat(failedScopesAtSkip.get())
 					.as("Unavailable alone does not fail an opened publication scope")
 					.isEqualTo(0);
+			break;
+		case RELEASE_FAILURE:
+			assertThat(releaseMarkerThrown).as("releasePrepared was reached after the busy reacquisition")
+					.isTrue();
+			assertThat(autoFlushFailure.get()).as("cleanup failure remains primary over discarded Unavailable")
+					.isSameAs(releaseMarker);
+			assertThat(failedScopesAtSkip.get()).as("cleanup failure marks the opened publication scope failed")
+					.isEqualTo(1);
+			break;
+		case SCOPE_CLOSE_FAILURE:
+			assertThat(publicationCloseMarkerThrown)
+					.as("publication scope close was reached after the pre-application busy failure")
+					.isTrue();
+			assertThat(autoFlushFailure.get()).as("scope close failure is not hidden with the benign busy signal")
+					.isNotNull();
+			assertThat(throwableGraphContains(autoFlushFailure.get(), publicationCloseMarker))
+					.as("the caller-visible failure retains the exact scope-close marker")
+					.isTrue();
+			assertThat(failedScopesAtSkip.get()).as("scope cleanup failure marks the publication failed")
+					.isEqualTo(1);
+			break;
+		case RELEASE_UNAVAILABLE:
+			assertThat(releaseMarkerThrown).as("releasePrepared was reached after the busy reacquisition")
+					.isTrue();
+			assertThat(autoFlushFailure.get()).as("cleanup Unavailable is not mistaken for the busy skip")
+					.isNotNull();
+			assertThat(throwableGraphContains(autoFlushFailure.get(), releaseUnavailable))
+					.as("the caller-visible failure retains the exact cleanup Unavailable marker")
+					.isTrue();
+			assertThat(failedScopesAtSkip.get()).as("cleanup failure marks the opened publication scope failed")
+					.isEqualTo(1);
+			break;
+		default:
+			throw new IllegalStateException("Unhandled busy-skip cleanup failure kind: " + failureKind);
 		}
 		assertThat(pendingAtSkip).as("a busy skip keeps the queued row pending").isTrue();
 		assertThat(publishedAtSkip).as("a busy skip does not publish the queued row").isFalse();
 		assertThat(backing.liveSinkPreparations).hasValue(0);
 		assertThat(backing.committed).containsExactly(queued);
+	}
+
+	private static boolean throwableGraphContains(Throwable root, Throwable expected) {
+		if (root == null) {
+			return false;
+		}
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		ArrayDeque<Throwable> pending = new ArrayDeque<>();
+		pending.add(root);
+		while (!pending.isEmpty()) {
+			Throwable current = pending.removeFirst();
+			if (current == expected) {
+				return true;
+			}
+			if (!visited.add(current)) {
+				continue;
+			}
+			if (current.getCause() != null) {
+				pending.addLast(current.getCause());
+			}
+			for (Throwable suppressed : current.getSuppressed()) {
+				pending.addLast(suppressed);
+			}
+		}
+		return false;
 	}
 
 	@Test
@@ -3825,6 +3916,8 @@ class StreamingWritePreflightOwnershipTest {
 		};
 		private volatile Runnable onSinkPreparationRelease = () -> {
 		};
+		private volatile Runnable onPublicationScopeClose = () -> {
+		};
 		private volatile IntConsumer onPreflightScopeClose = scopeId -> {
 		};
 		private volatile IntConsumer onRetainedOwnerClose = ownerId -> {
@@ -4028,6 +4121,7 @@ class StreamingWritePreflightOwnershipTest {
 				public void close() {
 					if (closed.compareAndSet(false, true)) {
 						publicationScopesClosed.incrementAndGet();
+						onPublicationScopeClose.run();
 					}
 				}
 			};
