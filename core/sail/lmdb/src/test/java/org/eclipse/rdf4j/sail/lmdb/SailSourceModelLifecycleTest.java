@@ -20,6 +20,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -40,7 +41,9 @@ import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.mockito.invocation.InvocationOnMock;
 
 class SailSourceModelLifecycleTest {
@@ -76,6 +79,61 @@ class SailSourceModelLifecycleTest {
 		assertThat(largestBatch.get()).isLessThanOrEqualTo(IMPORT_BATCH_SIZE);
 		verify(sink).setNamespace("ex", "urn:example:");
 		verify(sink).flush();
+	}
+
+	@Test
+	void addAllRefreshesTheSinkAfterContainsClosesIt(@TempDir Path dataDir) throws Exception {
+		try (LmdbSailStore store = new LmdbSailStore(dataDir.toFile(), new StoreProperties(),
+				new LmdbStoreConfig("spoc"))) {
+			LinkedHashModel expected = new LinkedHashModel();
+			Statement first = statement("bulk-small-first", CONTEXT);
+			Statement second = statement("bulk-small-second", SimpleValueFactory.getInstance()
+					.createIRI("urn:spill:other-context"));
+			expected.add(first);
+			expected.add(second);
+
+			try (SailSourceModel model = new SailSourceModel(store)) {
+				assertThat(
+						model.contains(first.getSubject(), first.getPredicate(), first.getObject(), first.getContext()))
+								.isFalse();
+				assertThat(model.addAll(List.of(first, second, first))).isTrue();
+				assertThat(model).hasSize(expected.size()).containsExactlyInAnyOrderElementsOf(expected);
+			}
+
+			try (SailSourceModel reopened = new SailSourceModel(store)) {
+				List<Statement> reopenedStatements = readStatements(reopened);
+				assertThat(reopenedStatements).hasSize(expected.size()).containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
+	}
+
+	@Test
+	void addAllRefreshesTheSinkAcrossBoundedBatchesAndDuplicates(@TempDir Path dataDir) throws Exception {
+		try (LmdbSailStore store = new LmdbSailStore(dataDir.toFile(), new StoreProperties(),
+				new LmdbStoreConfig("spoc"))) {
+			LinkedHashModel expected = new LinkedHashModel();
+			List<Statement> input = new ArrayList<>();
+			for (int i = 0; i < IMPORT_BATCH_SIZE * 2 + 2; i++) {
+				Statement row = statement("bulk-boundary-" + i,
+						SimpleValueFactory.getInstance().createIRI("urn:spill:context:" + (i % 4)));
+				expected.add(row);
+				input.add(row);
+				if (i == IMPORT_BATCH_SIZE - 1) {
+					input.add(row);
+				}
+			}
+			input.add(input.get(0));
+
+			try (SailSourceModel model = new SailSourceModel(store)) {
+				assertThat(model.addAll(input)).isTrue();
+				assertThat(model).hasSize(expected.size()).containsExactlyInAnyOrderElementsOf(expected);
+			}
+
+			try (SailSourceModel reopened = new SailSourceModel(store)) {
+				List<Statement> reopenedStatements = readStatements(reopened);
+				assertThat(reopenedStatements).hasSize(expected.size()).containsExactlyInAnyOrderElementsOf(expected);
+			}
+		}
 	}
 
 	@Test
@@ -258,10 +316,27 @@ class SailSourceModelLifecycleTest {
 		return new SailSourceModel(source);
 	}
 
+	private static List<Statement> readStatements(SailSourceModel model) {
+		Iterator<Statement> iterator = model.iterator();
+		List<Statement> statements = new ArrayList<>();
+		try {
+			while (iterator.hasNext()) {
+				statements.add(iterator.next());
+			}
+		} finally {
+			model.closeIterator(iterator);
+		}
+		return statements;
+	}
+
 	private static Statement statement(String value) {
+		return statement(value, CONTEXT);
+	}
+
+	private static Statement statement(String value, Resource context) {
 		var vf = SimpleValueFactory.getInstance();
 		return vf.createStatement(vf.createIRI("urn:subject:" + value), vf.createIRI("urn:predicate"),
-				vf.createLiteral(value), CONTEXT);
+				vf.createLiteral(value), context);
 	}
 
 	private static final class NoMaterializeModel extends LinkedHashModel {

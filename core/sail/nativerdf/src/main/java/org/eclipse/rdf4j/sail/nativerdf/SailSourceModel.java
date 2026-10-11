@@ -359,11 +359,10 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 		HashSet<Statement> tempSet = new HashSet<>();
 		HashSet<Resource> contexts = new HashSet<>();
-		SailSink sink = sink();
 
 		for (Statement statement : statements) {
 			if (tempSet.size() >= 1024) {
-				sink.approveAll(tempSet, contexts);
+				sink().approveAll(tempSet, contexts);
 				if (size >= 0) {
 					size += tempSet.size();
 				}
@@ -379,7 +378,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		}
 
 		if (!tempSet.isEmpty()) {
-			sink.approveAll(tempSet, contexts);
+			sink().approveAll(tempSet, contexts);
 			if (size >= 0) {
 				size += tempSet.size();
 			}
