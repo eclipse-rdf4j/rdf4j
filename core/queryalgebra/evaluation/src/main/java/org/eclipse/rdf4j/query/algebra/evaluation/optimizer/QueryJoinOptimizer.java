@@ -515,9 +515,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
 					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs, ordinaryEntryBoundVars);
 				}
-				if (experimental) {
-					orderedJoinArgs = placeBindingSetAssignments(orderedJoinArgs, ordinaryEntryBoundVars);
-				}
+				// Under every policy a multi-row VALUES that no join partner consumes must not lead the join: it would
+				// multiply every row before the consuming FILTER can prune, and inside a UNION arm it was distributed
+				// into, IterativeEvaluationOptimizer would hoist it away from that filter. Hoisting single-row tables
+				// to the front stays an experimental reordering. See QueryJoinOptimizerValuesPlacementTest.
+				orderedJoinArgs = placeBindingSetAssignments(orderedJoinArgs, ordinaryEntryBoundVars, experimental);
 
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
@@ -1069,7 +1071,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		private Deque<TupleExpr> placeBindingSetAssignments(Deque<TupleExpr> orderedJoinArgs,
-				Set<String> entryBoundVars) {
+				Set<String> entryBoundVars, boolean hoistSingletons) {
 			List<TupleExpr> orderedArgs = new ArrayList<>();
 			List<BindingSetAssignment> delayedAssignments = new ArrayList<>();
 			List<TupleExpr> otherArgs = new ArrayList<>();
@@ -1079,7 +1081,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				if (tupleExpr instanceof BindingSetAssignment assignment) {
 					foundAssignment = true;
 					int bindingSetCount = bindingSetCountUpToTwo(assignment);
-					if (bindingSetCount == 1) {
+					if (bindingSetCount == 1 && hoistSingletons) {
 						orderedArgs.add(tupleExpr);
 					} else if (bindingSetCount > 1) {
 						delayedAssignments.add(assignment);
@@ -1154,6 +1156,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean usesBindingFromAssignment(TupleExpr tupleExpr, Set<String> assignmentNames) {
 			for (String bindingName : tupleExpr.getBindingNames()) {
 				if (assignmentNames.contains(bindingName)) {
+					return true;
+				}
+			}
+			// A value expression inside the argument (a FILTER condition, a BIND input, an OPTIONAL condition) reads
+			// the assignment's bindings without exposing them as binding names. Such an argument consumes the
+			// assignment just as a pattern does: evaluated behind it, the expression would see the variable unbound.
+			for (String referencedName : VarNameCollector.process(tupleExpr)) {
+				if (assignmentNames.contains(referencedName)) {
 					return true;
 				}
 			}

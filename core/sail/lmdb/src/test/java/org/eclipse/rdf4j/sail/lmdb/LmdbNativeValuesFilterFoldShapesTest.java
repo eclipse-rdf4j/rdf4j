@@ -102,10 +102,11 @@ class LmdbNativeValuesFilterFoldShapesTest {
 		String query = PREFIXES + body;
 		List<String> expected = rows(memoryRepository, query);
 		assertThat(expected).as("generic ground truth must be non-empty for shape: " + shape).isNotEmpty();
-		assertThat(rows(lmdbRepository, query)).as("LMDB rows must equal MemoryStore rows for:\n" + query)
+		String rendered = explain(query);
+		assertThat(rows(lmdbRepository, query))
+				.as("LMDB rows must equal MemoryStore rows for:\n" + query + "\n" + rendered)
 				.isEqualTo(expected);
 
-		String rendered = explain(query);
 		switch (expectation) {
 		case DOMAIN_DRIVE -> assertThat(rendered)
 				.as("VALUES consumed only by an equality FILTER must become exact-domain probes:\n" + query)
@@ -122,6 +123,31 @@ class LmdbNativeValuesFilterFoldShapesTest {
 			}
 		}
 		}
+	}
+
+	/**
+	 * The optimized algebra (default execution policy, no sketches) must keep the distributed VALUES inside each UNION
+	 * arm, ordered after the arm's patterns and directly under the arm's filter, instead of hoisting one copy above the
+	 * UNION. That is the shape the native planner folds per arm, and the shape the generic engine evaluates without a
+	 * Cartesian prefix.
+	 */
+	@org.junit.jupiter.api.Test
+	void unionArmsKeepTheirOwnValuesInTheOptimizedAlgebra() {
+		String query = PREFIXES + String.join("\n",
+				"SELECT (COUNT(DISTINCT ?e) AS ?count) WHERE {",
+				"  VALUES ?t { \"DX-200\" \"DX-201\" }",
+				"  { ?e a ex:Condition ; ex:code ?code . }",
+				"  UNION",
+				"  { ?e a ex:Medication ; ex:code ?code . }",
+				"  FILTER(?code = ?t || ?code = \"DX-202\")",
+				"  OPTIONAL { ?e ex:code ?alt . }",
+				"}");
+		String rendered = explain(query);
+		String algebra = rendered.substring(rendered.indexOf("Query explanation"));
+		int values = algebra.split("BindingSetAssignment \\(", -1).length - 1;
+		assertThat(values).as("one VALUES copy per UNION arm, none hoisted above the UNION:\n" + algebra).isEqualTo(2);
+		assertThat(algebra.indexOf("Union")).as("the UNION must sit above both VALUES copies:\n" + algebra)
+				.isLessThan(algebra.indexOf("BindingSetAssignment ("));
 	}
 
 	static Stream<Arguments> shapes() {
