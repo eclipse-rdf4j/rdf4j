@@ -964,10 +964,10 @@ class SailSourceBranchDeepGenerationTest {
 
 		@Override
 		StreamingSnapshot streamingSnapshot(boolean nonblocking, Object inherited, boolean retainInputs,
-				boolean publicationFrontier, Set<Changeset> preparing, AtomicReference<Throwable> failure) {
+				boolean publicationFrontier, Set<FrozenFlush.Context> frozenContexts, Set<Changeset> preparing,
+				AtomicReference<Throwable> failure) {
 			StreamingSnapshot snapshot = super.streamingSnapshot(nonblocking, inherited, retainInputs,
-					publicationFrontier, preparing,
-					failure);
+					publicationFrontier, frozenContexts, preparing, failure);
 			if (fired.compareAndSet(false, true)) {
 				afterSnapshot.run();
 			}

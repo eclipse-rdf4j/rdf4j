@@ -63,6 +63,150 @@ class StreamingWritePreflightOwnershipTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void acknowledgedForeignFrozenAncestorDoesNotBecomeChildCoverage() throws Exception {
+		assertForeignFrozenAncestorRetirement(true);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void cancelledForeignFrozenAncestorDoesNotBecomeChildCoverage() throws Exception {
+		assertForeignFrozenAncestorRetirement(false);
+	}
+
+	private static void assertForeignFrozenAncestorRetirement(boolean acknowledge) throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		SailSourceBranch parent = branch(terminal);
+		SailSourceBranch child = branch(parent);
+		Statement parentRow = statement("foreign-frozen-parent");
+		Statement childRow = statement("independent-frozen-child");
+		add(parent, parentRow);
+		SailSource.FlushBatch parentBatch = parent.freezeForFlush();
+		add(child, childRow);
+		SailSource.FlushBatch childBatch = child.freezeForFlush();
+		CountDownLatch admissionReached = new CountDownLatch(1);
+		CountDownLatch releaseAdmission = new CountDownLatch(1);
+		AtomicBoolean first = new AtomicBoolean(true);
+		AtomicReference<List<Statement>> childAdmission = new AtomicReference<>();
+		terminal.onEstimate = input -> {
+			if (first.compareAndSet(true, false)) {
+				childAdmission.set(readAll(input.openCursor()));
+				admissionReached.countDown();
+				await(releaseAdmission, "independent child admission release");
+			}
+		};
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> publication = executor.submit(() -> {
+			child.prepare();
+			childBatch.flush();
+			childBatch.unFreezeAndDiscardFlushed();
+		});
+		Throwable childFailure = null;
+		try {
+			await(admissionReached, "independent child numeric admission");
+			assertThat(childAdmission.get()).as("the paused child admission traversed its actual own row")
+					.contains(childRow);
+			if (acknowledge) {
+				parentBatch.flush();
+				parentBatch.unFreezeAndDiscardFlushed();
+			} else {
+				parentBatch.close();
+				parent.flush();
+			}
+			assertThat(terminal.committed).as("the independent parent publication completed before child admission")
+					.containsExactly(parentRow);
+			releaseAdmission.countDown();
+			try {
+				publication.get(5, TimeUnit.SECONDS);
+			} catch (java.util.concurrent.ExecutionException failure) {
+				childFailure = failure.getCause();
+			}
+		} finally {
+			releaseAdmission.countDown();
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).as("the child publisher terminates").isTrue();
+			childBatch.close();
+			parentBatch.close();
+			child.close();
+			parent.close();
+		}
+		assertThat(childFailure).as("independent frozen ancestor retirement cannot invalidate the child's input")
+				.isNull();
+		assertThat(childAdmission.get()).as("foreign frozen work is absent from child numeric coverage")
+				.containsExactly(childRow);
+		assertThat(terminal.committed).containsExactlyInAnyOrder(parentRow, childRow);
+		assertThat(terminal.approvalCount(parentRow)).hasValue(1);
+		assertThat(terminal.approvalCount(childRow)).hasValue(1);
+	}
+
+	@Test
+	void frozenAncestorInSameContextRetainsItsPrefixAcrossPhysicalAttemptFailure() throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		SailSourceBranch parent = branch(terminal);
+		SailSourceBranch child = branch(parent);
+		Statement prefix = statement("same-context-prefix");
+		Statement own = statement("same-context-child");
+		RuntimeException marker = new SailException("first physical attempt preparation fails");
+		terminal.failSinkPrepareAt = 1;
+		terminal.sinkPrepareFailure = marker;
+		try (child; parent) {
+			add(parent, prefix);
+			add(child, own);
+			try (SailSource.FlushBatch batch = child.freezeForFlush()) {
+				assertThatThrownBy(batch::flush).isSameAs(marker);
+				assertThat(terminal.sinkPrepareCalls).as("the logical graph reached its first physical attempt")
+						.hasValue(1);
+				assertThat(terminal.committed).as("the failed preparation applied no row").isEmpty();
+				batch.flush();
+				batch.unFreezeAndDiscardFlushed();
+			}
+		}
+		assertThat(terminal.committed).containsExactlyInAnyOrder(prefix, own);
+		assertThat(terminal.approvalCount(prefix)).hasValue(1);
+		assertThat(terminal.approvalCount(own)).hasValue(1);
+	}
+
+	@Test
+	void frozenStreamingFlushCapturesParentPrefixBeforeFirstPhysicalAttempt() throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		SailSourceBranch parent = branch(terminal);
+		SailSourceBranch child = branch(parent);
+		Statement prefix = statement("first-stage-prefix");
+		Statement own = statement("first-stage-child");
+		Set<Statement> preflightRows = ConcurrentHashMap.newKeySet();
+		AtomicReference<Set<Statement>> rowsAtFirstTerminalSink = new AtomicReference<>();
+		terminal.onEstimate = input -> {
+			try (CloseableIteration<Statement> cursor = input.openCursor()) {
+				while (cursor.hasNext()) {
+					preflightRows.add(cursor.next());
+				}
+			}
+		};
+		terminal.onSinkOpen = (thread, level) -> rowsAtFirstTerminalSink.compareAndSet(null, Set.copyOf(preflightRows));
+		SailException flushFailure = null;
+		try (child; parent) {
+			add(parent, prefix);
+			add(child, own);
+			try (SailSource.FlushBatch batch = child.freezeForFlush()) {
+				try {
+					batch.flush();
+					batch.unFreezeAndDiscardFlushed();
+				} catch (SailException failure) {
+					flushFailure = failure;
+				}
+			}
+		}
+		assertThat(rowsAtFirstTerminalSink.get())
+				.as("the first physical attempt follows estimation of parent and child rows")
+				.isNotNull()
+				.contains(prefix, own);
+		assertThat(flushFailure).as("the covered parent prefix and child row publish without uncovered input").isNull();
+		assertThat(terminal.committed).containsExactlyInAnyOrder(prefix, own);
+		assertThat(terminal.approvalCount(prefix)).hasValue(1);
+		assertThat(terminal.approvalCount(own)).hasValue(1);
+	}
+
+	@Test
 	void nestedUnionCursorRetainsEveryConstituentAfterPreflightScopeCloses() throws Exception {
 		RecordingStreamingSource backing = new RecordingStreamingSource();
 		AtomicReference<StatementInput> captured = new AtomicReference<>();
@@ -218,6 +362,209 @@ class StreamingWritePreflightOwnershipTest {
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void unguardedSnapshotWaitsForForeignPreparedSinkRelease() throws Exception {
 		assertSnapshotWaitsForForeignPreparedSink(false, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void unownedUnionRouteGuardDoesNotBlockGraphCapture() throws Exception {
+		assertUnownedUnionRouteGuardDoesNotBlock(false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void unownedUnionRouteGuardDoesNotBlockInputValidation() throws Exception {
+		assertUnownedUnionRouteGuardDoesNotBlock(true);
+	}
+
+	private static void assertUnownedUnionRouteGuardDoesNotBlock(boolean prepareDuringValidation) throws Exception {
+		RecordingStreamingSource primaryTerminal = new RecordingStreamingSource();
+		RecordingStreamingSource additionalTerminal = new RecordingStreamingSource();
+		SailSourceBranch sharedPrimary = branch(primaryTerminal);
+		SailSourceBranch sharedAdditional = branch(additionalTerminal);
+		SailSourceBranch primaryChild = branch(sharedPrimary);
+		SailSourceBranch additionalChild = branch(sharedAdditional);
+		UnionSailSource union = new UnionSailSource(primaryChild, additionalChild);
+		Statement primaryRow = statement("prepared-union-primary-route");
+		CountDownLatch foreignPrepared = new CountDownLatch(1);
+		CountDownLatch releaseForeign = new CountDownLatch(1);
+		AtomicBoolean foreignClosed = new AtomicBoolean();
+		AtomicBoolean foreignTimedOut = new AtomicBoolean();
+		AtomicBoolean estimateHookRan = new AtomicBoolean();
+		AtomicReference<List<Statement>> rowsAtEstimate = new AtomicReference<>(List.of());
+		AtomicReference<Throwable> foreignFailure = new AtomicReference<>();
+		AtomicReference<Thread> foreignThread = new AtomicReference<>();
+		AtomicInteger foreignReservationsAtPrepare = new AtomicInteger(-1);
+		AtomicReference<Future<?>> foreignTask = new AtomicReference<>();
+		AtomicBoolean foreignStarted = new AtomicBoolean();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Runnable startForeignPreparation = () -> {
+			if (!foreignStarted.compareAndSet(false, true)) {
+				return;
+			}
+			foreignTask.set(executor.submit(() -> {
+				foreignThread.set(Thread.currentThread());
+				try (SailSink sink = sharedAdditional.sink(IsolationLevels.SNAPSHOT)) {
+					sink.prepare();
+					foreignReservationsAtPrepare.set(additionalTerminal.liveWriteReservations.get());
+					foreignPrepared.countDown();
+					if (!releaseForeign.await(5, TimeUnit.SECONDS)) {
+						foreignTimedOut.set(true);
+					}
+				} catch (Throwable failure) {
+					foreignFailure.set(failure);
+					foreignPrepared.countDown();
+				} finally {
+					foreignClosed.set(true);
+				}
+			}));
+		};
+
+		Throwable preflightFailure = null;
+		Throwable cleanupFailure = null;
+		int primaryReservationsAtReturn = -1;
+		int additionalReservationsAtReturn = -1;
+		boolean foreignGuardHeldAtReturn = false;
+		boolean terminalRowsAbsentAtReturn = false;
+		boolean preflightEntered = false;
+		try (sharedPrimary; sharedAdditional; primaryChild; additionalChild) {
+			add(primaryChild, primaryRow);
+			primaryChild.prepare();
+			assertThat(primaryTerminal.liveWriteReservations)
+					.as("the primary child prepared its real backing write reservation")
+					.hasValue(1);
+			assertThat(primaryTerminal.estimatedRows.get())
+					.as("the primary child's actual row was traversed before routed contention")
+					.isGreaterThan(0);
+			assertThat(primaryTerminal.committed).as("prepared primary work is still private").isEmpty();
+			assertThat(additionalTerminal.committed).as("the additional route has no published row").isEmpty();
+
+			if (prepareDuringValidation) {
+				primaryTerminal.onEstimate = input -> {
+					if (estimateHookRan.compareAndSet(false, true)) {
+						rowsAtEstimate.set(readAll(input.openCursor()));
+						startForeignPreparation.run();
+						await(foreignPrepared, "foreign additional-route preparation during input validation");
+					}
+				};
+			} else {
+				startForeignPreparation.run();
+				await(foreignPrepared, "foreign additional-route preparation before graph capture");
+			}
+
+			if (!prepareDuringValidation) {
+				assertThat(foreignFailure.get()).as("the foreign public sink prepared successfully").isNull();
+				assertThat(foreignReservationsAtPrepare)
+						.as("the empty foreign SNAPSHOT sink owns an actual prepared-write reservation")
+						.hasValue(1);
+				assertThat(additionalTerminal.liveWriteReservations).hasValue(1);
+				assertThat(additionalTerminal.committed).as("the additional terminal is still unchanged")
+						.isEmpty();
+			}
+
+			StreamingWritePreflight preflight = new StreamingWritePreflight(union);
+			SailClosable scope = null;
+			try {
+				try {
+					scope = preflight.enter();
+					preflightEntered = scope != null;
+				} catch (RuntimeException | Error failure) {
+					preflightFailure = failure;
+				}
+				primaryReservationsAtReturn = primaryTerminal.liveWriteReservations.get();
+				additionalReservationsAtReturn = additionalTerminal.liveWriteReservations.get();
+				foreignGuardHeldAtReturn = additionalReservationsAtReturn == 1 && !foreignClosed.get();
+				terminalRowsAbsentAtReturn = primaryTerminal.committed.isEmpty()
+						&& additionalTerminal.committed.isEmpty();
+			} finally {
+				releaseForeign.countDown();
+				Future<?> task = foreignTask.get();
+				if (task != null) {
+					try {
+						task.get(5, TimeUnit.SECONDS);
+					} catch (java.util.concurrent.ExecutionException failure) {
+						foreignFailure.compareAndSet(null, failure.getCause());
+					} catch (Exception failure) {
+						foreignFailure.compareAndSet(null, failure);
+					}
+				}
+				if (scope != null) {
+					try {
+						scope.close();
+					} catch (RuntimeException | Error failure) {
+						cleanupFailure = failure;
+					}
+				}
+				try {
+					preflight.close();
+				} catch (RuntimeException | Error failure) {
+					if (cleanupFailure == null) {
+						cleanupFailure = failure;
+					} else {
+						cleanupFailure.addSuppressed(failure);
+					}
+				}
+				executor.shutdownNow();
+				try {
+					if (!executor.awaitTermination(5, TimeUnit.SECONDS) && cleanupFailure == null) {
+						cleanupFailure = new AssertionError("the foreign prepared sink worker did not terminate");
+					}
+				} catch (InterruptedException interrupted) {
+					Thread.currentThread().interrupt();
+					if (cleanupFailure == null) {
+						cleanupFailure = interrupted;
+					}
+				}
+			}
+
+			if (prepareDuringValidation) {
+				assertThat(estimateHookRan).as("the foreign guard started after graph capture at the primary estimate")
+						.isTrue();
+				assertThat(rowsAtEstimate.get())
+						.as("the new primary input was traversed before the foreign guard began")
+						.containsExactly(primaryRow);
+			}
+			assertThat(foreignFailure.get()).as("the held foreign prepared sink completed without fixture failure")
+					.isNull();
+			assertThat(foreignReservationsAtPrepare)
+					.as("the foreign empty SNAPSHOT sink held an actual prepared-write reservation")
+					.hasValue(1);
+			assertThat(foreignThread.get()).as("the foreign guard belongs to its worker thread")
+					.isNotSameAs(Thread.currentThread());
+			assertThat(foreignTimedOut).as("the preflight did not wait for the foreign guard safety deadline")
+					.isFalse();
+			assertThat(additionalReservationsAtReturn)
+					.as("the foreign worker's prepared-write reservation was sampled before release")
+					.isEqualTo(1);
+			assertThat(foreignGuardHeldAtReturn)
+					.as("preflight returned while the unrelated additional-route prepared reservation was still held")
+					.isTrue();
+			assertThat(primaryReservationsAtReturn).as("the primary prepared reservation survived preflight")
+					.isEqualTo(1);
+			assertThat(terminalRowsAbsentAtReturn)
+					.as("no physical terminal row was applied while either route guard was held")
+					.isTrue();
+			assertThat(cleanupFailure).as("preflight cleanup completed after the foreign owner released").isNull();
+
+			union.flush();
+			sharedPrimary.flush();
+			sharedAdditional.flush();
+			assertThat(primaryTerminal.committed).containsExactly(primaryRow);
+			assertThat(additionalTerminal.committed).isEmpty();
+			assertThat(primaryTerminal.approvalCount(primaryRow)).hasValue(1);
+			assertThat(primaryTerminal.liveWriteReservations).hasValue(0);
+			assertThat(additionalTerminal.liveWriteReservations).hasValue(0);
+			assertThat(primaryTerminal.liveSinkPreparations).hasValue(0);
+			assertThat(additionalTerminal.liveSinkPreparations).hasValue(0);
+
+			if (preflightFailure != null) {
+				throw new AssertionError(
+						"streaming Union preflight failed while an unowned empty route held its guard; "
+								+ "phase=" + (prepareDuringValidation ? "input-validation" : "graph-capture")
+								+ ", foreignHeldAtReturn=" + foreignGuardHeldAtReturn,
+						preflightFailure);
+			}
+			assertThat(preflightEntered).as("the Union preflight entered successfully").isTrue();
+		}
 	}
 
 	@Test
@@ -805,7 +1152,8 @@ class StreamingWritePreflightOwnershipTest {
 		assertThat(finished).withFailMessage("forked owner snapshot probe timed out\n%s", output).isTrue();
 		assertThat(child.exitValue()).withFailMessage("forked owner snapshot probe failed\n%s", output).isZero();
 		assertThat(output)
-				.contains("BOTH_SINKS_PREPARED", "BOTH_UNION_PREFLIGHTS_REACHED_OWNER_RESOLUTION",
+				.contains("BOTH_SINKS_PREPARED",
+						"BOTH_UNION_PREFLIGHTS_COMPLETED_WITH_PREPARED_GUARDS_HELD",
 						"BUFFERED_ROWS_RETAINED_AFTER_PREFLIGHT", "OWNER_ROWS_PUBLISHED_AFTER_RETRY",
 						"PREPARED_RESERVATIONS_RELEASED");
 	}
@@ -2798,7 +3146,6 @@ class StreamingWritePreflightOwnershipTest {
 			CountDownLatch bothCompleted = new CountDownLatch(2);
 			CountDownLatch bothPreflightsCompleted = new CountDownLatch(2);
 			CountDownLatch allowOwnerFlush = new CountDownLatch(1);
-			CountDownLatch bothAtOwnerResolution = new CountDownLatch(2);
 			Set<Thread> ownerResolutionThreads = ConcurrentHashMap.newKeySet();
 			AtomicReference<Throwable> workerFailure = new AtomicReference<>();
 			AtomicReference<String> primaryOutcome = new AtomicReference<>();
@@ -2830,42 +3177,65 @@ class StreamingWritePreflightOwnershipTest {
 			}
 			if (primaryBacking.liveWriteReservations.get() != 1
 					|| additionalBacking.liveWriteReservations.get() != 1
+					|| primaryBacking.liveSinkPreparations.get() != 0
+					|| additionalBacking.liveSinkPreparations.get() != 0
 					|| !primaryRowsAtPrepare.get().equals(List.of(primaryRow))
 					|| !additionalRowsAtPrepare.get().equals(List.of(additionalRow))) {
-				throw new AssertionError("Prepared sink reservations or buffered row witnesses were missing: primary="
-						+ primaryBacking.liveWriteReservations + "/" + primaryRowsAtPrepare.get() + ", additional="
-						+ additionalBacking.liveWriteReservations + "/" + additionalRowsAtPrepare.get());
+				throw new AssertionError(
+						"Branch reservations, terminal preparations or buffered row witnesses differed: "
+								+ "primaryBranchReservations/terminalPreparations="
+								+ primaryBacking.liveWriteReservations + "/"
+								+ primaryBacking.liveSinkPreparations + " rows=" + primaryRowsAtPrepare.get()
+								+ ", additionalBranchReservations/terminalPreparations="
+								+ additionalBacking.liveWriteReservations + "/"
+								+ additionalBacking.liveSinkPreparations + " rows=" + additionalRowsAtPrepare.get());
 			}
 			System.out.println("BOTH_SINKS_PREPARED primaryRows=" + primaryRowsAtPrepare.get().size()
-					+ " additionalRows=" + additionalRowsAtPrepare.get().size() + " liveReservations=1/1");
+					+ " additionalRows=" + additionalRowsAtPrepare.get().size()
+					+ " branchReservations=1/1 terminalPreparations=0/0");
 
-			Consumer<Thread> ownerResolutionBarrier = thread -> {
-				if (ownerResolutionThreads.add(thread)) {
-					bothAtOwnerResolution.countDown();
-					awaitBarrier(bothAtOwnerResolution, "both Union graph collections to reach owner resolution");
-				}
-			};
-			primaryBacking.onNullOwnerQuery = ownerResolutionBarrier;
-			additionalBacking.onNullOwnerQuery = ownerResolutionBarrier;
+			Consumer<Thread> ownerResolutionDiagnostic = ownerResolutionThreads::add;
+			primaryBacking.onNullOwnerQuery = ownerResolutionDiagnostic;
+			additionalBacking.onNullOwnerQuery = ownerResolutionDiagnostic;
 			beginPreflight.countDown();
-			if (!bothAtOwnerResolution.await(5, TimeUnit.SECONDS)) {
-				System.err.println("BOTH_UNION_PREFLIGHTS_DID_NOT_REACH_OWNER_RESOLUTION; participants="
-						+ ownerResolutionThreads.size() + "; workerFailure=" + workerFailure.get());
-				dumpAllThreads("Union preflight activation did not complete");
-				System.exit(4);
-			}
-			System.out.println("BOTH_UNION_PREFLIGHTS_REACHED_OWNER_RESOLUTION participants="
-					+ ownerResolutionThreads.size());
 			if (!bothPreflightsCompleted.await(5, TimeUnit.SECONDS)) {
-				System.err.println("BOTH_UNION_PREFLIGHTS_DID_NOT_COMPLETE; participants="
+				System.err.println("BOTH_UNION_PREFLIGHTS_DID_NOT_COMPLETE; ownerCallbacks="
 						+ ownerResolutionThreads.size() + "; workerFailure=" + workerFailure.get());
 				dumpAllThreads("Union preflight completion did not complete");
 				System.exit(5);
+			}
+			if (workerFailure.get() != null) {
+				throw new AssertionError("Union owner worker failed before owner retry flush", workerFailure.get());
+			}
+			if (!isAcceptedOutcome(primaryOutcome.get()) || !isAcceptedOutcome(additionalOutcome.get())) {
+				throw new AssertionError("Unexpected Union preflight outcomes: primary=" + primaryOutcome.get()
+						+ ", additional=" + additionalOutcome.get());
+			}
+			if (!List.of(primaryRow).equals(primaryRowsAfterPreflight.get())
+					|| !List.of(additionalRow).equals(additionalRowsAfterPreflight.get())) {
+				throw new AssertionError("Union preflight did not retain both owner's exact buffered rows: primary="
+						+ primaryRowsAfterPreflight.get() + ", additional=" + additionalRowsAfterPreflight.get());
+			}
+			if (primaryBacking.liveWriteReservations.get() != 1
+					|| additionalBacking.liveWriteReservations.get() != 1
+					|| primaryBacking.liveSinkPreparations.get() != 0
+					|| additionalBacking.liveSinkPreparations.get() != 0) {
+				throw new AssertionError("A branch reservation changed or a terminal sink prepared before both "
+						+ "Union attempts ended: primary branch/terminal=" + primaryBacking.liveWriteReservations + "/"
+						+ primaryBacking.liveSinkPreparations + ", additional branch/terminal="
+						+ additionalBacking.liveWriteReservations + "/" + additionalBacking.liveSinkPreparations);
+			}
+			if (primaryCleanupThread.get() != null || additionalCleanupThread.get() != null) {
+				throw new AssertionError("Owner cleanup ran before the explicit retry release: primary="
+						+ primaryCleanupThread.get() + ", additional=" + additionalCleanupThread.get());
 			}
 			if (!primaryBacking.committed.isEmpty() || !additionalBacking.committed.isEmpty()) {
 				throw new AssertionError("A prepared owner published before the ordinary retry flush: primary="
 						+ primaryBacking.committed + ", additional=" + additionalBacking.committed);
 			}
+			System.out.println("BOTH_UNION_PREFLIGHTS_COMPLETED_WITH_PREPARED_GUARDS_HELD ownerCallbacks="
+					+ ownerResolutionThreads.size()
+					+ " rowsRetained=1/1 branchReservations=1/1 terminalPreparations=0/0");
 			System.out.println("BOTH_PREPARED_ROWS_RETAINED_BEFORE_OWNER_RETRY_FLUSH");
 			allowOwnerFlush.countDown();
 

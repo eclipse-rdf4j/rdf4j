@@ -188,43 +188,57 @@ interface FrozenFlush {
 					needsStaging = !staged;
 				}
 				StreamingWritePreflight streaming = root.preflight();
-				try (SailClosable preflight = streaming == null ? null : streaming.enter()) {
-					try {
-						if (needsStaging) {
+				try {
+					if (needsStaging || !apply) {
+						try (SailClosable preflight = streaming == null ? null : streaming.enter()) {
+							if (needsStaging) {
+								try {
+									root.discoverValidationCarriers(this);
+									root.stage(this);
+								} catch (RuntimeException | Error failure) {
+									if (streaming != null) {
+										streaming.failedForRoot(failure);
+									}
+									synchronized (this) {
+										// A partial transfer cannot masquerade as a complete replay on the next call.
+										stagingFailure = failure;
+									}
+									throw failure;
+								}
+							}
+							synchronized (this) {
+								staged = true;
+							}
+						}
+					}
+					if (apply) {
+						// Staging has made every native-facing ancestor immutable. Admit that complete graph before
+						// opening a terminal sink; the logical publication and writer reservation remain retained.
+						try (SailClosable preflight = streaming == null ? null : streaming.enter()) {
 							try {
-								root.discoverValidationCarriers(this);
-								root.stage(this);
+								List<Batch> toApply;
+								synchronized (this) {
+									toApply = List.copyOf(terminals);
+								}
+								for (Batch terminal : toApply) {
+									terminal.apply();
+								}
+								synchronized (this) {
+									flushed = true;
+								}
 							} catch (RuntimeException | Error failure) {
 								if (streaming != null) {
 									streaming.failedForRoot(failure);
 								}
-								synchronized (this) {
-									// A partial logical transfer must never masquerade as a complete replay on the next
-									// call.
-									stagingFailure = failure;
-								}
 								throw failure;
 							}
 						}
-						List<Batch> toApply;
-						synchronized (this) {
-							staged = true;
-							toApply = List.copyOf(terminals);
-						}
-						if (apply) {
-							for (Batch terminal : toApply) {
-								terminal.apply();
-							}
-							synchronized (this) {
-								flushed = true;
-							}
-						}
-					} catch (RuntimeException | Error failure) {
-						if (streaming != null) {
-							streaming.failedForRoot(failure);
-						}
-						throw failure;
 					}
+				} catch (RuntimeException | Error failure) {
+					if (streaming != null) {
+						streaming.failedForRoot(failure);
+					}
+					throw failure;
 				} finally {
 					synchronized (this) {
 						running = false;

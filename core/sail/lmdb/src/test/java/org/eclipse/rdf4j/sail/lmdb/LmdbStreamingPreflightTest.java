@@ -13,21 +13,34 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.util.List;
+import java.util.Set;
+import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailConflictException;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
+import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.base.StreamingPreflightBranchFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbStreamingPreflightTest {
@@ -175,6 +188,116 @@ class LmdbStreamingPreflightTest {
 	}
 
 	@Test
+	void emptyStatementInputUsesActiveNoDemandPreflightScope(@TempDir File dataDir) throws Exception {
+		try (TestStore fixture = new TestStore(dataDir);
+				TestStatementInput input = new TestStatementInput(emptyPreflight())) {
+			SailSource source = fixture.store.getBackingStore().getExplicitSailSource();
+			SailSource.NumericWriteEstimate estimate = source.estimateWritePreflight(input);
+
+			assertEquals(emptyPreflight(), input.metadata(), "the input must expose exact empty metadata");
+			assertEquals(1, input.generations().size(), "the repeatable input must expose its current generation");
+			assertTrue(input.isCurrent(), "the estimate must validate the current input generation");
+			assertSame(SailSource.NumericWriteEstimate.EMPTY, estimate,
+					"an empty repeatable input must use the shared no-demand estimate");
+			SailSource.WritePreflightScope scope = source.beginWritePreflight(estimate, new Object());
+			try {
+				assertTrue(scope.isActive(), "the empty estimate still retains a closeable logical scope");
+			} finally {
+				scope.close();
+			}
+			assertFalse(scope.isActive(), "closing the empty estimate scope must retire it");
+		}
+	}
+
+	@Test
+	void metadataOnlyInputsRemainDistinctFromEmptyNumericEstimate(@TempDir File dataDir) throws Exception {
+		Resource clearedContext = VF.createIRI("urn:streaming-preflight:cleared-context");
+		List<SailSource.WritePreflight> metadataOnly = List.of(
+				new SailSource.WritePreflight(List.of(),
+						List.of(new SailSource.NamespaceUpdate("added", "urn:streaming-preflight:namespace")),
+						Set.of(), Set.of(), false, false),
+				new SailSource.WritePreflight(List.of(), List.of(), Set.of("removed"), Set.of(), false, false),
+				new SailSource.WritePreflight(List.of(), List.of(), Set.of(), Set.of(), false, true),
+				new SailSource.WritePreflight(List.of(), List.of(), Set.of(), Set.of(), true, false),
+				new SailSource.WritePreflight(List.of(), List.of(), Set.of(), Set.of(clearedContext), false, false));
+
+		try (TestStore fixture = new TestStore(dataDir)) {
+			SailSource source = fixture.store.getBackingStore().getExplicitSailSource();
+			for (int index = 0; index < metadataOnly.size(); index++) {
+				SailSource.WritePreflight metadata = metadataOnly.get(index);
+				try (TestStatementInput input = new TestStatementInput(metadata)) {
+					assertFalse(input.hasStatements(), "metadata-only input must contain no RDF statement rows");
+					assertTrue(input.hasChanges(), "metadata-only input must remain a real logical change");
+					assertEquals(metadata, input.metadata(),
+							"the input must expose its exact namespace/clear metadata");
+					assertEquals(1, input.generations().size(),
+							"each metadata change must retain one logical generation");
+					assertTrue(input.isCurrent(), "metadata-only inputs remain current throughout estimation");
+					SailSource.NumericWriteEstimate estimate = source.estimateWritePreflight(input);
+					assertNotSame(SailSource.NumericWriteEstimate.EMPTY, estimate,
+							"metadata-only change " + index + " must not be collapsed into the empty estimate");
+				}
+			}
+		}
+	}
+
+	@Test
+	@Timeout(value = 20, unit = TimeUnit.SECONDS)
+	void readOnlySerializableNegativeReadConflictsWithLaterPublication(@TempDir File dataDir) throws Exception {
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc").setTripleDBSize(MAP_SIZE).setValueDBSize(MAP_SIZE));
+		store.init();
+		Resource absentSubject = VF.createIRI("urn:streaming-preflight:absent-subject");
+		IRI predicate = VF.createIRI("urn:streaming-preflight:serializable-predicate");
+		Value object = VF.createLiteral("late publication");
+		Statement expected = VF.createStatement(absentSubject, predicate, object);
+		try (SailConnection reader = store.getConnection()) {
+			reader.begin(IsolationLevels.SERIALIZABLE);
+			try (CloseableIteration<? extends Statement> negativeRead = reader.getStatements(absentSubject, predicate,
+					object, false)) {
+				assertFalse(negativeRead.hasNext(), "the SERIALIZABLE reader must record an actual negative lookup");
+			}
+
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.addStatement(absentSubject, predicate, object);
+				writer.commit();
+			}
+
+			try (SailConnection freshView = store.getConnection()) {
+				freshView.begin(IsolationLevels.SNAPSHOT_READ);
+				try (CloseableIteration<? extends Statement> published = freshView.getStatements(absentSubject,
+						predicate,
+						object, false)) {
+					assertTrue(published.hasNext(), "an independent fresh view must confirm the competing row");
+					assertEquals(expected, published.next(),
+							"the independent view must see the exact competing statement");
+					assertFalse(published.hasNext(), "the competing statement must be published exactly once");
+				}
+				freshView.commit();
+			}
+
+			Throwable validationFailure = null;
+			try {
+				reader.prepare();
+			} catch (SailConflictException failure) {
+				validationFailure = failure;
+			}
+			if (validationFailure == null) {
+				try {
+					reader.commit();
+				} catch (SailConflictException failure) {
+					validationFailure = failure;
+				}
+			}
+			assertTrue(validationFailure instanceof SailConflictException,
+					"prepare or read-only commit must reject the stale SERIALIZABLE negative read");
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void additionalBufferedStatementInvalidatesCachedPreflight(@TempDir File dataDir) throws Exception {
 		try (TestStore fixture = new TestStore(dataDir)) {
 			fixture.addBufferedStatements();
@@ -200,6 +323,48 @@ class LmdbStreamingPreflightTest {
 
 	private static void assertNoArrayCopies(StreamingPreflightBranchFactory branch, String name) {
 		assertEquals(0, branch.arrayCopies(), name + " must not copy its buffered model into an array");
+	}
+
+	private static SailSource.WritePreflight emptyPreflight() {
+		return new SailSource.WritePreflight(List.of(), List.of(), Set.of(), Set.of(), false, false);
+	}
+
+	private static final class TestStatementInput implements StatementInput {
+		private final SailSource.WritePreflight metadata;
+		private final Object generationIdentity = new Object();
+
+		private TestStatementInput(SailSource.WritePreflight metadata) {
+			this.metadata = metadata;
+		}
+
+		@Override
+		public CloseableIteration<Statement> openCursor() {
+			return new EmptyIteration<>();
+		}
+
+		@Override
+		public List<Generation> generations() {
+			return List.of(new Generation(generationIdentity, 1));
+		}
+
+		@Override
+		public SailSource.WritePreflight metadata() {
+			return metadata;
+		}
+
+		@Override
+		public boolean hasStatements() {
+			return false;
+		}
+
+		@Override
+		public boolean isCurrent() {
+			return true;
+		}
+
+		@Override
+		public void close() {
+		}
 	}
 
 	private static final class TestStore implements AutoCloseable {

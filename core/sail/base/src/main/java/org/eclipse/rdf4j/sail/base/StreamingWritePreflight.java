@@ -62,6 +62,13 @@ public final class StreamingWritePreflight implements SailClosable {
 		return frame != null && frame.graph.sources.contains(source);
 	}
 
+	/** Opportunistic admission applies only to sources participating in this lexical publication graph. */
+	static boolean isNonblocking(SailSource source) {
+		Frame frame = CURRENT.get();
+		return frame != null && frame.graph.sources.contains(source)
+				&& (frame.graph.nonblocking || frame.nonblockingEntries > 0);
+	}
+
 	/** Keep routed ancestor generations ordered until their own publication captures the complete prefix. */
 	static boolean canCompress(SailSource source) {
 		Frame frame = CURRENT.get();
@@ -141,6 +148,7 @@ public final class StreamingWritePreflight implements SailClosable {
 		List<SailSource.WriteOwner> acquiredOwners = new ArrayList<>();
 		boolean committed = false;
 		try {
+			graph.captureFrozenContexts();
 			graph.collect(root, List.of(), null);
 			graph.validateInputs();
 			graph.finishGroups();
@@ -444,6 +452,7 @@ public final class StreamingWritePreflight implements SailClosable {
 	private static final class Graph implements SailClosable {
 		private final Set<SailSource> sources = identitySet();
 		private final Set<SailSource> frontiers = identitySet();
+		private final Set<FrozenFlush.Context> frozenContexts = identitySet();
 		private final Set<SailSourceBranch> collected = identitySet();
 		private final Map<Changeset, StatementInput> inputs = new IdentityHashMap<>();
 		private final Map<SailSourceBranch, Set<Changeset>> members = new IdentityHashMap<>();
@@ -460,6 +469,18 @@ public final class StreamingWritePreflight implements SailClosable {
 				Set<Changeset> selected = identitySet();
 				selected.add(preparing);
 				this.preparing.put((SailSourceBranch) root, selected);
+			}
+		}
+
+		private void captureFrozenContexts() {
+			// Collect every operation root before following routes, so Union sibling order cannot confer ownership.
+			for (SailSource frontier : frontiers) {
+				if (frontier instanceof SailSourceBranch branch) {
+					FrozenFlush.Context context = branch.streamingFrozenContext(nonblocking);
+					if (context != null) {
+						frozenContexts.add(context);
+					}
+				}
 			}
 		}
 
@@ -481,7 +502,8 @@ public final class StreamingWritePreflight implements SailClosable {
 			if (source instanceof SailSourceBranch branch) {
 				boolean first = collected.add(branch);
 				SailSourceBranch.StreamingSnapshot snapshot = branch.streamingSnapshot(nonblocking, requestedOwner,
-						first, frontiers.contains(branch), preparing.getOrDefault(branch, Set.of()), failure);
+						first, frontiers.contains(branch), frozenContexts, preparing.getOrDefault(branch, Set.of()),
+						failure);
 				if (snapshot.publicationFrontier()) {
 					frontiers.add(branch);
 				}
@@ -664,6 +686,10 @@ public final class StreamingWritePreflight implements SailClosable {
 				}
 			}
 			if (source instanceof SailSourceBranch branch) {
+				if (!graph.frontiers.contains(branch) && preparing.getOrDefault(branch, Set.of()).isEmpty()) {
+					// A route with no selected input owns neither membership nor a publication frontier.
+					return;
+				}
 				branch.validateStreamingChanges(graph.nonblocking || nonblockingEntries > 0,
 						graph.frontiers.contains(branch),
 						preparing.getOrDefault(branch, Set.of()), current -> {

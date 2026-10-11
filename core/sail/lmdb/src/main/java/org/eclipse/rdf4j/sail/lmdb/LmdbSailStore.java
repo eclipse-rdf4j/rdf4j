@@ -6068,6 +6068,42 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/** Fixed-size failure context, including nested terms, without rendering or copying user values. */
+	private static String statementTermKinds(Statement statement, Throwable primary) {
+		if (statement == null) {
+			return "unavailable";
+		}
+		try {
+			return "subject=" + termKind(statement.getSubject()) + ", predicate=" + termKind(statement.getPredicate())
+					+ ", object=" + termKind(statement.getObject()) + ", context=" + termKind(statement.getContext());
+		} catch (RuntimeException | Error diagnosticFailure) {
+			// A lazy statement can itself fail after rollback. Retain that evidence without masking the write failure.
+			if (diagnosticFailure != primary) {
+				primary.addSuppressed(diagnosticFailure);
+			}
+			return "unavailable";
+		}
+	}
+
+	private static String termKind(Value value) {
+		if (value == null) {
+			return "null";
+		}
+		if (value instanceof IRI) {
+			return "IRI";
+		}
+		if (value instanceof BNode) {
+			return "BNode";
+		}
+		if (value instanceof Literal) {
+			return "Literal";
+		}
+		if (value instanceof TripleTerm) {
+			return "TripleTerm";
+		}
+		return "unknown";
+	}
+
 	@Override
 	public SailSource getExplicitSailSource() {
 		return new LmdbSailSource(true, null);
@@ -6332,6 +6368,10 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public SailSource.NumericWriteEstimate estimateWritePreflight(StatementInput input) {
+			if (!input.hasChanges()) {
+				input.validate();
+				return SailSource.NumericWriteEstimate.EMPTY;
+			}
 			SailSource.WritePreflight metadata = input.metadata();
 			long tripleDelta = tripleStore.estimateWriteBytes(input);
 			long valueDelta = valueStore.estimateWriteBytes(input);
@@ -6448,6 +6488,10 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public SailSource.WritePreflightScope beginWritePreflight(SailSource.NumericWriteEstimate estimate,
 				Object requestedOwner) throws SailException {
+			if (estimate == SailSource.NumericWriteEstimate.EMPTY) {
+				// Read-only validation retains its logical owner, but does not create native capacity demand.
+				return super.beginWritePreflight(estimate, requestedOwner);
+			}
 			if (!(estimate instanceof LmdbNumericWriteEstimate numericEstimate)) {
 				throw new IllegalArgumentException("Unsupported numeric LMDB write estimate: " + estimate);
 			}
@@ -7126,8 +7170,8 @@ class LmdbSailStore implements SailStore {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
 					logger.error(
-							"Encountered an unexpected problem while trying to add a statement. Last statement that was attempted to be added: [ {} ]",
-							last, e);
+							"Encountered an unexpected problem while trying to add a statement. Last statement term kinds: [ {} ]",
+							statementTermKinds(last, e), e);
 				}
 
 				if (e instanceof Error error) {
@@ -7244,8 +7288,8 @@ class LmdbSailStore implements SailStore {
 					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
 				} else {
 					logger.error(
-							"Encountered an unexpected problem while trying to add a statement. Last statement that was attempted to be added: [ {} ]",
-							last, e);
+							"Encountered an unexpected problem while trying to add a statement. Last statement term kinds: [ {} ]",
+							statementTermKinds(last, e), e);
 				}
 
 				if (e instanceof Error error) {

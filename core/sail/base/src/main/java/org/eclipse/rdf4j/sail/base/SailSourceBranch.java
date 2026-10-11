@@ -69,7 +69,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
 	 */
 	private final ArrayDeque<Changeset> changes = new ArrayDeque<>();
-	private BranchFlushBatch frozenBatch;
+	// Routing can observe frozen ownership without acquiring an unrelated transaction's branch guard.
+	private volatile BranchFlushBatch frozenBatch;
 	/** Leases transferred with shallow models; pending sinks retain their own leases until merge or close. */
 	private final ArrayDeque<WriteIntent> bufferedWriteIntents = new ArrayDeque<>();
 
@@ -648,13 +649,23 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		};
 		changeset.setSinkIsolationLevel(level);
 		try {
-			semaphore.lock();
-			if (closed) {
-				throw new SailException("SailSourceBranch is closed");
+			lockSinkAdmission();
+			try {
+				if (closed) {
+					throw new SailException("SailSourceBranch is closed");
+				}
+				pending.add(changeset);
+			} finally {
+				semaphore.unlock();
 			}
-			pending.add(changeset);
-		} finally {
-			semaphore.unlock();
+		} catch (RuntimeException | Error admissionFailure) {
+			Throwable cleanupFailure = closeResource(
+					admissionFailure instanceof StreamingWritePreflight.Unavailable ? null : admissionFailure,
+					changeset);
+			if (cleanupFailure != null) {
+				rethrow(cleanupFailure);
+			}
+			throw admissionFailure;
 		}
 		return changeset;
 	}
@@ -1224,7 +1235,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		if (current != null) {
 			return current;
 		}
-		semaphore.lock();
+		lockSinkAdmission();
 		try {
 			return bufferedWriteIntents.isEmpty() ? null : bufferedWriteIntents.getFirst().owner();
 		} finally {
@@ -1490,8 +1501,28 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			boolean publicationFrontier) {
 	}
 
+	FrozenFlush.Context streamingFrozenContext(boolean nonblocking) {
+		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			lockStreamingSnapshot(nonblocking);
+			try {
+				return frozenBatch == null ? null : frozenBatch.context;
+			} finally {
+				semaphore.unlock();
+			}
+		}
+	}
+
 	StreamingSnapshot streamingSnapshot(boolean nonblocking, Object inherited, boolean retainInputs,
-			boolean publicationFrontier, Set<Changeset> preparing, AtomicReference<Throwable> failure) {
+			boolean publicationFrontier, Set<FrozenFlush.Context> frozenContexts, Set<Changeset> preparing,
+			AtomicReference<Throwable> failure) {
+		BranchFlushBatch observedBatch = frozenBatch;
+		FrozenFlush.Context observedContext = observedBatch == null ? null : observedBatch.context;
+		if (!publicationFrontier && preparing.isEmpty()
+				&& (observedContext == null || !frozenContexts.contains(observedContext))) {
+			// No buffered input belongs to this operation here. Preserve its route and inherited owner; another
+			// child's publication, private intents, or prepared guard cannot add obligations to this frame.
+			return new StreamingSnapshot(List.of(), false, owner(inherited), false);
+		}
 		// Resolve callbacks before the short guard. Retain exact holders before any pending sink can retire.
 		Object effectiveOwner = owner(inherited);
 		if (effectiveOwner == null) {
@@ -1502,11 +1533,14 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			try {
 				lockStreamingSnapshot(nonblocking);
 				try {
+					boolean ownedFrozen = frozenBatch != null && (publicationFrontier
+							|| frozenBatch.context != null && frozenContexts.contains(frozenBatch.context));
+					boolean effectiveFrontier = publicationFrontier || ownedFrozen;
 					if (effectiveOwner == null && !bufferedWriteIntents.isEmpty()) {
 						effectiveOwner = bufferedWriteIntents.getFirst().owner();
 					}
 					if (retainInputs) {
-						for (Changeset change : streamingChangesLocked(publicationFrontier, preparing)) {
+						for (Changeset change : streamingChangesLocked(effectiveFrontier, preparing)) {
 							StatementInput input = change.statementInput(failure);
 							if (input != null) {
 								retained.add(new StreamingChange(change, input));
@@ -1514,8 +1548,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 						}
 					}
 					return new StreamingSnapshot(List.copyOf(retained),
-							frozenBatch != null && frozenBatch.forwarded, effectiveOwner,
-							publicationFrontier || frozenBatch != null);
+							ownedFrozen && frozenBatch.forwarded, effectiveOwner, effectiveFrontier);
 				} finally {
 					semaphore.unlock();
 				}
@@ -1557,7 +1590,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	private List<Changeset> streamingChangesLocked(boolean publicationFrontier, Set<Changeset> preparing) {
-		if (frozenBatch != null) {
+		if (frozenBatch != null && publicationFrontier) {
 			return List.copyOf(frozenBatch.captured);
 		}
 		List<Changeset> snapshot = publicationFrontier ? new ArrayList<>(changes) : new ArrayList<>();
@@ -2108,7 +2141,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		private final ArrayList<Changeset> staged;
 		private final List<WriteIntent> intents;
 		private final ArrayList<SailClosable> models = new ArrayList<>();
-		private FrozenFlush.Context context;
+		// A matching identity only claims ownership; streamingSnapshot rechecks it under the branch guard.
+		private volatile FrozenFlush.Context context;
 		private boolean stagedOnce;
 		private boolean forwarded;
 		private boolean released;
@@ -2515,7 +2549,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	void preparedChangeset(Changeset changeset) {
-		semaphore.lock();
+		lockSinkAdmission();
 		try {
 			checkWriteNotSuspended();
 			preparedContinuations.put(changeset, writeContinuation());
@@ -2599,11 +2633,19 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	private void checkWriteContinuationAdmission() {
-		semaphore.lock();
+		lockSinkAdmission();
 		try {
 			checkWriteNotSuspended();
 		} finally {
 			semaphore.unlock();
+		}
+	}
+
+	private void lockSinkAdmission() {
+		if (StreamingWritePreflight.isNonblocking(this)) {
+			lockStreamingSnapshot(true);
+		} else {
+			semaphore.lock();
 		}
 	}
 
