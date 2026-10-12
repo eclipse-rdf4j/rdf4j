@@ -48,6 +48,10 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final long objID;
 	private final Resource context;
 	private final long contextID;
+	private final long subjVersion;
+	private final long predVersion;
+	private final long objVersion;
+	private final long contextVersion;
 
 	/*--------------*
 	 * Constructors *
@@ -73,8 +77,9 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
 		this.readSnapshot = readSnapshot;
-		ValueStoreRevision revision = readSnapshot == null ? valueStore.getRevision()
-				: readSnapshot.completedRevision();
+		ValueStoreRevision revision = !ValueStore.canReuseNativeLeaf(subj) && !ValueStore.canReuseNativeLeaf(pred)
+				&& !ValueStore.canReuseNativeLeaf(obj) && !ValueStore.canReuseNativeLeaf(context) ? null
+						: readSnapshot == null ? valueStore.getRevision() : readSnapshot.completedRevision();
 		this.subjID = reusableId(subj, revision);
 		this.subj = subjID == LmdbValue.UNKNOWN_ID ? null : subj;
 		this.predID = reusableId(pred, revision);
@@ -83,11 +88,20 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		this.obj = objID == LmdbValue.UNKNOWN_ID ? null : obj;
 		this.contextID = reusableId(context, revision);
 		this.context = contextID == LmdbValue.UNKNOWN_ID ? null : context;
+		this.subjVersion = semanticVersion(this.subj);
+		this.predVersion = semanticVersion(this.pred);
+		this.objVersion = semanticVersion(this.obj);
+		this.contextVersion = semanticVersion(this.context);
+	}
+
+	private static long semanticVersion(Value value) {
+		return value instanceof LmdbValue nativeValue ? nativeValue.getSemanticVersion() : LmdbValue.UNKNOWN_ID;
 	}
 
 	/** Returns the value's internal ID when it is a native value of the given revision, otherwise UNKNOWN_ID. */
 	private static long reusableId(Value value, ValueStoreRevision revision) {
-		if (value instanceof LmdbValue nativeValue && nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
+		if (ValueStore.canReuseNativeLeaf(value) && value instanceof LmdbValue nativeValue
+				&& nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
 			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
 			ValueStoreRevision owner = identity.revision()instanceof ValueStoreRevision.Lazy lazy ? lazy.unwrapped()
 					: identity.revision();
@@ -108,26 +122,53 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			if (quad == null) {
 				return null;
 			}
+			if (readSnapshot != null && readSnapshot.hasStableIds()) {
+				if (readSnapshot.valueStore() != valueStore) {
+					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
+				}
+				synchronized (readSnapshot.txnRef()) {
+					readSnapshot.ensureValid();
+					return getStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
+				}
+			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
-			Resource subj = subjID == this.subjID ? this.subj : (Resource) getLazyValue(subjID);
+			Resource subj = (Resource) getLazyValue(subjID);
 
 			long predID = quad[TripleIndex.PRED_IDX];
-			IRI pred = predID == this.predID ? this.pred : (IRI) getLazyValue(predID);
+			IRI pred = (IRI) getLazyValue(predID);
 
 			long objID = quad[TripleIndex.OBJ_IDX];
-			Value obj = objID == this.objID ? this.obj : getLazyValue(objID);
+			Value obj = getLazyValue(objID);
 
 			Resource context = null;
 			long contextID = quad[TripleIndex.CONTEXT_IDX];
 			if (contextID != 0) {
-				context = contextID == this.contextID ? this.context : (Resource) getLazyValue(contextID);
+				context = (Resource) getLazyValue(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);
 		} catch (IOException e) {
 			throw causeIOException(e);
 		}
+	}
+
+	private Statement getStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
+		long subjectId = quad[TripleIndex.SUBJ_IDX];
+		Resource subject = (Resource) valueStore.getLazyValue(subjectId, revision, exposure,
+				subjectId == subjID ? subj : null, subjVersion);
+		long predicateId = quad[TripleIndex.PRED_IDX];
+		IRI predicate = (IRI) valueStore.getLazyValue(predicateId, revision, exposure,
+				predicateId == predID ? pred : null, predVersion);
+		long objectId = quad[TripleIndex.OBJ_IDX];
+		Value object = valueStore.getLazyValue(objectId, revision, exposure,
+				objectId == objID ? obj : null, objVersion);
+		long contextId = quad[TripleIndex.CONTEXT_IDX];
+		Resource statementContext = contextId == 0 ? null
+				: (Resource) valueStore.getLazyValue(contextId, revision,
+						exposure, contextId == contextID ? context : null, contextVersion);
+		return valueStore.createStatement(subject, predicate, object, statementContext);
 	}
 
 	private Value getLazyValue(long id) throws IOException {

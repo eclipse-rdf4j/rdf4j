@@ -6286,6 +6286,9 @@ class LmdbSailStore implements SailStore {
 				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, 0L, explicit);
 				return new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, null);
 			} else {
+				if (contexts[0].isTripleTerm()) {
+					return IterationConstants.EMPTY_STATEMENT_ITERATION;
+				}
 				long contextID = valueStore.getStatementId(valueSnapshot, contexts[0]);
 				if (contextID == LmdbValue.UNKNOWN_ID) {
 					return IterationConstants.EMPTY_STATEMENT_ITERATION;
@@ -6296,40 +6299,25 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
-		List<Long> contextIDList = new ArrayList<>(contexts.length);
-
-		for (Resource context : contexts) {
-			if (context == null) {
-				contextIDList.add(0L);
-			} else if (!context.isTripleTerm()) {
-				long contextID = valueStore.getStatementId(valueSnapshot, contexts[0]);
-
-				if (contextID != LmdbValue.UNKNOWN_ID) {
-					contextIDList.add(contextID);
-				} else {
-					contextIDList.add(null);
-				}
+		long[] contextIDs = new long[contexts.length];
+		for (int i = 0; i < contexts.length; i++) {
+			Resource context = contexts[i];
+			if (context != null && context.isTripleTerm()) {
+				contextIDs[i] = LmdbValue.UNKNOWN_ID;
+			} else {
+				contextIDs[i] = context == null ? 0L : valueStore.getStatementId(valueSnapshot, context);
 			}
 		}
 
-		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contextIDList.size());
-
-		for (int i = 0; i < contextIDList.size(); i++) {
-			Long contextID = contextIDList.get(i);
-			if (contextID == null) {
+		ArrayList<LmdbStatementIterator> perContextIterList = new ArrayList<>(contexts.length);
+		for (int i = 0; i < contexts.length; i++) {
+			long contextID = contextIDs[i];
+			if (contextID == LmdbValue.UNKNOWN_ID) {
 				continue;
 			}
-
-			Resource context = (contextID == 0) ? null : contexts[i];
-
-			try {
-				RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
-				perContextIterList
-						.add(new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, context));
-			} catch (IOException e) {
-				System.out.println("Txn:\n" + Objects.toString(txn));
-				throw e;
-			}
+			RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit);
+			perContextIterList
+					.add(new LmdbStatementIterator(records, valueStore, valueSnapshot, subj, pred, obj, contexts[i]));
 		}
 
 		if (perContextIterList.size() == 1) {

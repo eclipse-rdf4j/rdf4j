@@ -1772,10 +1772,17 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private ValueStoreRevision scopedRevision(ValueStoreRevision revision) {
+		if (!(revision instanceof ValueStoreRevision.Lazy)) {
+			return revision;
+		}
+		return scopedRevision(revision, ValueResolutionScope.activeExposure(this));
+	}
+
+	private ValueStoreRevision scopedRevision(ValueStoreRevision revision, ValueResolutionScope exposure) {
 		if (!(revision instanceof ValueStoreRevision.Lazy lazy)) {
 			return revision;
 		}
-		ValueResolutionScope scope = ValueResolutionScope.current(this);
+		ValueResolutionScope scope = exposure != null && exposure.isOpen() ? exposure : null;
 		if (scope == null) {
 			scope = lazy.resolutionScope();
 		}
@@ -2319,7 +2326,8 @@ class ValueStore extends AbstractValueFactory {
 	 * @throws IOException If an I/O error occurred.
 	 */
 	public LmdbValue getLazyValue(long id) throws IOException {
-		boolean naked = !ValueResolutionScope.hasActiveExposure(this);
+		ValueResolutionScope exposure = ValueResolutionScope.activeExposure(this);
+		boolean naked = exposure == null;
 		ValueStoreRevision.Lazy valueRevision;
 		if (!naked) {
 			valueRevision = currentReadRevision(id);
@@ -2337,7 +2345,7 @@ class ValueStore extends AbstractValueFactory {
 		LmdbValue value;
 		long stamp = revisionLock.readLock();
 		try {
-			value = getLazyValue(id, valueRevision, naked);
+			value = getLazyValue(id, valueRevision, naked, exposure);
 		} finally {
 			revisionLock.unlockRead(stamp);
 		}
@@ -2412,10 +2420,47 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	LmdbValue getLazyValue(long id, ValueStoreRevision valueRevision) throws IOException {
-		return getLazyValue(id, valueRevision, false);
+		return getLazyValue(id, valueRevision, false, ValueResolutionScope.activeExposure(this));
 	}
 
-	private LmdbValue getLazyValue(long id, ValueStoreRevision valueRevision, boolean outwardLookup)
+	/**
+	 * Only ordinary native leaves have their complete decode capability described by their current identity. Composite
+	 * models can retain independent child capabilities, and prepared models retain their original decode capability;
+	 * both must use the authoritative canonical lookup, which refreshes obsolete nested capabilities.
+	 */
+	static boolean canReuseNativeLeaf(Value value) {
+		return value instanceof LmdbIRI || value instanceof LmdbBNode;
+	}
+
+	/** Called under a validated paired snapshot; supplied terms remain subject to native identity and export checks. */
+	LmdbValue getLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure, Value supplied,
+			long semanticVersion) throws IOException {
+		if (canReuseNativeLeaf(supplied) && supplied instanceof LmdbValue value
+				&& semanticVersion != LmdbValue.UNKNOWN_ID
+				&& semanticVersion == value.getSemanticVersion()) {
+			LmdbValue.InternalIdentity identity = value.getInternalIdentity();
+			ValueStoreRevision owner = identity.revision();
+			if (identity.id() == id && completedRevision(owner).equals(completedRevision(revision))
+					&& reusableAssociation(owner)) {
+				return finishLazyLookup(value, revision, exposure);
+			}
+		}
+		return getLazyValue(id, revision, false, exposure);
+	}
+
+	private boolean reusableAssociation(ValueStoreRevision revision) {
+		if (!(revision instanceof ValueStoreRevision.Lazy lazy)) {
+			return true;
+		}
+		ValueEpoch epoch = lazy.idEpoch();
+		NativeValueAssociation association = lazy.association();
+		return (epoch == null || epoch.protectedIds) && (association == null
+				|| association.state == NativeValueAssociation.State.COMMITTED
+						&& association.environmentGeneration == environmentGeneration);
+	}
+
+	private LmdbValue getLazyValue(long id, ValueStoreRevision valueRevision, boolean outwardLookup,
+			ValueResolutionScope exposure)
 			throws IOException {
 		PendingValueAssociation pending = pendingValueAssociation;
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread() && pending != null
@@ -2432,15 +2477,21 @@ class ValueStore extends AbstractValueFactory {
 				? (CanonicalValueEntry) CANONICAL_CACHE_ELEMENT.getAcquire(caches.canonical, idx)
 				: null;
 		if (previous != null && previous.id == id && previous.isCurrent()) {
-			return outwardLookup ? previous.value : finishLazyLookup(previous.value, valueRevision);
+			return outwardLookup ? previous.value : finishLazyLookup(previous.value, valueRevision, exposure);
 		}
 		LmdbValue cached = cachedValue(id, valueRevision);
 		if (cached != null) {
 			// Both the ID association and deferred nested children belong to this captured dictionary epoch.
 			LmdbValue published = currentEpoch ? publishCanonicalValue(caches, idx, previous, id, cached) : cached;
-			return outwardLookup ? published : finishLazyLookup(published, valueRevision);
+			return outwardLookup ? published : finishLazyLookup(published, valueRevision, exposure);
 		}
-		valueRevision = scopedRevision(valueRevision);
+		return createLazyValue(id, valueRevision, outwardLookup, exposure, caches, currentEpoch, idx, previous);
+	}
+
+	private LmdbValue createLazyValue(long id, ValueStoreRevision valueRevision, boolean outwardLookup,
+			ValueResolutionScope exposure, ValueCacheEpoch caches, boolean currentEpoch, int idx,
+			CanonicalValueEntry previous) throws IOException {
+		valueRevision = scopedRevision(valueRevision, exposure);
 		int idType = ValueIds.getIdType(id);
 		LmdbValue value = switch (idType) {
 		case ValueIds.T_URI -> new LmdbIRI(valueRevision, id);
@@ -2455,18 +2506,18 @@ class ValueStore extends AbstractValueFactory {
 		}
 		};
 		if (!outwardLookup) {
-			finishLazyLookup(value, valueRevision);
+			finishLazyLookup(value, valueRevision, exposure);
 		}
 		LmdbValue published = currentEpoch ? publishCanonicalValue(caches, idx, previous, id, value) : value;
-		return published == value || outwardLookup ? published : finishLazyLookup(published, valueRevision);
+		return published == value || outwardLookup ? published : finishLazyLookup(published, valueRevision, exposure);
 	}
 
-	private LmdbValue finishLazyLookup(LmdbValue value, ValueStoreRevision requested) {
-		ValueResolutionScope scope = ValueResolutionScope.current(this);
-		if (scope == null && requested instanceof ValueStoreRevision.Lazy lazy) {
-			scope = lazy.resolutionScope();
+	private LmdbValue finishLazyLookup(LmdbValue value, ValueStoreRevision requested, ValueResolutionScope exposure) {
+		if (exposure != null) {
+			return value;
 		}
-		if (!ValueResolutionScope.hasActiveExposure(this) && (scope == null || !scope.isOpen())
+		ValueResolutionScope scope = requested instanceof ValueStoreRevision.Lazy lazy ? lazy.resolutionScope() : null;
+		if ((scope == null || !scope.isOpen())
 				&& value.getValueStoreRevision()instanceof ValueStoreRevision.Lazy lazy) {
 			// Naked lazy access preserves the low-level escape contract, including shells first published
 			// by an internal scope. Promotion preserves both the canonical object and immutable ID identity.

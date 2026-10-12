@@ -97,16 +97,16 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"0",
-			"1",
-			"2",
-			"3",
-			"4",
-			"5",
-			"6",
-			"7",
-			"8",
-			"9",
-			"10",
+//			"1",
+//			"2",
+//			"3",
+//			"4",
+//			"5",
+//			"6",
+//			"7",
+//			"8",
+//			"9",
+//			"10",
 //			"11",
 //			"12"
 	})
@@ -114,13 +114,13 @@ public class ThemeQueryBenchmark {
 
 	@Param({
 			"MEDICAL_RECORDS",
-			"SOCIAL_MEDIA",
-			"LIBRARY",
-			"ENGINEERING",
-			"HIGHLY_CONNECTED",
-			"TRAIN",
-			"ELECTRICAL_GRID",
-			"PHARMA"
+//			"SOCIAL_MEDIA",
+//			"LIBRARY",
+//			"ENGINEERING",
+//			"HIGHLY_CONNECTED",
+//			"TRAIN",
+//			"ELECTRICAL_GRID",
+//			"PHARMA"
 	})
 	public String themeName;
 

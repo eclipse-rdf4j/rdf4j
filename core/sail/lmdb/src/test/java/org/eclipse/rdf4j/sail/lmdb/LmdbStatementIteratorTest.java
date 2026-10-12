@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -77,6 +78,52 @@ class LmdbStatementIteratorTest {
 			}
 		}
 		assertEquals(expected, escaped.getObject(), "Deferred nested values must survive store shutdown");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "open", "closed", "foreign" })
+	void statementResolutionHonorsInstalledExposure(String state, @TempDir File directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		try (ClosingValueStore values = new ClosingValueStore(new File(directory, "values"), config);
+				ClosingValueStore foreign = new ClosingValueStore(new File(directory, "foreign"), config);
+				TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+			long[] quad = storeQuad(values, true, Values.literal("exposure-payload"));
+			try (TxnManager.ReaderReservation admitted = triples.getTxnManager().reserveReadTxn(false);
+					TxnManager.Txn triple = admitted.startPinned(triples::getDataRevision);
+					ValueStore.ReadSnapshotReservation reservation = values.reserveReadSnapshot();
+					ValueStore.ReadSnapshot snapshot = reservation.start(triple);
+					ValueResolutionScope scope = values.openValueResolutionScope();
+					ValueResolutionScope foreignScope = foreign.openValueResolutionScope();
+					LmdbStatementIterator iterator = new LmdbStatementIterator(repeated(quad), values, snapshot)) {
+				try (SailClosable exposure = (state.equals("foreign") ? foreignScope : scope).activate()) {
+					if (state.equals("closed")) {
+						scope.close();
+					}
+					LmdbValue object = (LmdbValue) iterator.next().getObject();
+					assertEquals(state.equals("foreign"), object.isExternallyOwned(),
+							"Only an exposure belonging to this store delimits internal access, including a closed one");
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void unpairedSnapshotKeepsItsOwnLazyCapability(boolean context, @TempDir File directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		try (ClosingValueStore values = new ClosingValueStore(new File(directory, "values"), config)) {
+			Value expected = Values.tripleTerm(Values.iri("urn:unpaired:subject"), Values.iri("urn:unpaired:predicate"),
+					Values.literal("unpaired-child"));
+			long[] quad = storeQuad(values, context, expected);
+			try (ValueStore.ReadSnapshotReservation reservation = values.reserveReadSnapshot();
+					ValueStore.ReadSnapshot snapshot = reservation.start();
+					LmdbStatementIterator iterator = new LmdbStatementIterator(repeated(quad), values, snapshot)) {
+				assertFalse(snapshot.hasStableIds());
+				assertEquals(expected, iterator.next().getObject());
+				snapshot.close();
+				assertThrows(SailException.class, iterator::next);
+			}
+		}
 	}
 
 	private static long[] storeQuad(ValueStore values, boolean context, Value object) throws Exception {

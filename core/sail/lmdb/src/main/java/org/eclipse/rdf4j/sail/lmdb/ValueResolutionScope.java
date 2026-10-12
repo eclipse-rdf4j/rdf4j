@@ -42,13 +42,18 @@ final class ValueResolutionScope implements SailClosable {
 	}
 
 	static ValueResolutionScope current(ValueStore store) {
-		ValueResolutionScope current = ACTIVE.get();
-		return current != null && current.store == store && !current.closed ? current : null;
+		ValueResolutionScope current = activeExposure(store);
+		return current != null && !current.closed ? current : null;
 	}
 
 	static boolean hasActiveExposure(ValueStore store) {
+		return activeExposure(store) != null;
+	}
+
+	/** Includes a closed, still-installed exposure, which continues to delimit internal value access. */
+	static ValueResolutionScope activeExposure(ValueStore store) {
 		ValueResolutionScope current = ACTIVE.get();
-		return current != null && current.store == store;
+		return current != null && current.store == store ? current : null;
 	}
 
 	boolean isOpen() {
