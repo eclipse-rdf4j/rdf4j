@@ -235,6 +235,17 @@ final class PreparedLmdbValue {
 		}
 	}
 
+	/**
+	 * A deferred value whose statement-index association is already proven for {@code generation}: query evaluation can
+	 * bind, re-prepare and look it up without a further resolution. The dictionary proof stays unverified.
+	 */
+	static Prepared createStatementProven(Owner owner, Value.Type type, LmdbValue.InternalIdentity identity,
+			Generation generation) {
+		State state = new State(owner, type, identity, null);
+		state.proof = new Proof(generation, identity);
+		return create(state);
+	}
+
 	static Prepared create(State state) {
 		return switch (state.type) {
 		case IRI -> new PreparedIRI(state);

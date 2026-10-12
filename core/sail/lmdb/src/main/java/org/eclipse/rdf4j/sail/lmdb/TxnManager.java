@@ -20,6 +20,7 @@ import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_reader_check;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
@@ -1252,16 +1253,25 @@ final class TxnManager {
 		private volatile boolean idle;
 		private volatile boolean resetOnWrite;
 		private volatile boolean stale;
+		// The native snapshot identity only changes when the reader is (re)activated; cache it so hot compatibility
+		// checks need no JNI call.
+		private volatile long nativeTransactionId;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
 			this.owned = owned;
 			this.resetOnWrite = resetOnWrite;
 			this.readerPermit = readerPermit;
+			this.nativeTransactionId = txn == NULL ? 0L : mdb_txn_id(txn);
 		}
 
 		long get() {
 			return txn;
+		}
+
+		/** The native transaction ID captured at the last activation; meaningful while {@link #isNativeActive()}. */
+		long nativeTransactionId() {
+			return nativeTransactionId;
 		}
 
 		long version() {
@@ -1438,6 +1448,7 @@ final class TxnManager {
 		private void activate() throws IOException {
 			if (!active && !closed) {
 				renewReadTxn(txn);
+				nativeTransactionId = mdb_txn_id(txn);
 				active = true;
 			}
 		}

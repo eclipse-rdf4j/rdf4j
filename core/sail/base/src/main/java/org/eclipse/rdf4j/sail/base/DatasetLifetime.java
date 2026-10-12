@@ -17,6 +17,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 
 /** Owner close forbids new operations; admitted cursors retain the complete dataset until their final release. */
@@ -82,7 +83,9 @@ final class DatasetLifetime {
 		CloseableIteration<? extends T> cursor = null;
 		try {
 			cursor = operation.get();
-			return new RetainedCursor<>(cursor);
+			if (!(cursor instanceof EmptyIteration)) {
+				return new RetainedCursor<>(cursor);
+			}
 		} catch (RuntimeException | Error failure) {
 			if (cursor != null) {
 				try {
@@ -96,6 +99,10 @@ final class DatasetLifetime {
 			release(failure);
 			throw failure;
 		}
+		// A resource-free empty cursor holds nothing of the dataset: release the admission now and keep the
+		// EmptyIteration visible so unions can elide it. A disposal failure here propagates as-is.
+		release();
+		return cursor;
 	}
 
 	private void release(Throwable primary) {

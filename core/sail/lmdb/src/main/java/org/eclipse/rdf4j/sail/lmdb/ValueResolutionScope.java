@@ -68,6 +68,10 @@ final class ValueResolutionScope implements SailClosable {
 	}
 
 	ValueStoreRevision.Lazy revision(ValueStoreRevision.Lazy epoch) {
+		if (epoch.resolutionScope() == this && !closed) {
+			// Already the unique scoped wrapper of its epoch in this scope; skip the keyed lookup.
+			return epoch;
+		}
 		ValueStoreRevision.Lazy cached = revisions.get(epoch.epoch());
 		if (cached != null || closed) {
 			return closed ? epoch : cached;

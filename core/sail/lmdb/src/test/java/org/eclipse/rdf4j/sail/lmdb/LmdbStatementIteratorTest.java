@@ -13,11 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -102,6 +104,38 @@ class LmdbStatementIteratorTest {
 					LmdbValue object = (LmdbValue) iterator.next().getObject();
 					assertEquals(state.equals("foreign"), object.isExternallyOwned(),
 							"Only an exposure belonging to this store delimits internal access, including a closed one");
+				}
+			}
+		}
+	}
+
+	@Test
+	void pairedSnapshotStatementsUnderExposureAreAlreadyPrepared(@TempDir File directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		try (ClosingValueStore values = new ClosingValueStore(new File(directory, "values"), config);
+				TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
+			Value object = Values.literal("prepared-payload");
+			long[] quad = storeQuad(values, true, object);
+			try (TxnManager.ReaderReservation admitted = triples.getTxnManager().reserveReadTxn(false);
+					TxnManager.Txn triple = admitted.startPinned(triples::getDataRevision);
+					ValueStore.ReadSnapshotReservation reservation = values.reserveReadSnapshot();
+					ValueStore.ReadSnapshot snapshot = reservation.start(triple);
+					ValueResolutionScope scope = values.openValueResolutionScope();
+					LmdbStatementIterator iterator = new LmdbStatementIterator(repeated(quad), values, snapshot)) {
+				try (SailClosable exposure = scope.activate()) {
+					Statement statement = iterator.next();
+					Function<Value, Value> preparer = values.valuePreparer(snapshot);
+					Value[] produced = { statement.getSubject(), statement.getPredicate(), statement.getObject(),
+							statement.getContext() };
+					for (int i = 0; i < produced.length; i++) {
+						assertSame(produced[i], preparer.apply(produced[i]),
+								"Statement values read under a paired snapshot and an exposure must already be prepared");
+						assertEquals(quad[i], values.getStatementId(snapshot, produced[i]));
+					}
+					assertEquals(Values.iri("urn:statement:subject"), statement.getSubject());
+					assertEquals(Values.iri("urn:statement:predicate"), statement.getPredicate());
+					assertEquals(object, statement.getObject());
+					assertEquals(Values.iri("urn:statement:context"), statement.getContext());
 				}
 			}
 		}

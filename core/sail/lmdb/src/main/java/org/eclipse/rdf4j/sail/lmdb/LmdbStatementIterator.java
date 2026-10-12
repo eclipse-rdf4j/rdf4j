@@ -52,6 +52,10 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final long predVersion;
 	private final long objVersion;
 	private final long contextVersion;
+	// Statement-proof context, valid while the snapshot's preparation generation and the exposure are unchanged.
+	private PreparedLmdbValue.Generation provenGeneration;
+	private ValueResolutionScope provenExposure;
+	private ValueStoreRevision.Lazy provenRevision;
 
 	/*--------------*
 	 * Constructors *
@@ -155,20 +159,46 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 
 	private Statement getStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
 			throws IOException {
+		PreparedLmdbValue.Generation generation = readSnapshot.preparationGeneration();
+		if (generation != provenGeneration || exposure != provenExposure) {
+			provenGeneration = generation;
+			provenExposure = exposure;
+			provenRevision = exposure == null ? null
+					: valueStore.statementProofRevision(readSnapshot, revision, exposure);
+		}
+		ValueStoreRevision.Lazy proven = generation.live ? provenRevision : null;
 		long subjectId = quad[TripleIndex.SUBJ_IDX];
-		Resource subject = (Resource) valueStore.getLazyValue(subjectId, revision, exposure,
-				subjectId == subjID ? subj : null, subjVersion);
+		Resource subject = (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure, proven,
+				generation);
 		long predicateId = quad[TripleIndex.PRED_IDX];
-		IRI predicate = (IRI) valueStore.getLazyValue(predicateId, revision, exposure,
-				predicateId == predID ? pred : null, predVersion);
+		IRI predicate = (IRI) statementValue(predicateId, predID, pred, predVersion, revision, exposure, proven,
+				generation);
 		long objectId = quad[TripleIndex.OBJ_IDX];
-		Value object = valueStore.getLazyValue(objectId, revision, exposure,
-				objectId == objID ? obj : null, objVersion);
+		Value object = statementValue(objectId, objID, obj, objVersion, revision, exposure, proven, generation);
 		long contextId = quad[TripleIndex.CONTEXT_IDX];
 		Resource statementContext = contextId == 0 ? null
-				: (Resource) valueStore.getLazyValue(contextId, revision,
-						exposure, contextId == contextID ? context : null, contextVersion);
+				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure, proven,
+						generation);
 		return valueStore.createStatement(subject, predicate, object, statementContext);
+	}
+
+	/**
+	 * A pattern value of this revision is reused as-is. Any other position read under a statement-proof revision is
+	 * produced as an already prepared, statement-proven value; otherwise the lazy shell keeps its escape contract.
+	 */
+	private Value statementValue(long id, long boundId, Value bound, long boundVersion, ValueStoreRevision revision,
+			ValueResolutionScope exposure, ValueStoreRevision.Lazy proven, PreparedLmdbValue.Generation generation)
+			throws IOException {
+		if (id == boundId) {
+			return valueStore.getLazyValue(id, revision, exposure, bound, boundVersion);
+		}
+		if (proven != null) {
+			Value prepared = valueStore.preparedStatementValue(readSnapshot, id, proven, generation);
+			if (prepared != null) {
+				return prepared;
+			}
+		}
+		return valueStore.getLazyValue(id, revision, exposure, null, boundVersion);
 	}
 
 	private Value getLazyValue(long id) throws IOException {

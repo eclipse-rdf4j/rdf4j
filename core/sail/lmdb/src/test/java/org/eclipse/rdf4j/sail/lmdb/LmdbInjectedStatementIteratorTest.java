@@ -44,7 +44,7 @@ class LmdbInjectedStatementIteratorTest {
 
 	@Test
 	void allInjectedTermsStillValidateClosedSnapshot(@TempDir File directory) throws Exception {
-		withSnapshot(directory, (values, snapshot, quad) -> {
+		withSnapshot(directory, Values.iri("urn:stored-payload"), (values, snapshot, quad) -> {
 			try (LmdbStatementIterator iterator = injected(values, snapshot, quad)) {
 				snapshot.close();
 				assertThrows(SailException.class, iterator::next,
@@ -221,7 +221,7 @@ class LmdbInjectedStatementIteratorTest {
 	private static LmdbStatementIterator injected(ValueStore values, ValueStore.ReadSnapshot snapshot, long[] quad) {
 		return new LmdbStatementIterator(repeated(quad), values, snapshot,
 				new LmdbIRI(snapshot.revision(), quad[0]), new LmdbIRI(snapshot.revision(), quad[1]),
-				new LmdbLiteral(snapshot.revision(), quad[2]), new LmdbIRI(snapshot.revision(), quad[3]));
+				new LmdbIRI(snapshot.revision(), quad[2]), new LmdbIRI(snapshot.revision(), quad[3]));
 	}
 
 	private static void withSnapshot(File directory, SnapshotAction action) throws Exception {

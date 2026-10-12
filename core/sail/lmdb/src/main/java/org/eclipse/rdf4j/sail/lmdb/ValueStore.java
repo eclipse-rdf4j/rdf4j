@@ -338,9 +338,18 @@ class ValueStore extends AbstractValueFactory {
 	final boolean valueHashCacheEnabled;
 	private final boolean inlineLiterals;
 
-	private final ThreadLocal<Boolean> hasReadLock = new ThreadLocal<>();
-	private final ThreadLocal<Long> borrowedReadTxn = new ThreadLocal<>();
-	private final ThreadLocal<ValueStoreRevision.Lazy> borrowedReadRevision = new ThreadLocal<>();
+	/**
+	 * Per-thread borrowed native read context. One mutable holder that is never removed replaces several ThreadLocals
+	 * whose set/remove churn dominated hot value decodes; absent state is {@code 0}, {@code null} or {@code false}.
+	 */
+	private static final class ReadContext {
+		long borrowedTxn;
+		ValueStoreRevision.Lazy borrowedRevision;
+		boolean hasReadLock;
+		boolean retainedDictionaryDecode;
+	}
+
+	private final ThreadLocal<ReadContext> readContext = ThreadLocal.withInitial(ReadContext::new);
 	private volatile ValueStoreRevision.Snapshot.TrackedValues sharedLazyValues;
 	private boolean closeInProgress;
 
@@ -1341,7 +1350,7 @@ class ValueStore extends AbstractValueFactory {
 			throw new IOException("LMDB map is full while rebuilding triple-term indexes");
 		}
 		var lockManager = txnManager.lockManager();
-		boolean readLocked = hasReadLock.get() != null;
+		boolean readLocked = readContext.get().hasReadLock;
 		if (readLocked) {
 			lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 		}
@@ -1579,7 +1588,7 @@ class ValueStore extends AbstractValueFactory {
 			ensurePendingValueAssociation();
 			return valueIdentity.lazy;
 		}
-		ValueStoreRevision.Lazy borrowed = borrowedReadRevision.get();
+		ValueStoreRevision.Lazy borrowed = readContext.get().borrowedRevision;
 		if (borrowed != null) {
 			return borrowed;
 		}
@@ -1734,10 +1743,8 @@ class ValueStore extends AbstractValueFactory {
 
 	boolean retainedReaderCompatible(Txn reader, ValueStoreRevision.Lazy revision) {
 		ensureAssociationReadable(revision);
-		return reader.isNativeActive() && associationCompatible(revision, mdb_txn_id(reader.get()));
+		return reader.isNativeActive() && associationCompatible(revision, reader.nativeTransactionId());
 	}
-
-	private final ThreadLocal<Boolean> retainedDictionaryDecode = new ThreadLocal<>();
 
 	static final class MissingRetainedValueException extends IOException {
 		private static final long serialVersionUID = 1L;
@@ -1753,21 +1760,18 @@ class ValueStore extends AbstractValueFactory {
 			throw new SailException("The retained dictionary reader predates this value's native association");
 		}
 		long version = reader.version();
-		Boolean previous = retainedDictionaryDecode.get();
-		retainedDictionaryDecode.set(Boolean.TRUE);
+		ReadContext context = readContext.get();
+		boolean previous = context.retainedDictionaryDecode;
+		context.retainedDictionaryDecode = true;
 		try {
-			boolean resolved = withBorrowedReadContext(reader.get(), revision, true,
+			boolean resolved = withBorrowedReadContext(context, reader.get(), revision, true,
 					(stack, txn) -> resolveValueFromData(id, value, revision));
 			if (version != reader.version()) {
 				throw new SailException("The retained dictionary reader changed during native decode");
 			}
 			return resolved;
 		} finally {
-			if (previous == null) {
-				retainedDictionaryDecode.remove();
-			} else {
-				retainedDictionaryDecode.set(previous);
-			}
+			context.retainedDictionaryDecode = previous;
 		}
 	}
 
@@ -1889,8 +1893,8 @@ class ValueStore extends AbstractValueFactory {
 			return withBorrowedReadContext(writeTxn,
 					requested == null ? currentReadRevision(LmdbValue.UNKNOWN_ID) : requested, false, transaction);
 		}
-		Long borrowed = borrowedReadTxn.get();
-		if (borrowed != null) {
+		long borrowed = readContext.get().borrowedTxn;
+		if (borrowed != 0) {
 			if (requested != null && !associationCompatible(requested, mdb_txn_id(borrowed))) {
 				throw new SailException("The borrowed dictionary reader predates this value's native association");
 			}
@@ -1916,36 +1920,25 @@ class ValueStore extends AbstractValueFactory {
 	private <T> T withBorrowedReadContext(long txn, ValueStoreRevision.Lazy valueRevision, boolean ownsReadBarrier,
 			Transaction<T> transaction)
 			throws IOException {
-		Long previousTxn = borrowedReadTxn.get();
-		ValueStoreRevision.Lazy previousRevision = borrowedReadRevision.get();
-		Boolean previousLock = hasReadLock.get();
-		borrowedReadTxn.set(txn);
-		borrowedReadRevision.set(valueRevision);
+		return withBorrowedReadContext(readContext.get(), txn, valueRevision, ownsReadBarrier, transaction);
+	}
+
+	private <T> T withBorrowedReadContext(ReadContext context, long txn, ValueStoreRevision.Lazy valueRevision,
+			boolean ownsReadBarrier, Transaction<T> transaction) throws IOException {
+		long previousTxn = context.borrowedTxn;
+		ValueStoreRevision.Lazy previousRevision = context.borrowedRevision;
+		boolean previousLock = context.hasReadLock;
+		context.borrowedTxn = txn;
+		context.borrowedRevision = valueRevision;
 		if (ownsReadBarrier) {
-			hasReadLock.set(Boolean.TRUE);
+			context.hasReadLock = true;
 		}
 		try {
 			return LmdbUtil.readTransaction(env, txn, transaction);
 		} finally {
-			setBorrowedReadContext(previousTxn, previousRevision);
-			if (previousLock == null) {
-				hasReadLock.remove();
-			} else {
-				hasReadLock.set(previousLock);
-			}
-		}
-	}
-
-	private void setBorrowedReadContext(Long transaction, ValueStoreRevision.Lazy valueRevision) {
-		if (transaction == null) {
-			borrowedReadTxn.remove();
-		} else {
-			borrowedReadTxn.set(transaction);
-		}
-		if (valueRevision == null) {
-			borrowedReadRevision.remove();
-		} else {
-			borrowedReadRevision.set(valueRevision);
+			context.borrowedTxn = previousTxn;
+			context.borrowedRevision = previousRevision;
+			context.hasReadLock = previousLock;
 		}
 	}
 
@@ -2206,7 +2199,7 @@ class ValueStore extends AbstractValueFactory {
 
 	protected byte[] getData(long id) throws IOException {
 		byte[] data = readTransaction(env, (stack, txn) -> getData(txn, id));
-		if (data == null && Boolean.TRUE.equals(retainedDictionaryDecode.get())) {
+		if (data == null && readContext.get().retainedDictionaryDecode) {
 			throw new MissingRetainedValueException(id);
 		}
 		return data;
@@ -2432,6 +2425,38 @@ class ValueStore extends AbstractValueFactory {
 		return value instanceof LmdbIRI || value instanceof LmdbBNode;
 	}
 
+	/**
+	 * The scoped revision under which {@code snapshot} proves statement IDs for values read inside {@code exposure}, or
+	 * {@code null} when the {@link #knownStatementId} conditions do not hold. Statement-index values produced under it
+	 * are prepared and statement-proven up front, so query evaluation binds, re-prepares and looks them up without
+	 * allocating a lazy shell plus a wrapper per row; the proof is never stronger than a later resolution would
+	 * establish. The result stays valid while the snapshot's preparation generation and the exposure are unchanged.
+	 */
+	ValueStoreRevision.Lazy statementProofRevision(ReadSnapshot snapshot, ValueStoreRevision revision,
+			ValueResolutionScope exposure) {
+		ValueStoreRevision scoped = scopedRevision(revision, exposure);
+		return scoped instanceof ValueStoreRevision.Lazy lazy && snapshot.provesStatementIds(lazy) ? lazy : null;
+	}
+
+	/**
+	 * A statement-index value under a revision returned by {@link #statementProofRevision} for a live
+	 * {@code generation}, or {@code null} when the ID needs a lazy shell (quoted triples).
+	 */
+	Value preparedStatementValue(ReadSnapshot snapshot, long id, ValueStoreRevision.Lazy proven,
+			PreparedLmdbValue.Generation generation) {
+		Value.Type type = switch (ValueIds.getIdType(id)) {
+		case ValueIds.T_URI -> Value.Type.IRI;
+		case ValueIds.T_BNODE -> Value.Type.BNode;
+		case ValueIds.T_DOUBLE, ValueIds.T_LITERAL -> Value.Type.Literal;
+		default -> ValueIds.isInlined(id) ? Value.Type.Literal : null;
+		};
+		if (type == null) {
+			return null;
+		}
+		return PreparedLmdbValue.createStatementProven(snapshot.preparationOwner, type,
+				new LmdbValue.InternalIdentity(id, proven), generation);
+	}
+
 	/** Called under a validated paired snapshot; supplied terms remain subject to native identity and export checks. */
 	LmdbValue getLazyValue(long id, ValueStoreRevision revision, ValueResolutionScope exposure, Value supplied,
 			long semanticVersion) throws IOException {
@@ -2553,13 +2578,13 @@ class ValueStore extends AbstractValueFactory {
 			// Unknown admission pins the selected epoch until every nested outward getter has completed.
 			return withValueReadTransaction(
 					writeTxn != 0 && writeTxnOwner == Thread.currentThread() ? valueRevision : null,
-					(stack, txn) -> finishNakedLookup(getValue(id, borrowedReadRevision.get())));
+					(stack, txn) -> finishNakedLookup(getValue(id, readContext.get().borrowedRevision)));
 		}
 		if (cached != null || ValueIds.isInlined(id)) {
 			return cached == null ? getValue(id, valueRevision) : cached;
 		}
 		return withValueReadTransaction(writeTxn != 0 && writeTxnOwner == Thread.currentThread() ? valueRevision : null,
-				(stack, txn) -> getValue(id, borrowedReadRevision.get()));
+				(stack, txn) -> getValue(id, readContext.get().borrowedRevision));
 	}
 
 	private LmdbValue getValue(long id, ValueStoreRevision valueRevision) throws IOException {
@@ -2628,7 +2653,7 @@ class ValueStore extends AbstractValueFactory {
 		try {
 			if (valueRevision instanceof ValueStoreRevision.Lazy lazy) {
 				Transaction<Boolean> decode = (stack, txn) -> resolveValueFromData(id, value, valueRevision);
-				if (borrowedReadTxn.get() == null && (writeTxn == 0 || writeTxnOwner != Thread.currentThread())) {
+				if (readContext.get().borrowedTxn == 0 && (writeTxn == 0 || writeTxnOwner != Thread.currentThread())) {
 					ValueResolutionScope resolutionScope = ValueResolutionScope.current(this);
 					if (resolutionScope == null) {
 						resolutionScope = lazy.resolutionScope();
@@ -2695,16 +2720,18 @@ class ValueStore extends AbstractValueFactory {
 					|| !associationCompatible(valueRevision, snapshot.nativeTransactionId)) {
 				return false;
 			}
-			Long previousTxn = borrowedReadTxn.get();
-			ValueStoreRevision.Lazy previousRevision = borrowedReadRevision.get();
-			borrowedReadTxn.set(snapshot.txn.get());
-			borrowedReadRevision.set((ValueStoreRevision.Lazy) valueRevision);
+			ReadContext context = readContext.get();
+			long previousTxn = context.borrowedTxn;
+			ValueStoreRevision.Lazy previousRevision = context.borrowedRevision;
+			context.borrowedTxn = snapshot.txn.get();
+			context.borrowedRevision = (ValueStoreRevision.Lazy) valueRevision;
 			try {
 				// The dictionary epoch may include values appended after this paired reader was admitted.
 				// An absent ID must fall back to a current reader rather than being interpreted as missing.
 				return resolveValueFromData(id, value, valueRevision);
 			} finally {
-				setBorrowedReadContext(previousTxn, previousRevision);
+				context.borrowedTxn = previousTxn;
+				context.borrowedRevision = previousRevision;
 			}
 		}
 	}
@@ -2811,7 +2838,7 @@ class ValueStore extends AbstractValueFactory {
 					}
 
 					var lockManager = txnManager.lockManager();
-					boolean readLocked = hasReadLock.get() != null;
+					boolean readLocked = readContext.get().hasReadLock;
 					if (readLocked) {
 						lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 					}
@@ -3701,13 +3728,22 @@ class ValueStore extends AbstractValueFactory {
 	 * reservation prevents ID reuse. Dictionary enumeration and point lookup use the stricter getId contract.
 	 */
 	long getStatementId(ReadSnapshot snapshot, Value value) throws IOException {
-		snapshot.ensureValid();
 		if (snapshot.valueStore() != this) {
 			throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 		}
 		if (value instanceof PreparedLmdbValue.Prepared prepared) {
+			PreparedLmdbValue.State state = prepared.state();
+			if (state.owner == snapshot.preparationOwner) {
+				PreparedLmdbValue.Proof proof = state.proof;
+				if (proof.generation() == snapshot.preparationGeneration && proof.generation().live) {
+					// The caller admitted this snapshot for the whole lookup; a live statement proof is final.
+					return proof.identity().id();
+				}
+			}
+			// The preparer validates and admits the snapshot once while resolving the prepared identity.
 			return snapshot.valuePreparer.resolve(prepared, true);
 		}
+		snapshot.ensureValid();
 		if (value instanceof LmdbValue nativeValue && nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
 			long id = knownStatementId(snapshot, nativeValue.getInternalIdentity());
 			if (id != LmdbValue.UNKNOWN_ID) {
@@ -3719,6 +3755,11 @@ class ValueStore extends AbstractValueFactory {
 
 	private long knownStatementId(ReadSnapshot snapshot, LmdbValue.InternalIdentity identity) throws IOException {
 		snapshot.ensureValid();
+		return knownStatementIdAdmitted(snapshot, identity);
+	}
+
+	/** As {@link #knownStatementId} for a caller that validated the snapshot itself and re-validates afterwards. */
+	private long knownStatementIdAdmitted(ReadSnapshot snapshot, LmdbValue.InternalIdentity identity) {
 		ValueStoreRevision.Lazy paired = snapshot.stableRevision;
 		ValueEpoch epoch = paired == null ? null : paired.idEpoch();
 		if (identity.id() == LmdbValue.UNKNOWN_ID || identity.revision().getValueStore() != this
@@ -4242,34 +4283,76 @@ class ValueStore extends AbstractValueFactory {
 			if (value == null) {
 				return null;
 			}
-			PreparedLmdbValue.Prepared prepared = (PreparedLmdbValue.Prepared) capture(value);
+			if (isPreparedForLiveGeneration(value)) {
+				// Per-row join probes re-prepare the same values; a live statement proof already answers them.
+				return value;
+			}
 			try {
-				resolve(prepared, true);
+				// One validity and admission check covers both the capture and the identity resolution of the value.
+				ReadSnapshot current = liveSnapshot();
+				PreparedLmdbValue.Prepared prepared = (PreparedLmdbValue.Prepared) capture(current, value);
+				if (prepared != value && current.hasStableIds()) {
+					// Captured just now and not tracked by the snapshot, so no other thread can hold it yet.
+					resolveAdmitted(current, prepared.state(), true);
+				} else {
+					resolve(current, prepared, true);
+				}
 				return prepared;
 			} catch (IOException failure) {
 				throw new SailException(failure);
 			}
 		}
 
+		private boolean isPreparedForLiveGeneration(Value value) {
+			if (!(value instanceof PreparedLmdbValue.Prepared prepared)) {
+				return false;
+			}
+			ReadSnapshot current = snapshot;
+			if (current == null) {
+				return false;
+			}
+			PreparedLmdbValue.State state = prepared.state();
+			if (state.owner != current.preparationOwner) {
+				return false;
+			}
+			PreparedLmdbValue.Proof proof = state.proof;
+			return proof.generation() == current.preparationGeneration && proof.generation().live;
+		}
+
 		private Value capture(Value value) {
 			if (value == null) {
 				return null;
 			}
+			if (value instanceof PreparedLmdbValue.Prepared prepared) {
+				ReadSnapshot current = snapshot;
+				if (current != null && prepared.state().owner == current.preparationOwner) {
+					// Already owned by this snapshot: no lookup follows, so no admission check is needed.
+					return prepared;
+				}
+			}
 			try {
-				ReadSnapshot current = liveSnapshot();
+				return capture(liveSnapshot(), value);
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			}
+		}
+
+		private Value capture(ReadSnapshot current, Value value) {
+			if (value == null) {
+				return null;
+			}
+			try {
 				if (value instanceof PreparedLmdbValue.Prepared prepared
 						&& prepared.state().owner == current.preparationOwner) {
 					return prepared;
 				}
-				Value payload = null;
-				Value.Type type = null;
-				LmdbValue.InternalIdentity identity = new LmdbValue.InternalIdentity(LmdbValue.UNKNOWN_ID,
-						current.completedRevision());
+				Value payload;
+				Value.Type type;
+				LmdbValue.InternalIdentity identity;
 				if (value instanceof LmdbValue nativeValue
 						&& nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID
-						&& nativeValue.getInternalIdentity().id() != LmdbValue.UNKNOWN_ID) {
-					identity = nativeValue.getInternalIdentity();
-					payload = nativeValue.copyInitializedValue(this::capture);
+						&& (identity = nativeValue.getInternalIdentity()).id() != LmdbValue.UNKNOWN_ID) {
+					payload = nativeValue.copyInitializedValue(capturer);
 					type = switch (ValueIds.getIdType(identity.id())) {
 					case ValueIds.T_URI -> Value.Type.IRI;
 					case ValueIds.T_BNODE -> Value.Type.BNode;
@@ -4282,10 +4365,12 @@ class ValueStore extends AbstractValueFactory {
 						identity = new LmdbValue.InternalIdentity(identity.id(), scopedRevision(current.revision()));
 					}
 				} else {
+					identity = new LmdbValue.InternalIdentity(LmdbValue.UNKNOWN_ID, current.completedRevision());
 					payload = copyPayload(value);
+					type = value.getType();
 				}
 				PreparedLmdbValue.Prepared prepared = PreparedLmdbValue.create(new PreparedLmdbValue.State(
-						current.preparationOwner, type == null ? value.getType() : type, identity, payload));
+						current.preparationOwner, type, identity, payload));
 				if (!current.hasStableIds() && payload == null) {
 					current.trackLazyValue(prepared);
 				}
@@ -4320,9 +4405,13 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		private long resolve(PreparedLmdbValue.Prepared prepared, boolean statement) throws IOException {
-			ReadSnapshot current = liveSnapshot();
+			return resolve(liveSnapshot(), prepared, statement);
+		}
+
+		private long resolve(ReadSnapshot current, PreparedLmdbValue.Prepared prepared, boolean statement)
+				throws IOException {
 			if (prepared.state().owner != current.preparationOwner) {
-				return resolve((PreparedLmdbValue.Prepared) capture(prepared), statement);
+				return resolve(current, (PreparedLmdbValue.Prepared) capture(current, prepared), statement);
 			}
 			PreparedLmdbValue.State state = prepared.state();
 			PreparedLmdbValue.Proof proof = statement ? state.proof : state.dictionaryProof;
@@ -4330,40 +4419,56 @@ class ValueStore extends AbstractValueFactory {
 				return proof.identity().id();
 			}
 			synchronized (state) {
-				while (true) {
+				return resolveAdmitted(current, state, statement);
+			}
+		}
+
+		/**
+		 * Resolves under the caller's exclusive access to {@code state} (its monitor, or a value nobody else holds);
+		 * {@code current} was validated and admitted by the caller immediately before.
+		 */
+		private long resolveAdmitted(ReadSnapshot current, PreparedLmdbValue.State state, boolean statement)
+				throws IOException {
+			boolean admitted = true;
+			while (true) {
+				if (!admitted) {
 					current = liveSnapshot();
-					PreparedLmdbValue.Generation generation = current.preparationGeneration;
-					proof = statement ? state.proof : state.dictionaryProof;
-					if (proof.generation() == generation && generation.live) {
-						return proof.identity().id();
-					}
-					LmdbValue.InternalIdentity candidate = state.proof.identity();
-					long id = statement ? knownStatementId(current, candidate) : knownSnapshotId(current, candidate);
-					boolean dictionaryValidated = !statement;
-					if (id == LmdbValue.UNKNOWN_ID) {
-						// This virtual call keeps the ordinary native lookup seam and mutable-caller contract intact.
-						id = getId(current, state.payload());
-						dictionaryValidated = true;
-					}
-					current.ensureValid();
-					if (generation != current.preparationGeneration || !generation.live) {
-						continue;
-					}
-					ValueStoreRevision preparedRevision = state.payload == null
-							? scopedRevision(current.revision())
-							: current.completedRevision();
-					PreparedLmdbValue.Proof resolved = new PreparedLmdbValue.Proof(generation,
-							new LmdbValue.InternalIdentity(id, preparedRevision));
-					if (dictionaryValidated) {
-						state.dictionaryProof = resolved;
-					}
-					// An absent old dictionary record does not revoke a safe statement-index association.
-					if (statement || state.proof.generation() != generation
-							|| state.proof.identity().id() == LmdbValue.UNKNOWN_ID) {
-						state.proof = resolved;
-					}
-					return id;
 				}
+				admitted = false;
+				PreparedLmdbValue.Generation generation = current.preparationGeneration;
+				PreparedLmdbValue.Proof proof = statement ? state.proof : state.dictionaryProof;
+				if (proof.generation() == generation && generation.live) {
+					return proof.identity().id();
+				}
+				LmdbValue.InternalIdentity candidate = state.proof.identity();
+				long id = statement ? knownStatementIdAdmitted(current, candidate)
+						: knownSnapshotId(current, candidate);
+				boolean dictionaryValidated = !statement;
+				if (id == LmdbValue.UNKNOWN_ID) {
+					// This virtual call keeps the ordinary native lookup seam and mutable-caller contract intact.
+					id = getId(current, state.payload());
+					dictionaryValidated = true;
+				}
+				current.ensureValid();
+				if (generation != current.preparationGeneration || !generation.live) {
+					continue;
+				}
+				ValueStoreRevision preparedRevision = state.payload == null
+						? scopedRevision(current.revision())
+						: current.completedRevision();
+				LmdbValue.InternalIdentity identity = candidate.id() == id && candidate.revision() == preparedRevision
+						? candidate
+						: new LmdbValue.InternalIdentity(id, preparedRevision);
+				PreparedLmdbValue.Proof resolved = new PreparedLmdbValue.Proof(generation, identity);
+				if (dictionaryValidated) {
+					state.dictionaryProof = resolved;
+				}
+				// An absent old dictionary record does not revoke a safe statement-index association.
+				if (statement || state.proof.generation() != generation
+						|| state.proof.identity().id() == LmdbValue.UNKNOWN_ID) {
+					state.proof = resolved;
+				}
+				return id;
 			}
 		}
 	}
@@ -4423,6 +4528,24 @@ class ValueStore extends AbstractValueFactory {
 
 		boolean hasStableIds() {
 			return stableTripleTxn != null;
+		}
+
+		PreparedLmdbValue.Generation preparationGeneration() {
+			return preparationGeneration;
+		}
+
+		/** The {@link ValueStore#knownStatementId} conditions, minus the ID, for a value revision read from here. */
+		boolean provesStatementIds(ValueStoreRevision.Lazy lazy) {
+			ValueStoreRevision.Lazy paired = stableRevision;
+			ValueEpoch epoch = paired == null ? null : paired.idEpoch();
+			ValueEpoch own = lazy.idEpoch();
+			if (lazy.getValueStore() != ValueStore.this || !hasStableIds() || epoch == null || !epoch.protectedIds
+					|| own != null && !own.protectedIds
+					|| !ValueStore.completedRevision(lazy).equals(completedRevision())) {
+				return false;
+			}
+			NativeValueAssociation association = lazy.association();
+			return association == null || association.state == NativeValueAssociation.State.COMMITTED;
 		}
 
 		boolean isCurrent() {
@@ -4870,8 +4993,8 @@ class ValueStore extends AbstractValueFactory {
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			return LmdbUtil.readTransaction(env, writeTxn, transaction);
 		}
-		Long borrowed = borrowedReadTxn.get();
-		if (borrowed != null) {
+		long borrowed = readContext.get().borrowedTxn;
+		if (borrowed != 0) {
 			return LmdbUtil.readTransaction(env, borrowed, transaction);
 		}
 		return withValueReadTransaction(null, transaction);
@@ -4909,7 +5032,7 @@ class ValueStore extends AbstractValueFactory {
 					retiredIdStore.transactionRolledBack();
 				}
 				var lockManager = txnManager.lockManager();
-				boolean readLocked = hasReadLock.get() != null;
+				boolean readLocked = readContext.get().hasReadLock;
 				if (readLocked) {
 					lockManager.unlockRead(StampedLongAdderLockManager.READ_LOCK_STAMP);
 				}
@@ -6131,7 +6254,9 @@ class ValueStore extends AbstractValueFactory {
 	/** Runs during serialized close after managed readers have released all native reader slots. */
 	private void materializeSharedLazyValues() throws IOException {
 		LmdbUtil.readTransaction(env, (stack, txn) -> {
-			borrowedReadTxn.set(txn);
+			ReadContext context = readContext.get();
+			long previousTxn = context.borrowedTxn;
+			context.borrowedTxn = txn;
 			try {
 				Throwable failure = null;
 				while (true) {
@@ -6149,7 +6274,7 @@ class ValueStore extends AbstractValueFactory {
 					}
 				}
 			} finally {
-				borrowedReadTxn.remove();
+				context.borrowedTxn = previousTxn;
 			}
 		});
 	}

@@ -46,7 +46,12 @@ public interface ValueStoreRevision {
 
 		@Override
 		public int hashCode() {
-			return Objects.hash(getValueStore(), getRevisionId());
+			return hash(getValueStore(), getRevisionId());
+		}
+
+		/** Same value as {@code Objects.hash(valueStore, revisionId)} without the varargs array and boxing. */
+		static int hash(ValueStore valueStore, long revisionId) {
+			return 31 * (31 + Objects.hashCode(valueStore)) + Long.hashCode(revisionId);
 		}
 	}
 
@@ -98,6 +103,8 @@ public interface ValueStoreRevision {
 		private transient volatile boolean tracked;
 		private transient ValueStore.ValueEpoch idEpoch;
 		private transient volatile WeakReference<ValueStore.ReadSnapshot> preferredSnapshot;
+		// Lazy revisions key per-scope maps on hot decode paths; the hash is computed at most once per instance.
+		private transient int hash;
 
 		public Lazy(ValueStoreRevision revision) {
 			this(revision, null);
@@ -170,6 +177,16 @@ public interface ValueStoreRevision {
 		@Override
 		public ValueStore getValueStore() {
 			return valueStore;
+		}
+
+		@Override
+		public int hashCode() {
+			int cached = hash;
+			if (cached == 0) {
+				cached = hash(valueStore, revisionId);
+				hash = cached;
+			}
+			return cached;
 		}
 
 		@Override

@@ -15,6 +15,8 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -23,12 +25,127 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.UnionIteration;
 import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
 import org.junit.jupiter.api.Test;
 
 class DatasetLifetimeTest {
+
+	@Test
+	void emptyCursorPreservesIdentityAndDoesNotRetainDataset() {
+		AtomicInteger disposals = new AtomicInteger();
+		DatasetLifetime lifetime = new DatasetLifetime(abandon -> disposals.incrementAndGet());
+		EmptyIteration<String> empty = new EmptyIteration<>();
+		CloseableIteration<? extends String> cursor = lifetime.open(() -> empty);
+		try {
+			assertSame(empty, cursor, "resource-free empty cursors must remain visible to union elision");
+			lifetime.close(false);
+			assertEquals(1, disposals.get(), "an untouched empty cursor must not retain dataset resources");
+		} finally {
+			cursor.close();
+			lifetime.close(false);
+		}
+		assertEquals(1, disposals.get());
+	}
+
+	@Test
+	void nestedEmptyLifetimesAllowUnionElisionWithoutRetainingResources() {
+		AtomicInteger innerDisposals = new AtomicInteger();
+		AtomicInteger outerDisposals = new AtomicInteger();
+		DatasetLifetime inner = new DatasetLifetime(abandon -> innerDisposals.incrementAndGet());
+		DatasetLifetime outer = new DatasetLifetime(abandon -> outerDisposals.incrementAndGet());
+		EmptyIteration<String> empty = new EmptyIteration<>();
+		CloseableIteration<? extends String> cursor = outer.open(() -> inner.open(() -> empty));
+		TrackingIteration source = new TrackingIteration(List.of("kept"));
+		CloseableIteration<? extends String> union = DualUnionIteration.getWildcardInstance(cursor, source);
+		try {
+			assertSame(source, union);
+			inner.close(true);
+			outer.close(false);
+			assertEquals(1, innerDisposals.get());
+			assertEquals(1, outerDisposals.get());
+			assertEquals("kept", union.next());
+		} finally {
+			union.close();
+			cursor.close();
+			inner.close(false);
+			outer.close(false);
+		}
+	}
+
+	@Test
+	void closedOwnerRejectsEmptyCursorAdmission() {
+		AtomicInteger operations = new AtomicInteger();
+		DatasetLifetime lifetime = new DatasetLifetime(abandon -> {
+		});
+		lifetime.close(false);
+		assertThrows(IllegalStateException.class, () -> lifetime.open(() -> {
+			operations.incrementAndGet();
+			return new EmptyIteration<>();
+		}));
+		assertEquals(0, operations.get());
+	}
+
+	@Test
+	void emptyCursorReleasesAdmissionAfterOwnerClosesInsideOperation() {
+		List<Boolean> dispositions = new ArrayList<>();
+		DatasetLifetime lifetime = new DatasetLifetime(dispositions::add);
+		EmptyIteration<String> empty = new EmptyIteration<>();
+		CloseableIteration<? extends String> cursor = lifetime.open(() -> {
+			lifetime.close(true);
+			assertTrue(dispositions.isEmpty(), "the admitted operation retains its owner while running");
+			return empty;
+		});
+		try {
+			assertEquals(List.of(true), dispositions);
+			assertSame(empty, cursor);
+		} finally {
+			cursor.close();
+			lifetime.close(false);
+		}
+		assertEquals(List.of(true), dispositions);
+	}
+
+	@Test
+	void emptyCursorDisposalFailureIsPropagatedWithoutDoubleRelease() {
+		AtomicInteger disposals = new AtomicInteger();
+		IllegalStateException failure = new IllegalStateException("dataset disposal failed");
+		DatasetLifetime lifetime = new DatasetLifetime(abandon -> {
+			disposals.incrementAndGet();
+			throw failure;
+		});
+		assertSame(failure, assertThrows(IllegalStateException.class, () -> lifetime.open(() -> {
+			lifetime.close(false);
+			return new EmptyIteration<>();
+		})));
+		assertEquals(0, failure.getSuppressed().length, "final disposal must not trigger another ownership release");
+		lifetime.close(false);
+		assertEquals(1, disposals.get());
+	}
+
+	@Test
+	void arbitraryCursorIsNotProbedToDetermineEmptiness() {
+		AtomicInteger probes = new AtomicInteger();
+		AtomicInteger disposals = new AtomicInteger();
+		DatasetLifetime lifetime = new DatasetLifetime(abandon -> disposals.incrementAndGet());
+		TrackingIteration source = new TrackingIteration(List.of()) {
+			@Override
+			public boolean hasNext() {
+				probes.incrementAndGet();
+				return super.hasNext();
+			}
+		};
+		CloseableIteration<? extends String> cursor = lifetime.open(() -> source);
+		lifetime.close(false);
+		assertEquals(0, probes.get());
+		assertEquals(0, disposals.get());
+		cursor.close();
+		assertEquals(1, source.closeCount());
+		assertEquals(1, disposals.get());
+	}
 
 	@Test
 	void retainedCursorForwardsLiveIndexMetrics() throws Exception {
