@@ -217,13 +217,14 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	}
 
 	/**
-	 * Releases the exclusive write lock when it is held by the supplied owner or by the current thread.
+	 * Releases the exclusive write lock only when it is held by the supplied owner. A nested connection that entered
+	 * through per-thread reentrancy never acquired the permit, so it must not release the owner's lock either.
 	 *
 	 * @param owner the connection releasing the lock
 	 */
 	void releaseExclusiveWriteLock(Object owner) {
 		synchronized (exclusiveWriteLockOwnerMonitor) {
-			if (exclusiveWriteLockOwner == null || !holdsExclusiveWriteLock(owner)) {
+			if (exclusiveWriteLockOwner == null || exclusiveWriteLockOwner != owner) {
 				return;
 			}
 			exclusiveWriteLockOwner = null;

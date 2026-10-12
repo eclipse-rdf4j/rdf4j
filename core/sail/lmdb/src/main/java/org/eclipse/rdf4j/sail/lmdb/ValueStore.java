@@ -2981,7 +2981,8 @@ class ValueStore extends AbstractValueFactory {
 		return saturatedEstimateAdd(estimateWriteBytes(preflight.statements()), estimateWriteMetadataBytes(preflight));
 	}
 
-	long estimateWriteBytes(StatementInput input) {
+	/** One pass over the input: the observer sees every statement, so callers can count without a second cursor. */
+	long estimateWriteBytes(StatementInput input, Consumer<Statement> observer) {
 		long statementEstimate = 128L;
 		try (CloseableIteration<Statement> statements = input.openCursor()) {
 			if (statements.hasNext()) {
@@ -2989,6 +2990,7 @@ class ValueStore extends AbstractValueFactory {
 				boolean moreStatements = statements.hasNext();
 				DictionaryByteEstimate estimate = new DictionaryByteEstimate(moreStatements);
 				do {
+					observer.accept(statement);
 					estimate.add(statement.getSubject());
 					estimate.add(statement.getPredicate());
 					estimate.add(statement.getObject());

@@ -28,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 
@@ -55,6 +56,8 @@ import org.slf4j.LoggerFactory;
 class SailSourceBranch implements SailSource, FrozenFlush {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceBranch.class);
+	private static final int MAX_DATASET_ACQUISITION_RETRY_BACKOFF_SHIFT = 10;
+	private static final int MAX_DATASET_ACQUISITION_RETRIES = 1000;
 
 	/**
 	 * Used to prevent changes to this object's field from multiple threads.
@@ -675,11 +678,33 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		return dataset(level, true);
 	}
 
+	/**
+	 * Backs off before an outermost dataset acquisition is retried, and fails the acquisition once the thread is
+	 * interrupted, the query deadline has expired, or the retry budget is exhausted.
+	 */
+	static void awaitDatasetAcquisitionRetry(int retries, Throwable failure) throws SailException {
+		if (Thread.currentThread().isInterrupted()) {
+			throw new SailException("Interrupted while retrying dataset acquisition", failure);
+		}
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long", failure);
+		}
+		if (retries >= MAX_DATASET_ACQUISITION_RETRIES) {
+			throw new SailConflictException("Unable to acquire a consistent dataset after " + retries
+					+ " attempts; retry the operation", failure);
+		}
+		// Back off while the backing source finishes the change that invalidated this acquisition.
+		LockSupport.parkNanos(TimeUnit.MICROSECONDS
+				.toNanos(1L << Math.min(retries, MAX_DATASET_ACQUISITION_RETRY_BACKOFF_SHIFT)));
+	}
+
 	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			if (closed) {
 				throw new SailException("SailSourceBranch is closed");
 			}
+			int retries = 0;
 			while (true) {
 				SailClosable admission = backingSource.beginDatasetAcquisition(level);
 				boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
@@ -693,9 +718,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				failure = closeResource(failure, admission);
 				if (failure instanceof RetryableDatasetAcquisitionException && outermost
 						&& failure.getSuppressed().length == 0) {
-					if (Thread.currentThread().isInterrupted()) {
-						throw new SailException("Interrupted while retrying dataset acquisition", failure);
-					}
+					awaitDatasetAcquisitionRetry(retries++, failure);
 					continue;
 				}
 				if (failure != null) {

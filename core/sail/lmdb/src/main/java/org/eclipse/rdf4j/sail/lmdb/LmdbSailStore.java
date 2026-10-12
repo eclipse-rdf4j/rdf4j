@@ -6482,8 +6482,9 @@ class LmdbSailStore implements SailStore {
 				return SailSource.NumericWriteEstimate.EMPTY;
 			}
 			SailSource.WritePreflight metadata = input.metadata();
-			long tripleDelta = tripleStore.estimateWriteBytes(input);
-			long valueDelta = valueStore.estimateWriteBytes(input);
+			long[] statementCount = new long[1];
+			long valueDelta = valueStore.estimateWriteBytes(input, ignored -> statementCount[0]++);
+			long tripleDelta = tripleStore.estimateWriteBytes(statementCount[0], metadata);
 			long namespaceAddedEncodedBytes = namespaceStore.estimateAddedNamespaceBytes(metadata);
 			boolean namespaceTouched = metadata.namespaceCleared() || !metadata.addedNamespaces().isEmpty()
 					|| !metadata.removedNamespacePrefixes().isEmpty();

@@ -24,6 +24,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -752,11 +753,11 @@ class LmdbEmergencyProjectedDemandTest {
 		}
 
 		@Override
-		long estimateWriteBytes(StatementInput input) {
+		long estimateWriteBytes(StatementInput input, Consumer<Statement> observer) {
 			int generationCount = input.generations().size();
 			boolean hasStatements = input.hasStatements();
 			boolean hasMetadataChanges = input.metadata().hasChanges();
-			long estimatedWriteBytes = super.estimateWriteBytes(input);
+			long estimatedWriteBytes = super.estimateWriteBytes(input, observer);
 			inputEstimateCalls
 					.add(new StatementInputEstimateWitness(estimatedWriteBytes, generationCount, hasStatements,
 							hasMetadataChanges));

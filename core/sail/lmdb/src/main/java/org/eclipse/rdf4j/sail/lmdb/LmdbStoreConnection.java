@@ -665,13 +665,17 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		}
 		ReplayPlan<?> evaluationPlan = pendingEvaluationReplayPlan.get();
 		if (evaluationPlan != null) {
+			// Consume the plan unconditionally: when evaluate() failed before registering its iteration, that
+			// iteration was closed and its plan must not attach to the next unrelated registration on this thread.
+			pendingEvaluationReplayPlan.remove();
+		}
+		if (evaluationPlan != null && !evaluationPlan.iteration.isClosed()) {
 			replayFactory = (ReplayFactory<T>) evaluationPlan.factory;
 			generation = evaluationPlan.generation;
 			readViews = evaluationPlan.readViews;
 			deadline = evaluationPlan.deadline;
 			sourcePlan = (ReplayPlanIteration<T>) evaluationPlan.iteration;
 			operationAttempt = sourcePlan.transferOperationAttempt();
-			pendingEvaluationReplayPlan.remove();
 		}
 		ReplayableIteration<T> replayable = new ReplayableIteration<>(iteration, replayFactory, generation, readViews,
 				deadline, operationAttempt, sourcePlan == null ? readAttemptLease : sourcePlan.admissionAttempt,

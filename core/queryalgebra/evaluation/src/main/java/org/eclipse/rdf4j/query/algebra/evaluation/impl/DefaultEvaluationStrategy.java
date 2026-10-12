@@ -1450,17 +1450,46 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return new QueryValueEvaluationStep.Fail("Constant failure: " + ex.getMessage());
 			}
 		} else {
+			ExternalValueSourceMemo functionSource = new ExternalValueSourceMemo(tripleSource);
 			return bindings -> {
 				Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
 				QueryExecutionContext.initializeExternalValues(argValues);
 				Value result;
 				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-					result = function.evaluate(ExternalValueTripleSource.wrap(tripleSource,
-							QueryExecutionContext.getExternalValueInitializer()), argValues);
+					result = function.evaluate(functionSource.current(), argValues);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				return result;
 			};
+		}
+	}
+
+	/**
+	 * Reuses the external-value wrapper across rows while the current thread's initializer is unchanged, instead of
+	 * allocating a new wrapper for every evaluated binding. A racing refresh only costs one extra wrapper.
+	 */
+	private static final class ExternalValueSourceMemo {
+		private record Wrapped(Consumer<Value> initializer, TripleSource source) {
+		}
+
+		private final TripleSource source;
+		private volatile Wrapped wrapped;
+
+		private ExternalValueSourceMemo(TripleSource source) {
+			this.source = source;
+		}
+
+		TripleSource current() {
+			Consumer<Value> initializer = QueryExecutionContext.getExternalValueInitializer();
+			if (initializer == null) {
+				return source;
+			}
+			Wrapped current = wrapped;
+			if (current == null || current.initializer != initializer) {
+				current = new Wrapped(initializer, ExternalValueTripleSource.wrap(source, initializer));
+				wrapped = current;
+			}
+			return current.source;
 		}
 	}
 

@@ -88,12 +88,10 @@ import org.eclipse.collections.api.iterator.LongIterator;
 import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator.Component;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex.StatementFieldValueAccessor;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Mode;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -156,6 +154,7 @@ class TripleStore implements Closeable {
 	private static final byte[] INDEX_FORMAT_KEY = "triple-index-format".getBytes(StandardCharsets.US_ASCII);
 	private static final byte[] INDEX_SPECS_KEY = "triple-index-specs".getBytes(StandardCharsets.US_ASCII);
 	private static final int INDEX_DATABASE_VERSION = 1;
+	private static final int MAX_INDEX_INITIALIZATION_ATTEMPTS = 4;
 	private static final Pattern MUTATION_JOURNAL_NAME = Pattern.compile(
 			"txn-replay-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\\.bin");
 	/**
@@ -212,6 +211,8 @@ class TripleStore implements Closeable {
 	private Throwable mutationFailure;
 	private boolean nativeMutation;
 	private boolean tripleMutation;
+	/** Index DBI creation and manifest writes are not journaled, so a map-growth replay cannot reproduce them. */
+	private boolean unjournaledMutation;
 
 	static final class MapFullException extends IOException {
 		private static final long serialVersionUID = 1L;
@@ -307,26 +308,42 @@ class TripleStore implements Closeable {
 
 		try {
 			String indexSpecStr = config.getTripleIndexes();
-			startTransaction();
-			Set<String> effectiveIndexSpecs = readIndexSpecs(writeTxn);
-			boolean nativeIndexManifest = effectiveIndexSpecs != null;
-			if (effectiveIndexSpecs == null && properties.isLoaded()) {
-				// Import the legacy sidecar once. The marker and DBI creation become durable together.
-				effectiveIndexSpecs = getIndexSpecs();
-			} else if (effectiveIndexSpecs == null) {
-				// A missing sidecar does not make a native store new: its committed manifest takes precedence above.
-				effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
-				if (effectiveIndexSpecs.isEmpty()) {
-					logger.debug("No triple indexes specified, using default: {}", DEFAULT_TRIPLE_INDEXES);
-					indexSpecStr = DEFAULT_TRIPLE_INDEXES;
-					effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
+			Set<String> effectiveIndexSpecs;
+			int initializationAttempts = 0;
+			while (true) {
+				startTransaction();
+				try {
+					effectiveIndexSpecs = readIndexSpecs(writeTxn);
+					boolean nativeIndexManifest = effectiveIndexSpecs != null;
+					if (effectiveIndexSpecs == null && properties.isLoaded()) {
+						// Import the legacy sidecar once. The marker and DBI creation become durable together.
+						effectiveIndexSpecs = getIndexSpecs();
+					} else if (effectiveIndexSpecs == null) {
+						// A missing sidecar does not make a native store new: its committed manifest takes precedence
+						// above.
+						effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
+						if (effectiveIndexSpecs.isEmpty()) {
+							logger.debug("No triple indexes specified, using default: {}", DEFAULT_TRIPLE_INDEXES);
+							indexSpecStr = DEFAULT_TRIPLE_INDEXES;
+							effectiveIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
+						}
+					}
+					initIndexes(effectiveIndexSpecs);
+					if (!nativeIndexManifest) {
+						writeIndexSpecs(effectiveIndexSpecs);
+					}
+					endTransaction(true);
+					break;
+				} catch (MapFullException mapFull) {
+					// The failed commit consumed the transaction and LMDB closed the DBI handles it had opened, so the
+					// index creation and manifest must be redone in a fresh transaction after growing the map.
+					indexes.clear();
+					if (!autoGrow || ++initializationAttempts >= MAX_INDEX_INITIALIZATION_ATTEMPTS) {
+						throw new IOException("LMDB map is full while initializing the triple indexes", mapFull);
+					}
+					growMapForIndexInitialization();
 				}
 			}
-			initIndexes(effectiveIndexSpecs);
-			if (!nativeIndexManifest) {
-				writeIndexSpecs(effectiveIndexSpecs);
-			}
-			endTransaction(true);
 			initializePageAndMapSize(config.getTripleDBSize());
 
 			Set<String> requestedIndexSpecs = TripleIndex.parseIndexSpecList(indexSpecStr);
@@ -569,6 +586,7 @@ class TripleStore implements Closeable {
 			writeNamespaceDatabaseValue(stack, writeTxn, INDEX_FORMAT_KEY, format);
 		}
 		nativeMutation = true;
+		unjournaledMutation = true;
 	}
 
 	private byte[] readNamespaceDatabaseValue(MemoryStack stack, long txn, byte[] key) throws IOException {
@@ -627,6 +645,7 @@ class TripleStore implements Closeable {
 			logger.trace("Initializing index '{}'...", fieldSeq);
 			indexes.add(new TripleIndex(getIndexName(fieldSeq), fieldSeq, true, env, writeTxn));
 			nativeMutation = true;
+			unjournaledMutation = true;
 		}
 	}
 
@@ -691,6 +710,21 @@ class TripleStore implements Closeable {
 			} finally {
 				env = 0;
 			}
+		}
+	}
+
+	/** Grows the map before the page size is known, doubling the environment's current native map size. */
+	private void growMapForIndexInitialization() throws IOException {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			E(mdb_env_info(env, info));
+			long currentMapSize = info.me_mapsize();
+			if (currentMapSize > Long.MAX_VALUE / 2L) {
+				throw new IOException("LMDB map cannot grow beyond " + currentMapSize + " bytes");
+			}
+			long grownMapSize = currentMapSize * 2L;
+			E(setMapSize(grownMapSize));
+			logger.debug("resized map to {} for index initialization", grownMapSize);
 		}
 	}
 
@@ -912,6 +946,7 @@ class TripleStore implements Closeable {
 				nativeCommitGeneration.incrementAndGet();
 				nativeMutation = false;
 				tripleMutation = false;
+				unjournaledMutation = false;
 				txnManager.reset();
 			}
 		} finally {
@@ -1571,18 +1606,12 @@ class TripleStore implements Closeable {
 		return saturatedAdd(estimateWriteBytes(preflight.statements()), estimateWriteMetadataBytes(preflight));
 	}
 
-	long estimateWriteBytes(StatementInput input) {
+	/** Estimates a buffered write from a statement count obtained by a caller that already scanned the input. */
+	long estimateWriteBytes(long statementCount, SailSource.WritePreflight metadata) {
 		long perIndexBytes = 2L * TripleIndex.MAX_KEY_LENGTH + 64L;
 		long perStatementBytes = saturatedAdd(saturatedMultiply(indexes.size(), perIndexBytes), 64L);
-		long estimate = 0L;
-		try (CloseableIteration<Statement> statements = input.openCursor()) {
-			while (statements.hasNext()) {
-				statements.next();
-				estimate = saturatedAdd(estimate, perStatementBytes);
-			}
-		}
-		input.validate();
-		return saturatedAdd(estimate, estimateWriteMetadataBytes(input.metadata()));
+		return saturatedAdd(saturatedMultiply(statementCount, perStatementBytes),
+				estimateWriteMetadataBytes(metadata));
 	}
 
 	private long estimateWriteMetadataBytes(SailSource.WritePreflight preflight) {
@@ -1861,6 +1890,12 @@ class TripleStore implements Closeable {
 		}
 		if (!usesReplayJournal()) {
 			growForTransactionRetry(0L, new MapFullException());
+		}
+		if (unjournaledMutation) {
+			// Index DBI creation and manifest writes are not in the journal; a replay would silently drop them.
+			MapFullException mapFull = new MapFullException();
+			markMutationFailure(mapFull);
+			throw mapFull;
 		}
 		requestMapGrowth(0L, true);
 		LmdbSailStore.MapGrowthAttempt growthAttempt = beginMapGrowthAttempt();
@@ -2713,6 +2748,7 @@ class TripleStore implements Closeable {
 		mutationFailure = null;
 		nativeMutation = false;
 		tripleMutation = false;
+		unjournaledMutation = false;
 		mutationJournal = null;
 		replayDecision = decision;
 		if (valueStore != null) {
@@ -2809,6 +2845,10 @@ class TripleStore implements Closeable {
 							if (replayDecision != null && replayDecision.checkpoint) {
 								throw new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.TRIPLE_STORE, null);
 							}
+							if (unjournaledMutation) {
+								// Replaying the journal would silently drop index DBI creation and manifest writes.
+								throw new MapFullException();
+							}
 							resizeAndReplay(-1, null);
 						}
 					}
@@ -2828,6 +2868,7 @@ class TripleStore implements Closeable {
 				mutationFailure = null;
 				nativeMutation = false;
 				tripleMutation = false;
+				unjournaledMutation = false;
 				if (!commit || committed || !(failure instanceof LmdbTransactionRetryException)) {
 					if (valueStore != null) {
 						valueStore.clearReplayDecision(replayDecision);
