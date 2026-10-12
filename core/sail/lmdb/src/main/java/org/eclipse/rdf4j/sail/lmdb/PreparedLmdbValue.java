@@ -141,6 +141,8 @@ final class PreparedLmdbValue {
 		volatile Value payload;
 		private volatile LmdbValue.InternalIdentity decodeIdentity;
 		volatile boolean externallyOwned;
+		// The semantic hash is immutable; a non-zero value is remembered after the first computation.
+		private volatile int hash;
 
 		State(Owner owner, Value.Type type, LmdbValue.InternalIdentity identity, Value payload) {
 			this.owner = owner;
@@ -210,18 +212,24 @@ final class PreparedLmdbValue {
 		}
 
 		int semanticHash() {
+			int known = hash;
+			if (known != 0) {
+				return known;
+			}
 			LmdbValue.InternalIdentity captured = proof.identity();
 			if (captured.id() != LmdbValue.UNKNOWN_ID) {
 				int cached = captured.revision().getStoredHash(captured.id());
 				if (cached != 0) {
+					hash = cached;
 					return cached;
 				}
 			}
-			int hash = payload().hashCode();
+			int computed = payload().hashCode();
 			if (captured.id() != LmdbValue.UNKNOWN_ID) {
-				captured.revision().storeHash(captured.id(), hash);
+				captured.revision().storeHash(captured.id(), computed);
 			}
-			return hash;
+			hash = computed;
+			return computed;
 		}
 	}
 

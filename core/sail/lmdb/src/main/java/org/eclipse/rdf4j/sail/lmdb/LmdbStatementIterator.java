@@ -130,9 +130,24 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 				if (readSnapshot.valueStore() != valueStore) {
 					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 				}
+				ValueResolutionScope exposure = ValueResolutionScope.activeExposure(valueStore);
+				PreparedLmdbValue.Generation generation = readSnapshot.preparationGeneration();
+				ValueStoreRevision revision = readSnapshot.revision();
+				if (generation != provenGeneration || exposure != provenExposure) {
+					// Only snapshot state is read here; the scope's own lock covers its revision wrappers.
+					provenGeneration = generation;
+					provenExposure = exposure;
+					provenRevision = exposure == null ? null
+							: valueStore.statementProofRevision(readSnapshot, revision, exposure);
+				}
+				if (provenRevision != null && generation.live) {
+					// The record read just validated this snapshot, and statement-proven values publish nothing: a
+					// detachment underneath merely leaves them with a stale proof that resolution re-establishes.
+					return provenStatement(quad, revision, exposure, provenRevision, generation);
+				}
 				synchronized (readSnapshot.txnRef()) {
 					readSnapshot.ensureValid();
-					return getStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
+					return provenStatement(quad, revision, exposure, null, generation);
 				}
 			}
 
@@ -157,16 +172,12 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 		}
 	}
 
-	private Statement getStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
-			throws IOException {
-		PreparedLmdbValue.Generation generation = readSnapshot.preparationGeneration();
-		if (generation != provenGeneration || exposure != provenExposure) {
-			provenGeneration = generation;
-			provenExposure = exposure;
-			provenRevision = exposure == null ? null
-					: valueStore.statementProofRevision(readSnapshot, revision, exposure);
-		}
-		ValueStoreRevision.Lazy proven = generation.live ? provenRevision : null;
+	/**
+	 * Builds the statement for {@code quad}: pattern values of this revision are reused, other positions become
+	 * statement-proven prepared values under {@code proven}, or lazy shells when {@code proven} is {@code null}.
+	 */
+	private Statement provenStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure,
+			ValueStoreRevision.Lazy proven, PreparedLmdbValue.Generation generation) throws IOException {
 		long subjectId = quad[TripleIndex.SUBJ_IDX];
 		Resource subject = (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure, proven,
 				generation);

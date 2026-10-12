@@ -8732,15 +8732,18 @@ class LmdbSailStore implements SailStore {
 				return new ReplaySafepointIndexIteration<>(iteration, indexReporter);
 			}
 			return new IterationWrapper<T>(iteration) {
+				private final QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext
+						.replayCheckpoint();
+
 				@Override
 				public boolean hasNext() {
-					QueryExecutionContext.checkpointReplaySafepoint();
+					checkpoint.checkpoint();
 					return super.hasNext();
 				}
 
 				@Override
 				public T next() {
-					QueryExecutionContext.checkpointReplaySafepoint();
+					checkpoint.checkpoint();
 					return super.next();
 				}
 			};
@@ -8749,6 +8752,8 @@ class LmdbSailStore implements SailStore {
 		private final class ReplaySafepointIndexIteration<T> extends IterationWrapper<T>
 				implements IndexReportingIterator {
 			private final IndexReportingIterator indexReporter;
+			private final QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext
+					.replayCheckpoint();
 
 			private ReplaySafepointIndexIteration(CloseableIteration<? extends T> iteration,
 					IndexReportingIterator indexReporter) {
@@ -8758,13 +8763,13 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean hasNext() {
-				QueryExecutionContext.checkpointReplaySafepoint();
+				checkpoint.checkpoint();
 				return super.hasNext();
 			}
 
 			@Override
 			public T next() {
-				QueryExecutionContext.checkpointReplaySafepoint();
+				checkpoint.checkpoint();
 				return super.next();
 			}
 

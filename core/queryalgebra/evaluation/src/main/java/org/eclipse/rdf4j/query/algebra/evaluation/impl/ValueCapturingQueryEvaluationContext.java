@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 
 /** Captures produced binding values once, preserving the context's existing binding layout and getters. */
 final class ValueCapturingQueryEvaluationContext implements QueryEvaluationContext {
@@ -129,6 +130,16 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	private BiConsumer<Value, MutableBindingSet> capture(BiConsumer<Value, MutableBindingSet> setter) {
+		if (capturer instanceof OwnedValueCapturer owned) {
+			// Values the capturer already owns (its constants and the values it produced) need no probe at all.
+			return (value, bindings) -> {
+				Value captured = value;
+				if (value != null && value != now && !owned.owns(value) && !ownedConstants.contains(value)) {
+					captured = capturer.apply(value);
+				}
+				setter.accept(captured, bindings);
+			};
+		}
 		return (value, bindings) -> {
 			// Only constant outputs are shared; the original caller values must still be recaptured.
 			Value captured = value;

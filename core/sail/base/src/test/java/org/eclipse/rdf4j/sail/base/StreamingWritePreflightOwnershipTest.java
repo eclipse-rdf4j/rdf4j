@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -1709,6 +1710,61 @@ class StreamingWritePreflightOwnershipTest {
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void explicitPrepareStillConflictsWhileAutoFlushAdmissionIsRunning() throws Exception {
 		assertConcurrentAutoFlushBehavior(false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void automaticFlushSkipsWhenItsPreflightOwnerIsRetiredDuringAdmission() throws Exception {
+		RecordingStreamingSource backing = new RecordingStreamingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		Statement queued = statement("auto-flush-owner-retired-during-admission");
+		SailDataset observer = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		add(branch, queued);
+		CountDownLatch admissionReached = new CountDownLatch(1);
+		CountDownLatch releaseAdmission = new CountDownLatch(1);
+		backing.onEstimate = input -> {
+			if (backing.estimateCalls.get() == 1) {
+				admissionReached.countDown();
+				await(releaseAdmission, "automatic flush admission release");
+			}
+		};
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> autoFlush = executor.submit(observer::close);
+		Future<?> close = null;
+		Throwable flushFailure = null;
+		Throwable closeFailure = null;
+		try {
+			await(admissionReached, "automatic flush admission");
+			// The branch closes while the opportunistic admission is still running, so the preflight owner is
+			// retired underneath it. The automatic flush must step aside instead of failing the observer release.
+			close = executor.submit(branch::close);
+			try {
+				close.get(500, TimeUnit.MILLISECONDS);
+			} catch (java.util.concurrent.TimeoutException stillClosing) {
+				// The close may wait for the paused admission; release it below.
+			}
+		} finally {
+			releaseAdmission.countDown();
+			try {
+				autoFlush.get(5, TimeUnit.SECONDS);
+			} catch (ExecutionException failure) {
+				flushFailure = failure.getCause();
+			}
+			if (close != null) {
+				try {
+					close.get(5, TimeUnit.SECONDS);
+				} catch (ExecutionException failure) {
+					closeFailure = failure.getCause();
+				}
+			}
+			executor.shutdownNow();
+			branch.close();
+		}
+		assertThat(flushFailure)
+				.as("an opportunistic flush that loses to owner retirement is skipped, not failed")
+				.isNull();
+		assertThat(closeFailure).as("the concurrent branch close completes").isNull();
+		assertThat(backing.committed).as("nothing was applied by the skipped flush").doesNotContain(queued);
 	}
 
 	private static void assertConcurrentAutoFlushBehavior(boolean nonblockingContender) throws Exception {

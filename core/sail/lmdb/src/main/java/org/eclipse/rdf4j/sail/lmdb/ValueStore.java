@@ -99,6 +99,7 @@ import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
@@ -347,6 +348,8 @@ class ValueStore extends AbstractValueFactory {
 		ValueStoreRevision.Lazy borrowedRevision;
 		boolean hasReadLock;
 		boolean retainedDictionaryDecode;
+		// The thread's LWJGL stack, looked up once per borrowed context and reused by nested native reads.
+		MemoryStack stack;
 	}
 
 	private final ThreadLocal<ReadContext> readContext = ThreadLocal.withInitial(ReadContext::new);
@@ -1928,17 +1931,21 @@ class ValueStore extends AbstractValueFactory {
 		long previousTxn = context.borrowedTxn;
 		ValueStoreRevision.Lazy previousRevision = context.borrowedRevision;
 		boolean previousLock = context.hasReadLock;
+		MemoryStack previousStack = context.stack;
+		MemoryStack stack = previousStack != null ? previousStack : MemoryStack.stackGet();
 		context.borrowedTxn = txn;
 		context.borrowedRevision = valueRevision;
+		context.stack = stack;
 		if (ownsReadBarrier) {
 			context.hasReadLock = true;
 		}
-		try {
-			return LmdbUtil.readTransaction(env, txn, transaction);
+		try (MemoryStack frame = stack.push()) {
+			return transaction.exec(stack, txn);
 		} finally {
 			context.borrowedTxn = previousTxn;
 			context.borrowedRevision = previousRevision;
 			context.hasReadLock = previousLock;
+			context.stack = previousStack;
 		}
 	}
 
@@ -2198,7 +2205,7 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	protected byte[] getData(long id) throws IOException {
-		byte[] data = readTransaction(env, (stack, txn) -> getData(txn, id));
+		byte[] data = readTransaction(env, (stack, txn) -> getData(stack, txn, id));
 		if (data == null && readContext.get().retainedDictionaryDecode) {
 			throw new MissingRetainedValueException(id);
 		}
@@ -2206,10 +2213,15 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private byte[] getData(long txn, long id) throws IOException {
-		try (MemoryStack stack = stackPush()) {
-			MDBVal keyData = MDBVal.calloc(stack);
+		return getData(MemoryStack.stackGet(), txn, id);
+	}
+
+	private byte[] getData(MemoryStack frameStack, long txn, long id) throws IOException {
+		try (MemoryStack stack = frameStack.push()) {
+			// Both structs are fully written before use (the key by mv_data, the value by mdb_get), so no zeroing.
+			MDBVal keyData = MDBVal.malloc(stack);
 			keyData.mv_data(id2data(idBuffer(stack), id).flip());
-			MDBVal valueData = MDBVal.calloc(stack);
+			MDBVal valueData = MDBVal.malloc(stack);
 			if (mdb_get(txn, dbi, keyData, valueData) == MDB_SUCCESS) {
 				byte[] valueBytes = new byte[valueData.mv_data().remaining()];
 				valueData.mv_data().get(valueBytes);
@@ -4262,7 +4274,19 @@ class ValueStore extends AbstractValueFactory {
 	/** One dictionary view's preparation service; models retain only its metadata-only owner and generation. */
 	private final class ValuePreparer implements Function<Value, Value> {
 		private volatile ReadSnapshot snapshot;
-		private final Function<Value, Value> capturer = this::capture;
+		private final OwnedValueCapturer capturer = new OwnedValueCapturer() {
+			@Override
+			public Value apply(Value value) {
+				return capture(value);
+			}
+
+			@Override
+			public boolean owns(Value value) {
+				ReadSnapshot current = snapshot;
+				return current != null && value instanceof PreparedLmdbValue.Prepared prepared
+						&& prepared.state().owner == current.preparationOwner;
+			}
+		};
 
 		private ValuePreparer(ReadSnapshot snapshot) {
 			this.snapshot = snapshot;
@@ -4993,9 +5017,16 @@ class ValueStore extends AbstractValueFactory {
 		if (writeTxn != 0 && writeTxnOwner == Thread.currentThread()) {
 			return LmdbUtil.readTransaction(env, writeTxn, transaction);
 		}
-		long borrowed = readContext.get().borrowedTxn;
+		ReadContext context = readContext.get();
+		long borrowed = context.borrowedTxn;
 		if (borrowed != 0) {
-			return LmdbUtil.readTransaction(env, borrowed, transaction);
+			MemoryStack stack = context.stack;
+			if (stack == null) {
+				return LmdbUtil.readTransaction(env, borrowed, transaction);
+			}
+			try (MemoryStack frame = stack.push()) {
+				return transaction.exec(stack, borrowed);
+			}
 		}
 		return withValueReadTransaction(null, transaction);
 	}

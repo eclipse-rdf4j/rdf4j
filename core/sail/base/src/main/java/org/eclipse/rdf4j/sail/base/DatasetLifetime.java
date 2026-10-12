@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 
@@ -24,44 +26,48 @@ import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 final class DatasetLifetime {
 
 	private final Consumer<Boolean> dispose;
-	private int owners = 1;
-	private boolean closed;
-	private boolean abandoned;
+	// Lock-free ownership count: every pattern evaluation acquires and releases once, so no monitor is taken.
+	private final AtomicInteger owners = new AtomicInteger(1);
+	private final AtomicBoolean closed = new AtomicBoolean();
+	private volatile boolean abandoned;
 
 	DatasetLifetime(Consumer<Boolean> dispose) {
 		this.dispose = dispose;
 	}
 
-	private synchronized void acquire() {
-		if (closed) {
+	private void acquire() {
+		if (closed.get()) {
 			throw new IllegalStateException("The dataset owner is closed");
 		}
-		owners = Math.addExact(owners, 1);
+		int previous = owners.getAndIncrement();
+		if (previous <= 0) {
+			// Already disposed: undo the admission without triggering another disposal.
+			owners.decrementAndGet();
+			throw new IllegalStateException("The dataset owner is closed");
+		}
+		if (previous == Integer.MAX_VALUE) {
+			owners.decrementAndGet();
+			throw new ArithmeticException("integer overflow");
+		}
 	}
 
 	private void release() {
-		boolean last;
-		boolean abandon;
-		synchronized (this) {
-			if (owners == 0) {
-				throw new IllegalStateException("Dataset ownership underflow");
-			}
-			last = --owners == 0;
-			abandon = abandoned;
+		int remaining = owners.decrementAndGet();
+		if (remaining < 0) {
+			owners.incrementAndGet();
+			throw new IllegalStateException("Dataset ownership underflow");
 		}
-		if (last) {
-			dispose.accept(abandon);
+		if (remaining == 0) {
+			dispose.accept(abandoned);
 		}
 	}
 
 	void close(boolean abandon) {
-		synchronized (this) {
-			if (closed) {
-				return;
-			}
-			closed = true;
-			abandoned = abandon;
+		if (!closed.compareAndSet(false, true)) {
+			return;
 		}
+		// Published before the owner's own release, so whichever release is last observes the disposition.
+		abandoned = abandon;
 		release();
 	}
 

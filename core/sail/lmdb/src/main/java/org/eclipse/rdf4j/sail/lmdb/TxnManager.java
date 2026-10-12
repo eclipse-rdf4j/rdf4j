@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_reset;
 
 import java.io.Closeable;
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.nio.IntBuffer;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
 import org.eclipse.rdf4j.sail.lmdb.util.MpmcRingBuffer;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBVal;
 
 /**
  * Manager for LMDB read transactions.
@@ -1274,6 +1276,64 @@ final class TxnManager {
 			return nativeTransactionId;
 		}
 
+		// Record-iterator buffers of this reader are handed back and forth under this monitor; the shared
+		// multi-producer pools only absorb the overflow.
+		private final MDBVal[] spareVals = new MDBVal[8];
+		private int spareValCount;
+		private final ByteBuffer[] spareKeys = new ByteBuffer[4];
+		private int spareKeyCount;
+
+		/** Caller holds this reader's monitor. */
+		MDBVal takeVal() {
+			if (spareValCount > 0) {
+				MDBVal val = spareVals[--spareValCount];
+				spareVals[spareValCount] = null;
+				return val;
+			}
+			return valuePool.getVal();
+		}
+
+		/** Caller holds this reader's monitor. */
+		void giveVal(MDBVal val) {
+			if (spareValCount < spareVals.length) {
+				spareVals[spareValCount++] = val;
+			} else {
+				valuePool.free(val);
+			}
+		}
+
+		/** Caller holds this reader's monitor. */
+		ByteBuffer takeKeyBuffer() {
+			if (spareKeyCount > 0) {
+				ByteBuffer bb = spareKeys[--spareKeyCount];
+				spareKeys[spareKeyCount] = null;
+				return bb.clear();
+			}
+			return valuePool.getKeyBuffer();
+		}
+
+		/** Caller holds this reader's monitor. */
+		void giveKeyBuffer(ByteBuffer bb) {
+			if (spareKeyCount < spareKeys.length) {
+				spareKeys[spareKeyCount++] = bb;
+			} else {
+				valuePool.free(bb);
+			}
+		}
+
+		private void releaseSpares() {
+			while (spareValCount > 0) {
+				MDBVal val = spareVals[--spareValCount];
+				spareVals[spareValCount] = null;
+				valuePool.free(val);
+			}
+			while (spareKeyCount > 0) {
+				ByteBuffer bb = spareKeys[--spareKeyCount];
+				spareKeys[spareKeyCount] = null;
+				valuePool.free(bb);
+			}
+		}
+
 		long version() {
 			return version;
 		}
@@ -1512,6 +1572,7 @@ final class TxnManager {
 		}
 
 		private synchronized void abortAndMarkClosed() {
+			releaseSpares();
 			if (!closed) {
 				mdb_txn_abort(txn);
 			}

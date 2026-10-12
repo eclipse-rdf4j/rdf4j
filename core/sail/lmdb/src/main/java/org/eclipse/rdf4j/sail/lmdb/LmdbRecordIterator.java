@@ -106,23 +106,7 @@ class LmdbRecordIterator implements RecordIterator {
 		this.originalQuad = new long[] { subj, pred, obj, context };
 		this.quad = new long[] { subj, pred, obj, context };
 		this.pool = txnRef.getValuePool();
-		this.keyData = pool.getVal();
-		this.valueData = pool.getVal();
 		this.index = index;
-		if (rangeSearch) {
-			minKeyBuf = pool.getKeyBuffer();
-			index.getMinKey(minKeyBuf, subj, pred, obj, context);
-			minKeyBuf.flip();
-
-			this.maxKey = pool.getVal();
-			this.maxKeyBuf = pool.getKeyBuffer();
-			index.getMaxKey(maxKeyBuf, subj, pred, obj, context);
-			maxKeyBuf.flip();
-			this.maxKey.mv_data(maxKeyBuf);
-		} else {
-			minKeyBuf = null;
-			this.maxKey = null;
-		}
 
 		this.matchValues = subj > 0 || pred > 0 || obj > 0 || context >= 0;
 
@@ -136,10 +120,15 @@ class LmdbRecordIterator implements RecordIterator {
 			readStamp = txnLockManager.readLock();
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
-			freeBuffers();
 			throw new SailException(e);
 		}
 		long openedCursor = 0;
+		// The native buffers are taken from the reader's own cache under its monitor, where close returns them.
+		MDBVal key = null;
+		MDBVal value = null;
+		MDBVal max = null;
+		ByteBuffer min = null;
+		ByteBuffer maxBuf = null;
 		try {
 			synchronized (txnRef) {
 				txnRef.ensureSnapshotValid();
@@ -148,6 +137,18 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 				this.txnRefVersion = txnRef.version();
 				this.txn = txnRef.get();
+				key = txnRef.takeVal();
+				value = txnRef.takeVal();
+				if (rangeSearch) {
+					min = txnRef.takeKeyBuffer();
+					index.getMinKey(min, subj, pred, obj, context);
+					min.flip();
+					max = txnRef.takeVal();
+					maxBuf = txnRef.takeKeyBuffer();
+					index.getMaxKey(maxBuf, subj, pred, obj, context);
+					maxBuf.flip();
+					max.mv_data(maxBuf);
+				}
 
 				try (MemoryStack stack = MemoryStack.stackPush()) {
 					PointerBuffer pp = stack.mallocPointer(1);
@@ -161,22 +162,44 @@ class LmdbRecordIterator implements RecordIterator {
 			if (openedCursor != 0) {
 				mdb_cursor_close(openedCursor);
 			}
-			freeBuffers();
+			synchronized (txnRef) {
+				if (key != null) {
+					txnRef.giveVal(key);
+				}
+				if (value != null) {
+					txnRef.giveVal(value);
+				}
+				if (min != null) {
+					txnRef.giveKeyBuffer(min);
+				}
+				if (max != null) {
+					txnRef.giveVal(max);
+				}
+				if (maxBuf != null) {
+					txnRef.giveKeyBuffer(maxBuf);
+				}
+			}
 			throw e;
 		} finally {
 			txnLockManager.unlockRead(readStamp);
 		}
+		this.keyData = key;
+		this.valueData = value;
+		this.maxKey = max;
+		this.minKeyBuf = min;
+		this.maxKeyBuf = maxBuf;
 	}
 
+	/** Caller holds the reader's monitor. */
 	private void freeBuffers() {
-		pool.free(keyData);
-		pool.free(valueData);
+		txnRef.giveVal(keyData);
+		txnRef.giveVal(valueData);
 		if (minKeyBuf != null) {
-			pool.free(minKeyBuf);
+			txnRef.giveKeyBuffer(minKeyBuf);
 		}
 		if (maxKey != null) {
-			pool.free(maxKeyBuf);
-			pool.free(maxKey);
+			txnRef.giveKeyBuffer(maxKeyBuf);
+			txnRef.giveVal(maxKey);
 		}
 	}
 

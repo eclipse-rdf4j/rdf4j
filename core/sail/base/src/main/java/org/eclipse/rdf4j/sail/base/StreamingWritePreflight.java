@@ -181,7 +181,8 @@ public final class StreamingWritePreflight implements SailClosable {
 			frame.validateAll();
 			synchronized (this) {
 				if (retirementRequested) {
-					throw new SailConflictException("Write preflight was cancelled during admission");
+					throw nonblocking ? new Unavailable()
+							: new SailConflictException("Write preflight was cancelled during admission");
 				}
 				registrations.clear();
 				registrations.putAll(candidates);
@@ -201,8 +202,10 @@ public final class StreamingWritePreflight implements SailClosable {
 			CURRENT.set(frame);
 			return frame;
 		} catch (RuntimeException | Error failure) {
-			// A busy ancestor is a nonblocking control-flow skip, not an exception to hide cleanup behind.
-			Throwable primary = failure instanceof Unavailable ? null : failure;
+			// A busy ancestor is a nonblocking control-flow skip, not an exception to hide cleanup behind. So is any
+			// conflict a nonblocking admission meets before application: the opportunistic flush retries later.
+			RuntimeException skipped = skipIfNonblocking(nonblocking, failure);
+			Throwable primary = skipped instanceof Unavailable ? null : failure;
 			if (primary != null) {
 				graph.recordFailure(primary);
 			}
@@ -218,9 +221,27 @@ public final class StreamingWritePreflight implements SailClosable {
 			cleanupFailure = closeResource(cleanupFailure, () -> finished(primary));
 			if (primary == null) {
 				rethrow(cleanupFailure);
+				throw skipped;
 			}
 			throw failure;
 		}
+	}
+
+	/**
+	 * A nonblocking admission is opportunistic: a conflict it meets before any application is not a failure of the
+	 * caller's operation but a signal to step aside, exactly like a busy ancestor.
+	 */
+	private static RuntimeException skipIfNonblocking(boolean nonblocking, Throwable failure) {
+		if (failure instanceof Unavailable unavailable) {
+			return unavailable;
+		}
+		if (nonblocking && failure instanceof SailConflictException) {
+			return new Unavailable();
+		}
+		if (failure instanceof RuntimeException runtime) {
+			return runtime;
+		}
+		throw (Error) failure;
 	}
 
 	private void finished(Throwable primary) {
@@ -635,6 +656,18 @@ public final class StreamingWritePreflight implements SailClosable {
 			return () -> nonblockingEntries--;
 		}
 
+		private boolean nonblocking() {
+			return graph.nonblocking || nonblockingEntries > 0;
+		}
+
+		/**
+		 * Retirement of the owner or of an admission is a lifecycle event, not a data conflict: a nonblocking context
+		 * steps aside from it exactly like from a busy ancestor, while a blocking publication fails.
+		 */
+		private RuntimeException retired(String message) {
+			return nonblocking() ? new Unavailable() : new SailConflictException(message);
+		}
+
 		private void selectPreparingSink(SailSourceBranch branch, Changeset sink) {
 			// A newly opened carrier may be empty. Nonempty private work needs its own captured input.
 			check(sink);
@@ -687,12 +720,12 @@ public final class StreamingWritePreflight implements SailClosable {
 		private void validateSource(SailSource source) {
 			synchronized (owner) {
 				if (owner.retirementRequested) {
-					throw new SailConflictException("The write-preflight owner was retired before publication");
+					throw retired("The write-preflight owner was retired before publication");
 				}
 			}
 			for (Registration registration : admissions) {
 				if (!registration.scope.isActive()) {
-					throw new SailConflictException("The write-preflight admission was retired before publication");
+					throw retired("The write-preflight admission was retired before publication");
 				}
 			}
 			if (source instanceof SailSourceBranch branch) {

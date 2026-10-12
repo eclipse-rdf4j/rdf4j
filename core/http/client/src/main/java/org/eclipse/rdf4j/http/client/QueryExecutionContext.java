@@ -36,8 +36,8 @@ public final class QueryExecutionContext {
 	private static final int CHECKPOINT_STRIDE = 1024;
 	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
-	private static final ThreadLocal<ReplaySafepoint> REPLAY_SAFEPOINT = new ThreadLocal<>();
-	private static final ThreadLocal<ReplayDeferral> REPLAY_DEFERRAL = new ThreadLocal<>();
+	// Both replay chains live in one per-thread holder, so a per-row checkpoint costs a single lookup.
+	private static final ThreadLocal<ReplayState> REPLAY = ThreadLocal.withInitial(ReplayState::new);
 	private static final ThreadLocal<Consumer<Value>> EXTERNAL_VALUE_INITIALIZER = new ThreadLocal<>();
 	private static final ThreadLocal<InstalledReplayContext> INSTALLED_REPLAY_CONTEXT = new ThreadLocal<>();
 	private static volatile boolean heavyOperatorExecutionEnabled = true;
@@ -101,20 +101,20 @@ public final class QueryExecutionContext {
 
 	/** Adds an opaque admission capability to work explicitly dispatched with the captured query context. */
 	public static Activation activateReplaySafepoint(Runnable checkpoint, Supplier<WorkerScope> workerScopeCapture) {
-		ReplaySafepoint previous = REPLAY_SAFEPOINT.get();
+		ReplaySafepoint previous = replay().safepoint;
 		ReplaySafepoint next = new ReplaySafepoint(Objects.requireNonNull(checkpoint, "Checkpoint was null"), previous,
 				workerScopeCapture);
-		REPLAY_SAFEPOINT.set(next);
+		replay().safepoint = next;
 		return () -> {
 			if (next.active.compareAndSet(true, false)) {
 				next.checkpoint.set(null);
 				next.workerScopeCapture = null;
 			}
-			if (REPLAY_SAFEPOINT.get() == next) {
+			if (replay().safepoint == next) {
 				if (previous == null) {
-					REPLAY_SAFEPOINT.remove();
+					replay().safepoint = null;
 				} else {
-					REPLAY_SAFEPOINT.set(previous);
+					replay().safepoint = previous;
 				}
 			}
 		};
@@ -122,20 +122,20 @@ public final class QueryExecutionContext {
 
 	/** Defers cooperative replay checks while invoking synchronous extension code. */
 	public static Activation deferReplaySafepoints() {
-		if (REPLAY_SAFEPOINT.get() == null) {
+		if (replay().safepoint == null) {
 			// Nothing to defer; keep per-row extension calls allocation free for stores without replay.
 			return NOOP_ACTIVATION;
 		}
-		ReplayDeferral previous = REPLAY_DEFERRAL.get();
+		ReplayDeferral previous = replay().deferral;
 		ReplayDeferral next = new ReplayDeferral(previous);
-		REPLAY_DEFERRAL.set(next);
+		replay().deferral = next;
 		return () -> {
 			next.active.set(false);
-			if (REPLAY_DEFERRAL.get() == next) {
+			if (replay().deferral == next) {
 				if (previous == null) {
-					REPLAY_DEFERRAL.remove();
+					replay().deferral = null;
 				} else {
-					REPLAY_DEFERRAL.set(previous);
+					replay().deferral = previous;
 				}
 			}
 		};
@@ -201,8 +201,8 @@ public final class QueryExecutionContext {
 
 	/** Captures the current replay checkpoint scopes for work dispatched to pre-existing worker threads. */
 	public static ReplayContext captureReplayContext() {
-		ReplaySafepoint safepoint = copyActiveReplaySafepoints(REPLAY_SAFEPOINT.get());
-		ReplayDeferral deferral = copyActiveReplayDeferrals(REPLAY_DEFERRAL.get());
+		ReplaySafepoint safepoint = copyActiveReplaySafepoints(replay().safepoint);
+		ReplayDeferral deferral = copyActiveReplayDeferrals(replay().deferral);
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
 		List<WorkerScope> workerScopes = null;
@@ -226,12 +226,36 @@ public final class QueryExecutionContext {
 
 	/** Checks whether the current evaluation should cooperatively abandon its unobserved read attempt. */
 	public static void checkpointReplaySafepoint() {
-		for (ReplayDeferral deferral = REPLAY_DEFERRAL.get(); deferral != null; deferral = deferral.previous) {
+		checkpointReplaySafepoint(REPLAY.get());
+	}
+
+	/**
+	 * A handle bound to the creating thread that runs {@link #checkpointReplaySafepoint()} without a ThreadLocal lookup
+	 * on that thread; any other thread falls back to its own replay state.
+	 */
+	public static ReplayCheckpoint replayCheckpoint() {
+		return new ReplayCheckpoint();
+	}
+
+	public static final class ReplayCheckpoint {
+		private final Thread thread = Thread.currentThread();
+		private final ReplayState state = REPLAY.get();
+
+		private ReplayCheckpoint() {
+		}
+
+		public void checkpoint() {
+			checkpointReplaySafepoint(Thread.currentThread() == thread ? state : REPLAY.get());
+		}
+	}
+
+	private static void checkpointReplaySafepoint(ReplayState state) {
+		for (ReplayDeferral deferral = state.deferral; deferral != null; deferral = deferral.previous) {
 			if (deferral.active.get()) {
 				return;
 			}
 		}
-		for (ReplaySafepoint safepoint = REPLAY_SAFEPOINT.get(); safepoint != null; safepoint = safepoint.previous) {
+		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
 			if (safepoint.active.get()) {
 				Runnable checkpoint = safepoint.checkpoint.get();
 				if (checkpoint == null) {
@@ -356,8 +380,8 @@ public final class QueryExecutionContext {
 		/** Runs an integer-returning operation with this context installed, then restores the worker's context. */
 		public int getAsInt(IntSupplier action) {
 			Objects.requireNonNull(action, "Action was null");
-			ReplaySafepoint previousSafepoint = REPLAY_SAFEPOINT.get();
-			ReplayDeferral previousDeferral = REPLAY_DEFERRAL.get();
+			ReplaySafepoint previousSafepoint = replay().safepoint;
+			ReplayDeferral previousDeferral = replay().deferral;
 			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.getAsInt();
 			}
@@ -382,8 +406,8 @@ public final class QueryExecutionContext {
 		}
 
 		private <T> T withContext(Supplier<T> action) {
-			ReplaySafepoint previousSafepoint = REPLAY_SAFEPOINT.get();
-			ReplayDeferral previousDeferral = REPLAY_DEFERRAL.get();
+			ReplaySafepoint previousSafepoint = replay().safepoint;
+			ReplayDeferral previousDeferral = replay().deferral;
 			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.get();
 			}
@@ -404,7 +428,7 @@ public final class QueryExecutionContext {
 					activations.add(Objects.requireNonNull(scope.activate(), "Worker scope activation was null"));
 				}
 				INSTALLED_REPLAY_CONTEXT
-						.set(new InstalledReplayContext(this, REPLAY_SAFEPOINT.get(), REPLAY_DEFERRAL.get(),
+						.set(new InstalledReplayContext(this, replay().safepoint, replay().deferral,
 								EXTERNAL_VALUE_INITIALIZER.get()));
 			} catch (RuntimeException | Error failure) {
 				try {
@@ -482,14 +506,14 @@ public final class QueryExecutionContext {
 
 	private static void setReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral) {
 		if (safepoint == null) {
-			REPLAY_SAFEPOINT.remove();
+			replay().safepoint = null;
 		} else {
-			REPLAY_SAFEPOINT.set(safepoint);
+			replay().safepoint = safepoint;
 		}
 		if (deferral == null) {
-			REPLAY_DEFERRAL.remove();
+			replay().deferral = null;
 		} else {
-			REPLAY_DEFERRAL.set(deferral);
+			replay().deferral = deferral;
 		}
 	}
 
@@ -561,6 +585,15 @@ public final class QueryExecutionContext {
 			this.handle = handle;
 			this.previous = previous;
 		}
+	}
+
+	private static final class ReplayState {
+		ReplaySafepoint safepoint;
+		ReplayDeferral deferral;
+	}
+
+	private static ReplayState replay() {
+		return REPLAY.get();
 	}
 
 	private static final class ReplaySafepoint {
