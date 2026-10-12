@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -364,7 +366,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 			var target = effectiveTarget.getTargetVar();
 
-			query += "\n" + getFilter(connectionsGroup, target);
+			query += "\n" + getFilter(connectionsGroup, target, stableRandomVariableProvider);
 
 		} else {
 			value = new Variable<>("value");
@@ -377,7 +379,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			String pathQuery = sparqlFragment.getFragment();
 
 			query += "\n" + pathQuery;
-			query += "\n" + getFilter(connectionsGroup, value);
+			query += "\n" + getFilter(connectionsGroup, value, stableRandomVariableProvider);
 		}
 
 		var allTargetVariables = effectiveTarget.getAllTargetVariables();
@@ -387,7 +389,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 
 	}
 
-	private String getFilter(ConnectionsGroup connectionsGroup, Variable<Value> target) {
+	private String getFilter(ConnectionsGroup connectionsGroup, Variable<Value> target,
+			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 
 		RdfsSubClassOfReasoner rdfsSubClassOfReasoner = connectionsGroup.getRdfsSubClassOfReasoner();
 		Set<Resource> allClasses;
@@ -398,12 +401,23 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			allClasses = clazzSet;
 		}
 
-		String condition = allClasses.stream()
-				.map(c -> "EXISTS{" + target.asSparqlVariable() + " a <" + c.stringValue() + ">}")
-				.reduce((a, b) -> a + " || " + b)
-				.orElseThrow(IllegalStateException::new);
+		if (allClasses.size() == 1) {
+			return "FILTER(NOT EXISTS{" + target.asSparqlVariable() + " a <"
+					+ allClasses.iterator().next().stringValue()
+					+ ">})";
+		}
 
-		return "FILTER(!(" + condition + "))";
+		// A single EXISTS with an IN-list instead of one EXISTS per (sub)class. Engines that evaluate EXISTS per row
+		// (e.g. GraphDB) otherwise pay the sub-query setup cost once per class for every value.
+		String type = stableRandomVariableProvider.next().asSparqlVariable();
+		// The constrained class goes first: engines that try the classes one by one (e.g. GraphDB joins the IN-list as
+		// VALUES) can stop at the first match, and with RDFS inference every valid value has the constrained class.
+		String classes = Stream.concat(Stream.of(clazz), allClasses.stream().filter(c -> !c.equals(clazz)))
+				.map(c -> "<" + c.stringValue() + ">")
+				.collect(Collectors.joining(", "));
+
+		return "FILTER(NOT EXISTS{" + target.asSparqlVariable() + " a " + type + " . FILTER(" + type + " IN ("
+				+ classes + "))})";
 	}
 
 	@Override
