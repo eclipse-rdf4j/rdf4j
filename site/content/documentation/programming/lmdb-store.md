@@ -123,6 +123,42 @@ config.setTripleDBSize(1_073_741_824L);
 Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 ```
 
+The generic value-ID, namespace and namespace-ID caches can use a selected implementation:
+
+```java
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbCacheImplementation;
+
+config.setCacheImplementation(LmdbCacheImplementation.ADAPTIVE_SLOT)
+      .setValueIDCacheSize(1024)
+      .setNamespaceCacheSize(512)
+      .setNamespaceIDCacheSize(32);
+config.validate();
+```
+
+The default is `LOSSY_CONCURRENT`. The other choices are `CONCURRENT`, `BOUNDED_CONCURRENT`, `ADAPTIVE_SLOT`,
+`MEMOIZING_SLOT`, `COMPACT_SLOT`, `SLOT_CAS`, `SLOT_CELL`, and `SLOT_SNAPSHOT`. Specialized value, hash, snapshot
+and transaction caches keep their own implementations. Admission is best-effort; cache hits still undergo the
+store's existing validity checks, and misses resolve against the native dictionary.
+
+The six slot implementations accept capacities from 1 to 2^25. The other three accept 0 to 2^30. Positive sizes
+round up to a power of two with at least four slots. Zero is unbounded for `LOSSY_CONCURRENT` and `CONCURRENT`,
+disables `BOUNDED_CONCURRENT`, and is invalid for the slot implementations. Negative size settings retain their
+existing meaning of using the default size. Invalid combinations fail validation before native store initialization;
+the store does not substitute a different implementation.
+
+For RDF configuration, add the following property to the LMDB Sail configuration node. Enum names are case-sensitive;
+omitting the property preserves `LOSSY_CONCURRENT`:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:cacheImplementation "ADAPTIVE_SLOT" .
+```
+
+`DatagovLoadIsolationBenchmark` includes every selectable implementation through its `cacheImplementation` JMH
+parameter. See the module's `cache-competition/README.md` for real LMDB benchmark commands and the distinction
+between those runs and the supplied synthetic cache benchmarks.
+
 The optional value hash cache stores precomputed `Value.hashCode()` results in `hashes.dat`. It is disabled by default.
 When enabled, LMDB writes a `hashes.dat.integrity` sidecar on clean shutdown and only trusts the cache again on the
 next startup if that integrity metadata validates. Invalid or stale hash cache files are discarded automatically and
