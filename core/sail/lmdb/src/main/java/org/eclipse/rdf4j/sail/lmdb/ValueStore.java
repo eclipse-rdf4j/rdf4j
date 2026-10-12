@@ -2670,7 +2670,6 @@ class ValueStore extends AbstractValueFactory {
 
 		byte[] data = getData(id);
 		if (data != null) {
-//				System.out.println(id);
 			data2value(id, data, value, valueRevision);
 			return true;
 		}
