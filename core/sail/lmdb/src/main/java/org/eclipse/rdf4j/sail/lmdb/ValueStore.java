@@ -2734,14 +2734,21 @@ class ValueStore extends AbstractValueFactory {
 		}
 
 		byte[] data = getData(id);
-		if (data != null) {
-			data2value(id, data, value, valueRevision);
-			// Within one dictionary epoch an ID's payload is immutable: publish it so the next shell for this ID
-			// copies the decoded fields instead of repeating the native read.
-			cacheValue(id, value, valueRevision);
-			return true;
+		if (data == null) {
+			return false;
 		}
-		return false;
+		ValueStoreRevision completed = completedRevision(valueRevision);
+		if (valueCaches.revision == completed) {
+			// Within one dictionary epoch an ID's payload is immutable: publish it so the next shell for this ID
+			// copies the decoded fields instead of repeating the native read. The cached model is bound to the
+			// completed revision, never to the caller's lazy revision, whose collection releases retired IDs.
+			LmdbValue decoded = data2value(id, data, null, valueRevision);
+			cacheValue(id, decoded, completed);
+			value.setFromInitializedValue(decoded);
+		} else {
+			data2value(id, data, value, valueRevision);
+		}
+		return true;
 	}
 
 	boolean isSafeAllocationResize() {

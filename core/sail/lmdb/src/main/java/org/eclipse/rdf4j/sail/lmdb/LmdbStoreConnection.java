@@ -68,8 +68,6 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExposure;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * Connection to an {@link LmdbStore}.
@@ -1238,9 +1236,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						delegate.close();
 					}
 					if (retry) {
-						if (failure != null) {
-							logAbandonedAttemptCleanupFailures(failure);
-						}
 						if (internalReadScopeDepth.get() > 0) {
 							throw new LmdbSailStore.MapResizeConflictException(growthKind,
 									"LMDB map changed while opening a read result; retry its owning read operation");
@@ -2443,9 +2438,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						deferredClose.close();
 					}
 					if (retry) {
-						if (failure != null) {
-							logAbandonedAttemptCleanupFailures(failure);
-						}
 						if (transactionReplay || observationOwner != null) {
 							retirePendingReplayIfIdle();
 							if (observationOwner != null && !transactionReplay) {
@@ -2662,24 +2654,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	static boolean isMapResizeConflict(Throwable failure) {
 		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (current.getSuppressed().length > 0) {
+				// A retry must never hide an earlier resource-cleanup failure from an abandoned attempt.
+				return false;
+			}
 			if (current instanceof LmdbSailStore.MapResizeConflictException) {
 				return true;
 			}
 		}
 		return false;
-	}
-
-	private static final Logger replayLogger = LoggerFactory.getLogger(LmdbStoreConnection.class);
-
-	/** A replayed attempt's own cleanup problems are reported instead of disappearing with the retried failure. */
-	private static void logAbandonedAttemptCleanupFailures(Throwable failure) {
-		for (Throwable current = failure; current != null; current = current.getCause()) {
-			for (Throwable suppressed : current.getSuppressed()) {
-				replayLogger.warn(
-						"Retrying an LMDB read after map growth; the abandoned attempt reported a cleanup failure",
-						suppressed);
-			}
-		}
 	}
 
 	private boolean isReplayIsolation(IsolationLevel isolationLevel) {
