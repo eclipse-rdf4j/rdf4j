@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author James Leigh
  */
-abstract class DelegatingSailDataset implements SailDataset {
+abstract class DelegatingSailDataset implements SailDataset, TreeOwnedDataset {
 
 	private final SailDataset delegate;
 
@@ -47,6 +47,13 @@ abstract class DelegatingSailDataset implements SailDataset {
 	@Override
 	public String toString() {
 		return delegate.toString();
+	}
+
+	@Override
+	public void cursorsCloseBeforeDataset() {
+		if (delegate instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
 	}
 
 	@Override

@@ -33,7 +33,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Håvard M. Ottestad
  */
-class UnionSailDataset implements SailDataset {
+class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 
 	private final SailDataset dataset1;
 	private final SailDataset dataset2;
@@ -68,6 +68,16 @@ class UnionSailDataset implements SailDataset {
 	public Function<Value, Value> getValueCapturer() {
 		Function<Value, Value> first = dataset1.getValueCapturer();
 		return first == dataset2.getValueCapturer() ? first : null;
+	}
+
+	@Override
+	public void cursorsCloseBeforeDataset() {
+		if (dataset1 instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
+		if (dataset2 instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
 	}
 
 	@Override

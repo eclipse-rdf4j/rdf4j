@@ -6379,10 +6379,11 @@ class LmdbSailStore implements SailStore {
 		}
 
 		long count = 0;
+		QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext.replayCheckpoint();
 		for (long contextID : contextIDList) {
 			try (RecordIterator records = tripleStore.getTriples(txn, subjID, predID, objID, contextID, explicit)) {
 				while (true) {
-					QueryExecutionContext.checkpointReplaySafepoint();
+					checkpoint.checkpoint();
 					if (records.next() == null) {
 						break;
 					}

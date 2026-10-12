@@ -35,7 +35,7 @@ import org.eclipse.rdf4j.model.impl.SimpleNamespace;
 import org.eclipse.rdf4j.sail.SailException;
 
 /** An ordered view of retained logical generations over one backing dataset. */
-class SailDatasetImpl implements SailDataset {
+class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 
 	private final SailDataset derivedFrom;
 	private final List<Changeset> changes;
@@ -90,6 +90,14 @@ class SailDatasetImpl implements SailDataset {
 	@Override
 	public boolean isSnapshotCompatibleWithCurrentAdmission() {
 		return lifetime.call(derivedFrom::isSnapshotCompatibleWithCurrentAdmission);
+	}
+
+	@Override
+	public void cursorsCloseBeforeDataset() {
+		lifetime.cursorsCloseBeforeOwner();
+		if (derivedFrom instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
 	}
 
 	@Override

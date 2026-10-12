@@ -30,6 +30,9 @@ final class DatasetLifetime {
 	private final AtomicInteger owners = new AtomicInteger(1);
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private volatile boolean abandoned;
+	// An owner that closes every cursor before itself needs no per-cursor admission; a cursor outliving such an
+	// owner fails safely in its own source, which validates its native handle on every access.
+	private volatile boolean retainCursors = true;
 
 	DatasetLifetime(Consumer<Boolean> dispose) {
 		this.dispose = dispose;
@@ -60,6 +63,11 @@ final class DatasetLifetime {
 		}
 	}
 
+	/** Cursors opened after this call are not retained; see {@link TreeOwnedDataset}. */
+	void cursorsCloseBeforeOwner() {
+		retainCursors = false;
+	}
+
 	void close(boolean abandon) {
 		if (!closed.compareAndSet(false, true)) {
 			return;
@@ -83,6 +91,12 @@ final class DatasetLifetime {
 	}
 
 	<T> CloseableIteration<? extends T> open(Supplier<CloseableIteration<? extends T>> operation) {
+		if (!retainCursors) {
+			if (closed.get()) {
+				throw new IllegalStateException("The dataset owner is closed");
+			}
+			return operation.get();
+		}
 		acquire();
 		CloseableIteration<? extends T> cursor = null;
 		try {

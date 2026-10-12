@@ -1041,6 +1041,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	/** A consumed input cannot be reconstructed even before any result has escaped. */
 	private void sealReadReplay() {
 		ReadExposureScope scope = activeReadExposureScope.get();
+		if (scope == null) {
+			// Only an observed result reads without an exposure scope, and an observed result is sealed already.
+			return;
+		}
 		synchronized (readAttemptLock) {
 			if (scope.operationAttempt != null) {
 				scope.operationAttempt.sealed = true;
@@ -2266,6 +2270,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			throwIfReadScopeRequestedReplay();
 			return operation.execute();
 		}
+		if (observationOwner != null && observationOwner.observed && activeReadExposureScope.get() == null) {
+			return executeObservedRead(operation, observationOwner, deadline);
+		}
 		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 			ReadExposureScope parent = activeReadExposureScope.get();
 			OperationReadAttempt operationAttempt = observationOwner == null
@@ -2488,6 +2495,122 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				}
 			}
 		}
+	}
+
+	private static final Runnable NO_REPLAY_CHECKPOINT = () -> {
+	};
+
+	/**
+	 * A result that has already handed out rows can never be replayed, so its later calls need none of the
+	 * exposure-scope bookkeeping: no growth request targets an observed result, and a view invalidated underneath
+	 * surfaces from the native read or from the validity check after the call. What remains is the deadline and
+	 * cancellation check, the read-operation accounting that close and retirement wait for, the value exposure scope,
+	 * the external-value initializer for extension code running inside the call, and the captured admission for work
+	 * the call dispatches to worker threads.
+	 */
+	private <T> T executeObservedRead(ReadOperation<T> operation, ReplayableIteration<?> owner,
+			QueryExecutionDeadline deadline) throws SailException {
+		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			throwIfDeadlineExpired(deadline);
+			synchronized (readAttemptLock) {
+				if (transactionFinished && isActive() && !isDetachedAttemptResultLocked(owner)
+						&& (owner.operationAttempt == null || !owner.operationAttempt.sealed)) {
+					throw new SailException("The LMDB connection is closed");
+				}
+				beginReadThread();
+				activeReadOperations++;
+			}
+			ValueResolutionScope valueScope = owner.valueScope;
+			SailClosable valueBinding = null;
+			QueryExecutionContext.Activation externalValueBinding = null;
+			QueryExecutionContext.Activation workerAdmission = null;
+			int oldDepth = internalReadScopeDepth.get();
+			T result = null;
+			Throwable failure = null;
+			try {
+				valueBinding = valueScope == null ? null : valueScope.activateForeground();
+				externalValueBinding = QueryExecutionContext
+						.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
+				workerAdmission = QueryExecutionContext.activateReplaySafepoint(NO_REPLAY_CHECKPOINT,
+						() -> observedWorkerScope(owner, deadline));
+				internalReadScopeDepth.set(oldDepth + 1);
+				result = operation.execute();
+				for (LmdbSailStore.ReadViewLease readView : owner.readViews) {
+					readView.ensureNativeSnapshotsValid();
+				}
+			} catch (RuntimeException | Error readFailure) {
+				failure = readFailure;
+			} finally {
+				if (oldDepth == 0) {
+					internalReadScopeDepth.remove();
+				} else {
+					internalReadScopeDepth.set(oldDepth);
+				}
+				QueryExecutionContext.Activation closeWorkerAdmission = workerAdmission;
+				QueryExecutionContext.Activation closeExternalValueBinding = externalValueBinding;
+				SailClosable closeValueBinding = valueBinding;
+				try {
+					closeResources(failure, () -> {
+						if (closeWorkerAdmission != null) {
+							closeWorkerAdmission.close();
+						}
+					}, () -> {
+						if (closeExternalValueBinding != null) {
+							closeExternalValueBinding.close();
+						}
+					}, () -> {
+						if (closeValueBinding != null) {
+							closeValueBinding.close();
+						}
+					});
+				} catch (RuntimeException | Error cleanup) {
+					if (failure == null) {
+						failure = cleanup;
+					}
+				}
+			}
+			List<CloseableIteration<?>> deferredCloses;
+			boolean retirePending;
+			synchronized (readAttemptLock) {
+				deferredCloses = endReadOperationLocked();
+				retirePending = activeReadOperations == 0 && (replayRequested || !pendingResultReplays.isEmpty());
+			}
+			for (CloseableIteration<?> deferredClose : deferredCloses) {
+				deferredClose.close();
+			}
+			if (retirePending) {
+				retirePendingReplayIfIdle();
+			}
+			if (failure != null) {
+				if (failure instanceof SailException sailFailure) {
+					throw sailFailure;
+				}
+				if (failure instanceof RuntimeException runtimeFailure) {
+					throw runtimeFailure;
+				}
+				if (failure instanceof Error error) {
+					throw error;
+				}
+				throw new SailException("LMDB read failed", failure);
+			}
+			return result;
+		}
+	}
+
+	/** The admission an observed result lends to worker threads; see {@link ReadExposureScope#get()}. */
+	private QueryExecutionContext.WorkerScope observedWorkerScope(ReplayableIteration<?> owner,
+			QueryExecutionDeadline deadline) {
+		LmdbSailStore.ReadAttemptLease admission = owner.admissionAttempt;
+		if (admission == null) {
+			return null;
+		}
+		List<LmdbSailStore.ReadViewLease> views = owner.readViews;
+		LmdbSailStore.ReadViewLease preferred = lmdbStore.getBackingStore().currentReadViewLease();
+		if (preferred == null && views.size() == 1) {
+			preferred = views.get(0);
+		}
+		return new CapturedReadContext(owner, owner.operationAttempt, admission, admission.generation(), deadline,
+				views, preferred, owner.valueScope, readThreadRegistration.get().cancellationGeneration);
 	}
 
 	private void awaitResultReplayIfNeeded(ReplayableIteration<?> iteration, QueryExecutionDeadline deadline)
@@ -3124,7 +3247,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile boolean attemptFinished;
 		private volatile boolean workerAdmissionClosed;
 		private volatile boolean observed;
-		private List<LmdbSailStore.ReadViewLease> readViews;
+		// An immutable list, replaced under readAttemptLock; observed-result calls read it without the lock.
+		private volatile List<LmdbSailStore.ReadViewLease> readViews;
 		private final QueryExecutionDeadline deadline;
 		private final OperationReadAttempt operationAttempt;
 		private volatile LmdbSailStore.ReadAttemptLease admissionAttempt;

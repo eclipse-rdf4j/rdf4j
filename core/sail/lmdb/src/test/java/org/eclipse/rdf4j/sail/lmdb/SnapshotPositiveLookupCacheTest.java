@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -550,22 +551,31 @@ class SnapshotPositiveLookupCacheTest {
 		LmdbValue held;
 		try (Fixture fixture = new Fixture(directory, false, 128)) {
 			long id = fixture.store(expected);
-			try (View view = fixture.openView();
+			try (View creatorView = fixture.openView();
 					ValueResolutionScope creator = fixture.values.openValueResolutionScope()) {
+				LmdbValue shell;
 				try (SailClosable activation = creator.activate()) {
-					held = (LmdbValue) fixture.values.valuePreparer(view.snapshot)
-							.apply(fixture.values.getLazyValue(view.snapshot, id));
+					shell = fixture.values.getLazyValue(creatorView.snapshot, id);
 				}
-				assertFalse(held.isInitialized());
-				if (!lateExport) {
-					fixture.values.protectExternalValue(held);
-				}
-				held.setInternalID(LmdbValue.UNKNOWN_ID, view.snapshot.completedRevision());
-				assertEquals(LmdbValue.UNKNOWN_ID, held.getInternalID());
-				assertFalse(held.isInitialized(),
-						"Rebinding numeric metadata must preserve deferred semantic payloads");
-				if (lateExport) {
-					fixture.values.protectExternalValue(held);
+				// A shell of a paired snapshot's own epoch is used as it is; an unpaired snapshot's capturer wraps it
+				// in a prepared value that keeps the shell's deferred decode capability.
+				try (ValueStore.ReadSnapshotReservation reservation = fixture.values.reserveReadSnapshot();
+						ValueStore.ReadSnapshot unpaired = reservation.start()) {
+					try (SailClosable activation = creator.activate()) {
+						held = (LmdbValue) fixture.values.valueCapturer(unpaired).apply(shell);
+					}
+					assertNotSame(shell, held, "an unpaired snapshot must capture the shell as a prepared value");
+					assertFalse(held.isInitialized());
+					if (!lateExport) {
+						fixture.values.protectExternalValue(held);
+					}
+					held.setInternalID(LmdbValue.UNKNOWN_ID, unpaired.completedRevision());
+					assertEquals(LmdbValue.UNKNOWN_ID, held.getInternalID());
+					assertFalse(held.isInitialized(),
+							"Rebinding numeric metadata must preserve deferred semantic payloads");
+					if (lateExport) {
+						fixture.values.protectExternalValue(held);
+					}
 				}
 			}
 		}

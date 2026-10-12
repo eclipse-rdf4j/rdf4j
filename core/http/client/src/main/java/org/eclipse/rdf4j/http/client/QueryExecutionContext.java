@@ -36,7 +36,7 @@ public final class QueryExecutionContext {
 	private static final int CHECKPOINT_STRIDE = 1024;
 	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
 	// Cooperative replay checks only buy promptness: an unexposed attempt is validated again at its exposure
-	// boundary, so per-row callers run the installed checkpoints once per stride of rows.
+	// boundary, so a per-row cursor handle runs the installed checkpoints once per stride of rows.
 	private static final int REPLAY_CHECKPOINT_STRIDE = 256;
 	private static final int REPLAY_CHECKPOINT_MASK = REPLAY_CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
@@ -110,7 +110,6 @@ public final class QueryExecutionContext {
 		ReplaySafepoint next = new ReplaySafepoint(Objects.requireNonNull(checkpoint, "Checkpoint was null"), previous,
 				workerScopeCapture);
 		state.safepoint = next;
-		state.checkpointCalls = 0;
 		return () -> {
 			if (next.active.compareAndSet(true, false)) {
 				next.checkpoint.set(null);
@@ -118,7 +117,6 @@ public final class QueryExecutionContext {
 			}
 			if (state.safepoint == next) {
 				state.safepoint = previous;
-				state.checkpointCalls = 0;
 			}
 		};
 	}
@@ -223,8 +221,10 @@ public final class QueryExecutionContext {
 	}
 
 	/**
-	 * A handle bound to the creating thread that runs {@link #checkpointReplaySafepoint()} without a ThreadLocal lookup
-	 * on that thread; any other thread falls back to its own replay state.
+	 * A per-cursor handle bound to the creating thread that runs {@link #checkpointReplaySafepoint()} without a
+	 * ThreadLocal lookup on that thread; any other thread falls back to its own replay state. The handle's first check
+	 * runs at once, the rest of its row stream is checked once per stride: cooperative replay checks only buy
+	 * promptness, since an unexposed attempt is validated again at its exposure boundary.
 	 */
 	public static ReplayCheckpoint replayCheckpoint() {
 		return new ReplayCheckpoint();
@@ -233,21 +233,21 @@ public final class QueryExecutionContext {
 	public static final class ReplayCheckpoint {
 		private final Thread thread = Thread.currentThread();
 		private final ReplayState state = REPLAY.get();
+		private int calls;
 
 		private ReplayCheckpoint() {
 		}
 
 		public void checkpoint() {
+			if (!ignoreCheckpointStride && (calls++ & REPLAY_CHECKPOINT_MASK) != 0) {
+				return;
+			}
 			checkpointReplaySafepoint(Thread.currentThread() == thread ? state : REPLAY.get());
 		}
 	}
 
 	private static void checkpointReplaySafepoint(ReplayState state) {
-		if (state.deferralDepth > 0 || state.safepoint == null) {
-			return;
-		}
-		// The first check after the installed safepoints changed runs at once; the rest of a row stream is strided.
-		if (!ignoreCheckpointStride && (state.checkpointCalls++ & REPLAY_CHECKPOINT_MASK) != 0) {
+		if (state.deferralDepth > 0) {
 			return;
 		}
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
@@ -504,14 +504,12 @@ public final class QueryExecutionContext {
 		ReplayState state = replay();
 		state.safepoint = safepoint;
 		state.deferralDepth = deferral ? 1 : 0;
-		state.checkpointCalls = 0;
 	}
 
 	private static void restoreReplayContext(ReplaySafepoint safepoint, int deferralDepth) {
 		ReplayState state = replay();
 		state.safepoint = safepoint;
 		state.deferralDepth = deferralDepth;
-		state.checkpointCalls = 0;
 	}
 
 	private static ReplaySafepoint copyActiveReplaySafepoints(ReplaySafepoint current) {
@@ -561,8 +559,6 @@ public final class QueryExecutionContext {
 		ReplaySafepoint safepoint;
 		// Nesting depth of synchronous extension calls that defer cooperative replay checks.
 		int deferralDepth;
-		// Checks since the installed safepoints last changed; zero runs the next check immediately.
-		int checkpointCalls;
 	}
 
 	private static ReplayState replay() {

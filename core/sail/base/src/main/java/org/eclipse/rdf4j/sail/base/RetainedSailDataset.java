@@ -28,7 +28,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
 
 /** Keeps a dataset alive until its owner and all cursors opened from it have released their references. */
-final class RetainedSailDataset extends DelegatingSailDataset {
+final class RetainedSailDataset extends DelegatingSailDataset implements TreeOwnedDataset {
 
 	private final DatasetLifetime lifetime;
 
@@ -53,6 +53,12 @@ final class RetainedSailDataset extends DelegatingSailDataset {
 			}
 			return null;
 		});
+	}
+
+	@Override
+	public void cursorsCloseBeforeDataset() {
+		lifetime.cursorsCloseBeforeOwner();
+		super.cursorsCloseBeforeDataset();
 	}
 
 	@Override

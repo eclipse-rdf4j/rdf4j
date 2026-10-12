@@ -126,10 +126,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 				if (readSnapshot.valueStore() != valueStore) {
 					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 				}
-				// The record read just validated the paired snapshot under its reader monitor, and a lazy shell
-				// publishes nothing native. Statement values are plain shells of the snapshot's revision: shared
-				// through the dictionary cache, and recognised by the snapshot's value preparer as already proven
-				// statement values, so binding and join probes allocate nothing per row.
+				// A lazy shell publishes nothing native, so the snapshot's validity is checked without its reader
+				// monitor. Statement values are plain shells of the snapshot's revision: shared through the
+				// dictionary cache, and recognised by the snapshot's value preparer as already proven statement
+				// values, so binding and join probes allocate nothing per row.
+				readSnapshot.ensureValid();
 				return lazyStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
 			}
 

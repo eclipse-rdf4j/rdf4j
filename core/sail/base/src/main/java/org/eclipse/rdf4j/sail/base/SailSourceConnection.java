@@ -268,6 +268,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		CloseableIteration<BindingSet> iteration = null;
 		try {
 			rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+			if (rdfDataset instanceof TreeOwnedDataset owned) {
+				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
+				owned.cursorsCloseBeforeDataset();
+			}
 
 			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
