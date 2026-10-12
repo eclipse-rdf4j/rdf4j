@@ -1830,6 +1830,19 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/**
+	 * Whether the index chosen for this binding pattern lists every bound field in its key prefix, so a range walk
+	 * visits only the matching entries. Such counts stay on LMDB instead of sweeping an in-memory structure.
+	 */
+	boolean indexPrefixCoversBoundFields(long subj, long pred, long obj, long context) {
+		int mask = boundMask(subj, pred, obj, context);
+		if (mask == 0) {
+			return true;
+		}
+		TripleIndex index = bestIndexByBoundMask[mask];
+		return index != null && index.getRangePrefixLength(subj, pred, obj, context) == Integer.bitCount(mask);
+	}
+
 	private static int boundMask(long subj, long pred, long obj, long context) {
 		return (subj >= 0 ? 1 : 0) | (pred >= 0 ? 2 : 0) | (obj >= 0 ? 4 : 0) | (context >= 0 ? 8 : 0);
 	}

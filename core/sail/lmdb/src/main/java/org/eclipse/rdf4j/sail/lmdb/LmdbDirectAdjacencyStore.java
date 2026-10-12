@@ -78,6 +78,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	static final String CLEAN_TXN_READS_PROPERTY = "rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled";
 	static final String PARALLEL_ROW_PATH_PROPERTY = "rdf4j.lmdb.directAdjacency.parallelRowPath.enabled";
 	static final String SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
+	/** Rows copied per batch while a graph-bound count sweeps the exact view. */
+	private static final int CONTEXT_SWEEP_BATCH_ROWS = 4096;
 	static final String PLANNER_STATS_PROPERTY = "rdf4j.lmdb.directAdjacency.plannerStats.enabled";
 	static final String NODE_PREDICATE_SERVE_PROPERTY = "rdf4j.lmdb.directAdjacency.nodePredicateProjection.serve.enabled";
 	private static final String ARBITRATED_INDEX_PREFIX = "arbitrated-";
@@ -5093,12 +5095,21 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		boolean subjectBound = subject > 0;
 		boolean objectBound = object > 0;
+		if (!subjectBound && !objectBound && context >= 0) {
+			// A graph-bound count without a node has no statistic to read. When an LMDB index leads with every bound
+			// field its range walk visits only the matching entries and wins; otherwise sweep the exact view's runs,
+			// which keep every (neighbor, context) pair in memory, instead of filtering a whole LMDB index.
+			if (tripleStore.indexPrefixCoversBoundFields(-1L, predicate, -1L, context)) {
+				return -1;
+			}
+			return countContextSweep(view, predicate, context, explicit, existenceOnly);
+		}
 		if (predicate <= 0) {
 			return countNodeStatements(view, subject, object, context, explicit, subjectBound, objectBound,
 					existenceOnly);
 		}
 		if (!subjectBound && !objectBound) {
-			if (!scanAggregatesEnabled() || context >= 0 || view.snapshotRevision() != view.state().appliedRevision()
+			if (!scanAggregatesEnabled() || view.snapshotRevision() != view.state().appliedRevision()
 					|| !planeCovered(view, predicate)) {
 				return -1;
 			}
@@ -5167,6 +5178,38 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		metrics.recordHit();
 		return matches;
+	}
+
+	/**
+	 * Counts (or proves the existence of) the statements of one graph, for one predicate or across every predicate, by
+	 * sweeping the exact FULL view: runs are (neighbor, context) ordered, so the context column is decoded in memory
+	 * without touching LMDB. Declines ({@code -1}) unless the view is exact and complete, so a partially covered view
+	 * keeps answering such counts from LMDB.
+	 */
+	private long countContextSweep(LmdbAdjacencyReadView view, long predicate, long context, boolean explicit,
+			boolean existenceOnly) {
+		if (!scanAggregatesEnabled() || !exactFullSnapshot(view)) {
+			return -1;
+		}
+		long count = 0L;
+		long[] buffer = new long[CONTEXT_SWEEP_BATCH_ROWS * (TripleIndex.CONTEXT_IDX + 1)];
+		try (RecordIterator rows = predicate > 0
+				? openCompletePredicateSlice(view, -1L, predicate, -1L, context, explicit, null)
+				: new LmdbDirectAdjacencyPredicateSweepIterator(this, view, -1L, -1L, context, explicit, null)) {
+			while (true) {
+				int produced = rows.fill(buffer, CONTEXT_SWEEP_BATCH_ROWS);
+				count += produced;
+				if (produced < CONTEXT_SWEEP_BATCH_ROWS || (existenceOnly && count > 0)) {
+					break;
+				}
+			}
+		}
+		if (count == 0) {
+			metrics.recordExactMiss();
+		} else {
+			metrics.recordHit();
+		}
+		return existenceOnly ? Math.min(count, 1L) : count;
 	}
 
 	/**

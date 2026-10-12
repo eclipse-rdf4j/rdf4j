@@ -88,9 +88,9 @@ class BulkCompressionTest {
 
 	@Test
 	void fastestGivesEveryArtifactItsDocumentedDefault() {
-		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
-		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_NAMESPACES)).isEqualTo(BulkCodec.level(9));
-		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_VALUES)).isEqualTo(BulkCodec.level(9));
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.FAST);
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_NAMESPACES)).isEqualTo(BulkCodec.FAST);
+		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_VALUES)).isEqualTo(BulkCodec.FAST);
 		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.FAST);
 		assertThat(BulkCompression.FASTEST.codecFor(BulkArtifact.STATEMENT_INDEXES)).isEqualTo(BulkCodec.FAST);
 	}
@@ -116,11 +116,18 @@ class BulkCompressionTest {
 
 	/**
 	 * {@code runs} and {@code staged} were the only two knobs before every artifact became selectable, so the tokens
-	 * users and workspace manifests already contain have to keep meaning exactly what they meant.
+	 * users and workspace manifests already contain have to keep meaning exactly what they meant. The legacy default
+	 * {@code runs=fast,staged=9} still selects those codecs, although {@code fastest} now uses the fast codec for
+	 * staged inputs too.
 	 */
 	@Test
 	void aLegacyPerTierTokenStillMeansTheSameProfile() {
-		assertThat(BulkCompression.parse("runs=fast,staged=9")).isEqualTo(BulkCompression.FASTEST);
+		BulkCompression legacyDefault = BulkCompression.parse("runs=fast,staged=9");
+		assertThat(legacyDefault.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
+		assertThat(legacyDefault.codecFor(BulkArtifact.STAGED_VALUES)).isEqualTo(BulkCodec.level(9));
+		assertThat(legacyDefault.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.FAST);
+		assertThat(legacyDefault.codecFor(BulkArtifact.PREDICATE_COUNTS)).isEqualTo(BulkCodec.NONE);
+		assertThat(BulkCompression.parse("runs=fast,staged=fast")).isEqualTo(BulkCompression.FASTEST);
 		assertThat(BulkCompression.parse("runs=none,staged=none")).isEqualTo(BulkCompression.NONE);
 		BulkCompression mixed = BulkCompression.parse("runs=none,staged=17");
 		assertThat(mixed.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.NONE);
@@ -171,13 +178,13 @@ class BulkCompressionTest {
 	void aPartialListLeavesEverythingElseAtItsDefault() {
 		BulkCompression selection = BulkCompression.parse("id-quads=none");
 		assertThat(selection.codecFor(BulkArtifact.ID_QUADS)).isEqualTo(BulkCodec.NONE);
-		assertThat(selection.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.level(9));
+		assertThat(selection.codecFor(BulkArtifact.STAGED_STATEMENTS)).isEqualTo(BulkCodec.FAST);
 		assertThat(selection.codecFor(BulkArtifact.COMPONENT_BUCKETS)).isEqualTo(BulkCodec.FAST);
 	}
 
 	@Test
 	void aSelectionThatMatchesAPresetCollapsesToThePresetToken() {
-		assertThat(BulkCompression.parse("runs=fast,staged=9").token()).isEqualTo("fastest");
+		assertThat(BulkCompression.parse("runs=fast,staged=fast").token()).isEqualTo("fastest");
 		assertThat(BulkCompression.parse("all=none").token()).isEqualTo("none");
 		assertThat(BulkCompression.parse("all=12").token()).isEqualTo("12");
 	}
@@ -189,7 +196,9 @@ class BulkCompressionTest {
 	@Test
 	void aTokenNamesOnlyWhatDiffersFromTheBase() {
 		assertThat(BulkCompression.parse("runs=fast,staged=17").token()).isEqualTo("staged=17");
-		assertThat(BulkCompression.parse("runs=none,staged=9").token()).isEqualTo("runs=none");
+		assertThat(BulkCompression.parse("runs=none,staged=fast").token()).isEqualTo("runs=none");
+		assertThat(BulkCompression.parse("runs=none,staged=9").token()).isEqualTo("runs=none,staged=9");
+		assertThat(BulkCompression.parse("runs=fast,staged=9").token()).isEqualTo("staged=9");
 		assertThat(BulkCompression.parse("runs=12,staged=none").token()).isEqualTo("runs=12,staged=none");
 		assertThat(BulkCompression.parse("id-quads=none").token()).isEqualTo("id-quads=none");
 		assertThat(BulkCompression.parse("predicate-id-plan=9").token()).isEqualTo("predicate-id-plan=9");

@@ -39,16 +39,16 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @Experimental
 public enum BulkArtifact {
 
-	// BulkCompression.STAGED_INPUT_LEVEL is a compile-time constant, so javac inlines it here rather than emitting a
-	// class reference. Initialising these constants therefore does not start initialising BulkCompression, which in
-	// turn reads BulkArtifact.values() while building its presets.
+	// Staged inputs use LZ4's fast compressor by default: staging is on the critical path of every load, and the
+	// high-ratio compressor cost about a quarter of staging time for roughly a quarter less spill volume. Disk-bound
+	// loads can still select BulkCompression.level(...) or a staged=<level> override.
 
 	/** The staged copy of every parsed statement, re-read by several later phases. */
-	STAGED_STATEMENTS("staged-statements", Group.STAGED, BulkCodec.level(BulkCompression.STAGED_INPUT_LEVEL)),
+	STAGED_STATEMENTS("staged-statements", Group.STAGED, BulkCodec.FAST),
 	/** The staged namespace declarations. */
-	STAGED_NAMESPACES("staged-namespaces", Group.STAGED, BulkCodec.level(BulkCompression.STAGED_INPUT_LEVEL)),
+	STAGED_NAMESPACES("staged-namespaces", Group.STAGED, BulkCodec.FAST),
 	/** The staged value buckets, one per value partition. */
-	STAGED_VALUES("staged-values", Group.STAGED, BulkCodec.level(BulkCompression.STAGED_INPUT_LEVEL)),
+	STAGED_VALUES("staged-values", Group.STAGED, BulkCodec.FAST),
 
 	/** One occurrence count per distinct predicate, written when staging finishes. */
 	PREDICATE_COUNTS("predicate-counts", Group.PLAN, BulkCodec.NONE),

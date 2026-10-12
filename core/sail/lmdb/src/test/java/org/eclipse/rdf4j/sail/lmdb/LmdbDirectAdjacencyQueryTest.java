@@ -1464,6 +1464,74 @@ class LmdbDirectAdjacencyQueryTest {
 	}
 
 	@Test
+	void contextBoundCountsAreServedByTheExactView() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		openPreferStore();
+
+		try (CloseableDataset dataset = dataset()) {
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("a named-graph count is served by the exact view instead of an LMDB index scan")
+					.isGreaterThan(hitsBefore);
+
+			long hitsBeforeDefaultGraph = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("the default-graph count is served by the exact view")
+					.isGreaterThan(hitsBeforeDefaultGraph);
+
+			long hitsBeforePredicate = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.source.count(-1, p1, -1, g1)).isEqualTo(1);
+			assertThat(dataset.source.count(-1, p1, -1, 0)).isEqualTo(2);
+			assertThat(dataset.source.count(-1, p2, -1, g1)).isEqualTo(0);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("predicate counts within one graph are served by the exact view")
+					.isGreaterThan(hitsBeforePredicate);
+
+			assertThat(dataset.source.count(-1, -1, -1, -1)).isEqualTo(5);
+			assertThat(dataset.dataset.getStatementCount(null, null, null, G1)).isEqualTo(1);
+			assertThat(dataset.dataset.getStatementCount(null, P1, null, (Resource) null)).isEqualTo(2);
+		}
+	}
+
+	@Test
+	void contextBoundCountsStayOnLmdbWhenAnIndexLeadsWithTheBoundFields() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		openPreferStore("spoc,posc,cspo");
+
+		try (CloseableDataset dataset = dataset()) {
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("a context-leading index walks only the matching rows, which beats sweeping every edge")
+					.isEqualTo(hitsBefore);
+
+			assertThat(dataset.source.count(-1, p1, -1, 0)).isEqualTo(2);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("no index leads with both predicate and context, so that count sweeps the predicate's run")
+					.isGreaterThan(hitsBefore);
+		}
+	}
+
+	@Test
+	void contextBoundCountsFallBackWithoutAFullExactView() throws IOException {
+		System.setProperty(LmdbDirectAdjacencyStore.SCAN_AGGREGATES_PROPERTY, "true");
+		openStore(DirectAdjacencyMode.PREFER, DirectAdjacencyCoverage.SELECTED, List.of(P1));
+
+		try (CloseableDataset dataset = dataset()) {
+			long hitsBefore = direct.snapshotMetrics().lookupHits;
+			assertThat(dataset.source.count(-1, -1, -1, g1)).isEqualTo(1);
+			assertThat(dataset.source.count(-1, -1, -1, 0)).isEqualTo(4);
+			assertThat(dataset.source.count(-1, p2, -1, 0)).isEqualTo(1);
+			assertThat(direct.snapshotMetrics().lookupHits)
+					.as("a partially covered view cannot sweep every predicate, so LMDB answers")
+					.isEqualTo(hitsBefore);
+		}
+	}
+
+	@Test
 	void plannerFanOutIsExactByDefaultAndFalseRestoresSampledStatistics() throws Exception {
 		openPreferStore();
 		assertThat(sail.awaitDirectAdjacencyReady(0, TimeUnit.MILLISECONDS)).isTrue();

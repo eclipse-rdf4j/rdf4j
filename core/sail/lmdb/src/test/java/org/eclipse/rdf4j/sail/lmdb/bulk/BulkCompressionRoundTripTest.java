@@ -184,14 +184,17 @@ class BulkCompressionRoundTripTest {
 	}
 
 	/**
-	 * {@link BulkCompression#FASTEST} must keep the loader's original split: the fast compressor for the busy run-time
-	 * files, the high-ratio one for the staged inputs that get re-read.
+	 * {@link BulkCompression#FASTEST} uses the fast compressor for staged inputs as well as run-time files, while the
+	 * legacy {@code staged=9} selection still produces the smaller high-ratio staged files.
 	 */
 	@Test
-	void fastestKeepsTheHighRatioCodecForStagedInputs() throws Exception {
+	void fastestUsesTheFastCodecForStagedInputs() throws Exception {
 		Path fast = write("default-run.bin", BulkCompression.FASTEST.codecFor(BulkArtifact.ID_QUADS));
-		Path high = write("default-staged.bin", BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS));
+		Path staged = write("default-staged.bin", BulkCompression.FASTEST.codecFor(BulkArtifact.STAGED_STATEMENTS));
+		Path high = write("legacy-staged.bin",
+				BulkCompression.parse("staged=9").codecFor(BulkArtifact.STAGED_STATEMENTS));
 
+		assertThat(Files.readAllBytes(staged)).isEqualTo(Files.readAllBytes(fast));
 		assertThat(Files.size(high)).isLessThan(Files.size(fast));
 	}
 

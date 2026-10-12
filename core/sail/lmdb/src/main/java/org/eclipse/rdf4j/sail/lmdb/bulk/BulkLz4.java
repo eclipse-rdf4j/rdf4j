@@ -54,10 +54,22 @@ final class BulkLz4 {
 	}
 
 	static DataOutputStream appendOutput(Path path, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
+		return appendOutput(path, codec, scheduler, BLOCK_BYTES);
+	}
+
+	/**
+	 * Append-mode output with an explicit LZ4 block size. Long-lived bucket outputs use smaller blocks so many of them
+	 * can stay open within a memory budget; readers accept any block size.
+	 */
+	static DataOutputStream appendOutput(Path path, BulkCodec codec, BulkTaskScheduler scheduler, int blockBytes)
+			throws IOException {
 		Objects.requireNonNull(path, "path");
+		if (blockBytes <= 0 || blockBytes > BLOCK_BYTES) {
+			throw new IllegalArgumentException("LZ4 block size must be in (0, " + BLOCK_BYTES + "]");
+		}
 		Files.createDirectories(path.getParent());
 		BulkTaskScheduler.ResourceScope resources = scheduler == null ? null
-				: scheduler.reserveStreamResources(mergeOutputMemoryBytes(codec), 1);
+				: scheduler.reserveStreamResources(mergeOutputMemoryBytes(codec, blockBytes), 1);
 		BulkTaskScheduler.OpenFileHandle handle = null;
 		OutputStream raw = null;
 		try {
@@ -72,7 +84,7 @@ final class BulkLz4 {
 			if (handle != null) {
 				raw = new TrackedOutputStream(raw, handle, resources);
 			}
-			return new DataOutputStream(compress(raw, codec));
+			return new DataOutputStream(compress(raw, codec, blockBytes));
 		} catch (IOException | RuntimeException | Error failure) {
 			if (raw != null) {
 				try {
@@ -100,6 +112,47 @@ final class BulkLz4 {
 	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler) throws IOException {
 		return output(path, codec, scheduler, () -> {
 		});
+	}
+
+	/**
+	 * Single-stream output whose buffers and descriptor are claimed from an already admitted coordinator lease, so it
+	 * can be opened by the coordinator and written by whichever worker currently owns the lease's work.
+	 */
+	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler,
+			BulkTaskScheduler.ResourceLease lease) throws IOException {
+		Objects.requireNonNull(path, "path");
+		Objects.requireNonNull(codec, "codec");
+		Objects.requireNonNull(scheduler, "scheduler");
+		Objects.requireNonNull(lease, "lease");
+		Path parent = path.getParent();
+		if (parent != null) {
+			Files.createDirectories(parent);
+		}
+		BulkTaskScheduler.ResourceScope resources = scheduler.claimResourceLeaseMemory(lease,
+				mergeOutputMemoryBytes(codec));
+		BulkTaskScheduler.OpenFileHandle handle = null;
+		OutputStream raw = null;
+		try {
+			handle = scheduler.trackOpenFileHandle(lease);
+			resources.trackHandle(handle);
+			raw = new BufferedOutputStream(Files.newOutputStream(path, StandardOpenOption.CREATE,
+					StandardOpenOption.WRITE, StandardOpenOption.TRUNCATE_EXISTING));
+			raw = new TrackedOutputStream(raw, handle, resources);
+			return new DataOutputStream(compress(raw, codec));
+		} catch (IOException | RuntimeException | Error failure) {
+			if (raw != null) {
+				try {
+					raw.close();
+				} catch (IOException cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+			if (handle != null) {
+				handle.close();
+			}
+			closeResources(resources, failure);
+			throw failure;
+		}
 	}
 
 	static DataOutputStream output(Path path, BulkCodec codec, BulkTaskScheduler scheduler, Runnable afterOpen)
@@ -526,10 +579,33 @@ final class BulkLz4 {
 	}
 
 	private static OutputStream compress(OutputStream raw, BulkCodec codec) {
+		return compress(raw, codec, BLOCK_BYTES);
+	}
+
+	/**
+	 * Encodes {@code bytes[0, length)} as one complete frame that can be appended to an {@link #appendOutput} file and
+	 * read back by {@link #readConcatenated} or {@link #openConcatenated} with the same codec. The LZ4 block size
+	 * follows the payload, so small per-partition frames do not allocate full-size block buffers.
+	 */
+	static byte[] frame(byte[] bytes, int length, BulkCodec codec) throws IOException {
+		Objects.requireNonNull(bytes, "bytes");
+		Objects.requireNonNull(codec, "codec");
+		if (codec.kind() == BulkCodec.Kind.NONE) {
+			return java.util.Arrays.copyOf(bytes, length);
+		}
+		int blockBytes = Math.max(64, Math.min(BLOCK_BYTES, Integer.highestOneBit(Math.max(1, length - 1)) << 1));
+		java.io.ByteArrayOutputStream encoded = new java.io.ByteArrayOutputStream(length / 2 + 64);
+		try (OutputStream output = compress(encoded, codec, blockBytes)) {
+			output.write(bytes, 0, length);
+		}
+		return encoded.toByteArray();
+	}
+
+	private static OutputStream compress(OutputStream raw, BulkCodec codec, int blockBytes) {
 		if (codec.kind() == BulkCodec.Kind.NONE) {
 			return raw;
 		}
-		return new LZ4BlockOutputStream(raw, BLOCK_BYTES, compressor(codec));
+		return new LZ4BlockOutputStream(raw, blockBytes, compressor(codec));
 	}
 
 	private static InputStream decompress(InputStream raw, BulkCodec codec) {
@@ -558,12 +634,17 @@ final class BulkLz4 {
 
 	/** Memory retained by one merge output, including compression scratch used by the safe/high codecs. */
 	static long mergeOutputMemoryBytes(BulkCodec codec) {
+		return mergeOutputMemoryBytes(codec, BLOCK_BYTES);
+	}
+
+	/** Memory retained by one output using LZ4 blocks of {@code blockBytes}. */
+	static long mergeOutputMemoryBytes(BulkCodec codec, int blockBytes) {
 		long streamBytes = STREAM_BUFFER_BYTES + OBJECT_AND_STREAM_STATE_BYTES;
 		if (codec.kind() == BulkCodec.Kind.NONE) {
 			return streamBytes;
 		}
 		return Math.addExact(streamBytes,
-				2L * BLOCK_BYTES + LZ4_HEADER_AND_BOUND_BYTES + COMPRESSOR_SCRATCH_BYTES);
+				2L * blockBytes + blockBytes / 255 + 64 + COMPRESSOR_SCRATCH_BYTES);
 	}
 
 	private static boolean hasMore(InputStream input) throws IOException {

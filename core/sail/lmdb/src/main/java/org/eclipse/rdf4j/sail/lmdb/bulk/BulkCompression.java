@@ -31,11 +31,10 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  * and the legacy key {@code runs} names every artifact outside {@link BulkArtifact.Group#STAGED} and
  * {@link BulkArtifact.Group#PLAN} at once.
  * <p>
- * {@link #FASTEST} is the base every other selection is written against: LZ4's fast compressor on the busy run-time
- * files, its high-ratio compressor at level {@value #STAGED_INPUT_LEVEL} on the staged copies that later phases
- * re-read, and no compression on the two tiny plan files. {@link #level(int)} puts the same high-ratio level on
- * everything, {@link #NONE} disables compression everywhere, and {@link #parse(String)} reads a {@code key=codec} list
- * that changes only what it names.
+ * {@link #FASTEST} is the base every other selection is written against: LZ4's fast compressor on the run-time files
+ * and on the staged copies that later phases re-read, and no compression on the two tiny plan files.
+ * {@link #level(int)} puts the same high-ratio level on everything, {@link #NONE} disables compression everywhere, and
+ * {@link #parse(String)} reads a {@code key=codec} list that changes only what it names.
  * <p>
  * Compressed files remain readable regardless of the level they were written at, so changing an artifact between LZ4
  * codecs is safe. Changing one to or from {@link BulkCodec#NONE} is not, which is why a resumed load keeps whatever
@@ -55,7 +54,8 @@ public final class BulkCompression {
 	public static final int MAXIMUM_LEVEL = BulkCodec.MAXIMUM_LEVEL;
 
 	/**
-	 * Level the loader applies to staged inputs under {@link #FASTEST}.
+	 * High-ratio level the loader applied to staged inputs under {@link #FASTEST} before staged inputs moved to the
+	 * fast compressor. Kept as the level a disk-bound load may select explicitly.
 	 */
 	static final int STAGED_INPUT_LEVEL = 9;
 
