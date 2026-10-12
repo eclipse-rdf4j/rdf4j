@@ -105,21 +105,20 @@ public final class QueryExecutionContext {
 
 	/** Adds an opaque admission capability to work explicitly dispatched with the captured query context. */
 	public static Activation activateReplaySafepoint(Runnable checkpoint, Supplier<WorkerScope> workerScopeCapture) {
-		ReplaySafepoint previous = replay().safepoint;
+		ReplayState state = replay();
+		ReplaySafepoint previous = state.safepoint;
 		ReplaySafepoint next = new ReplaySafepoint(Objects.requireNonNull(checkpoint, "Checkpoint was null"), previous,
 				workerScopeCapture);
-		replay().safepoint = next;
+		state.safepoint = next;
+		state.checkpointCalls = 0;
 		return () -> {
 			if (next.active.compareAndSet(true, false)) {
 				next.checkpoint.set(null);
 				next.workerScopeCapture = null;
 			}
-			if (replay().safepoint == next) {
-				if (previous == null) {
-					replay().safepoint = null;
-				} else {
-					replay().safepoint = previous;
-				}
+			if (state.safepoint == next) {
+				state.safepoint = previous;
+				state.checkpointCalls = 0;
 			}
 		};
 	}
@@ -247,7 +246,8 @@ public final class QueryExecutionContext {
 		if (state.deferralDepth > 0 || state.safepoint == null) {
 			return;
 		}
-		if (!ignoreCheckpointStride && (++state.checkpointCalls & REPLAY_CHECKPOINT_MASK) != 0) {
+		// The first check after the installed safepoints changed runs at once; the rest of a row stream is strided.
+		if (!ignoreCheckpointStride && (state.checkpointCalls++ & REPLAY_CHECKPOINT_MASK) != 0) {
 			return;
 		}
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
@@ -504,12 +504,14 @@ public final class QueryExecutionContext {
 		ReplayState state = replay();
 		state.safepoint = safepoint;
 		state.deferralDepth = deferral ? 1 : 0;
+		state.checkpointCalls = 0;
 	}
 
 	private static void restoreReplayContext(ReplaySafepoint safepoint, int deferralDepth) {
 		ReplayState state = replay();
 		state.safepoint = safepoint;
 		state.deferralDepth = deferralDepth;
+		state.checkpointCalls = 0;
 	}
 
 	private static ReplaySafepoint copyActiveReplaySafepoints(ReplaySafepoint current) {
@@ -559,6 +561,7 @@ public final class QueryExecutionContext {
 		ReplaySafepoint safepoint;
 		// Nesting depth of synchronous extension calls that defer cooperative replay checks.
 		int deferralDepth;
+		// Checks since the installed safepoints last changed; zero runs the next check immediately.
 		int checkpointCalls;
 	}
 
