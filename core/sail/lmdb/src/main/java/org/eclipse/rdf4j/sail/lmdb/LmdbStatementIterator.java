@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
 /**
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
@@ -38,6 +39,16 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final ValueStore.ReadSnapshot readSnapshot;
 	private Statement nextElement;
 
+	// Pattern values that are native values of the revision this iterator reads; reused instead of recreated.
+	private final Resource subj;
+	private final long subjID;
+	private final IRI pred;
+	private final long predID;
+	private final Value obj;
+	private final long objID;
+	private final Resource context;
+	private final long contextID;
+
 	/*--------------*
 	 * Constructors *
 	 *--------------*/
@@ -50,9 +61,41 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	}
 
 	LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore, ValueStore.ReadSnapshot readSnapshot) {
+		this(recordIt, valueStore, readSnapshot, null, null, null, null);
+	}
+
+	/**
+	 * Creates a new LmdbStatementIterator that reuses the supplied pattern values for matching record IDs whenever they
+	 * are native values of the revision this iterator reads. Other values are ignored.
+	 */
+	LmdbStatementIterator(RecordIterator recordIt, ValueStore valueStore, ValueStore.ReadSnapshot readSnapshot,
+			Resource subj, IRI pred, Value obj, Resource context) {
 		this.recordIt = recordIt;
 		this.valueStore = valueStore;
 		this.readSnapshot = readSnapshot;
+		ValueStoreRevision revision = readSnapshot == null ? valueStore.getRevision()
+				: readSnapshot.completedRevision();
+		this.subjID = reusableId(subj, revision);
+		this.subj = subjID == LmdbValue.UNKNOWN_ID ? null : subj;
+		this.predID = reusableId(pred, revision);
+		this.pred = predID == LmdbValue.UNKNOWN_ID ? null : pred;
+		this.objID = reusableId(obj, revision);
+		this.obj = objID == LmdbValue.UNKNOWN_ID ? null : obj;
+		this.contextID = reusableId(context, revision);
+		this.context = contextID == LmdbValue.UNKNOWN_ID ? null : context;
+	}
+
+	/** Returns the value's internal ID when it is a native value of the given revision, otherwise UNKNOWN_ID. */
+	private static long reusableId(Value value, ValueStoreRevision revision) {
+		if (value instanceof LmdbValue nativeValue && nativeValue.getSemanticVersion() != LmdbValue.UNKNOWN_ID) {
+			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
+			ValueStoreRevision owner = identity.revision()instanceof ValueStoreRevision.Lazy lazy ? lazy.unwrapped()
+					: identity.revision();
+			if (identity.id() != LmdbValue.UNKNOWN_ID && revision.equals(owner)) {
+				return identity.id();
+			}
+		}
+		return LmdbValue.UNKNOWN_ID;
 	}
 
 	/*---------*
@@ -67,18 +110,18 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
-			Resource subj = (Resource) getLazyValue(subjID);
+			Resource subj = subjID == this.subjID ? this.subj : (Resource) getLazyValue(subjID);
 
 			long predID = quad[TripleIndex.PRED_IDX];
-			IRI pred = (IRI) getLazyValue(predID);
+			IRI pred = predID == this.predID ? this.pred : (IRI) getLazyValue(predID);
 
 			long objID = quad[TripleIndex.OBJ_IDX];
-			Value obj = getLazyValue(objID);
+			Value obj = objID == this.objID ? this.obj : getLazyValue(objID);
 
 			Resource context = null;
 			long contextID = quad[TripleIndex.CONTEXT_IDX];
 			if (contextID != 0) {
-				context = (Resource) getLazyValue(contextID);
+				context = contextID == this.contextID ? this.context : (Resource) getLazyValue(contextID);
 			}
 
 			return valueStore.createStatement(subj, pred, obj, context);
