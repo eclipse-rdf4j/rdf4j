@@ -57,9 +57,11 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
@@ -186,9 +188,7 @@ class LmdbBufferedTripleTermTest {
 				}
 				// Remove the final shared owner only after the intermediate shared-component verification.
 				try (RepositoryConnection lastOwner = repository.getConnection()) {
-					lastOwner.begin(IsolationLevels.READ_COMMITTED);
-					lastOwner.clear(SHARED_OWNER_CONTEXT);
-					lastOwner.commit();
+					commitReadCommittedWithRetry(lastOwner, connection -> connection.clear(SHARED_OWNER_CONTEXT));
 					commits.incrementAndGet();
 					assertEquals(0, lastOwner.size(SHARED_OWNER_CONTEXT));
 				}
@@ -472,21 +472,22 @@ class LmdbBufferedTripleTermTest {
 			if (writer >= 2) {
 				await(releaseRemainingOwners, "the still-referenced shared components must be checked first");
 			}
-			connection.clear(assigned);
-			connection.commit();
+			commitReadCommittedWithRetry(connection, retry -> retry.clear(assigned));
 			commits.incrementAndGet();
 			if (writer < 2) {
 				firstOwnersDeleted.countDown();
 				await(releaseRemainingOwners, "the remaining shared owners must be checked before replacement churn");
 			}
 			for (int round = 0; round < ROUNDS; round++) {
-				connection.begin(IsolationLevels.READ_COMMITTED);
-				for (Resource context : assigned) {
-					String prefix = "writer-" + writer + "-round-" + round + "-" + ((IRI) context).getLocalName();
-					addRows(connection, prefix, ROWS, (IRI) context);
-					addSharedRows(connection, prefix, (IRI) context);
-				}
-				connection.commit();
+				int currentRound = round;
+				commitReadCommittedWithRetry(connection, retry -> {
+					for (Resource context : assigned) {
+						String prefix = "writer-" + writer + "-round-" + currentRound + "-"
+								+ ((IRI) context).getLocalName();
+						addRows(retry, prefix, ROWS, (IRI) context);
+						addSharedRows(retry, prefix, (IRI) context);
+					}
+				});
 				commits.incrementAndGet();
 				reuse.minimumFree.accumulateAndGet(entries(store, "free_ids"), Math::min);
 				try (RepositoryResult<Statement> rows = connection.getStatements(null, null, null, false, assigned)) {
@@ -494,12 +495,42 @@ class LmdbBufferedTripleTermTest {
 						captureIds(rows.next().getObject(), reuse.componentIds, reuse.tripleIds);
 					}
 				}
-				connection.begin(IsolationLevels.READ_COMMITTED);
-				connection.clear(assigned);
-				connection.commit();
+				commitReadCommittedWithRetry(connection, retry -> retry.clear(assigned));
 				commits.incrementAndGet();
 			}
 		}
+	}
+
+	private static void commitReadCommittedWithRetry(RepositoryConnection connection,
+			Consumer<RepositoryConnection> mutation) {
+		while (true) {
+			try {
+				if (!connection.isActive()) {
+					connection.begin(IsolationLevels.READ_COMMITTED);
+				}
+				mutation.accept(connection);
+				connection.commit();
+				return;
+			} catch (RepositoryException failure) {
+				if (connection.isActive()) {
+					connection.rollback();
+				}
+				if (!isRetryableConflict(failure) || Thread.currentThread().isInterrupted()) {
+					throw failure;
+				}
+				// Growth may freeze an admitted read transaction before its first write. Retry the entire mutation;
+				// the independently held reader buffers and all committed-ID reuse evidence remain unchanged.
+			}
+		}
+	}
+
+	private static boolean isRetryableConflict(Throwable failure) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			if (cause instanceof SailConflictException) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static Seed seed(File directory) {
