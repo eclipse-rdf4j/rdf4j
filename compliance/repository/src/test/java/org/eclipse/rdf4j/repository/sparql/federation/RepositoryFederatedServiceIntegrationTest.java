@@ -12,9 +12,13 @@
 package org.eclipse.rdf4j.repository.sparql.federation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -31,16 +35,22 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.repository.base.RepositoryWrapper;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import com.google.common.collect.Lists;
 
@@ -219,18 +229,67 @@ public class RepositoryFederatedServiceIntegrationTest {
 	}
 
 	@Test
-	public void serviceJoinInvokesValuesClauseOverride() {
+	public void subSelectServiceJoinDoesNotRewriteValues() {
 		AtomicInteger calls = useValuesClauseOverride();
 		addLabelData();
 		String query = "SELECT ?var WHERE { VALUES ?var { 'val1' 'val2' } "
 				+ "SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 1000 } } ORDER BY ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2")));
+		assertEquals(0, calls.get());
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 1, 2 })
+	public void basicServiceJoinInvokesLegacyValuesClauseOverride(int occupiedControlNames) {
+		AtomicInteger calls = useValuesClauseOverride();
+		addLabelData();
+		StringBuilder variables = new StringBuilder("?var");
+		StringBuilder firstRow = new StringBuilder("'val1'");
+		StringBuilder secondRow = new StringBuilder("'val2'");
+		for (int i = 0; i < occupiedControlNames; i++) {
+			variables.append(" ?").append(controlVariable(i));
+			firstRow.append(" 'a").append(i).append("'");
+			secondRow.append(" 'b").append(i).append("'");
+		}
+		String query = "SELECT * WHERE { VALUES (" + variables + ") { (" + firstRow + ") (" + secondRow
+				+ ") } SERVICE <urn:dummy> { ?s ?p ?var } } ORDER BY ?var";
+
+		List<BindingSet> result = evaluateQuery(query);
+		assertResultEquals(result, "var", Lists.newArrayList(l("val1"), l("val2")));
+		for (int i = 0; i < occupiedControlNames; i++) {
+			assertResultEquals(result, controlVariable(i), Lists.newArrayList(l("a" + i), l("b" + i)));
+		}
+		for (BindingSet row : result) {
+			assertFalse(row.hasBinding(controlVariable(occupiedControlNames)));
+		}
 		assertEquals(1, calls.get());
 	}
 
 	@Test
-	public void renamedControlVariableStillInvokesValuesClauseOverride() {
+	public void legacyValuesClauseOverrideCanCustomizeRenamedControlVariable() {
+		AtomicInteger calls = new AtomicInteger();
+		federatedService = new RepositoryFederatedService(serviceRepo) {
+			@Override
+			protected String insertValuesClause(String queryString, String valuesClause) {
+				calls.incrementAndGet();
+				return super.insertValuesClause(queryString, valuesClause + " FILTER (?var = 'val1') ");
+			}
+		};
+		addLabelData();
+		String query = "SELECT * WHERE { VALUES (?var ?__rowIdx ?__rowIdx_1) "
+				+ "{ ('val1' 'a' 'a1') ('val2' 'b' 'b1') } SERVICE <urn:dummy> { ?s ?p ?var } }";
+
+		List<BindingSet> result = evaluateQuery(query);
+		assertResultEquals(result, "var", Lists.newArrayList(l("val1")));
+		assertResultEquals(result, "__rowIdx", Lists.newArrayList(l("a")));
+		assertResultEquals(result, "__rowIdx_1", Lists.newArrayList(l("a1")));
+		assertFalse(result.get(0).hasBinding("__rowIdx_2"));
+		assertEquals(1, calls.get());
+	}
+
+	@Test
+	public void subSelectUserControlVariableDoesNotRewriteValues() {
 		AtomicInteger calls = useValuesClauseOverride();
 		addLabelData();
 		String query = "SELECT ?var ?__rowIdx WHERE { VALUES ?var { 'val1' 'val2' } "
@@ -239,7 +298,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 		List<BindingSet> result = evaluateQuery(query);
 		assertResultEquals(result, "var", Lists.newArrayList(l("val1"), l("val2")));
 		assertResultEquals(result, "__rowIdx", Lists.newArrayList(iri("s1"), iri("s2")));
-		assertEquals(1, calls.get());
+		assertEquals(0, calls.get());
 	}
 
 	@Test
@@ -278,7 +337,7 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s2"), RDFS.LABEL, l("val2")),
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 
-		// Note: here we apply a workaround and explicitly project "?__rowIdx"
+		// ?__rowIdx is an ordinary projected variable, even in a remote subquery.
 		String query = "SELECT ?var WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 } . SERVICE <urn:dummy> { SELECT ?s ?var ?__rowIdx { ?s ?p ?var } LIMIT 3  } } order by ?var";
 
 		assertResultEquals(evaluateQuery(query), "var", Lists.newArrayList(l("val1"), l("val2"), l("val3")));
@@ -311,20 +370,23 @@ public class RepositoryFederatedServiceIntegrationTest {
 
 	@Test
 	public void test5a() {
+		List<TupleQuery> invocations = recordServiceInvocations();
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
 
-		// Note: here we apply a workaround and explicitly project "?__rowIdx"
+		// An unbound user variable named ?__rowIdx does not opt into correlated subquery evaluation.
 		String query = "SELECT ?var ?output WHERE { SERVICE <urn:dummy> { SELECT ?var { ?s ?p ?var } LIMIT 3 }  . SERVICE <urn:dummy> { SELECT (CONCAT(?var, '_processed') AS ?output) ?__rowIdx WHERE { } } }";
 
 		List<BindingSet> res = evaluateQuery(query);
 		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		assertResultEquals(res, "output", Lists.newArrayList(l("val1_processed"), l("val2_processed")));
+		assertResultEquals(res, "output", Lists.newArrayList(null, null));
+		assertIndependentServiceResults(query, res, invocations);
 	}
 
 	@Test
 	public void test5b() {
+		List<TupleQuery> invocations = recordServiceInvocations();
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -333,15 +395,14 @@ public class RepositoryFederatedServiceIntegrationTest {
 
 		List<BindingSet> res = evaluateQuery(query);
 		assertResultEquals(res, "var", Lists.newArrayList(l("val1"), l("val2")));
-		// Without the explicit ?__rowIdx opt-in (compare test5a) the subselect service is ONE logical
-		// Invocation, in which ?var is unbound and CONCAT errors — ?output stays unbound. The previous
-		// "_processed" outcome relied on implicitly injecting each input binding into the remote subselect,
-		// which is not observationally equivalent to any single Invocation.
+		// The remote subquery evaluates independently: ?var is unbound and CONCAT leaves ?output unbound.
 		assertResultEquals(res, "output", Lists.newArrayList(null, null));
+		assertIndependentServiceResults(query, res, invocations);
 	}
 
 	@Test
 	public void test6() {
+		List<TupleQuery> invocations = recordServiceInvocations();
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -353,13 +414,16 @@ public class RepositoryFederatedServiceIntegrationTest {
 		assertEquals(2, res.size());
 		BindingSet b1 = res.get(0);
 		assertEquals(l("val1"), b1.getValue("var"));
-		// the explicit ?__rowIdx projection opts into row-correlated vectored evaluation: the count is
-		// computed per input binding with the binding injected into the remote subquery
-		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
+		// The remote aggregate sees all three statements before joining its result to the input mappings.
+		for (BindingSet row : res) {
+			assertEquals(3, ((Literal) row.getValue("cnt")).intValue());
+		}
+		assertIndependentServiceResults(query, res, invocations);
 	}
 
 	@Test
 	public void test6b() {
+		List<TupleQuery> invocations = recordServiceInvocations();
 
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s1"), RDFS.LABEL, l("val1"))));
 		addData(serviceRepo, Lists.newArrayList(vf.createStatement(iri("s2"), RDFS.LABEL, l("val2"))));
@@ -371,8 +435,9 @@ public class RepositoryFederatedServiceIntegrationTest {
 		assertEquals(1, res.size());
 		BindingSet b1 = res.get(0);
 		assertEquals(l("val1"), b1.getValue("var"));
-		// the explicit ?__rowIdx projection opts into row-correlated vectored evaluation — see test6
-		assertEquals(1, ((Literal) b1.getValue("cnt")).intValue());
+		// A singleton input mapping must not pierce the remote aggregate's scope either.
+		assertEquals(3, ((Literal) b1.getValue("cnt")).intValue());
+		assertIndependentServiceResults(query, res, invocations);
 	}
 
 	@Test
@@ -507,8 +572,50 @@ public class RepositoryFederatedServiceIntegrationTest {
 				vf.createStatement(iri("s3"), RDFS.LABEL, l("val3"))));
 	}
 
+	private static String controlVariable(int index) {
+		return "__rowIdx" + (index == 0 ? "" : "_" + index);
+	}
+
+	private List<TupleQuery> recordServiceInvocations() {
+		List<TupleQuery> preparedQueries = new ArrayList<>();
+		Repository recordingRepository = new RepositoryWrapper(serviceRepo) {
+			@Override
+			public RepositoryConnection getConnection() {
+				return new RepositoryConnectionWrapper(this, super.getConnection()) {
+					@Override
+					public TupleQuery prepareTupleQuery(QueryLanguage language, String query, String baseUri) {
+						assertFalse(query.contains("VALUES"),
+								"independent remote subqueries must not receive input rows");
+						TupleQuery prepared = super.prepareTupleQuery(language, query, baseUri);
+						preparedQueries.add(prepared);
+						return prepared;
+					}
+				};
+			}
+		};
+		federatedService = new RepositoryFederatedService(recordingRepository);
+		return preparedQueries;
+	}
+
+	private void assertIndependentServiceResults(String query, List<BindingSet> actual, List<TupleQuery> invocations) {
+		assertEquals(2, invocations.size(), "each SERVICE must evaluate its original subquery once");
+		for (TupleQuery invocation : invocations) {
+			assertTrue(invocation.getBindings().isEmpty(), "outer bindings must not enter remote subquery scope");
+		}
+		List<BindingSet> local = evaluateQuery(serviceRepo, query.replace("SERVICE <urn:dummy>", ""));
+		Map<BindingSet, Long> expectedBag = local.stream()
+				.collect(Collectors.groupingBy(row -> row, Collectors.counting()));
+		Map<BindingSet, Long> actualBag = actual.stream()
+				.collect(Collectors.groupingBy(row -> row, Collectors.counting()));
+		assertEquals(expectedBag, actualBag, "federation must preserve the complete compatible-mapping join multiset");
+	}
+
 	private List<BindingSet> evaluateQuery(String query) {
-		try (RepositoryConnection conn = localRepo.getConnection()) {
+		return evaluateQuery(localRepo, query);
+	}
+
+	private List<BindingSet> evaluateQuery(Repository repository, String query) {
+		try (RepositoryConnection conn = repository.getConnection()) {
 			try (TupleQueryResult tqr = conn.prepareTupleQuery(query).evaluate()) {
 				return Iterations.asList(tqr);
 			}

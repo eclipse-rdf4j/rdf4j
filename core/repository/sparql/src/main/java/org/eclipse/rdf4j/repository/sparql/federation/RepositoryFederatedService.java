@@ -393,9 +393,10 @@ public class RepositoryFederatedService implements FederatedService {
 			List<String> relevantBindingNames = getRelevantBindingNames(allBindings, service.getServiceVars());
 
 			if (!relevantBindingNames.isEmpty()) {
-				// insert VALUES clause into the query
+				// The collision-free control variable is already projected. Keep the established two-argument
+				// extension point so existing endpoint-specific VALUES rewrites remain effective.
 				queryString = insertValuesClause(queryString,
-						buildVALUESClause(allBindings, relevantBindingNames, rowIdxVar), rowIdxVar);
+						buildVALUESClause(allBindings, relevantBindingNames, rowIdxVar));
 			}
 
 			conn = useFreshConnection ? freshConnection() : getConnection();
@@ -600,7 +601,9 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the given row-index
-	 * projection if it is not already present.
+	 * projection if it is not already present. This helper supports callers that need an explicit projection name;
+	 * runtime SERVICE rewriting uses {@link #insertValuesClause(String, String)} with its control variable already
+	 * projected.
 	 *
 	 * @param queryString  the SELECT query string from the SERVICE node
 	 * @param valuesClause the constructed VALUES clause
