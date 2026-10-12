@@ -15,8 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mockStatic;
 
 import java.io.File;
 import java.io.IOException;
@@ -27,6 +32,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
@@ -65,6 +71,9 @@ import org.eclipse.rdf4j.sail.base.StreamingPreflightBranchFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+import org.mockito.MockedStatic;
 
 class LmdbForegroundFilterSamplingEpochTest {
 
@@ -1084,6 +1093,161 @@ class LmdbForegroundFilterSamplingEpochTest {
 		assertNotNull(earlyResult, "A sampler completing within budget must return its estimate result");
 		assertEquals(-1.0d, earlyResult.passRatio(), 0.0d,
 				"Admission that exceeds the local sampling budget yields unavailable, not a late estimate");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void publishedSamplingExpirationReturnsUnavailableBeforeMonotonicBudget(boolean foregroundSampling)
+			throws Exception {
+		Path dataDirectory = Files.createTempDirectory("lmdb-filter-published-sampling-expiration");
+		SamplingPause pause = new SamplingPause();
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
+				samplingConfig(20_000L, foregroundSampling, !foregroundSampling, 0L), pause);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			seedMatchedRows(repository, sail, ROW_COUNT);
+			LmdbSailStore backing = sail.getBackingStore();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			if (!foregroundSampling) {
+				assertEquals(-1.0d, stats.estimateFilterPass(filter, pattern).passRatio(), 0.0d);
+				assertEquals(1, stats.pendingBackgroundSamplingRequests());
+			}
+			try (QueryExecutionDeadline callerDeadline = QueryExecutionDeadline.start(60_000L);
+					QueryExecutionDeadline samplingDeadline = QueryExecutionDeadline.start(1L)) {
+				awaitDeadlineExpiration(samplingDeadline);
+				stats.setSamplingViewSupplier(() -> {
+					assertSame(samplingDeadline, QueryExecutionDeadline.current(),
+							"Real admission must observe the sampling deadline's published expiration");
+					return backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ, null);
+				});
+				// Timer expiration is authoritative even when it precedes the independent monotonic sampling budget.
+				// Substitute the public factory's result to exercise that ordering without manipulating timer
+				// internals.
+				try (MockedStatic<QueryExecutionDeadline> deadlines = mockStatic(QueryExecutionDeadline.class,
+						CALLS_REAL_METHODS);
+						QueryExecutionDeadline.Scope ignored = callerDeadline.enter();
+						SailClosable publication = backing.beginPublication(new Object())) {
+					deadlines.when(() -> QueryExecutionDeadline.start(anyLong())).thenReturn(samplingDeadline);
+					if (foregroundSampling) {
+						assertEquals(-1.0d, stats.estimateFilterPass(filter, pattern).passRatio(), 0.0d,
+								"A published local expiration must yield an unavailable foreground estimate");
+					} else {
+						assertEquals(0, backing.runBackgroundFilterSamplingCycle(20_000L),
+								"A published local expiration must skip the background request");
+					}
+					deadlines.verify(() -> QueryExecutionDeadline.start(anyLong()));
+					assertSame(callerDeadline, QueryExecutionDeadline.current(),
+							"Sampling must restore the original caller deadline");
+					assertFalse(callerDeadline.isExpired(), "Sampling must preserve the caller's remaining budget");
+				}
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDirectory.toFile());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void unexpectedSamplingInterruptionStillPropagates(boolean foregroundSampling) throws Exception {
+		assertSamplingCancellationPropagates(foregroundSampling, SamplingCancellation.UNEXPECTED_FAILURE);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void callerExpirationStillPropagatesWithLocalSamplingDeadline(boolean foregroundSampling) throws Exception {
+		assertSamplingCancellationPropagates(foregroundSampling, SamplingCancellation.CALLER_DEADLINE);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void threadInterruptionStillPropagatesAfterSamplingExpiration(boolean foregroundSampling) throws Exception {
+		assertSamplingCancellationPropagates(foregroundSampling, SamplingCancellation.THREAD_INTERRUPT);
+	}
+
+	private void assertSamplingCancellationPropagates(boolean foregroundSampling, SamplingCancellation cancellation)
+			throws Exception {
+		Path dataDirectory = Files.createTempDirectory("lmdb-filter-sampling-cancellation");
+		long samplingMillis = cancellation == SamplingCancellation.UNEXPECTED_FAILURE ? 20_000L : 100L;
+		long callerMillis = cancellation == SamplingCancellation.CALLER_DEADLINE ? 500L : 60_000L;
+		SamplingPause pause = new SamplingPause();
+		ProbeLmdbStore sail = new ProbeLmdbStore(dataDirectory.toFile(),
+				samplingConfig(samplingMillis, foregroundSampling, !foregroundSampling, 0L), pause);
+		SailRepository repository = new SailRepository(sail);
+		try {
+			repository.init();
+			seedMatchedRows(repository, sail, ROW_COUNT);
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			if (!foregroundSampling) {
+				assertEquals(-1.0d, stats.estimateFilterPass(filter, pattern).passRatio(), 0.0d);
+				assertEquals(1, stats.pendingBackgroundSamplingRequests());
+			}
+			QueryInterruptedException injectedFailure = new QueryInterruptedException("Injected sampling interruption");
+			try (QueryExecutionDeadline callerDeadline = QueryExecutionDeadline.start(callerMillis);
+					QueryExecutionDeadline.Scope ignored = callerDeadline.enter()) {
+				stats.setSamplingViewSupplier(() -> {
+					QueryExecutionDeadline localDeadline = QueryExecutionDeadline.current();
+					assertNotNull(localDeadline);
+					assertNotSame(callerDeadline, localDeadline,
+							"The local sampling deadline must be installed before the cancellation occurs");
+					switch (cancellation) {
+					case UNEXPECTED_FAILURE:
+						assertFalse(localDeadline.isExpired(), "The injected failure occurs with a live local budget");
+						break;
+					case CALLER_DEADLINE:
+						awaitDeadlineExpiration(callerDeadline);
+						assertTrue(localDeadline.isExpired(), "Both deadlines expire before caller cancellation");
+						break;
+					case THREAD_INTERRUPT:
+						awaitDeadlineExpiration(localDeadline);
+						Thread.currentThread().interrupt();
+						break;
+					}
+					throw injectedFailure;
+				});
+				assertSame(injectedFailure, assertThrows(QueryInterruptedException.class, () -> {
+					if (foregroundSampling) {
+						stats.estimateFilterPass(filter, pattern);
+					} else {
+						sail.getBackingStore().runBackgroundFilterSamplingCycle(samplingMillis);
+					}
+				}), "Sampling must preserve the original interruption");
+				assertSame(callerDeadline, QueryExecutionDeadline.current(),
+						"A failed sample must restore its caller's scoped deadline");
+				assertEquals(cancellation == SamplingCancellation.CALLER_DEADLINE, callerDeadline.isExpired(),
+						"Only caller expiration consumes the caller's budget");
+				assertEquals(cancellation == SamplingCancellation.THREAD_INTERRUPT,
+						Thread.currentThread().isInterrupted(), "Sampling must preserve thread interruption");
+			}
+		} finally {
+			Thread.interrupted();
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDirectory.toFile());
+		}
+	}
+
+	private enum SamplingCancellation {
+		UNEXPECTED_FAILURE,
+		CALLER_DEADLINE,
+		THREAD_INTERRUPT
+	}
+
+	private static void awaitDeadlineExpiration(QueryExecutionDeadline deadline) {
+		CompletableFuture<Void> expiration = new CompletableFuture<>();
+		try (QueryExecutionDeadline.Registration ignored = deadline.onExpiration(() -> expiration.complete(null))) {
+			expiration.get(5, TimeUnit.SECONDS);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while waiting for published deadline expiration", failure);
+		} catch (ExecutionException | TimeoutException failure) {
+			throw new AssertionError("The deadline must publish expiration before admission resumes", failure);
+		}
+		assertTrue(deadline.isExpired(), "The deadline must have published its expiration before admission");
 	}
 
 	@Test

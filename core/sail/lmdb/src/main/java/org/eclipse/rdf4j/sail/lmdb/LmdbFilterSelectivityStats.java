@@ -558,9 +558,10 @@ class LmdbFilterSelectivityStats
 		if (TimeUnit.MILLISECONDS.toNanos(remainingMillis) < remainingNanos) {
 			remainingMillis++;
 		}
-		try (QueryExecutionDeadline localDeadline = needsLocalDeadline
+		QueryExecutionDeadline localDeadline = needsLocalDeadline
 				? QueryExecutionDeadline.start(remainingMillis)
 				: null;
+		try (localDeadline;
 				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(localDeadline);
 				LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
 			LmdbSailStore.ReadView view = admission.view();
@@ -637,7 +638,8 @@ class LmdbFilterSelectivityStats
 			if (Thread.currentThread().isInterrupted() || callerDeadline != null && callerDeadline.isExpired()) {
 				throw failure;
 			}
-			if (needsLocalDeadline && samplingDeadlineExceeded(deadlineNanos)) {
+			// Admission observes published expiration, which may precede the independent monotonic sampling budget.
+			if (localDeadline != null && localDeadline.isExpired()) {
 				return null;
 			}
 			throw failure;
