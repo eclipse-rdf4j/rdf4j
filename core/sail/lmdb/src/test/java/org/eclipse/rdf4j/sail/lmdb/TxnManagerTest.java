@@ -35,6 +35,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -48,8 +49,10 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbUtil.Transaction;
@@ -62,6 +65,101 @@ import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 
 public class TxnManagerTest {
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void closedUnexpiredDeadlineWaitsForNativeWriter(boolean capturedContext, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(TimeUnit.MINUTES.toMillis(1))) {
+			QueryExecutionContext.ReplayContext context;
+			try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				context = QueryExecutionContext.captureReplayContext();
+			}
+			deadline.close();
+			assertEquals(Long.MAX_VALUE, deadline.remainingNanos());
+			assertFalse(deadline.isExpired());
+			AtomicReference<Thread> readerThread = new AtomicReference<>();
+			CountDownLatch started = new CountDownLatch(1);
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			Future<Long> reader;
+			try {
+				reader = executor.submit(() -> {
+					readerThread.set(Thread.currentThread());
+					Supplier<Long> read = () -> {
+						assertSame(deadline, QueryExecutionDeadline.current());
+						started.countDown();
+						return nativeReadTransactionId(fixture.manager);
+					};
+					if (capturedContext) {
+						return context.get(read);
+					}
+					try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+						return read.get();
+					}
+				});
+				assertTrue(started.await(5, TimeUnit.SECONDS));
+				awaitWaitingIn(readerThread.get(), "java.util.concurrent.locks.StampedLock", "acquireRead");
+				assertFalse(reader.isDone(), "An unexpired closed deadline must wait while the native writer is held");
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+			}
+			assertTrue(reader.get(5, TimeUnit.SECONDS) >= 0L,
+					"The reader must start a native transaction after release");
+			assertFalse(fixture.manager.lockManager().isReaderActive());
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void expiredClosedDeadlineRejectsNativeRead(boolean capturedContext, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET);
+				ExecutorService executor = Executors.newSingleThreadExecutor();
+				QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1)) {
+			QueryExecutionContext.ReplayContext context;
+			CountDownLatch expired = new CountDownLatch(1);
+			deadline.onExpiration(expired::countDown);
+			try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+				context = QueryExecutionContext.captureReplayContext();
+			}
+			assertTrue(expired.await(5, TimeUnit.SECONDS));
+			deadline.close();
+			assertEquals(0L, deadline.remainingNanos());
+			assertTrue(deadline.isExpired());
+			long writeStamp = fixture.manager.lockManager().writeLock();
+			try {
+				Future<?> reader = executor.submit(() -> {
+					Supplier<Long> read = () -> {
+						assertSame(deadline, QueryExecutionDeadline.current());
+						return nativeReadTransactionId(fixture.manager);
+					};
+					if (capturedContext) {
+						return context.get(read);
+					}
+					try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+						return read.get();
+					}
+				});
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> reader.get(5, TimeUnit.SECONDS));
+				assertInstanceOf(QueryInterruptedException.class, failure.getCause());
+				assertFalse(fixture.manager.lockManager().isReaderActive());
+			} finally {
+				fixture.manager.lockManager().unlockWrite(writeStamp);
+			}
+		}
+	}
+
+	private static long nativeReadTransactionId(TxnManager manager) {
+		try {
+			return manager.doWith((stack, txn) -> {
+				assertNotEquals(0L, txn, "The barrier must admit an actual native transaction");
+				return mdb_txn_id(txn);
+			});
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
 
 	@Test
 	void ordinaryAdmissionReclaimsParkedReadersAfterWriteBarrierReleases(@TempDir Path dataDir) throws Exception {
