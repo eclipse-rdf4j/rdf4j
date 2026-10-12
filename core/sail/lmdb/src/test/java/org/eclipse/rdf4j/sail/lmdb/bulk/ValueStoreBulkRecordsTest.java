@@ -186,43 +186,89 @@ class ValueStoreBulkRecordsTest {
 		ValueStoreBulkRecords.Output serial = ValueStoreBulkRecords.build(values, serialWorkspace, memoryBudgetBytes,
 				maxOpenFiles, BulkCompression.NONE, () -> false);
 
-		AtomicBoolean workerSpillOverlappedReaders = new AtomicBoolean();
+		AtomicBoolean readersOpen = new AtomicBoolean(true);
+		AtomicBoolean readersOpenAtSample = new AtomicBoolean();
+		AtomicInteger heldWorkerOutputs = new AtomicInteger();
+		AtomicInteger overlappingWorkerOutputs = new AtomicInteger(-1);
 		AtomicInteger overlapHandles = new AtomicInteger(-1);
-		CountDownLatch spillStarted = new CountDownLatch(1);
+		AtomicInteger workerOutputCallbacks = new AtomicInteger();
+		CountDownLatch firstOutputOpened = new CountDownLatch(1);
+		CountDownLatch secondOutputSampled = new CountDownLatch(1);
 		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles)) {
 			Path outputWorkspace = Files.createDirectory(temporaryDirectory.resolve("value-spill-overlap-output"));
-			ValueStoreBulkRecords.Output output = ValueStoreBulkRecords.build(values, outputWorkspace,
-					memoryBudgetBytes,
-					maxOpenFiles, BulkCompression.NONE,
-					() -> false, scheduler, () -> {
-						int openHandles = scheduler.openFileHandles();
-						if (scheduler.isWorkerThread() && overlapHandles.compareAndSet(-1, openHandles)) {
-							workerSpillOverlappedReaders.set(openHandles >= 3);
-							spillStarted.countDown();
-						}
-					}, () -> {
-						try {
-							assertThat(spillStarted.await(10, TimeUnit.SECONDS))
-									.as("an asynchronous spill starts before the resolved-value readers close")
-									.isTrue();
-						} catch (InterruptedException e) {
-							Thread.currentThread().interrupt();
-							throw new AssertionError("interrupted while waiting for the asynchronous spill", e);
-						}
-					});
+			ValueStoreBulkRecords.Output output;
+			try {
+				output = ValueStoreBulkRecords.build(values, outputWorkspace, memoryBudgetBytes, maxOpenFiles,
+						BulkCompression.NONE, () -> false, scheduler, () -> {
+							if (!scheduler.isWorkerThread()) {
+								return;
+							}
+
+							int outputIndex = workerOutputCallbacks.getAndIncrement();
+							if (outputIndex > 1) {
+								return;
+							}
+							heldWorkerOutputs.incrementAndGet();
+							try {
+								if (outputIndex == 0) {
+									firstOutputOpened.countDown();
+									assertThat(secondOutputSampled.await(10, TimeUnit.SECONDS))
+											.as("a second worker output opens before the first spill proceeds")
+											.isTrue();
+								} else {
+									assertThat(firstOutputOpened.await(10, TimeUnit.SECONDS))
+											.as("the first worker output remains open while the second opens")
+											.isTrue();
+									int openHandles = scheduler.openFileHandles();
+									overlapHandles.set(openHandles);
+									overlappingWorkerOutputs.set(heldWorkerOutputs.get());
+									readersOpenAtSample.set(readersOpen.get());
+								}
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError("interrupted while coordinating worker outputs", e);
+							} finally {
+								heldWorkerOutputs.decrementAndGet();
+								secondOutputSampled.countDown();
+							}
+						}, () -> {
+							try {
+								assertThat(secondOutputSampled.await(10, TimeUnit.SECONDS))
+										.as("two worker spill outputs are sampled before the resolved-value readers close")
+										.isTrue();
+								readersOpen.set(false);
+							} catch (InterruptedException e) {
+								Thread.currentThread().interrupt();
+								throw new AssertionError("interrupted while awaiting the two worker outputs", e);
+							}
+						});
+			} finally {
+				firstOutputOpened.countDown();
+				secondOutputSampled.countDown();
+			}
 
 			assertThat(readRecords(output.mainRecords())).isEqualTo(readRecords(serial.mainRecords()));
 			assertThat(readRecords(output.referenceCounts())).isEqualTo(readRecords(serial.referenceCounts()));
 			assertThat(readTuples(output.tripleTerms())).isEqualTo(readTuples(serial.tripleTerms()));
 			assertThat(readTuples(output.valueHashes())).isEqualTo(readTuples(serial.valueHashes()));
 
-			assertThat(workerSpillOverlappedReaders)
-					.as("the spill output overlaps both resolved-value input handles; observed %d open handles",
-							overlapHandles.get())
+			assertThat(overlappingWorkerOutputs)
+					.as("exactly the first two worker spill outputs are held for the sample")
+					.hasValue(2);
+			assertThat(readersOpenAtSample)
+					.as("both resolved-value readers remain open during the worker-output sample")
 					.isTrue();
-			assertThat(overlapHandles).hasValue(3);
+			assertThat(readersOpen).isFalse();
+			// The global handle count can include other legitimate outputs; assert the causal reader and held-worker
+			// roles.
+			assertThat(overlapHandles.get())
+					.as("sampled handles include both reader inputs and held worker outputs")
+					.isGreaterThanOrEqualTo(values.readerFileDescriptorEstimate() + overlappingWorkerOutputs.get());
 			assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
+			assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(maxOpenFiles);
+			assertThat(scheduler.peakOpenFileHandles()).isLessThanOrEqualTo(maxOpenFiles);
 			assertThat(scheduler.reservedMemoryBytes()).isZero();
+			assertThat(scheduler.reservedFileDescriptors()).isZero();
 			assertThat(scheduler.openFileHandles()).isZero();
 		}
 	}
