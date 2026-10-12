@@ -152,7 +152,8 @@ class LmdbSynchronousIngestTest {
 				Value captured = VF.createTripleTerm(quotedSubject, PREDICATE,
 						VF.createTripleTerm(quotedSubject, PREDICATE,
 								VF.createLiteral(row == 0 ? "before-lookahead" : "after-lookahead")));
-				expected.add(VF.createStatement(VF.createIRI("urn:singleton:row:" + row), PREDICATE, captured, context));
+				expected.add(
+						VF.createStatement(VF.createIRI("urn:singleton:row:" + row), PREDICATE, captured, context));
 			}
 			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				sink.approveAll(supplied, Set.of());
@@ -173,7 +174,9 @@ class LmdbSynchronousIngestTest {
 	void singletonPromotionDuplicatesAndReadditionPreserveEstimator(boolean namedContext, boolean nested,
 			@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
-				.setForceSync(false).setSketchEstimatorEnabled(true).setBulkOperationSize(4);
+				.setForceSync(false)
+				.setSketchEstimatorEnabled(true)
+				.setBulkOperationSize(4);
 		try (Fixture fixture = new Fixture(directory, config)) {
 			write(fixture, statements("estimator-warmup", 2));
 			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
@@ -192,7 +195,8 @@ class LmdbSynchronousIngestTest {
 				sink.approveAll(input, Set.of());
 				sink.flush();
 			}
-			assertEquals(0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+			assertEquals(0d,
+					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertTrue(observer.hasStatement(statement, true));
 				assertFalse(observer.hasStatement(statement, false));
@@ -206,7 +210,8 @@ class LmdbSynchronousIngestTest {
 			}
 			assertTrue(fixture.events.alignedWrites.isEmpty());
 			assertEquals(5, fixture.events.scalarWrites.size());
-			assertEquals(1d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+			assertEquals(1d,
+					estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertVisible(observer, input);
 				assertEquals(3, observer.size());
@@ -622,7 +627,8 @@ class LmdbSynchronousIngestTest {
 				apply(sink, second, "second", seed, expected);
 				sink.flush();
 			}
-			assertWriter(fixture.events, producer, first == Call.SMALL || first == Call.SINGLETON || first == Call.REMOVE);
+			assertWriter(fixture.events, producer,
+					first == Call.SMALL || first == Call.SINGLETON || first == Call.REMOVE);
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertVisible(observer, expected);
 				assertEquals(expected.size(), observer.size());

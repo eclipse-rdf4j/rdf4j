@@ -7259,7 +7259,8 @@ class LmdbSailStore implements SailStore {
 					if (first) {
 						first = false;
 						if (!statements.hasNext()) {
-							submitAddQuad(captured.getSubject(), captured.getPredicate(), captured.getObject(), explicit,
+							submitAddQuad(captured.getSubject(), captured.getPredicate(), captured.getObject(),
+									explicit,
 									captured.getContext());
 							return;
 						}
