@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -78,6 +80,10 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			if (scansBoundSubject(filter.getArg(), assignment, input)) {
+				return;
+			}
+
 			if (mergeWithExistingValuesAnchor(filter, assignment)) {
 				analysis.invalidate();
 				return;
@@ -86,6 +92,33 @@ final class FilterInValuesOptimizer implements QueryOptimizer {
 			filter.replaceWith(new Join(assignment, filter.getArg().clone()));
 			analysis.invalidate();
 		}
+
+		/**
+		 * A statement pattern whose subject is already bound (by a constant or by the input, e.g. the outer row of a
+		 * correlated EXISTS) only reads that subject's statements. Scanning them and testing the values is cheaper than
+		 * a VALUES anchor on the outer side, which looks up the listed values one by one until one matches, through a
+		 * join that is rebuilt for every input row. A single value is still anchored: its one lookup is fully bound.
+		 */
+		private boolean scansBoundSubject(TupleExpr arg, BindingSetAssignment assignment,
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+			if (!(arg instanceof StatementPattern pattern) || !hasMultipleRows(assignment)) {
+				return false;
+			}
+			Var subject = pattern.getSubjectVar();
+			if (!subject.hasValue() && assignment.getBindingNames().contains(subject.getName())) {
+				return false;
+			}
+			return analysis.bindingState(subject, input) == QueryAlgebraBindingAnalysis.BindingState.BOUND;
+		}
+	}
+
+	private static boolean hasMultipleRows(BindingSetAssignment assignment) {
+		Iterator<BindingSet> rows = assignment.getBindingSets().iterator();
+		if (!rows.hasNext()) {
+			return false;
+		}
+		rows.next();
+		return rows.hasNext();
 	}
 
 	private static boolean isScopeBoundary(Filter filter) {
