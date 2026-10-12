@@ -46,7 +46,6 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
-import org.eclipse.rdf4j.sail.base.StatementInput;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 
 /** Same-package guest writer with deterministic pauses around LMDB publication boundaries. */
@@ -362,8 +361,9 @@ public final class CrashPowerCutWriterMain {
 						tripleDirectory = dir.toPath();
 						return new TripleStore(dir, storeProperties, storeConfig, valueStore) {
 							@Override
-							long estimateWriteBytes(StatementInput input) {
-								return profile.equals("journal-replay") ? 0L : super.estimateWriteBytes(input);
+							long estimateWriteBytes(long statementCount, SailSource.WritePreflight metadata) {
+								return profile.equals("journal-replay") ? 0L
+										: super.estimateWriteBytes(statementCount, metadata);
 							}
 
 							@Override
@@ -495,12 +495,12 @@ public final class CrashPowerCutWriterMain {
 		}
 
 		@Override
-		long estimateWriteBytes(StatementInput input) {
+		long estimateWriteBytes(long statementCount, SailSource.WritePreflight metadata) {
 			if (MIXED_REPLAY_BEFORE_NATIVE_COMMIT.equals(scenario)) {
 				// The mixed cut must exercise actual native capacity failure and complete frozen replay.
 				return 0L;
 			}
-			return super.estimateWriteBytes(input);
+			return super.estimateWriteBytes(statementCount, metadata);
 		}
 
 		private boolean isFrozenProbeArmed() {
