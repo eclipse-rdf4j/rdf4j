@@ -1,0 +1,22 @@
+{
+  "format": "rdf4j-tuple-expr",
+  "version": 1,
+  "expression": {
+    "type": "Projection",
+    "arg": {
+      "type": "StatementPattern",
+      "subjectVar": { "type": "Var", "name": "s" },
+      "predicateVar": {
+        "type": "Var",
+        "name": "p",
+        "value": { "type": "IRI", "value": "urn:example:knows" },
+        "constant": true
+      },
+      "objectVar": { "type": "Var", "name": "o" }
+    },
+    "projectionElements": [
+      { "name": "s" },
+      { "name": "o", "projectionAlias": "friend" }
+    ]
+  }
+}

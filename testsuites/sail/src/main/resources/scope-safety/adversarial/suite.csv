@@ -1,0 +1,11 @@
+id,category,rows,title,query,result
+a01,subquery-shadowing,1,"Three nested frames reuse one variable name",queries/a01.rq,results/a01.srx
+a02,values-undef,1,"Declared subquery exports may be bound later or remain unbound",queries/a02.rq,results/a02.srx
+a03,optional-scope,2,"A hidden subquery variable is not an OPTIONAL compatibility key",queries/a03.rq,results/a03.srx
+a04,minus-scope,1,"A hidden subquery variable creates no MINUS overlap",queries/a04.rq,results/a04.srx
+a05,minus-alias,1,"A projected alias creates genuine MINUS overlap",queries/a05.rq,results/a05.srx
+a06,exists-scope,1,"Nested EXISTS correlates without exporting local variables",queries/a06.rq,results/a06.srx
+a07,union-scope,2,"UNION branches export disjoint aliases and hide their source",queries/a07.rq,results/a07.srx
+a08,aggregate-scope,1,"An aggregate subquery hides its source variable",queries/a08.rq,results/a08.srx
+a09,graph-scope,1,"A subquery graph variable shadows an outer variable",queries/a09.rq,results/a09.srx
+a10,lateral-scope,1,"LATERAL correlates on input while hiding an unprojected local",queries/a10.rq,results/a10.srx

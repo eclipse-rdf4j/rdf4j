@@ -1,0 +1,10 @@
+name = "rdf4j_equivalence_formal"
+version = "0.1.0"
+defaultTargets = ["Rdf4jEquivalenceFormal", "check-certificates"]
+
+[[lean_lib]]
+name = "Rdf4jEquivalenceFormal"
+
+[[lean_exe]]
+name = "check-certificates"
+root = "Main"

@@ -37,7 +37,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.ContextAwareQueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.scope.OptimizationSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
@@ -51,7 +52,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
  * @author Arjohn Kampman
  */
 public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisitor<RuntimeException>
-		implements QueryOptimizer {
+		implements ContextAwareQueryOptimizer {
 
 	private static final ThreadLocal<QueryAlgebraBindingAnalysis> CURRENT_ANALYSIS = new ThreadLocal<>();
 
@@ -73,6 +74,12 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 				CURRENT_ANALYSIS.set(previous);
 			}
 		}
+	}
+
+	@Override
+	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationSession session) {
+		ContextAwareQueryOptimizer.dispatch(tupleExpr, dataset, bindings, session, EnforcePolicy.SKIP,
+				this::optimize, null);
 	}
 
 	@Override

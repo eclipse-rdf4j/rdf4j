@@ -52,7 +52,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 
 	public void setArguments(List<ValueExpr> args) {
 		this.args = new ArrayList<>(args);
-		for (ValueExpr arg : args) {
+		for (ValueExpr arg : this.args) {
 			arg.setParentNode(this);
 		}
 	}
@@ -81,9 +81,9 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 		for (int i = 0; i < args.size(); i++) {
 			ValueExpr arg = args.get(i);
 			if (arg == current) {
-				ValueExpr replacementValue = (ValueExpr) replacement;
-				args.set(i, replacementValue);
-				replacementValue.setParentNode(this);
+				ValueExpr replacementArg = (ValueExpr) replacement;
+				replacementArg.setParentNode(this);
+				args.set(i, replacementArg);
 			}
 		}
 	}
