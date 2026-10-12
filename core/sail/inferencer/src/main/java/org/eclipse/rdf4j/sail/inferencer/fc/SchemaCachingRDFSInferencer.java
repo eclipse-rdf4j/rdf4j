@@ -74,6 +74,11 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	private final Object exclusiveWriteLockOwnerMonitor = new Object();
 	private volatile Object exclusiveWriteLockOwner;
 
+	// Set when a connection could not rebuild the shared schema cache after a rollback, typically because the backing
+	// store force-closed its connection while shutting down. The next connection that takes the exclusive write lock
+	// rebuilds the cache before using it, so closing a connection never has to reopen the backing store.
+	private volatile boolean schemaCacheInvalidated;
+
 	// If false, the inferencer will skip some RDFS rules.
 	boolean useAllRdfsRules = true;
 
@@ -233,6 +238,20 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	// Ownership is per connection: the owner may continue on another thread, so the calling thread proves nothing.
 	private boolean holdsExclusiveWriteLock(Object owner) {
 		return exclusiveWriteLockOwner == owner;
+	}
+
+	/** Marks the shared schema cache as stale until a connection holding the exclusive write lock rebuilds it. */
+	void invalidateSchemaCache() {
+		schemaCacheInvalidated = true;
+	}
+
+	/** Claims the pending rebuild; the caller must hold the exclusive write lock and rebuild the cache. */
+	boolean claimSchemaCacheRebuild() {
+		if (!schemaCacheInvalidated) {
+			return false;
+		}
+		schemaCacheInvalidated = false;
+		return true;
 	}
 
 	@Override

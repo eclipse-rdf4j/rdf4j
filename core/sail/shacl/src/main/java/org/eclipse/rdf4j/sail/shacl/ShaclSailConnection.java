@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -1063,7 +1064,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 							set.stream()
 									.peek(s -> {
 										if (Thread.currentThread().isInterrupted()) {
-											throw new SailException(
+											throw new InterruptedSailException(
 													"ShacilSailConnection was interrupted while filling added/removed statement repositories");
 										}
 									})
@@ -1462,7 +1463,7 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 			boolean valid = invalidTuples.conforms();
 
 			if (Thread.currentThread().isInterrupted()) {
-				throw new InterruptedException("ShaclSailConnection was interrupted while validating.");
+				throw new InterruptedSailException("ShaclSailConnection was interrupted while validating.");
 			}
 
 			if (closed) {
@@ -1504,6 +1505,10 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						failure.addSuppressed(prepareFailure);
 					}
 					prepareFailure = failure;
+					if (failure instanceof InterruptedSailException
+							|| failure.getCause() instanceof InterruptedSailException) {
+						throw new InterruptedSailException("SHACL transaction preparation was interrupted", failure);
+					}
 					throw failure;
 				}
 			}

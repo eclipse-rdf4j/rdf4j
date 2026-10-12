@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -35,8 +36,8 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	private final QueryEvaluationContext delegate;
 	private final Function<Value, Value> capturer;
 	private final Map<Function<Value, Value>, Map<Value, Value>> constants = new IdentityHashMap<>();
-	// Copy-on-write: replaced under this context's monitor, read without locking by per-row setters.
-	private volatile Map<Value, Boolean> ownedConstants = new IdentityHashMap<>();
+	// Owned constants are added under this context's monitor and probed without locking by per-row setters.
+	private final OwnedConstants ownedConstants = new OwnedConstants();
 	private volatile Literal now;
 
 	ValueCapturingQueryEvaluationContext(QueryEvaluationContext delegate, Function<Value, Value> capturer) {
@@ -66,9 +67,7 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 			Value owned = delegate.captureConstant(value, capturer);
 			captured.put(value, owned);
 			captured.put(owned, owned);
-			Map<Value, Boolean> nextOwned = new IdentityHashMap<>(ownedConstants);
-			nextOwned.put(owned, Boolean.TRUE);
-			ownedConstants = nextOwned;
+			ownedConstants.add(owned);
 		}
 		return captured.get(value);
 	}
@@ -132,10 +131,79 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 		return (value, bindings) -> {
 			// Only constant outputs are shared; the original caller values must still be recaptured.
 			Value captured = value;
-			if (value != null && value != now && !ownedConstants.containsKey(value)) {
+			if (value != null && value != now && !ownedConstants.contains(value)) {
 				captured = capturer.apply(value);
 			}
 			setter.accept(captured, bindings);
 		};
+	}
+
+	/**
+	 * An identity set of owned constants with lock-free membership probes. Insertions are serialized by the owning
+	 * context's monitor and each one is a single volatile slot write, so adding a constant never republishes the
+	 * constants captured before it. A reader can only miss an insertion that is still in progress, which costs one
+	 * extra capture of a value that is in fact already owned.
+	 */
+	private static final class OwnedConstants {
+
+		private static final int INITIAL_CAPACITY = 16;
+
+		// The table is never more than half full, so every probe sequence reaches an empty slot. A replaced table is
+		// never written again, which keeps that bound for readers that still hold it.
+		private volatile AtomicReferenceArray<Value> table = new AtomicReferenceArray<>(INITIAL_CAPACITY);
+		private int size;
+
+		boolean contains(Value value) {
+			AtomicReferenceArray<Value> current = table;
+			int mask = current.length() - 1;
+			int index = slot(value, mask);
+			while (true) {
+				Value candidate = current.get(index);
+				if (candidate == null) {
+					return false;
+				}
+				if (candidate == value) {
+					return true;
+				}
+				index = (index + 1) & mask;
+			}
+		}
+
+		/** Adds the value; the caller must hold the owning context's monitor. */
+		void add(Value value) {
+			if (contains(value)) {
+				return;
+			}
+			AtomicReferenceArray<Value> current = table;
+			if ((size + 1) * 2 > current.length()) {
+				AtomicReferenceArray<Value> grown = new AtomicReferenceArray<>(current.length() * 2);
+				for (int i = 0; i < current.length(); i++) {
+					Value existing = current.get(i);
+					if (existing != null) {
+						insert(grown, existing);
+					}
+				}
+				insert(grown, value);
+				size++;
+				table = grown;
+				return;
+			}
+			insert(current, value);
+			size++;
+		}
+
+		private static void insert(AtomicReferenceArray<Value> table, Value value) {
+			int mask = table.length() - 1;
+			int index = slot(value, mask);
+			while (table.get(index) != null) {
+				index = (index + 1) & mask;
+			}
+			table.set(index, value);
+		}
+
+		private static int slot(Value value, int mask) {
+			int hash = System.identityHashCode(value);
+			return (hash ^ (hash >>> 16)) & mask;
+		}
 	}
 }

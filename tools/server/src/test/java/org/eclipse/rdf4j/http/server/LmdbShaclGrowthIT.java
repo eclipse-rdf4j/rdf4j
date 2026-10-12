@@ -33,8 +33,8 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailConnection;
-import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.shacl.ShaclSail;
@@ -216,7 +216,7 @@ class LmdbShaclGrowthIT {
 			SailConnection sailConnection = ((SailRepositoryConnection) connection).getSailConnection();
 			shaclSail.arm();
 			try {
-				SailException failure = assertThrows(SailException.class, sailConnection::prepare,
+				InterruptedSailException failure = assertThrows(InterruptedSailException.class, sailConnection::prepare,
 						"prepare must fail if interruption prevents the delegated prepare from running");
 				assertEquals("SHACL transaction preparation was interrupted", failure.getMessage(),
 						"the failure must come from the interrupted SHACL delegation path");

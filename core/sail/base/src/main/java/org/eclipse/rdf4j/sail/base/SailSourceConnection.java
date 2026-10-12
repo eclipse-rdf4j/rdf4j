@@ -918,12 +918,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
+			// Sample the listener state once: a pure insertion consumes no read view, but a listener needs the
+			// dataset to preserve duplicate notifications. The notification path below must follow the same
+			// decision even when a listener registers concurrently.
+			boolean notifyListeners = hasConnectionListeners();
 			if (op == null && (!explicitSinks.containsKey(null)
-					|| hasConnectionListeners() && !datasets.containsKey(null))) {
+					|| notifyListeners && !datasets.containsKey(null))) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				// Pure insertion consumes no read view. A listener needs the dataset to preserve duplicate
-				// notifications.
-				if (hasConnectionListeners() && !datasets.containsKey(null)) {
+				if (notifyListeners && !datasets.containsKey(null)) {
 					datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
 				}
 				if (!explicitSinks.containsKey(null)) {
@@ -931,7 +933,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				}
 			}
 			assert explicitSinks.containsKey(op);
-			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
+			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), notifyListeners, contexts);
 		}
 		if (op != null) {
 			recordDataImportMetricsStatementsAdded(contexts);
@@ -1076,10 +1078,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
-			throws SailException {
+	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
+			boolean notifyListeners, Resource... contexts) throws SailException {
+		assert dataset != null || !notifyListeners : "listener notifications require a read view";
 		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
-			if (hasConnectionListeners()) {
+			if (notifyListeners) {
 				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj), false);
 				} else if (sink instanceof Changeset && ((Changeset) sink).hasDeprecated(subj, pred, obj, NULL_CTX)) {
@@ -1105,7 +1108,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 					contextsToCheck = new Resource[] { ctx };
 				}
 
-				if (hasConnectionListeners()) {
+				if (notifyListeners) {
 					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
 						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx), false);
 					} else if (sink instanceof Changeset

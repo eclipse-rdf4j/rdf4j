@@ -86,7 +86,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	void processForSchemaCache(Statement statement) {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 
 		final IRI predicate = statement.getPredicate();
 		final Value object = statement.getObject();
@@ -134,10 +134,26 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 	private boolean inferredCleared = false;
 
+	/**
+	 * Takes the shared schema write lock for this connection. A cache that an earlier connection left stale (it could
+	 * not rebuild it after a rollback) is rebuilt here, before any mutation of this connection consults it.
+	 */
+	private void acquireSchemaWriteLock() {
+		sail.acquireExclusiveWriteLock(this);
+		if (sail.claimSchemaCacheRebuild()) {
+			try {
+				regenerateCacheAndInferenceMaps(false);
+			} catch (RuntimeException | Error failure) {
+				sail.invalidateSchemaCache();
+				throw failure;
+			}
+		}
+	}
+
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
 		logger.debug("Clearing all inferred statements");
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.clearInferred(contexts);
 		inferredCleared = true;
 	}
@@ -147,52 +163,52 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void removeStatements(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.removeStatements(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public void removeStatement(UpdateContext update, Resource subject, IRI predicate, Value object,
 			Resource... contexts) throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.removeStatement(update, subject, predicate, object, contexts);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		return super.removeInferredStatement(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public void clear(Resource... contexts) throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.clear(contexts);
 	}
 
 	@Override
 	public void setNamespace(String prefix, String name) throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.setNamespace(prefix, name);
 	}
 
 	@Override
 	public void removeNamespace(String prefix) throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.removeNamespace(prefix);
 	}
 
 	@Override
 	public void clearNamespaces() throws SailException {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 		super.clearNamespaces();
 	}
 
 	@Override
 	public void startUpdate(UpdateContext update) throws SailException {
 		if (update != null) {
-			sail.acquireExclusiveWriteLock(this);
+			acquireSchemaWriteLock();
 		}
 		super.startUpdate(update);
 	}
@@ -302,7 +318,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			inferredContext = context;
 		}
 		if (!(schemaChange && actuallyAdd)) {
-			sail.acquireExclusiveWriteLock(this);
+			acquireSchemaWriteLock();
 			if (!sail.usesPredefinedSchema()) {
 				processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
 			}
@@ -392,7 +408,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	}
 
 	void addAxiomStatements() {
-		sail.acquireExclusiveWriteLock(this);
+		acquireSchemaWriteLock();
 
 		ValueFactory vf = sail.getValueFactory();
 
@@ -977,7 +993,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 
 	@Override
 	public void close() throws SailException {
-		// Close the native transaction before restoring a cache left dirty by failed rollback.
+		// Close the native transaction before handing a cache left dirty by a failed rollback to the next writer.
 		// Resource ordering also retains the original failure and suppresses later cleanup failures.
 		try (SailClosable schemaCleanup = this::restoreAfterClose; SailClosable backingClose = super::close) {
 			if (connection.isOpen()) {
@@ -993,9 +1009,10 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	private void restoreAfterClose() {
 		try {
 			if (statementsAdded || statementsRemoved || schemaChange) {
-				try (SailConnection snapshot = sail.getBaseSail().getConnection()) {
-					regenerateCacheAndInferenceMaps(snapshot, false);
-				}
+				// The backing connection is closed or failed to rebuild the cache. Opening another backing connection
+				// from close() is not an option: the backing store may be shutting down and would be re-initialized
+				// instead. Leave the rebuild to the next connection that takes the schema write lock.
+				sail.invalidateSchemaCache();
 				resetState();
 			}
 		} finally {
