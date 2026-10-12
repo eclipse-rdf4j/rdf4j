@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
@@ -50,7 +51,8 @@ class SailSourceBranch implements SailSource {
 	/**
 	 * Used to prevent changes to this object's field from multiple threads.
 	 */
-	private final ReentrantLock semaphore = new ReentrantLock();
+	private final ReentrantLock semaphore;
+	private final BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition;
 
 	/**
 	 * The difference between this {@link SailSource} and the backing {@link SailSource}.
@@ -110,12 +112,14 @@ class SailSourceBranch implements SailSource {
 
 	private static final class SnapshotLease {
 		private final SailDataset dataset;
+		private final SailDatasetSnapshot acquisition;
 		private int borrowers;
 		private boolean retired;
 		private boolean closed;
 
 		private SnapshotLease(SailDataset dataset) {
 			this.dataset = dataset;
+			this.acquisition = SailDatasetSnapshot.current();
 		}
 	}
 
@@ -153,10 +157,24 @@ class SailSourceBranch implements SailSource {
 
 	private SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush,
 			BackingSailSource statementBufferSource) {
+		this(backingSource, modelFactory, autoFlush, statementBufferSource, new ReentrantLock(), null);
+	}
+
+	SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, ReentrantLock semaphore,
+			BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition) {
+		this(backingSource, modelFactory, true,
+				backingSource instanceof BackingSailSource source ? source : null, semaphore, snapshotAcquisition);
+	}
+
+	private SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush,
+			BackingSailSource statementBufferSource, ReentrantLock semaphore,
+			BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition) {
 		this.backingSource = backingSource;
 		this.statementBufferSource = statementBufferSource;
 		this.modelFactory = modelFactory;
 		this.autoFlush = autoFlush;
+		this.semaphore = semaphore;
+		this.snapshotAcquisition = snapshotAcquisition;
 	}
 
 	@Override
@@ -321,6 +339,12 @@ class SailSourceBranch implements SailSource {
 	}
 
 	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
+		return snapshotAcquisition != null && SailDatasetSnapshot.current() != null
+				? snapshotAcquisition.apply(level, observe)
+				: datasetDirect(level, observe);
+	}
+
+	SailDataset datasetDirect(IsolationLevel level, boolean observe) throws SailException {
 		try {
 			semaphore.lock();
 			SailDataset dataset = new DelegatingSailDataset(
@@ -647,7 +671,9 @@ class SailSourceBranch implements SailSource {
 	private SailDataset derivedFromSnapshot(IsolationLevel level) throws SailException {
 		try {
 			semaphore.lock();
-			if (autoFlush && this.snapshot != null && !this.snapshot.dataset.isSnapshotCurrent()) {
+			if (autoFlush && this.snapshot != null
+					&& (this.snapshot.acquisition != SailDatasetSnapshot.current()
+							|| !this.snapshot.dataset.isSnapshotCurrent())) {
 				// a writer bypassed this branch (e.g. isolation NONE writes straight into the backing store) and
 				// advanced the store past the cached pinned snapshot; new borrowers of this long-lived branch must
 				// see the latest committed state, so retire the stale dataset (open borrowers keep it alive).

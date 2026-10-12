@@ -558,9 +558,23 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		IsolationLevel level = getTransactionIsolation();
 		if (!IsolationLevels.NONE.isCompatibleWith(level)) {
 			// only create transaction branches if transaction is isolated
-			explicitOnlyBranch = store.getExplicitSailSource().fork();
-			inferredOnlyBranch = store.getInferredSailSource().fork();
-			includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);
+			try {
+				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
+					try (SailDatasetSnapshot snapshot = new SailDatasetSnapshot()) {
+						explicitOnlyBranch = snapshot.fork(store.getExplicitSailSource());
+						inferredOnlyBranch = snapshot.fork(store.getInferredSailSource());
+					}
+				} else {
+					explicitOnlyBranch = store.getExplicitSailSource().fork();
+					inferredOnlyBranch = store.getInferredSailSource().fork();
+				}
+				includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);
+			} catch (RuntimeException | Error failure) {
+				SourceClosingSailDataset.closeAfterFailure(failure, explicitOnlyBranch, inferredOnlyBranch);
+				explicitOnlyBranch = null;
+				inferredOnlyBranch = null;
+				throw failure;
+			}
 		}
 	}
 
@@ -1169,9 +1183,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		// Active transactions and other stores keep their ordinary source selection and dataset semantics.
 		if (!isActive() && store instanceof SnapshotSailStore snapshotStore) {
 			if (includeInferred == IncludeInferred.all) {
-				SailDataset inferred = snapshotStore.datasetForRead(true, level);
+				SailDataset inferred = null;
 				SailDataset explicit = null;
-				try {
+				try (SailDatasetSnapshot.Scope ignored = SailDatasetSnapshot.open()) {
+					inferred = snapshotStore.datasetForRead(true, level);
 					explicit = snapshotStore.datasetForRead(false, level);
 					return UnionSailDataset.getInstance(inferred, explicit);
 				} catch (RuntimeException | Error failure) {

@@ -15,7 +15,6 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
@@ -340,7 +339,7 @@ public class RepositoryFederatedService implements FederatedService {
 
 		// materialize all bindings (to allow for fallback in case of errors)
 		// note that this may be blocking depending on the underlying iterator
-		List<BindingSet> allBindings = new LinkedList<>();
+		List<BindingSet> allBindings = new ArrayList<>();
 		while (bindings.hasNext()) {
 			allBindings.add(bindings.next());
 		}
@@ -368,14 +367,8 @@ public class RepositoryFederatedService implements FederatedService {
 		// Pushing input bindings into a service pattern that contains a subquery is not observationally
 		// equivalent to the one logical Invocation the algebra defines: pre-bound variables pierce the
 		// subquery's scope (changing aggregates), and a VALUES clause injected around a subselect constrains
-		// its solutions BEFORE any LIMIT/ORDER inside it. Evaluate such patterns once and join locally —
-		// UNLESS the user explicitly projects the ?__rowIdx correlation variable in the service pattern,
-		// which is the documented opt-in to row-correlated vectored evaluation (an RDF4J extension contract;
-		// a degenerate use that duplicates the VALUES variable falls through to the single-invocation
-		// fallback via the malformed-query handling).
-		boolean userRequestedRowCorrelation = service.getServiceExpressionString() != null
-				&& service.getServiceExpressionString().contains("?" + ROW_IDX_VAR);
-		if (!userRequestedRowCorrelation && TupleExprs.containsSubquery(service.getArg())) {
+		// its solutions BEFORE any LIMIT/ORDER inside it. Evaluate such patterns once and join locally.
+		if (TupleExprs.containsSubquery(service.getArg())) {
 			return evaluateOnceAndJoinLocally(service, allBindings, baseUri);
 		}
 
@@ -389,16 +382,10 @@ public class RepositoryFederatedService implements FederatedService {
 				return select(service, projectionVars, allBindings.get(0), baseUri);
 			}
 
-			// To be able to insert the input bindings again later on, we need some
-			// means to identify the row of each binding. hence, we use an
-			// additional
-			// projection variable, which is also passed in the VALUES clause
-			// with the value of the actual row. The value corresponds to the index
-			// of the binding in the index list. The variable is freshly generated: a fixed helper name could
-			// collide with a user variable of the same name in the service pattern or the input bindings.
-			// When the user explicitly projects ?__rowIdx as the vectored-evaluation opt-in, that exact name
-			// IS the correlation contract and is used as-is.
-			String rowIdxVar = userRequestedRowCorrelation ? ROW_IDX_VAR : getRowIndexVar(service, allBindings);
+			// To be able to insert the input bindings again later on, we need some means to identify the row of each
+			// binding. We pass a freshly generated projection variable and its row index in the VALUES clause. This
+			// variable must remain distinct from every service and input variable.
+			String rowIdxVar = getRowIndexVar(service, allBindings);
 			projectionVars.add(rowIdxVar);
 
 			String queryString = service.getSelectQueryString(projectionVars);
@@ -454,17 +441,11 @@ public class RepositoryFederatedService implements FederatedService {
 			if (useFreshConnection) {
 				closeQuietly(conn);
 			}
-			// A malformed generated query is a bug in our VALUES rewriting and must not be silenced.
-			// Under the explicit ?__rowIdx opt-in the user requested row-correlated vectored evaluation, so
-			// the correlated per-binding evaluation is the honest fallback. Otherwise fall back to ONE
-			// invocation of the original service pattern joined locally — never to one remote request per
-			// input binding, which would partition the logical Invocation.
+			// A malformed generated query is a bug in our VALUES rewriting. Fall back to ONE invocation of the
+			// original service pattern joined locally — never to one remote request per input binding, which
+			// would partition the logical Invocation.
 			logger.debug("Encountered malformed query exception: " + e.getMessage()
-					+ ". Falling back to " + (userRequestedRowCorrelation ? "correlated per-binding evaluation."
-							: "a single SERVICE invocation with a local join."));
-			if (userRequestedRowCorrelation) {
-				return perBindingCorrelatedEvaluation(service, allBindings, baseUri);
-			}
+					+ ". Falling back to a single SERVICE invocation with a local join.");
 			return evaluateOnceAndJoinLocally(service, allBindings, baseUri);
 		} catch (QueryEvaluationException e) {
 			if (useFreshConnection) {
@@ -498,9 +479,9 @@ public class RepositoryFederatedService implements FederatedService {
 	 * per-binding requests) and join the remote solutions with the input bindings locally using compatible-mapping
 	 * merging. This is the conforming fallback whenever pushing the bindings down is not possible: partitioning the
 	 * Invocation into one remote request per input binding is never authorized by a fallback — separate requests may
-	 * observe different remote state, generate distinct fresh values, and fail partially. SILENT handling is inherited
-	 * from {@link #select(Service, Set, BindingSet, String)}: a failed silent Invocation yields the singleton empty
-	 * mapping, and joining it locally passes the input bindings through unchanged.
+	 * observe different remote state, generate distinct fresh values, and fail partially. Successful SILENT results are
+	 * buffered by {@link #select(Service, Set, BindingSet, String)} before exposure; synchronous setup failures are
+	 * caught here and pass the input bindings through unchanged.
 	 *
 	 * @param service     the SERVICE
 	 * @param allBindings all input bindings
@@ -511,49 +492,18 @@ public class RepositoryFederatedService implements FederatedService {
 			List<BindingSet> allBindings, String baseUri) {
 
 		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-		CloseableIteration<BindingSet> remote = select(service, projectionVars, EmptyBindingSet.getInstance(),
-				baseUri);
+		CloseableIteration<BindingSet> remote;
+		try {
+			remote = select(service, projectionVars, EmptyBindingSet.getInstance(), baseUri);
+		} catch (RuntimeException e) {
+			if (!service.isSilent()) {
+				throw e;
+			}
+			logger.debug("SILENT SERVICE invocation failed before result iteration; passing input mappings through: {}",
+					e.getMessage());
+			return new CollectionIteration<>(new ArrayList<>(allBindings));
+		}
 		return new LocalServiceJoinIteration(remote, allBindings);
-	}
-
-	/**
-	 * Row-correlated per-binding evaluation, available only under the explicit {@code ?__rowIdx} opt-in: one
-	 * {@link #select(Service, Set, BindingSet, String)} per input binding, with the binding injected into the remote
-	 * query. This is deliberately NOT one logical Invocation — it is the vectored-evaluation extension contract the
-	 * user requested.
-	 */
-	private CloseableIteration<BindingSet> perBindingCorrelatedEvaluation(Service service,
-			List<BindingSet> allBindings, String baseUri) {
-		Set<String> projectionVars = new HashSet<>(service.getServiceVars());
-		Iterator<BindingSet> inputs = allBindings.iterator();
-		return new LookAheadIteration<>() {
-
-			private CloseableIteration<BindingSet> current;
-
-			@Override
-			protected BindingSet getNextElement() {
-				while (true) {
-					if (current == null) {
-						if (!inputs.hasNext()) {
-							return null;
-						}
-						current = select(service, projectionVars, inputs.next(), baseUri);
-					}
-					if (current.hasNext()) {
-						return current.next();
-					}
-					current.close();
-					current = null;
-				}
-			}
-
-			@Override
-			protected void handleClose() {
-				if (current != null) {
-					current.close();
-				}
-			}
-		};
 	}
 
 	/**
@@ -565,7 +515,7 @@ public class RepositoryFederatedService implements FederatedService {
 		private final CloseableIteration<BindingSet> remote;
 		private final List<BindingSet> inputBindings;
 		private BindingSet currentRemote;
-		private int inputIndex;
+		private Iterator<BindingSet> inputIterator;
 
 		private LocalServiceJoinIteration(CloseableIteration<BindingSet> remote, List<BindingSet> inputBindings) {
 			this.remote = remote;
@@ -580,16 +530,17 @@ public class RepositoryFederatedService implements FederatedService {
 						return null;
 					}
 					currentRemote = remote.next();
-					inputIndex = 0;
+					inputIterator = inputBindings.iterator();
 				}
-				while (inputIndex < inputBindings.size()) {
-					BindingSet input = inputBindings.get(inputIndex++);
+				while (inputIterator.hasNext()) {
+					BindingSet input = inputIterator.next();
 					BindingSet merged = merge(input, currentRemote);
 					if (merged != null) {
 						return merged;
 					}
 				}
 				currentRemote = null;
+				inputIterator = null;
 			}
 		}
 
@@ -636,12 +587,6 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Returns a synthetic row-index variable name that cannot collide with any user-visible variable: it is absent from
-	 * the service's variables, from every input binding name, and from the serialized service pattern text (which
-	 * conservatively also covers string literals mentioning the candidate).
-	 */
-
-	/**
 	 * Insert the constructed VALUES clause in the beginning of the WHERE block. Also adds the {@link #ROW_IDX_VAR}
 	 * projection if it is not already present.
 	 *
@@ -678,6 +623,10 @@ public class RepositoryFederatedService implements FederatedService {
 		return sb.toString();
 	}
 
+	/**
+	 * Returns a synthetic row-index variable name that cannot collide with any user-visible variable in the service
+	 * algebra or any input binding.
+	 */
 	private String getRowIndexVar(Service service, List<BindingSet> inputs) {
 		Set<String> occupiedNames = new HashSet<>(service.getServiceVars());
 		service.getServiceExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {

@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.SailReadOnlyException;
 import org.eclipse.rdf4j.sail.base.SailSourceConnection;
+import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -124,11 +125,13 @@ public class LmdbStoreConnection extends SailSourceConnection {
 				adjacency.beginLogicalCommitBatch();
 			}
 			try {
-				super.commitInternal();
-				if (adjacencyWriteAdmitted) {
-					// Publish buffered root changes before returning, including while old snapshots are open.
-					lmdbStore.getSailStore().getExplicitSailSource().flush();
-					lmdbStore.getSailStore().getInferredSailSource().flush();
+				if (adjacencyWriteAdmitted || LmdbSailStore.snapshotPinningEnabled()) {
+					// Retained readers can keep both roots observed. Publish the logical commit and both physical
+					// planes together, so a fresh reader cannot combine an explicit promotion overlay with the old
+					// inferred copy still in the backing store.
+					((SnapshotSailStore) lmdbStore.getSailStore()).flushCommittedChanges(super::commitInternal);
+				} else {
+					super.commitInternal();
 				}
 				releaseAdjacencyWrite();
 			} catch (RuntimeException | Error failure) {

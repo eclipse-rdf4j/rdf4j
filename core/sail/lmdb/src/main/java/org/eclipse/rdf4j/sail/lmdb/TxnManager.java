@@ -262,43 +262,88 @@ final class TxnManager {
 
 	/** Opens every sibling under one read lock after atomically admitting the complete family. */
 	Txn[] createReadTxnPinnedFamily(int count, LongSupplier dataRevision) throws IOException {
+		try (ReaderReservation reservation = reserveReadTxnPinnedFamily(count)) {
+			return reservation.openPinnedFamily(dataRevision);
+		}
+	}
+
+	/** Reserves admission without acquiring a transaction or a lock needed by reader cleanup. */
+	ReaderReservation reserveReadTxnPinnedFamily(int count) throws IOException {
 		if (count <= 0) {
 			throw new IllegalArgumentException("pinned transaction family size must be positive: " + count);
 		}
 		if (count >= POOL_SIZE) {
 			throw new IOException("Pinned transaction family exceeds the ordinary reader capacity: " + count);
 		}
-		Txn[] transactions = new Txn[count];
-		Semaphore permits = acquireReaderPermits(count, false);
-		int unassigned = count;
-		int opened = 0;
-		long readStamp = 0;
-		boolean readLocked = false;
-		try {
+		return new ReaderReservation(count, acquireReaderPermits(count, false));
+	}
+
+	final class ReaderReservation implements AutoCloseable {
+		private final Semaphore permits;
+		private int remaining;
+
+		private ReaderReservation(int count, Semaphore permits) {
+			this.remaining = count;
+			this.permits = permits;
+		}
+
+		Txn[] openPinnedFamily(LongSupplier dataRevision) throws IOException {
+			int count;
+			synchronized (this) {
+				if (remaining == 0) {
+					throw new IllegalStateException("Reader reservation already consumed or closed");
+				}
+				count = remaining;
+				remaining = 0;
+			}
+			Txn[] transactions = null;
+			int unassigned = count;
+			int opened = 0;
+			long readStamp = 0;
+			boolean readLocked = false;
 			try {
-				readStamp = lockManager.readLock();
-				readLocked = true;
-			} catch (InterruptedException e) {
-				Thread.currentThread().interrupt();
-				throw new IOException(e);
+				transactions = new Txn[count];
+				try {
+					readStamp = lockManager.readLock();
+					readLocked = true;
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new IOException(e);
+				}
+				long revision = dataRevision.getAsLong();
+				for (; opened < count; opened++) {
+					// The factory owns this permit from here, including native-start failure cleanup.
+					unassigned--;
+					Txn transaction = createReadTxnWithPermit(false, permits);
+					transaction.snapshotRevision = revision;
+					transactions[opened] = transaction;
+				}
+				return transactions;
+			} catch (IOException | RuntimeException | Error failure) {
+				for (int i = opened - 1; i >= 0; i--) {
+					try {
+						transactions[i].close();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+				throw failure;
+			} finally {
+				if (readLocked) {
+					lockManager.unlockRead(readStamp);
+				}
+				permits.release(unassigned);
 			}
-			long revision = dataRevision.getAsLong();
-			for (; opened < count; opened++) {
-				// The factory owns this permit from here, including native-start failure cleanup.
-				unassigned--;
-				Txn transaction = createReadTxnWithPermit(false, permits);
-				transaction.snapshotRevision = revision;
-				transactions[opened] = transaction;
-			}
-			return transactions;
-		} catch (IOException | RuntimeException | Error e) {
-			for (int i = opened - 1; i >= 0; i--) {
-				transactions[i].close();
-			}
-			throw e;
-		} finally {
-			if (readLocked) {
-				lockManager.unlockRead(readStamp);
+		}
+
+		@Override
+		public void close() {
+			int unassigned;
+			synchronized (this) {
+				unassigned = remaining;
+				remaining = 0;
 			}
 			permits.release(unassigned);
 		}

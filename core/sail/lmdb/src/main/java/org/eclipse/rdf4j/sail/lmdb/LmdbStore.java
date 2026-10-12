@@ -570,6 +570,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 
 			@Override
+			public void prepareDataset(IsolationLevel level) {
+				if (isIsolationDisabled()) {
+					backingStore.prepareDataset(level);
+				} else {
+					sharedStore.prepareDataset(level);
+				}
+			}
+
+			@Override
 			public SailSource getExplicitSailSource() {
 				return isIsolationDisabled() ? backingStore.getExplicitSailSource(transactionOwner)
 						: sharedStore.getExplicitSailSource();

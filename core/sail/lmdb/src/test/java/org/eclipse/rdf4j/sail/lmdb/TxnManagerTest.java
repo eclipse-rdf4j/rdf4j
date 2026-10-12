@@ -546,6 +546,40 @@ public class TxnManagerTest {
 
 	@ParameterizedTest
 	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
+	void readerReservationOwnsOnlyUnconsumedPermits(TxnManager.Mode mode, @TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {
+			TxnManager manager = fixture.manager;
+			int available = manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0);
+			TxnManager.ReaderReservation unused = manager.reserveReadTxnPinnedFamily(2);
+			assertEquals(available - 2, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision(),
+					"Admission must not capture a database revision");
+			unused.close();
+			unused.close();
+			assertEquals(available, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertThrows(IllegalStateException.class, () -> unused.openPinnedFamily(() -> 41));
+
+			TxnManager.Txn[] transactions;
+			try (TxnManager.ReaderReservation consumed = manager.reserveReadTxnPinnedFamily(2)) {
+				transactions = consumed.openPinnedFamily(() -> 42);
+				assertThrows(IllegalStateException.class, () -> consumed.openPinnedFamily(() -> 43));
+			}
+			try {
+				assertEquals(available - 2, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+						"Closing a consumed reservation must leave the transactions' permits owned");
+				assertEquals(42, manager.minPinnedSnapshotRevision());
+			} finally {
+				for (TxnManager.Txn transaction : transactions) {
+					transaction.close();
+				}
+			}
+			assertEquals(available, manager.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertEquals(Long.MAX_VALUE, manager.minPinnedSnapshotRevision());
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = TxnManager.Mode.class, names = { "RESET", "ABORT" })
 	void failedPinnedFamilyReturnsAllReservedReaderSlots(TxnManager.Mode mode, @TempDir Path dataDir)
 			throws Exception {
 		try (ReaderFixture fixture = new ReaderFixture(dataDir, mode)) {

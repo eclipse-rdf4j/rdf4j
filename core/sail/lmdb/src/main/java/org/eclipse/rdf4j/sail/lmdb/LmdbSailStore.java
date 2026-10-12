@@ -92,11 +92,14 @@ import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
 import org.eclipse.rdf4j.sail.base.Changeset;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetSnapshot;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.base.SailStoreStatementSource;
+import org.eclipse.rdf4j.sail.lmdb.TxnManager.ReaderReservation;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -952,6 +955,7 @@ class LmdbSailStore implements SailStore {
 	 * done.
 	 */
 	private final ReentrantLock sinkStoreAccessLock = new ReentrantLock();
+	private final Object snapshotReaderReservationsKey = new Object();
 	private final Condition storeTransactionFinished = sinkStoreAccessLock.newCondition();
 	/** Writer admission is permanently closed under sinkStoreAccessLock before native close maintenance. */
 	private boolean closing;
@@ -2313,7 +2317,7 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
-		public LmdbSailDataset dataset(IsolationLevel level) throws SailException {
+		public SailDataset dataset(IsolationLevel level) throws SailException {
 			boolean isEstimatorRefresh = sketchBasedJoinEstimator != null
 					&& SketchBasedJoinEstimator.REFRESH_THREAD_NAME.equals(Thread.currentThread().getName());
 			// Refresh reader transactions can remain open across write commits and must not
@@ -2326,9 +2330,184 @@ class LmdbSailStore implements SailStore {
 			boolean pinSnapshot = trackActive && level != null && snapshotPinningEnabled()
 					&& level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ);
 			boolean adjacencyBypass = level != null && level.isCompatibleWith(IsolationLevels.SERIALIZABLE);
+			SailDatasetSnapshot snapshot = SailDatasetSnapshot.current();
+			if (pinSnapshot && snapshot != null) {
+				SailDatasetSnapshot.DatasetPair pair = snapshot.getOrCreate(LmdbSailStore.this,
+						() -> acquireSnapshotPair(adjacencyBypass));
+				return pair.borrow(explicit);
+			}
 			return new LmdbSailDataset(explicit, trackActive, pinSnapshot, adjacencyBypass);
 		}
 
+	}
+
+	@Override
+	public void prepareDataset(IsolationLevel level) {
+		boolean estimatorRefresh = sketchBasedJoinEstimator != null
+				&& SketchBasedJoinEstimator.REFRESH_THREAD_NAME.equals(Thread.currentThread().getName());
+		if (!estimatorRefresh && level != null && snapshotPinningEnabled()
+				&& level.isCompatibleWith(IsolationLevels.SNAPSHOT_READ) && SailDatasetSnapshot.current() != null) {
+			snapshotReaders().prepare();
+		}
+	}
+
+	private SnapshotReaders snapshotReaders() {
+		return SailDatasetSnapshot.current().getOrCreate(snapshotReaderReservationsKey, SnapshotReaders::new);
+	}
+
+	/** Context-owned admission, reusable after an acquisition failure in a retained transaction. */
+	private final class SnapshotReaders implements SailClosable {
+		private SnapshotReaderReservations reserved;
+		private boolean captured;
+
+		private synchronized void prepare() {
+			if (reserved != null || captured) {
+				return;
+			}
+			ReaderReservation triples = null;
+			ReaderReservation dictionary = null;
+			try {
+				triples = tripleStore.getTxnManager().reserveReadTxnPinnedFamily(2);
+				dictionary = valueStore.getTxnManager().reserveReadTxnPinnedFamily(2);
+				reserved = new SnapshotReaderReservations(triples, dictionary);
+			} catch (IOException | RuntimeException | Error failure) {
+				if (dictionary != null) {
+					dictionary.close();
+				}
+				if (triples != null) {
+					triples.close();
+				}
+				if (failure instanceof IOException exception) {
+					throw new SailException(exception);
+				}
+				if (failure instanceof RuntimeException exception) {
+					throw exception;
+				}
+				throw (Error) failure;
+			}
+		}
+
+		private synchronized SnapshotReaderReservations take() {
+			if (captured) {
+				throw new IllegalStateException("Physical snapshot already captured");
+			}
+			prepare();
+			SnapshotReaderReservations acquired = reserved;
+			reserved = null;
+			return acquired;
+		}
+
+		private synchronized void captured() {
+			captured = true;
+		}
+
+		@Override
+		public void close() {
+			SnapshotReaderReservations unused;
+			synchronized (this) {
+				unused = reserved;
+				reserved = null;
+			}
+			if (unused != null) {
+				unused.close();
+			}
+		}
+	}
+
+	private record SnapshotReaderReservations(ReaderReservation triples, ReaderReservation dictionary)
+			implements SailClosable {
+		@Override
+		public void close() {
+			try {
+				dictionary.close();
+			} finally {
+				triples.close();
+			}
+		}
+	}
+
+	/** Acquire both physical planes before returning through any source decorator. */
+	private SailDatasetSnapshot.DatasetPair acquireSnapshotPair(boolean adjacencyBypass) {
+		LmdbSailDataset explicit = null;
+		LmdbSailDataset inferred = null;
+		Txn[] triples = null;
+		Txn[] dictionary = null;
+		// Reserve before taking the store lock, even when called without SnapshotSailStore.
+		SnapshotReaders readers = snapshotReaders();
+		try (SnapshotReaderReservations reservations = readers.take()) {
+			sinkStoreAccessLock.lock();
+			try {
+				triples = reservations.triples().openPinnedFamily(tripleStore::getDataRevision);
+				dictionary = reservations.dictionary().openPinnedFamily(tripleStore::getDataRevision);
+				Map<String, String> namespaces = new HashMap<>();
+				for (var iterator = namespaceStore.iterator(); iterator.hasNext();) {
+					Namespace namespace = iterator.next();
+					namespaces.put(namespace.getPrefix(), namespace.getName());
+				}
+				Map<String, String> snapshotNamespaces = Map.copyOf(namespaces);
+				Txn explicitTriples = triples[0];
+				Txn explicitDictionary = dictionary[0];
+				triples[0] = null;
+				dictionary[0] = null;
+				explicit = new LmdbSailDataset(true, true, true, adjacencyBypass,
+						explicitTriples, explicitDictionary, snapshotNamespaces);
+				Txn inferredTriples = triples[1];
+				Txn inferredDictionary = dictionary[1];
+				triples[1] = null;
+				dictionary[1] = null;
+				inferred = new LmdbSailDataset(false, true, true, adjacencyBypass,
+						inferredTriples, inferredDictionary, snapshotNamespaces);
+				SailDatasetSnapshot.DatasetPair pair = new SailDatasetSnapshot.DatasetPair(explicit, inferred);
+				readers.captured();
+				return pair;
+			} catch (IOException | RuntimeException | Error failure) {
+				if (explicit != null) {
+					try {
+						explicit.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+				if (inferred != null) {
+					try {
+						inferred.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+				closeSnapshotTransactions(dictionary, failure);
+				closeSnapshotTransactions(triples, failure);
+				if (failure instanceof IOException exception) {
+					throw new SailException(exception);
+				}
+				if (failure instanceof RuntimeException exception) {
+					throw exception;
+				}
+				throw (Error) failure;
+			} finally {
+				sinkStoreAccessLock.unlock();
+			}
+		}
+	}
+
+	private void closeSnapshotTransactions(Txn[] transactions, Throwable failure) {
+		if (transactions != null) {
+			for (Txn transaction : transactions) {
+				if (transaction != null) {
+					try {
+						transaction.close();
+					} catch (RuntimeException | Error cleanup) {
+						if (failure != cleanup) {
+							failure.addSuppressed(cleanup);
+						}
+					}
+				}
+			}
+		}
 	}
 
 	/** Collects failures from completion phases after the authoritative triple commit. */
@@ -5358,10 +5537,15 @@ class LmdbSailStore implements SailStore {
 
 		public LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean adjacencyBypass)
 				throws SailException {
+			this(explicit, trackActiveTxn, pinSnapshot, adjacencyBypass, null, null, null);
+		}
+
+		private LmdbSailDataset(boolean explicit, boolean trackActiveTxn, boolean pinSnapshot, boolean adjacencyBypass,
+				Txn snapshotTxn, Txn snapshotDictionaryTxn, Map<String, String> namespaces) throws SailException {
 			boolean acquiredAdjacencyEligible = (trackActiveTxn || pinSnapshot) && !adjacencyBypass;
-			Txn acquiredTxn = null;
-			Txn acquiredDictionaryTxn = null;
-			Map<String, String> acquiredNamespaces = null;
+			Txn acquiredTxn = snapshotTxn;
+			Txn acquiredDictionaryTxn = snapshotDictionaryTxn;
+			Map<String, String> acquiredNamespaces = namespaces;
 			LmdbAdjacencyReadView acquiredAdjacencyView = null;
 			LmdbAdjacencyMetrics.Snapshot acquiredAdjacencyOpenSnapshot = null;
 			long acquiredSnapshotRevision;
@@ -5371,16 +5555,18 @@ class LmdbSailStore implements SailStore {
 			sinkStoreAccessLock.lock();
 			try {
 				TxnManager txnManager = tripleStore.getTxnManager();
-				if (pinSnapshot) {
+				if (snapshotTxn != null) {
+					// The acquisition context transferred both transactions and their namespace snapshot to us.
+				} else if (pinSnapshot) {
 					acquiredTxn = txnManager.createReadTxnPinned(tripleStore::getDataRevision);
 					acquiredDictionaryTxn = valueStore.getTxnManager()
 							.createReadTxnPinned(tripleStore::getDataRevision);
-					Map<String, String> namespaces = new HashMap<>();
+					Map<String, String> capturedNamespaces = new HashMap<>();
 					for (var iterator = namespaceStore.iterator(); iterator.hasNext();) {
 						Namespace namespace = iterator.next();
-						namespaces.put(namespace.getPrefix(), namespace.getName());
+						capturedNamespaces.put(namespace.getPrefix(), namespace.getName());
 					}
-					acquiredNamespaces = Map.copyOf(namespaces);
+					acquiredNamespaces = Map.copyOf(capturedNamespaces);
 				} else if (trackActiveTxn) {
 					TxnManager.ReadTxnRegistration registration = txnManager
 							.createReadTxnTrackedAtRevision(tripleStore::getDataRevision);
