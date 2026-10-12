@@ -2378,8 +2378,12 @@ class ValueStore extends AbstractValueFactory {
 					}
 					continue;
 				}
-				// Monotonic marking precedes readiness observation. Late decode publication checks it too.
-				lmdbValue.markExternallyOwned();
+				if (lmdbValue.isExternallyOwned()) {
+					// Already protected: its epoch is retained and its loaded children were walked by the caller
+					// that marked it, or will be by the decode that completes it. Walking again only grows the
+					// shared-value set.
+					continue;
+				}
 				ValueStoreRevision revision = lmdbValue.getInternalIdentity().revision();
 				if (revision instanceof ValueStoreRevision.Lazy lazy) {
 					if (!lazyRevisions.retainLegacy(lazy, cleaner)) {
@@ -2387,6 +2391,9 @@ class ValueStore extends AbstractValueFactory {
 					}
 					sharedLazyValues.add(lmdbValue);
 				}
+				// Marking follows retention, so an observed mark implies a retained epoch, and precedes the
+				// readiness observation below. Late decode publication checks the mark too.
+				lmdbValue.markExternallyOwned();
 				if (lmdbValue.isInitialized()) {
 					lmdbValue.visitValueChildren(child -> {
 						if (child != null) {
@@ -2435,38 +2442,6 @@ class ValueStore extends AbstractValueFactory {
 	 */
 	static boolean canReuseNativeLeaf(Value value) {
 		return value instanceof LmdbIRI || value instanceof LmdbBNode;
-	}
-
-	/**
-	 * The scoped revision under which {@code snapshot} proves statement IDs for values read inside {@code exposure}, or
-	 * {@code null} when the {@link #knownStatementId} conditions do not hold. Statement-index values produced under it
-	 * are prepared and statement-proven up front, so query evaluation binds, re-prepares and looks them up without
-	 * allocating a lazy shell plus a wrapper per row; the proof is never stronger than a later resolution would
-	 * establish. The result stays valid while the snapshot's preparation generation and the exposure are unchanged.
-	 */
-	ValueStoreRevision.Lazy statementProofRevision(ReadSnapshot snapshot, ValueStoreRevision revision,
-			ValueResolutionScope exposure) {
-		ValueStoreRevision scoped = scopedRevision(revision, exposure);
-		return scoped instanceof ValueStoreRevision.Lazy lazy && snapshot.provesStatementIds(lazy) ? lazy : null;
-	}
-
-	/**
-	 * A statement-index value under a revision returned by {@link #statementProofRevision} for a live
-	 * {@code generation}, or {@code null} when the ID needs a lazy shell (quoted triples).
-	 */
-	Value preparedStatementValue(ReadSnapshot snapshot, long id, ValueStoreRevision.Lazy proven,
-			PreparedLmdbValue.Generation generation) {
-		Value.Type type = switch (ValueIds.getIdType(id)) {
-		case ValueIds.T_URI -> Value.Type.IRI;
-		case ValueIds.T_BNODE -> Value.Type.BNode;
-		case ValueIds.T_DOUBLE, ValueIds.T_LITERAL -> Value.Type.Literal;
-		default -> ValueIds.isInlined(id) ? Value.Type.Literal : null;
-		};
-		if (type == null) {
-			return null;
-		}
-		return PreparedLmdbValue.createStatementProven(snapshot.preparationOwner, type,
-				new LmdbValue.InternalIdentity(id, proven), generation);
 	}
 
 	/** Called under a validated paired snapshot; supplied terms remain subject to native identity and export checks. */
@@ -2761,6 +2736,9 @@ class ValueStore extends AbstractValueFactory {
 		byte[] data = getData(id);
 		if (data != null) {
 			data2value(id, data, value, valueRevision);
+			// Within one dictionary epoch an ID's payload is immutable: publish it so the next shell for this ID
+			// copies the decoded fields instead of repeating the native read.
+			cacheValue(id, value, valueRevision);
 			return true;
 		}
 		return false;
@@ -4283,10 +4261,30 @@ class ValueStore extends AbstractValueFactory {
 			@Override
 			public boolean owns(Value value) {
 				ReadSnapshot current = snapshot;
-				return current != null && value instanceof PreparedLmdbValue.Prepared prepared
-						&& prepared.state().owner == current.preparationOwner;
+				if (current == null) {
+					return false;
+				}
+				if (value instanceof PreparedLmdbValue.Prepared prepared) {
+					return prepared.state().owner == current.preparationOwner;
+				}
+				return isNativeOfSnapshot(current, value);
 			}
 		};
+
+		/**
+		 * A lazy shell of this paired snapshot's own dictionary epoch is already a proven statement value: the record
+		 * read that produced it established its ID under the pinned triple reader, exactly the
+		 * {@link ReadSnapshot#provesStatementIds} conditions a later lookup would check again.
+		 */
+		private boolean isNativeOfSnapshot(ReadSnapshot current, Value value) {
+			if (!(value instanceof LmdbValue nativeValue) || value instanceof PreparedLmdbValue.Prepared
+					|| nativeValue.getSemanticVersion() == LmdbValue.UNKNOWN_ID) {
+				return false;
+			}
+			LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
+			return identity.id() != LmdbValue.UNKNOWN_ID && identity.revision()instanceof ValueStoreRevision.Lazy lazy
+					&& current.provesStatementIds(lazy);
+		}
 
 		private ValuePreparer(ReadSnapshot snapshot) {
 			this.snapshot = snapshot;
@@ -4309,6 +4307,11 @@ class ValueStore extends AbstractValueFactory {
 			}
 			if (isPreparedForLiveGeneration(value)) {
 				// Per-row join probes re-prepare the same values; a live statement proof already answers them.
+				return value;
+			}
+			ReadSnapshot proving = snapshot;
+			if (proving != null && isNativeOfSnapshot(proving, value)) {
+				// Statement values read under this paired snapshot are looked up by their proven ID as they are.
 				return value;
 			}
 			try {
@@ -4347,11 +4350,16 @@ class ValueStore extends AbstractValueFactory {
 			if (value == null) {
 				return null;
 			}
-			if (value instanceof PreparedLmdbValue.Prepared prepared) {
-				ReadSnapshot current = snapshot;
-				if (current != null && prepared.state().owner == current.preparationOwner) {
-					// Already owned by this snapshot: no lookup follows, so no admission check is needed.
-					return prepared;
+			ReadSnapshot current = snapshot;
+			if (current != null) {
+				if (value instanceof PreparedLmdbValue.Prepared prepared) {
+					if (prepared.state().owner == current.preparationOwner) {
+						// Already owned by this snapshot: no lookup follows, so no admission check is needed.
+						return prepared;
+					}
+				} else if (isNativeOfSnapshot(current, value)) {
+					// A shell of this snapshot's own epoch keeps its canonical identity and deferred payload.
+					return value;
 				}
 			}
 			try {

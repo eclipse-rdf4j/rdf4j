@@ -28,11 +28,14 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.SailConflictException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /** Numeric caching, advisory admission lifetime and lexical transfer coverage are separate responsibilities. */
 @InternalUseOnly
 public final class StreamingWritePreflight implements SailClosable {
 
+	private static final Logger logger = LoggerFactory.getLogger(StreamingWritePreflight.class);
 	private static final ThreadLocal<Frame> CURRENT = new ThreadLocal<>();
 	private final SailSource root;
 	private final Map<GroupKey, Registration> registrations = new LinkedHashMap<>();
@@ -228,14 +231,17 @@ public final class StreamingWritePreflight implements SailClosable {
 	}
 
 	/**
-	 * A nonblocking admission is opportunistic: a conflict it meets before any application is not a failure of the
-	 * caller's operation but a signal to step aside, exactly like a busy ancestor.
+	 * A nonblocking admission is opportunistic: owner retirement and buffered input that changed under it before any
+	 * application are signals to step aside, exactly like a busy ancestor, and the skipped flush runs at the next
+	 * trigger. Any other conflict stays a failure of the caller's operation.
 	 */
 	private static RuntimeException skipIfNonblocking(boolean nonblocking, Throwable failure) {
 		if (failure instanceof Unavailable unavailable) {
 			return unavailable;
 		}
-		if (nonblocking && failure instanceof SailConflictException) {
+		if (nonblocking && failure instanceof InputGenerationConflictException) {
+			logger.debug("Skipping a nonblocking write preflight whose buffered input changed during admission: {}",
+					failure.getMessage());
 			return new Unavailable();
 		}
 		if (failure instanceof RuntimeException runtime) {
@@ -305,6 +311,15 @@ public final class StreamingWritePreflight implements SailClosable {
 
 	static final class Unavailable extends RuntimeException {
 		private static final long serialVersionUID = 1L;
+	}
+
+	/** Buffered statement input changed between its capture and its publication. */
+	static final class InputGenerationConflictException extends SailConflictException {
+		private static final long serialVersionUID = 1L;
+
+		InputGenerationConflictException(String message) {
+			super(message);
+		}
 	}
 
 	/** Each intended mutation claims one permit at its method entry, before any delegate callback. */
@@ -705,12 +720,14 @@ public final class StreamingWritePreflight implements SailClosable {
 			List<StatementInput.Generation> generation = expected.get(change);
 			if (generation != null) {
 				if (!actual.equals(generation)) {
-					throw new SailConflictException("Uncovered logical changes arrived during write publication");
+					throw new InputGenerationConflictException(
+							"Uncovered logical changes arrived during write publication");
 				}
 			} else {
 				try (StatementInput input = change.statementInput()) {
 					if (input != null && input.hasChanges()) {
-						throw new SailConflictException("Uncovered logical changes arrived during write publication");
+						throw new InputGenerationConflictException(
+								"Uncovered logical changes arrived during write publication");
 					}
 				}
 				expected.put(change, actual);

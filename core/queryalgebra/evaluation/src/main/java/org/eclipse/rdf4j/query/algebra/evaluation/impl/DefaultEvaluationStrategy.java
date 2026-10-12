@@ -16,6 +16,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -1451,6 +1452,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		} else {
 			ExternalValueSourceMemo functionSource = new ExternalValueSourceMemo(tripleSource);
+			if (isBuiltInFunction(function)) {
+				// Built-in functions compute from their arguments and never retain them or call back into the
+				// store, so their arguments need no external lifetime protection and no replay deferral.
+				return bindings -> function.evaluate(functionSource.current(),
+						evaluateAllArguments(args, argSteps, bindings));
+			}
 			return bindings -> {
 				Value[] argValues = evaluateAllArguments(args, argSteps, bindings);
 				QueryExecutionContext.initializeExternalValues(argValues);
@@ -1462,6 +1469,22 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				return result;
 			};
 		}
+	}
+
+	private static final String BUILT_IN_FUNCTION_PACKAGE = org.eclipse.rdf4j.query.algebra.evaluation.function.Function.class
+			.getPackageName();
+	private static final Set<String> BUILT_IN_FUNCTION_PACKAGES = Set.of(BUILT_IN_FUNCTION_PACKAGE,
+			BUILT_IN_FUNCTION_PACKAGE + ".string", BUILT_IN_FUNCTION_PACKAGE + ".numeric",
+			BUILT_IN_FUNCTION_PACKAGE + ".datetime", BUILT_IN_FUNCTION_PACKAGE + ".hash",
+			BUILT_IN_FUNCTION_PACKAGE + ".rdfterm", BUILT_IN_FUNCTION_PACKAGE + ".xsd",
+			BUILT_IN_FUNCTION_PACKAGE + ".triple");
+
+	/**
+	 * The SPARQL built-ins shipped in this module. Third-party and other extension functions may stash their arguments,
+	 * so they keep the full external-value protocol.
+	 */
+	static boolean isBuiltInFunction(org.eclipse.rdf4j.query.algebra.evaluation.function.Function function) {
+		return BUILT_IN_FUNCTION_PACKAGES.contains(function.getClass().getPackageName());
 	}
 
 	/**

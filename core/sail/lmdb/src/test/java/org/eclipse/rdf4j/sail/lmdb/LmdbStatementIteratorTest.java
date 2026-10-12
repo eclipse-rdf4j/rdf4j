@@ -110,7 +110,7 @@ class LmdbStatementIteratorTest {
 	}
 
 	@Test
-	void pairedSnapshotStatementsUnderExposureAreAlreadyPrepared(@TempDir File directory) throws Exception {
+	void pairedSnapshotStatementsUnderExposureAreReusedByThePreparer(@TempDir File directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig();
 		try (ClosingValueStore values = new ClosingValueStore(new File(directory, "values"), config);
 				TripleStore triples = new TripleStore(new File(directory, "triples"), config, values)) {
@@ -129,7 +129,7 @@ class LmdbStatementIteratorTest {
 							statement.getContext() };
 					for (int i = 0; i < produced.length; i++) {
 						assertSame(produced[i], preparer.apply(produced[i]),
-								"Statement values read under a paired snapshot and an exposure must already be prepared");
+								"Statement values read under a paired snapshot and an exposure are proven as they are");
 						assertEquals(quad[i], values.getStatementId(snapshot, produced[i]));
 					}
 					assertEquals(Values.iri("urn:statement:subject"), statement.getSubject());

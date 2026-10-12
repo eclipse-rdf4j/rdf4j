@@ -63,6 +63,8 @@ class LmdbRecordIterator implements RecordIterator {
 	private final ValueStore.ReadSnapshot readSnapshot;
 
 	private long txnRefVersion;
+	// The reader lease at construction: a recycled handle belongs to another owner and must not be touched.
+	private final long txnLease;
 
 	private final long txn;
 
@@ -85,8 +87,6 @@ class LmdbRecordIterator implements RecordIterator {
 	private long[] resumeExclusive;
 
 	private final StampedLongAdderLockManager txnLockManager;
-
-	private final Thread ownerThread = Thread.currentThread();
 
 	private long sourceRowsScannedActual;
 	private long sourceRowsMatchedActual;
@@ -136,6 +136,7 @@ class LmdbRecordIterator implements RecordIterator {
 					readSnapshot.ensureValid();
 				}
 				this.txnRefVersion = txnRef.version();
+				this.txnLease = txnRef.lease();
 				this.txn = txnRef.get();
 				key = txnRef.takeVal();
 				value = txnRef.takeVal();
@@ -231,7 +232,7 @@ class LmdbRecordIterator implements RecordIterator {
 					log.debug("Calling next() on an LmdbRecordIterator that is already closed, returning null");
 					return null;
 				}
-				txnRef.ensureSnapshotValid();
+				txnRef.ensureSnapshotValid(txnLease);
 				if (readSnapshot != null) {
 					readSnapshot.ensureValid();
 				}
@@ -241,7 +242,7 @@ class LmdbRecordIterator implements RecordIterator {
 					// Pinned transactions must never renew onto the newer map generation. The native read lock prevents
 					// a
 					// resize while this operation is in progress; this check rejects a resize that completed earlier.
-					txnRef.ensureSnapshotValid();
+					txnRef.ensureSnapshotValid(txnLease);
 					if (readSnapshot != null) {
 						readSnapshot.ensureValid();
 					}
@@ -350,10 +351,12 @@ class LmdbRecordIterator implements RecordIterator {
 		if (!closed) {
 			long lockStamp = 0L;
 			boolean locked = false;
-			boolean writeLocked = maybeCalledAsync && ownerThread != Thread.currentThread();
 			if (!currentThreadHasReadLock) {
+				// The reader's monitor already serializes this close with any concurrent next(); the read barrier
+				// only keeps a map resize out. Taking the write barrier here would stall every reader and deadlock a
+				// closer that still holds a read stamp.
 				try {
-					lockStamp = writeLocked ? txnLockManager.writeLock() : txnLockManager.readLock();
+					lockStamp = txnLockManager.readLock();
 					locked = true;
 				} catch (InterruptedException e) {
 					Thread.currentThread().interrupt();
@@ -373,11 +376,7 @@ class LmdbRecordIterator implements RecordIterator {
 				}
 			} finally {
 				if (locked) {
-					if (writeLocked) {
-						txnLockManager.unlockWrite(lockStamp);
-					} else {
-						txnLockManager.unlockRead(lockStamp);
-					}
+					txnLockManager.unlockRead(lockStamp);
 				}
 			}
 		}

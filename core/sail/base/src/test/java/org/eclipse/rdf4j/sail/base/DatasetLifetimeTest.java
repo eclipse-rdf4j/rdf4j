@@ -20,8 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.NoSuchElementException;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -33,6 +35,34 @@ import org.eclipse.rdf4j.sail.TripleSourceIterationWrapper;
 import org.junit.jupiter.api.Test;
 
 class DatasetLifetimeTest {
+
+	@Test
+	void concurrentCursorCloseReleasesTheDatasetOnce() throws Exception {
+		for (int round = 0; round < 200; round++) {
+			AtomicInteger disposals = new AtomicInteger();
+			DatasetLifetime lifetime = new DatasetLifetime(abandon -> disposals.incrementAndGet());
+			CloseableIteration<? extends String> cursor = lifetime.open(() -> new TrackingIteration(List.of("a")));
+			lifetime.close(false);
+			CyclicBarrier barrier = new CyclicBarrier(2);
+			List<Throwable> failures = Collections.synchronizedList(new ArrayList<>());
+			Runnable close = () -> {
+				try {
+					barrier.await();
+					cursor.close();
+				} catch (Throwable failure) {
+					failures.add(failure);
+				}
+			};
+			Thread first = new Thread(close, "cursor-close-1");
+			Thread second = new Thread(close, "cursor-close-2");
+			first.start();
+			second.start();
+			first.join();
+			second.join();
+			assertTrue(failures.isEmpty(), () -> "a racing double close must not underflow ownership: " + failures);
+			assertEquals(1, disposals.get(), "the dataset must be disposed exactly once");
+		}
+	}
 
 	@Test
 	void emptyCursorPreservesIdentityAndDoesNotRetainDataset() {

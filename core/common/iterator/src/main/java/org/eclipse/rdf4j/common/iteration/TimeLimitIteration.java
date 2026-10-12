@@ -96,11 +96,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				if (Thread.currentThread().isInterrupted()) {
-					result = false;
-				} else {
-					result = wrappedIter.hasNext();
-				}
+				throwIfThreadInterrupted();
+				result = wrappedIter.hasNext();
 			}
 		} catch (NoSuchElementException e) {
 			failure = e;
@@ -140,10 +137,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				if (Thread.currentThread().isInterrupted()) {
-					close();
-					throw new NoSuchElementException("The iteration has been interrupted.");
-				}
+				throwIfThreadInterrupted();
 				// Let this wrapper observe the source failure before any automatic close can replace it.
 				result = wrappedIter.next();
 			}
@@ -180,10 +174,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		Throwable failure = null;
 		try {
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
-				if (Thread.currentThread().isInterrupted()) {
-					close();
-					throw new IllegalStateException("The iteration has been interrupted.");
-				}
+				throwIfThreadInterrupted();
 				wrappedIter.remove();
 			}
 		} catch (IllegalStateException e) {
@@ -207,6 +198,18 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private void closeWithinDeadline() {
 		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 			close();
+		}
+	}
+
+	/**
+	 * A caller whose thread is already interrupted neither enters the source nor gets a silently shortened result: the
+	 * iteration closes and the interruption is reported like a time limit.
+	 */
+	private void throwIfThreadInterrupted() {
+		if (Thread.currentThread().isInterrupted()) {
+			close();
+			throwInterruptedException();
+			throw new IllegalStateException("throwInterruptedException() must throw");
 		}
 	}
 

@@ -8737,14 +8737,9 @@ class LmdbSailStore implements SailStore {
 
 				@Override
 				public boolean hasNext() {
+					// Replay checks only buy promptness; once per row, in hasNext(), is enough.
 					checkpoint.checkpoint();
 					return super.hasNext();
-				}
-
-				@Override
-				public T next() {
-					checkpoint.checkpoint();
-					return super.next();
 				}
 			};
 		}
@@ -8763,14 +8758,9 @@ class LmdbSailStore implements SailStore {
 
 			@Override
 			public boolean hasNext() {
+				// Replay checks only buy promptness; once per row, in hasNext(), is enough.
 				checkpoint.checkpoint();
 				return super.hasNext();
-			}
-
-			@Override
-			public T next() {
-				checkpoint.checkpoint();
-				return super.next();
 			}
 
 			@Override

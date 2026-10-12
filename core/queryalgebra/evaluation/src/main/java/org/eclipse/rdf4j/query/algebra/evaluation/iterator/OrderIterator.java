@@ -143,9 +143,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
 			while (true) {
-				QueryExecutionContext.checkpointReplaySafepoint();
+				// The source cursors check cooperative replay in their own hasNext().
 				boolean hasNext = iter.hasNext();
-				QueryExecutionContext.checkpointReplaySafepoint();
 				if (!hasNext) {
 					break;
 				}
@@ -155,7 +154,6 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
 					try {
 						sort(list).forEach(queue::add);
-						QueryExecutionContext.checkpointReplaySafepoint();
 						serialized.add(queue);
 					} catch (RuntimeException | Error failure) {
 						try {
@@ -178,7 +176,6 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
 					List<BindingSet> sorted = new ArrayList<>(limit2);
 					sort(list).forEach(sorted::add);
-					QueryExecutionContext.checkpointReplaySafepoint();
 					decrement(list.size() - sorted.size());
 					list = sorted;
 					if (sorted.size() >= limit) {

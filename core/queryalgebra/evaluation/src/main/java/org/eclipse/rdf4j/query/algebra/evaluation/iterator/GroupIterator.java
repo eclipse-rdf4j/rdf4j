@@ -304,14 +304,12 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 			Map<BindingSetKey, Entry> entries = cf.createGroupByMap();
 			// Make an optimized hash function valid during this query evaluation step.
 			ToIntFunction<BindingSet> hashMaker = cf.hashOfBindingSetFuntion(getValues);
-			QueryExecutionContext.ReplayCheckpoint checkpoint = QueryExecutionContext.replayCheckpoint();
+			// The source cursors check cooperative replay in their own hasNext(); no extra per-row checkpoint here.
 			while (!isClosed()) {
-				checkpoint.checkpoint();
 				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 				if (!iter.hasNext()) {
 					break;
 				}
-				checkpoint.checkpoint();
 				BindingSet sol = iter.next();
 				inputRows++;
 				if ((inputRows & (BUILD_CHECKPOINT_INTERVAL - 1)) == 0) {

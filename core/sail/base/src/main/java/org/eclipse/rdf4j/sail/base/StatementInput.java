@@ -16,7 +16,6 @@ import java.util.List;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.sail.SailConflictException;
 
 /** Repeatable, owned traversal of additions and removals from exact logical generations. */
 @InternalUseOnly
@@ -37,7 +36,8 @@ public interface StatementInput extends SailClosable {
 
 	default void validate() {
 		if (!isCurrent()) {
-			throw new SailConflictException("Buffered statement generations changed during write preflight");
+			throw new StreamingWritePreflight.InputGenerationConflictException(
+					"Buffered statement generations changed during write preflight");
 		}
 	}
 

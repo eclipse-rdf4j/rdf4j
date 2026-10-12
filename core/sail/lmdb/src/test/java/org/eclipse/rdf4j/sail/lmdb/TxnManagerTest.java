@@ -870,6 +870,25 @@ public class TxnManagerTest {
 		}
 	}
 
+	@Test
+	void recycledReaderHandleRejectsTheLeaseOfItsPreviousOwner(@TempDir Path dataDir) throws Exception {
+		try (ReaderFixture fixture = new ReaderFixture(dataDir, TxnManager.Mode.RESET)) {
+			TxnManager.Txn first = fixture.manager.createReadTxn();
+			long lease = first.lease();
+			first.ensureSnapshotValid(lease);
+			first.close();
+			TxnManager.Txn second = fixture.manager.createReadTxn();
+			try {
+				assertSame(first, second, "RESET mode recycles the pooled reader handle");
+				assertThrows(SailException.class, () -> second.ensureSnapshotValid(lease),
+						"a record iterator of the previous owner must not touch the recycled reader");
+				second.ensureSnapshotValid(second.lease());
+			} finally {
+				second.close();
+			}
+		}
+	}
+
 	private static final class ReaderFixture implements AutoCloseable {
 		private final long env;
 		private final TxnManager manager;

@@ -35,6 +35,10 @@ public final class QueryExecutionContext {
 	private static volatile boolean ignoreCheckpointStride = false;
 	private static final int CHECKPOINT_STRIDE = 1024;
 	private static final int CHECKPOINT_MASK = CHECKPOINT_STRIDE - 1;
+	// Cooperative replay checks only buy promptness: an unexposed attempt is validated again at its exposure
+	// boundary, so per-row callers run the installed checkpoints once per stride of rows.
+	private static final int REPLAY_CHECKPOINT_STRIDE = 256;
+	private static final int REPLAY_CHECKPOINT_MASK = REPLAY_CHECKPOINT_STRIDE - 1;
 	private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
 	// Both replay chains live in one per-thread holder, so a per-row checkpoint costs a single lookup.
 	private static final ThreadLocal<ReplayState> REPLAY = ThreadLocal.withInitial(ReplayState::new);
@@ -122,23 +126,13 @@ public final class QueryExecutionContext {
 
 	/** Defers cooperative replay checks while invoking synchronous extension code. */
 	public static Activation deferReplaySafepoints() {
-		if (replay().safepoint == null) {
+		ReplayState state = replay();
+		if (state.safepoint == null) {
 			// Nothing to defer; keep per-row extension calls allocation free for stores without replay.
 			return NOOP_ACTIVATION;
 		}
-		ReplayDeferral previous = replay().deferral;
-		ReplayDeferral next = new ReplayDeferral(previous);
-		replay().deferral = next;
-		return () -> {
-			next.active.set(false);
-			if (replay().deferral == next) {
-				if (previous == null) {
-					replay().deferral = null;
-				} else {
-					replay().deferral = previous;
-				}
-			}
-		};
+		state.deferralDepth++;
+		return new ReplayDeferral(state);
 	}
 
 	/**
@@ -202,7 +196,7 @@ public final class QueryExecutionContext {
 	/** Captures the current replay checkpoint scopes for work dispatched to pre-existing worker threads. */
 	public static ReplayContext captureReplayContext() {
 		ReplaySafepoint safepoint = copyActiveReplaySafepoints(replay().safepoint);
-		ReplayDeferral deferral = copyActiveReplayDeferrals(replay().deferral);
+		boolean deferral = replay().deferralDepth > 0;
 		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
 		Consumer<Value> initializer = EXTERNAL_VALUE_INITIALIZER.get();
 		List<WorkerScope> workerScopes = null;
@@ -218,7 +212,7 @@ public final class QueryExecutionContext {
 				}
 			}
 		}
-		return safepoint == null && deferral == null && deadline == null && initializer == null
+		return safepoint == null && !deferral && deadline == null && initializer == null
 				? null
 				: new ReplayContext(safepoint, deferral, deadline, initializer,
 						workerScopes == null ? List.of() : List.copyOf(workerScopes.reversed()));
@@ -250,10 +244,11 @@ public final class QueryExecutionContext {
 	}
 
 	private static void checkpointReplaySafepoint(ReplayState state) {
-		for (ReplayDeferral deferral = state.deferral; deferral != null; deferral = deferral.previous) {
-			if (deferral.active.get()) {
-				return;
-			}
+		if (state.deferralDepth > 0 || state.safepoint == null) {
+			return;
+		}
+		if (!ignoreCheckpointStride && (++state.checkpointCalls & REPLAY_CHECKPOINT_MASK) != 0) {
+			return;
 		}
 		for (ReplaySafepoint safepoint = state.safepoint; safepoint != null; safepoint = safepoint.previous) {
 			if (safepoint.active.get()) {
@@ -332,19 +327,19 @@ public final class QueryExecutionContext {
 		}
 	}
 
-	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, ReplayDeferral deferral,
+	private record InstalledReplayContext(ReplayContext context, ReplaySafepoint safepoint, boolean deferral,
 			Consumer<Value> initializer) {
 	}
 
 	/** A captured replay checkpoint stack that can be installed around one unit of worker-thread work. */
 	public static final class ReplayContext {
 		private final ReplaySafepoint safepoint;
-		private final ReplayDeferral deferral;
+		private final boolean deferral;
 		private final QueryExecutionDeadline deadline;
 		private final Consumer<Value> initializer;
 		private final List<WorkerScope> workerScopes;
 
-		private ReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral, QueryExecutionDeadline deadline,
+		private ReplayContext(ReplaySafepoint safepoint, boolean deferral, QueryExecutionDeadline deadline,
 				Consumer<Value> initializer,
 				List<WorkerScope> workerScopes) {
 			this.safepoint = safepoint;
@@ -381,7 +376,7 @@ public final class QueryExecutionContext {
 		public int getAsInt(IntSupplier action) {
 			Objects.requireNonNull(action, "Action was null");
 			ReplaySafepoint previousSafepoint = replay().safepoint;
-			ReplayDeferral previousDeferral = replay().deferral;
+			int previousDeferral = replay().deferralDepth;
 			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.getAsInt();
 			}
@@ -407,7 +402,7 @@ public final class QueryExecutionContext {
 
 		private <T> T withContext(Supplier<T> action) {
 			ReplaySafepoint previousSafepoint = replay().safepoint;
-			ReplayDeferral previousDeferral = replay().deferral;
+			int previousDeferral = replay().deferralDepth;
 			if (isCurrentContext(previousSafepoint, previousDeferral)) {
 				return action.get();
 			}
@@ -416,7 +411,7 @@ public final class QueryExecutionContext {
 			}
 		}
 
-		private Activation install(ReplaySafepoint previousSafepoint, ReplayDeferral previousDeferral) {
+		private Activation install(ReplaySafepoint previousSafepoint, int previousDeferral) {
 			InstalledReplayContext previousContext = INSTALLED_REPLAY_CONTEXT.get();
 			Consumer<Value> previousInitializer = EXTERNAL_VALUE_INITIALIZER.get();
 			QueryExecutionDeadline.Scope deadlineScope = QueryExecutionDeadline.enterScopedContext(deadline);
@@ -428,7 +423,7 @@ public final class QueryExecutionContext {
 					activations.add(Objects.requireNonNull(scope.activate(), "Worker scope activation was null"));
 				}
 				INSTALLED_REPLAY_CONTEXT
-						.set(new InstalledReplayContext(this, replay().safepoint, replay().deferral,
+						.set(new InstalledReplayContext(this, replay().safepoint, replay().deferralDepth > 0,
 								EXTERNAL_VALUE_INITIALIZER.get()));
 			} catch (RuntimeException | Error failure) {
 				try {
@@ -447,10 +442,10 @@ public final class QueryExecutionContext {
 			};
 		}
 
-		private static void restore(ReplaySafepoint safepoint, ReplayDeferral deferral,
+		private static void restore(ReplaySafepoint safepoint, int deferralDepth,
 				InstalledReplayContext previousContext, QueryExecutionDeadline.Scope deadlineScope,
 				Consumer<Value> initializer) {
-			setReplayContext(safepoint, deferral);
+			restoreReplayContext(safepoint, deferralDepth);
 			setExternalValueInitializer(initializer);
 			if (previousContext == null) {
 				INSTALLED_REPLAY_CONTEXT.remove();
@@ -481,10 +476,11 @@ public final class QueryExecutionContext {
 			}
 		}
 
-		private boolean isCurrentContext(ReplaySafepoint currentSafepoint, ReplayDeferral currentDeferral) {
+		private boolean isCurrentContext(ReplaySafepoint currentSafepoint, int currentDeferralDepth) {
 			if (QueryExecutionDeadline.current() != deadline) {
 				return false;
 			}
+			boolean currentDeferral = currentDeferralDepth > 0;
 			Consumer<Value> currentInitializer = EXTERNAL_VALUE_INITIALIZER.get();
 			if (currentSafepoint == safepoint && currentDeferral == deferral && currentInitializer == initializer
 					&& workerScopes.isEmpty()) {
@@ -504,17 +500,16 @@ public final class QueryExecutionContext {
 		}
 	}
 
-	private static void setReplayContext(ReplaySafepoint safepoint, ReplayDeferral deferral) {
-		if (safepoint == null) {
-			replay().safepoint = null;
-		} else {
-			replay().safepoint = safepoint;
-		}
-		if (deferral == null) {
-			replay().deferral = null;
-		} else {
-			replay().deferral = deferral;
-		}
+	private static void setReplayContext(ReplaySafepoint safepoint, boolean deferral) {
+		ReplayState state = replay();
+		state.safepoint = safepoint;
+		state.deferralDepth = deferral ? 1 : 0;
+	}
+
+	private static void restoreReplayContext(ReplaySafepoint safepoint, int deferralDepth) {
+		ReplayState state = replay();
+		state.safepoint = safepoint;
+		state.deferralDepth = deferralDepth;
 	}
 
 	private static ReplaySafepoint copyActiveReplaySafepoints(ReplaySafepoint current) {
@@ -544,33 +539,6 @@ public final class QueryExecutionContext {
 		return result;
 	}
 
-	private static ReplayDeferral copyActiveReplayDeferrals(ReplayDeferral current) {
-		boolean allActive = true;
-		for (ReplayDeferral deferral = current; deferral != null; deferral = deferral.previous) {
-			if (!deferral.active.get()) {
-				allActive = false;
-				break;
-			}
-		}
-		if (allActive) {
-			return current;
-		}
-
-		List<ReplayDeferral> activeScopes = new ArrayList<>();
-		for (ReplayDeferral deferral = current; deferral != null; deferral = deferral.previous) {
-			if (deferral.active.get()) {
-				activeScopes.add(deferral);
-			}
-		}
-
-		ReplayDeferral result = null;
-		for (int i = activeScopes.size() - 1; i >= 0; i--) {
-			ReplayDeferral scope = activeScopes.get(i);
-			result = new ReplayDeferral(scope.active, result);
-		}
-		return result;
-	}
-
 	private static boolean shouldCheckpoint() {
 		if (ignoreCheckpointStride)
 			return true;
@@ -589,7 +557,9 @@ public final class QueryExecutionContext {
 
 	private static final class ReplayState {
 		ReplaySafepoint safepoint;
-		ReplayDeferral deferral;
+		// Nesting depth of synchronous extension calls that defer cooperative replay checks.
+		int deferralDepth;
+		int checkpointCalls;
 	}
 
 	private static ReplayState replay() {
@@ -621,17 +591,23 @@ public final class QueryExecutionContext {
 		}
 	}
 
-	private static final class ReplayDeferral {
-		private final ReplayDeferral previous;
-		private final AtomicBoolean active;
+	/** One synchronous extension call's deferral; closing it once releases one level of the thread's depth. */
+	private static final class ReplayDeferral implements Activation {
+		private final ReplayState state;
+		private boolean closed;
 
-		private ReplayDeferral(ReplayDeferral previous) {
-			this(new AtomicBoolean(true), previous);
+		private ReplayDeferral(ReplayState state) {
+			this.state = state;
 		}
 
-		private ReplayDeferral(AtomicBoolean active, ReplayDeferral previous) {
-			this.active = active;
-			this.previous = previous;
+		@Override
+		public void close() {
+			if (!closed) {
+				closed = true;
+				if (state.deferralDepth > 0) {
+					state.deferralDepth--;
+				}
+			}
 		}
 	}
 }

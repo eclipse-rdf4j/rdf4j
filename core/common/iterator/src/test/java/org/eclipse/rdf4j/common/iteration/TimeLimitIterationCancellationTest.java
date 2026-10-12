@@ -184,13 +184,16 @@ class TimeLimitIterationCancellationTest {
 					ExecutorService executor = Executors.newSingleThreadExecutor()) {
 				Future<Boolean> call = executor.submit(() -> {
 					Thread.currentThread().interrupt();
+					// An interrupted caller gets the interruption reported, never a silently shortened result.
+					IllegalStateException reported;
 					if (operation == Operation.HAS_NEXT) {
-						assertFalse(timed.hasNext());
+						reported = assertThrows(IllegalStateException.class, timed::hasNext);
 					} else if (operation == Operation.NEXT) {
-						assertThrows(NoSuchElementException.class, timed::next);
+						reported = assertThrows(IllegalStateException.class, timed::next);
 					} else {
-						assertThrows(IllegalStateException.class, timed::remove);
+						reported = assertThrows(IllegalStateException.class, timed::remove);
 					}
+					assertEquals("deadline expired", reported.getMessage());
 					return Thread.currentThread().isInterrupted();
 				});
 				assertTrue(call.get(5, TimeUnit.SECONDS));

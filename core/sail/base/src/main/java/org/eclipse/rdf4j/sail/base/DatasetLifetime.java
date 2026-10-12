@@ -36,18 +36,16 @@ final class DatasetLifetime {
 	}
 
 	private void acquire() {
-		if (closed.get()) {
-			throw new IllegalStateException("The dataset owner is closed");
-		}
-		int previous = owners.getAndIncrement();
-		if (previous <= 0) {
-			// Already disposed: undo the admission without triggering another disposal.
-			owners.decrementAndGet();
-			throw new IllegalStateException("The dataset owner is closed");
-		}
-		if (previous == Integer.MAX_VALUE) {
-			owners.decrementAndGet();
-			throw new ArithmeticException("integer overflow");
+		// A CAS loop, not getAndIncrement: an increment from zero would briefly admit a second acquirer on a
+		// dataset that the final release has already disposed.
+		while (true) {
+			int current = owners.get();
+			if (closed.get() || current == 0) {
+				throw new IllegalStateException("The dataset owner is closed");
+			}
+			if (owners.compareAndSet(current, Math.addExact(current, 1))) {
+				return;
+			}
 		}
 	}
 
@@ -126,6 +124,8 @@ final class DatasetLifetime {
 
 	private final class RetainedCursor<T> extends AbstractCloseableIteration<T> implements IndexReportingIterator {
 		private final CloseableIteration<? extends T> delegate;
+		// The base class guards close() with a plain flag; two racing closers could both reach handleClose().
+		private final AtomicBoolean released = new AtomicBoolean();
 
 		private RetainedCursor(CloseableIteration<? extends T> delegate) {
 			this.delegate = delegate;
@@ -206,6 +206,9 @@ final class DatasetLifetime {
 
 		@Override
 		protected void handleClose() {
+			if (!released.compareAndSet(false, true)) {
+				return;
+			}
 			Throwable primary = null;
 			try {
 				delegate.close();

@@ -52,10 +52,6 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	private final long predVersion;
 	private final long objVersion;
 	private final long contextVersion;
-	// Statement-proof context, valid while the snapshot's preparation generation and the exposure are unchanged.
-	private PreparedLmdbValue.Generation provenGeneration;
-	private ValueResolutionScope provenExposure;
-	private ValueStoreRevision.Lazy provenRevision;
 
 	/*--------------*
 	 * Constructors *
@@ -130,25 +126,11 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 				if (readSnapshot.valueStore() != valueStore) {
 					throw new IllegalArgumentException("Read snapshot belongs to a different ValueStore");
 				}
-				ValueResolutionScope exposure = ValueResolutionScope.activeExposure(valueStore);
-				PreparedLmdbValue.Generation generation = readSnapshot.preparationGeneration();
-				ValueStoreRevision revision = readSnapshot.revision();
-				if (generation != provenGeneration || exposure != provenExposure) {
-					// Only snapshot state is read here; the scope's own lock covers its revision wrappers.
-					provenGeneration = generation;
-					provenExposure = exposure;
-					provenRevision = exposure == null ? null
-							: valueStore.statementProofRevision(readSnapshot, revision, exposure);
-				}
-				if (provenRevision != null && generation.live) {
-					// The record read just validated this snapshot, and statement-proven values publish nothing: a
-					// detachment underneath merely leaves them with a stale proof that resolution re-establishes.
-					return provenStatement(quad, revision, exposure, provenRevision, generation);
-				}
-				synchronized (readSnapshot.txnRef()) {
-					readSnapshot.ensureValid();
-					return provenStatement(quad, revision, exposure, null, generation);
-				}
+				// The record read just validated the paired snapshot under its reader monitor, and a lazy shell
+				// publishes nothing native. Statement values are plain shells of the snapshot's revision: shared
+				// through the dictionary cache, and recognised by the snapshot's value preparer as already proven
+				// statement values, so binding and join probes allocate nothing per row.
+				return lazyStatement(quad, readSnapshot.revision(), ValueResolutionScope.activeExposure(valueStore));
 			}
 
 			long subjID = quad[TripleIndex.SUBJ_IDX];
@@ -173,43 +155,27 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implem
 	}
 
 	/**
-	 * Builds the statement for {@code quad}: pattern values of this revision are reused, other positions become
-	 * statement-proven prepared values under {@code proven}, or lazy shells when {@code proven} is {@code null}.
+	 * Builds the statement for {@code quad}: pattern values of this revision are reused, every other position is a lazy
+	 * shell of {@code revision} under {@code exposure}.
 	 */
-	private Statement provenStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure,
-			ValueStoreRevision.Lazy proven, PreparedLmdbValue.Generation generation) throws IOException {
+	private Statement lazyStatement(long[] quad, ValueStoreRevision revision, ValueResolutionScope exposure)
+			throws IOException {
 		long subjectId = quad[TripleIndex.SUBJ_IDX];
-		Resource subject = (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure, proven,
-				generation);
+		Resource subject = (Resource) statementValue(subjectId, subjID, subj, subjVersion, revision, exposure);
 		long predicateId = quad[TripleIndex.PRED_IDX];
-		IRI predicate = (IRI) statementValue(predicateId, predID, pred, predVersion, revision, exposure, proven,
-				generation);
+		IRI predicate = (IRI) statementValue(predicateId, predID, pred, predVersion, revision, exposure);
 		long objectId = quad[TripleIndex.OBJ_IDX];
-		Value object = statementValue(objectId, objID, obj, objVersion, revision, exposure, proven, generation);
+		Value object = statementValue(objectId, objID, obj, objVersion, revision, exposure);
 		long contextId = quad[TripleIndex.CONTEXT_IDX];
 		Resource statementContext = contextId == 0 ? null
-				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure, proven,
-						generation);
+				: (Resource) statementValue(contextId, contextID, context, contextVersion, revision, exposure);
 		return valueStore.createStatement(subject, predicate, object, statementContext);
 	}
 
-	/**
-	 * A pattern value of this revision is reused as-is. Any other position read under a statement-proof revision is
-	 * produced as an already prepared, statement-proven value; otherwise the lazy shell keeps its escape contract.
-	 */
+	/** A pattern value of this revision is reused as-is; any other position becomes a lazy shell. */
 	private Value statementValue(long id, long boundId, Value bound, long boundVersion, ValueStoreRevision revision,
-			ValueResolutionScope exposure, ValueStoreRevision.Lazy proven, PreparedLmdbValue.Generation generation)
-			throws IOException {
-		if (id == boundId) {
-			return valueStore.getLazyValue(id, revision, exposure, bound, boundVersion);
-		}
-		if (proven != null) {
-			Value prepared = valueStore.preparedStatementValue(readSnapshot, id, proven, generation);
-			if (prepared != null) {
-				return prepared;
-			}
-		}
-		return valueStore.getLazyValue(id, revision, exposure, null, boundVersion);
+			ValueResolutionScope exposure) throws IOException {
+		return valueStore.getLazyValue(id, revision, exposure, id == boundId ? bound : null, boundVersion);
 	}
 
 	private Value getLazyValue(long id) throws IOException {

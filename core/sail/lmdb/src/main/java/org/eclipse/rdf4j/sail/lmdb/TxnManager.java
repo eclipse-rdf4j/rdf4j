@@ -1258,6 +1258,9 @@ final class TxnManager {
 		// The native snapshot identity only changes when the reader is (re)activated; cache it so hot compatibility
 		// checks need no JNI call.
 		private volatile long nativeTransactionId;
+		// Advances whenever this pooled handle changes owner, so a record iterator of a previous owner cannot pass
+		// the snapshot check on a recycled reader.
+		private volatile long lease;
 
 		private Txn(long txn, boolean owned, boolean resetOnWrite, Semaphore readerPermit) {
 			this.txn = txn;
@@ -1336,6 +1339,20 @@ final class TxnManager {
 
 		long version() {
 			return version;
+		}
+
+		/** The current owner lease of this pooled handle; captured by record iterators at construction. */
+		long lease() {
+			return lease;
+		}
+
+		/** As {@link #ensureSnapshotValid()}, additionally rejecting a handle recycled since {@code expectedLease}. */
+		void ensureSnapshotValid(long expectedLease) {
+			if (lease != expectedLease) {
+				throw new SailException(
+						"SNAPSHOT transaction was recycled for another owner; retry the read operation");
+			}
+			ensureSnapshotValid();
 		}
 
 		private volatile IdleReaderReclaimer idleReaderReclaimer;
@@ -1502,6 +1519,7 @@ final class TxnManager {
 			this.snapshotInvalidationKind = null;
 			this.idle = false;
 			this.closed = false;
+			lease++;
 			activate();
 		}
 
@@ -1579,6 +1597,7 @@ final class TxnManager {
 			active = false;
 			idle = false;
 			closed = true;
+			lease++;
 			snapshotRevision = -1;
 		}
 
