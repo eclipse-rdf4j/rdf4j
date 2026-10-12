@@ -33,6 +33,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -51,6 +52,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -65,6 +67,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.base.SailSource;
 import org.eclipse.rdf4j.sail.base.SailStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
@@ -79,6 +82,137 @@ class LmdbSynchronousIngestTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:sync-ingest:predicate");
+
+	@Test
+	void singletonApprovalAvoidsBulkPreparation(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 4)) {
+			Set<Statement> input = statements("singleton", 1);
+			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(input, Set.of());
+				sink.flush();
+			}
+			assertWriter(fixture.events, Thread.currentThread(), true);
+			assertEquals(1, fixture.events.scalarWrites.size());
+			assertTrue(fixture.events.alignedWrites.isEmpty(),
+					"one captured statement must bypass bulk preparation and aligned dispatch");
+			try (RepositoryConnection observer = fixture.repository.getConnection()) {
+				assertVisible(observer, input);
+				assertEquals(1, observer.size());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "1,1", "1,2", "8,1", "8,2" })
+	void singletonLookaheadCapturesNestedMutableTermsBeforeAdvancing(int sizeHint, int actualCount,
+			@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 4)) {
+			LmdbLiteral mutable = (LmdbLiteral) fixture.store.getValueFactory().createLiteral("before-lookahead");
+			IRI quotedSubject = VF.createIRI("urn:singleton:quoted");
+			IRI context = VF.createIRI("urn:singleton:context");
+			Value nested = VF.createTripleTerm(quotedSubject, PREDICATE,
+					VF.createTripleTerm(quotedSubject, PREDICATE, mutable));
+			Set<Statement> supplied = new AbstractSet<>() {
+				@Override
+				public boolean isEmpty() {
+					return false;
+				}
+
+				@Override
+				public int size() {
+					return sizeHint;
+				}
+
+				@Override
+				public Iterator<Statement> iterator() {
+					return new Iterator<>() {
+						private int returned;
+
+						@Override
+						public boolean hasNext() {
+							if (returned > 0) {
+								mutable.setLabel("after-lookahead");
+							}
+							return returned < actualCount;
+						}
+
+						@Override
+						public Statement next() {
+							if (returned >= actualCount) {
+								throw new NoSuchElementException();
+							}
+							return VF.createStatement(VF.createIRI("urn:singleton:row:" + returned++), PREDICATE,
+									nested, context);
+						}
+					};
+				}
+			};
+			Set<Statement> expected = new LinkedHashSet<>();
+			for (int row = 0; row < actualCount; row++) {
+				Value captured = VF.createTripleTerm(quotedSubject, PREDICATE,
+						VF.createTripleTerm(quotedSubject, PREDICATE,
+								VF.createLiteral(row == 0 ? "before-lookahead" : "after-lookahead")));
+				expected.add(VF.createStatement(VF.createIRI("urn:singleton:row:" + row), PREDICATE, captured, context));
+			}
+			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(supplied, Set.of());
+				sink.flush();
+			}
+			assertWriter(fixture.events, Thread.currentThread(), sizeHint <= 4);
+			assertEquals(actualCount == 1 ? List.of() : List.of(2),
+					fixture.events.alignedWrites.stream().map(write -> write.count).toList());
+			try (RepositoryConnection observer = fixture.repository.getConnection()) {
+				assertVisible(observer, expected);
+				assertEquals(actualCount, observer.size());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void singletonPromotionDuplicatesAndReadditionPreserveEstimator(boolean namedContext, boolean nested,
+			@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setForceSync(false).setSketchEstimatorEnabled(true).setBulkOperationSize(4);
+		try (Fixture fixture = new Fixture(directory, config)) {
+			write(fixture, statements("estimator-warmup", 2));
+			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
+			assertEquals(2L, estimator.rebuild());
+			fixture.events.clearWrites();
+			IRI predicate = VF.createIRI("urn:singleton:predicate");
+			Resource context = namedContext ? VF.createIRI("urn:singleton:context") : null;
+			Value object = VF.createLiteral("singleton dictionary value");
+			if (nested) {
+				object = VF.createTripleTerm(PREDICATE, predicate, VF.createTripleTerm(PREDICATE, predicate, object));
+			}
+			Statement statement = VF.createStatement(VF.createIRI("urn:singleton:subject"), predicate, object, context);
+			Set<Statement> input = Set.of(statement);
+			try (SailSink sink = fixture.store.getBackingStore().getInferredSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(input, Set.of());
+				sink.approveAll(input, Set.of());
+				sink.flush();
+			}
+			assertEquals(0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+			try (RepositoryConnection observer = fixture.repository.getConnection()) {
+				assertTrue(observer.hasStatement(statement, true));
+				assertFalse(observer.hasStatement(statement, false));
+			}
+			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(input, Set.of());
+				sink.approveAll(input, Set.of());
+				sink.deprecate(statement);
+				sink.approveAll(input, Set.of());
+				sink.flush();
+			}
+			assertTrue(fixture.events.alignedWrites.isEmpty());
+			assertEquals(5, fixture.events.scalarWrites.size());
+			assertEquals(1d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, predicate.stringValue()));
+			try (RepositoryConnection observer = fixture.repository.getConnection()) {
+				assertVisible(observer, input);
+				assertEquals(3, observer.size());
+			}
+		}
+	}
 
 	@Test
 	void singleBulkOperationUsesProducerWriter(@TempDir Path directory) throws Exception {
@@ -188,6 +322,8 @@ class LmdbSynchronousIngestTest {
 						Statement statement = abandoned.iterator().next();
 						sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 								statement.getContext());
+					} else if (route == MutationRoute.SINGLETON) {
+						sink.approveAll(Set.of(abandoned.iterator().next()), Set.of());
 					} else {
 						sink.approveAll(abandoned, Set.of());
 					}
@@ -313,7 +449,8 @@ class LmdbSynchronousIngestTest {
 
 	@ParameterizedTest
 	@CsvSource({ "4,1,5,true", "4,2,4,true", "4,2,3,true", "4,5,2,true", "4,8,5,true", "4,5,8,true",
-			"4,1,0,true", "1,1,3,true", "256,2,257,true", "4,1,5,false", "4,5,2,false", "4,5,8,false" })
+			"4,1,0,true", "1,1,3,true", "256,2,257,true", "4,1,5,false", "4,5,2,false", "4,5,8,false",
+			"4,1,1,true", "4,8,1,true", "4,1,1,false", "4,8,1,false" })
 	void changingSetSizeHintPreservesLogicalBatchesAndAllContents(int bulkSize, int initialCount, int actualCount,
 			boolean explicit, @TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, bulkSize);
@@ -375,7 +512,7 @@ class LmdbSynchronousIngestTest {
 	}
 
 	@ParameterizedTest
-	@CsvSource({ "2,5", "2,8", "5,2" })
+	@CsvSource({ "2,5", "2,8", "5,2", "1,1", "8,1" })
 	void enabledSketchCallbacksSurviveHintGrowthTailsAndDuplicates(int initialCount, int actualCount,
 			@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
@@ -387,7 +524,7 @@ class LmdbSynchronousIngestTest {
 			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
 			assertNotNull(estimator);
 			try (SailSink seed = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
-				seed.approveAll(sizingHintStatements(1), Set.of());
+				seed.approveAll(statements("sketch-seed", 1), Set.of());
 				seed.flush();
 			}
 			assertEquals(1L, estimator.rebuild());
@@ -437,7 +574,7 @@ class LmdbSynchronousIngestTest {
 						estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, "urn:sizing:predicate:1"));
 				try (RepositoryConnection observer = fixture.repository.getConnection()) {
 					assertVisible(observer, expected);
-					assertEquals(actualCount, observer.size());
+					assertEquals(actualCount + 1, observer.size());
 				}
 			} finally {
 				supplied.contentsChanged.countDown();
@@ -485,7 +622,7 @@ class LmdbSynchronousIngestTest {
 				apply(sink, second, "second", seed, expected);
 				sink.flush();
 			}
-			assertWriter(fixture.events, producer, first == Call.SMALL || first == Call.REMOVE);
+			assertWriter(fixture.events, producer, first == Call.SMALL || first == Call.SINGLETON || first == Call.REMOVE);
 			try (RepositoryConnection observer = fixture.repository.getConnection()) {
 				assertVisible(observer, expected);
 				assertEquals(expected.size(), observer.size());
@@ -1391,6 +1528,7 @@ class LmdbSynchronousIngestTest {
 	}
 
 	private enum Call {
+		SINGLETON,
 		SMALL,
 		LARGE,
 		DIRECT,
@@ -1421,7 +1559,7 @@ class LmdbSynchronousIngestTest {
 	}
 
 	private static List<Integer> expectedBatchCounts(int bulkSize, int actualCount) {
-		if (bulkSize <= 0 || actualCount <= 0) {
+		if (bulkSize <= 0 || actualCount <= 1) {
 			return List.of();
 		}
 		List<Integer> counts = new ArrayList<>();
@@ -1435,7 +1573,7 @@ class LmdbSynchronousIngestTest {
 	}
 
 	private static int expectedScalarWriteCount(int bulkSize, List<Integer> batchCounts, int actualCount) {
-		if (bulkSize <= 0) {
+		if (bulkSize <= 0 || actualCount == 1) {
 			return actualCount;
 		}
 		return (int) batchCounts.stream().filter(count -> count == 1).count();
@@ -1556,6 +1694,7 @@ class LmdbSynchronousIngestTest {
 
 	private enum MutationRoute {
 		BULK,
+		SINGLETON,
 		DISABLED_BULK,
 		DIRECT
 	}

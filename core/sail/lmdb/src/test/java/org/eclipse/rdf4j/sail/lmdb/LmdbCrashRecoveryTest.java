@@ -1768,6 +1768,7 @@ class LmdbCrashRecoveryTest {
 		private volatile boolean currentFrozenDecision;
 		private volatile int expectedExplicitRows;
 		private volatile int expectedInferredRows;
+		private boolean applyingAligned;
 
 		private PausingTripleStore(java.io.File dir, StoreProperties properties, LmdbStoreConfig config,
 				ValueStore valueStore, PausePoint pausePoint, AtomicBoolean pauseArmed)
@@ -1833,20 +1834,50 @@ class LmdbCrashRecoveryTest {
 		}
 
 		@Override
+		public boolean storeTriple(long subj, long pred, long obj, long context, boolean explicit) throws IOException {
+			try {
+				boolean stored = super.storeTriple(subj, pred, obj, context, explicit);
+				if (!applyingAligned) {
+					recordFrozenRows(1, explicit);
+				}
+				return stored;
+			} catch (IOException | RuntimeException | Error failure) {
+				if (!applyingAligned) {
+					recordFrozenCapacityFailure(failure);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
 		public void storeTriplesAligned(long[] subj, long[] pred, long[] obj, long[] context, int count,
 				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
 			try {
-				super.storeTriplesAligned(subj, pred, obj, context, count, explicit, addedIndexConsumer);
-				if (isFrozenProbeArmed() && currentFrozenDecision) {
-					(explicit ? currentExplicitRows : currentInferredRows).addAndGet(count);
+				boolean wasApplyingAligned = applyingAligned;
+				applyingAligned = true;
+				try {
+					super.storeTriplesAligned(subj, pred, obj, context, count, explicit, addedIndexConsumer);
+				} finally {
+					applyingAligned = wasApplyingAligned;
 				}
+				recordFrozenRows(count, explicit);
 			} catch (IOException | RuntimeException | Error failure) {
-				if (isFrozenProbeArmed() && currentFrozenDecision
-						&& failure instanceof FrozenStatementCapacityException) {
-					mainCapacityFailures.incrementAndGet();
-					capacityAwaitingAbort.set(true);
-				}
+				recordFrozenCapacityFailure(failure);
 				throw failure;
+			}
+		}
+
+		private void recordFrozenRows(int count, boolean explicit) {
+			if (isFrozenProbeArmed() && currentFrozenDecision) {
+				(explicit ? currentExplicitRows : currentInferredRows).addAndGet(count);
+			}
+		}
+
+		private void recordFrozenCapacityFailure(Throwable failure) {
+			if (isFrozenProbeArmed() && currentFrozenDecision
+					&& failure instanceof FrozenStatementCapacityException) {
+				mainCapacityFailures.incrementAndGet();
+				capacityAwaitingAbort.set(true);
 			}
 		}
 

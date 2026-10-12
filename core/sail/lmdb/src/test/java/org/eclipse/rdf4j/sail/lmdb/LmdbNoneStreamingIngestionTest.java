@@ -5507,7 +5507,7 @@ class LmdbNoneStreamingIngestionTest {
 		String logicalNamespaceAfterFailure = null;
 		String physicalNamespaceAfterFailure = null;
 		String reopenedNamespace = null;
-		int alignedStatementsAfterFlush = 0;
+		int scalarStatementsAfterFlush = 0;
 
 		try {
 			ObservingTripleStore triples = observed.get();
@@ -5529,7 +5529,7 @@ class LmdbNoneStreamingIngestionTest {
 				try (LmdbSailStore.FlushPublication publication = store.beginPublication(owner, batch)) {
 					batch.flush();
 					batchFlushReturned = true;
-					alignedStatementsAfterFlush = triples.alignedStatementCount.get();
+					scalarStatementsAfterFlush = triples.scalarWriteCount.get();
 					publication.fail();
 					try {
 						publication.commit();
@@ -5567,7 +5567,7 @@ class LmdbNoneStreamingIngestionTest {
 
 		Throwable observedCommitFailure = commitFailure;
 		boolean observedBatchFlushReturned = batchFlushReturned;
-		int observedAlignedStatementsAfterFlush = alignedStatementsAfterFlush;
+		int observedScalarStatementsAfterFlush = scalarStatementsAfterFlush;
 		Set<Statement> observedLogicalAfterFailure = logicalAfterFailure;
 		Set<Statement> observedPhysicalAfterFailure = physicalAfterFailure;
 		Set<Statement> observedAfterFollowup = afterFollowup;
@@ -5578,8 +5578,8 @@ class LmdbNoneStreamingIngestionTest {
 		assertAll("a failed retained publication cannot acknowledge its buffered source branch",
 				() -> assertTrue(observedBatchFlushReturned,
 						"the frozen batch must apply its real native write prefix"),
-				() -> assertTrue(observedAlignedStatementsAfterFlush > 0,
-						"the real aligned TripleStore writer must receive the batch row"),
+				() -> assertEquals(1, observedScalarStatementsAfterFlush,
+						"the real scalar TripleStore writer must receive the singleton batch row"),
 				() -> assertNotNull(observedCommitFailure,
 						"commit must reject a publication that was explicitly marked failed"),
 				() -> assertEquals(Set.of(buffered), observedLogicalAfterFailure,

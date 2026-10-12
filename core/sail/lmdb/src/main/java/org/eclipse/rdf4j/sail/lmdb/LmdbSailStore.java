@@ -25,6 +25,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -7248,8 +7249,21 @@ class LmdbSailStore implements SailStore {
 				startTransaction(remainingHint > bulkOperationSize);
 
 				BulkAddQuadsOperation bulk = null;
+				boolean first = true;
 
-				for (Statement statement : approved) {
+				for (Iterator<Statement> statements = approved.iterator(); statements.hasNext();) {
+					Statement statement = statements.next();
+					last = statement;
+					// Capture before lookahead: even hasNext() may change the caller's mutable terms.
+					Statement captured = captureMutationStatement(statement);
+					if (first) {
+						first = false;
+						if (!statements.hasNext()) {
+							submitAddQuad(captured.getSubject(), captured.getPredicate(), captured.getObject(), explicit,
+									captured.getContext());
+							return;
+						}
+					}
 					if (bulk == null) {
 						int capacity = remainingHint > 0 ? Math.min(bulkOperationSize, remainingHint)
 								: bulkOperationSize;
@@ -7259,9 +7273,8 @@ class LmdbSailStore implements SailStore {
 						// A weakly consistent set's size is only an allocation hint. Expand before resolving this row.
 						bulk = bulk.withConfiguredCapacity();
 					}
-					last = statement;
 					// Capture before requesting the next caller row; resolution can now be deferred to this batch.
-					bulk.statements[bulk.size] = captureMutationStatement(statement);
+					bulk.statements[bulk.size] = captured;
 					bulk.add(0, 0, 0, 0);
 
 					if (remainingHint > 0) {
@@ -8020,19 +8033,7 @@ class LmdbSailStore implements SailStore {
 				}
 				startTransaction(true);
 
-				AddQuadOperation q = new AddQuadOperation();
-				q.s = valueStore.storeValue(subj);
-				q.p = valueStore.storeValue(pred);
-				q.o = valueStore.storeValue(obj);
-				q.c = context == null ? 0 : valueStore.storeValue(context);
-				q.context = context;
-				q.explicit = explicit;
-				q.subj = subj;
-				q.pred = pred;
-				q.obj = obj;
-				q.estimatorCallback = this::queueEstimatorAdd;
-
-				submitOperation(q);
+				submitAddQuad(subj, pred, obj, explicit, context);
 			} catch (IOException e) {
 				rollbackAfterMutationFailure(e);
 				throw new SailException(e);
@@ -8043,6 +8044,22 @@ class LmdbSailStore implements SailStore {
 			} finally {
 				sinkStoreAccessLock.unlock();
 			}
+		}
+
+		private void submitAddQuad(Resource subj, IRI pred, Value obj, boolean explicit, Resource context)
+				throws IOException {
+			AddQuadOperation q = new AddQuadOperation();
+			q.s = valueStore.storeValue(subj);
+			q.p = valueStore.storeValue(pred);
+			q.o = valueStore.storeValue(obj);
+			q.c = context == null ? 0 : valueStore.storeValue(context);
+			q.context = context;
+			q.explicit = explicit;
+			q.subj = subj;
+			q.pred = pred;
+			q.obj = obj;
+			q.estimatorCallback = this::queueEstimatorAdd;
+			submitOperation(q);
 		}
 
 		private void submitOperation(Operation operation) throws IOException {

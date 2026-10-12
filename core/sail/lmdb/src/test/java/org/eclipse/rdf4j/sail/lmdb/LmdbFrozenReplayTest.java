@@ -4391,6 +4391,7 @@ class LmdbFrozenReplayTest {
 	private static final class CountingTripleStore extends TripleStore {
 		private final RetryProbe probe;
 		private final ValueStore valueStore;
+		private boolean applyingAligned;
 
 		private CountingTripleStore(File directory, LmdbStoreConfig config, RetryProbe probe)
 				throws IOException, SailException {
@@ -4488,9 +4489,15 @@ class LmdbFrozenReplayTest {
 		@Override
 		public boolean storeTriple(long subject, long predicate, long object, long context, boolean explicit)
 				throws IOException {
+			if (!applyingAligned) {
+				beforeNativeApplication(explicit);
+			}
 			boolean stored = super.storeTriple(subject, predicate, object, context, explicit);
 			if (stored) {
 				probe.newNativeTriplesStored.incrementAndGet();
+			}
+			if (!applyingAligned) {
+				afterNativeApplication(1, explicit);
 			}
 			return stored;
 		}
@@ -4544,6 +4551,18 @@ class LmdbFrozenReplayTest {
 		@Override
 		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
 				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
+			beforeNativeApplication(explicit);
+			boolean wasApplyingAligned = applyingAligned;
+			applyingAligned = true;
+			try {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			} finally {
+				applyingAligned = wasApplyingAligned;
+			}
+			afterNativeApplication(count, explicit);
+		}
+
+		private void beforeNativeApplication(boolean explicit) throws IOException {
 			if (explicit && probe.failBeforeExplicitAfterInferred.compareAndSet(true, false)) {
 				probe.inferredRowsBeforeExplicitFailure.set(probe.inferredRowsApplied.get());
 				probe.explicitRowsBeforeFailure.set(probe.explicitRowsApplied.get());
@@ -4556,7 +4575,9 @@ class LmdbFrozenReplayTest {
 				}
 				throw new AssertionError("MDB_MAP_FULL must be classified as an LMDB map-capacity failure");
 			}
-			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+		}
+
+		private void afterNativeApplication(int count, boolean explicit) throws IOException {
 			if (explicit) {
 				probe.explicitRowsApplied.addAndGet(count);
 			} else {
