@@ -73,7 +73,6 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 	private final Semaphore exclusiveWriteLock = new Semaphore(1, true);
 	private final Object exclusiveWriteLockOwnerMonitor = new Object();
 	private volatile Object exclusiveWriteLockOwner;
-	private volatile Thread exclusiveWriteLockThread;
 
 	// If false, the inferencer will skip some RDFS rules.
 	boolean useAllRdfsRules = true;
@@ -212,13 +211,12 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 		}
 		synchronized (exclusiveWriteLockOwnerMonitor) {
 			exclusiveWriteLockOwner = owner;
-			exclusiveWriteLockThread = Thread.currentThread();
 		}
 	}
 
 	/**
-	 * Releases the exclusive write lock only when it is held by the supplied owner. A nested connection that entered
-	 * through per-thread reentrancy never acquired the permit, so it must not release the owner's lock either.
+	 * Releases the exclusive write lock only when it is held by the supplied owner. Any other connection never acquired
+	 * the permit, so it must not release the owner's lock either.
 	 *
 	 * @param owner the connection releasing the lock
 	 */
@@ -228,14 +226,13 @@ public class SchemaCachingRDFSInferencer extends NotifyingSailWrapper {
 				return;
 			}
 			exclusiveWriteLockOwner = null;
-			exclusiveWriteLockThread = null;
 			exclusiveWriteLock.release();
 		}
 	}
 
-	// The thread check preserves the previous per-thread reentrancy for nested connections on one thread.
+	// Ownership is per connection: the owner may continue on another thread, so the calling thread proves nothing.
 	private boolean holdsExclusiveWriteLock(Object owner) {
-		return exclusiveWriteLockOwner == owner || exclusiveWriteLockThread == Thread.currentThread();
+		return exclusiveWriteLockOwner == owner;
 	}
 
 	@Override

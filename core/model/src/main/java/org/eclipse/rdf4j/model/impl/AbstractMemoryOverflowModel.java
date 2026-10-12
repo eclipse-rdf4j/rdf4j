@@ -512,18 +512,31 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 	@Override
 	public void close() {
 		Model diskModel;
-		synchronized (this) {
-			lock.lock();
-			try {
-				if (closed) {
-					return;
+		// A pending interrupt must not prevent close; a new interrupt while waiting for a long writer cancels it.
+		boolean interrupted = Thread.interrupted();
+		try {
+			synchronized (this) {
+				try {
+					lock.lockInterruptibly();
+				} catch (InterruptedException e) {
+					interrupted = true;
+					throw new RuntimeException(e);
 				}
-				closed = true;
-				diskModel = disk;
-				memory = null;
-				disk = null;
-			} finally {
-				lock.unlock();
+				try {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					diskModel = disk;
+					memory = null;
+					disk = null;
+				} finally {
+					lock.unlock();
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
 			}
 		}
 

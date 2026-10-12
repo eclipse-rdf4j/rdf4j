@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Sorts the input and optionally applies limit and distinct.
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  */
 public class OrderIterator extends DelayedIteration<BindingSet> {
 
+	private static final Logger logger = LoggerFactory.getLogger(OrderIterator.class);
 	private static final int INPUT_CHECKPOINT_INTERVAL = 128;
 	private static final String OPERATOR_NAME = "ORDER_BY";
 
@@ -72,11 +75,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		try {
 			Files.deleteIfExists(file.toPath());
 		} catch (IOException deleteFailure) {
-			if (failure == null) {
-				failure = deleteFailure;
-			} else if (failure != deleteFailure) {
-				failure.addSuppressed(deleteFailure);
-			}
+			// A spill file that cannot be removed right now is a leaked temp file, not a failed close.
+			logger.debug("Could not delete ORDER BY spill file {}", file, deleteFailure);
 		}
 		if (failure != null) {
 			throw failure;

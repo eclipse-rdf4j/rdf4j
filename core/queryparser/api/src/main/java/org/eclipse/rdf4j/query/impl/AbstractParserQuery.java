@@ -28,8 +28,13 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 public abstract class AbstractParserQuery extends AbstractQuery {
 
 	private final ParsedQuery parsedQuery;
-	// Scope only modern hook dispatch; direct legacy callers retain their independent timeout.
-	private final ThreadLocal<QueryExecutionDeadline> legacyHookDeadline = new ThreadLocal<>();
+	// Scope only modern hook dispatch; direct legacy callers retain their independent timeout. One shared thread-local
+	// keyed by the owning query avoids a ThreadLocal allocation per parsed query.
+	private static final ThreadLocal<LegacyHookScope> LEGACY_HOOK_SCOPE = new ThreadLocal<>();
+
+	private record LegacyHookScope(AbstractParserQuery owner, QueryExecutionDeadline deadline) {
+	}
+
 	private static final ClassValue<Boolean> OVERRIDES_LEGACY_HOOK = new ClassValue<>() {
 		@Override
 		protected Boolean computeValue(Class<?> type) {
@@ -59,7 +64,8 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 	protected CloseableIteration<? extends BindingSet> enforceMaxQueryTime(
 			CloseableIteration<? extends BindingSet> bindingsIter) {
 		if (getMaxExecutionTime() > 0) {
-			QueryExecutionDeadline deadline = legacyHookDeadline.get();
+			LegacyHookScope scope = LEGACY_HOOK_SCOPE.get();
+			QueryExecutionDeadline deadline = scope != null && scope.owner() == this ? scope.deadline() : null;
 			bindingsIter = deadline == null
 					? new QueryInterruptIteration<>(bindingsIter, 1000L * getMaxExecutionTime())
 					: new QueryInterruptIteration<>(bindingsIter, deadline, false);
@@ -97,19 +103,15 @@ public abstract class AbstractParserQuery extends AbstractQuery {
 			// The default hook would only add a second wrapper for the deadline that the public result already owns.
 			return bindingsIter;
 		}
-		QueryExecutionDeadline previous = legacyHookDeadline.get();
-		if (deadline == null) {
-			legacyHookDeadline.remove();
-		} else {
-			legacyHookDeadline.set(deadline);
-		}
+		LegacyHookScope previous = LEGACY_HOOK_SCOPE.get();
+		LEGACY_HOOK_SCOPE.set(new LegacyHookScope(this, deadline));
 		try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 			return enforceMaxQueryTime(bindingsIter);
 		} finally {
 			if (previous == null) {
-				legacyHookDeadline.remove();
+				LEGACY_HOOK_SCOPE.remove();
 			} else {
-				legacyHookDeadline.set(previous);
+				LEGACY_HOOK_SCOPE.set(previous);
 			}
 		}
 	}

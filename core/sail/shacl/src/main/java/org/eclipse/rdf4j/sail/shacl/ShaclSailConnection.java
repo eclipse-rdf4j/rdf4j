@@ -1487,8 +1487,9 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 						System.currentTimeMillis() - before);
 			}
 
-			// if the thread has been interrupted we should try to return quickly
-			if (!Thread.currentThread().isInterrupted()) {
+			// A failed prepare returns quickly when the thread has been interrupted. A successful validation must still
+			// prepare the inner connections, otherwise commit() would observe an incomplete prepared state.
+			if (prepareFailure == null || !Thread.currentThread().isInterrupted()) {
 				try {
 					shapesRepoConnection.prepare();
 					if (previousStateConnection != null) {
@@ -1505,9 +1506,6 @@ public class ShaclSailConnection extends NotifyingSailConnectionWrapper implemen
 					prepareFailure = failure;
 					throw failure;
 				}
-			} else if (prepareFailure == null) {
-				prepareFailure = new SailException("SHACL transaction preparation was interrupted");
-				throwPrepareFailure();
 			}
 
 		}

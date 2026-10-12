@@ -369,13 +369,19 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		}
 	}
 
-	/** Marks one generation as retired and defers native dataset close until outside {@code semaphore}. */
+	/**
+	 * Marks one generation as retired and defers native dataset close until outside {@code semaphore}. Only an idle
+	 * generation is abandoned: a borrowed one may already have handed results to its observer, so its final release
+	 * must close the dataset normally.
+	 */
 	private void retireSnapshotForGrowth(SnapshotLease lease, List<SnapshotLease> toClose) {
 		lease.retired = true;
-		lease.abandoned = true;
-		if (lease.borrowers == 0 && !lease.closed) {
-			lease.closed = true;
-			toClose.add(lease);
+		if (lease.borrowers == 0) {
+			lease.abandoned = true;
+			if (!lease.closed) {
+				lease.closed = true;
+				toClose.add(lease);
+			}
 		}
 	}
 
