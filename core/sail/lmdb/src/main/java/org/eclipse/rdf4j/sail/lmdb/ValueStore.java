@@ -2137,6 +2137,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private int getStoredHashUnchecked(long id) {
+		if (!valueHashCacheEnabled) {
+			return 0;
+		}
 		Integer pendingHash;
 		synchronized (pendingHashUpdates) {
 			pendingHash = pendingHashUpdates.get(id);
@@ -2174,6 +2177,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void storeHashUnchecked(long id, int hash) {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
@@ -2192,6 +2198,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	void clearStoredHash(long id) {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		if (id == LmdbValue.UNKNOWN_ID) {
 			return;
 		}
@@ -4221,7 +4230,11 @@ class ValueStore extends AbstractValueFactory {
 				if (captured[0] != null) {
 					try {
 						captured[0].close();
-					} catch (RuntimeException | Error cleanupFailure) {
+					} catch (Error cleanupFailure) {
+						if (cleanupFailure != e) {
+							e.addSuppressed(cleanupFailure);
+						}
+					} catch (RuntimeException cleanupFailure) {
 						if (cleanupFailure != e) {
 							e.addSuppressed(cleanupFailure);
 						}
@@ -6003,14 +6016,14 @@ class ValueStore extends AbstractValueFactory {
 	void storeValues(Value[] values, long[] ids, int count) throws IOException {
 		checkReplayFailure();
 		TxnReplayPolicy.Decision decision = replayDecision;
-		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread() || decision == null || !decision.checkpoint) {
-			// Atomic allocation may checkpoint and replace/replay dictionary IDs while resolving a dependency.
-			// Keep its per-value encoding/allocation sequence: deferred encodings must not cross that boundary.
-			for (int i = 0; i < count; i++) {
-				ids[i] = storeValue(values[i]);
-			}
-			return;
-		}
+//		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread() || decision == null || !decision.checkpoint) {
+//			// Atomic allocation may checkpoint and replace/replay dictionary IDs while resolving a dependency.
+//			// Keep its per-value encoding/allocation sequence: deferred encodings must not cross that boundary.
+//			for (int i = 0; i < count; i++) {
+//				ids[i] = storeValue(values[i]);
+//			}
+//			return;
+//		}
 		byte[][] data = new byte[count][];
 		int[] indexes = new int[count];
 		int unresolved = 0;
@@ -6374,6 +6387,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void flushPendingHashUpdates() {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		Map<Long, Integer> updates;
 		synchronized (pendingHashUpdates) {
 			if (pendingHashUpdates.isEmpty()) {
@@ -6389,6 +6405,9 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void clearPendingHashUpdates() {
+		if (!valueHashCacheEnabled) {
+			return;
+		}
 		synchronized (pendingHashUpdates) {
 			pendingHashUpdates.clear();
 		}

@@ -47,6 +47,7 @@ import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 import java.util.function.IntConsumer;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -79,7 +80,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
+import org.slf4j.LoggerFactory;
+
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.classic.spi.ThrowableProxy;
+import ch.qos.logback.core.read.ListAppender;
 
 class LmdbFrozenReplayTest {
 
@@ -1178,10 +1188,13 @@ class LmdbFrozenReplayTest {
 				writer.begin(IsolationLevels.SNAPSHOT_READ);
 				addStatements(writer, statements);
 				writer.setNamespace("m3", "urn:m3:");
-				try {
-					writer.commit();
-				} catch (RepositoryException failure) {
-					commitFailure = failure;
+				try (FailureLogCapture logging = new FailureLogCapture()) {
+					try {
+						writer.commit();
+					} catch (RepositoryException failure) {
+						commitFailure = failure;
+					}
+					logging.assertTerminalFailure(commitFailure);
 				}
 
 				nativeCommitGenerationAfter = tripleStore.getNativeCommitGeneration();
@@ -1836,10 +1849,14 @@ class LmdbFrozenReplayTest {
 						writer.begin(IsolationLevels.SNAPSHOT_READ);
 						addStatements(writer, statements);
 						writer.setNamespace("m3", "urn:m3:");
-						try {
-							writer.commit();
-						} catch (RuntimeException failure) {
-							commitFailure = failure;
+						try (FailureLogCapture logging = new FailureLogCapture()) {
+							try {
+								writer.commit();
+							} catch (RuntimeException failure) {
+								commitFailure = failure;
+							}
+							assertEquals(List.of(), logging.errors(),
+									"Consumed capacity failures recover without ERROR logs");
 						}
 					}
 				}
@@ -1965,10 +1982,13 @@ class LmdbFrozenReplayTest {
 					writer.begin(IsolationLevels.SNAPSHOT_READ);
 					addStatements(writer, rejectedStatements);
 					writer.setNamespace(rejectedNamespace, "urn:m3:retired-marker:");
-					try {
-						writer.commit();
-					} catch (RuntimeException failure) {
-						commitFailure = failure;
+					try (FailureLogCapture logging = new FailureLogCapture()) {
+						try {
+							writer.commit();
+						} catch (RuntimeException failure) {
+							commitFailure = failure;
+						}
+						logging.assertTerminalFailure(commitFailure);
 					}
 					try (RepositoryConnection observer = targetRepository.getConnection()) {
 						visibleAfterFailure = readAllStatementRows(observer, false);
@@ -2127,12 +2147,94 @@ class LmdbFrozenReplayTest {
 
 	@Test
 	void alignedCapacityFailureRestartsSynchronousAttemptFromFrozenInput(@TempDir Path directory) throws Exception {
-		assertAlignedCapacityFailureRestarts(directory, false);
+		try (FailureLogCapture logging = new FailureLogCapture()) {
+			assertAlignedCapacityFailureRestarts(directory, false);
+			assertEquals(List.of(), logging.errors(), "A successfully recovered native attempt must not log an error");
+		}
 	}
 
 	@Test
 	void alignedCapacityFailureRestartsAsynchronousAttemptFromFrozenInput(@TempDir Path directory) throws Exception {
 		assertAlignedCapacityFailureRestarts(directory, true);
+	}
+
+	@ParameterizedTest(name = "{0}, async={1}, bulk={2}, map={3}")
+	@MethodSource("recoveredCapacityLoggingCases")
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void recoveredCapacityDoesNotLogErrors(IsolationLevels isolation, boolean multiThreading, int bulkSize,
+			LmdbSailStore.MapResizeKind kind, @TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(bulkSize);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		// The native worker exits after its first injected failure. More than 1,024 remaining operations must
+		// exhaust its queue and surface that failure during input production, regardless of thread scheduling.
+		int count = multiThreading && kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE
+				? (bulkSize == 0 ? 1_027 : 2_052)
+				: 5;
+		List<Statement> statements = replayStatements(count);
+		Set<Statement> expected = Set.copyOf(statements);
+		AtomicInteger notifications = new AtomicInteger();
+		try (FailureLogCapture logging = new FailureLogCapture()) {
+			try {
+				repository.init();
+				store.getBackingStore().enableMultiThreading = multiThreading;
+				store.probe.reset();
+				long tripleMapBefore = store.probe.tripleStore.get().mapSizeBytes();
+				long valueMapBefore = store.probe.valueStore.get().mapSizeBytes();
+				store.addSailChangedListener(event -> notifications.incrementAndGet());
+				if (kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE) {
+					store.probe.failAfterAlignedPrefix.set(true);
+				} else {
+					store.probe.failAfterValueAllocation.set(true);
+				}
+				try (RepositoryConnection writer = repository.getConnection();
+						RepositoryConnection observer = repository.getConnection()) {
+					writer.begin(isolation);
+					addStatements(writer, statements);
+					writer.setNamespace("m3", "urn:m3:");
+					writer.commit();
+					assertExactStatementRows(expected, readAllStatementRows(observer, false), "immediate retry view");
+					assertEquals("urn:m3:", observer.getNamespace("m3"));
+				}
+				long tripleMapAfter = store.probe.tripleStore.get().mapSizeBytes();
+				long valueMapAfter = store.probe.valueStore.get().mapSizeBytes();
+				assertEquals(2, store.probe.transactionStarts.get(), "One capacity failure needs one complete retry");
+				assertEquals(1, notifications.get(), "Only the logical commit notifies listeners");
+				assertEquals(0, store.probe.journalAllocations.get(), "Frozen retries remain journal-free");
+				if (kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE) {
+					assertEquals(1, store.probe.alignedCapacityFailures.get());
+					assertTrue(tripleMapAfter > tripleMapBefore);
+					assertEquals(valueMapBefore, valueMapAfter);
+				} else {
+					assertEquals(1, store.probe.valueAllocationCapacityFailures.get());
+					assertTrue(valueMapAfter > valueMapBefore);
+					assertEquals(tripleMapBefore, tripleMapAfter);
+				}
+			} finally {
+				repository.shutDown();
+			}
+			SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+			try {
+				reopened.init();
+				try (RepositoryConnection reader = reopened.getConnection()) {
+					assertExactStatementRows(expected, readAllStatementRows(reader, false), "reopened retry view");
+					assertEquals("urn:m3:", reader.getNamespace("m3"));
+				}
+			} finally {
+				reopened.shutDown();
+			}
+			assertEquals(List.of(), logging.errors(), "Recovered capacity is expected publication control flow");
+		}
+	}
+
+	private static Stream<Arguments> recoveredCapacityLoggingCases() {
+		return Stream.of(IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ, IsolationLevels.SNAPSHOT,
+				IsolationLevels.SERIALIZABLE)
+				.flatMap(isolation -> Stream.of(false, true)
+						.flatMap(async -> Stream.of(0, 2)
+								.flatMap(bulk -> Stream.of(LmdbSailStore.MapResizeKind.TRIPLE_STORE,
+										LmdbSailStore.MapResizeKind.VALUE_STORE)
+										.map(kind -> Arguments.of(isolation, async, bulk, kind)))));
 	}
 
 	@Test
@@ -2332,10 +2434,13 @@ class LmdbFrozenReplayTest {
 				addStatements(retryWriter, retryInput);
 				retryWriter.setNamespace("m3-retry", "urn:m3:retry:");
 				store.probe.failAfterAlignedPrefix.set(true);
-				try {
-					retryWriter.commit();
-				} catch (RepositoryException failure) {
-					capacityFailure = failure;
+				try (FailureLogCapture logging = new FailureLogCapture()) {
+					try {
+						retryWriter.commit();
+					} catch (RepositoryException failure) {
+						capacityFailure = failure;
+					}
+					logging.assertTerminalFailure(capacityFailure);
 				}
 
 				tripleMapAfterFailure = tripleStore.mapSizeBytes();
@@ -2821,10 +2926,13 @@ class LmdbFrozenReplayTest {
 				addStatements(writer, failedInput);
 				writer.setNamespace("m3-aborted", "urn:m3:aborted:");
 				store.probe.failAfterAlignedPrefix.set(true);
-				try {
-					writer.commit();
-				} catch (Throwable failure) {
-					commitFailure = failure;
+				try (FailureLogCapture logging = new FailureLogCapture()) {
+					try {
+						writer.commit();
+					} catch (Throwable failure) {
+						commitFailure = failure;
+					}
+					logging.assertTerminalFailure(commitFailure);
 				}
 
 				assertEquals(1, store.probe.alignedCapacityFailures.get(),
@@ -3300,10 +3408,13 @@ class LmdbFrozenReplayTest {
 				writer.begin(IsolationLevels.SNAPSHOT_READ);
 				addStatements(writer, failedInput);
 				writer.setNamespace("m3-oom", "urn:m3:oom:");
-				try {
-					writer.commit();
-				} catch (Throwable failure) {
-					commitFailure = failure;
+				try (FailureLogCapture logging = new FailureLogCapture()) {
+					try {
+						writer.commit();
+					} catch (Throwable failure) {
+						commitFailure = failure;
+					}
+					logging.assertTerminalFailure(commitFailure);
 				}
 
 				assertEquals(1, store.probe.terminalAfterPrefixFailures.get(),
@@ -3421,10 +3532,16 @@ class LmdbFrozenReplayTest {
 				addStatements(writer, failedInput);
 				writer.setNamespace("m3-growth-disabled", "urn:m3:growth-disabled:");
 				store.probe.failAfterAlignedPrefix.set(true);
-				try {
-					writer.commit();
-				} catch (Throwable failure) {
-					commitFailure = failure;
+				try (FailureLogCapture logging = new FailureLogCapture()) {
+					try {
+						writer.commit();
+					} catch (Throwable failure) {
+						commitFailure = failure;
+					}
+					logging.assertTerminalFailure(commitFailure);
+					assertEquals("Encountered an unexpected problem while trying to add a statement."
+							+ " Last statement term kinds: [ subject=IRI, predicate=IRI, object=Literal, context=null ]",
+							logging.errors().getFirst().getFormattedMessage());
 				}
 
 				startsAfterFailure = store.probe.transactionStarts.get();
@@ -4143,6 +4260,38 @@ class LmdbFrozenReplayTest {
 				.setSketchEstimatorEnabled(false);
 	}
 
+	private static final class FailureLogCapture implements AutoCloseable {
+		private final Logger logger = (Logger) LoggerFactory.getLogger(LmdbSailStore.class);
+		private final ListAppender<ILoggingEvent> appender = new ListAppender<>();
+		private final Level previousLevel = logger.getLevel();
+
+		private FailureLogCapture() {
+			logger.setLevel(Level.ERROR);
+			appender.start();
+			logger.addAppender(appender);
+		}
+
+		private List<ILoggingEvent> errors() {
+			return appender.list.stream().filter(event -> event.getLevel() == Level.ERROR).toList();
+		}
+
+		private void assertTerminalFailure(Throwable failure) {
+			assertNotNull(failure, "The fault must terminate its publication");
+			List<ILoggingEvent> events = errors();
+			assertEquals(1, events.size(), "A terminal publication must log its failure exactly once");
+			Throwable logged = ((ThrowableProxy) events.getFirst().getThrowableProxy()).getThrowable();
+			assertTrue(causeChainContainsIdentity(failure, logged),
+					"The log must retain the exact original throwable from the terminal failure");
+		}
+
+		@Override
+		public void close() {
+			logger.detachAppender(appender);
+			appender.stop();
+			logger.setLevel(previousLevel);
+		}
+	}
+
 	private static final class CountingLmdbStore extends LmdbStore {
 		private final RetryProbe probe = new RetryProbe();
 
@@ -4170,6 +4319,16 @@ class LmdbFrozenReplayTest {
 			super(directory, properties, config);
 			this.probe = probe;
 			probe.valueStore.set(this);
+		}
+
+		@Override
+		public long storeValue(Value value) throws IOException {
+			long id = super.storeValue(value);
+			if (probe != null && probe.failAfterValueAllocation.compareAndSet(true, false)) {
+				probe.valueAllocationCapacityFailures.incrementAndGet();
+				throw frozenCapacity(null);
+			}
+			return id;
 		}
 
 		@Override
@@ -4204,6 +4363,8 @@ class LmdbFrozenReplayTest {
 	}
 
 	private static final class RetryProbe {
+		private final AtomicBoolean failAfterValueAllocation = new AtomicBoolean();
+		private final AtomicInteger valueAllocationCapacityFailures = new AtomicInteger();
 		private final AtomicInteger journalAllocations = new AtomicInteger();
 		private final AtomicInteger transactionStarts = new AtomicInteger();
 		private final AtomicInteger ordinaryDecisionStarts = new AtomicInteger();
@@ -4275,6 +4436,8 @@ class LmdbFrozenReplayTest {
 		private final AtomicBoolean failRollbackAfterSuccessfulAbort = new AtomicBoolean();
 
 		private void reset() {
+			failAfterValueAllocation.set(false);
+			valueAllocationCapacityFailures.set(0);
 			journalAllocations.set(0);
 			transactionStarts.set(0);
 			ordinaryDecisionStarts.set(0);

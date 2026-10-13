@@ -418,7 +418,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private void flushAndCommitWithRetry(SailSource.FlushBatch batch) throws SailException {
 		LmdbSailStore backing = lmdbStore.getBackingStore();
-		try (LmdbSailStore.FlushPublication publication = backing.beginPublication(this, batch)) {
+		LmdbSailStore.FlushPublication publication = backing.beginPublication(this, batch);
+		try (publication) {
 			while (true) {
 				try {
 					batch.flush();
@@ -433,6 +434,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					backing.growForStatementReplay(this, temporary);
 				}
 			}
+		} catch (RuntimeException | Error failure) {
+			// Report only the terminal outcome, after rollback and close have attached their cleanup failures.
+			try {
+				publication.reportTerminalFailure(failure);
+			} catch (RuntimeException | Error reportingFailure) {
+				if (reportingFailure != failure) {
+					failure.addSuppressed(reportingFailure);
+				}
+			}
+			throw failure;
 		}
 	}
 

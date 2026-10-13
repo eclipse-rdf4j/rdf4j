@@ -4061,6 +4061,8 @@ class LmdbSailStore implements SailStore {
 	@InternalUseOnly
 	interface FlushPublication extends SailSource.PublicationScope {
 		void commit() throws SailException;
+
+		void reportTerminalFailure(Throwable failure);
 	}
 
 	/** The logical publication remains owned until commit acknowledgement and all final cleanup finish. */
@@ -4118,6 +4120,8 @@ class LmdbSailStore implements SailStore {
 		private boolean closed;
 		private StatementReplayCertificate retry;
 		private MapGrowthAttempt growth;
+		private MutationFailureDiagnostic mutationFailure;
+		private boolean terminalFailureReported;
 
 		private RetainedFlushPublication(PublicationContext context, SailClosable scope, SailSource.FlushBatch batch) {
 			this.context = context;
@@ -4169,6 +4173,22 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public void fail() {
 			context.fail();
+		}
+
+		@Override
+		public void reportTerminalFailure(Throwable failure) {
+			if (!eligible || terminalFailureReported) {
+				return;
+			}
+			terminalFailureReported = true;
+			MutationFailureDiagnostic diagnostic = mutationFailure;
+			mutationFailure = null;
+			if (diagnostic == null) {
+				logger.error("Encountered an unexpected problem while completing a retained statement publication.",
+						failure);
+			} else {
+				logMutationFailure(diagnostic, failure);
+			}
 		}
 
 		@Override
@@ -4327,6 +4347,7 @@ class LmdbSailStore implements SailStore {
 			}
 			checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
 			retained.retry = null;
+			retained.mutationFailure = null;
 		} catch (IOException capacityFailure) {
 			throw new SailException("Unable to grow LMDB maps for the retained statement attempt", capacityFailure);
 		}
@@ -6178,6 +6199,30 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	private record MutationFailureDiagnostic(String message, Statement statement, boolean includeTermKinds) {
+	}
+
+	private void reportMutationFailure(Object owner, String message, Statement statement, boolean includeTermKinds,
+			Throwable failure) {
+		MutationFailureDiagnostic diagnostic = new MutationFailureDiagnostic(message, statement, includeTermKinds);
+		if (frozenReplayPublication(owner)) {
+			// One attempt-local statement is sufficient for diagnostics. Rendering it here could add suppressed
+			// failures and incorrectly prevent the outer coordinator from certifying an otherwise recoverable attempt.
+			publicationContext.get().retainedFlush.mutationFailure = diagnostic;
+		} else {
+			logMutationFailure(diagnostic, failure);
+		}
+	}
+
+	private static void logMutationFailure(MutationFailureDiagnostic diagnostic, Throwable failure) {
+		if (diagnostic.includeTermKinds()) {
+			logger.error(diagnostic.message() + " Last statement term kinds: [ {} ]",
+					statementTermKinds(diagnostic.statement(), failure), failure);
+		} else {
+			logger.error(diagnostic.message(), failure);
+		}
+	}
+
 	/** Fixed-size failure context, including nested terms, without rendering or copying user values. */
 	private static String statementTermKinds(Statement statement, Throwable primary) {
 		if (statement == null) {
@@ -7310,13 +7355,9 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
-				if (multiThreadingActive) {
-					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
-				} else {
-					logger.error(
-							"Encountered an unexpected problem while trying to add a statement. Last statement term kinds: [ {} ]",
-							statementTermKinds(last, e), e);
-				}
+				reportMutationFailure(writerOwner(),
+						"Encountered an unexpected problem while trying to add a statement.",
+						last, !multiThreadingActive, e);
 
 				if (e instanceof Error error) {
 					throw error;
@@ -7428,13 +7469,9 @@ class LmdbSailStore implements SailStore {
 				}
 			} catch (IOException | RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
-				if (multiThreadingActive) {
-					logger.error("Encountered an unexpected problem while trying to add a statement.", e);
-				} else {
-					logger.error(
-							"Encountered an unexpected problem while trying to add a statement. Last statement term kinds: [ {} ]",
-							statementTermKinds(last, e), e);
-				}
+				reportMutationFailure(writerOwner(),
+						"Encountered an unexpected problem while trying to add a statement.",
+						last, !multiThreadingActive, e);
 
 				if (e instanceof Error error) {
 					throw error;
@@ -8056,7 +8093,9 @@ class LmdbSailStore implements SailStore {
 				throw new SailException(e);
 			} catch (RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
-				logger.error("Encountered an unexpected problem while trying to add a statement", e);
+				reportMutationFailure(writerOwner(),
+						"Encountered an unexpected problem while trying to add a statement",
+						null, false, e);
 				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
@@ -8198,7 +8237,9 @@ class LmdbSailStore implements SailStore {
 				throw new SailException(e);
 			} catch (RuntimeException | Error e) {
 				rollbackAfterMutationFailure(e);
-				logger.error("Encountered an unexpected problem while trying to remove statements", e);
+				reportMutationFailure(writerOwner(),
+						"Encountered an unexpected problem while trying to remove statements",
+						null, false, e);
 				throw e;
 			} finally {
 				sinkStoreAccessLock.unlock();
