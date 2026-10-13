@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
@@ -31,6 +32,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -71,6 +73,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	private BiConsumer<MutableBindingSet, Statement> convertStatementConverter;
 	private final QueryEvaluationContext context;
 	private final StatementOrder order;
+	private final Function<Value, Value> valuePreparer;
+	private final PreparedBindingAccess[] preparedBindingAccess;
 
 	private final Predicate<BindingSet> unboundTest;
 
@@ -95,6 +99,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
+		this.valuePreparer = tripleSource.getValuePreparer();
 		Set<IRI> graphs = null;
 		// If the graph part is empty we do not need to check this
 		// in the conversion etc.
@@ -111,8 +116,6 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			emptyGraph = false;
 		}
 
-		contextSup = extractContextsFromDatasets(statementPattern.getContextVar(), emptyGraph, graphs);
-
 		// Normalize the variables.
 		// This helps performance because in ?a ?a ?a with normalization
 		// There is just one unbound test for ?a instead of three.
@@ -126,6 +129,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		predVar = replaceValueWithNewValue(predVar, tripleSource.getValueFactory());
 		objVar = replaceValueWithNewValue(objVar, tripleSource.getValueFactory());
 		conVar = replaceValueWithNewValue(conVar, tripleSource.getValueFactory());
+		if (valuePreparer != null && graphs != null) {
+			Set<IRI> preparedGraphs = new LinkedHashSet<>(graphs.size());
+			for (IRI graph : graphs) {
+				preparedGraphs.add((IRI) valuePreparer.apply(graph));
+			}
+			graphs = preparedGraphs;
+		}
+		contextSup = extractContextsFromDatasets(conVar, emptyGraph, graphs);
 
 		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
 		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
@@ -174,6 +185,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 
 		unboundTest = getUnboundTest(context, normalizedSubjectVar, normalizedPredicateVar, normalizedObjectVar,
 				normalizedContextVar);
+		if (valuePreparer == null) {
+			preparedBindingAccess = null;
+		} else {
+			List<PreparedBindingAccess> accesses = new ArrayList<>(4);
+			for (Var var : new Var[] { subjVar, predVar, objVar, conVar }) {
+				if (var != null && !var.hasValue()) {
+					accesses.add(new PreparedBindingAccess(context.getValue(var.getName()),
+							context.setBinding(var.getName())));
+				}
+			}
+			preparedBindingAccess = accesses.toArray(PreparedBindingAccess[]::new);
+		}
 
 	}
 
@@ -183,7 +206,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		} else if (!var.hasValue()) {
 			return var.clone();
 		} else {
-			Var ret = getVarWithNewValue(var, valueFactory);
+			Var ret = valuePreparer == null ? getVarWithNewValue(var, valueFactory)
+					: Var.of(var.getName(), valuePreparer.apply(var.getValue()), var.isAnonymous(), var.isConstant());
 			ret.setVariableScopeChange(var.isVariableScopeChange());
 			return ret;
 		}
@@ -224,7 +248,36 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()), anonymous, constant);
 			}
 		}
-		return var;
+		if (value instanceof TripleTerm triple) {
+			return Var.of(var.getName(), valueFactory.createTripleTerm(triple.getSubject(), triple.getPredicate(),
+					triple.getObject()), anonymous, constant);
+		}
+		return Var.of(var.getName(), value, anonymous, constant);
+	}
+
+	private record PreparedBindingAccess(Function<BindingSet, Value> getter,
+			BiConsumer<Value, MutableBindingSet> setter) {
+	}
+
+	/** Returns an owned copy only when a statement input requires a store-native replacement. */
+	BindingSet prepareBindings(BindingSet bindings) {
+		if (preparedBindingAccess == null || bindings.isEmpty() || unboundTest.test(bindings)) {
+			return bindings;
+		}
+		MutableBindingSet prepared = null;
+		for (PreparedBindingAccess access : preparedBindingAccess) {
+			Value value = access.getter().apply(bindings);
+			if (value != null) {
+				Value replacement = valuePreparer.apply(value);
+				if (replacement != value) {
+					if (prepared == null) {
+						prepared = context.createBindingSet(bindings);
+					}
+					access.setter().accept(replacement, prepared);
+				}
+			}
+		}
+		return prepared == null ? bindings : prepared;
 	}
 
 	// test if the variable must remain unbound for this solution see
@@ -309,7 +362,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else {
-			CloseableIteration<BindingSet> iteration = getIteration(bindings);
+			CloseableIteration<BindingSet> iteration = getIteration(prepareBindings(bindings));
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
@@ -416,6 +469,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			// https://www.w3.org/TR/sparql11-query/#assignment
 			return 0;
 		}
+		bindings = prepareBindings(bindings);
 
 		final Value contextValue = getContextVar != null ? getContextVar.apply(bindings) : null;
 		Resource[] contexts = contextSup.apply(contextValue);
