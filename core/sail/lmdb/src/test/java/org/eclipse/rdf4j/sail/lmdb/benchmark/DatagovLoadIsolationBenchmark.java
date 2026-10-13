@@ -30,7 +30,6 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbCacheImplementation;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -57,14 +56,14 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
 @State(Scope.Benchmark)
 @Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 3, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
+@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
 @Measurement(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-//	@Param({ "NONE", "READ_COMMITTED" })
+	//	@Param({ "NONE", "READ_COMMITTED" })
 	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
@@ -107,20 +106,20 @@ public class DatagovLoadIsolationBenchmark {
 		new Runner(opt).run();
 	}
 
-	@Benchmark
-	public boolean loadDatagovFileSingleTransaction() throws IOException {
-		return loadOnce(createBenchmarkConfig());
-	}
-
 //	@Benchmark
+//	public boolean loadDatagovFileSingleTransaction() throws IOException {
+//		return loadOnce(createBenchmarkConfig());
+//	}
+
+	//	@Benchmark
 //	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
 //		return loadOnce(createBenchmarkConfigAllIndexes());
 //	}
 //
-//	@Benchmark
-//	public boolean loadDatagovFileInBatches() throws IOException {
-//		return loadDatagovFileInBatchesInternal();
-//	}
+	@Benchmark
+	public boolean loadDatagovFileInBatches() throws IOException {
+		return loadDatagovFileInBatchesInternal();
+	}
 
 	private boolean loadDatagovFileInBatchesInternal() throws IOException {
 		temporaryFolder = Files.newTemporaryFolder();
