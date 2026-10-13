@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -106,9 +107,10 @@ class LmdbGrowthUpgradeTest {
 				try {
 					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
 							"the readonly attempt must register and open its snapshot before growth closes admission");
+					startGrowthWarning(trigger, backingStore);
 					trigger.setNamespace("growth-demand", namespace);
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
-							"the 2 MiB namespace demand must start the writer-drain phase");
+							"the supported namespace preflight signal must start the writer-drain phase");
 
 					allowOwnerUpgrade.countDown();
 					assertTrue(ownerUpgraded.await(5, TimeUnit.SECONDS),
@@ -203,9 +205,10 @@ class LmdbGrowthUpgradeTest {
 				try {
 					assertTrue(ownerReadReady.await(5, TimeUnit.SECONDS),
 							"the readonly attempt must register and open its snapshot before growth closes admission");
+					startGrowthWarning(trigger, backingStore);
 					trigger.setNamespace("growth-demand", namespace);
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_WRITERS,
-							"the 2 MiB namespace demand must start the writer-drain phase");
+							"the supported namespace preflight signal must start the writer-drain phase");
 					trigger.commit();
 					awaitPhase(backingStore, LmdbSailStore.GrowthPhase.DRAIN_READERS,
 							"the reader grace must be observable while an admitted snapshot remains open");
@@ -388,6 +391,15 @@ class LmdbGrowthUpgradeTest {
 		}
 		// Namespaces share the authoritative TripleStore map, whose readers require the reader-grace phase.
 		connection.setNamespace("growth-demand", namespaceGrowthValue());
+	}
+
+	private static void startGrowthWarning(SailConnection connection,
+			LmdbSailStore backingStore) throws Exception {
+		assertFalse(backingStore.growthAdmissionClosed(), "a fresh writer fixture must begin with admission open");
+		// Namespace removal is a supported preflight signal; this prefix is absent from the seeded fixture.
+		connection.removeNamespace("growth-warning");
+		assertTrue(backingStore.growthAdmissionClosed(),
+				"the namespace write intent must close admission before the large demand is buffered");
 	}
 
 	private static String namespaceGrowthValue() {

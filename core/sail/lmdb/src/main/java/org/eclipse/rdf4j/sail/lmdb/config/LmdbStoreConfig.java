@@ -17,6 +17,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -480,6 +481,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * The backend shared by the generic value-ID, namespace and namespace-ID caches. Specialized value and snapshot
 	 * caches keep their own implementations. The default preserves the existing lossy concurrent cache.
 	 */
+	@Experimental
 	public LmdbCacheImplementation getCacheImplementation() {
 		return cacheImplementation;
 	}
@@ -488,6 +490,7 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	 * Selects a cache backend. Call {@link #validate()} to check its capacity constraints after configuring sizes;
 	 * opening a store also validates them. See {@link LmdbCacheImplementation} for zero-capacity semantics and limits.
 	 */
+	@Experimental
 	public LmdbStoreConfig setCacheImplementation(LmdbCacheImplementation cacheImplementation) {
 		this.cacheImplementation = Objects.requireNonNull(cacheImplementation, "cacheImplementation");
 		return this;

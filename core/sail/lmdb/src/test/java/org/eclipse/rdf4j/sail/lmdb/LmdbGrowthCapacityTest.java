@@ -403,11 +403,9 @@ class LmdbGrowthCapacityTest {
 				try (RepositoryConnection writer = repository.getConnection()) {
 					try {
 						writer.begin();
-						writer.add(VF.createIRI("urn:warning-expiry:subject"),
-								VF.createIRI("urn:warning-expiry:predicate"),
-								VF.createLiteral("x".repeat(1024 * 1024)));
+						bufferStatementsUntilGrowthWarning(writer, backingStore, "urn:warning-expiry:subject:");
 						assertTrue(backingStore.growthAdmissionClosed(),
-								"the oversized buffered write must close admission");
+								"the buffered statement estimate must close admission");
 						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
 						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
@@ -457,11 +455,9 @@ class LmdbGrowthCapacityTest {
 				try (RepositoryConnection writer = repository.getConnection()) {
 					try {
 						writer.begin();
-						writer.add(VF.createIRI("urn:warning-restart:subject:1"),
-								VF.createIRI("urn:warning-restart:predicate"),
-								VF.createLiteral("x".repeat(1024 * 1024)));
+						bufferStatementsUntilGrowthWarning(writer, backingStore, "urn:warning-restart:subject:");
 						assertTrue(backingStore.growthAdmissionClosed(),
-								"the first oversized buffered write must start an admission phase");
+								"the buffered statement estimate must start an admission phase");
 						long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
 						CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
@@ -471,9 +467,7 @@ class LmdbGrowthCapacityTest {
 								"the deadline-bound reader must start");
 						awaitCurrentAdmissionWaiter(backingStore, deadlineReader);
 
-						writer.add(VF.createIRI("urn:warning-restart:subject:2"),
-								VF.createIRI("urn:warning-restart:predicate"),
-								VF.createLiteral("y".repeat(1024 * 1024)));
+						addBufferedStatement(writer, "urn:warning-restart:later-subject:", 0L);
 						assertReaderDeadlineExpires(deadlineReader);
 						assertTrue(backingStore.growthAdmissionClosed(),
 								"a later buffered write must keep the same writer phase active");
@@ -513,8 +507,7 @@ class LmdbGrowthCapacityTest {
 		try (RepositoryConnection writer = repository.getConnection()) {
 			try {
 				writer.begin();
-				writer.add(VF.createIRI("urn:warning-no-probe:subject:1"),
-						VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("x".repeat(1024 * 1024)));
+				bufferStatementsUntilGrowthWarning(writer, backingStore, "urn:warning-no-probe:subject:");
 				long growthEpisodes = backingStore.growthMetricsSnapshot().growthEpisodes();
 
 				CountDownLatch deadlineReaderStarted = new CountDownLatch(1);
@@ -527,8 +520,7 @@ class LmdbGrowthCapacityTest {
 				assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
 						"the reader's own deadline must not expire the writer's growth episode");
 
-				writer.add(VF.createIRI("urn:warning-no-probe:subject:2"),
-						VF.createIRI("urn:warning-no-probe:predicate"), VF.createLiteral("y".repeat(1024 * 1024)));
+				addBufferedStatement(writer, "urn:warning-no-probe:later-subject:", 0L);
 				assertEquals(growthEpisodes, backingStore.growthMetricsSnapshot().growthEpisodes(),
 						"a later buffered write must retain the original growth episode after the reader times out");
 				assertTrue(backingStore.growthAdmissionClosed(),
@@ -567,14 +559,13 @@ class LmdbGrowthCapacityTest {
 					RepositoryConnection secondWriter = repository.getConnection()) {
 				firstWriter.begin();
 				secondWriter.begin();
-				firstWriter.add(VF.createIRI("urn:warning-owner:first"), VF.createIRI("urn:warning-owner:predicate"),
-						VF.createLiteral("x".repeat(1024 * 1024)));
+				long warningOperations = bufferStatementsUntilGrowthWarning(firstWriter, backingStore,
+						"urn:warning-owner:first:");
 				assertTrue(backingStore.growthAdmissionClosed(),
 						"the first connection must start its warning before the second writer buffers data");
 
 				long startNanos = System.nanoTime();
-				secondWriter.add(VF.createIRI("urn:warning-owner:second"),
-						VF.createIRI("urn:warning-owner:predicate"), VF.createLiteral("y".repeat(1024 * 1024)));
+				addBufferedStatements(secondWriter, warningOperations, "urn:warning-owner:second:");
 				long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNanos);
 				assertTrue(elapsedMillis < 1_500,
 						"a second connection on the same thread must not be mistaken for the first writer until warning expiry");
@@ -602,9 +593,8 @@ class LmdbGrowthCapacityTest {
 			Future<?> preparation = writerExecutor.submit(() -> {
 				try (RepositoryConnection writer = repository.getConnection()) {
 					writer.begin();
-					writer.add(VF.createIRI("urn:warning-owner:same-thread"),
-							VF.createIRI("urn:warning-owner:predicate"),
-							VF.createLiteral("x".repeat(1024 * 1024)));
+					bufferStatementsUntilGrowthWarning(writer, store.getBackingStore(),
+							"urn:warning-owner:same-thread:");
 					assertTrue(store.getBackingStore().growthAdmissionClosed(),
 							"the explicit transaction must begin a warning while buffering its write");
 					writer.prepare();
@@ -642,9 +632,8 @@ class LmdbGrowthCapacityTest {
 				boolean handedOff = false;
 				try {
 					writer.begin();
-					writer.add(VF.createIRI("urn:warning-owner:thread-handoff"),
-							VF.createIRI("urn:warning-owner:predicate"),
-							VF.createLiteral("x".repeat(1024 * 1024)));
+					bufferStatementsUntilGrowthWarning(writer, store.getBackingStore(),
+							"urn:warning-owner:thread-handoff:");
 					assertTrue(store.getBackingStore().growthAdmissionClosed(),
 							"the explicit transaction must begin a warning while buffering its write");
 					handedOff = true;
@@ -688,6 +677,27 @@ class LmdbGrowthCapacityTest {
 			operation.cancel(true);
 			throw new AssertionError(failureMessage, timeout);
 		}
+	}
+
+	private static long bufferStatementsUntilGrowthWarning(RepositoryConnection writer, LmdbSailStore backingStore,
+			String subjectPrefix) {
+		assertFalse(backingStore.growthAdmissionClosed(), "a fresh writer fixture must begin with admission open");
+		long operations = 0L;
+		while (!backingStore.growthAdmissionClosed()) {
+			addBufferedStatement(writer, subjectPrefix, operations++);
+		}
+		return operations;
+	}
+
+	private static void addBufferedStatements(RepositoryConnection writer, long operations, String subjectPrefix) {
+		for (long index = 0; index < operations; index++) {
+			addBufferedStatement(writer, subjectPrefix, index);
+		}
+	}
+
+	private static void addBufferedStatement(RepositoryConnection writer, String subjectPrefix, long index) {
+		writer.add(VF.createIRI(subjectPrefix + index), VF.createIRI("urn:lmdb:growth-warning:predicate"),
+				VF.createLiteral("bounded buffered write"));
 	}
 
 	private static void awaitCurrentAdmissionWaiter(LmdbSailStore store) throws InterruptedException {

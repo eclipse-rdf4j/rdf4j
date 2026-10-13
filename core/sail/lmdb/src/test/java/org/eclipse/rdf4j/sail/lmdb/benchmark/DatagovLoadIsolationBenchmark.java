@@ -63,8 +63,8 @@ public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	// @Param({ "NONE", "READ_COMMITTED" })
-	@Param({ "READ_COMMITTED" })
+	@Param({ "NONE", "READ_COMMITTED" })
+//	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
 	@Param({ "1024" })
@@ -106,16 +106,16 @@ public class DatagovLoadIsolationBenchmark {
 		new Runner(opt).run();
 	}
 
-//	@Benchmark
-//	public boolean loadDatagovFileSingleTransaction() throws IOException {
-//		return loadOnce(createBenchmarkConfig());
-//	}
+	@Benchmark
+	public boolean loadDatagovFileSingleTransaction() throws IOException {
+		return loadOnce(createBenchmarkConfig());
+	}
 
-	// @Benchmark
-//	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
-//		return loadOnce(createBenchmarkConfigAllIndexes());
-//	}
-//
+	@Benchmark
+	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
+		return loadOnce(createBenchmarkConfigAllIndexes());
+	}
+
 	@Benchmark
 	public boolean loadDatagovFileInBatches() throws IOException {
 		return loadDatagovFileInBatchesInternal();
