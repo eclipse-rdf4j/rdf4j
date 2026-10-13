@@ -55,17 +55,17 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 3, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 10, time = 10, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
 //	@Param({ "NONE", "READ_COMMITTED" })
-	@Param({ "NONE" })
+	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
 	@Param({ "1024" })
@@ -74,11 +74,11 @@ public class DatagovLoadIsolationBenchmark {
 	@Param({ "true" })
 	public boolean automaticEvaluationStrategy;
 
-	@Param({ "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT", "ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
-			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT", "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT",
-			"ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
-			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT" })
-	public LmdbCacheImplementation cacheImplementation;
+//	@Param({ "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT", "ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
+//			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT", "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT",
+//			"ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
+//			"SLOT_CAS", "SLOT_CELL", "SLOT_SNAPSHOT" })
+//	public LmdbCacheImplementation cacheImplementation;
 
 	private Model data;
 	private File temporaryFolder;
@@ -179,7 +179,7 @@ public class DatagovLoadIsolationBenchmark {
 	}
 
 	private LmdbStoreConfig configure(LmdbStoreConfig config) {
-		config.setCacheImplementation(cacheImplementation);
+//		config.setCacheImplementation(cacheImplementation);
 		if (!automaticEvaluationStrategy) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
