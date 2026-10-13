@@ -2170,6 +2170,33 @@ class LmdbSynchronousIngestTest {
 		}
 
 		@Override
+		void storeValues(Value[] values, long[] ids, int count) throws IOException {
+			// The batched dictionary path resolves whole batches; apply the same per-value hooks around the batch.
+			Overlap overlap = events == null ? null : events.overlap;
+			boolean later = false;
+			Value failing = null;
+			for (int i = 0; i < count; i++) {
+				if (overlap != null && overlap.laterValue.equals(values[i])) {
+					later = true;
+				}
+				if (events != null && values[i].equals(events.valueFailureValue)) {
+					failing = values[i];
+				}
+			}
+			if (later) {
+				await(overlap.firstNativeFinished);
+			}
+			super.storeValues(values, ids, count);
+			if (later) {
+				overlap.producer.set(Thread.currentThread());
+				overlap.laterValueStored.countDown();
+			}
+			if (failing != null) {
+				throwFailure(events.valuePutFailure.getAndSet(null));
+			}
+		}
+
+		@Override
 		public void rollback() throws IOException {
 			if (events != null) {
 				events.valueRollbacks.incrementAndGet();

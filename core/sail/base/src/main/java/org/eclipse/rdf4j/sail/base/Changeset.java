@@ -126,7 +126,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	}
 
 	private boolean recordWriteIntent(long approximateBytes, boolean unestimatedOperation) {
-		if (!tracksWriteIntent()) {
+		return recordWriteIntent(tracksWriteIntent(), approximateBytes, unestimatedOperation);
+	}
+
+	private boolean recordWriteIntent(boolean tracked, long approximateBytes, boolean unestimatedOperation) {
+		if (!tracked) {
 			return false;
 		}
 		// Shallow clones share these counters with their models; callers hold the shared model write lock.
@@ -768,28 +772,29 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			beforeWriteIntent();
 
 			assert !closed;
-			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+			boolean tracked = tracksWriteIntent();
+			long approximateBytes = tracked ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
+			// The locked state is the current generation for the whole critical section.
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
-
-				if (modelWriteState.deprecated != null) {
-					modelWriteState.deprecated.remove(statement);
-					modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
-							|| modelWriteState.deprecated.isEmpty();
+				if (writeLock.deprecated != null) {
+					writeLock.deprecated.remove(statement);
+					writeLock.deprecatedEmpty = writeLock.deprecated.isEmpty();
 				}
-				if (modelWriteState.approved == null) {
-					modelWriteState.approved = createEmptyModel();
+				if (writeLock.approved == null) {
+					writeLock.approved = createEmptyModel();
 				}
-				modelWriteState.approved.add(statement);
-				modelWriteState.approvedEmpty = modelWriteState.approved == null || modelWriteState.approved.isEmpty();
-				if (statement.getContext() != null) {
-					if (modelWriteState.approvedContexts == null) {
-						modelWriteState.approvedContexts = new HashSet<>();
+				writeLock.approved.add(statement);
+				writeLock.approvedEmpty = false;
+				Resource context = statement.getContext();
+				if (context != null) {
+					if (writeLock.approvedContexts == null) {
+						writeLock.approvedContexts = new HashSet<>();
 					}
-					modelWriteState.approvedContexts.add(statement.getContext());
+					writeLock.approvedContexts.add(context);
 				}
-				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(tracked, approximateBytes, false);
 			} finally {
 				writeLock.unlockWriter();
 			}
@@ -811,27 +816,27 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			checkModelMutation();
 			beforeWriteIntent();
 			assert !closed;
-			long approximateBytes = tracksWriteIntent() ? approximateStatementBytes(statement) : 0L;
+			boolean tracked = tracksWriteIntent();
+			long approximateBytes = tracked ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
+			// The locked state is the current generation for the whole critical section.
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
-				if (modelWriteState.approved != null) {
-					modelWriteState.approved.remove(statement);
-					modelWriteState.approvedEmpty = modelWriteState.approved == null
-							|| modelWriteState.approved.isEmpty();
+				if (writeLock.approved != null) {
+					writeLock.approved.remove(statement);
+					writeLock.approvedEmpty = writeLock.approved.isEmpty();
 				}
-				if (modelWriteState.deprecated == null) {
-					modelWriteState.deprecated = createEmptyModel();
+				if (writeLock.deprecated == null) {
+					writeLock.deprecated = createEmptyModel();
 				}
-				modelWriteState.deprecated.add(statement);
-				modelWriteState.deprecatedEmpty = modelWriteState.deprecated == null
-						|| modelWriteState.deprecated.isEmpty();
+				writeLock.deprecated.add(statement);
+				writeLock.deprecatedEmpty = false;
 				Resource ctx = statement.getContext();
-				if (modelWriteState.approvedContexts != null && modelWriteState.approvedContexts.contains(ctx)
-						&& !modelWriteState.approved.contains(null, null, null, ctx)) {
-					modelWriteState.approvedContexts.remove(ctx);
+				if (writeLock.approvedContexts != null && writeLock.approvedContexts.contains(ctx)
+						&& !writeLock.approved.contains(null, null, null, ctx)) {
+					writeLock.approvedContexts.remove(ctx);
 				}
-				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(tracked, approximateBytes, false);
 			} finally {
 				writeLock.unlockWriter();
 			}
@@ -1345,6 +1350,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		private CloseableIteration<Statement> current;
 		private int nextModel;
 		private boolean cursorClosed;
+		/** This cursor holds its own freeze lease, so the generation cannot be reopened while it is traversed. */
+		private boolean pinned;
 
 		private InputCursor(ModelWriteState state, long revision, AtomicReference<Throwable> failure) {
 			this.state = state;
@@ -1360,13 +1367,20 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					if (revision != state.revision) {
 						throw new SailConflictException("Statement generation changed before traversal");
 					}
+					if (!pinned && state.frozenOwners.get() != 0) {
+						// A frozen generation cannot change its revision; pin the freeze for the cursor's lifetime
+						// so a cancelled batch cannot reopen it underneath an in-flight traversal.
+						state.frozenOwners.incrementAndGet();
+						pinned = true;
+					}
+					boolean unguarded = pinned || state.sealed;
 					Model model = nextModel++ == 0 ? state.approved : state.deprecated;
 					if (model != null) {
 						spill(model);
 						Iterator<Statement> iterator = model.iterator();
 						try {
 							RetainedStatementIterator retained = new RetainedStatementIterator(state, iterator,
-									failure);
+									failure, unguarded);
 							state.retain();
 							current = retained;
 						} catch (RuntimeException | Error failure) {
@@ -1446,7 +1460,16 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						}
 					} finally {
 						current = null;
-						state.release();
+						try {
+							if (pinned) {
+								pinned = false;
+								if (state.frozenOwners.decrementAndGet() < 0) {
+									throw new IllegalStateException("Frozen model ownership underflow");
+								}
+							}
+						} finally {
+							state.release();
+						}
 					}
 				}
 			}
@@ -1695,21 +1718,35 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		private final Iterator<Statement> delegate;
 		private final long revision;
 		private final AtomicReference<Throwable> failure;
+		/**
+		 * A frozen or sealed generation cannot change its revision or contents, so its reads skip the per-element
+		 * cleanup scope, lock and revision check; the owning cursor pins the freeze for as long as it is open.
+		 */
+		private final boolean unguarded;
 		private boolean closed;
+		/**
+		 * A memoised {@code hasNext()} answer: wrappers call it repeatedly, so each element costs two guarded reads.
+		 */
+		private boolean hasNextKnown;
+		private boolean nextAvailable;
 
 		private RetainedStatementIterator(ModelWriteState state, Iterator<Statement> delegate) {
-			this(state, delegate, null);
+			this(state, delegate, null, false);
 		}
 
 		private RetainedStatementIterator(ModelWriteState state, Iterator<Statement> delegate,
-				AtomicReference<Throwable> failure) {
+				AtomicReference<Throwable> failure, boolean unguarded) {
 			this.state = state;
 			this.delegate = delegate;
 			this.revision = state.revision;
 			this.failure = failure;
+			this.unguarded = unguarded;
 		}
 
 		private <T> T read(Supplier<T> operation) {
+			if (unguarded) {
+				return operation.get();
+			}
 			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 				SailModelCleanup.beginLock();
 				state.readWriteLock.readLock();
@@ -1729,8 +1766,13 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			if (closed) {
 				return false;
 			}
+			if (hasNextKnown) {
+				return nextAvailable;
+			}
 			try {
 				boolean next = read(delegate::hasNext);
+				hasNextKnown = true;
+				nextAvailable = next;
 				if (!next) {
 					close();
 				}
@@ -1747,6 +1789,8 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				throw new NoSuchElementException();
 			}
 			try {
+				// The guarded read still re-validates the generation for every element handed out.
+				hasNextKnown = false;
 				return read(delegate::next);
 			} catch (RuntimeException | Error failure) {
 				closeAfter(failure);
@@ -2022,9 +2066,10 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			checkModelMutation(state);
 			ModelWriteState mutable = detachTransferredGeneration(state);
-			StatementInput.Generation before = new StatementInput.Generation(mutable.identity, mutable.revision);
 			if (mutation != null) {
-				mutation.advance(before, new StatementInput.Generation(mutable.identity, mutable.revision + 1));
+				// Only a covered publication frame needs the generation witnesses; plain writes allocate nothing.
+				mutation.advance(new StatementInput.Generation(mutable.identity, mutable.revision),
+						new StatementInput.Generation(mutable.identity, mutable.revision + 1));
 			}
 			mutable.revision++;
 			return mutable;

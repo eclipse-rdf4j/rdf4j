@@ -4324,11 +4324,23 @@ class LmdbFrozenReplayTest {
 		@Override
 		public long storeValue(Value value) throws IOException {
 			long id = super.storeValue(value);
+			failAfterValueAllocationIfRequested();
+			return id;
+		}
+
+		@Override
+		void storeValues(Value[] values, long[] ids, int count) throws IOException {
+			super.storeValues(values, ids, count);
+			if (count > 0) {
+				failAfterValueAllocationIfRequested();
+			}
+		}
+
+		private void failAfterValueAllocationIfRequested() throws IOException {
 			if (probe != null && probe.failAfterValueAllocation.compareAndSet(true, false)) {
 				probe.valueAllocationCapacityFailures.incrementAndGet();
 				throw frozenCapacity(null);
 			}
-			return id;
 		}
 
 		@Override

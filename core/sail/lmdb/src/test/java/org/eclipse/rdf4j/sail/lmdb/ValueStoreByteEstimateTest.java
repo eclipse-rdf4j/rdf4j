@@ -233,6 +233,79 @@ class ValueStoreByteEstimateTest {
 		assertTrue(estimate.bytes() > beforeShorter, "a longer chain introduces a new outer record");
 	}
 
+	@Test
+	void sampledEstimateScalesSmallRecordsAndKeepsLargeRecordsExact() {
+		int statementCount = 100_000;
+		int runLength = 10;
+		IRI[] predicates = new IRI[12];
+		for (int i = 0; i < predicates.length; i++) {
+			predicates[i] = VF.createIRI("urn:estimate:predicate:" + i);
+		}
+		// Beyond the exact prefix and inside a subject run that the sampler skips (run 5001 for an interval of 8).
+		int outlierIndex = 50_013;
+		assertTrue(outlierIndex >= ValueStore.EXACT_PREFIX_STATEMENTS);
+		assertTrue((outlierIndex / runLength + 1) % ValueStore.SAMPLE_INTERVAL != 0);
+		String outlierLabel = "x".repeat(64 * 1024);
+		List<Statement> input = new ArrayList<>(statementCount);
+		Resource subject = null;
+		for (int i = 0; i < statementCount; i++) {
+			if (i % runLength == 0) {
+				subject = VF.createIRI("urn:estimate:subject:" + (i / runLength));
+			}
+			Value object = VF.createLiteral(i == outlierIndex ? outlierLabel : "object " + i);
+			input.add(VF.createStatement(subject, predicates[i % predicates.length], object));
+		}
+
+		DictionaryByteEstimate exact = new DictionaryByteEstimate(true);
+		DictionaryByteEstimate nonDistinct = new DictionaryByteEstimate(false);
+		for (Statement statement : input) {
+			for (Value term : List.of(statement.getSubject(), statement.getPredicate(), statement.getObject())) {
+				exact.add(term);
+				nonDistinct.add(term);
+			}
+		}
+		AtomicInteger observed = new AtomicInteger();
+		DictionaryByteEstimate sampled = ValueStore.estimateStatements(input.iterator(),
+				statement -> observed.incrementAndGet());
+
+		long outlierBytes = 4L * (3L * outlierLabel.length() + 32L) + 256L;
+		assertEquals(statementCount, observed.get(), "the observer still sees every statement");
+		assertTrue(sampled.bytes() >= outlierBytes, "an unsampled outlier must still be counted in full");
+		// Unique-heavy data hits the per-bucket record-count cap, so the sampled value tracks the exact one closely;
+		// repeat-heavy data is deliberately over-provisioned by the sampling margin.
+		assertTrue(sampled.bytes() >= exact.bytes() * 95 / 100,
+				"sampled=" + sampled.bytes() + " exact=" + exact.bytes());
+		// Bucket-maximum rounding applies to both estimators, so bound the sampled result by the exact one plus the
+		// sketch/extrapolation margin rather than by the plain (unrounded) non-distinct sum.
+		assertTrue(sampled.bytes() <= exact.bytes() * 3 / 2,
+				"sampled=" + sampled.bytes() + " exact=" + exact.bytes() + " non-distinct sum=" + nonDistinct.bytes());
+		assertTrue(sampled.exactRecords() < exact.exactRecords() / 4,
+				"sampled traversal hashed " + sampled.exactRecords() + " of " + exact.exactRecords() + " records");
+	}
+
+	@Test
+	void sampleIntervalOneIsExact() {
+		List<Statement> input = new ArrayList<>();
+		Resource subject = null;
+		for (int i = 0; i < ValueStore.EXACT_PREFIX_STATEMENTS; i++) {
+			if (i % 10 == 0) {
+				subject = VF.createIRI("urn:estimate:subject:" + (i / 10));
+			}
+			input.add(VF.createStatement(subject, PREDICATE, VF.createLiteral("object " + (i % 3000))));
+		}
+		DictionaryByteEstimate exact = new DictionaryByteEstimate(true);
+		for (Statement statement : input) {
+			exact.add(statement.getSubject());
+			exact.add(statement.getPredicate());
+			exact.add(statement.getObject());
+			exact.add(statement.getContext());
+		}
+		DictionaryByteEstimate sampled = ValueStore.estimateStatements(input.iterator(), statement -> {
+		});
+		assertEquals(exact.bytes(), sampled.bytes(), "inputs within the exact prefix are never sampled");
+		assertEquals(exact.exactRecords(), sampled.exactRecords());
+	}
+
 	private static Value chain(Value leaf, int depth, Resource middleSubject) {
 		Value value = leaf;
 		for (int i = 0; i < depth; i++) {

@@ -242,11 +242,25 @@ class LmdbStatsLoggingTest {
 				storeConfig) -> new ValueStore(valueDir, properties, storeConfig) {
 					@Override
 					public long storeValue(Value value) throws IOException {
-						if (value instanceof Literal literal && literal.getLabel().length() == largeLabel.length()
-								&& injectedWrites.compareAndSet(0, 1)) {
+						if (isInjectedFailure(value)) {
 							throw marker;
 						}
 						return super.storeValue(value);
+					}
+
+					@Override
+					void storeValues(Value[] values, long[] ids, int count) throws IOException {
+						for (int i = 0; i < count; i++) {
+							if (isInjectedFailure(values[i])) {
+								throw marker;
+							}
+						}
+						super.storeValues(values, ids, count);
+					}
+
+					private boolean isInjectedFailure(Value value) {
+						return value instanceof Literal literal && literal.getLabel().length() == largeLabel.length()
+								&& injectedWrites.compareAndSet(0, 1);
 					}
 				};
 		LmdbStoreConfig storeConfig = config().setAutoGrow(false).setBulkOperationSize(bulkOperationSize);

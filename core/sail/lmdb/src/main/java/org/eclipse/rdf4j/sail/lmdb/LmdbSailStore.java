@@ -7311,6 +7311,9 @@ class LmdbSailStore implements SailStore {
 
 				BulkAddQuadsOperation bulk = null;
 				boolean first = true;
+				// Predicate and context ids resolved by earlier batches of this approval stay valid for the whole
+				// native lineage: an in-place resize commits them and every abort unwinds out of this method.
+				BatchValueCache resolved = new BatchValueCache();
 
 				for (Iterator<Statement> statements = approved.iterator(); statements.hasNext();) {
 					Statement statement = statements.next();
@@ -7343,14 +7346,14 @@ class LmdbSailStore implements SailStore {
 						remainingHint--;
 					}
 					if (bulk.isFull()) {
-						resolveBatchValues(bulk);
+						resolveBatchValues(bulk, resolved);
 						submitOperation(bulk);
 						bulk = null;
 					}
 				}
 
 				if (bulk != null && !bulk.isEmpty()) {
-					resolveBatchValues(bulk);
+					resolveBatchValues(bulk, resolved);
 					submitOperation(bulk);
 				}
 			} catch (IOException | RuntimeException | Error e) {
@@ -7761,13 +7764,26 @@ class LmdbSailStore implements SailStore {
 			}
 		}
 
+		/** Dictionary ids already resolved earlier within one bulk approval's native lineage. */
+		private static final class BatchValueCache {
+			private final HashMap<IRI, Long> predicates = new HashMap<>();
+			private final HashMap<Resource, Long> contexts = new HashMap<>();
+		}
+
+		private static final int RESOLVED_POSITION = -2;
+
 		private void resolveBatchValues(BulkAddQuadsOperation batch) throws IOException {
-			// Deduplicate every term position inside this operation, never across chunks or public transactions.
+			resolveBatchValues(batch, new BatchValueCache());
+		}
+
+		private void resolveBatchValues(BulkAddQuadsOperation batch, BatchValueCache resolved) throws IOException {
+			// Deduplicate every term position inside this operation, never across chunks or public transactions;
+			// predicate and context ids may additionally be reused from earlier batches of the same approval.
 			int capacity = Math.multiplyExact(batch.size, 4);
 			Value[] values = new Value[capacity];
 			long[] ids = new long[capacity];
 			int[] positions = new int[capacity];
-			ObjectIntHashMap<Value> indexes = new ObjectIntHashMap<>();
+			ObjectIntHashMap<Value> indexes = new ObjectIntHashMap<>(capacity);
 			int valueCount = 0;
 			Resource previousSubject = null;
 			int previousSubjectIndex = -1;
@@ -7791,32 +7807,69 @@ class LmdbSailStore implements SailStore {
 				}
 				positions[offset] = previousSubjectIndex;
 
-				for (int field = 1; field < 4; field++) {
-					Value value = switch (field) {
-					case 1 -> statement.getPredicate();
-					case 2 -> statement.getObject();
-					default -> statement.getContext();
-					};
-					int index = -1;
-					if (value != null) {
-						index = indexes.getIfAbsent(value, -1);
-						if (index < 0) {
-							index = valueCount++;
-							indexes.put(value, index);
-							values[index] = value;
+				IRI predicate = statement.getPredicate();
+				Long predicateId = resolved.predicates.get(predicate);
+				if (predicateId != null) {
+					batch.predicates[i] = predicateId;
+					positions[offset + 1] = RESOLVED_POSITION;
+				} else {
+					positions[offset + 1] = dedupeIndex(indexes, values, predicate, valueCount);
+					if (positions[offset + 1] == valueCount) {
+						valueCount++;
+					}
+				}
+
+				Value object = statement.getObject();
+				positions[offset + 2] = dedupeIndex(indexes, values, object, valueCount);
+				if (positions[offset + 2] == valueCount) {
+					valueCount++;
+				}
+
+				Resource context = statement.getContext();
+				if (context == null) {
+					positions[offset + 3] = -1;
+				} else {
+					Long contextId = resolved.contexts.get(context);
+					if (contextId != null) {
+						batch.contexts[i] = contextId;
+						positions[offset + 3] = RESOLVED_POSITION;
+					} else {
+						positions[offset + 3] = dedupeIndex(indexes, values, context, valueCount);
+						if (positions[offset + 3] == valueCount) {
+							valueCount++;
 						}
 					}
-					positions[offset + field] = index;
 				}
 			}
 			valueStore.storeValues(values, ids, valueCount);
 			for (int i = 0; i < batch.size; i++) {
+				Statement statement = batch.statements[i];
 				batch.subjects[i] = ids[positions[4 * i]];
-				batch.predicates[i] = ids[positions[4 * i + 1]];
+				int predicateIndex = positions[4 * i + 1];
+				if (predicateIndex != RESOLVED_POSITION) {
+					batch.predicates[i] = ids[predicateIndex];
+					resolved.predicates.put(statement.getPredicate(), batch.predicates[i]);
+				}
 				batch.objects[i] = ids[positions[4 * i + 2]];
 				int contextIndex = positions[4 * i + 3];
-				batch.contexts[i] = contextIndex < 0 ? 0 : ids[contextIndex];
+				if (contextIndex == -1) {
+					batch.contexts[i] = 0;
+				} else if (contextIndex != RESOLVED_POSITION) {
+					batch.contexts[i] = ids[contextIndex];
+					resolved.contexts.put(statement.getContext(), batch.contexts[i]);
+				}
 			}
+		}
+
+		/** Returns the batch index of {@code value}, which equals {@code nextIndex} when the value is new. */
+		private static int dedupeIndex(ObjectIntHashMap<Value> indexes, Value[] values, Value value, int nextIndex) {
+			int index = indexes.getIfAbsent(value, -1);
+			if (index < 0) {
+				index = nextIndex;
+				indexes.put(value, index);
+				values[index] = value;
+			}
+			return index;
 		}
 
 		private void flushNoneBatch() throws IOException {

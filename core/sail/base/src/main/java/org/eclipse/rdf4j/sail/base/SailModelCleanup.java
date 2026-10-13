@@ -33,10 +33,8 @@ final class SailModelCleanup {
 	static Retained retain() {
 		State state = CURRENT.get();
 		Retained retained = new Retained(state.gate);
-		synchronized (state) {
-			state.requireScope();
-			state.gate.retain();
-		}
+		state.requireScope();
+		state.gate.retain();
 		return retained;
 	}
 
@@ -52,18 +50,13 @@ final class SailModelCleanup {
 	/** Lexical scopes and retained cleanup reservations are not physical branch or model guards. */
 	static boolean holdsOrdinaryGuard() {
 		State state = CURRENT.get();
-		synchronized (state) {
-			return state.holds > state.scopes;
-		}
+		return state.holds > state.scopes;
 	}
 
 	static void defer(SailClosable resource) {
 		State state = CURRENT.get();
-		Pending pending = new Pending(resource);
-		synchronized (state) {
-			state.requireScope();
-			state.append(pending);
-		}
+		state.requireScope();
+		state.append(new Pending(resource));
 	}
 
 	private static final class Pending {
@@ -118,6 +111,10 @@ final class SailModelCleanup {
 		}
 	}
 
+	/**
+	 * Thread-confined bookkeeping: only the owning thread reaches its {@code State} through {@link #CURRENT}, so no
+	 * monitor is needed here. Cross-thread hand-off of completed work goes through the shared {@link Gate} only.
+	 */
 	private static final class State {
 		private final Gate gate = new Gate();
 		private int holds;
@@ -126,27 +123,27 @@ final class SailModelCleanup {
 		private Pending head;
 		private Pending tail;
 
-		private synchronized void beginScope() {
+		private void beginScope() {
 			holds = Math.addExact(holds, 1);
 			scopes++;
 		}
 
-		private synchronized void beginHold() {
+		private void beginHold() {
 			holds = Math.addExact(holds, 1);
 		}
 
-		private synchronized void endScope() {
+		private void endScope() {
 			if (--scopes < 0) {
 				throw new IllegalStateException("Model cleanup scope underflow");
 			}
 			endHold();
 		}
 
-		private synchronized void endHold() {
+		private void endHold() {
 			if (--holds < 0) {
 				throw new IllegalStateException("Model cleanup suppression underflow");
 			}
-			if (holds == 0 && gate.accept(head, tail)) {
+			if (holds == 0 && head != null && gate.accept(head, tail)) {
 				head = null;
 				tail = null;
 			}
@@ -174,26 +171,19 @@ final class SailModelCleanup {
 		}
 
 		private void drain() {
-			synchronized (this) {
-				if (holds != 0 || gate.isActive() || draining) {
-					return;
-				}
-				draining = true;
+			// The common case has nothing pending: skip the shared gate monitor entirely.
+			if (holds != 0 || draining || head == null || gate.isActive()) {
+				return;
 			}
+			draining = true;
 			Throwable failure = null;
 			try {
-				while (true) {
-					Pending next;
-					synchronized (this) {
-						if (holds != 0 || gate.isActive() || head == null) {
-							break;
-						}
-						next = head;
-						head = next.next;
-						next.next = null;
-						if (head == null) {
-							tail = null;
-						}
+				while (holds == 0 && head != null && !gate.isActive()) {
+					Pending next = head;
+					head = next.next;
+					next.next = null;
+					if (head == null) {
+						tail = null;
 					}
 					try {
 						next.resource.close();
@@ -206,12 +196,8 @@ final class SailModelCleanup {
 					}
 				}
 			} finally {
-				synchronized (this) {
-					draining = false;
-					if (holds == 0 && head == null && !gate.isActive() && CURRENT.get() == this) {
-						CURRENT.remove();
-					}
-				}
+				// Keep the idle state resident: re-creating it per workflow churns the thread-local map.
+				draining = false;
 			}
 			if (failure instanceof Error error) {
 				throw error;
@@ -259,15 +245,11 @@ final class SailModelCleanup {
 				return;
 			}
 			State recipient = CURRENT.get();
-			synchronized (recipient) {
-				recipient.requireScope();
-			}
+			recipient.requireScope();
+			// Never hold the gate monitor while entering a different workflow's state.
 			Pending ready = gate.release();
 			closed = true;
-			// Never hold the gate monitor while entering a different workflow's state.
-			synchronized (recipient) {
-				recipient.append(ready);
-			}
+			recipient.append(ready);
 		}
 	}
 

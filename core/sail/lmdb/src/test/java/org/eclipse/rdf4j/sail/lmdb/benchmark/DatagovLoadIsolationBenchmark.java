@@ -54,10 +54,10 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 3, time = 3, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
 @Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3, time = 10, timeUnit = TimeUnit.SECONDS)
+@Measurement(iterations = 3, time = 3, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 

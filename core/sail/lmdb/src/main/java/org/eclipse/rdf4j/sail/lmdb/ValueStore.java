@@ -68,6 +68,7 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -3068,27 +3069,62 @@ class ValueStore extends AbstractValueFactory {
 	long estimateWriteBytes(StatementInput input, Consumer<Statement> observer) {
 		long statementEstimate = 128L;
 		try (CloseableIteration<Statement> statements = input.openCursor()) {
-			if (statements.hasNext()) {
-				Statement statement = statements.next();
-				boolean moreStatements = statements.hasNext();
-				DictionaryByteEstimate estimate = new DictionaryByteEstimate(moreStatements);
-				do {
-					observer.accept(statement);
-					estimate.add(statement.getSubject());
-					estimate.add(statement.getPredicate());
-					estimate.add(statement.getObject());
-					estimate.add(statement.getContext());
-					if (!moreStatements) {
-						break;
-					}
-					statement = statements.next();
-					moreStatements = statements.hasNext();
-				} while (true);
+			DictionaryByteEstimate estimate = estimateStatements(statements, observer);
+			if (estimate != null) {
 				statementEstimate = saturatedEstimateAdd(statementEstimate, estimate.bytes());
 			}
 		}
 		input.validate();
 		return saturatedEstimateAdd(statementEstimate, estimateWriteMetadataBytes(input.metadata()));
+	}
+
+	/** Statements fingerprinted exactly before a streamed estimate starts sampling subject runs. */
+	static final int EXACT_PREFIX_STATEMENTS = 8192;
+	/** After the exact prefix, one in this many subject runs is fingerprinted; the rest are sized without hashing. */
+	static final int SAMPLE_INTERVAL = 8;
+
+	/**
+	 * Feeds every statement of a streamed input to a distinct-aware dictionary estimate. Returns {@code null} for an
+	 * empty input.
+	 */
+	static DictionaryByteEstimate estimateStatements(Iterator<Statement> statements, Consumer<Statement> observer) {
+		if (!statements.hasNext()) {
+			return null;
+		}
+		Statement statement = statements.next();
+		boolean moreStatements = statements.hasNext();
+		DictionaryByteEstimate estimate = new DictionaryByteEstimate(moreStatements);
+		long index = 0L;
+		long run = 0L;
+		Resource previousSubject = null;
+		do {
+			observer.accept(statement);
+			Resource subject = statement.getSubject();
+			if (subject != previousSubject && (previousSubject == null || !subject.equals(previousSubject))) {
+				// Grouped input (one subject, many statements) is sampled per subject run, so a sampled run
+				// contributes all of its statements and subject cardinality extrapolates correctly.
+				run++;
+				previousSubject = subject;
+			}
+			if (index < EXACT_PREFIX_STATEMENTS || run % SAMPLE_INTERVAL == 0L) {
+				estimate.add(subject);
+				estimate.add(statement.getPredicate());
+				estimate.add(statement.getObject());
+				estimate.add(statement.getContext());
+			} else {
+				estimate.skip(subject);
+				estimate.skip(statement.getPredicate());
+				estimate.skip(statement.getObject());
+				estimate.skip(statement.getContext());
+			}
+			index++;
+			if (!moreStatements) {
+				break;
+			}
+			statement = statements.next();
+			moreStatements = statements.hasNext();
+		} while (true);
+		return estimate;
 	}
 
 	private long estimateWriteMetadataBytes(SailSource.WritePreflight preflight) {
@@ -3398,11 +3434,11 @@ class ValueStore extends AbstractValueFactory {
 
 					// store mapping of hash+ID -> []
 					dataVal.mv_data(stack.bytes());
-					E(mdb_put(txn, dbi, hashVal, dataVal, 0));
+					E(mdb_put(writeTxn, dbi, hashVal, dataVal, 0));
 
 					dataVal.mv_size(data.length);
 					// store mapping of ID -> data
-					E(mdb_put(txn, dbi, idVal, dataVal, MDB_RESERVE));
+					E(mdb_put(writeTxn, dbi, idVal, dataVal, MDB_RESERVE));
 					dataVal.mv_data().put(data);
 
 					// update ref count if necessary
@@ -3416,120 +3452,72 @@ class ValueStore extends AbstractValueFactory {
 	}
 
 	private void findIds(byte[][] data, int[] indexes, long[] ids, int count) throws IOException {
-		int[] order = sortedStoreOrder(data, count);
-		readTransaction(env, (stack, txn) -> {
-			// NONE allocation either keeps this native writer or throws to lexical chunk recovery. In particular,
-			// no encoded namespace/datatype IDs or stack buffers may survive a checkpoint and peer ID recycling.
+		// CRC32 once per hashed value: the lookup key and the allocation key reuse it. Rows are visited in batch
+		// order; hashed keys are uniformly random, so sorting them would buy no page locality.
+		long[] hashes = new long[count];
+		for (int i = 0; i < count; i++) {
+			hashes[i] = data[i].length > MAX_KEY_SIZE ? hash(data[i]) : 0L;
+		}
+		readTransaction(env, (stack, admitted) -> {
+			// Cursor-free on purpose: a tracked decision may resize the map in place while allocating, which
+			// commits and restarts the writer transaction. Only Java-owned bytes and freshly re-read handles
+			// survive that boundary, so every row re-reads writeTxn and nothing native is retained across rows.
 			MDBVal keyVal = MDBVal.calloc(stack);
 			MDBVal idVal = MDBVal.calloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
 			ByteBuffer idBytes = idBuffer(stack);
 			ByteBuffer hashBytes = stack.malloc(2 + 2 * Long.BYTES + 2);
-			PointerBuffer cursorHandle = stack.mallocPointer(1);
-			long lookupCursor = 0;
-			long payloadCursor = 0;
-			try {
-				E(mdb_cursor_open(txn, dbi, cursorHandle));
-				lookupCursor = cursorHandle.get(0);
-				E(mdb_cursor_open(txn, dbi, cursorHandle));
-				payloadCursor = cursorHandle.get(0);
-				long dictionaryLookup = lookupCursor;
-				long dictionaryPayload = payloadCursor;
-				for (int position = 0; position < count; position++) {
-					int index = order[position];
-					byte[] encoded = data[index];
-					boolean hashed = encoded.length > MAX_KEY_SIZE;
-					stack.push();
-					try {
-						idVal.clear();
-						dataVal.clear();
-						if (hashed) {
-							hashBytes.clear();
-							hashBytes.put(HASH_KEY);
-							Varint.writeUnsigned(hashBytes, hash(encoded));
-							keyVal.mv_data(hashBytes.flip());
-						} else {
-							keyVal.mv_data(stack.bytes(encoded));
-						}
-						if (mdb_cursor_get(dictionaryLookup, keyVal, idVal, MDB_SET) == MDB_SUCCESS) {
-							// Copy the ID before another native operation. Returned MDBVal data belongs to LMDB.
-							long found = data2id(idVal.mv_data());
-							if (!hashed || mdb_cursor_get(dictionaryPayload, idVal, dataVal, MDB_SET) == MDB_SUCCESS
-									&& dataVal.mv_data().compareTo(ByteBuffer.wrap(encoded)) == 0) {
-								ids[indexes[index]] = found;
-								continue;
-							}
-							// Collision scans and HASHID_KEY allocation retain their authoritative scalar path.
-							// No borrowed MDBVal pointer is used after that path can write/move dictionary pages.
-							ids[indexes[index]] = findId(encoded, true);
+			for (int index = 0; index < count; index++) {
+				byte[] encoded = data[index];
+				boolean hashed = encoded.length > MAX_KEY_SIZE;
+				stack.push();
+				try {
+					long txn = writeTxn != 0 ? writeTxn : admitted;
+					idVal.clear();
+					dataVal.clear();
+					if (hashed) {
+						hashBytes.clear();
+						hashBytes.put(HASH_KEY);
+						Varint.writeUnsigned(hashBytes, hashes[index]);
+						keyVal.mv_data(hashBytes.flip());
+					} else {
+						keyVal.mv_data(stack.bytes(encoded));
+					}
+					if (mdb_get(txn, dbi, keyVal, idVal) == MDB_SUCCESS) {
+						// Copy the ID before another native operation. Returned MDBVal data belongs to LMDB.
+						long found = data2id(idVal.mv_data());
+						if (!hashed || mdb_get(txn, dbi, idVal, dataVal) == MDB_SUCCESS
+								&& dataVal.mv_data().compareTo(ByteBuffer.wrap(encoded)) == 0) {
+							ids[indexes[index]] = found;
 							continue;
 						}
-						resizeForAllocation(txn, 2L * encoded.length + 2L * (2L + Long.BYTES));
-						long id = nextId(encoded[0]);
-						writeTransaction((writeStack, activeTxn) -> {
-							idBytes.clear();
-							idVal.mv_data(id2data(idBytes, id).flip());
-							E(mdb_cursor_put(dictionaryLookup, keyVal, idVal, 0));
-							if (hashed) {
-								dataVal.mv_size(encoded.length);
-								E(mdb_cursor_put(dictionaryPayload, idVal, dataVal, MDB_RESERVE));
-								dataVal.mv_data().put(encoded);
-							} else {
-								E(mdb_cursor_put(dictionaryPayload, idVal, keyVal, 0));
-							}
-							incrementRefCount(writeStack, activeTxn, encoded);
-							return null;
-						});
-						ids[indexes[index]] = id;
-					} finally {
-						stack.pop();
+						// Collision scans and HASHID_KEY allocation retain their authoritative scalar path.
+						ids[indexes[index]] = findId(encoded, true);
+						continue;
 					}
-				}
-			} finally {
-				// Native NONE capacity failures unwind without consuming the writer. Close cursors before the
-				// caller parks/retires that generation, including failure while opening the second cursor.
-				if (payloadCursor != 0) {
-					mdb_cursor_close(payloadCursor);
-				}
-				if (lookupCursor != 0) {
-					mdb_cursor_close(lookupCursor);
+					resizeForAllocation(txn, 2L * encoded.length + 2L * (2L + Long.BYTES));
+					long id = nextId(encoded[0]);
+					writeTransaction((writeStack, activeTxn) -> {
+						idBytes.clear();
+						idVal.mv_data(id2data(idBytes, id).flip());
+						E(mdb_put(activeTxn, dbi, keyVal, idVal, 0));
+						if (hashed) {
+							dataVal.mv_size(encoded.length);
+							E(mdb_put(activeTxn, dbi, idVal, dataVal, MDB_RESERVE));
+							dataVal.mv_data().put(encoded);
+						} else {
+							E(mdb_put(activeTxn, dbi, idVal, keyVal, 0));
+						}
+						incrementRefCount(writeStack, activeTxn, encoded);
+						return null;
+					});
+					ids[indexes[index]] = id;
+				} finally {
+					stack.pop();
 				}
 			}
 			return null;
 		});
-	}
-
-	private int[] sortedStoreOrder(byte[][] data, int count) {
-		int[] order = new int[count];
-		long[] primary = new long[count];
-		long[] secondary = new long[count];
-		for (int i = 0; i < count; i++) {
-			order[i] = i;
-			primary[i] = data[i].length <= MAX_KEY_SIZE ? leadingStoreKey(data[i], 0)
-					: ((long) HASH_KEY << 56) | hash(data[i]);
-			secondary[i] = data[i].length <= MAX_KEY_SIZE ? leadingStoreKey(data[i], Long.BYTES) : 0;
-		}
-		int[] scratchOrder = new int[count];
-		long[] scratchValues = new long[count];
-		int[] counts = new int[256];
-		int[] offsets = new int[256];
-		LeadingFieldSorters.lsdRadixSort(order, secondary, count, scratchOrder, scratchValues, counts, offsets);
-		for (int i = 0; i < count; i++) {
-			byte[] encoded = data[order[i]];
-			primary[i] = encoded.length <= MAX_KEY_SIZE ? leadingStoreKey(encoded, 0)
-					: ((long) HASH_KEY << 56) | hash(encoded);
-		}
-		LeadingFieldSorters.lsdRadixSort(order, primary, count, scratchOrder, scratchValues, counts, offsets);
-		return order;
-	}
-
-	private static long leadingStoreKey(byte[] data, int offset) {
-		long key = 0;
-		int length = Math.min(Math.max(0, data.length - offset), Long.BYTES);
-		for (int i = 0; i < length; i++) {
-			key = (key << Byte.SIZE) | (data[offset + i] & 0xFFL);
-		}
-		return length == 0 ? 0 : key << ((Long.BYTES - length) * Byte.SIZE);
 	}
 
 	private LmdbTripleTerm id2tripleTerm(long id, LmdbTripleTerm value, ValueStoreRevision valueRevision)
@@ -6015,10 +6003,8 @@ class ValueStore extends AbstractValueFactory {
 	/** Resolves only one bounded, lexically captured statement batch; no state is retained across calls. */
 	void storeValues(Value[] values, long[] ids, int count) throws IOException {
 		checkReplayFailure();
-		TxnReplayPolicy.Decision decision = replayDecision;
-		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread() || decision == null || !decision.checkpoint) {
-			// Atomic allocation may checkpoint and replace/replay dictionary IDs while resolving a dependency.
-			// Keep its per-value encoding/allocation sequence: deferred encodings must not cross that boundary.
+		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread()) {
+			// Without an owned native writer every value takes the authoritative scalar admission path.
 			for (int i = 0; i < count; i++) {
 				ids[i] = storeValue(values[i]);
 			}

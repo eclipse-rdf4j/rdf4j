@@ -412,7 +412,8 @@ public interface ValueStoreRevision {
 
 	default void storeHash(long id, int hash) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore != null && valueStore.getRevision().getRevisionId() == getRevisionId()) {
+		if (valueStore != null && valueStore.valueHashCacheEnabled
+				&& valueStore.getRevision().getRevisionId() == getRevisionId()) {
 			valueStore.storeHash(id, hash, getRevisionId());
 		}
 	}

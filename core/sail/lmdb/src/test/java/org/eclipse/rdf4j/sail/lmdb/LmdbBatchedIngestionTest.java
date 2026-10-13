@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -192,8 +193,8 @@ class LmdbBatchedIngestionTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(booleans = { false, true })
-	void boundedValueBatchPreservesMixedIdentitiesAndCollisions(boolean checkpoint, @TempDir Path directory)
+	@ValueSource(strings = { "direct", "tracked", "checkpoint" })
+	void boundedValueBatchPreservesMixedIdentitiesAndCollisions(String mode, @TempDir Path directory)
 			throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(32L << 20);
 		File localDirectory = directory.resolve("local").toFile();
@@ -226,12 +227,16 @@ class LmdbBatchedIngestionTest {
 			resolved = new long[input.length];
 			Arrays.fill(resolved, Long.MIN_VALUE);
 			local.startTransaction(false);
-			if (checkpoint) {
-				local.setReplayDecision(new TxnReplayPolicy.Decision(new TxnReplayPolicy(), true, false, 0, 0, 0)
-						.forNativeCheckpoints());
+			TxnReplayPolicy.Decision tracked = new TxnReplayPolicy.Decision(new TxnReplayPolicy(), true, false, 0, 0,
+					0);
+			switch (mode) {
+			case "tracked" -> local.setReplayDecision(tracked);
+			case "checkpoint" -> local.setReplayDecision(tracked.forNativeCheckpoints());
+			default -> {
+			}
 			}
 			local.storeValues(input, resolved, expected.length);
-			assertEquals(checkpoint, local.batchReadAdmissions > 0, "the selected native bulk path must execute");
+			assertTrue(local.batchReadAdmissions > 0, "the native bulk path must execute for every decision");
 			assertNotEquals(originalId, resolved[0], "a mutated own value must not reuse its stale lexical ID");
 			assertNotEquals(resolved[7], resolved[8], "colliding large values remain distinct");
 			assertEquals(resolved[7], resolved[9], "the duplicate large value resolves to its original ID");
@@ -250,6 +255,79 @@ class LmdbBatchedIngestionTest {
 				assertEquals(resolved[i], reopened.getId(expected[i]));
 				assertEquals(expected[i], reopened.getValue(resolved[i]));
 			}
+		}
+	}
+
+	@Test
+	void trackedBatchSurvivesMidBatchDictionaryResize(@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueDBSize(256L << 10);
+		File localDirectory = directory.resolve("local").toFile();
+		int count = 1024;
+		Value[] input = new Value[count];
+		for (int i = 0; i < count; i++) {
+			input[i] = Values.literal("value-" + i + "-" + "x".repeat(1000));
+		}
+		long[] resolved = new long[count];
+		try (ReadTrackingValueStore local = new ReadTrackingValueStore(localDirectory, config)) {
+			long initialMapBytes = local.mapSizeBytes();
+			local.startTransaction(false);
+			// A tracked decision resizes in place: the writer transaction is committed and restarted mid-batch.
+			local.setReplayDecision(new TxnReplayPolicy.Decision(new TxnReplayPolicy(), true, false, 0, 0, 0));
+			local.storeValues(input, resolved, count);
+			assertEquals(1, local.batchReadAdmissions, "one native admission resolves the whole batch");
+			assertTrue(local.mapSizeBytes() > initialMapBytes, "the dictionary map grew during the batch");
+			for (int i = 0; i < count; i++) {
+				assertNotEquals(LmdbValue.UNKNOWN_ID, resolved[i]);
+				assertEquals(input[i], local.getValue(resolved[i]));
+			}
+			local.commit();
+		}
+		try (ReadTrackingValueStore reopened = new ReadTrackingValueStore(localDirectory, config)) {
+			for (int i = 0; i < count; i++) {
+				assertEquals(resolved[i], reopened.getId(input[i]));
+				assertEquals(input[i], reopened.getValue(resolved[i]));
+			}
+		}
+	}
+
+	@Test
+	void readCommittedBulkApproveSurvivesMidTransactionDictionaryResize(@TempDir Path directory)
+			throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setValueDBSize(256L << 10)
+				.setTripleDBSize(8L << 20)
+				.setBulkOperationSize(64);
+		File dataDir = directory.resolve("store").toFile();
+		IRI[] predicates = new IRI[5];
+		for (int i = 0; i < predicates.length; i++) {
+			predicates[i] = Values.iri("urn:resize:predicate:" + i);
+		}
+		IRI[] contexts = new IRI[3];
+		for (int i = 0; i < contexts.length; i++) {
+			contexts[i] = Values.iri("urn:resize:context:" + i);
+		}
+		Model expected = new LinkedHashModel();
+		for (int i = 0; i < 3000; i++) {
+			expected.add(Values.iri("urn:resize:subject:" + (i / 4)), predicates[i % predicates.length],
+					Values.literal("value-" + i + "-" + "x".repeat(1000)), contexts[i % contexts.length]);
+		}
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.add(expected);
+				connection.commit();
+				verifyRepositoryRows(connection, expected);
+			}
+		} finally {
+			repository.shutDown();
+		}
+		SailRepository reopened = new SailRepository(new LmdbStore(dataDir, config));
+		try {
+			try (RepositoryConnection connection = reopened.getConnection()) {
+				verifyRepositoryRows(connection, expected);
+			}
+		} finally {
+			reopened.shutDown();
 		}
 	}
 

@@ -12,14 +12,19 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.ConcurrentModificationException;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -27,6 +32,7 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
@@ -82,6 +88,94 @@ class ChangesetStatementCursorTest {
 		assertEquals(2, model.cursors.size(), "the sink opened two independent cursors over the retained input model");
 		assertEquals(List.of(1, 1), model.cursors.stream().map(cursor -> cursor.consumed).toList());
 		assertEquals(List.of(1, 1), model.cursors.stream().map(cursor -> cursor.closes).toList());
+	}
+
+	@Test
+	void openCursorFailsWhenGenerationChangesDuringTraversal() {
+		TrackingChangeset changeset = new TrackingChangeset();
+		changeset.approve(statement("one"));
+		changeset.approve(statement("two"));
+		TrackingModel model = changeset.onlyModel();
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		try (StatementInput input = changeset.statementInput(failure)) {
+			CloseableIteration<Statement> cursor = input.openCursor();
+			assertTrue(cursor.hasNext());
+			cursor.next();
+
+			changeset.approve(statement("late"));
+
+			ConcurrentModificationException conflict = assertThrows(ConcurrentModificationException.class,
+					cursor::hasNext);
+			assertEquals("Statement generation changed during traversal", conflict.getMessage());
+			assertSame(conflict, failure.get(), "the cursor publishes its traversal failure to the input context");
+			assertFalse(cursor.hasNext(), "a conflicting cursor closes itself");
+			assertFalse(input.isCurrent());
+			assertThrows(StreamingWritePreflight.InputGenerationConflictException.class, input::validate);
+			assertEquals(1, model.cursors.size());
+			assertEquals(1, model.cursors.get(0).closes, "the raw model iterator is closed once the cursor fails");
+		}
+	}
+
+	@Test
+	void openCursorFailsWhenGenerationChangesBeforeTraversal() {
+		TrackingChangeset changeset = new TrackingChangeset();
+		changeset.approve(statement("one"));
+		AtomicReference<Throwable> failure = new AtomicReference<>();
+		try (StatementInput input = changeset.statementInput(failure)) {
+			CloseableIteration<Statement> cursor = input.openCursor();
+
+			changeset.approve(statement("late"));
+
+			SailConflictException conflict = assertThrows(SailConflictException.class, cursor::hasNext);
+			assertEquals("Statement generation changed before traversal", conflict.getMessage());
+			assertFalse(cursor.hasNext(), "a conflicting cursor closes itself");
+			assertFalse(input.isCurrent());
+		}
+	}
+
+	@Test
+	void frozenInputCursorPinsFreezeWhileOpen() {
+		TrackingChangeset changeset = new TrackingChangeset();
+		changeset.approve(statement("one"));
+		changeset.approve(statement("two"));
+		SailClosable freeze = changeset.freezeModel();
+		try (StatementInput input = changeset.statementInput()) {
+			CloseableIteration<Statement> cursor = input.openCursor();
+			assertTrue(cursor.hasNext());
+			cursor.next();
+
+			// Cancelling the batch freeze while a preflight cursor is still open must not reopen the generation.
+			freeze.close();
+			assertTrue(changeset.isFrozen(), "an open cursor over a frozen generation keeps it frozen");
+			assertThrows(IllegalStateException.class, () -> changeset.approve(statement("late")));
+
+			assertTrue(cursor.hasNext());
+			cursor.next();
+			assertFalse(cursor.hasNext());
+			cursor.close();
+		}
+		assertFalse(changeset.isFrozen(), "closing the last cursor releases the pinned freeze");
+		changeset.approve(statement("late"));
+		assertEquals(3, changeset.onlyModel().size());
+	}
+
+	@Test
+	void sealedInputCursorTraversesWithoutRevisionGuards() {
+		TrackingChangeset changeset = new TrackingChangeset();
+		changeset.approve(statement("one"));
+		changeset.approve(statement("two"));
+		changeset.sealModel();
+		try (StatementInput input = changeset.statementInput()) {
+			CloseableIteration<Statement> cursor = input.openCursor();
+			List<Statement> read = new ArrayList<>();
+			while (cursor.hasNext()) {
+				read.add(cursor.next());
+			}
+			assertEquals(2, read.size());
+			assertThrows(IllegalStateException.class, () -> changeset.approve(statement("late")));
+		}
+		assertThrows(IllegalStateException.class, () -> changeset.approve(statement("late")),
+				"a sealed generation stays immutable after its cursors close");
 	}
 
 	private static Statement statement(String value) {

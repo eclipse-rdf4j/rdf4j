@@ -28,6 +28,14 @@ import org.eclipse.rdf4j.model.Value;
  */
 final class DictionaryByteEstimate {
 	private static final int HASH_CACHE_SIZE = 256;
+	/** Records at least this large are always fingerprinted exactly, so sampling can never average out an outlier. */
+	static final long LARGE_RECORD_BYTES = 1L << 14;
+	/**
+	 * Extrapolated (unsampled) cardinality is inflated by this factor: the estimate is advisory and an overestimate
+	 * only enlarges the virtual map, while memo churn and sketch variance could otherwise pull a sample below the exact
+	 * value.
+	 */
+	static final double SAMPLING_MARGIN = 1.25d;
 	private static final long IRI_HASH = 0x9e3779b97f4a7c15L;
 	private static final long BNODE_HASH = 0xc2b2ae3d27d4eb4fL;
 	private static final long LITERAL_HASH = 0x165667b19e3779f9L;
@@ -53,9 +61,93 @@ final class DictionaryByteEstimate {
 	private long[] offeredHashes;
 	private long[] offeredBytes;
 	private long totalBytes;
+	private long exactRecords;
+	/** Per size bucket: records that were sized but not fingerprinted; they extrapolate the sketched cardinality. */
+	private long[] unsampledOffers;
+	/**
+	 * Per size bucket: every record fed exactly, before the fingerprint memo, so sampling ratios compare like with
+	 * like.
+	 */
+	private long[] exactOffers;
+	/** Identity memo of lexical values already sized without fingerprinting (mirrors the exact-path string memo). */
+	private String[] skippedStrings;
+	private byte[] skippedTypes;
 
 	DictionaryByteEstimate(boolean distinct) {
 		this.distinct = distinct;
+	}
+
+	/** Number of records that were fingerprinted and offered to a sketch (exact accounting), for diagnostics. */
+	long exactRecords() {
+		return exactRecords;
+	}
+
+	/**
+	 * Accounts for a value without fingerprinting it. Sampled traversals use this for the statements they do not hash;
+	 * the size still contributes to the per-bucket maximum and the extrapolated cardinality.
+	 */
+	void skip(Value value) {
+		if (value == null) {
+			return;
+		}
+		if (!distinct || value instanceof TripleTerm) {
+			// Composite records keep their exact structural accounting; plain sums gain nothing from sampling.
+			add(value);
+			return;
+		}
+		String lexical;
+		int type;
+		long bytes;
+		if (value instanceof IRI iri) {
+			lexical = iri.stringValue();
+			type = 1;
+			bytes = dictionaryBytes(utf8UpperBound(lexical) + 32L);
+		} else if (value instanceof BNode bnode) {
+			lexical = bnode.getID();
+			type = 2;
+			bytes = dictionaryBytes(utf8UpperBound(lexical) + 16L);
+		} else if (value instanceof Literal literal) {
+			String language = literal.getLanguage().orElse(null);
+			lexical = literal.getLabel();
+			type = 4;
+			bytes = dictionaryBytes(utf8UpperBound(lexical) + 32L
+					+ (language == null ? 0L : utf8UpperBound(language)));
+			if (bytes >= LARGE_RECORD_BYTES) {
+				add(value);
+				return;
+			}
+			skip(literal.getDatatype());
+		} else {
+			recordUnsampled(dictionaryBytes(TripleIndex.MAX_KEY_LENGTH + 128L));
+			return;
+		}
+		if (bytes >= LARGE_RECORD_BYTES) {
+			add(value);
+			return;
+		}
+		// The same identity memo the exact path uses: a lexical value that was already fingerprinted or already
+		// sized is not a new record, so repeated terms scale like their fingerprinted share.
+		int index = stringCacheIndex(lexical);
+		if (findCachedString(lexical, type == 4 ? 0 : type, index)) {
+			return;
+		}
+		if (skippedStrings != null && skippedStrings[index] == lexical && skippedTypes[index] == type) {
+			return;
+		}
+		recordUnsampled(bytes);
+		if (skippedStrings == null) {
+			skippedStrings = new String[HASH_CACHE_SIZE];
+			skippedTypes = new byte[HASH_CACHE_SIZE];
+		}
+		skippedStrings[index] = lexical;
+		skippedTypes[index] = (byte) type;
+	}
+
+	private void recordUnsampled(long bytes) {
+		ensureBuckets();
+		int bucket = Long.SIZE - 1 - Long.numberOfLeadingZeros(bytes);
+		maximumBytes[bucket] = Math.max(maximumBytes[bucket], bytes);
+		unsampledOffers[bucket] = LmdbUtil.saturatedAdd(unsampledOffers[bucket], 1L);
 	}
 
 	void add(Value value) {
@@ -198,20 +290,27 @@ final class DictionaryByteEstimate {
 			totalBytes = LmdbUtil.saturatedAdd(totalBytes, bytes);
 			return;
 		}
+		ensureBuckets();
+		int bucket = Long.SIZE - 1 - Long.numberOfLeadingZeros(bytes);
+		exactOffers[bucket] = LmdbUtil.saturatedAdd(exactOffers[bucket], 1L);
 		int index = (int) hash & (HASH_CACHE_SIZE - 1);
 		if (offeredHashes != null && offeredHashes[index] == hash && offeredBytes[index] == bytes) {
 			return;
 		}
-		recordDistinct(hash, bytes, index);
+		recordDistinct(hash, bytes, index, bucket);
 	}
 
-	private void recordDistinct(long hash, long bytes, int index) {
+	private void ensureBuckets() {
 		if (sketches == null) {
 			sketches = new HllSketch[Long.SIZE];
 			maximumBytes = new long[Long.SIZE];
 			offers = new long[Long.SIZE];
+			exactOffers = new long[Long.SIZE];
+			unsampledOffers = new long[Long.SIZE];
 		}
-		int bucket = Long.SIZE - 1 - Long.numberOfLeadingZeros(bytes);
+	}
+
+	private void recordDistinct(long hash, long bytes, int index, int bucket) {
 		HllSketch sketch = sketches[bucket];
 		if (sketch == null) {
 			// 1024 registers keep the usual relative error near 3%; byte registers avoid packed-nibble update work.
@@ -226,6 +325,7 @@ final class DictionaryByteEstimate {
 		// Every distinct fingerprint is offered at least once, so uncached offers still cap its cardinality.
 		// Cache collisions repeat work; no HLL register update is interpreted as a membership test.
 		sketch.update(hash);
+		exactRecords++;
 		offeredHashes[index] = hash;
 		offeredBytes[index] = bytes;
 		maximumBytes[bucket] = Math.max(maximumBytes[bucket], bytes);
@@ -237,13 +337,30 @@ final class DictionaryByteEstimate {
 		if (sketches != null) {
 			for (int bucket = 0; bucket < sketches.length; bucket++) {
 				HllSketch sketch = sketches[bucket];
-				if (sketch != null) {
+				long unsampled = unsampledOffers[bucket];
+				if (sketch == null && unsampled == 0L) {
+					continue;
+				}
+				long count;
+				if (sketch == null) {
+					// Nothing in this bucket was fingerprinted: assume every sized record is distinct.
+					count = unsampled;
+				} else {
 					// Round the confidence margin for this advisory estimate; ceiling would double a repeated
 					// singleton.
-					long count = Math.min(offers[bucket], Math.max(1L, Math.round(sketch.getUpperBound(3))));
-					estimate = LmdbUtil.saturatedAdd(estimate,
-							saturatedMultiply(count, maximumBytes[bucket]));
+					long distinct = Math.min(offers[bucket], Math.max(1L, Math.round(sketch.getUpperBound(3))));
+					count = distinct;
+					if (unsampled != 0L) {
+						// Extrapolate the sketched cardinality over the records that were only sized, using the
+						// raw (pre-memo) exact record count so repeated terms scale like their sampled share, and
+						// never above the total number of records this bucket received.
+						double ratio = (double) unsampled / (double) exactOffers[bucket];
+						long extrapolated = (long) Math.ceil(distinct * ratio * SAMPLING_MARGIN);
+						count = Math.min(LmdbUtil.saturatedAdd(exactOffers[bucket], unsampled),
+								LmdbUtil.saturatedAdd(distinct, Math.max(0L, extrapolated)));
+					}
 				}
+				estimate = LmdbUtil.saturatedAdd(estimate, saturatedMultiply(count, maximumBytes[bucket]));
 			}
 		}
 		return estimate;
