@@ -73,23 +73,32 @@ class TripleTermIndexBulkRecordsTest {
 
 		long memoryBudgetBytes = 8L * 1024 * 1024;
 		int maxOpenFiles = 8;
-		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles);
-				TripleTermIndexBulkRecords records = TripleTermIndexBulkRecords.build(source, workspace, null,
-						memoryBudgetBytes, maxOpenFiles, BulkCompression.FASTEST, () -> false, scheduler)) {
-			assertThat(records.runs()).extracting(TripleTermIndexBulkRecords.IndexRun::specification)
-					.containsExactly("spoc", "cspo");
-			assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
-			assertThat(scheduler.reservedMemoryBytes()).isZero();
-			assertThat(scheduler.reservedFileDescriptors()).isZero();
-			for (TripleTermIndexBulkRecords.IndexRun run : records.runs()) {
-				assertThat(run.tuples().rows()).isEqualTo(rows);
-				long[][] previous = { null };
-				run.tuples().forEach(tuple -> {
-					if (previous[0] != null) {
-						assertThat(compareUnsigned(previous[0], tuple)).isLessThanOrEqualTo(0);
+		ConcurrentWorkerOverlapProbe overlapProbe = new ConcurrentWorkerOverlapProbe();
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles)) {
+			try {
+				try (TripleTermIndexBulkRecords records = TripleTermIndexBulkRecords.build(source, workspace, null,
+						memoryBudgetBytes, maxOpenFiles, BulkCompression.FASTEST, overlapProbe, scheduler)) {
+					assertThat(records.runs()).extracting(TripleTermIndexBulkRecords.IndexRun::specification)
+							.containsExactly("spoc", "cspo");
+					assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
+					assertThat(scheduler.reservedMemoryBytes()).isZero();
+					assertThat(scheduler.reservedFileDescriptors()).isZero();
+					for (TripleTermIndexBulkRecords.IndexRun run : records.runs()) {
+						assertThat(run.tuples().rows()).isEqualTo(rows);
+						long[][] previous = { null };
+						run.tuples().forEach(tuple -> {
+							if (previous[0] != null) {
+								assertThat(compareUnsigned(previous[0], tuple)).isLessThanOrEqualTo(0);
+							}
+							previous[0] = tuple.clone();
+						});
 					}
-					previous[0] = tuple.clone();
-				});
+				}
+				assertThat(overlapProbe.observedDistinctWorkerOverlap())
+						.as("two distinct term-index finishing workers should overlap inside their work callbacks")
+						.isTrue();
+			} finally {
+				overlapProbe.releaseBlockedWorker();
 			}
 		}
 	}

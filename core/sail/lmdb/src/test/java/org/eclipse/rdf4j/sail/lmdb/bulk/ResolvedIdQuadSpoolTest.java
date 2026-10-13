@@ -195,17 +195,25 @@ class ResolvedIdQuadSpoolTest {
 				memoryBudgetBytes, BulkCompression.NONE, () -> false);
 		Path adaptiveWorkspace = Files.createDirectory(temporaryDirectory.resolve("per-partition-adaptive"));
 		int[] runs = { -1 };
+		ConcurrentWorkerOverlapProbe overlapProbe = new ConcurrentWorkerOverlapProbe();
 		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(4, memoryBudgetBytes, 32)) {
-			PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
-			ResolvedIdQuadSpool adaptive = ResolvedIdQuadSpool.build(staged, dictionary, adaptiveWorkspace, 32,
-					memoryBudgetBytes, BulkCompression.NONE, () -> false, scheduler, controller,
-					count -> runs[0] = count);
+			try {
+				PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
+				ResolvedIdQuadSpool adaptive = ResolvedIdQuadSpool.build(staged, dictionary, adaptiveWorkspace, 32,
+						memoryBudgetBytes, BulkCompression.NONE, overlapProbe, scheduler, controller,
+						count -> runs[0] = count);
 
-			assertThat(runs[0]).isBetween(1, partitionCount);
-			assertThat(scheduler.peakActiveTasks()).isGreaterThan(1);
-			assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
-			assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(32);
-			assertThat(Files.readAllBytes(adaptive.path())).isEqualTo(Files.readAllBytes(serial.path()));
+				assertThat(runs[0]).isBetween(1, partitionCount);
+				assertThat(overlapProbe.observedDistinctWorkerOverlap())
+						.as("two distinct partition workers should overlap inside their resolution callbacks")
+						.isTrue();
+				assertThat(scheduler.peakActiveTasks()).isGreaterThan(1);
+				assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
+				assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(32);
+				assertThat(Files.readAllBytes(adaptive.path())).isEqualTo(Files.readAllBytes(serial.path()));
+			} finally {
+				overlapProbe.releaseBlockedWorker();
+			}
 		}
 		try (var files = Files.walk(adaptiveWorkspace)) {
 			assertThat(files.map(Path::toString)).noneMatch(name -> name.endsWith(".meta"));

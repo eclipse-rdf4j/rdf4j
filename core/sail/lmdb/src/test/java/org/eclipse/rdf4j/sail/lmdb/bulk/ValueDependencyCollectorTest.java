@@ -26,6 +26,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -79,29 +80,43 @@ class ValueDependencyCollectorTest {
 		List<String> serialEntries = dictionaryEntries(serialDictionary);
 
 		Path adaptiveWorkspace = Files.createDirectory(temporaryDirectory.resolve("adaptive"));
+		ConcurrentWorkerOverlapProbe overlapProbe = new ConcurrentWorkerOverlapProbe();
+		AtomicLong submittedChunkRuns = new AtomicLong();
 		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles)) {
-			PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
-			ValueDependencyBuckets adaptiveDependencies = ValueDependencyCollector.collect(staged, adaptiveWorkspace,
-					partitionCount, maxOpenFiles, memoryBudgetBytes, config, compression, () -> false, scheduler,
-					controller);
+			try {
+				PartitionConcurrencyController controller = new PartitionConcurrencyController(System::nanoTime);
+				ValueDependencyBuckets adaptiveDependencies = ValueDependencyCollector.collect(staged,
+						adaptiveWorkspace,
+						partitionCount, maxOpenFiles, memoryBudgetBytes, LmdbStoreFormat.forNewStore(config),
+						compression,
+						overlapProbe, scheduler,
+						controller, submittedChunkRuns::set);
 
-			long dependencyDataFiles;
-			try (var dependencyFiles = Files.list(adaptiveWorkspace.resolve("dependency-buckets"))) {
-				dependencyDataFiles = dependencyFiles
-						.count();
+				long dependencyDataFiles;
+				try (var dependencyFiles = Files.list(adaptiveWorkspace.resolve("dependency-buckets"))) {
+					dependencyDataFiles = dependencyFiles.count();
+				}
+				assertThat(dependencyDataFiles)
+						.as("adaptive dependency output should retain only coalesced destination buckets")
+						.isLessThanOrEqualTo(partitionCount);
+				assertThat(submittedChunkRuns.get())
+						.as("adaptive dependency collection should submit multiple chunk runs")
+						.isGreaterThan(1);
+				assertThat(overlapProbe.observedDistinctWorkerOverlap())
+						.as("a second worker should start while the first worker is held at the cancellation seam")
+						.isTrue();
+				assertThat(scheduler.peakActiveTasks()).isGreaterThan(1);
+				assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
+				assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(maxOpenFiles);
+				assertThat(scheduler.peakOpenFileHandles()).isLessThanOrEqualTo(maxOpenFiles);
+				PartitionValueDictionary adaptiveDictionary = PartitionValueDictionaryBuilder.build(staged,
+						adaptiveDependencies, Files.createDirectory(adaptiveWorkspace.resolve("dictionary")),
+						partitionCount,
+						memoryBudgetBytes, maxOpenFiles, config, compression, () -> false, predicateIdPlan);
+				assertThat(dictionaryEntries(adaptiveDictionary)).containsExactlyElementsOf(serialEntries);
+			} finally {
+				overlapProbe.releaseBlockedWorker();
 			}
-			assertThat(dependencyDataFiles)
-					.as("adaptive dependency output should retain only coalesced destination buckets")
-					.isLessThanOrEqualTo(partitionCount);
-			assertThat(scheduler.peakActiveTasks()).isGreaterThan(1);
-			assertThat(scheduler.peakReservedMemoryBytes()).isLessThanOrEqualTo(memoryBudgetBytes);
-			assertThat(scheduler.peakReservedFileDescriptors()).isLessThanOrEqualTo(maxOpenFiles);
-			assertThat(scheduler.peakOpenFileHandles()).isLessThanOrEqualTo(maxOpenFiles);
-			PartitionValueDictionary adaptiveDictionary = PartitionValueDictionaryBuilder.build(staged,
-					adaptiveDependencies, Files.createDirectory(adaptiveWorkspace.resolve("dictionary")),
-					partitionCount,
-					memoryBudgetBytes, maxOpenFiles, config, compression, () -> false, predicateIdPlan);
-			assertThat(dictionaryEntries(adaptiveDictionary)).containsExactlyElementsOf(serialEntries);
 		}
 	}
 

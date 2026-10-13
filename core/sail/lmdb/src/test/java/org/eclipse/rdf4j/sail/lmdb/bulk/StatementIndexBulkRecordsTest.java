@@ -100,14 +100,23 @@ class StatementIndexBulkRecordsTest {
 
 		long memoryBudgetBytes = 32L * 1024L * 1024L;
 		int maxOpenFiles = 8;
-		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles);
-				StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc,posc",
-						memoryBudgetBytes, maxOpenFiles, compression, () -> false, scheduler)) {
-			assertThat(records.runs()).extracting(StatementIndexBulkRecords.IndexRun::specification)
-					.containsExactly("spoc", "posc");
-			assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
-			assertThat(scheduler.reservedMemoryBytes()).isZero();
-			assertThat(scheduler.reservedFileDescriptors()).isZero();
+		ConcurrentWorkerOverlapProbe overlapProbe = new ConcurrentWorkerOverlapProbe();
+		try (BulkTaskScheduler scheduler = new BulkTaskScheduler(2, memoryBudgetBytes, maxOpenFiles)) {
+			try {
+				try (StatementIndexBulkRecords records = StatementIndexBulkRecords.build(spool, workspace, "spoc,posc",
+						memoryBudgetBytes, maxOpenFiles, compression, overlapProbe, scheduler)) {
+					assertThat(records.runs()).extracting(StatementIndexBulkRecords.IndexRun::specification)
+							.containsExactly("spoc", "posc");
+					assertThat(scheduler.peakActiveTasks()).isEqualTo(2);
+					assertThat(scheduler.reservedMemoryBytes()).isZero();
+					assertThat(scheduler.reservedFileDescriptors()).isZero();
+				}
+				assertThat(overlapProbe.observedDistinctWorkerOverlap())
+						.as("two distinct index-finishing workers should overlap inside their work callbacks")
+						.isTrue();
+			} finally {
+				overlapProbe.releaseBlockedWorker();
+			}
 		}
 	}
 
