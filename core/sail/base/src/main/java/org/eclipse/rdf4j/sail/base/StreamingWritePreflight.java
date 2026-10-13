@@ -83,7 +83,11 @@ public final class StreamingWritePreflight implements SailClosable {
 		if (frame != null && frame.graph.sources.contains(source)) {
 			try {
 				frame.validateSource(source);
-			} catch (RuntimeException | Error failure) {
+			} catch (RuntimeException failure) {
+				RuntimeException classified = skipIfNonblocking(frame.nonblocking(), failure);
+				frame.fail(classified);
+				throw classified;
+			} catch (Error failure) {
 				frame.fail(failure);
 				throw failure;
 			}
@@ -755,7 +759,9 @@ public final class StreamingWritePreflight implements SailClosable {
 						preparing.getOrDefault(branch, Set.of()), current -> {
 							Set<Changeset> seen = identitySet();
 							for (Changeset change : current) {
-								check(change);
+								// Let validate() classify nonblocking generation conflicts before recording frame
+								// failure.
+								checkGeneration(change);
 								seen.add(change);
 							}
 							for (Changeset change : graph.frontiers.contains(branch)

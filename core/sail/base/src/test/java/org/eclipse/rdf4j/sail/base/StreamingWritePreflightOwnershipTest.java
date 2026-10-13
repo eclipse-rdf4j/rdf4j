@@ -826,6 +826,128 @@ class StreamingWritePreflightOwnershipTest {
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void nestedAutoFlushSkipsGenerationChangeWithoutPoisoningItsBlockingFrame() throws Exception {
+		RecordingStreamingSource backing = new RecordingStreamingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		Statement queued = statement("nested-auto-flush-generation-change-queued");
+		Statement concurrent = statement("nested-auto-flush-generation-change-concurrent");
+		SailDataset initialObserver = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		add(branch, queued);
+		AtomicReference<SailDataset> replacementObserver = new AtomicReference<>();
+		AtomicBoolean hookActivated = new AtomicBoolean();
+		AtomicReference<Thread> hookThread = new AtomicReference<>();
+		AtomicReference<Thread> mutationThread = new AtomicReference<>();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Throwable autoFlushFailure = null;
+		Throwable blockingValidationFailure = null;
+		Throwable replacementCloseFailure = null;
+		Throwable branchCloseFailure = null;
+		List<Statement> bufferedRowsAtSkip = List.of();
+		List<Statement> finalRows = List.of();
+		Set<Statement> committedAtSkip = Set.of();
+		int failedPublicationsAtSkip = -1;
+		boolean pendingAtSkip = false;
+		boolean initialObserverReleased = false;
+		boolean replacementObserverReleased = false;
+		boolean executorTerminated = false;
+
+		installConcurrentSnapshotMutation(backing, false, branch, concurrent, replacementObserver, executor,
+				hookActivated, hookThread, mutationThread);
+		try {
+			try (StreamingWritePreflight covering = new StreamingWritePreflight(branch);
+					SailClosable scope = covering.enter()) {
+				try {
+					initialObserver.close();
+				} catch (Throwable failure) {
+					autoFlushFailure = failure;
+				} finally {
+					initialObserverReleased = true;
+				}
+				committedAtSkip = Set.copyOf(backing.committed);
+				failedPublicationsAtSkip = backing.failedPublicationScopes.get();
+				backing.onTryBeginPublication = thread -> {
+				};
+				try {
+					StreamingWritePreflight.validate(branch);
+				} catch (Throwable failure) {
+					blockingValidationFailure = failure;
+				}
+			}
+			SailDataset openedReplacement = replacementObserver.get();
+			if (openedReplacement != null) {
+				try (SailDataset current = branch.dataset(IsolationLevels.NONE)) {
+					bufferedRowsAtSkip = readAll(current.getStatements(null, null, null));
+				}
+				pendingAtSkip = branch.isChanged();
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					replacementCloseFailure = failure;
+				} finally {
+					replacementObserverReleased = true;
+				}
+			}
+			try (SailDataset dataset = backing.dataset(IsolationLevels.NONE)) {
+				finalRows = readAll(dataset.getStatements(null, null, null));
+			}
+		} finally {
+			backing.onTryBeginPublication = thread -> {
+			};
+			backing.onSinkPrepare = () -> {
+			};
+			if (!initialObserverReleased) {
+				try {
+					initialObserver.close();
+				} catch (Throwable failure) {
+					if (autoFlushFailure == null) {
+						autoFlushFailure = failure;
+					}
+				}
+			}
+			SailDataset openedReplacement = replacementObserver.get();
+			if (!replacementObserverReleased && openedReplacement != null) {
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					if (replacementCloseFailure == null) {
+						replacementCloseFailure = failure;
+					}
+				}
+			}
+			try {
+				branch.close();
+			} catch (Throwable failure) {
+				branchCloseFailure = failure;
+			}
+			executor.shutdownNow();
+			executorTerminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+
+		assertThat(hookActivated).as("nested automatic publication reached its admission boundary").isTrue();
+		assertThat(mutationThread.get()).as("the concurrent writer ran on another thread")
+				.isNotSameAs(hookThread.get());
+		assertThat(autoFlushFailure)
+				.as("nested opportunistic flush skips the generation change without surfacing an error")
+				.isNull();
+		assertThat(failedPublicationsAtSkip).as("nested skip leaves its blocking frame unpoisoned").isZero();
+		assertThat(blockingValidationFailure)
+				.as("the later blocking validation reports the original typed generation conflict")
+				.isInstanceOf(StreamingWritePreflight.InputGenerationConflictException.class);
+		assertThat(bufferedRowsAtSkip).containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(pendingAtSkip).isTrue();
+		assertThat(committedAtSkip).as("neither row is applied before the replacement reader closes").isEmpty();
+		assertThat(replacementCloseFailure).isNull();
+		assertThat(finalRows).containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(backing.approvalCount(queued)).hasValue(1);
+		assertThat(backing.approvalCount(concurrent)).hasValue(1);
+		assertThat(backing.failedPublicationScopes).hasValue(0);
+		assertThat(branchCloseFailure).isNull();
+		assertThat(executorTerminated).isTrue();
+		assertStreamingWriteResourcesClosed(backing);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void nestedParentAutoFlushEstimatesItsCurrentFrontierAfterObserverRelease() throws Exception {
 		RecordingStreamingSource terminal = new RecordingStreamingSource();
 		SailSourceBranch parent = new SailSourceBranch(terminal, new DynamicModelFactory(), true);
@@ -1259,7 +1381,7 @@ class StreamingWritePreflightOwnershipTest {
 
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
-	void autoFlushRootRejectsChildAcknowledgementDuringCapturedPreparation() throws Exception {
+	void autoFlushRootDefersChildAcknowledgementUntilFreshCapture() throws Exception {
 		assertChildAcknowledgementDuringCapturedPreparation(true);
 	}
 
@@ -1322,9 +1444,18 @@ class StreamingWritePreflightOwnershipTest {
 				assertThat(childFlushReturned).as("the child acknowledged its row before root preparation resumed")
 						.isTrue();
 				assertThat(childFlushFailure.get()).as("the concurrent child acknowledgement succeeds").isNull();
-				assertThat(firstRootFailure.get())
-						.as("the captured root receipt rejects a child generation acknowledged during preparation")
-						.isInstanceOf(SailConflictException.class);
+				if (autoFlush) {
+					assertThat(firstRootFailure.get())
+							.as("opportunistic root flush defers stale captured input until its next trigger")
+							.isNull();
+				} else {
+					assertThat(firstRootFailure.get())
+							.as("blocking root flush rejects a child generation acknowledged during preparation")
+							.isInstanceOf(StreamingWritePreflight.InputGenerationConflictException.class);
+				}
+				assertThat(terminal.terminalApprovalCalls)
+						.as("the stale captured input is rejected before terminal application begins")
+						.hasValue(0);
 				assertThat(terminal.committed).as("the rejected first attempt applies no terminal rows").isEmpty();
 				assertThat(terminal.liveSinkPreparations).as("the rejected attempt releases terminal preparation")
 						.hasValue(0);
@@ -1765,6 +1896,287 @@ class StreamingWritePreflightOwnershipTest {
 				.isNull();
 		assertThat(closeFailure).as("the concurrent branch close completes").isNull();
 		assertThat(backing.committed).as("nothing was applied by the skipped flush").doesNotContain(queued);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void automaticFlushSkipsConcurrentGenerationChangeAfterAdmission() throws Exception {
+		assertAutomaticFlushSkipsConcurrentGenerationChange(false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void automaticFlushSkipsConcurrentGenerationChangeDuringSinkPreparation() throws Exception {
+		assertAutomaticFlushSkipsConcurrentGenerationChange(true);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void explicitFlushRetainsTypedGenerationConflictDuringSinkPreparation() throws Exception {
+		RecordingStreamingSource backing = new RecordingStreamingSource();
+		SailSourceBranch branch = branch(backing);
+		Statement queued = statement("explicit-flush-generation-change-queued");
+		Statement concurrent = statement("explicit-flush-generation-change-concurrent");
+		add(branch, queued);
+		AtomicReference<SailDataset> replacementObserver = new AtomicReference<>();
+		AtomicBoolean hookActivated = new AtomicBoolean();
+		AtomicReference<Thread> hookThread = new AtomicReference<>();
+		AtomicReference<Thread> mutationThread = new AtomicReference<>();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Throwable firstFlushFailure = null;
+		Throwable retryFailure = null;
+		Throwable replacementCloseFailure = null;
+		Throwable branchCloseFailure = null;
+		List<Statement> bufferedRowsAtFailure = List.of();
+		List<Statement> finalRows = List.of();
+		Set<Statement> committedAtFailure = Set.of();
+		int approvalsAtFailure = -1;
+		int preparationsAtFailure = -1;
+		boolean replacementObserverReleased = false;
+		boolean executorTerminated = false;
+
+		installConcurrentSnapshotMutation(backing, true, branch, concurrent, replacementObserver, executor,
+				hookActivated, hookThread, mutationThread);
+		try {
+			try {
+				branch.flush();
+			} catch (Throwable failure) {
+				firstFlushFailure = failure;
+			}
+			committedAtFailure = Set.copyOf(backing.committed);
+			approvalsAtFailure = backing.terminalApprovalCalls.get();
+			preparationsAtFailure = backing.liveSinkPreparations.get();
+			backing.onSinkPrepare = () -> {
+			};
+			backing.onTryBeginPublication = thread -> {
+			};
+			if (replacementObserver.get() != null) {
+				try (SailDataset current = branch.dataset(IsolationLevels.NONE)) {
+					bufferedRowsAtFailure = readAll(current.getStatements(null, null, null));
+				}
+				try {
+					replacementObserver.get().close();
+				} catch (Throwable failure) {
+					replacementCloseFailure = failure;
+				} finally {
+					replacementObserverReleased = true;
+				}
+			}
+			try {
+				branch.flush();
+			} catch (Throwable failure) {
+				retryFailure = failure;
+			}
+			try (SailDataset dataset = backing.dataset(IsolationLevels.NONE)) {
+				finalRows = readAll(dataset.getStatements(null, null, null));
+			}
+		} finally {
+			backing.onSinkPrepare = () -> {
+			};
+			backing.onTryBeginPublication = thread -> {
+			};
+			if (!replacementObserverReleased && replacementObserver.get() != null) {
+				try {
+					replacementObserver.get().close();
+				} catch (Throwable failure) {
+					if (replacementCloseFailure == null) {
+						replacementCloseFailure = failure;
+					}
+				}
+			}
+			try {
+				branch.close();
+			} catch (Throwable failure) {
+				branchCloseFailure = failure;
+			}
+			executor.shutdownNow();
+			executorTerminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+
+		assertThat(hookActivated).as("the explicit flush reached sink preparation").isTrue();
+		assertThat(mutationThread.get()).as("the concurrent writer ran on another thread")
+				.isNotSameAs(hookThread.get());
+		assertThat(firstFlushFailure).as("blocking flush preserves the typed input-generation conflict")
+				.isInstanceOf(StreamingWritePreflight.InputGenerationConflictException.class);
+		assertThat(bufferedRowsAtFailure).as("blocking conflict preserves both logical rows")
+				.containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(committedAtFailure).as("blocking validation applies neither row").isEmpty();
+		assertThat(approvalsAtFailure).as("blocking conflict occurs before terminal row application").isZero();
+		assertThat(preparationsAtFailure).as("the rejected publication releases its prepared sink").isZero();
+		assertThat(replacementCloseFailure).isNull();
+		assertThat(retryFailure).as("a later blocking flush can retry the retained rows").isNull();
+		assertThat(finalRows).containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(backing.committed).containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(backing.approvalCount(queued)).hasValue(1);
+		assertThat(backing.approvalCount(concurrent)).hasValue(1);
+		assertThat(branchCloseFailure).isNull();
+		assertThat(executorTerminated).isTrue();
+		assertStreamingWriteResourcesClosed(backing);
+	}
+
+	private static void assertAutomaticFlushSkipsConcurrentGenerationChange(boolean duringSinkPreparation)
+			throws Exception {
+		RecordingStreamingSource backing = new RecordingStreamingSource();
+		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
+		Statement queued = statement("auto-flush-generation-change-queued-" + duringSinkPreparation);
+		Statement concurrent = statement("auto-flush-generation-change-concurrent-" + duringSinkPreparation);
+		SailDataset initialObserver = branch.dataset(IsolationLevels.SNAPSHOT_READ);
+		add(branch, queued);
+		AtomicReference<SailDataset> replacementObserver = new AtomicReference<>();
+		AtomicBoolean hookActivated = new AtomicBoolean();
+		AtomicReference<Thread> hookThread = new AtomicReference<>();
+		AtomicReference<Thread> mutationThread = new AtomicReference<>();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Throwable autoFlushFailure = null;
+		Throwable replacementCloseFailure = null;
+		Throwable branchCloseFailure = null;
+		List<Statement> bufferedRowsAtSkip = List.of();
+		List<Statement> finalRows = List.of();
+		Set<Statement> committedAtSkip = Set.of();
+		boolean pendingAtSkip = false;
+		int approvalsAtSkip = -1;
+		int failedPublicationsAtSkip = -1;
+		int preparationsAtSkip = -1;
+		boolean initialObserverReleased = false;
+		boolean replacementObserverReleased = false;
+		boolean executorTerminated = false;
+
+		installConcurrentSnapshotMutation(backing, duringSinkPreparation, branch, concurrent, replacementObserver,
+				executor, hookActivated, hookThread, mutationThread);
+		try {
+			try {
+				initialObserver.close();
+			} catch (Throwable failure) {
+				autoFlushFailure = failure;
+			} finally {
+				initialObserverReleased = true;
+			}
+			committedAtSkip = Set.copyOf(backing.committed);
+			backing.onTryBeginPublication = thread -> {
+			};
+			backing.onSinkPrepare = () -> {
+			};
+			SailDataset openedReplacement = replacementObserver.get();
+			if (openedReplacement != null) {
+				try (SailDataset current = branch.dataset(IsolationLevels.NONE)) {
+					bufferedRowsAtSkip = readAll(current.getStatements(null, null, null));
+				}
+				pendingAtSkip = branch.isChanged();
+				approvalsAtSkip = backing.terminalApprovalCalls.get();
+				failedPublicationsAtSkip = backing.failedPublicationScopes.get();
+				preparationsAtSkip = backing.liveSinkPreparations.get();
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					replacementCloseFailure = failure;
+				} finally {
+					replacementObserverReleased = true;
+				}
+			}
+			try (SailDataset dataset = backing.dataset(IsolationLevels.NONE)) {
+				finalRows = readAll(dataset.getStatements(null, null, null));
+			}
+		} finally {
+			backing.onTryBeginPublication = thread -> {
+			};
+			backing.onSinkPrepare = () -> {
+			};
+			if (!initialObserverReleased) {
+				try {
+					initialObserver.close();
+				} catch (Throwable failure) {
+					if (autoFlushFailure == null) {
+						autoFlushFailure = failure;
+					}
+				}
+			}
+			SailDataset openedReplacement = replacementObserver.get();
+			if (!replacementObserverReleased && openedReplacement != null) {
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					if (replacementCloseFailure == null) {
+						replacementCloseFailure = failure;
+					}
+				}
+			}
+			try {
+				branch.close();
+			} catch (Throwable failure) {
+				branchCloseFailure = failure;
+			}
+			executor.shutdownNow();
+			executorTerminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+
+		assertThat(hookActivated).as("the automatic publication reached the requested race boundary").isTrue();
+		assertThat(mutationThread.get()).as("the concurrent writer ran on another thread")
+				.isNotSameAs(hookThread.get());
+		assertThat(autoFlushFailure)
+				.as("automatic flush skips a pre-application input-generation change without failing observer close")
+				.withFailMessage("automatic flush failure=%s, hookDuringSinkPreparation=%s",
+						autoFlushFailure, duringSinkPreparation)
+				.isNull();
+		assertThat(bufferedRowsAtSkip).as("both logical rows remain queued at the skip boundary")
+				.containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(pendingAtSkip).as("the skipped publication retains buffered changes").isTrue();
+		assertThat(approvalsAtSkip).as("no terminal row approval begins before the skip").isZero();
+		assertThat(committedAtSkip).as("the skipped publication commits neither row").isEmpty();
+		assertThat(failedPublicationsAtSkip).as("a pre-application skip does not fail its publication scope").isZero();
+		assertThat(preparationsAtSkip).as("any unused backing preparation is cancelled before observer close returns")
+				.isZero();
+		assertThat(replacementCloseFailure).as("releasing the replacement reader retries the queued publication")
+				.isNull();
+		assertThat(finalRows).as("the later publication applies both retained rows")
+				.containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(backing.committed).containsExactlyInAnyOrder(queued, concurrent);
+		assertThat(backing.approvalCount(queued)).as("the original queued row is applied once").hasValue(1);
+		assertThat(backing.approvalCount(concurrent)).as("the concurrent row is applied once").hasValue(1);
+		assertThat(backing.failedPublicationScopes).as("the pre-application race never poisons publication")
+				.hasValue(0);
+		assertThat(branchCloseFailure).isNull();
+		assertThat(executorTerminated).as("the concurrent writer terminates").isTrue();
+		assertStreamingWriteResourcesClosed(backing);
+	}
+
+	private static void installConcurrentSnapshotMutation(RecordingStreamingSource backing,
+			boolean duringSinkPreparation, SailSourceBranch branch, Statement concurrent,
+			AtomicReference<SailDataset> replacementObserver, ExecutorService executor,
+			AtomicBoolean hookActivated, AtomicReference<Thread> hookThread,
+			AtomicReference<Thread> mutationThread) {
+		Runnable mutate = () -> {
+			if (!hookActivated.compareAndSet(false, true)) {
+				return;
+			}
+			hookThread.set(Thread.currentThread());
+			Future<?> mutation = executor.submit(() -> {
+				mutationThread.set(Thread.currentThread());
+				replacementObserver.set(branch.dataset(IsolationLevels.SNAPSHOT_READ));
+				add(branch, concurrent);
+			});
+			try {
+				mutation.get(5, TimeUnit.SECONDS);
+			} catch (Exception failure) {
+				throw new AssertionError("Concurrent snapshot reader and buffered write did not complete", failure);
+			}
+		};
+		if (duringSinkPreparation) {
+			backing.onSinkPrepare = mutate;
+		} else {
+			backing.onTryBeginPublication = thread -> mutate.run();
+		}
+	}
+
+	private static void assertStreamingWriteResourcesClosed(RecordingStreamingSource backing) {
+		assertThat(backing.liveSinkPreparations).as("no terminal sink preparation remains open").hasValue(0);
+		assertThat(backing.liveWriteReservations).as("no prepared-write reservation remains open").hasValue(0);
+		assertThat(backing.preflightScopeCloses).as("all streaming preflight scopes close")
+				.hasValue(backing.preflightScopeOpens.get());
+		assertThat(backing.retainedOwnerCloses).as("all retained writer owners close")
+				.hasValue(backing.retainedOwnerCount.get());
+		assertThat(backing.ownerClosedWhilePrepared).as("writer owners outlive every prepared resource").hasValue(0);
+		assertThat(backing.publicationScopesClosed).as("all publication scopes close")
+				.hasValue(backing.publicationScopesStarted.get());
 	}
 
 	private static void assertConcurrentAutoFlushBehavior(boolean nonblockingContender) throws Exception {
@@ -2289,11 +2701,24 @@ class StreamingWritePreflightOwnershipTest {
 	@Test
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void autoFlushPropagatesUnavailableAfterTerminalInputApplicationBegins() throws Exception {
+		assertAutoFlushPropagatesAfterTerminalInputApplicationBegins(
+				new StreamingWritePreflight.Unavailable(), "Unavailable");
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void autoFlushPropagatesInputGenerationConflictAfterTerminalInputApplicationBegins() throws Exception {
+		assertAutoFlushPropagatesAfterTerminalInputApplicationBegins(
+				new StreamingWritePreflight.InputGenerationConflictException("injected terminal conflict"),
+				"InputGenerationConflictException");
+	}
+
+	private static void assertAutoFlushPropagatesAfterTerminalInputApplicationBegins(RuntimeException marker,
+			String failureName) throws Exception {
 		RecordingStreamingSource backing = new RecordingStreamingSource();
 		SailSourceBranch branch = new SailSourceBranch(backing, new DynamicModelFactory(), true);
 		Statement first = statement("auto-flush-terminal-prefix-first");
 		Statement second = statement("auto-flush-terminal-prefix-second");
-		StreamingWritePreflight.Unavailable marker = new StreamingWritePreflight.Unavailable();
 		try (branch; SailDataset observer = branch.dataset(IsolationLevels.SNAPSHOT_READ)) {
 			add(branch, first);
 			add(branch, second);
@@ -2318,9 +2743,193 @@ class StreamingWritePreflightOwnershipTest {
 			assertThat(backing.publicationScopesClosed).hasValue(1);
 			assertThat(backing.committed).as("the failed sink never commits a partial or empty publication").isEmpty();
 			assertThat(surfaced)
-					.as("an Unavailable raised after terminal input application begins reaches the caller")
+					.as(failureName + " raised after terminal input application begins reaches the caller")
 					.isSameAs(marker);
 		}
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void autoFlushPropagatesInheritedGenerationConflictAfterTerminalApplicationBegins() throws Exception {
+		RecordingStreamingSource firstTerminal = new RecordingStreamingSource();
+		RecordingStreamingSource secondTerminal = new RecordingStreamingSource();
+		SailSourceBranch first = new SailSourceBranch(firstTerminal, new DynamicModelFactory(), true);
+		SailSourceBranch second = new SailSourceBranch(secondTerminal, new DynamicModelFactory(), true);
+		UnionSailSource union = new UnionSailSource(first, second);
+		Statement firstRow = statement("auto-flush-inherited-conflict-first-row");
+		Statement secondRow = statement("auto-flush-inherited-conflict-second-row");
+		Statement concurrentRow = statement("auto-flush-inherited-conflict-concurrent-row");
+		SailDataset firstObserver = first.dataset(IsolationLevels.SNAPSHOT_READ);
+		SailDataset secondObserver = second.dataset(IsolationLevels.SNAPSHOT_READ);
+		add(first, firstRow);
+		add(second, secondRow);
+		AtomicReference<SailDataset> replacementObserver = new AtomicReference<>();
+		AtomicBoolean callbackActivated = new AtomicBoolean();
+		AtomicBoolean firstObserverReleased = new AtomicBoolean();
+		AtomicBoolean secondObserverReleased = new AtomicBoolean();
+		AtomicBoolean replacementObserverReleased = new AtomicBoolean();
+		AtomicBoolean initialSecondObserverClosed = new AtomicBoolean();
+		AtomicReference<Thread> hookThread = new AtomicReference<>();
+		AtomicReference<Thread> mutationThread = new AtomicReference<>();
+		AtomicReference<Throwable> secondObserverCloseFailure = new AtomicReference<>();
+		AtomicReference<Throwable> directValidationFailure = new AtomicReference<>();
+		AtomicReference<Throwable> outerFailure = new AtomicReference<>();
+		AtomicReference<Throwable> replacementCloseFailure = new AtomicReference<>();
+		AtomicReference<Throwable> secondRetryFailure = new AtomicReference<>();
+		AtomicReference<Throwable> unionCloseFailure = new AtomicReference<>();
+		AtomicInteger stagedApprovalsAtCallback = new AtomicInteger(-1);
+		AtomicInteger failedPublicationsAtFailure = new AtomicInteger(-1);
+		AtomicReference<Set<Statement>> firstCommittedAtFailure = new AtomicReference<>(Set.of());
+		AtomicReference<Set<Statement>> secondCommittedAtFailure = new AtomicReference<>(Set.of());
+		AtomicReference<List<Statement>> secondRowsAtFailure = new AtomicReference<>(List.of());
+		AtomicBoolean secondPendingAtFailure = new AtomicBoolean();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		boolean executorTerminated = false;
+
+		firstTerminal.onTerminalApproval = statement -> {
+			if (!callbackActivated.compareAndSet(false, true)) {
+				return;
+			}
+			stagedApprovalsAtCallback.set(firstTerminal.stagedTerminalApprovals.get());
+			hookThread.set(Thread.currentThread());
+			Future<?> mutation = executor.submit(() -> {
+				mutationThread.set(Thread.currentThread());
+				replacementObserver.set(second.dataset(IsolationLevels.SNAPSHOT_READ));
+				add(second, concurrentRow);
+			});
+			try {
+				mutation.get(5, TimeUnit.SECONDS);
+			} catch (Exception failure) {
+				throw new AssertionError("Concurrent writer did not publish its buffered row", failure);
+			}
+			try {
+				secondObserver.close();
+			} catch (Throwable failure) {
+				secondObserverCloseFailure.set(failure);
+			} finally {
+				secondObserverReleased.set(true);
+				initialSecondObserverClosed.set(true);
+			}
+			try {
+				StreamingWritePreflight.validate(second);
+			} catch (RuntimeException | Error failure) {
+				directValidationFailure.set(failure);
+				throw failure;
+			}
+		};
+
+		try {
+			try (StreamingWritePreflight covering = new StreamingWritePreflight(union);
+					SailClosable scope = covering.enter()) {
+				try {
+					firstObserver.close();
+				} catch (Throwable failure) {
+					outerFailure.set(failure);
+				} finally {
+					firstObserverReleased.set(true);
+				}
+				firstCommittedAtFailure.set(Set.copyOf(firstTerminal.committed));
+				failedPublicationsAtFailure.set(firstTerminal.failedPublicationScopes.get());
+				secondCommittedAtFailure.set(Set.copyOf(secondTerminal.committed));
+				try (SailDataset dataset = second.dataset(IsolationLevels.NONE)) {
+					secondRowsAtFailure.set(readAll(dataset.getStatements(null, null, null)));
+				}
+				secondPendingAtFailure.set(second.isChanged());
+			} catch (Throwable failure) {
+				Throwable original = outerFailure.get();
+				if (original == null) {
+					outerFailure.set(failure);
+				} else if (failure != original) {
+					original.addSuppressed(failure);
+				}
+			}
+
+			SailDataset openedReplacement = replacementObserver.get();
+			if (openedReplacement != null) {
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					replacementCloseFailure.set(failure);
+				} finally {
+					replacementObserverReleased.set(true);
+				}
+			}
+			try {
+				second.flush();
+			} catch (Throwable failure) {
+				secondRetryFailure.set(failure);
+			}
+		} finally {
+			firstTerminal.onTerminalApproval = statement -> {
+			};
+			if (!firstObserverReleased.get()) {
+				try {
+					firstObserver.close();
+				} catch (Throwable failure) {
+					outerFailure.compareAndSet(null, failure);
+				}
+			}
+			if (!secondObserverReleased.get()) {
+				try {
+					secondObserver.close();
+				} catch (Throwable failure) {
+					secondObserverCloseFailure.compareAndSet(null, failure);
+				}
+			}
+			SailDataset openedReplacement = replacementObserver.get();
+			if (!replacementObserverReleased.get() && openedReplacement != null) {
+				try {
+					openedReplacement.close();
+				} catch (Throwable failure) {
+					replacementCloseFailure.compareAndSet(null, failure);
+				}
+			}
+			try {
+				union.close();
+			} catch (Throwable failure) {
+				unionCloseFailure.set(failure);
+			}
+			executor.shutdownNow();
+			executorTerminated = executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+
+		assertThat(callbackActivated).as("the first terminal staged a row before the race callback").isTrue();
+		assertThat(stagedApprovalsAtCallback).as("the callback ran after one real terminal approval was staged")
+				.hasValue(1);
+		assertThat(mutationThread.get()).as("the concurrent writer ran on another thread")
+				.isNotSameAs(hookThread.get());
+		assertThat(initialSecondObserverClosed)
+				.as("closing the initial reader returns while the replacement reader remains open")
+				.isTrue();
+		assertThat(secondObserverCloseFailure.get())
+				.as("closing the initial reader does not fail the active publication")
+				.isNull();
+		assertThat(directValidationFailure.get())
+				.as("the explicit graph validation after application begins uses its control signal")
+				.isInstanceOf(StreamingWritePreflight.Unavailable.class);
+		assertThat(outerFailure.get()).as("the active first publication surfaces that post-application signal")
+				.isNotNull();
+		assertThat(throwableGraphContains(outerFailure.get(), directValidationFailure.get()))
+				.as("the outer failure preserves the graph-validation control signal")
+				.isTrue();
+		assertThat(firstCommittedAtFailure.get()).as("the failed first publication commits no staged prefix").isEmpty();
+		assertThat(failedPublicationsAtFailure).as("the actual first publication scope is failed").hasValue(1);
+		assertThat(secondCommittedAtFailure.get()).as("the concurrent branch remains unpublished at failure").isEmpty();
+		assertThat(secondRowsAtFailure.get()).containsExactlyInAnyOrder(secondRow, concurrentRow);
+		assertThat(secondPendingAtFailure).isTrue();
+		assertThat(replacementCloseFailure.get()).isNull();
+		assertThat(secondRetryFailure.get()).as("the second branch retries after the active frame closes").isNull();
+		assertThat(firstTerminal.committed).as("the failed first transaction does not commit a staged prefix")
+				.isEmpty();
+		assertThat(secondTerminal.committed).containsExactlyInAnyOrder(secondRow, concurrentRow);
+		assertThat(firstTerminal.approvalCount(firstRow)).as("the failed attempt staged exactly one row").hasValue(1);
+		assertThat(secondTerminal.approvalCount(secondRow)).hasValue(1);
+		assertThat(secondTerminal.approvalCount(concurrentRow)).hasValue(1);
+		assertThat(firstTerminal.failedPublicationScopes).hasValue(1);
+		assertThat(unionCloseFailure.get()).isNull();
+		assertThat(executorTerminated).isTrue();
+		assertStreamingWriteResourcesClosed(firstTerminal);
+		assertStreamingWriteResourcesClosed(secondTerminal);
 	}
 
 	@Test
@@ -4056,6 +4665,7 @@ class StreamingWritePreflightOwnershipTest {
 		private final AtomicInteger writeIntentRegistrations = new AtomicInteger();
 		private final AtomicInteger writeIntentCloses = new AtomicInteger();
 		private final AtomicInteger terminalApprovalCalls = new AtomicInteger();
+		private final AtomicInteger stagedTerminalApprovals = new AtomicInteger();
 		private final AtomicInteger stagedApprovalsAtFailure = new AtomicInteger(-1);
 		private final AtomicInteger preflightScopeOpens = new AtomicInteger();
 		private final AtomicInteger preflightScopeCloses = new AtomicInteger();
@@ -4101,6 +4711,8 @@ class StreamingWritePreflightOwnershipTest {
 		private volatile RuntimeException nextWriteIntentFailure;
 		private volatile int failTerminalApprovalAt = -1;
 		private volatile RuntimeException terminalApprovalFailure;
+		private volatile Consumer<Statement> onTerminalApproval = statement -> {
+		};
 
 		@Override
 		public Object writePreflightGroup() {
@@ -4371,6 +4983,8 @@ class StreamingWritePreflightOwnershipTest {
 					}
 					removals.remove(statement);
 					additions.add(statement);
+					stagedTerminalApprovals.incrementAndGet();
+					onTerminalApproval.accept(statement);
 				}
 
 				@Override
