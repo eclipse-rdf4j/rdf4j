@@ -714,16 +714,10 @@ class LmdbCrashRecoveryTest {
 		Path witness = createExternalWitness(testWorkDir, "covered-frozen-autogrow-witness");
 		assertWitnessStoreIsIndependent(witness);
 		LmdbStoreConfig config = durableConfig().setTripleDBSize(4096 * 10L);
-		StoreTransaction transaction;
+		StoreTransaction transaction = frozenAutogrowTransaction();
 		try (ChildProcessSession child = new ChildProcessSession(
 				startWriter(storeDir, PausePoint.BEFORE_FROZEN_AUTOGROW_COMMIT, config))) {
 			assertEquals("READY", child.readLine());
-			String mapSizeMessage = child.readLine();
-			assertTrue(mapSizeMessage.startsWith("INITIAL_TRIPLE_MAP_SIZE:"),
-					"the child must expose its starting map size before the covered write begins");
-			long initialTripleMapSize = Long.parseLong(
-					mapSizeMessage.substring("INITIAL_TRIPLE_MAP_SIZE:".length()));
-			transaction = autogrowTransaction(initialTripleMapSize);
 			String pause = child.readLine(180, TimeUnit.SECONDS);
 			assertFrozenReplayPause(pause, AUTOGROW_TRANSACTION_SIZE, 0);
 			assertTrue(replayJournalFiles(storeDir).isEmpty(),
@@ -1410,6 +1404,13 @@ class LmdbCrashRecoveryTest {
 						+ "n".repeat(Math.toIntExact(initialTripleMapSize)));
 	}
 
+	private static StoreTransaction frozenAutogrowTransaction() {
+		// Force capacity through the statement corpus. A map-sized namespace independently reserves a larger
+		// map before frozen publication and belongs to the legacy journal-replay cut above.
+		return new StoreTransaction("frozen-autogrow-1", generatedStatements("urn:crash:frozen-autogrow:",
+				AUTOGROW_TRANSACTION_SIZE), List.of(), "urn:crash:frozen-autogrow:namespace:");
+	}
+
 	private static StoreTransaction mixedAutogrowBaseline() {
 		return new StoreTransaction("mixed-autogrow-before",
 				List.of(REMOVED_ACKNOWLEDGED_STATEMENT, NAMED_CONTEXT_DUPLICATE, MIXED_DELETE_ONLY), List.of(),
@@ -1633,10 +1634,7 @@ class LmdbCrashRecoveryTest {
 					throw new AssertionError("The mixed full map-growth replay pause point was not reached");
 				}
 				if (pausePoint == PausePoint.BEFORE_FROZEN_AUTOGROW_COMMIT) {
-					long initialTripleMapSize = ((PausingLmdbStore) store).tripleMapSizeBytes();
-					System.out.println("CRASHLAB:INITIAL_TRIPLE_MAP_SIZE:" + initialTripleMapSize);
-					System.out.flush();
-					StoreTransaction transaction = autogrowTransaction(initialTripleMapSize);
+					StoreTransaction transaction = frozenAutogrowTransaction();
 					((PausingLmdbStore) store).armFrozenReplay(transaction.additions().size(), 0);
 					try (SailConnection connection = store.getConnection()) {
 						connection.begin(IsolationLevels.SNAPSHOT);
@@ -1919,13 +1917,25 @@ class LmdbCrashRecoveryTest {
 
 		@Override
 		long estimateWriteBytes(SailSource.WritePreflight preflight) {
-			if (pausePoint == PausePoint.AFTER_MAP_GROWTH_REPLAY
-					|| pausePoint == PausePoint.AFTER_MIXED_MAP_GROWTH_REPLAY) {
-				// Keep these crash cuts on the native MAP_FULL fallback path; the normal test path exercises
-				// whole-write preflight before preparing the native mutation journal.
+			if (requiresNativeCapacityFailure()) {
 				return 0L;
 			}
 			return super.estimateWriteBytes(preflight);
+		}
+
+		@Override
+		long estimateWriteBytes(long statementCount, SailSource.WritePreflight metadata) {
+			if (requiresNativeCapacityFailure()) {
+				return 0L;
+			}
+			return super.estimateWriteBytes(statementCount, metadata);
+		}
+
+		private boolean requiresNativeCapacityFailure() {
+			// Both preflight paths must leave replay crash cuts on the native MAP_FULL fallback. Keep the
+			// mixed baseline's normal reservation until its frozen replay probe is armed.
+			return pausePoint == PausePoint.AFTER_MAP_GROWTH_REPLAY
+					|| pausePoint == PausePoint.AFTER_MIXED_MAP_GROWTH_REPLAY || isFrozenProbeArmed();
 		}
 
 		@Override

@@ -86,6 +86,7 @@ class ValueStoreTermIndexRecoveryTest {
 	private static final String DROP_RETRY_NEW_INDEXES = "spoc,cspo,psoc,opcs";
 	private static final String GROWN_TERM_INDEXES = "opsc,spoc,cspo,posc,pocs,psoc,pcos,ocps,ocsp,opcs";
 	private static final int GROWTH_FIXTURE_SIZE = 2_000;
+	private static final long NO_GROWTH_VALUE_MAP_SIZE = 8L * 1024 * 1024;
 
 	@Test
 	@Timeout(value = 120, unit = TimeUnit.SECONDS)
@@ -167,14 +168,15 @@ class ValueStoreTermIndexRecoveryTest {
 	@Timeout(value = 240, unit = TimeUnit.SECONDS)
 	void termIndexRebuildFitsCurrentMapAndReopensFromCommittedTerms(@TempDir Path storeDir)
 			throws Exception {
-		Seed first = seedStore(storeDir, smallMapConfig(), GROWTH_FIXTURE_SIZE, 20);
+		LmdbStoreConfig noGrowthConfig = noGrowthMapConfig();
+		Seed first = seedStore(storeDir, noGrowthConfig, GROWTH_FIXTURE_SIZE, 20);
 		long initialMapSize = first.valueMapSizeBytes();
 		long initialOccupiedBytes = first.valueOccupiedBytes();
-		assertTrue(initialMapSize > smallMapConfig().getValueDBSize(),
-				"the buffered seed write must reserve map capacity before the native term-index rebuild");
+		assertEquals(noGrowthConfig.getValueDBSize(), initialMapSize,
+				"the no-growth control must start at its explicit map capacity independently of ingestion estimates");
 
 		ChildProcess child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
-				smallMapConfig().getValueDBSize());
+				noGrowthConfig.getValueDBSize());
 		String output = awaitProcess(child, 180, TimeUnit.SECONDS);
 		assertEquals(0, child.process().exitValue(), "the reindex child must complete: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_REBUILD_COMPLETE"),
@@ -645,6 +647,10 @@ class ValueStoreTermIndexRecoveryTest {
 
 	private static LmdbStoreConfig smallMapConfig() {
 		return new LmdbStoreConfig("spoc").setForceSync(true).setValueDBSize(128L * 4096);
+	}
+
+	private static LmdbStoreConfig noGrowthMapConfig() {
+		return new LmdbStoreConfig("spoc").setForceSync(true).setValueDBSize(NO_GROWTH_VALUE_MAP_SIZE);
 	}
 
 	private static String termIndexDatabaseName(String fieldSequence) {
