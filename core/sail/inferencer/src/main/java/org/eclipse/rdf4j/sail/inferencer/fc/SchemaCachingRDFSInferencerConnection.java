@@ -150,10 +150,22 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 		}
 	}
 
+	/**
+	 * Takes the schema write lock for a write requested on this connection. The backing store rejects a write outside a
+	 * transaction; taking the owner-scoped lock first would leave it held, by a connection that never begins a
+	 * transaction, until that connection closes. Cache rebuilds after rollback or close take the lock directly.
+	 */
+	private void acquireSchemaWriteLockForWrite() {
+		if (!isActive()) {
+			throw new SailException("No active transaction");
+		}
+		acquireSchemaWriteLock();
+	}
+
 	@Override
 	public void clearInferred(Resource... contexts) throws SailException {
 		logger.debug("Clearing all inferred statements");
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.clearInferred(contexts);
 		inferredCleared = true;
 	}
@@ -163,52 +175,52 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 	@Override
 	public void removeStatements(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.removeStatements(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public void removeStatement(UpdateContext update, Resource subject, IRI predicate, Value object,
 			Resource... contexts) throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.removeStatement(update, subject, predicate, object, contexts);
 	}
 
 	@Override
 	public boolean removeInferredStatement(Resource subject, IRI predicate, Value object, Resource... contexts)
 			throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		return super.removeInferredStatement(subject, predicate, object, contexts);
 	}
 
 	@Override
 	public void clear(Resource... contexts) throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.clear(contexts);
 	}
 
 	@Override
 	public void setNamespace(String prefix, String name) throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.setNamespace(prefix, name);
 	}
 
 	@Override
 	public void removeNamespace(String prefix) throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.removeNamespace(prefix);
 	}
 
 	@Override
 	public void clearNamespaces() throws SailException {
-		acquireSchemaWriteLock();
+		acquireSchemaWriteLockForWrite();
 		super.clearNamespaces();
 	}
 
 	@Override
 	public void startUpdate(UpdateContext update) throws SailException {
 		if (update != null) {
-			acquireSchemaWriteLock();
+			acquireSchemaWriteLockForWrite();
 		}
 		super.startUpdate(update);
 	}
@@ -318,7 +330,7 @@ public class SchemaCachingRDFSInferencerConnection extends InferencerConnectionW
 			inferredContext = context;
 		}
 		if (!(schemaChange && actuallyAdd)) {
-			acquireSchemaWriteLock();
+			acquireSchemaWriteLockForWrite();
 			if (!sail.usesPredefinedSchema()) {
 				processForSchemaCache(sail.getValueFactory().createStatement(subject, predicate, object));
 			}

@@ -438,6 +438,19 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	 * were called on this thread.
 	 */
 	void interrupt() {
-		requestCloseOnTimeout();
+		if (deadline != null) {
+			requestCloseOnTimeout();
+			return;
+		}
+		// A timer-driven limit closes synchronously: the wrapper and its source are released before this returns.
+		isInterrupted.set(true);
+		try {
+			close();
+		} catch (Exception e) {
+			if (e instanceof InterruptedException) {
+				Thread.currentThread().interrupt();
+			}
+			logger.warn("TimeLimitIteration timed out and failed to close successfully: ", e);
+		}
 	}
 }

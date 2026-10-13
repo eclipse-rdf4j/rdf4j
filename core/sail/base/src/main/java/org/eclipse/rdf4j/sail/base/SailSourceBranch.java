@@ -163,7 +163,6 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		private final long generation;
 		private final CountDownLatch completed = new CountDownLatch(1);
 		private boolean invalidated;
-		private Throwable failure;
 
 		private SnapshotAdmission(long generation) {
 			this.generation = generation;
@@ -722,6 +721,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					failure = datasetFailure;
 				}
 				failure = closeResource(failure, admission);
+				// The failure belongs to this thread alone: a suppressed close failure means the retry is not clean.
 				if (failure instanceof RetryableDatasetAcquisitionException && outermost
 						&& failure.getSuppressed().length == 0) {
 					awaitDatasetAcquisitionRetry(retries++, failure);
@@ -791,7 +791,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					// Reader-capacity admission can wait. Never hold the branch semaphore across this call.
 					admitted = backingSource.dataset(level);
 				} catch (Throwable failure) {
-					completeSnapshotAdmission(ownedAdmission, failure);
+					completeSnapshotAdmission(ownedAdmission);
 					rethrow(failure);
 					throw new AssertionError("unreachable");
 				}
@@ -855,7 +855,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				} catch (Throwable failure) {
 					failure = closeResource(failure, candidateCached ? null : admitted);
 					if (!admissionCompleted) {
-						completeSnapshotAdmission(ownedAdmission, failure);
+						completeSnapshotAdmission(ownedAdmission);
 					}
 					failure = closeResource(failure, observer);
 					rethrow(failure);
@@ -865,7 +865,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					Throwable failure = new RetryableDatasetAcquisitionException(
 							"The admitted snapshot no longer matches the requested read view");
 					failure = closeResource(failure, admitted);
-					completeSnapshotAdmission(ownedAdmission, failure);
+					completeSnapshotAdmission(ownedAdmission);
 					rethrow(failure);
 				}
 
@@ -1179,18 +1179,16 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			Thread.currentThread().interrupt();
 			throw new SailException("Interrupted while waiting for a snapshot generation", e);
 		}
-		if (admission.failure != null) {
-			rethrow(admission.failure);
-		}
 	}
 
-	private void completeSnapshotAdmission(SnapshotAdmission admission, Throwable failure) {
+	/**
+	 * Releases the readers waiting on an admission that cached no snapshot. Each of them retries on its own: the
+	 * admitting reader's failure is reported to that reader alone and is never shared across threads.
+	 */
+	private void completeSnapshotAdmission(SnapshotAdmission admission) {
 		semaphore.lock();
 		try {
 			if (snapshotAdmission == admission) {
-				if (!admission.invalidated && admission.generation == snapshotGeneration) {
-					admission.failure = failure;
-				}
 				snapshotAdmission = null;
 			}
 		} finally {
@@ -1424,25 +1422,24 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		if (!backingSource.tracksWriteIntent()) {
 			return;
 		}
-		long approximateWriteBytes = 0L;
+		long bufferedOperations = 0L;
 		boolean hasUnestimatedOperations = false;
 		semaphore.lock();
 		try {
 			for (Changeset change : changes) {
-				approximateWriteBytes = saturatedAdd(approximateWriteBytes, change.getApproximateWriteIntentBytes());
+				bufferedOperations = saturatedAdd(bufferedOperations, change.getBufferedWriteOperations());
 				hasUnestimatedOperations |= change.hasUnestimatedWriteIntent();
 			}
 			synchronized (pending) {
 				for (Changeset change : pending) {
-					approximateWriteBytes = saturatedAdd(approximateWriteBytes,
-							change.getApproximateWriteIntentBytes());
+					bufferedOperations = saturatedAdd(bufferedOperations, change.getBufferedWriteOperations());
 					hasUnestimatedOperations |= change.hasUnestimatedWriteIntent();
 				}
 			}
 		} finally {
 			semaphore.unlock();
 		}
-		if (backingSource.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations)) {
+		if (backingSource.shouldPreflightWrite(bufferedOperations, hasUnestimatedOperations)) {
 			beginBufferedWriteWarning();
 		}
 	}
@@ -1495,8 +1492,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	@Override
-	public boolean shouldPreflightWrite(long approximateWriteBytes, boolean hasUnestimatedOperations) {
-		return backingSource.shouldPreflightWrite(approximateWriteBytes, hasUnestimatedOperations);
+	public boolean shouldPreflightWrite(long bufferedOperations, boolean hasUnestimatedOperations) {
+		return backingSource.shouldPreflightWrite(bufferedOperations, hasUnestimatedOperations);
 	}
 
 	@Override

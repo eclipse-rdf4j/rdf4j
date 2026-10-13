@@ -64,7 +64,8 @@ import org.eclipse.rdf4j.sail.SailException;
  */
 @InternalUseOnly
 public abstract class Changeset implements SailSink, ModelFactory {
-	private static final long WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES = 256L * 1024L;
+	/** Buffered write operations between advisory preflight signals; the backing source turns the count into bytes. */
+	private static final long WRITE_PREFLIGHT_SIGNAL_INTERVAL_OPERATIONS = 256L;
 
 	private volatile ModelWriteState modelWriteState = new ModelWriteState();
 	private volatile boolean transferred;
@@ -117,79 +118,39 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		return null;
 	}
 
-	long getApproximateWriteIntentBytes() {
-		return transferred ? 0L : modelWriteState.approximateWriteIntentBytes;
+	/** Number of buffered statement-level write operations; no value is inspected to maintain this count. */
+	long getBufferedWriteOperations() {
+		return transferred ? 0L : modelWriteState.bufferedWriteOperations;
 	}
 
 	boolean hasUnestimatedWriteIntent() {
 		return !transferred && modelWriteState.hasUnestimatedWriteIntent;
 	}
 
-	private boolean recordWriteIntent(long approximateBytes, boolean unestimatedOperation) {
-		return recordWriteIntent(tracksWriteIntent(), approximateBytes, unestimatedOperation);
+	private boolean recordWriteIntent(long operations, boolean unestimatedOperation) {
+		return recordWriteIntent(tracksWriteIntent(), operations, unestimatedOperation);
 	}
 
-	private boolean recordWriteIntent(boolean tracked, long approximateBytes, boolean unestimatedOperation) {
+	private boolean recordWriteIntent(boolean tracked, long operations, boolean unestimatedOperation) {
 		if (!tracked) {
 			return false;
 		}
 		// Shallow clones share these counters with their models; callers hold the shared model write lock.
 		ModelWriteState state = modelWriteState;
 		boolean firstUnestimatedOperation = unestimatedOperation && !state.hasUnestimatedWriteIntent;
-		state.approximateWriteIntentBytes = saturatedAdd(state.approximateWriteIntentBytes, approximateBytes);
+		state.bufferedWriteOperations = saturatedAdd(state.bufferedWriteOperations, operations);
 		if (unestimatedOperation) {
 			state.hasUnestimatedWriteIntent = true;
 		}
-		boolean crossedSizeBoundary = state.nextWritePreflightSignalBytes != Long.MAX_VALUE
-				&& state.approximateWriteIntentBytes >= state.nextWritePreflightSignalBytes;
-		if (crossedSizeBoundary) {
-			long crossedIntervals = (state.approximateWriteIntentBytes - state.nextWritePreflightSignalBytes)
-					/ WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES + 1L;
-			state.nextWritePreflightSignalBytes = saturatedAdd(state.nextWritePreflightSignalBytes,
-					saturatedMultiply(crossedIntervals, WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES));
+		boolean crossedCountBoundary = state.nextWritePreflightSignalOperations != Long.MAX_VALUE
+				&& state.bufferedWriteOperations >= state.nextWritePreflightSignalOperations;
+		if (crossedCountBoundary) {
+			long crossedIntervals = (state.bufferedWriteOperations - state.nextWritePreflightSignalOperations)
+					/ WRITE_PREFLIGHT_SIGNAL_INTERVAL_OPERATIONS + 1L;
+			state.nextWritePreflightSignalOperations = saturatedAdd(state.nextWritePreflightSignalOperations,
+					saturatedMultiply(crossedIntervals, WRITE_PREFLIGHT_SIGNAL_INTERVAL_OPERATIONS));
 		}
-		return firstUnestimatedOperation || crossedSizeBoundary;
-	}
-
-	private static long approximateStatementBytes(Statement statement) {
-		long estimate = 128L;
-		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getSubject()));
-		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getPredicate()));
-		estimate = saturatedAdd(estimate, approximateValueBytes(statement.getObject()));
-		if (statement.getContext() != null) {
-			estimate = saturatedAdd(estimate, approximateValueBytes(statement.getContext()));
-		}
-		return estimate;
-	}
-
-	private static long approximateValueBytes(Value value) {
-		long estimate = 0L;
-		Value checkpoint = value;
-		long power = 1L;
-		long length = 0L;
-		// Only object position admits nested triple terms. Iterate it, detecting cycles by identity.
-		while (value instanceof TripleTerm tripleTerm) {
-			estimate = saturatedAdd(estimate, 64L);
-			estimate = saturatedAdd(estimate, approximateScalarBytes(tripleTerm.getSubject()));
-			estimate = saturatedAdd(estimate, approximateScalarBytes(tripleTerm.getPredicate()));
-			value = tripleTerm.getObject();
-			if (value == checkpoint) {
-				throw new IllegalArgumentException("Cyclic triple term cannot be estimated");
-			}
-			if (++length == power) {
-				checkpoint = value;
-				power = power > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : power * 2L;
-				length = 0L;
-			}
-		}
-		return saturatedAdd(estimate, approximateScalarBytes(value));
-	}
-
-	private static long approximateScalarBytes(Value value) {
-		if (value instanceof TripleTerm) {
-			throw new IllegalArgumentException("A triple term cannot be a subject or predicate");
-		}
-		return saturatedAdd(32L, saturatedMultiply(value.stringValue().length(), 4L));
+		return firstUnestimatedOperation || crossedCountBoundary;
 	}
 
 	private static long saturatedAdd(long left, long right) {
@@ -579,9 +540,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		beforeWriteIntent();
 		assert !closed;
 
-		long approximateBytes = tracksWriteIntent()
-				? saturatedAdd(64L, saturatedMultiply((long) prefix.length() + name.length(), 4L))
-				: 0L;
 		boolean signalWritePreflight = false;
 		ModelWriteState writeLock = acquireModelMutationLock(mutation);
 		try {
@@ -593,7 +551,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				modelWriteState.addedNamespaces = new HashMap<>();
 			}
 			modelWriteState.addedNamespaces.put(prefix, name);
-			signalWritePreflight = recordWriteIntent(approximateBytes, false);
+			signalWritePreflight = recordWriteIntent(1L, false);
 		} finally {
 			writeLock.unlockWriter();
 		}
@@ -619,8 +577,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 				modelWriteState.removedPrefixes = new HashSet<>();
 			}
 			modelWriteState.removedPrefixes.add(prefix);
-			signalWritePreflight = recordWriteIntent(
-					tracksWriteIntent() ? 64L + (long) prefix.length() * 4L : 0L, true);
+			signalWritePreflight = recordWriteIntent(0L, true);
 		} finally {
 			writeLock.unlockWriter();
 		}
@@ -773,7 +730,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 			assert !closed;
 			boolean tracked = tracksWriteIntent();
-			long approximateBytes = tracked ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
 			// The locked state is the current generation for the whole critical section.
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
@@ -794,7 +750,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					}
 					writeLock.approvedContexts.add(context);
 				}
-				signalWritePreflight = recordWriteIntent(tracked, approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(tracked, 1L, false);
 			} finally {
 				writeLock.unlockWriter();
 			}
@@ -817,7 +773,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			beforeWriteIntent();
 			assert !closed;
 			boolean tracked = tracksWriteIntent();
-			long approximateBytes = tracked ? approximateStatementBytes(statement) : 0L;
 			boolean signalWritePreflight = false;
 			// The locked state is the current generation for the whole critical section.
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
@@ -836,7 +791,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						&& !writeLock.approved.contains(null, null, null, ctx)) {
 					writeLock.approvedContexts.remove(ctx);
 				}
-				signalWritePreflight = recordWriteIntent(tracked, approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(tracked, 1L, false);
 			} finally {
 				writeLock.unlockWriter();
 			}
@@ -2173,12 +2128,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
-			long approximateBytes = 0L;
-			if (tracksWriteIntent()) {
-				for (Statement statement : approve) {
-					approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
-				}
-			}
 			boolean signalWritePreflight = false;
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
@@ -2198,7 +2147,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 					}
 					modelWriteState.approvedContexts.addAll(approveContexts);
 				}
-				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(approve.size(), false);
 
 			} finally {
 				writeLock.unlockWriter();
@@ -2215,12 +2164,6 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
 			beforeWriteIntent();
-			long approximateBytes = 0L;
-			if (tracksWriteIntent()) {
-				for (Statement statement : deprecate) {
-					approximateBytes = saturatedAdd(approximateBytes, approximateStatementBytes(statement));
-				}
-			}
 			boolean signalWritePreflight = false;
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
 			try {
@@ -2244,7 +2187,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						modelWriteState.approvedContexts.remove(ctx);
 					}
 				}
-				signalWritePreflight = recordWriteIntent(approximateBytes, false);
+				signalWritePreflight = recordWriteIntent(deprecate.size(), false);
 
 			} finally {
 				writeLock.unlockWriter();
@@ -2311,8 +2254,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 			deprecatedContexts = null;
 			addedNamespaces = null;
 			removedPrefixes = null;
-			approximateWriteIntentBytes = 0L;
+			bufferedWriteOperations = 0L;
 			hasUnestimatedWriteIntent = false;
+			nextWritePreflightSignalOperations = WRITE_PREFLIGHT_SIGNAL_INTERVAL_OPERATIONS;
 		}
 
 		private static void closeModel(AutoCloseable model) {
@@ -2341,9 +2285,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		private final AtomicInteger suspendedWriteModels = new AtomicInteger();
 		private final AtomicInteger frozenOwners = new AtomicInteger();
 		private volatile boolean sealed;
-		private volatile long approximateWriteIntentBytes;
+		private volatile long bufferedWriteOperations;
 		private volatile boolean hasUnestimatedWriteIntent;
-		private long nextWritePreflightSignalBytes = WRITE_PREFLIGHT_SIGNAL_INTERVAL_BYTES;
+		private long nextWritePreflightSignalOperations = WRITE_PREFLIGHT_SIGNAL_INTERVAL_OPERATIONS;
 		private final ThreadLocal<List<boolean[]>> continuationReadLocks = ThreadLocal.withInitial(ArrayList::new);
 
 		private void registerContinuationReadLock(boolean[] readLock) {

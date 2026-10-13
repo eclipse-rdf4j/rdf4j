@@ -205,6 +205,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	private QueryExecutionDeadline pendingQueryDeadline;
 	private volatile Throwable replayFailure;
 	private long readAttemptGeneration;
+	// Deterministic seam for a read attempt that fails while its result is being registered; tests only.
+	volatile Runnable beforeIterationRegistrationForTest;
 
 	/*--------------*
 	 * Constructors *
@@ -726,6 +728,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			replayableIterations.add(replayable);
 		}
 		try {
+			Runnable beforeRegistration = beforeIterationRegistrationForTest;
+			if (beforeRegistration != null) {
+				beforeRegistration.run();
+			}
 			retirePendingReplayIfIdle();
 			if (operationAttempt == null && generation != currentReadAttemptGeneration() && replayFactory != null) {
 				ReplayPlanIteration<T> replacement = openReplayPlan(replayFactory, deadline);
@@ -733,9 +739,6 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						replacement.admissionAttempt);
 				retirePendingReplayIfIdle();
 			}
-		} catch (SailException failure) {
-			replayable.close();
-			throw new QueryEvaluationException("Unable to restart an LMDB read attempt", failure);
 		} catch (RuntimeException | Error failure) {
 			replayable.close();
 			throw failure;
