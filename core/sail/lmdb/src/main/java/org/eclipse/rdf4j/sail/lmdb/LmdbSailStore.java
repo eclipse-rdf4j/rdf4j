@@ -244,7 +244,8 @@ class LmdbSailStore implements SailStore {
 		private final WeakHashMap<ReadViewLease, Boolean> historicalViews = new WeakHashMap<>();
 		private ReadView reservedEpoch;
 		private volatile boolean closed;
-		private boolean writing;
+		/** Set once under the coordinator lock; read lock-free by the per-statement fast path. */
+		private volatile boolean writing;
 		/** Only NONE may yield physical writers after publishing a complete paired chunk. */
 		private boolean nativeCheckpointParked;
 		private volatile boolean completed;
@@ -576,7 +577,7 @@ class LmdbSailStore implements SailStore {
 				Thread.ofVirtual().name("LmdbMapGrowth-", 0).factory());
 		private Thread growthThread;
 		private volatile boolean shuttingDown;
-		private Throwable growthFailure;
+		private volatile Throwable growthFailure;
 		private FailedGrowthPressure failedPressure;
 		private final WeakHashMap<MapGrowthToken, Throwable> failedEpisodes = new WeakHashMap<>();
 		private GrowthEpisode episode;
@@ -853,6 +854,16 @@ class LmdbSailStore implements SailStore {
 		}
 
 		private void markWriteIntent(ReadAttemptLease attempt) {
+			if (attempt.writing) {
+				// Every statement of a writing transaction re-enters here. The upgrade check and the growth signal
+				// already happened on the first intent, so only the admission checks remain. Taking the lock and
+				// signalling again would wake the growth thread for every statement and contend with it.
+				checkAdmission(deadlineFor(attempt));
+				if (attempt.completed) {
+					throw new SailException("The LMDB transaction attempt has already finished");
+				}
+				return;
+			}
 			lock.lock();
 			try {
 				checkAdmission(deadlineFor(attempt));
@@ -1227,6 +1238,52 @@ class LmdbSailStore implements SailStore {
 					}
 				}
 				return nativeUsedBytes;
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		/** Largest preflight demand registered by {@code owner} that is not yet bound to a native generation. */
+		private long unboundProjectedDemand(Object owner, MapResizeKind kind) {
+			lock.lock();
+			try {
+				List<ProjectedWriteScope> scopes = projectedWrites.get(owner);
+				if (scopes == null) {
+					return 0L;
+				}
+				ReadAttemptLease attempt = transactions.get(owner);
+				long demand = 0L;
+				for (ProjectedWriteScope scope : scopes) {
+					if (!scope.closed && scope.nativeGeneration == 0L && scope.attempt == attempt
+							&& (attempt == null || !attempt.completed && !attempt.failed)) {
+						demand = Math.max(demand,
+								kind == MapResizeKind.TRIPLE_STORE ? scope.tripleUsedBytes : scope.valueUsedBytes);
+					}
+				}
+				return demand;
+			} finally {
+				lock.unlock();
+			}
+		}
+
+		/** True when no other writer, direct native writer or read view could observe a map resize right now. */
+		private boolean soleParticipant(Object owner) {
+			lock.lock();
+			try {
+				if (!views.isEmpty() || pendingViews != 0) {
+					return false;
+				}
+				for (Object directOwner : directWriters.keySet()) {
+					if (directOwner != owner) {
+						return false;
+					}
+				}
+				for (ReadAttemptLease attempt : transactions.values()) {
+					if (attempt.owner != owner && attempt.writing && !attempt.completed && !attempt.failed) {
+						return false;
+					}
+				}
+				return true;
 			} finally {
 				lock.unlock();
 			}
@@ -4309,6 +4366,59 @@ class LmdbSailStore implements SailStore {
 	}
 
 	@InternalUseOnly
+	/**
+	 * Grows the native maps for the demand a flush projected at prepare time before that flush starts its first native
+	 * write. Between native transactions a resize needs no abort, so a correctly projected flush is never replayed. The
+	 * retained statement replay stays as the fallback for underestimated demand, and nothing changes while another
+	 * writer or a read view participates.
+	 */
+	void growForProjectedWrite(Object owner) throws SailException {
+		if (!autoGrow) {
+			return;
+		}
+		sinkStoreAccessLock.lock();
+		try {
+			if (storeTxnStarted.get() || namespaceTransactionOwner != null || storeReplayDecision != null) {
+				return;
+			}
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+		long tripleDemand = mapGrowthCoordinator.unboundProjectedDemand(owner, MapResizeKind.TRIPLE_STORE);
+		long valueDemand = mapGrowthCoordinator.unboundProjectedDemand(owner, MapResizeKind.VALUE_STORE);
+		if (tripleDemand <= 0L && valueDemand <= 0L || !mapGrowthCoordinator.soleParticipant(owner)) {
+			return;
+		}
+		try {
+			long tripleEstimate = Math.max(0L, tripleDemand - tripleStore.occupiedBytes());
+			long valueEstimate = Math.max(0L, valueDemand - valueStore.occupiedBytes());
+			boolean triples = tripleEstimate > 0L && tripleStore.requiresResizeForEstimatedWrite(tripleEstimate);
+			boolean values = valueEstimate > 0L && valueStore.requiresResizeForEstimatedWrite(valueEstimate);
+			if (!triples && !values) {
+				return;
+			}
+			MapGrowthAttempt growth;
+			try {
+				growth = mapGrowthCoordinator.begin(owner, 0L);
+			} catch (LmdbTransactionRetryException concurrentWork) {
+				// A concurrent participant appeared after the check above: keep the retained replay fallback.
+				return;
+			}
+			try (growth) {
+				if (triples) {
+					growth.requestQuiescence(MapResizeKind.TRIPLE_STORE);
+					tripleStore.growMapForEstimatedWrite(tripleEstimate, growth);
+				}
+				if (values) {
+					growth.requestQuiescence(MapResizeKind.VALUE_STORE);
+					valueStore.growMapForEstimatedWrite(valueEstimate, growth);
+				}
+			}
+		} catch (IOException e) {
+			throw new SailException("Unable to grow the LMDB maps for the projected buffered write", e);
+		}
+	}
+
 	void growForStatementReplay(Object owner, TemporaryFlushingException failure) throws SailException {
 		PublicationContext context = publicationContext.get();
 		RetainedFlushPublication retained = context == null ? null : context.retainedFlush;
@@ -4346,6 +4456,7 @@ class LmdbSailStore implements SailStore {
 				throw new SailException("Frozen statement replay requires actual affected map-size progress", failure);
 			}
 			checkPublicationAdmission(QueryExecutionDeadline.current(), owner);
+			mapGrowthMetrics.recordStatementReplay();
 			retained.retry = null;
 			retained.mutationFailure = null;
 		} catch (IOException capacityFailure) {

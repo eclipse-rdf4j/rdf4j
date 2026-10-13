@@ -420,6 +420,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		LmdbSailStore backing = lmdbStore.getBackingStore();
 		LmdbSailStore.FlushPublication publication = backing.beginPublication(this, batch);
 		try (publication) {
+			backing.growForProjectedWrite(this);
 			while (true) {
 				try {
 					batch.flush();

@@ -38,6 +38,7 @@ final class MapGrowthMetrics {
 	private final LongAdder emergencyFailures = new LongAdder();
 	private final LongAdder reservedReplays = new LongAdder();
 	private final LongAdder cancelledReplays = new LongAdder();
+	private final LongAdder statementReplays = new LongAdder();
 	private final EnumMap<LmdbSailStore.GrowthPhase, Long> phaseNanos = new EnumMap<>(LmdbSailStore.GrowthPhase.class);
 	private LmdbSailStore.GrowthPhase currentPhase = LmdbSailStore.GrowthPhase.OPEN;
 	private long phaseStartedNanos = System.nanoTime();
@@ -80,6 +81,11 @@ final class MapGrowthMetrics {
 
 	void recordReplayCancelled() {
 		cancelledReplays.increment();
+	}
+
+	/** A retained flush was aborted for map growth and its statements are being replayed from scratch. */
+	void recordStatementReplay() {
+		statementReplays.increment();
 	}
 
 	Episode startEpisode() {
@@ -146,7 +152,8 @@ final class MapGrowthMetrics {
 				valueStoreResizes.sum(),
 				fallbackResizes.sum(), currentPhase, Map.copyOf(phases), writerMaximum, admissionTimeouts.sum(),
 				emergencyAttempts.sum(), emergencySuccesses.sum(), emergencyFailures.sum(), reservedReplays.sum(),
-				cancelledReplays.sum());
+				cancelledReplays.sum(),
+				statementReplays.sum());
 	}
 
 	record Snapshot(long growthEpisodes, long forcedInvalidationEpisodes, long forcedInvalidatedViews,
@@ -156,7 +163,8 @@ final class MapGrowthMetrics {
 			long tripleStoreResizes, long valueStoreResizes, long fallbackResizes,
 			LmdbSailStore.GrowthPhase currentPhase, Map<LmdbSailStore.GrowthPhase, Long> phaseNanos,
 			long maximumWriterWaitNanos, long admissionTimeouts, long emergencyAttempts, long emergencySuccesses,
-			long emergencyFailures, long reservedReplays, long cancelledReplays) {
+			long emergencyFailures, long reservedReplays, long cancelledReplays,
+			long statementReplays) {
 	}
 
 	static final class Episode {

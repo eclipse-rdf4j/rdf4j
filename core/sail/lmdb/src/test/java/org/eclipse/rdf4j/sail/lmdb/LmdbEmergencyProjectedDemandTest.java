@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -503,8 +504,10 @@ class LmdbEmergencyProjectedDemandTest {
 							+ ", after=" + growthAfter);
 			assertEquals(LmdbSailStore.GrowthPhase.EMERGENCY, growthWitness.phase(),
 					"the frozen replay must grow the affected map during its certified emergency phase");
-			assertTrue(growthWitness.frozenReplay(),
-					"the ValueStore growth decision must be the distinct frozen-replay decision");
+			assertFalse(growthWitness.frozenReplay(),
+					"projected growth runs ahead of the first native write, before any frozen-replay decision exists");
+			assertEquals(growthBefore.statementReplays(), growthAfter.statementReplays(),
+					"a correctly projected explicit/inferred flush must not be replayed");
 			assertTrue(growthWitness.grew() && growthWitness.mapBytesAfter() > growthWitness.mapBytesBefore(),
 					"the ValueStore growth hook must report actual map progress; " + growthWitness);
 			List<StatementInputEstimateWitness> forecastsBeforeGrowth = growthWitness.inputEstimatesBeforeGrowth();
