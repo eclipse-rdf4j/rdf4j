@@ -161,6 +161,35 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		return right != 0 && left > Long.MAX_VALUE / right ? Long.MAX_VALUE : left * right;
 	}
 
+	/** Structural input validation is independent of advisory estimation and precedes every model mutation. */
+	private static void validateStatementStructure(Statement statement) {
+		validateTripleTermStructure(statement.getSubject());
+		validateTripleTermStructure(statement.getPredicate());
+		validateTripleTermStructure(statement.getObject());
+		validateTripleTermStructure(statement.getContext());
+	}
+
+	private static void validateTripleTermStructure(Value value) {
+		Value checkpoint = value;
+		long power = 1L;
+		long length = 0L;
+		// Only object position admits nested terms. Brent's identity check uses no lexical reads, hashes or set.
+		while (value instanceof TripleTerm tripleTerm) {
+			if (tripleTerm.getSubject() instanceof TripleTerm || tripleTerm.getPredicate() instanceof TripleTerm) {
+				throw new IllegalArgumentException("A triple term cannot be a subject or predicate");
+			}
+			value = tripleTerm.getObject();
+			if (value == checkpoint) {
+				throw new IllegalArgumentException("Cyclic triple term cannot be buffered");
+			}
+			if (++length == power) {
+				checkpoint = value;
+				power = power > Long.MAX_VALUE / 2L ? Long.MAX_VALUE : power * 2L;
+				length = 0L;
+			}
+		}
+	}
+
 	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
 		Objects.requireNonNull(changeset1, "changeset1");
 		Objects.requireNonNull(changeset2, "changeset2");
@@ -726,6 +755,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
+			validateStatementStructure(statement);
 			beforeWriteIntent();
 
 			assert !closed;
@@ -770,6 +800,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
+			validateStatementStructure(statement);
 			beforeWriteIntent();
 			assert !closed;
 			boolean tracked = tracksWriteIntent();
@@ -2127,6 +2158,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
+			for (Statement statement : approve) {
+				validateStatementStructure(statement);
+			}
 			beforeWriteIntent();
 			boolean signalWritePreflight = false;
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
@@ -2163,6 +2197,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		StreamingWritePreflight.Mutation mutation = StreamingWritePreflight.claim(this);
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			checkModelMutation();
+			for (Statement statement : deprecate) {
+				validateStatementStructure(statement);
+			}
 			beforeWriteIntent();
 			boolean signalWritePreflight = false;
 			ModelWriteState writeLock = acquireModelMutationLock(mutation);
