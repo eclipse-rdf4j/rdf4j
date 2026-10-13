@@ -6016,14 +6016,14 @@ class ValueStore extends AbstractValueFactory {
 	void storeValues(Value[] values, long[] ids, int count) throws IOException {
 		checkReplayFailure();
 		TxnReplayPolicy.Decision decision = replayDecision;
-//		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread() || decision == null || !decision.checkpoint) {
-//			// Atomic allocation may checkpoint and replace/replay dictionary IDs while resolving a dependency.
-//			// Keep its per-value encoding/allocation sequence: deferred encodings must not cross that boundary.
-//			for (int i = 0; i < count; i++) {
-//				ids[i] = storeValue(values[i]);
-//			}
-//			return;
-//		}
+		if (writeTxn == 0 || writeTxnOwner != Thread.currentThread() || decision == null || !decision.checkpoint) {
+			// Atomic allocation may checkpoint and replace/replay dictionary IDs while resolving a dependency.
+			// Keep its per-value encoding/allocation sequence: deferred encodings must not cross that boundary.
+			for (int i = 0; i < count; i++) {
+				ids[i] = storeValue(values[i]);
+			}
+			return;
+		}
 		byte[][] data = new byte[count][];
 		int[] indexes = new int[count];
 		int unresolved = 0;

@@ -63,7 +63,7 @@ public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
 
-	//	@Param({ "NONE", "READ_COMMITTED" })
+	// @Param({ "NONE", "READ_COMMITTED" })
 	@Param({ "READ_COMMITTED" })
 	public IsolationLevels isolationLevel;
 
@@ -111,7 +111,7 @@ public class DatagovLoadIsolationBenchmark {
 //		return loadOnce(createBenchmarkConfig());
 //	}
 
-	//	@Benchmark
+	// @Benchmark
 //	public boolean loadDatagovFileSingleTransaction6Indexes() throws IOException {
 //		return loadOnce(createBenchmarkConfigAllIndexes());
 //	}
