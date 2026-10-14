@@ -323,6 +323,9 @@ public class QueryValueEvaluationStepSupplier {
 
 	private static IRI iriFunction(String baseURI, Value argValue, ValueFactory vf) {
 		if (argValue instanceof Literal lit) {
+			if (!QueryEvaluationUtility.isSimpleLiteral(lit)) {
+				throw new ValueExprEvaluationException("IRI requires an IRI or an xsd:string literal");
+			}
 
 			String uriString = lit.getLabel();
 			try {

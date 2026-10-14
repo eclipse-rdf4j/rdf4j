@@ -112,6 +112,28 @@ public class ExpressionErrorSemanticsTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	public void iriRejectsNonStringLiteralsBeforeBaseResolution(QueryEvaluationMode mode) {
+		for (boolean optimize : List.of(false, true)) {
+			for (String operand : List.of("123", "true", "'relative'@en", "'relative'^^<urn:datatype>",
+					"BNODE()", "TRIPLE(<urn:s>, <urn:p>, 1)")) {
+				for (String expression : List.of("IRI(" + operand + ")", "URI(" + operand + ")")) {
+					assertThat(evaluate(mode, "BASE <https://example.org/base/> SELECT ?x WHERE { BIND("
+							+ expression + " AS ?x) }", optimize)).as(expression)
+									.singleElement()
+									.satisfies(row -> assertThat(row.hasBinding("x")).isFalse());
+				}
+			}
+			for (String operand : List.of("'relative'", "<https://example.org/base/relative>")) {
+				assertThat(evaluate(mode, "BASE <https://example.org/base/> SELECT ?x WHERE { BIND(IRI("
+						+ operand + ") AS ?x) }", optimize)).singleElement()
+								.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(
+										SimpleValueFactory.getInstance()
+												.createIRI("https://example.org/base/relative")));
+			}
+		}
+	}
 
 	@Test
 	public void erroneousIfConditionEvaluatesNeitherBranch() {
