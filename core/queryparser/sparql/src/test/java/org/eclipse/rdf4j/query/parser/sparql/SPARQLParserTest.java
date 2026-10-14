@@ -94,7 +94,21 @@ import org.junit.jupiter.api.Test;
  */
 public class SPARQLParserTest {
 
+	@Test
+	public void acceptsZeroArgumentConcat() {
+		assertDoesNotThrow(() -> new SPARQLParser().parseQuery("SELECT (CONCAT() AS ?result) WHERE {}", null));
+	}
 
+	@Test
+	public void acceptsEmptyVariadicExpressionsInNestedContexts() {
+		for (String expression : List.of("COALESCE()", "CONCAT()", "IF(true, COALESCE(), CONCAT())",
+				"COALESCE(COALESCE(), CONCAT())")) {
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT (" + expression + " AS ?result) WHERE {}", null), expression);
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT ?result WHERE { BIND(" + expression + " AS ?result) }", null), expression);
+		}
+	}
 
 	@Test
 	public void acceptsMultipleHavingConstraintsInAllQueryForms() {

@@ -1667,7 +1667,7 @@ void NotIn() :
 void Coalesce() :
 {}
 {
-    <COALESCE> <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>
+    <COALESCE> (<NIL> | <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>)
 }
 
 void Str() :

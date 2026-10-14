@@ -2101,7 +2101,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public FunctionCall visit(ASTConcat node, Object data) throws VisitorException {
-		return createFunctionCall(FN.CONCAT.stringValue(), node, 1, Integer.MAX_VALUE);
+		return createFunctionCall(FN.CONCAT.stringValue(), node, 0, Integer.MAX_VALUE);
 	}
 
 	@Override
