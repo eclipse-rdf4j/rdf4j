@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
@@ -20,10 +21,14 @@ import static org.mockito.Mockito.when;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -161,9 +166,57 @@ class ServiceQueryEvaluationStepTelemetryTest {
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(-1L);
 	}
 
+	@Test
+	void closesSelectResultWhenReplayCheckpointFiresBeforeResultOwnership() {
+		Service service = new Service(
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				"{ ?s ?p ?o }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(false);
+
+		FederatedService federatedService = mock(FederatedService.class);
+		ClosingIteration result = new ClosingIteration();
+		when(federatedService.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenReturn(result);
+		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
+		when(resolver.getService("http://example.com/service")).thenReturn(federatedService);
+		ServiceQueryEvaluationStep step = new ServiceQueryEvaluationStep(service, service.getServiceRef(), resolver);
+
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			throw new IllegalStateException("simulate accepted replay after SERVICE returned");
+		})) {
+			assertThatThrownBy(() -> step.evaluate(EmptyBindingSet.getInstance()))
+					.isInstanceOf(QueryExecutionContext.ReplaySafepointException.class);
+		}
+
+		assertThat(result.closed.get()).as("the unreturned SERVICE iteration must be closed on replay unwind").isTrue();
+	}
+
 	private static BindingSet singleBindingSet(String name, String value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static final class ClosingIteration extends AbstractCloseableIteration<BindingSet> {
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		@Override
+		public boolean hasNext() {
+			return false;
+		}
+
+		@Override
+		public BindingSet next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		protected void handleClose() {
+			closed.set(true);
+		}
 	}
 }

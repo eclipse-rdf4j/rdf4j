@@ -17,8 +17,14 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -158,7 +164,8 @@ class LmdbStatsLoggingTest {
 			connection.begin(isolation);
 			connection.setNamespace("rdf", RDF.NAMESPACE);
 			connection.commit();
-			assertWriteSnapshots(before, store.getLmdbStats());
+			assertThat(snapshots(Level.TRACE)).isEmpty();
+			assertThat(store.getLmdbStats()).isEqualTo(before);
 
 			appender.list.clear();
 			connection.begin(isolation);
@@ -217,6 +224,75 @@ class LmdbStatsLoggingTest {
 			store.failStats = true;
 		}
 		assertThat(events(Level.WARN)).hasSize(3);
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 0, 2 })
+	void failedBulkApprovalLogsOnlyBoundedTermStructure(int bulkOperationSize) throws IOException {
+		String largeLabel = "x".repeat(2 * 1024 * 1024);
+		Literal largeLiteral = SimpleValueFactory.getInstance().createLiteral(largeLabel);
+		Statement statement = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:bounded-log:subject"),
+						SimpleValueFactory.getInstance().createIRI("urn:bounded-log:predicate"), largeLiteral);
+		IOException cause = new IOException("injected value-store write failure");
+		RuntimeException marker = new IllegalStateException("injected approval marker", cause);
+		AtomicInteger injectedWrites = new AtomicInteger();
+		LmdbSailStore.ValueStoreFactory valueStoreFactory = (valueDir, properties,
+				storeConfig) -> new ValueStore(valueDir, properties, storeConfig) {
+					@Override
+					public long storeValue(Value value) throws IOException {
+						if (isInjectedFailure(value)) {
+							throw marker;
+						}
+						return super.storeValue(value);
+					}
+
+					@Override
+					void storeValues(Value[] values, long[] ids, int count) throws IOException {
+						for (int i = 0; i < count; i++) {
+							if (isInjectedFailure(values[i])) {
+								throw marker;
+							}
+						}
+						super.storeValues(values, ids, count);
+					}
+
+					private boolean isInjectedFailure(Value value) {
+						return value instanceof Literal literal && literal.getLabel().length() == largeLabel.length()
+								&& injectedWrites.compareAndSet(0, 1);
+					}
+				};
+		LmdbStoreConfig storeConfig = config().setAutoGrow(false).setBulkOperationSize(bulkOperationSize);
+		LmdbSailStore store = new LmdbSailStore(dataDir, new StoreProperties(), storeConfig, false,
+				valueStoreFactory, TripleStore::new);
+		store.enableMultiThreading = false;
+		appender.list.clear();
+		try (store; SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE)) {
+			Throwable callerFailure = null;
+			try {
+				sink.approveAll(Set.of(statement), Set.of());
+			} catch (Throwable failure) {
+				callerFailure = failure;
+			}
+
+			assertThat(injectedWrites).as("the actual ValueStore.storeValue boundary was reached").hasValue(1);
+			assertThat(callerFailure).as("the exact injected caller failure is preserved").isSameAs(marker);
+			List<ILoggingEvent> failures = events(Level.ERROR);
+			assertThat(failures).as("the approval failure is recorded once").hasSize(1);
+			ILoggingEvent event = failures.getFirst();
+			assertThat(event.getThrowableProxy()).isNotNull();
+			assertThat(event.getThrowableProxy().getClassName()).isEqualTo(marker.getClass().getName());
+			assertThat(event.getThrowableProxy().getMessage()).isEqualTo(marker.getMessage());
+			assertThat(event.getThrowableProxy().getCause().getMessage()).isEqualTo(cause.getMessage());
+
+			String diagnostic = event.getFormattedMessage();
+			// Keep failures numeric so a rejected 2 MiB diagnostic is not printed again.
+			assertThat(diagnostic.length())
+					.as("the %s diagnostic length", bulkOperationSize == 0 ? "scalar" : "bulk")
+					.isLessThan(512);
+			assertThat(diagnostic).doesNotContain(largeLabel).contains("IRI", "Literal");
+		}
 	}
 
 	private void assertWriteSnapshots(LmdbStats before, LmdbStats after) {

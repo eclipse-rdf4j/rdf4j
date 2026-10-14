@@ -121,6 +121,63 @@ class SourceClosingSailDatasetTest {
 	}
 
 	@TestFactory
+	List<DynamicTest> abandonmentReleasesDatasetAndSourceOnlyOnce() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (boolean abandonFirst : new boolean[] { false, true }) {
+			tests.add(DynamicTest.dynamicTest("abandonFirst=" + abandonFirst, () -> {
+				List<String> releases = new ArrayList<>();
+				SailDataset dataset = mock(SailDataset.class);
+				SailSource source = mock(SailSource.class);
+				when(source.dataset(IsolationLevels.SNAPSHOT)).thenReturn(dataset);
+				doAnswer(call -> releases.add("dataset close")).when(dataset).close();
+				doAnswer(call -> releases.add("source close")).when(source).close();
+				doAnswer(call -> releases.add("dataset abandon")).when(dataset).abandonUnobserved();
+				doAnswer(call -> releases.add("source abandon")).when(source).abandonUnobserved();
+				SailDataset owned = SourceClosingSailDataset.open(source, IsolationLevels.SNAPSHOT);
+				if (abandonFirst) {
+					owned.abandonUnobserved();
+				} else {
+					owned.close();
+				}
+				owned.close();
+				owned.abandonUnobserved();
+				assertEquals(abandonFirst ? List.of("dataset abandon", "source abandon")
+						: List.of("dataset close", "source close"), releases);
+			}));
+		}
+		return tests;
+	}
+
+	@TestFactory
+	List<DynamicTest> abandonmentPreservesFailureAndStillReleasesSource() {
+		List<DynamicTest> tests = new ArrayList<>();
+		for (boolean error : new boolean[] { false, true }) {
+			for (boolean sameFailure : new boolean[] { false, true }) {
+				tests.add(DynamicTest.dynamicTest("error=" + error + ", sameFailure=" + sameFailure, () -> {
+					Throwable failure = error ? new AssertionError("dataset abandonment")
+							: new SailException("dataset abandonment");
+					Throwable cleanup = sameFailure ? failure : new SailException("source abandonment");
+					SailDataset dataset = mock(SailDataset.class);
+					SailSource source = mock(SailSource.class);
+					when(source.dataset(IsolationLevels.SNAPSHOT)).thenReturn(dataset);
+					doThrow(failure).when(dataset).abandonUnobserved();
+					doThrow(cleanup).when(source).abandonUnobserved();
+					SailDataset owned = SourceClosingSailDataset.open(source, IsolationLevels.SNAPSHOT);
+					assertSame(failure, assertThrows(failure.getClass(), owned::abandonUnobserved));
+					assertEquals(sameFailure ? List.of() : List.of(cleanup), List.of(failure.getSuppressed()));
+					owned.close();
+					owned.abandonUnobserved();
+					verify(dataset).abandonUnobserved();
+					verify(source).abandonUnobserved();
+					verify(dataset, never()).close();
+					verify(source, never()).close();
+				}));
+			}
+		}
+		return tests;
+	}
+
+	@TestFactory
 	List<DynamicTest> preservesAcquisitionFailuresAndSuppressesCleanupFailures() {
 		List<DynamicTest> tests = new ArrayList<>();
 		for (boolean error : new boolean[] { false, true }) {
@@ -177,6 +234,23 @@ class SourceClosingSailDatasetTest {
 		owned.close();
 		verify(dataset).close();
 		verify(source).close();
+	}
+
+	@Test
+	void sourceAbandonmentFailureIsNotRetried() {
+		SailException failure = new SailException("source abandonment");
+		SailDataset dataset = mock(SailDataset.class);
+		SailSource source = mock(SailSource.class);
+		when(source.dataset(IsolationLevels.SNAPSHOT)).thenReturn(dataset);
+		doThrow(failure).when(source).abandonUnobserved();
+		SailDataset owned = SourceClosingSailDataset.open(source, IsolationLevels.SNAPSHOT);
+		assertSame(failure, assertThrows(SailException.class, owned::abandonUnobserved));
+		owned.close();
+		owned.abandonUnobserved();
+		verify(dataset).abandonUnobserved();
+		verify(source).abandonUnobserved();
+		verify(dataset, never()).close();
+		verify(source, never()).close();
 	}
 
 	@Test

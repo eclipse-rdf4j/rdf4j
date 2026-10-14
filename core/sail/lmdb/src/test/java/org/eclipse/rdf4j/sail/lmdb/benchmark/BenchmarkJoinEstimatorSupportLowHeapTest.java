@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.fail;
 import java.io.File;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -50,11 +51,13 @@ class BenchmarkJoinEstimatorSupportLowHeapTest {
 		command.add(LowHeapBenchmarkWaitProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
+		File outputFile = new File(dataDir, "low-heap-benchmark-wait-output.log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
+				.redirectOutput(outputFile)
 				.start();
 		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = process.getInputStream().readAllBytes();
+		byte[] output = Files.readAllBytes(outputFile.toPath());
 		if (!finished) {
 			process.destroyForcibly();
 			fail("Low-heap benchmark wait probe timed out:\n" + new String(output, StandardCharsets.UTF_8));

@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -35,6 +37,26 @@ import org.eclipse.rdf4j.sail.SailException;
 public interface SailDataset extends SailClosable {
 
 	/**
+	 * Supplies optional preparation of query-owned statement-pattern values for this dataset's read view. Returned
+	 * values must remain lexically equal, must not mutate caller values, and must not retain a closed dataset or native
+	 * transaction. A null preparer preserves ordinary value handling. A supplied capturer belongs to this same read
+	 * view and must produce representations accepted by this preparer.
+	 */
+	@InternalUseOnly
+	default Function<Value, Value> getValuePreparer() {
+		return null;
+	}
+
+	/**
+	 * Supplies optional capture of query-produced values without looking up their identifiers. Captured values can be
+	 * prepared by {@link #getValuePreparer()} when a statement-pattern input needs them.
+	 */
+	@InternalUseOnly
+	default Function<Value, Value> getValueCapturer() {
+		return null;
+	}
+
+	/**
 	 * Called when this {@link SailDataset} is no longer is used, such as when a read operation is complete. An
 	 * isolation level compatible with {@link IsolationLevels#SNAPSHOT} will ensure the state of this
 	 * {@link SailDataset} dose not change between the first call to this object until {@link SailClosable#release()} is
@@ -42,6 +64,17 @@ public interface SailDataset extends SailClosable {
 	 */
 	@Override
 	void close() throws SailException;
+
+	/**
+	 * Releases a private dataset belonging to an unobserved operation that is being discarded for replay. Implementors
+	 * may skip work needed only to preserve values or observations that cannot escape the discarded operation. Callers
+	 * must ensure that no result or observation from the dataset has escaped. Ordinary completion must use
+	 * {@link #close()}.
+	 */
+	@InternalUseOnly
+	default void abandonUnobserved() throws SailException {
+		close();
+	}
 
 	/**
 	 * Gets the namespaces relevant to the data contained in this object.
@@ -151,6 +184,35 @@ public interface SailDataset extends SailClosable {
 	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;
+	}
+
+	/**
+	 * Returns whether this dataset still reflects the latest committed state of its backing source. Implementations
+	 * that cannot detect stale snapshots, or that do not provide pinned snapshots, should retain the default value of
+	 * {@code true}.
+	 *
+	 * <p>
+	 * A source that caches snapshots for later readers can use {@code false} to retire this dataset for new readers
+	 * while allowing existing readers to finish against the state they already borrowed.
+	 *
+	 * @return {@code true} if this dataset is current; {@code false} if its backing source has advanced since the
+	 *         snapshot was created.
+	 */
+	default boolean isSnapshotCurrent() {
+		return true;
+	}
+
+	/**
+	 * Returns whether this dataset belongs to the read view currently being admitted by its source.
+	 *
+	 * <p>
+	 * Implementations that do not bind datasets to an admission scope should retain the default value of {@code true}.
+	 * A source may use {@code false} to avoid returning a cached dataset from another transaction's pinned read view.
+	 *
+	 * @return {@code true} if this dataset is compatible with the current admission
+	 */
+	default boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return true;
 	}
 
 }

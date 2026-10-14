@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementController.CONTROL_COHORTS;
+import static org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementController.TRIAL_COHORTS;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -24,6 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.IntFunction;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -71,7 +74,7 @@ class AdaptiveFilterPlacementTest {
 	private static final int SUBJECTS = 4096;
 
 	@Test
-	void learnsEarlyRejectionEvenThoughItNeedsMorePredicateProbes() {
+	void triesEarlyRejectionBeforeOpeningDownstreamObservations() {
 		CountingSource source = new CountingSource();
 		for (int i = 0; i < SUBJECTS; i++) {
 			IRI subject = subject(i);
@@ -84,10 +87,15 @@ class AdaptiveFilterPlacementTest {
 		TupleExpr query = new Filter(new Join(type(), pattern(OBSERVATION, "observation")),
 				new Not(new Exists(pattern(CONDITION, "local"))));
 		assertThat(evaluate(query, source)).isEmpty();
+		assertFirstTrialLookups(source, OBSERVATION, 0, AdaptiveFilterPlacementTest::subject);
+		assertFirstTrialLookups(source, CONDITION, 1, AdaptiveFilterPlacementTest::subject);
 		assertThat(source.lookups(OBSERVATION))
-				.as("rejecting the anchor must avoid most downstream observation lookups")
-				.isLessThan(SUBJECTS / 2);
-		assertThat(source.lookups(CONDITION)).isLessThan(SUBJECTS * 2L);
+				.as("the early trial must skip one downstream lookup for each rejected cohort")
+				.isLessThanOrEqualTo(SUBJECTS - TRIAL_COHORTS);
+		assertThat(source.lookups(CONDITION))
+				.as("the early trial probes once instead of once per eight observation rows")
+				.isLessThanOrEqualTo(SUBJECTS * 8L - TRIAL_COHORTS * 7L);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
 	@Test
@@ -227,13 +235,13 @@ class AdaptiveFilterPlacementTest {
 				new Not(new Exists(condition)));
 		assertThat(evaluate(query, source)).isEmpty();
 		assertThat(source.lookups(OBSERVATION))
-				.as("prefix rows before the condition's input must not hide the deeper drain boundary")
-				.isLessThan(SUBJECTS / 2);
+				.as("the first deeper trial must skip a suffix lookup for each rejected encounter, across prefix frames")
+				.isLessThanOrEqualTo(source.rows(TYPE) - TRIAL_COHORTS);
 		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
 	@Test
-	void learnsToTestBeforeUnionFanoutAndPreservesEveryDuplicate() {
+	void triesBeforeUnionFanoutAndPreservesEveryDuplicate() {
 		CountingSource source = new CountingSource();
 		Map<BindingSet, Integer> expected = new HashMap<>();
 		for (int i = 0; i < SUBJECTS; i++) {
@@ -253,13 +261,15 @@ class AdaptiveFilterPlacementTest {
 		TupleExpr query = new Filter(new Join(type(), fanout),
 				new Not(new Exists(pattern(CONDITION, "local"))));
 		assertThat(evaluate(query, source)).isEqualTo(expected);
+		assertFirstTrialLookups(source, CONDITION, 1, AdaptiveFilterPlacementTest::subject);
 		assertThat(source.lookups(CONDITION))
-				.as("passing correlated predicates must not keep following UNION multiplicity")
-				.isLessThan(SUBJECTS * 2L);
+				.as("the first trial probes once instead of once per eight UNION rows")
+				.isLessThanOrEqualTo(SUBJECTS * 8L - TRIAL_COHORTS * 7L);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
 	@Test
-	void anEarlySeedCanLearnToWaitForASelectiveSibling() {
+	void anEarlySeedCanTryWaitingForASelectiveSibling() {
 		CountingSource source = new CountingSource();
 		Map<BindingSet, Integer> expected = new HashMap<>();
 		for (int i = 0; i < SUBJECTS; i++) {
@@ -277,10 +287,29 @@ class AdaptiveFilterPlacementTest {
 		Filter early = new Filter(type(), new Exists(pattern(CONDITION, "local")));
 		Filter selective = new Filter(pattern(NAME, "name"),
 				new Compare(Var.of("name"), new ValueConstant(VF.createLiteral(true))));
-		assertThat(evaluate(new Join(early, selective), source)).isEqualTo(expected);
+		Join query = new Join(early, selective);
+		query.setRuntimeTelemetryEnabled(true);
+		assertThat(evaluate(query, source)).isEqualTo(expected);
+		assertThat(query.getLongMetricActual("adaptiveFilterCohortsActual")).isEqualTo(SUBJECTS);
+		assertThat(query.getLongMetricActual("adaptiveFilterTrialsActual")).isPositive();
+		assertFirstTrialLookups(source, CONDITION, 0, AdaptiveFilterPlacementTest::subject);
 		assertThat(source.lookups(CONDITION))
-				.as("the legal envelope must include later sites as well as earlier sites")
-				.isLessThan(SUBJECTS / 2);
+				.as("the first later-site trial must skip EXISTS for each false selective-sibling result")
+				.isLessThanOrEqualTo(SUBJECTS - TRIAL_COHORTS);
+		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
+	}
+
+	private static void assertFirstTrialLookups(CountingSource source, IRI predicate, long expected,
+			IntFunction<Resource> lookupSubject) {
+		// These fixtures insert TYPE rows in subject order; the stable first proposal is the complete alternate cut.
+		// After CONTROL_COHORTS baseline inputs, the next TRIAL_COHORTS inputs execute that cut regardless of
+		// whether its elapsed time later beats both control windows. Assert its work, not host-dependent convergence.
+		for (int index = CONTROL_COHORTS; index < CONTROL_COHORTS + TRIAL_COHORTS; index++) {
+			Resource subject = lookupSubject.apply(index);
+			assertThat(source.lookups(subject, predicate))
+					.as("first-trial lookups for %s and %s", subject, predicate)
+					.isEqualTo(expected);
+		}
 	}
 
 	@Test
@@ -461,9 +490,14 @@ class AdaptiveFilterPlacementTest {
 		TupleExpr query = new Filter(new Join(type(), new Union(arm, arm.clone())),
 				new Not(new Exists(condition)));
 		assertThat(evaluate(query, source)).isEmpty();
+		for (int item = 0; item < 2; item++) {
+			int itemIndex = item;
+			assertFirstTrialLookups(source, MEDICATION, 0,
+					index -> VF.createIRI("urn:item:" + index + ":" + itemIndex));
+		}
 		assertThat(source.lookups(MEDICATION))
-				.as("one logical cut must reject on every UNION arm before opening its suffix")
-				.isLessThan(SUBJECTS * 2L);
+				.as("the first complete-cut trial skips two item lookups in each of the two UNION arms per cohort")
+				.isLessThanOrEqualTo(SUBJECTS * 4L - TRIAL_COHORTS * 4L);
 		assertThat(source.closed.sum()).isEqualTo(source.opened.sum());
 	}
 
@@ -835,6 +869,7 @@ class AdaptiveFilterPlacementTest {
 		private final Map<IRI, List<Statement>> byPredicate = new HashMap<>();
 		private final Map<AccessKey, List<Statement>> bySubject = new HashMap<>();
 		private final Map<IRI, LongAdder> lookups = new ConcurrentHashMap<>();
+		private final Map<AccessKey, LongAdder> lookupsBySubject = new ConcurrentHashMap<>();
 		private final Map<IRI, LongAdder> rows = new ConcurrentHashMap<>();
 		private final Map<IRI, LongAdder> counts = new ConcurrentHashMap<>();
 		private final LongAdder opened = new LongAdder();
@@ -849,6 +884,11 @@ class AdaptiveFilterPlacementTest {
 
 		long lookups(IRI predicate) {
 			LongAdder count = lookups.get(predicate);
+			return count == null ? 0 : count.sum();
+		}
+
+		long lookups(Resource subject, IRI predicate) {
+			LongAdder count = lookupsBySubject.get(new AccessKey(subject, predicate));
 			return count == null ? 0 : count.sum();
 		}
 
@@ -879,6 +919,7 @@ class AdaptiveFilterPlacementTest {
 				throw new QueryEvaluationException("statement access failed");
 			}
 			lookups.computeIfAbsent(predicate, ignored -> new LongAdder()).increment();
+			lookupsBySubject.computeIfAbsent(new AccessKey(subject, predicate), ignored -> new LongAdder()).increment();
 			List<Statement> candidates = subject == null ? byPredicate.getOrDefault(predicate, List.of())
 					: bySubject.getOrDefault(new AccessKey(subject, predicate), List.of());
 			List<Statement> matches = new ArrayList<>();
