@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -596,6 +597,44 @@ class LmdbNativeKernelExecutionParallelFailureTest {
 		assertThat(problem)
 				.as("an Error attached to an allocation refusal must preserve its Error identity")
 				.isSameAs(cleanup);
+	}
+
+	/** Used in a bounded child JVM because a broken startup barrier cannot be cancelled by the query owner. */
+	void exerciseWorkerActivationFailure(boolean matrix) {
+		ProbeSource source = new ProbeSource(null, false);
+		Scenario scenario = scenario(source);
+		RuntimeException injected = new IllegalStateException("native worker activation rejected");
+		AtomicBoolean rejectFirst = new AtomicBoolean(true);
+		AtomicInteger activated = new AtomicInteger();
+		Throwable failure;
+		try (var scope = QueryExecutionContext.activateReplaySafepoint(() -> {
+		}, () -> () -> {
+			System.out.println("WORKER_ACTIVATED " + activated.incrementAndGet());
+			if (rejectFirst.compareAndSet(true, false)) {
+				throw injected;
+			}
+			return () -> {
+			};
+		})) {
+			failure = catchThrowable(() -> {
+				if (matrix) {
+					LmdbNativeParallelKernelAggregate.tryEvaluate(typeMatrixLowered(),
+							new NativeLmdbQuerySource.NativeAdjacency[0], null, null,
+							new TypeMatrixContext[] { typeMatrix() }, emptyDomains(), SlotPlan.singleton(),
+							scenario.row,
+							scenario.emitter, null, ignored -> new CancellationKernel(new CountDownLatch(0)));
+				} else {
+					LmdbNativeKernelExecution.tryEvaluateAggregateParallel(scenario.plan, scenario.row,
+							new int[0], AGGREGATES, scenario.emitter, null, null, true, true);
+				}
+			});
+		}
+		assertThat(activated.get()).as("both admitted kernel workers must activate").isEqualTo(2);
+		assertThat(LmdbNativeWorkerLifecycleTest.hasCause(failure, injected)).isTrue();
+		assertThat(source.children).hasSize(2);
+		for (ProbeSource child : source.children) {
+			assertThat(child.closeCalls).hasValue(1);
+		}
 	}
 
 	private Scenario scenario(ProbeSource source) {

@@ -853,6 +853,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 	private LmdbNativeStrategySelection<T> executeGuarded(
 			LmdbNativeAdaptiveArbitration.DispatchPlan.Guarded<T> plan, int winnerIndex, int backupIndex)
 			throws IOException {
+		var replayContext = NativeExecutionContext.captureWorkerContext();
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Normal<T> normalPlan = plan.normal();
 		LmdbNativeStrategyProposal<T> chosen = candidates.get(winnerIndex);
 		String backupTag = backupIndex >= 0 && backupIndex < candidates.size() ? candidates.get(backupIndex).tag
@@ -907,7 +908,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		Runnable backupTask = () -> {
 			LmdbNativeSafetyLedger.Reservation guardReservation = null;
 			long launchMillis = 0L;
-			try {
+			try (var replayScope = replayContext.activate()) {
 				while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
 					if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
 						break;
@@ -1184,6 +1185,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 
 	private LmdbNativeStrategySelection<T> executeHedgeAttempt(LmdbNativeAdaptiveArbitration.DispatchPlan.Hedge<T> plan,
 			int trialIndex, int fallbackIndex) throws IOException {
+		var replayContext = NativeExecutionContext.captureWorkerContext();
 		LmdbNativeAdaptiveArbitration.DispatchPlan.Probe<T> probe = plan.probe();
 		String fallbackTag = fallbackIndex >= 0 ? candidates.get(fallbackIndex).tag : null;
 		if (hedgeSupport == null || fallbackTag == null || !hedgeSupport.supportsTag(fallbackTag)) {
@@ -1224,7 +1226,7 @@ final class LmdbNativeStrategyArbiter<T> implements AutoCloseable {
 		LmdbNativeHedgeSupport.ShadowContext shadowForTask = shadow;
 		LmdbNativeParallelPipelines.TaskReservation reservationForTask = taskReservation;
 		Runnable backupTask = () -> {
-			try {
+			try (var replayScope = replayContext.activate()) {
 				while (go.getCount() > 0 && race.state() == LmdbNativeHedgeRace.State.PRIMARY_ONLY) {
 					if (go.await(50L, java.util.concurrent.TimeUnit.MILLISECONDS)) {
 						break;

@@ -19,12 +19,18 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
@@ -47,7 +53,7 @@ class LmdbPositionRoutingIntegrationTest {
 
 	private static void assertRouting(File directory, String query, String binding, boolean nativeProjection,
 			boolean computedText) throws Exception {
-		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
+		ObservingStore store = new ObservingStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
 				.setNativeEvaluationEnabled(true)
 				.setValueCacheSize(64));
 		SailRepository repository = new SailRepository(store);
@@ -57,6 +63,19 @@ class LmdbPositionRoutingIntegrationTest {
 			ValueStore values = store.getBackingStore().valueStore();
 			long id = values.getId(expected, false);
 			assertFalse(ValueIds.isInlined(id));
+			if (nativeProjection) {
+				values.clearCaches();
+				try (var raw = store.getConnection();
+						var rows = raw.evaluate(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+								.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+					assertTrue(rows.hasNext());
+					BindingSet nativeRow = rows.next();
+					assertInstanceOf(NativeProjectedBindingSet.class, nativeRow,
+							"observe native production before the repository snapshots its outward row");
+					assertEquals(id, ((LmdbValue) nativeRow.getValue(binding)).getInternalID());
+					assertFalse(rows.hasNext());
+				}
+			}
 			TupleQuery prepared = connection.prepareTupleQuery(query);
 			readSingle(prepared); // Exercise query initialization before observing cache admissions.
 			values.clearCaches();
@@ -64,10 +83,12 @@ class LmdbPositionRoutingIntegrationTest {
 				assertNull(values.cachedValue(id, mask));
 			}
 
+			store.observedId = id;
+			store.masks.clear();
 			BindingSet row = readSingle(prepared);
-			if (nativeProjection) {
-				assertInstanceOf(NativeProjectedBindingSet.class, row);
-			}
+			assertFalse(store.masks.isEmpty(), "the real native dictionary materializer must be observed");
+			assertTrue(store.masks.stream().allMatch(mask -> mask == (ValuePosition.SUBJECT | ValuePosition.OBJECT)),
+					"subquery aliases and computed values must preserve the original combined role");
 			assertEquals(expected, row.getValue(binding));
 			LmdbValue value = assertInstanceOf(LmdbValue.class, row.getValue(binding));
 			assertTrue(value.isInitialized(), "the Sail result boundary must initialize dictionary values");
@@ -81,6 +102,31 @@ class LmdbPositionRoutingIntegrationTest {
 			}
 		} finally {
 			repository.shutDown();
+		}
+	}
+
+	private static final class ObservingStore extends LmdbStore {
+		private long observedId;
+		private final List<Integer> masks = new ArrayList<>();
+
+		private ObservingStore(File directory, LmdbStoreConfig config) {
+			super(directory, config);
+		}
+
+		@Override
+		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				boolean sketch) throws IOException {
+			return new LmdbSailStore(directory, properties, config, sketch,
+					(valueDirectory, valueProperties, valueConfig) -> new ValueStore(valueDirectory, valueProperties,
+							valueConfig) {
+						@Override
+						LmdbValue getLazyValue(ReadSnapshot snapshot, long id, int mask) throws IOException {
+							if (id == observedId) {
+								masks.add(mask);
+							}
+							return super.getLazyValue(snapshot, id, mask);
+						}
+					}, TripleStore::new);
 		}
 	}
 

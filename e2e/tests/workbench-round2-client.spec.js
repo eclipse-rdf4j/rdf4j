@@ -714,13 +714,13 @@ test('cleanup in another tab keeps the stored results of a live page, however ol
 	const readyStore = await waitForStoredResult(page, before, 12000);
 	expect(readyStore.metadataCount).toBe(12000);
 	expect(readyStore.physicalRowCount).toBe(12000);
-	const live = (await storedResults(page)).databases;
-	expect(live, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
-	expect(live).toContain(readyStore.id);
+	const liveIds = (await storedResults(page)).databases;
+	expect(liveIds, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
+	expect(liveIds).toContain(readyStore.id);
 	const fourDaysAgo = Date.now() - 4 * 24 * 60 * 60 * 1000;
 	const abandoned = 'rows-' + fourDaysAgo.toString(36) + '-abandoned';
 	await plantAbandonedStore(page, abandoned, fourDaysAgo);
-	await ageStoredResults(page, live, fourDaysAgo);
+	await ageStoredResults(page, liveIds, fourDaysAgo);
 	await forgetLastCleanup(page);
 
 	// Another tab shows a page, and cleans up after it is shown.
@@ -731,7 +731,7 @@ test('cleanup in another tab keeps the stored results of a live page, however ol
 		{ message: 'the abandoned store is deleted' }).toBe(false);
 	const left = await storedResults(other);
 	expect(left.registry[abandoned], 'and forgotten').toBeUndefined();
-	for (const id of live) {
+	for (const id of liveIds) {
 		expect(left.databases, 'the live page\'s store is kept').toContain(id);
 	}
 	// The live page still reads its rows.

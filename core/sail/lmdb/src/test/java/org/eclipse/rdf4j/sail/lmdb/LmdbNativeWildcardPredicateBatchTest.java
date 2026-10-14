@@ -372,6 +372,29 @@ class LmdbNativeWildcardPredicateBatchTest {
 	}
 
 	@Test
+	void earlyCloseReleasesParallelPredicateTileWorkers(@TempDir File dataDir) {
+		open(dataDir);
+		System.setProperty(NATIVE_BATCH_ROWS_PROPERTY, "16");
+		System.setProperty(PARALLEL_PROPERTY, "true");
+		System.setProperty(PARALLEL_MIN_WORK_PROPERTY, "0");
+		System.setProperty(PARALLEL_STARTUP_WORK_PROPERTY, "1.0E12");
+		System.setProperty(PARALLEL_THREADS_PROPERTY, "2");
+		System.setProperty(PARALLEL_MAX_TASKS_PROPERTY, "2");
+		long workersBefore = LmdbNativeKernelIrTestAccess.wildcardWorkers();
+		String query = "SELECT ?a ?p ?value WHERE { ?a a <" + NS + "SomeClass> . ?a ?p ?value }";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			long statements = connection.size();
+			try (var result = connection.prepareTupleQuery(query).evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("a")).isNotNull();
+				assertThat(LmdbNativeKernelIrTestAccess.wildcardWorkers()).isGreaterThan(workersBefore);
+				System.out.println("NATIVE_PREDICATE_WORKERS_ADMITTED");
+			}
+			assertThat(connection.size()).isEqualTo(statements);
+		}
+	}
+
+	@Test
 	void demandsPartitionTheirPrunableAxisAndPublishBoundedPayloadPages(@TempDir File dataDir) {
 		open(dataDir);
 		String predicateAny = "SELECT DISTINCT ?p WHERE { "

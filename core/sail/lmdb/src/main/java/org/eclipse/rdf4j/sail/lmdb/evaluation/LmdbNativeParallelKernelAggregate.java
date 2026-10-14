@@ -526,9 +526,11 @@ final class LmdbNativeParallelKernelAggregate {
 				NativeLmdbQuerySource workerSource = sources[worker];
 				TypeMatrixTask initialTask = initialTasks[worker];
 				try {
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(workerExecutor.submit(() -> {
-						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-								.inherit(fusedParent);
+						try (var replayScope = replayContext.activate();
+								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+										.inherit(fusedParent);
 								LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
 										.inherit(probeParent)) {
 							telemetry.workerReady(workerIndex);
@@ -541,6 +543,8 @@ final class LmdbNativeParallelKernelAggregate {
 						} catch (Throwable problem) {
 							publishWorkerFailure(failure, peerStop, problem);
 							throw problem;
+						} finally {
+							telemetry.finishStartup(workerIndex);
 						}
 					}));
 				} catch (RuntimeException | Error problem) {
@@ -880,9 +884,11 @@ final class LmdbNativeParallelKernelAggregate {
 				NativeLmdbQuerySource source = sources[w];
 				PartialMemory memory = workerMemory[worker];
 				try {
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(workerExecutor.submit(() -> {
-						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-								.inherit(fusedParent);
+						try (var replayScope = replayContext.activate();
+								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+										.inherit(fusedParent);
 								LmdbNativeProbeDeadline.Scope probeScope = LmdbNativeProbeDeadline
 										.inherit(probeParent)) {
 							telemetry.workerReady(worker);
@@ -894,6 +900,8 @@ final class LmdbNativeParallelKernelAggregate {
 						} catch (Throwable t) {
 							publishWorkerFailure(failure, peerStop, t);
 							throw t;
+						} finally {
+							telemetry.finishStartup(worker);
 						}
 					}));
 				} catch (RuntimeException | Error problem) {
@@ -2194,6 +2202,7 @@ final class LmdbNativeParallelKernelAggregate {
 		private final int partitions;
 		private final String operator;
 		private final CountDownLatch ready;
+		private final boolean[] startupReported;
 		private final CountDownLatch start = new CountDownLatch(1);
 		private final AtomicInteger workersStarted = new AtomicInteger();
 		private final AtomicInteger active = new AtomicInteger();
@@ -2212,6 +2221,7 @@ final class LmdbNativeParallelKernelAggregate {
 			this.partitions = partitions;
 			this.operator = operator;
 			ready = new CountDownLatch(workers);
+			startupReported = new boolean[workers];
 			morsels = new long[workers];
 			rows = new long[workers];
 			physicalWork = new long[workers];
@@ -2225,8 +2235,16 @@ final class LmdbNativeParallelKernelAggregate {
 				throw new IllegalArgumentException("invalid worker ordinal " + worker);
 			}
 			workersStarted.incrementAndGet();
-			ready.countDown();
+			finishStartup(worker);
 			start.await();
+		}
+
+		/** Each slot is worker-confined; an activation failure must arrive without reporting runnable work. */
+		private void finishStartup(int worker) {
+			if (!startupReported[worker]) {
+				startupReported[worker] = true;
+				ready.countDown();
+			}
 		}
 
 		private <T> T runActive(int worker, WorkerTask<T> task) throws IOException, InterruptedException {

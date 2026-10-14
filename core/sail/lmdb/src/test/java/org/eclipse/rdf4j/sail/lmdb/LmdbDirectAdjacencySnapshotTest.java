@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -296,7 +297,11 @@ class LmdbDirectAdjacencySnapshotTest {
 			direct.pauseApplierForTest(false);
 			long s1 = oldDataset.idOf(S1);
 			long p1 = oldDataset.idOf(P1);
-			long g2 = oldDataset.idOf(G2); // resolves now, but did not exist at the pinned revision
+			assertThat(oldDataset.idOf(G2)).isEqualTo(LmdbValue.UNKNOWN_ID);
+			// The paired old dictionary correctly refuses the new term. Bind the committed ID explicitly to
+			// probe the old adjacency context catalog; UNKNOWN_ID itself means wildcard to the native scan API.
+			long g2 = ((ValueStore) backing.getValueFactory()).getId(G2);
+			assertThat(g2).isNotEqualTo(LmdbValue.UNKNOWN_ID);
 			long hitsBefore = direct.snapshotMetrics().lookupHits;
 			// the old view proves emptiness for the post-snapshot context without consulting LMDB
 			assertThat(collect(oldDataset.statements(s1, p1, -1, g2))).isEmpty();

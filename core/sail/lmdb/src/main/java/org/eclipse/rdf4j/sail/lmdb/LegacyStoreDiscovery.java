@@ -114,8 +114,14 @@ final class LegacyStoreDiscovery {
 				boolean hasLegacyRetirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
 						valuesDatabases, legacy);
 				Set<String> statementIndexes = classifyStatementIndexes(triplesDatabases);
-				Set<String> termIndexes = classifyTermIndexes(valuesDatabases, properties, legacy);
-				validateKnownDatabases(valuesDatabases, triplesDatabases, statementIndexes, termIndexes,
+				Set<String> physicalTermIndexes = classifyTermIndexes(valuesDatabases, properties, legacy);
+				boolean statementManifest = validateNamespaceMetadata(stack, triplesTxn, triplesDatabases,
+						statementIndexes);
+				Set<String> activeTermIndexes = validateTermIndexManifest(stack, valuesTxn, valuesDatabases,
+						physicalTermIndexes);
+				boolean termManifest = activeTermIndexes != null;
+				Set<String> termIndexes = termManifest ? activeTermIndexes : physicalTermIndexes;
+				validateKnownDatabases(valuesDatabases, triplesDatabases, statementIndexes, physicalTermIndexes,
 						properties, legacy, hasLegacyRetirementQueue);
 				if (legacy) {
 					int termCspoDatabase = termIndexes.contains("cspo")
@@ -134,7 +140,7 @@ final class LegacyStoreDiscovery {
 					validateTermIndexes(stack, valuesTxn, valuesDatabases, termIndexes, valuesMain,
 							valuesDatabases.get("unused_ids"), termCspoDatabase, termSpocDatabase);
 				}
-				validateDescriptors(properties, statementIndexes, termIndexes, legacy);
+				validateDescriptors(properties, statementIndexes, termIndexes, legacy, statementManifest, termManifest);
 			} finally {
 				if (triplesTxn != NULL) {
 					mdb_txn_abort(triplesTxn);
@@ -295,6 +301,9 @@ final class LegacyStoreDiscovery {
 			StoreProperties properties, boolean legacy, boolean hasLegacyRetirementQueue) throws IOException {
 		Set<String> expectedTriples = new LinkedHashSet<>();
 		expectedTriples.add("contexts");
+		if (tripleDatabases.containsKey(TripleStore.NAMESPACE_DATABASE_NAME)) {
+			expectedTriples.add(TripleStore.NAMESPACE_DATABASE_NAME);
+		}
 		for (String spec : statementIndexes) {
 			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, true));
 			expectedTriples.add(TripleIndex.nativeDatabaseName(spec, false));
@@ -316,6 +325,9 @@ final class LegacyStoreDiscovery {
 			expectedValues.add("retired_ids");
 			expectedValues.add("retired_ids_seq");
 		}
+		if (valueDatabases.containsKey(ValueStore.TERM_INDEX_MANIFEST_DATABASE)) {
+			expectedValues.add(ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+		}
 		for (String spec : termIndexes) {
 			expectedValues.add(TripleIndex.nativeDatabaseName("term-" + spec, true));
 		}
@@ -333,6 +345,105 @@ final class LegacyStoreDiscovery {
 			if (!missing.isEmpty()) {
 				throw new IOException("Missing named database in values environment: " + missing.iterator().next());
 			}
+		}
+	}
+
+	/** Validates the optional incoming namespace/index manifest without importing or rewriting legacy state. */
+	private static boolean validateNamespaceMetadata(MemoryStack stack, long transaction,
+			Map<String, Integer> databases, Set<String> statementIndexes) throws IOException {
+		Integer database = databases.get(TripleStore.NAMESPACE_DATABASE_NAME);
+		if (database == null) {
+			return false;
+		}
+		byte[] format = getValue(transaction, database, TripleStore.NAMESPACE_FORMAT_KEY);
+		byte[] snapshot = getValue(transaction, database, TripleStore.NAMESPACE_SNAPSHOT_KEY);
+		if ((format == null) != (snapshot == null)) {
+			throw new IOException("Incomplete namespace database snapshot metadata");
+		}
+		if (format != null) {
+			validateMetadataVersion(format, TripleStore.NAMESPACE_DATABASE_VERSION, "namespace");
+			NamespaceStore.decodeSnapshot(snapshot);
+		}
+		byte[] indexFormat = getValue(transaction, database, TripleStore.INDEX_FORMAT_KEY);
+		byte[] indexSpecs = getValue(transaction, database, TripleStore.INDEX_SPECS_KEY);
+		if ((indexFormat == null) != (indexSpecs == null)) {
+			throw new IOException("Incomplete native triple index metadata");
+		}
+		if (indexFormat != null) {
+			validateMetadataVersion(indexFormat, TripleStore.INDEX_DATABASE_VERSION, "native triple index");
+			validateUtf8(ByteBuffer.wrap(indexSpecs), "native triple index specifications");
+			if (!TripleIndex.parseIndexSpecList(new String(indexSpecs, StandardCharsets.UTF_8))
+					.equals(statementIndexes)) {
+				throw new IOException("Native triple index metadata disagrees with named index databases");
+			}
+		}
+		PointerBuffer handle = stack.mallocPointer(1);
+		E(mdb_cursor_open(transaction, database, handle));
+		long cursor = handle.get(0);
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			while (result == MDB_SUCCESS) {
+				byte[] bytes = copy(key.mv_data());
+				if (!Arrays.equals(bytes, TripleStore.NAMESPACE_FORMAT_KEY)
+						&& !Arrays.equals(bytes, TripleStore.NAMESPACE_SNAPSHOT_KEY)
+						&& !Arrays.equals(bytes, TripleStore.INDEX_FORMAT_KEY)
+						&& !Arrays.equals(bytes, TripleStore.INDEX_SPECS_KEY)) {
+					throw new IOException("Unrecognized namespace database metadata key: " + printablePrefix(bytes));
+				}
+				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+			}
+			if (result != MDB_NOTFOUND) {
+				E(result);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+		return indexFormat != null;
+	}
+
+	/** Validates committed authority while admitting recognized staged indexes for the owner's orphan cleanup. */
+	private static Set<String> validateTermIndexManifest(MemoryStack stack, long transaction,
+			Map<String, Integer> databases, Set<String> physicalTermIndexes) throws IOException {
+		Integer database = databases.get(ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+		if (database == null) {
+			return null;
+		}
+		byte[] manifest = getValue(transaction, database, ValueStore.TERM_INDEX_MANIFEST_KEY);
+		if (manifest == null) {
+			throw new IOException("Native triple-term manifest disagrees with named index databases");
+		}
+		Set<String> activeTermIndexes = ValueStore.decodeTermIndexManifest(ByteBuffer.wrap(manifest));
+		if (!activeTermIndexes.contains("spoc") || !activeTermIndexes.contains("cspo")
+				|| !physicalTermIndexes.containsAll(activeTermIndexes)) {
+			throw new IOException("Native triple-term manifest disagrees with named index databases");
+		}
+		PointerBuffer handle = stack.mallocPointer(1);
+		E(mdb_cursor_open(transaction, database, handle));
+		long cursor = handle.get(0);
+		try {
+			MDBVal key = MDBVal.calloc(stack);
+			MDBVal value = MDBVal.calloc(stack);
+			int result = mdb_cursor_get(cursor, key, value, MDB_FIRST);
+			while (result == MDB_SUCCESS) {
+				if (!Arrays.equals(copy(key.mv_data()), ValueStore.TERM_INDEX_MANIFEST_KEY)) {
+					throw new IOException("Unrecognized native triple-term manifest metadata key");
+				}
+				result = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+			}
+			if (result != MDB_NOTFOUND) {
+				E(result);
+			}
+		} finally {
+			mdb_cursor_close(cursor);
+		}
+		return activeTermIndexes;
+	}
+
+	private static void validateMetadataVersion(byte[] encoded, int expected, String description) throws IOException {
+		if (encoded.length != Integer.BYTES || ByteBuffer.wrap(encoded).getInt() != expected) {
+			throw new IOException("Unsupported " + description + " database metadata version");
 		}
 	}
 
@@ -492,32 +603,26 @@ final class LegacyStoreDiscovery {
 	}
 
 	private static void validateDescriptors(StoreProperties properties, Set<String> statements, Set<String> terms,
-			boolean legacy) {
-		if (!legacy) {
-			validateRequiredDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), statements);
-			validateRequiredDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(),
-					terms);
-			return;
-		}
-		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), statements);
-		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), terms);
-		if (properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
+			boolean legacy, boolean statementManifest, boolean termManifest) {
+		validateDescriptor(StoreProperties.INDEXES_KEY, properties.getTripleIndexes(), statements, !legacy,
+				statementManifest);
+		validateDescriptor(StoreProperties.TRIPLE_TERM_INDEXES_KEY, properties.getTripleTermIndexes(), terms,
+				!legacy, termManifest);
+		// Each manifest is committed with its own native indexes. A valid sidecar may lag that commit after a crash.
+		if (statementManifest || properties.getTripleIndexes() == null || properties.getTripleIndexes().isBlank()) {
 			properties.setTripleIndexes(String.join(",", new TreeSet<>(statements)));
 		}
-		if (properties.getTripleTermIndexes() == null || properties.getTripleTermIndexes().isBlank()) {
+		if (termManifest || properties.getTripleTermIndexes() == null || properties.getTripleTermIndexes().isBlank()) {
 			properties.setTripleTermIndexes(String.join(",", new TreeSet<>(terms)));
 		}
 	}
 
-	private static void validateRequiredDescriptor(String key, String descriptor, Set<String> actual) {
+	private static void validateDescriptor(String key, String descriptor, Set<String> actual, boolean required,
+			boolean nativeManifest) {
 		if (descriptor == null || descriptor.isBlank()) {
-			throw new SailException("Missing persisted " + key + " descriptor for an existing native generation");
-		}
-		validateDescriptor(key, descriptor, actual);
-	}
-
-	private static void validateDescriptor(String key, String descriptor, Set<String> actual) {
-		if (descriptor == null || descriptor.isBlank()) {
+			if (required) {
+				throw new SailException("Missing persisted " + key + " descriptor for an existing native generation");
+			}
 			return;
 		}
 		Set<String> parsed;
@@ -526,7 +631,7 @@ final class LegacyStoreDiscovery {
 		} catch (SailException invalid) {
 			throw new SailException("Invalid persisted " + key + " descriptor", invalid);
 		}
-		if (parsed.size() != tokenCount(descriptor) || !parsed.equals(actual)) {
+		if (parsed.size() != tokenCount(descriptor) || (!nativeManifest && !parsed.equals(actual))) {
 			throw new SailException("Persisted " + key + " descriptor disagrees with native indexes");
 		}
 	}

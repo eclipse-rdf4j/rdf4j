@@ -645,10 +645,11 @@ final class LmdbNativeParallelAggregation {
 			LmdbNativeAttemptMetrics workerMetric = workerMetrics[i];
 			int worker = i;
 			try {
+				var replayContext = NativeExecutionContext.captureWorkerContext();
 				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 					MultiJoinPlan workerPlan = null;
 					boolean handedToWorkerRunner = false;
-					try {
+					try (var replayScope = replayContext.activate()) {
 						workerPlan = templatePlan == null
 								? workerPlans[worker]
 								: LmdbNativeParallelPipelines.forkWorkerPlan(templatePlan,

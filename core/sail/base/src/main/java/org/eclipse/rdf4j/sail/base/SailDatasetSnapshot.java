@@ -63,6 +63,10 @@ public final class SailDatasetSnapshot implements SailClosable {
 		return new SnapshotSource(source.fork(), this);
 	}
 
+	SailSource fork(SailSource source, Object writeOwner) {
+		return new SnapshotSource(source.fork(writeOwner), this);
+	}
+
 	private synchronized void retain() {
 		ensureOpen();
 		references++;
@@ -213,6 +217,8 @@ public final class SailDatasetSnapshot implements SailClosable {
 	private static final class SnapshotSource extends DelegatingSailSource {
 		private final SailDatasetSnapshot snapshot;
 		private final AtomicBoolean closed = new AtomicBoolean();
+		private final AtomicBoolean snapshotReleased = new AtomicBoolean();
+		private final AtomicBoolean frozenAttemptReleased = new AtomicBoolean();
 
 		private SnapshotSource(SailSource delegate, SailDatasetSnapshot snapshot) {
 			super(delegate, true);
@@ -221,29 +227,112 @@ public final class SailDatasetSnapshot implements SailClosable {
 		}
 
 		@Override
+		protected boolean isFrozenFlushTransparent() {
+			// Snapshot ownership decorates acquisition and close; write staging still belongs to the delegate.
+			return true;
+		}
+
+		@Override
+		public boolean supportsStreamingWritePreflight() {
+			// Retaining a read generation does not change the delegate's write-admission boundary.
+			return streamingDelegate().supportsStreamingWritePreflight();
+		}
+
+		@Override
 		public SailSource fork() {
+			ensureSnapshotAvailable();
 			return new SnapshotSource(super.fork(), snapshot);
 		}
 
 		@Override
+		public SailSource fork(Object writeOwner) {
+			ensureSnapshotAvailable();
+			return new SnapshotSource(super.fork(writeOwner), snapshot);
+		}
+
+		@Override
+		public SailClosable beginDatasetAcquisition(IsolationLevel level) {
+			ensureSnapshotAvailable();
+			try (Scope ignored = snapshot.activate()) {
+				return super.beginDatasetAcquisition(level);
+			}
+		}
+
+		@Override
 		public SailDataset dataset(IsolationLevel level) {
+			ensureSnapshotAvailable();
 			try (Scope ignored = snapshot.activate()) {
 				return super.dataset(level);
 			}
 		}
 
 		@Override
+		public FlushBatch freezeForFlush() {
+			if (closed.get() || frozenAttemptReleased.get()) {
+				throw new IllegalStateException("The retained snapshot source has completed its write attempt");
+			}
+			FlushBatch batch = super.freezeForFlush();
+			if (batch instanceof FrozenFlush.Batch retained) {
+				retained.context().attemptCleanup(retained, this, this::releaseFrozenSnapshot);
+			}
+			return batch;
+		}
+
+		@Override
+		public void enlistValidationCarriers(FrozenFlush.Context context) {
+			context.attemptCleanup(this, this::releaseFrozenSnapshot);
+			super.enlistValidationCarriers(context);
+		}
+
+		@Override
+		public void retireSnapshotsPreservingBorrowers() {
+			try {
+				super.retireSnapshotsPreservingBorrowers();
+			} catch (RuntimeException | Error failure) {
+				SourceClosingSailDataset.closeAfterFailure(failure, this::releaseSnapshot);
+				throw failure;
+			}
+			releaseSnapshot();
+		}
+
+		private void releaseFrozenSnapshot() {
+			frozenAttemptReleased.set(true);
+			releaseSnapshot();
+		}
+
+		private void ensureSnapshotAvailable() {
+			if (closed.get() || snapshotReleased.get()) {
+				throw new IllegalStateException("The retained snapshot source has completed its read attempt");
+			}
+		}
+
+		private void releaseSnapshot() {
+			if (snapshotReleased.compareAndSet(false, true)) {
+				snapshot.close();
+			}
+		}
+
+		@Override
 		public void close() {
+			finish(super::close);
+		}
+
+		@Override
+		public void abandonUnobserved() {
+			finish(super::abandonUnobserved);
+		}
+
+		private void finish(SailClosable delegateCleanup) {
 			if (!closed.compareAndSet(false, true)) {
 				return;
 			}
 			try {
-				super.close();
+				delegateCleanup.close();
 			} catch (RuntimeException | Error failure) {
-				SourceClosingSailDataset.closeAfterFailure(failure, snapshot);
+				SourceClosingSailDataset.closeAfterFailure(failure, this::releaseSnapshot);
 				throw failure;
 			}
-			snapshot.close();
+			releaseSnapshot();
 		}
 	}
 }

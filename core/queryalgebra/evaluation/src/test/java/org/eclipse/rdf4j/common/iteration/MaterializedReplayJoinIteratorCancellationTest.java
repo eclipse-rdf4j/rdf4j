@@ -39,6 +39,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MaterializedReplayJoinIteratorCancellationTest {
 
@@ -358,6 +360,83 @@ class MaterializedReplayJoinIteratorCancellationTest {
 			assertEquals(0, rightOpened.get());
 		} finally {
 			replay.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void cancellationBeforeFirstConsumerEntryClosesBothReplayPolicies(boolean experimental) {
+		for (boolean timer : new boolean[] { false, true }) {
+			AtomicInteger opened = new AtomicInteger();
+			QueryEvaluationStep operand = bindings -> {
+				opened.incrementAndGet();
+				return new TrackingIteration(List.of(), null, null, null);
+			};
+			MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(operand, operand, null,
+					EmptyBindingSet.getInstance(), false, List.of(), DefaultCollectionFactory::new,
+					experimental ? QueryExecutionPolicy.EXPERIMENTAL : QueryExecutionPolicy.DEFAULT);
+			try (TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS)) {
+				if (timer) {
+					timeout.interrupt();
+				} else {
+					assertTrue(replay.requestCancellation());
+				}
+				assertTrue(replay.isClosed(), "an unstarted replay has no evaluator to complete its cancellation");
+				if (timer) {
+					assertThrows(TestTimeoutException.class, timeout::hasNext);
+				} else {
+					assertFalse(replay.hasNext());
+				}
+				assertEquals(0, opened.get(), "pre-start cancellation must not evaluate either operand");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void cancellationDuringFactoryCreationRetainsEvaluatorCleanup(boolean experimental) throws Exception {
+		CountDownLatch factoryEntered = new CountDownLatch(1);
+		CountDownLatch releaseFactory = new CountDownLatch(1);
+		AtomicInteger opened = new AtomicInteger();
+		AtomicInteger factoryClosed = new AtomicInteger();
+		AtomicReference<Thread> closeThread = new AtomicReference<>();
+		AtomicReference<Throwable> outcome = new AtomicReference<>();
+		QueryEvaluationStep operand = bindings -> {
+			opened.incrementAndGet();
+			return new TrackingIteration(List.of(), null, null, null);
+		};
+		MaterializedReplayJoinIterator replay = new MaterializedReplayJoinIterator(operand, operand, null,
+				EmptyBindingSet.getInstance(), false, List.of(), () -> {
+					DefaultCollectionFactory factory = new DefaultCollectionFactory() {
+						@Override
+						public void close() {
+							factoryClosed.incrementAndGet();
+							closeThread.set(Thread.currentThread());
+							super.close();
+						}
+					};
+					factoryEntered.countDown();
+					await(releaseFactory, "collection factory creation release");
+					return factory;
+				}, experimental ? QueryExecutionPolicy.EXPERIMENTAL : QueryExecutionPolicy.DEFAULT);
+		TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, LONG_TIME_LIMIT_MILLIS);
+		Thread worker = startWorker(timeout, outcome);
+		try {
+			assertTrue(factoryEntered.await(WAIT_SECONDS, TimeUnit.SECONDS));
+			timeout.interrupt();
+			assertFalse(replay.isClosed(), "the in-flight creator owns unpublished resource cleanup");
+			assertEquals(0, factoryClosed.get());
+			releaseFactory.countDown();
+			awaitWorker(worker);
+			assertInstanceOf(TestTimeoutException.class, outcome.get());
+			assertTrue(replay.isClosed());
+			assertEquals(0, opened.get(), "cancellation during factory creation must prevent operand creation");
+			assertEquals(1, factoryClosed.get());
+			assertSame(worker, closeThread.get(), "unpublished resources close on their evaluator thread");
+		} finally {
+			releaseFactory.countDown();
+			awaitWorker(worker);
+			timeout.close();
 		}
 	}
 

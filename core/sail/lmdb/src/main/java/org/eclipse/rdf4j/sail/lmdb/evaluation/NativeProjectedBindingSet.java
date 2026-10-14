@@ -256,7 +256,7 @@ public final class NativeProjectedBindingSet extends AbstractBindingSet {
 		}
 	}
 
-	/** Removes the native source after the boundary has initialized every collected value. */
+	/** Removes the native source after every bound value has been captured independently of that source. */
 	public void detachAfterMaterialization() {
 		source = null;
 	}

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
@@ -90,7 +91,7 @@ class LmdbQueryReadyBulkLoadTest {
 	}
 
 	@Test
-	void namespaceOnlyReadCommittedCommitDoesNotWriteLmdbEnvironments() throws IOException {
+	void namespaceOnlyReadCommittedCommitWritesOnlyAuthoritativeNamespaceMetadata() throws IOException {
 		LmdbStore store = new LmdbStore(new File(dataDir, "namespace-only"), config());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
@@ -99,14 +100,17 @@ class LmdbQueryReadyBulkLoadTest {
 				LmdbSailStore backingStore = store.getBackingStore();
 				long tripleTransactionId = backingStore.tripleStoreTransactionId();
 				long valueTransactionId = backingStore.valueStoreTransactionId();
+				long rdfRevision = backingStore.getTripleStore().getDataRevision();
 
 				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.setNamespace("example", "urn:example:");
 				connection.commit();
 
 				assertEquals("urn:example:", connection.getNamespace("example"));
-				assertEquals(tripleTransactionId, backingStore.tripleStoreTransactionId(),
-						"namespace persistence must not commit an empty triple transaction");
+				assertEquals(tripleTransactionId + 1, backingStore.tripleStoreTransactionId(),
+						"namespace persistence commits its authoritative metadata once");
+				assertEquals(rdfRevision, backingStore.getTripleStore().getDataRevision(),
+						"namespace metadata cannot advance RDF retirement authority");
 				assertEquals(valueTransactionId, backingStore.valueStoreTransactionId(),
 						"namespace persistence must not commit an empty value transaction");
 			}
@@ -127,13 +131,13 @@ class LmdbQueryReadyBulkLoadTest {
 		repository.init();
 		try {
 			try (RepositoryConnection connection = repository.getConnection()) {
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(initial);
 				connection.commit();
 				assertQueryReady(store, connection, initial.size());
 				assertTrue(store.getBackingStore().hasActiveFreshValueSession());
 
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(provisional);
 				connection.rollback();
 				assertEquals(initial.size(), connection.size());
@@ -141,7 +145,7 @@ class LmdbQueryReadyBulkLoadTest {
 				assertTrue(store.getBackingStore().hasActiveFreshValueSession(),
 						"rollback must retain values committed by earlier fresh batches");
 
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(committedAfterRollback);
 				connection.commit();
 				long postRollbackCount = initial.size() + committedAfterRollback.size();
@@ -149,13 +153,13 @@ class LmdbQueryReadyBulkLoadTest {
 				assertFalse(connection.hasStatement(provisional.iterator().next(), true),
 						"a later disjoint commit must not publish the rolled-back batch");
 
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(provisional);
 				connection.commit();
 				long committedCount = initial.size() + committedAfterRollback.size() + provisional.size();
 				assertQueryReady(store, connection, committedCount);
 
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(initial);
 				connection.commit();
 				assertQueryReady(store, connection, committedCount);
@@ -202,29 +206,63 @@ class LmdbQueryReadyBulkLoadTest {
 	}
 
 	@Test
-	void contextOverrideInvalidatesAnActiveFreshSession() throws IOException {
+	void normalizedRepositoryContextsPreserveAnActiveFreshSession() throws IOException {
 		LmdbStore store = new LmdbStore(new File(dataDir, "context-override-fallback"), config());
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
 			try (RepositoryConnection connection = repository.getConnection()) {
 				Model initial = statements();
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(initial);
 				connection.commit();
 				assertTrue(store.getBackingStore().hasActiveFreshValueSession());
 
 				Model overridden = additionalStatements(initial.size(), BATCH_SIZE);
 				IRI overrideContext = VF.createIRI("urn:query-ready:override-context");
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(overridden, overrideContext);
 				connection.commit();
 
 				assertQueryReady(store, connection, initial.size() + overridden.size());
-				assertFalse(store.getBackingStore().hasActiveFreshValueSession());
+				assertTrue(store.getBackingStore().hasActiveFreshValueSession(),
+						"the branch normalizes contexts into supported prepared statements before LMDB ingestion");
 				Statement first = overridden.iterator().next();
 				assertTrue(connection.hasStatement(first.getSubject(), first.getPredicate(), first.getObject(), true,
 						overrideContext));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void directContextOverrideInvalidatesAnActiveFreshSession() throws IOException {
+		LmdbStore store = new LmdbStore(new File(dataDir, "direct-context-override"), config());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try {
+			Model initial = statements();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.READ_COMMITTED);
+				connection.add(initial);
+				connection.commit();
+			}
+			assertTrue(store.getBackingStore().hasActiveFreshValueSession());
+			Model overridden = additionalStatements(initial.size(), BATCH_SIZE);
+			IRI override = VF.createIRI("urn:query-ready:direct-override");
+			try (SailSink sink = store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				assertEquals(overridden.size(), sink.approveAll(overridden, override));
+				sink.flush();
+			}
+			assertFalse(store.getBackingStore().hasActiveFreshValueSession(),
+					"the actual direct-sink context override selects the normal ingestion fallback");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertQueryReady(store, connection, initial.size() + overridden.size());
+				for (Statement statement : overridden) {
+					assertTrue(connection.hasStatement(statement.getSubject(), statement.getPredicate(),
+							statement.getObject(), false, override));
+				}
 			}
 		} finally {
 			repository.shutDown();
@@ -275,7 +313,7 @@ class LmdbQueryReadyBulkLoadTest {
 				long transactionIdBeforeLoad = store.getBackingStore().tripleStoreTransactionId();
 				Model statements = statements();
 				statements.addAll(additionalStatements(statements.size(), 100_000));
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(statements);
 				connection.commit();
 				assertQueryReady(store, connection, statements.size());
@@ -299,7 +337,7 @@ class LmdbQueryReadyBulkLoadTest {
 				LmdbSailStore backingStore = store.getBackingStore();
 				backingStore.startTrackingTripleResizeChecks();
 				Model statements = statements();
-				connection.begin(IsolationLevels.NONE);
+				connection.begin(IsolationLevels.READ_COMMITTED);
 				connection.add(statements);
 				connection.commit();
 

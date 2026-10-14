@@ -43,12 +43,36 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 	private final QueryEvaluationContext scope;
 	private final Object queryScopedValueLock = new Object();
 	private Consumer<Value> queryScopedValueRegistrar;
+	private Function<Value, Value> valueCapturer;
 	private Literal now;
 	private boolean nowRegistered;
 
 	EvaluationScopedQueryEvaluationContext(QueryEvaluationContext structural) {
+		this(structural, null);
+	}
+
+	EvaluationScopedQueryEvaluationContext(QueryEvaluationContext structural, Function<Value, Value> valueCapturer) {
 		this.structural = structural;
 		this.scope = new QueryEvaluationContext.Minimal(structural.getDataset());
+		this.valueCapturer = valueCapturer;
+	}
+
+	static QueryEvaluationContext create(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {
+		return strategy == null ? new EvaluationScopedQueryEvaluationContext(structural)
+				: strategy.evaluationContext(structural);
+	}
+
+	void installValueCapturer(Function<Value, Value> capturer) {
+		synchronized (queryScopedValueLock) {
+			if (valueCapturer == null) {
+				valueCapturer = capturer;
+			}
+		}
+	}
+
+	@Override
+	public Value captureConstant(Value value, Function<Value, Value> capturer) {
+		return scope.captureConstant(value, capturer);
 	}
 
 	@Override
@@ -56,6 +80,9 @@ final class EvaluationScopedQueryEvaluationContext implements QueryEvaluationCon
 		synchronized (queryScopedValueLock) {
 			if (now == null) {
 				now = scope.getNow();
+				if (valueCapturer != null) {
+					now = (Literal) scope.captureConstant(now, valueCapturer);
+				}
 			}
 			if (!nowRegistered && queryScopedValueRegistrar != null) {
 				// Keep the registration inside the same monitor as the gate. A concurrent caller cannot observe and

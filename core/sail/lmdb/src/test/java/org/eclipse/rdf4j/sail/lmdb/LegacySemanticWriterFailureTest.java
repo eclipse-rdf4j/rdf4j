@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.AbstractMap;
 import java.util.Map;
@@ -113,6 +114,105 @@ class LegacySemanticWriterFailureTest {
 	}
 
 	@Test
+	void bulkDerivedIndexFailureCannotCommitIncompleteCallbacks() throws Exception {
+		assertIncompleteStatementMutationCannotCommit(false);
+	}
+
+	@Test
+	void removalDerivedIndexFailureCannotCommitWithoutItsCallback() throws Exception {
+		assertIncompleteStatementMutationCannotCommit(true);
+	}
+
+	@Test
+	void nativeChunkRemovalCannotCommitIncompleteDerivedCallback() throws Exception {
+		assertIncompleteStatementMutationCannotCommit(true, true);
+	}
+
+	private void assertIncompleteStatementMutationCannotCommit(boolean removal) throws Exception {
+		assertIncompleteStatementMutationCannotCommit(removal, false);
+	}
+
+	private void assertIncompleteStatementMutationCannotCommit(boolean removal, boolean nativeChunk) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(false);
+		Path dictionaryPath = directory.resolve("dictionary");
+		StoreProperties properties = new StoreProperties(dictionaryPath.toFile()).setVersion("2");
+		ValueStore values = new ValueStore(dictionaryPath.toFile(), properties, config,
+				false, null, LmdbStoreFormat.fromProperties(properties, config), false);
+		FailingMutationFactory factory = new FailingMutationFactory();
+		AtomicInteger generations = new AtomicInteger();
+		TripleStore triples = new TripleStore(directory.resolve("triples").toFile(), properties, config, values,
+				() -> generations.getAndIncrement() == 0 ? factory : new MapDb3CollectionFactory(1));
+		try {
+			values.startTransaction(false);
+			triples.startTransaction();
+			long predicate = values.storeValue(VALUES.createIRI("urn:failure:predicate"));
+			for (int i = 0; i < 12; i++) {
+				long subject = values.storeValue(VALUES.createIRI("urn:failure:seed:" + i));
+				Literal literal = VALUES.createLiteral("seed value " + i, "en");
+				long object = values.storeValue(literal);
+				triples.captureLegacyWriterObject(object, literal);
+				triples.storeTriple(subject, predicate, object, 0, true);
+			}
+			assertThat(factory.initialized).isTrue();
+			long[] subjects = new long[2];
+			long[] predicates = { predicate, predicate };
+			long[] objects = new long[2];
+			for (int i = 0; i < 2; i++) {
+				subjects[i] = values.storeValue(VALUES.createIRI("urn:failure:bulk:" + i));
+				Literal literal = VALUES.createLiteral("bulk value " + i, "en");
+				objects[i] = values.storeValue(literal);
+				triples.captureLegacyWriterObject(objects[i], literal);
+			}
+			if (removal) {
+				triples.storeTriplesAligned(subjects, predicates, objects, new long[2], 2, true);
+			}
+			AtomicInteger callbacks = new AtomicInteger();
+			factory.failRemovals = removal;
+			factory.armed = true;
+			assertThatThrownBy(() -> {
+				if (nativeChunk) {
+					triples.removeNativeChunkQuads(new long[][] { { subjects[0], predicate, objects[0], 0 } }, true,
+							ignored -> callbacks.incrementAndGet());
+				} else if (removal) {
+					triples.removeTriplesByContext(subjects[0], predicate, objects[0], 0, true,
+							ignored -> callbacks.incrementAndGet());
+				} else {
+					triples.storeTriplesAligned(subjects, predicates, objects, new long[2], 2,
+							true, false, ignored -> callbacks.incrementAndGet());
+				}
+			}).isSameAs(factory.failure).hasSuppressedException(factory.cleanup);
+			assertThat(callbacks).as("failed derived publication has not completed the mandatory row callbacks")
+					.hasValue(0);
+			for (int i = 0; i < 2; i++) {
+				try (RecordIterator physical = triples.getTriplesForWrite(subjects[i], predicate, objects[i], 0,
+						true)) {
+					if (removal && i == 0) {
+						assertThat(physical.next()).isNull();
+					} else {
+						assertThat(physical.next()).containsExactly(subjects[i], predicate, objects[i], 0);
+						assertThat(physical.next()).isNull();
+					}
+				}
+			}
+			assertThatThrownBy(triples::commit).isInstanceOf(IOException.class).hasCause(factory.failure);
+			triples.rollback();
+			values.rollback();
+			try (TxnManager.Txn reader = triples.getTxnManager().createReadTxn()) {
+				try (RecordIterator physical = triples.getTriples(reader, -1, -1, -1, -1, true)) {
+					assertThat(physical.next()).as("an incomplete derived/callback operation must never publish")
+							.isNull();
+				}
+			}
+		} finally {
+			try {
+				triples.close();
+			} finally {
+				values.close();
+			}
+		}
+	}
+
+	@Test
 	void dictionaryOwnerReleasesNativeEnvironmentWhenSpilledIndexCloseFails() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false);
 		StoreProperties properties = new StoreProperties(directory.toFile()).setVersion("2");
@@ -200,6 +300,7 @@ class LegacySemanticWriterFailureTest {
 		private final IllegalArgumentException cleanup = new IllegalArgumentException("mutation cleanup refused");
 		private boolean initialized;
 		private boolean armed;
+		private boolean failRemovals;
 		private int maps;
 		private int closes;
 
@@ -235,6 +336,9 @@ class LegacySemanticWriterFailureTest {
 
 				@Override
 				public V remove(Object key) {
+					if (armed && failRemovals) {
+						throw failure;
+					}
 					return delegate.remove(key);
 				}
 

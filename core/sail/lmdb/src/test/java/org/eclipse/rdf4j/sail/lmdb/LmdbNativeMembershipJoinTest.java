@@ -16,16 +16,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -137,6 +142,59 @@ public class LmdbNativeMembershipJoinTest {
 
 	private static String q(String body) {
 		return "PREFIX ex: <" + EX + ">\n" + body;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void preparedMembershipTermsStayInTheirSnapshotAndRenewForTheNextTransaction(boolean boundTerm) {
+		String previousNative = System.setProperty(NATIVE_FLAG, "true");
+		try (SailRepositoryConnection reader = repository.getConnection()) {
+			ValueFactory vf = reader.getValueFactory();
+			IRI datatype = vf.createIRI(EX, "laterDatatype");
+			Literal later = vf.createLiteral("dictionary term published later", datatype);
+			String term = boundTerm ? "?required" : "\"dictionary term published later\"^^ex:laterDatatype";
+			String witness = "?s ex:laterPredicate " + term;
+			TupleQuery positive = reader.prepareTupleQuery(q("SELECT ?s WHERE { ?s ex:type ex:Item . "
+					+ "FILTER EXISTS { " + witness + " } }"));
+			TupleQuery negative = reader.prepareTupleQuery(q("SELECT ?s WHERE { ?s ex:type ex:Item . "
+					+ "MINUS { " + witness + " } }"));
+			if (boundTerm) {
+				positive.setBinding("required", later);
+				negative.setBinding("required", later);
+			}
+			reader.begin(IsolationLevels.SNAPSHOT);
+			List<String> original = membershipSubjects(negative);
+			assertThat(original).hasSize(80);
+			assertThat(membershipSubjects(positive)).isEmpty();
+			List<String> published = new ArrayList<>();
+			try (SailRepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT);
+				for (int i = 0; i < 40; i++) {
+					IRI subject = vf.createIRI(EX, "item" + i);
+					writer.add(subject, vf.createIRI(EX, "laterPredicate"), later);
+					published.add(subject.stringValue());
+				}
+				writer.commit();
+			}
+			assertThat(membershipSubjects(positive)).as("old dictionary membership cannot admit later terms").isEmpty();
+			assertThat(membershipSubjects(negative)).containsExactlyInAnyOrderElementsOf(original);
+			reader.commit();
+			reader.begin(IsolationLevels.SNAPSHOT);
+			assertThat(positive.explain(Explanation.Level.Optimized).toString()).contains("NativeRows");
+			assertThat(membershipSubjects(positive)).as("the same prepared query must renew unknown-ID/cache scope")
+					.containsExactlyInAnyOrderElementsOf(published);
+			assertThat(membershipSubjects(negative)).containsExactlyInAnyOrderElementsOf(
+					original.stream().filter(subject -> !published.contains(subject)).toList());
+			reader.commit();
+		} finally {
+			restore(NATIVE_FLAG, previousNative);
+		}
+	}
+
+	private static List<String> membershipSubjects(TupleQuery query) {
+		try (var result = query.evaluate()) {
+			return QueryResults.asList(result).stream().map(row -> row.getValue("s").stringValue()).toList();
+		}
 	}
 
 	@ParameterizedTest

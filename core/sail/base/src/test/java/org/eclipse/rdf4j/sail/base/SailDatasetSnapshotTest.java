@@ -12,21 +12,469 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.withSettings;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.impl.DynamicModelFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.SailException;
 import org.junit.jupiter.api.Test;
 
 class SailDatasetSnapshotTest {
+
+	@Test
+	void retainedForkActivatesSnapshotBeforeReaderAdmission() {
+		assertRetainedAdmissionContext(false);
+	}
+
+	@Test
+	void nestedRetainedForkActivatesSnapshotBeforeReaderAdmission() {
+		assertRetainedAdmissionContext(true);
+	}
+
+	private void assertRetainedAdmissionContext(boolean nested) {
+		SailSource source = mock(SailSource.class);
+		SailSource delegate = mock(SailSource.class);
+		when(source.fork()).thenReturn(delegate);
+		when(delegate.fork()).thenReturn(delegate);
+		try (SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+				SailSource retained = snapshot.fork(source);
+				SailSource target = nested ? retained.fork() : retained;
+				SailDatasetSnapshot.Scope outer = SailDatasetSnapshot.open()) {
+			SailDatasetSnapshot unrelated = SailDatasetSnapshot.current();
+			when(delegate.beginDatasetAcquisition(IsolationLevels.SNAPSHOT)).thenAnswer(invocation -> {
+				assertSame(snapshot, SailDatasetSnapshot.current(), "admission must select the retained pair");
+				return (SailClosable) () -> {
+				};
+			});
+			try (SailClosable admission = target.beginDatasetAcquisition(IsolationLevels.SNAPSHOT)) {
+				assertSame(unrelated, SailDatasetSnapshot.current(), "activation must restore the caller context");
+			}
+		}
+	}
+
+	@Test
+	void abandonedForkReleasesOnlyItsSnapshotReference() {
+		assertAbandonedRetainedFork(false, false);
+	}
+
+	@Test
+	void abandonedForkReleasesSnapshotAfterDelegateFailure() {
+		assertAbandonedRetainedFork(false, true);
+	}
+
+	@Test
+	void abandonedNestedForksPreserveSiblingAndBorrower() {
+		assertAbandonedRetainedFork(true, false);
+	}
+
+	@Test
+	void abandonedNestedForksReleaseSnapshotAfterDelegateFailure() {
+		assertAbandonedRetainedFork(true, true);
+	}
+
+	private void assertAbandonedRetainedFork(boolean nested, boolean failDelegate) {
+		SailSource source = mock(SailSource.class);
+		SailSource delegate = mock(SailSource.class);
+		SailSource childDelegate = mock(SailSource.class);
+		SailSource siblingDelegate = mock(SailSource.class);
+		when(source.fork()).thenReturn(delegate, siblingDelegate);
+		when(delegate.fork()).thenReturn(childDelegate);
+		SailException failure = new SailException("delegate abandonment failed");
+		if (failDelegate) {
+			doThrow(failure).when(delegate).abandonUnobserved();
+		}
+		SailDataset first = mock(SailDataset.class), second = mock(SailDataset.class);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailDatasetSnapshot.DatasetPair pair = snapshot.getOrCreate(this,
+				() -> new SailDatasetSnapshot.DatasetPair(first, second));
+		SailDataset borrower = pair.borrow(true);
+		SailSource retained = snapshot.fork(source);
+		SailSource child = nested ? retained.fork() : null;
+		SailSource sibling = snapshot.fork(source);
+		snapshot.close();
+		try {
+			if (failDelegate) {
+				assertSame(failure, assertThrows(SailException.class, retained::abandonUnobserved));
+			} else {
+				retained.abandonUnobserved();
+			}
+			retained.abandonUnobserved();
+			assertThrows(IllegalStateException.class, () -> retained.dataset(IsolationLevels.SNAPSHOT));
+			assertThrows(IllegalStateException.class, retained::fork);
+			if (child != null) {
+				child.abandonUnobserved();
+				child.close();
+				verify(childDelegate, times(1)).abandonUnobserved();
+				verify(childDelegate, never()).close();
+			}
+			verify(first, never()).close();
+			verify(second, never()).close();
+			sibling.abandonUnobserved();
+			sibling.close();
+			retained.close();
+			verify(second, times(1)).close();
+			verify(first, never()).close();
+			verify(delegate, times(1)).abandonUnobserved();
+			verify(delegate, never()).close();
+			verify(siblingDelegate, times(1)).abandonUnobserved();
+			verify(siblingDelegate, never()).close();
+		} finally {
+			retained.close();
+			if (child != null) {
+				child.close();
+			}
+			sibling.close();
+			borrower.close();
+		}
+		verify(first, times(1)).close();
+	}
+
+	@Test
+	void nestedSnapshotForksPreserveStreamingPreflightCapability() {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		when(source.fork()).thenReturn(fork);
+		when(fork.fork()).thenReturn(fork);
+		when(fork.supportsStreamingWritePreflight()).thenReturn(true);
+		try (SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+				SailSource retained = snapshot.fork(source);
+				SailSource nested = retained.fork()) {
+			assertTrue(retained.supportsStreamingWritePreflight());
+			assertTrue(nested.supportsStreamingWritePreflight());
+		}
+	}
+
+	@Test
+	void snapshotForkDoesNotBypassForeignLegacyPreflightBoundary() {
+		SailSource terminal = mock(SailSource.class);
+		when(terminal.supportsStreamingWritePreflight()).thenReturn(true);
+		SailSource decorated = new DelegatingSailSource(terminal, false) {
+		};
+		SailSource source = mock(SailSource.class);
+		when(source.fork()).thenReturn(decorated);
+		try (SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+				SailSource retained = snapshot.fork(source)) {
+			assertFalse(retained.supportsStreamingWritePreflight());
+		}
+	}
+
+	@Test
+	void retainedForkPreservesTransparentFrozenStaging() {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class, withSettings().extraInterfaces(FrozenFlush.class));
+		Object writeOwner = new Object();
+		when(source.fork(writeOwner)).thenReturn(fork);
+		FrozenFlush.Batch batch = mock(FrozenFlush.Batch.class);
+		when(batch.context()).thenReturn(new FrozenFlush.Context());
+		when(fork.freezeForFlush()).thenReturn(batch);
+		Changeset carrier = mock(Changeset.class);
+		List<Changeset> incoming = List.of(carrier);
+		FrozenFlush.Context context = new FrozenFlush.Context();
+		when(((FrozenFlush) fork).stageFrozen(incoming, carrier, context)).thenReturn(batch);
+		SailClosable acquisition = mock(SailClosable.class);
+		SailDatasetSnapshot transaction = new SailDatasetSnapshot();
+		transaction.getOrCreate(this, () -> acquisition);
+		SailSource retained = transaction.fork(source, writeOwner);
+		transaction.close();
+		try {
+			assertTrue(FrozenReplayCoverage.supports(retained),
+					"retaining a dataset snapshot must preserve transparent frozen staging");
+			assertSame(batch, retained.freezeForFlush());
+			assertSame(batch, ((FrozenFlush) retained).stageFrozen(incoming, carrier, context));
+			verify(acquisition, never()).close();
+		} finally {
+			retained.close();
+			retained.close();
+		}
+		verify(fork, times(1)).close();
+		verify(acquisition, times(1)).close();
+	}
+
+	@Test
+	void stagedWrapperReleasesItsSnapshotBeforeAttemptWithoutClosingBorrower() {
+		assertStagedWrapperReleasesSnapshot(false);
+	}
+
+	@Test
+	void stagedWrapperPreservesSiblingGenerationAndBorrower() {
+		assertStagedWrapperReleasesSnapshot(true);
+	}
+
+	private void assertStagedWrapperReleasesSnapshot(boolean siblingRetained) {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class, withSettings().extraInterfaces(FrozenFlush.class));
+		SailSource otherFork = mock(SailSource.class);
+		when(source.fork()).thenReturn(fork, otherFork);
+		FrozenFlush.Context context = new FrozenFlush.Context();
+		FrozenFlush.Batch batch = stagedBatch(fork, context);
+		SailDataset first = mock(SailDataset.class);
+		SailDataset second = mock(SailDataset.class);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailDatasetSnapshot.DatasetPair pair = snapshot.getOrCreate(this,
+				() -> new SailDatasetSnapshot.DatasetPair(first, second));
+		SailDataset borrowed = pair.borrow(true);
+		SailSource retained = snapshot.fork(source);
+		SailSource sibling = siblingRetained ? snapshot.fork(source) : null;
+		snapshot.close();
+		assertSame(batch, retained.freezeForFlush());
+		FrozenReplayCoverage coverage = FrozenReplayCoverage.stage(batch);
+		assertTrue(coverage.acceptsOwner(new Object()));
+		coverage.releaseAttemptCleanup();
+		coverage.releaseAttemptCleanup();
+		verify(first, never()).close();
+		verify(second, times(siblingRetained ? 0 : 1)).close();
+		assertThrows(IllegalStateException.class, () -> retained.dataset(IsolationLevels.SNAPSHOT));
+		assertThrows(IllegalStateException.class, retained::fork);
+		if (sibling != null) {
+			SailDataset sameGeneration = mock(SailDataset.class);
+			when(otherFork.dataset(IsolationLevels.SNAPSHOT)).thenAnswer(invocation -> {
+				assertSame(pair, SailDatasetSnapshot.current()
+						.getOrCreate(this,
+								() -> {
+									throw new AssertionError("sibling must retain its original generation");
+								}));
+				return sameGeneration;
+			});
+			assertSame(sameGeneration, sibling.dataset(IsolationLevels.SNAPSHOT));
+			sibling.close();
+		}
+		verify(second, times(1)).close();
+		verify(first, never()).close();
+		borrowed.close();
+		context.release(false);
+		retained.close();
+		retained.close();
+		verify(first, times(1)).close();
+		verify(second, times(1)).close();
+		verify(fork, times(1)).close();
+	}
+
+	@Test
+	void nestedSnapshotWrappersReleaseOnceAfterCompleteStaging() {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class, withSettings().extraInterfaces(FrozenFlush.class));
+		when(source.fork()).thenReturn(fork);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailClosable acquisition = snapshot.getOrCreate(this, () -> mock(SailClosable.class));
+		SailSource first = snapshot.fork(source);
+		SailSource second = snapshot.fork(source);
+		snapshot.close();
+		FrozenFlush.Context context = new FrozenFlush.Context();
+		FrozenFlush.Batch batch = stagedBatch(fork, context);
+		doAnswer(invocation -> {
+			context.discover(second);
+			context.discover(second);
+			return null;
+		}).when(batch).discoverValidationCarriers(context);
+		first.freezeForFlush();
+		FrozenReplayCoverage coverage = FrozenReplayCoverage.stage(batch);
+		verify(acquisition, never()).close();
+		coverage.releaseAttemptCleanup();
+		verify(acquisition, times(1)).close();
+		coverage.releaseAttemptCleanup();
+		context.release(false);
+		first.close();
+		second.close();
+		verify(acquisition, times(1)).close();
+	}
+
+	@Test
+	void partialStagingRetainsSnapshotUntilGraphCancellation() {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class, withSettings().extraInterfaces(FrozenFlush.class));
+		when(source.fork()).thenReturn(fork);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailClosable acquisition = snapshot.getOrCreate(this, () -> mock(SailClosable.class));
+		SailSource retained = snapshot.fork(source);
+		snapshot.close();
+		FrozenFlush.Context context = new FrozenFlush.Context();
+		FrozenFlush.Batch batch = stagedBatch(fork, context);
+		RuntimeException failure = new IllegalStateException("staging rejected");
+		doThrow(failure).when(batch).stage(context);
+		retained.freezeForFlush();
+		assertSame(failure, assertThrows(IllegalStateException.class, () -> FrozenReplayCoverage.stage(batch)));
+		assertThrows(IllegalStateException.class, context::releaseAttemptCleanup);
+		verify(acquisition, never()).close();
+		context.release(false);
+		verify(acquisition, times(1)).close();
+		retained.close();
+		retained.close();
+		verify(acquisition, times(1)).close();
+	}
+
+	private static FrozenFlush.Batch stagedBatch(SailSource fork, FrozenFlush.Context context) {
+		FrozenFlush.Batch batch = mock(FrozenFlush.Batch.class);
+		when(batch.context()).thenReturn(context);
+		when(batch.replayTarget()).thenReturn(fork);
+		when(batch.hasStatementWork()).thenReturn(true);
+		when(batch.acceptsReplayOwner(any())).thenReturn(true);
+		when(fork.freezeForFlush()).thenReturn(batch);
+		doAnswer(invocation -> {
+			context.register(batch);
+			context.terminal(batch);
+			return null;
+		}).when(batch).stage(context);
+		return batch;
+	}
+
+	@Test
+	void realUnionReenlistmentRetainsSnapshotCleanupOwnership() {
+		assertRealUnionRetainsCleanup(2);
+	}
+
+	@Test
+	void retiringWrapperReadAttemptStillAllowsItsFrozenWritePublication() {
+		SailSource terminal = mock(SailSource.class);
+		when(terminal.sink(any())).thenAnswer(invocation -> mock(SailSink.class));
+		SailSource branch = new SailSourceBranch(terminal, new DynamicModelFactory());
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailClosable acquisition = snapshot.getOrCreate(this, () -> mock(SailClosable.class));
+		SailSource retained = snapshot.fork(branch);
+		snapshot.close();
+		try {
+			try (SailSink sink = retained.sink(IsolationLevels.NONE)) {
+				var values = SimpleValueFactory.getInstance();
+				sink.approve(values.createIRI("urn:retired:s"), values.createIRI("urn:retired:p"),
+						values.createLiteral("retained logical row"), null);
+				sink.flush();
+			}
+			retained.retireSnapshotsPreservingBorrowers();
+			verify(acquisition, times(1)).close();
+			assertThrows(IllegalStateException.class, () -> retained.dataset(IsolationLevels.SNAPSHOT));
+			try (SailSource.FlushBatch batch = retained.freezeForFlush()) {
+				FrozenReplayCoverage coverage = FrozenReplayCoverage.stage(batch);
+				assertTrue(coverage.hasStatementWork());
+				coverage.releaseAttemptCleanup();
+				batch.flush();
+				batch.unFreezeAndDiscardFlushed();
+			}
+		} finally {
+			retained.close();
+			branch.close();
+		}
+		verify(acquisition, times(1)).close();
+	}
+
+	@Test
+	void retiringWrapperPreservesItsActiveBorrowerUntilRollbackClosesTheSource() {
+		SailSource terminal = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class);
+		when(terminal.fork()).thenReturn(fork);
+		SailDataset first = mock(SailDataset.class);
+		SailDataset second = mock(SailDataset.class);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailDatasetSnapshot.DatasetPair pair = snapshot.getOrCreate(this,
+				() -> new SailDatasetSnapshot.DatasetPair(first, second));
+		SailDataset borrowed = pair.borrow(true);
+		SailSource retained = snapshot.fork(terminal);
+		snapshot.close();
+		retained.retireSnapshotsPreservingBorrowers();
+		retained.retireSnapshotsPreservingBorrowers();
+		verify(first, never()).close();
+		verify(second, times(1)).close();
+		assertThrows(IllegalStateException.class, () -> retained.dataset(IsolationLevels.SNAPSHOT));
+		retained.close();
+		retained.close();
+		verify(fork, times(1)).close();
+		verify(first, never()).close();
+		borrowed.close();
+		verify(first, times(1)).close();
+		verify(second, times(1)).close();
+	}
+
+	@Test
+	void nestedRealUnionReenlistmentRetainsSnapshotCleanupOwnership() {
+		assertRealUnionRetainsCleanup(3);
+	}
+
+	private void assertRealUnionRetainsCleanup(int members) {
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailClosable acquisition = snapshot.getOrCreate(this, () -> mock(SailClosable.class));
+		List<SailSource> branches = new ArrayList<>();
+		List<SailSource> retained = new ArrayList<>();
+		for (int i = 0; i < members; i++) {
+			SailSource terminal = mock(SailSource.class);
+			when(terminal.sink(any())).thenAnswer(invocation -> mock(SailSink.class));
+			SailSource branch = new SailSourceBranch(terminal, new DynamicModelFactory());
+			branches.add(branch);
+			SailSource wrapper = snapshot.fork(branch);
+			retained.add(wrapper);
+			try (SailSink sink = wrapper.sink(IsolationLevels.NONE)) {
+				var values = SimpleValueFactory.getInstance();
+				sink.approve(values.createIRI("urn:snapshot:" + i), values.createIRI("urn:snapshot:p"),
+						values.createLiteral(i), null);
+				sink.flush();
+			}
+		}
+		snapshot.close();
+		SailSource union = new UnionSailSource(retained.get(0), retained.get(1));
+		if (members == 3) {
+			union = new UnionSailSource(union, retained.get(2));
+		}
+		try (SailSource.FlushBatch batch = union.freezeForFlush()) {
+			FrozenReplayCoverage coverage = FrozenReplayCoverage.stage(batch);
+			assertEquals(members, coverage.targets().size());
+			assertTrue(coverage.hasStatementWork());
+			assertTrue(coverage.acceptsOwner(null));
+			verify(acquisition, never()).close();
+			coverage.releaseAttemptCleanup();
+			verify(acquisition, times(1)).close();
+			coverage.releaseAttemptCleanup();
+			batch.flush();
+			batch.unFreezeAndDiscardFlushed();
+		} finally {
+			union.close();
+			for (SailSource branch : branches) {
+				branch.close();
+			}
+		}
+		verify(acquisition, times(1)).close();
+	}
+
+	@Test
+	void failedNestedDiscoveryReleasesEveryEnlistedWrapperOnCancellation() {
+		SailSource source = mock(SailSource.class);
+		SailSource fork = mock(SailSource.class, withSettings().extraInterfaces(FrozenFlush.class));
+		when(source.fork()).thenReturn(fork);
+		SailDatasetSnapshot snapshot = new SailDatasetSnapshot();
+		SailClosable acquisition = snapshot.getOrCreate(this, () -> mock(SailClosable.class));
+		SailSource first = snapshot.fork(source);
+		SailSource second = snapshot.fork(source);
+		snapshot.close();
+		FrozenFlush.Context context = new FrozenFlush.Context();
+		FrozenFlush.Batch batch = stagedBatch(fork, context);
+		RuntimeException failure = new IllegalStateException("nested discovery rejected");
+		doThrow(failure).when((FrozenFlush) fork).enlistValidationCarriers(context);
+		doAnswer(invocation -> {
+			context.discover(second);
+			return null;
+		}).when(batch).discoverValidationCarriers(context);
+		first.freezeForFlush();
+		assertSame(failure, assertThrows(IllegalStateException.class, () -> FrozenReplayCoverage.stage(batch)));
+		verify(acquisition, never()).close();
+		context.release(false);
+		verify(acquisition, times(1)).close();
+		first.close();
+		second.close();
+		verify(acquisition, times(1)).close();
+	}
 
 	@Test
 	void temporaryScopeReleasesUnclaimedPartnersButBorrowedDatasetSurvives() {

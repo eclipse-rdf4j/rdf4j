@@ -73,9 +73,9 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 		ValueStore openedValues = null;
 		TripleStore openedTriples = null;
 		try {
-			openedNamespaces = new NamespaceStore(root);
 			openedValues = new ValueStore(new File(root, "values"), properties, config, true, null, format, true);
 			openedTriples = new TripleStore(new File(root, "triples"), properties, config, openedValues);
+			openedNamespaces = new NamespaceStore(root, openedTriples);
 		} catch (Throwable failure) {
 			closeAfterConstructorFailure(openedTriples, openedValues, openedNamespaces, failure);
 			throw failure;
@@ -124,7 +124,7 @@ public final class LmdbNativeBulkStore implements AutoCloseable {
 	}
 
 	public void syncNamespaces() throws IOException {
-		namespaceStore.sync();
+		tripleStore.commitNamespaceSnapshot(namespaceStore.snapshot());
 	}
 
 	public void appendContexts(ContextSource source, int maxTransactionRecords, long maxTransactionBytes)

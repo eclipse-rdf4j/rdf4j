@@ -123,8 +123,9 @@ final class LmdbNativeDistinctRootCount {
 					ParallelSource sibling = sources[w];
 					Long low = w == 0 ? null : boundaries[w - 1];
 					Long high = w == workers - 1 ? null : boundaries[w];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					tasks.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (var probe = sibling.newProbe()) {
+						try (var replayScope = replayContext.activate(); var probe = sibling.newProbe()) {
 							NativeAdjacency[] workerViews = new NativeAdjacency[predicates.length];
 							for (int p = 0; p < predicates.length; p++) {
 								check(cancellation, abort);

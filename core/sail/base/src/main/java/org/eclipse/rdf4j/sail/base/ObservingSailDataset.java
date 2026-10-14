@@ -66,6 +66,31 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		Throwable failure = null;
+		try {
+			super.abandonUnobserved();
+		} catch (RuntimeException | Error abandonFailure) {
+			failure = abandonFailure;
+		}
+		try {
+			observer.close();
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure == null) {
+				failure = closeFailure;
+			} else if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		if (failure instanceof Error error) {
+			throw error;
+		}
+	}
+
+	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() throws SailException {
 		observer.observe(null, null, null);
 		return super.getContextIDs();

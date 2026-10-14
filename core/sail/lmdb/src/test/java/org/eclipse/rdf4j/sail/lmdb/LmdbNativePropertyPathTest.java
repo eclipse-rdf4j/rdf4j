@@ -1568,6 +1568,40 @@ public class LmdbNativePropertyPathTest {
 	}
 
 	@Test
+	public void earlyCloseReleasesIdleParallelPathWorkers() throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String previousEnabled = System.getProperty(PARALLEL_ENABLED);
+		String previousThreads = System.getProperty(PARALLEL_THREADS);
+		String previousMaxTasks = System.getProperty(PARALLEL_MAX_TASKS);
+		String previousParallelMin = System.getProperty(PATH_FRONTIER_PARALLEL_MIN);
+		try {
+			System.setProperty(PARALLEL_ENABLED, "true");
+			System.setProperty(PARALLEL_THREADS, "2");
+			System.setProperty(PARALLEL_MAX_TASKS, "2");
+			System.setProperty(PATH_FRONTIER_PARALLEL_MIN, "2");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				long statements = connection.size();
+				try (var result = connection.prepareTupleQuery(q("SELECT ?o WHERE { ex:a ex:p+ ?o . }")).evaluate()) {
+					for (int i = 0; i < 3; i++) {
+						assertThat(result.hasNext()).isTrue();
+						assertThat(result.next().getValue("o")).isNotNull();
+					}
+					assertThat(LmdbNativeParallelPipelines.quoteTasks(false, 2))
+							.as("the actual path owns both worker reservations before early close")
+							.isNull();
+					System.out.println("NATIVE_PATH_WORKERS_ADMITTED");
+				}
+				assertThat(connection.size()).isEqualTo(statements);
+			}
+		} finally {
+			restoreProperty(PARALLEL_ENABLED, previousEnabled);
+			restoreProperty(PARALLEL_THREADS, previousThreads);
+			restoreProperty(PARALLEL_MAX_TASKS, previousMaxTasks);
+			restoreProperty(PATH_FRONTIER_PARALLEL_MIN, previousParallelMin);
+		}
+	}
+
+	@Test
 	public void parallelPathWorkersReportAndUseTheirOwnAdjacencyViews() throws Exception {
 		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
 		String previousEnabled = System.getProperty(PARALLEL_ENABLED);

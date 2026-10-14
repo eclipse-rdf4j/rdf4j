@@ -273,6 +273,23 @@ class LmdbNativeIrKernelParallelTest {
 	}
 
 	@Test
+	void earlyCloseReleasesParallelKernelWorkersAndKeepsStoreUsable() {
+		long before = LmdbNativeParallelKernelRows.PARALLEL_RUNS.get();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			long statements = connection.size();
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(OPTIONAL_QUERY);
+			query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_IR_KERNEL_PARALLEL);
+			try (var result = query.evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("s")).isNotNull();
+				assertThat(LmdbNativeParallelKernelRows.PARALLEL_RUNS.get()).isEqualTo(before + 1);
+				System.out.println("NATIVE_KERNEL_WORKERS_ADMITTED");
+			}
+			assertThat(connection.size()).isEqualTo(statements);
+		}
+	}
+
+	@Test
 	void optionalKernelRunsParallelWithoutLosingParity() {
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(OPTIONAL_QUERY);
@@ -374,6 +391,8 @@ class LmdbNativeIrKernelParallelTest {
 
 	@Test
 	void filterHookKernelDeclinesParallelButKeepsTheSequentialKernel() {
+		// Assert the eligibility decline independently of machine-wide timing learned by earlier queries.
+		System.setProperty("rdf4j.lmdb.costCalibration.enabled", "false");
 		System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<String> expected = rows(EXISTS_DISJUNCTION_QUERY);
 		assertThat(expected).isNotEmpty();

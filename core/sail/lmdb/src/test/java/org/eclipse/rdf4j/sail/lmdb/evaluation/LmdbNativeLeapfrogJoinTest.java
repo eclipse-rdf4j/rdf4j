@@ -17,13 +17,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -300,6 +306,57 @@ public class LmdbNativeLeapfrogJoinTest {
 		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected);
 		assertThat(LmdbNativeLeapfrogJoin.PLANNED.get()).as("leapfrog must not plan acyclic shapes")
 				.isEqualTo(plannedBefore);
+	}
+
+	@Test
+	public void workerScopeCanCloseItsRealRepositoryResultAfterNativeCleanup() throws Exception {
+		String previousMin = System.getProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY);
+		String previousThreads = System.getProperty(PARALLEL_THREADS_PROPERTY);
+		String previousNative = System.getProperty(NATIVE_FLAG);
+		CountDownLatch scopeClosing = new CountDownLatch(1);
+		CountDownLatch releaseClose = new CountDownLatch(1);
+		CountDownLatch ownerClosed = new CountDownLatch(1);
+		AtomicBoolean selected = new AtomicBoolean();
+		AtomicReference<TupleQueryResult> owner = new AtomicReference<>();
+		try {
+			System.setProperty(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, "1");
+			System.setProperty(PARALLEL_THREADS_PROPERTY, "4");
+			System.setProperty(NATIVE_FLAG, "true");
+			openRepository();
+			Thread consumer = Thread.currentThread();
+			try (var context = QueryExecutionContext.activateReplaySafepoint(() -> {
+			}, () -> () -> () -> {
+				if (Thread.currentThread() != consumer && selected.compareAndSet(false, true)) {
+					scopeClosing.countDown();
+					try {
+						releaseClose.await();
+						owner.get().close();
+						ownerClosed.countDown();
+					} catch (InterruptedException interrupted) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(interrupted);
+					}
+				}
+			}); SailRepositoryConnection connection = repository.getConnection()) {
+				SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(TRIANGLE);
+				query.setForcedLmdbExecutionStrategy(WCOJ_STRATEGY);
+				try (TupleQueryResult result = query.evaluate()) {
+					owner.set(result);
+					assertThat(result.hasNext()).isTrue();
+					assertThat(result.next().getValue("a")).isNotNull();
+					assertThat(LmdbNativeLeapfrogJoin.PARALLEL_RUNS.get()).isPositive();
+					assertThat(scopeClosing.await(5, TimeUnit.SECONDS)).isTrue();
+					System.out.println("NATIVE_LEAPFROG_WORKER_CLOSING_REAL_RESULT");
+					releaseClose.countDown();
+					assertThat(ownerClosed.await(5, TimeUnit.SECONDS)).isTrue();
+				}
+			}
+		} finally {
+			releaseClose.countDown();
+			restore(LmdbNativeLeapfrogJoin.PARALLEL_MIN_CANDIDATES_PROPERTY, previousMin);
+			restore(PARALLEL_THREADS_PROPERTY, previousThreads);
+			restore(NATIVE_FLAG, previousNative);
+		}
 	}
 
 	@Test

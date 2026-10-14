@@ -1874,9 +1874,11 @@ final class LmdbWildcardPredicateBatch {
 				}
 				for (int helper = 0; helper < helpers; helper++) {
 					NativeLmdbQuerySource.ParallelSource source = sources[helper];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-								.inherit(parentSession)) {
+						try (var replayScope = replayContext.activate();
+								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+										.inherit(parentSession)) {
 							processHelper(source, nextChunk, chunkCount);
 						} catch (Throwable problem) {
 							failure.compareAndSet(null, problem);
@@ -1993,9 +1995,11 @@ final class LmdbWildcardPredicateBatch {
 				}
 				for (int helper = 0; helper < helpers; helper++) {
 					NativeLmdbQuerySource.ParallelSource source = sources[helper];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures[helper] = LmdbNativeParallelPipelines.pool().submit(() -> {
-						try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
-								.inherit(parentSession)) {
+						try (var replayScope = replayContext.activate();
+								LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
+										.inherit(parentSession)) {
 							processDataHelper(source, round);
 						} catch (Throwable problem) {
 							failure.compareAndSet(null, problem);
@@ -6603,6 +6607,7 @@ final class LmdbWildcardPredicateBatch {
 			try {
 				for (int i = 0; i < workers.length; i++) {
 					workers[i].expectedPredicateCount = expectedPredicateCount;
+					workers[i].replayContext = NativeExecutionContext.captureWorkerContext();
 					futures[i] = LmdbNativeParallelPipelines.pool().submit(workers[i]);
 					submitted++;
 				}
@@ -6725,6 +6730,7 @@ final class LmdbWildcardPredicateBatch {
 		}
 
 		private final class PredicateTileWorker implements Runnable {
+			NativeExecutionContext.WorkerContext replayContext;
 			final int index;
 			final NativeLmdbQuerySource.ParallelSource source;
 			final ArrayBlockingQueue<Round> input = new ArrayBlockingQueue<>(1);
@@ -6779,14 +6785,16 @@ final class LmdbWildcardPredicateBatch {
 				boolean readySignalled = false;
 				try (LmdbFusedSipFactorizedRuntime.Scope ignored = LmdbFusedSipFactorizedRuntime
 						.inherit(parentSession)) {
-					workerRow = new RowState(source, parentRow.layout, parentRow.base, parentRow.exactValuesMetrics,
-							parentRow.cancellation);
-					workerRow.memoryScope = parentRow.memoryScope;
-					workerRow.runtimePlan = parentRow.runtimePlan;
-					probe = source.newProbe();
-					adjacency = probe.wildcardAdjacency(bySubject);
-					if (adjacency == null || adjacency.predicateCount() != expectedPredicateCount) {
-						throw new ParallelPredicateDecline("wildcard predicate snapshot unavailable");
+					try (var replayScope = replayContext.activate()) {
+						workerRow = new RowState(source, parentRow.layout, parentRow.base, parentRow.exactValuesMetrics,
+								parentRow.cancellation);
+						workerRow.memoryScope = parentRow.memoryScope;
+						workerRow.runtimePlan = parentRow.runtimePlan;
+						probe = source.newProbe();
+						adjacency = probe.wildcardAdjacency(bySubject);
+						if (adjacency == null || adjacency.predicateCount() != expectedPredicateCount) {
+							throw new ParallelPredicateDecline("wildcard predicate snapshot unavailable");
+						}
 					}
 					ready.countDown();
 					readySignalled = true;
@@ -6796,7 +6804,7 @@ final class LmdbWildcardPredicateBatch {
 							return;
 						}
 						boolean failed = false;
-						try {
+						try (var replayScope = replayContext.activate()) {
 							round.results[index] = process(round);
 						} catch (Throwable failure) {
 							round.failures[index] = failure;

@@ -239,6 +239,23 @@ class ValueStorePositionCacheTest {
 	}
 
 	@Test
+	void initializedLargeLazyShellLeavesEveryCacheBank(@TempDir File directory) throws Exception {
+		try (TestValueStore store = store(directory, 64)) {
+			String lexical = "x".repeat(1024 * 1024 + 1);
+			store.startTransaction(true);
+			long id = store.storeValue(store.createLiteral(lexical));
+			store.commit();
+			store.clearCaches();
+			for (int mask = 0; mask < 16; mask++) {
+				LmdbValue value = lazy(store, id, mask);
+				assertFalse(value.isInitialized());
+				assertEquals(lexical, value.stringValue());
+				assertNull(cached(store, id, mask), "completion must evict the now oversized canonical shell");
+			}
+		}
+	}
+
+	@Test
 	void rejectsUnknownPositionBitsAtEveryEntryPoint(@TempDir File directory) throws Exception {
 		try (TestValueStore store = store(directory, 64)) {
 			long id = persist(store, "invalid-position");

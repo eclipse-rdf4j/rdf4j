@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 
@@ -26,6 +27,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -93,6 +96,72 @@ class LmdbValueMaterializingCancellationTest {
 			assertThrows(NoSuchElementException.class, materialized::next);
 			assertFalse(materialized.hasNext());
 			assertEquals(1, source.closeCalls);
+		}
+	}
+
+	@Test
+	void directCloseWaitsForNativeHandleCaptureBeforeClosingTheSource() throws Exception {
+		CountDownLatch captureEntered = new CountDownLatch(1), releaseCapture = new CountDownLatch(1);
+		CountDownLatch cancellationForwarded = new CountDownLatch(1), sourceClosed = new CountDownLatch(1);
+		NativeProjectedBindingSet nativeRow = mock(NativeProjectedBindingSet.class);
+		var source = new RecordingSource(List.of(row("first"), nativeRow), true) {
+			@Override
+			public boolean requestCancellation() {
+				cancellationForwarded.countDown();
+				return super.requestCancellation();
+			}
+
+			@Override
+			protected void handleClose() {
+				super.handleClose();
+				sourceClosed.countDown();
+			}
+		};
+		doAnswer(invocation -> {
+			captureEntered.countDown();
+			await(releaseCapture);
+			return null;
+		}).when(nativeRow).collectMaterializationValues(any());
+		var materialized = new LmdbValueMaterializingIteration(source, 8);
+		CompletableFuture<Boolean> consuming = null;
+		CompletableFuture<Void> closing = null;
+		AtomicReference<Thread> closer = new AtomicReference<>();
+		try {
+			materialized.next();
+			consuming = CompletableFuture.supplyAsync(() -> {
+				try {
+					materialized.next();
+					return true;
+				} catch (NoSuchElementException cancelled) {
+					return false;
+				}
+			});
+			assertTrue(captureEntered.await(5, TimeUnit.SECONDS));
+			closing = CompletableFuture.runAsync(() -> {
+				closer.set(Thread.currentThread());
+				materialized.close();
+			});
+			assertTrue(cancellationForwarded.await(5, TimeUnit.SECONDS));
+			long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			while (closer.get().getState() != Thread.State.BLOCKED && !closing.isDone()
+					&& System.nanoTime() < limit) {
+				Thread.onSpinWait();
+			}
+			assertEquals(Thread.State.BLOCKED, closer.get().getState());
+			assertEquals(1L, sourceClosed.getCount(), "native handles still require their source's paired snapshot");
+			releaseCapture.countDown();
+			assertFalse(consuming.get(5, TimeUnit.SECONDS));
+			closing.get(5, TimeUnit.SECONDS);
+			assertEquals(1, source.closeCalls);
+		} finally {
+			releaseCapture.countDown();
+			if (consuming != null) {
+				consuming.get(5, TimeUnit.SECONDS);
+			}
+			if (closing != null) {
+				closing.get(5, TimeUnit.SECONDS);
+			}
+			materialized.close();
 		}
 	}
 

@@ -18,11 +18,15 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.lwjgl.system.MemoryStack.stackPush;
+import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -42,6 +46,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -349,169 +355,109 @@ public class TripleStoreTest {
 
 	@Test
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
-		final long promotedSubject = 11L;
-		final long promotedPredicate = 22L;
-		final long promotedObject = 33L;
-		final long promotedContext = 44L;
-		final long inferredControlSubject = 12L;
-		final long inferredControlPredicate = 23L;
-		final long inferredControlObject = 34L;
-		final long inferredControlContext = 45L;
-		final int newRowCount = 32_768;
-
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
-				.setAutoGrow(true)
-				.setForceSync(true)
-				.setTripleDBSize(2L * 1024 * 1024);
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
+		fallbackDir.mkdirs();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setTripleDBSize(512L * 1024)
+				.setAutoGrow(true);
+		int count = 12_000;
+		long[] subj = new long[count];
+		long[] pred = new long[count];
+		long[] obj = new long[count];
+		long[] context = new long[count];
+		for (int i = 0; i < count; i++) {
+			subj[i] = 100_000L + i;
+			pred[i] = i % 31 + 1;
+			obj[i] = 200_000L + i;
+			context[i] = 1_000L + i % 5;
+		}
+
 		try (TripleStore fallbackStore = new TripleStore(fallbackDir, config, null)) {
 			fallbackStore.startTransaction();
-			assertTrue(fallbackStore.storeTriple(promotedSubject, promotedPredicate, promotedObject, promotedContext,
-					false));
-			assertTrue(
-					fallbackStore.storeTriple(inferredControlSubject, inferredControlPredicate, inferredControlObject,
-							inferredControlContext, false));
+			fallbackStore.storeTriplesAligned(subj, pred, obj, context, count, false);
 			fallbackStore.commit();
 
-			int alignedRowCount = newRowCount + 1;
-			long[] subjects = new long[alignedRowCount];
-			long[] predicates = new long[alignedRowCount];
-			long[] objects = new long[alignedRowCount];
-			long[] contexts = new long[alignedRowCount];
-			// The promoted row is first in SPOC order, so it is part of the effective prefix when aligned writes grow.
-			subjects[0] = promotedSubject;
-			predicates[0] = promotedPredicate;
-			objects[0] = promotedObject;
-			contexts[0] = promotedContext;
-			for (int i = 0; i < newRowCount; i++) {
-				subjects[i + 1] = 100_000L + i;
-				predicates[i + 1] = 55L;
-				objects[i + 1] = 200_000L;
-				contexts[i + 1] = 500L + i % 3;
-			}
-
+			long mapSizeBeforePromotion = mapSize(fallbackStore);
 			fallbackStore.startTransaction();
-			long growthCountBefore = fallbackStore.getBulkMapGrowthCount();
-			fallbackStore.storeTriplesAligned(subjects, predicates, objects, contexts, alignedRowCount, true);
+			fallbackStore.storeTriplesAligned(subj, pred, obj, context, count, true);
 			fallbackStore.commit();
-			assertTrue("aligned writes must grow the map and replay the remaining rows",
-					fallbackStore.getBulkMapGrowthCount() > growthCountBefore);
-			assertAlignedPromotionState(fallbackStore, newRowCount, promotedPredicate, promotedObject,
-					inferredControlPredicate, inferredControlObject);
+			assertTrue("promoting the existing inferred batch must exercise native map growth and full replay",
+					mapSize(fallbackStore) > mapSizeBeforePromotion);
+			assertPromotedBatch(fallbackStore, subj, pred, obj, context);
 		}
 
 		try (TripleStore reopened = new TripleStore(fallbackDir, config, null)) {
-			assertAlignedPromotionState(reopened, newRowCount, promotedPredicate, promotedObject,
-					inferredControlPredicate, inferredControlObject);
+			assertPromotedBatch(reopened, subj, pred, obj, context);
 		}
 	}
 
-	private void assertAlignedPromotionState(TripleStore store, int newRowCount, long promotedPredicate,
-			long promotedObject, long inferredControlPredicate, long inferredControlObject) throws Exception {
+	private void assertPromotedBatch(TripleStore store, long[] subj, long[] pred, long[] obj, long[] context)
+			throws Exception {
 		try (Txn txn = store.getTxnManager().createReadTxn()) {
-			assertEquals("all new aligned rows and the promotion must be explicit", newRowCount + 1,
-					count(store.getTriples(txn, -1, -1, -1, -1, true)));
-			assertEquals("the unpromoted control row must remain the only inferred row", 1,
-					count(store.getTriples(txn, -1, -1, -1, -1, false)));
-			assertEquals("the promoted row must be present in PSOC", 1,
-					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, true)));
-			assertEquals("the promoted row must have no inferred PSOC entry", 0,
-					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, false)));
-			assertEquals("the promoted row must be present in OSPC", 1,
-					count(store.getTriples(txn, -1, -1, promotedObject, -1, true)));
-			assertEquals("the promoted row must have no inferred OSPC entry", 0,
-					count(store.getTriples(txn, -1, -1, promotedObject, -1, false)));
-			assertEquals("the control row must remain inferred in PSOC", 1,
-					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, false)));
-			assertEquals("the control row must not become explicit in PSOC", 0,
-					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, true)));
-			assertEquals("the control row must remain inferred in OSPC", 1,
-					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, false)));
-			assertEquals("the control row must not become explicit in OSPC", 0,
-					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, true)));
-			assertEquals("PSOC must contain every new row", newRowCount,
-					count(store.getTriples(txn, -1, 55L, -1, -1, true)));
-			assertEquals("OSPC must contain every new row", newRowCount,
-					count(store.getTriples(txn, -1, -1, 200_000L, -1, true)));
-		}
-	}
-
-	@Test
-	public void hasTriplesAllWildcardReflectsExplicitAndInferredStores() throws Exception {
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertFalse("Empty explicit store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
-					true));
-			assertFalse("Empty inferred store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
-					false));
-
-			tripleStore.startTransaction();
-			tripleStore.storeTriple(1, 2, 3, 4, true);
-			tripleStore.storeTriple(5, 6, 7, 8, false);
-			tripleStore.commit();
-
-			assertTrue("Explicit store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, true));
-			assertTrue("Inferred store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, false));
-		}
-	}
-
-	@Test
-	public void hasTriplesExactQuadMatchesStoredStatementOnly() throws Exception {
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(11, 22, 33, 44, true);
-		tripleStore.commit();
-
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertTrue("Stored exact quad should exist", tripleStore.hasTriples(txn, 11, 22, 33, 44, true));
-			assertFalse("Different subject should not exist", tripleStore.hasTriples(txn, 12, 22, 33, 44, true));
-			assertFalse("Explicit lookup should not see inferred DB", tripleStore.hasTriples(txn, 11, 22, 33, 44,
-					false));
-		}
-	}
-
-	@Test
-	public void hasTriplesExactNullContextMatchesStoredStatement() throws Exception {
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(11, 22, 33, 0, true);
-		tripleStore.commit();
-
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertTrue("Null context is an exact context value", tripleStore.hasTriples(txn, 11, 22, 33, 0, true));
-			assertFalse("Non-null context should not match null context", tripleStore.hasTriples(txn, 11, 22, 33, 44,
-					true));
-		}
-	}
-
-	@Test
-	public void hasTriplesPartialPatternsMatchFirstStoredStatement() throws Exception {
-		tripleStore.startTransaction();
-		tripleStore.storeTriple(11, 22, 33, 44, true);
-		tripleStore.commit();
-
-		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
-			assertTrue("Predicate-only pattern should match", tripleStore.hasTriples(txn, -1, 22, -1, -1, true));
-			assertTrue("Object-only pattern should match", tripleStore.hasTriples(txn, -1, -1, 33, -1, true));
-			assertTrue("Context-only pattern should match", tripleStore.hasTriples(txn, -1, -1, -1, 44, true));
-			assertFalse("Missing predicate should not match", tripleStore.hasTriples(txn, -1, 23, -1, -1, true));
-		}
-	}
-
-	@Test
-	public void hasTriplesPartialPatternsMatchWithSingleSpoIndex() throws Exception {
-		File singleIndexDir = new File(dataDir, "single-spo-index-store");
-		singleIndexDir.mkdirs();
-		try (TripleStore singleIndexStore = new TripleStore(singleIndexDir, new LmdbStoreConfig("spoc"), null)) {
-			singleIndexStore.startTransaction();
-			singleIndexStore.storeTriple(11, 22, 33, 44, true);
-			singleIndexStore.commit();
-
-			try (Txn txn = singleIndexStore.getTxnManager().createReadTxn()) {
-				assertTrue("Predicate-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
-						22, -1, -1, true));
-				assertTrue("Object-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
-						-1, 33, -1, true));
-				assertTrue("Context-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
-						-1, -1, 44, true));
+			boolean[] found = new boolean[subj.length];
+			int foundCount = 0;
+			try (RecordIterator records = store.getTriples(txn, -1, -1, -1, -1, true)) {
+				long[] record;
+				while ((record = records.next()) != null) {
+					int index = Math.toIntExact(record[0] - subj[0]);
+					assertTrue("unexpected explicit statement subject", index >= 0 && index < found.length);
+					assertFalse("an aligned promotion must not duplicate a statement", found[index]);
+					assertEquals(subj[index], record[0]);
+					assertEquals(pred[index], record[1]);
+					assertEquals(obj[index], record[2]);
+					assertEquals(context[index], record[3]);
+					found[index] = true;
+					foundCount++;
+				}
 			}
+			assertEquals("every promoted statement must remain in the primary index", subj.length, foundCount);
+			for (int i = 0; i < found.length; i++) {
+				assertTrue("a promoted statement is missing at batch offset " + i, found[i]);
+			}
+			try (RecordIterator inferred = store.getTriples(txn, -1, -1, -1, -1, false)) {
+				assertEquals("promotion must remove every inferred primary row", 0, count(inferred));
+			}
+			for (long predicate = 1; predicate <= 31; predicate++) {
+				int expected = 0;
+				for (long value : pred) {
+					if (value == predicate) {
+						expected++;
+					}
+				}
+				try (RecordIterator explicit = store.getTriples(txn, -1, predicate, -1, -1, true);
+						RecordIterator inferred = store.getTriples(txn, -1, predicate, -1, -1, false)) {
+					assertEquals("PSOC explicit entries must remain queryable", expected, count(explicit));
+					assertEquals("PSOC must not retain stale inferred entries", 0, count(inferred));
+				}
+			}
+			for (long value = 1_000; value < 1_005; value++) {
+				int expected = 0;
+				for (long contextId : context) {
+					if (contextId == value) {
+						expected++;
+					}
+				}
+				try (RecordIterator explicit = store.getTriples(txn, -1, -1, -1, value, true)) {
+					assertEquals("all promoted context entries must remain queryable", expected, count(explicit));
+				}
+			}
+			List<Long> actualContexts = new ArrayList<>();
+			try (LmdbContextIdIterator contexts = store.getContexts(txn)) {
+				long[] next;
+				while ((next = contexts.next()) != null) {
+					actualContexts.add(next[0]);
+				}
+			}
+			assertEquals("promotion must retain exactly the previously committed contexts",
+					List.of(1_000L, 1_001L, 1_002L, 1_003L, 1_004L), actualContexts);
+		}
+	}
+
+	private long mapSize(TripleStore store) {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			assertEquals(MDB_SUCCESS, mdb_env_info(store.env, info));
+			return info.me_mapsize();
 		}
 	}
 
@@ -1016,6 +962,174 @@ public class TripleStoreTest {
 			tripleStore.close();
 		} finally {
 			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	private void assertAlignedPromotionState(TripleStore store, int newRowCount, long promotedPredicate,
+			long promotedObject, long inferredControlPredicate, long inferredControlObject) throws Exception {
+		try (Txn txn = store.getTxnManager().createReadTxn()) {
+			assertEquals("all new aligned rows and the promotion must be explicit", newRowCount + 1,
+					count(store.getTriples(txn, -1, -1, -1, -1, true)));
+			assertEquals("the unpromoted control row must remain the only inferred row", 1,
+					count(store.getTriples(txn, -1, -1, -1, -1, false)));
+			assertEquals("the promoted row must be present in PSOC", 1,
+					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, true)));
+			assertEquals("the promoted row must have no inferred PSOC entry", 0,
+					count(store.getTriples(txn, -1, promotedPredicate, -1, -1, false)));
+			assertEquals("the promoted row must be present in OSPC", 1,
+					count(store.getTriples(txn, -1, -1, promotedObject, -1, true)));
+			assertEquals("the promoted row must have no inferred OSPC entry", 0,
+					count(store.getTriples(txn, -1, -1, promotedObject, -1, false)));
+			assertEquals("the control row must remain inferred in PSOC", 1,
+					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, false)));
+			assertEquals("the control row must not become explicit in PSOC", 0,
+					count(store.getTriples(txn, -1, inferredControlPredicate, -1, -1, true)));
+			assertEquals("the control row must remain inferred in OSPC", 1,
+					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, false)));
+			assertEquals("the control row must not become explicit in OSPC", 0,
+					count(store.getTriples(txn, -1, -1, inferredControlObject, -1, true)));
+			assertEquals("PSOC must contain every new row", newRowCount,
+					count(store.getTriples(txn, -1, 55L, -1, -1, true)));
+			assertEquals("OSPC must contain every new row", newRowCount,
+					count(store.getTriples(txn, -1, -1, 200_000L, -1, true)));
+		}
+	}
+
+	@Test
+	public void hasTriplesAllWildcardReflectsExplicitAndInferredStores() throws Exception {
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertFalse("Empty explicit store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
+					true));
+			assertFalse("Empty inferred store should not have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1,
+					false));
+
+			tripleStore.startTransaction();
+			tripleStore.storeTriple(1, 2, 3, 4, true);
+			tripleStore.storeTriple(5, 6, 7, 8, false);
+			tripleStore.commit();
+
+			assertTrue("Explicit store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, true));
+			assertTrue("Inferred store should have triples", tripleStore.hasTriples(txn, -1, -1, -1, -1, false));
+		}
+	}
+
+	@Test
+	public void hasTriplesExactQuadMatchesStoredStatementOnly() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 44, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Stored exact quad should exist", tripleStore.hasTriples(txn, 11, 22, 33, 44, true));
+			assertFalse("Different subject should not exist", tripleStore.hasTriples(txn, 12, 22, 33, 44, true));
+			assertFalse("Explicit lookup should not see inferred DB", tripleStore.hasTriples(txn, 11, 22, 33, 44,
+					false));
+		}
+	}
+
+	@Test
+	public void hasTriplesExactNullContextMatchesStoredStatement() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 0, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Null context is an exact context value", tripleStore.hasTriples(txn, 11, 22, 33, 0, true));
+			assertFalse("Non-null context should not match null context", tripleStore.hasTriples(txn, 11, 22, 33, 44,
+					true));
+		}
+	}
+
+	@Test
+	public void hasTriplesPartialPatternsMatchFirstStoredStatement() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 44, true);
+		tripleStore.commit();
+
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn()) {
+			assertTrue("Predicate-only pattern should match", tripleStore.hasTriples(txn, -1, 22, -1, -1, true));
+			assertTrue("Object-only pattern should match", tripleStore.hasTriples(txn, -1, -1, 33, -1, true));
+			assertTrue("Context-only pattern should match", tripleStore.hasTriples(txn, -1, -1, -1, 44, true));
+			assertFalse("Missing predicate should not match", tripleStore.hasTriples(txn, -1, 23, -1, -1, true));
+		}
+	}
+
+	@Test
+	public void hasTriplesPartialPatternsMatchWithSingleSpoIndex() throws Exception {
+		File singleIndexDir = new File(dataDir, "single-spo-index-store");
+		singleIndexDir.mkdirs();
+		try (TripleStore singleIndexStore = new TripleStore(singleIndexDir, new LmdbStoreConfig("spoc"), null)) {
+			singleIndexStore.startTransaction();
+			singleIndexStore.storeTriple(11, 22, 33, 44, true);
+			singleIndexStore.commit();
+
+			try (Txn txn = singleIndexStore.getTxnManager().createReadTxn()) {
+				assertTrue("Predicate-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						22, -1, -1, true));
+				assertTrue("Object-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						-1, 33, -1, true));
+				assertTrue("Context-only pattern should match through full scan", singleIndexStore.hasTriples(txn, -1,
+						-1, -1, 44, true));
+			}
+		}
+	}
+
+	@Test
+	public void testAlignedWriteFallbackPreservesInferredControlRows() throws Exception {
+		final long promotedSubject = 11L;
+		final long promotedPredicate = 22L;
+		final long promotedObject = 33L;
+		final long promotedContext = 44L;
+		final long inferredControlSubject = 12L;
+		final long inferredControlPredicate = 23L;
+		final long inferredControlObject = 34L;
+		final long inferredControlContext = 45L;
+		final int newRowCount = 32_768;
+
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setAutoGrow(true)
+				.setForceSync(true)
+				.setTripleDBSize(2L * 1024 * 1024);
+		File fallbackDir = new File(dataDir, "aligned-fallback-store");
+		try (TripleStore fallbackStore = new TripleStore(fallbackDir, config, null)) {
+			fallbackStore.startTransaction();
+			assertTrue(fallbackStore.storeTriple(promotedSubject, promotedPredicate, promotedObject, promotedContext,
+					false));
+			assertTrue(
+					fallbackStore.storeTriple(inferredControlSubject, inferredControlPredicate, inferredControlObject,
+							inferredControlContext, false));
+			fallbackStore.commit();
+
+			int alignedRowCount = newRowCount + 1;
+			long[] subjects = new long[alignedRowCount];
+			long[] predicates = new long[alignedRowCount];
+			long[] objects = new long[alignedRowCount];
+			long[] contexts = new long[alignedRowCount];
+			// The promoted row is first in SPOC order, so it is part of the effective prefix when aligned writes grow.
+			subjects[0] = promotedSubject;
+			predicates[0] = promotedPredicate;
+			objects[0] = promotedObject;
+			contexts[0] = promotedContext;
+			for (int i = 0; i < newRowCount; i++) {
+				subjects[i + 1] = 100_000L + i;
+				predicates[i + 1] = 55L;
+				objects[i + 1] = 200_000L;
+				contexts[i + 1] = 500L + i % 3;
+			}
+
+			fallbackStore.startTransaction();
+			long growthCountBefore = fallbackStore.getBulkMapGrowthCount();
+			fallbackStore.storeTriplesAligned(subjects, predicates, objects, contexts, alignedRowCount, true);
+			fallbackStore.commit();
+			assertTrue("aligned writes must grow the map and replay the remaining rows",
+					fallbackStore.getBulkMapGrowthCount() > growthCountBefore);
+			assertAlignedPromotionState(fallbackStore, newRowCount, promotedPredicate, promotedObject,
+					inferredControlPredicate, inferredControlObject);
+		}
+
+		try (TripleStore reopened = new TripleStore(fallbackDir, config, null)) {
+			assertAlignedPromotionState(reopened, newRowCount, promotedPredicate, promotedObject,
+					inferredControlPredicate, inferredControlObject);
 		}
 	}
 }

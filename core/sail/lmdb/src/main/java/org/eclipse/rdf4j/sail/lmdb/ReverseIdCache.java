@@ -12,11 +12,15 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReferenceArray;
 
 /** A reverse dictionary cache retaining immutable keys, with allocation-free bounded probes. */
 final class ReverseIdCache<K, Q> {
 
 	private static final int WAYS = 4;
+	private static final int PAGE_SHIFT = 8;
+	private static final int PAGE_SIZE = 1 << PAGE_SHIFT;
+	private static final int PAGE_MASK = PAGE_SIZE - 1;
 
 	interface KeyAdapter<K, Q> {
 		int hash(Q query);
@@ -68,15 +72,13 @@ final class ReverseIdCache<K, Q> {
 
 	static final class State<K> {
 		private final Object epoch = new Object();
-		private final Bucket<K>[] buckets;
+		private final AtomicReferenceArray<AtomicReferenceArray<Bucket<K>>> pages;
 		private final ConcurrentHashMap<K, Entry<K>>[] unbounded;
 
 		@SuppressWarnings("unchecked")
 		private State(int sets, int banks, boolean unlimited) {
-			buckets = (Bucket<K>[]) new Bucket<?>[sets];
-			for (int i = 0; i < sets; i++) {
-				buckets[i] = new Bucket<>();
-			}
+			// Capacity limits populated sets; an empty cache does not require a Bucket for every possible hash.
+			pages = new AtomicReferenceArray<>((sets + PAGE_MASK) >>> PAGE_SHIFT);
 			unbounded = unlimited ? (ConcurrentHashMap<K, Entry<K>>[]) new ConcurrentHashMap<?, ?>[banks] : null;
 			if (unbounded != null) {
 				for (int i = 0; i < banks; i++) {
@@ -87,6 +89,31 @@ final class ReverseIdCache<K, Q> {
 
 		Object epoch() {
 			return epoch;
+		}
+
+		Bucket<K> bucket(int set, boolean create) {
+			int pageIndex = set >>> PAGE_SHIFT;
+			AtomicReferenceArray<Bucket<K>> page = pages.get(pageIndex);
+			if (page == null) {
+				if (!create) {
+					return null;
+				}
+				AtomicReferenceArray<Bucket<K>> candidate = new AtomicReferenceArray<>(PAGE_SIZE);
+				page = pages.compareAndExchange(pageIndex, null, candidate);
+				if (page == null) {
+					page = candidate;
+				}
+			}
+			int offset = set & PAGE_MASK;
+			Bucket<K> bucket = page.get(offset);
+			if (bucket == null && create) {
+				Bucket<K> candidate = new Bucket<>();
+				bucket = page.compareAndExchange(offset, null, candidate);
+				if (bucket == null) {
+					bucket = candidate;
+				}
+			}
+			return bucket;
 		}
 	}
 
@@ -149,7 +176,8 @@ final class ReverseIdCache<K, Q> {
 			return null;
 		}
 		int hash = keys.hash(query);
-		return expected.buckets[set(hash, bank)].find(query, hash, keys);
+		Bucket<K> bucket = expected.bucket(set(hash, bank), false);
+		return bucket == null ? null : bucket.find(query, hash, keys);
 	}
 
 	Entry<K> put(State<K> expected, K key, long id, ValueStoreRevision revision, Object negativeScope,
@@ -171,7 +199,7 @@ final class ReverseIdCache<K, Q> {
 		if (unlimited) {
 			expected.unbounded[bank].put(entry.key, entry);
 		} else if (bankSets[bank] != 0) {
-			expected.buckets[set(entry.hash, bank)].put(entry);
+			expected.bucket(set(entry.hash, bank), true).put(entry);
 		}
 		return entry;
 	}

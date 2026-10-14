@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb.config;
 
 import java.time.Duration;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Iterator;
@@ -63,18 +64,27 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	/**
 	 * The default namespace cache size.
 	 */
-	public static final int NAMESPACE_CACHE_SIZE = 64;
+	public static final int NAMESPACE_CACHE_SIZE = 128;
 
 	/**
 	 * The default marker that enables adaptive aligned bulk write batches.
 	 */
-	public static final int BULK_OPERATION_SIZE = 256;
+	public static final int BULK_OPERATION_SIZE = 1024;
 
 	public static final long OPTIMIZER_SAMPLING_MAX_MILLIS = 2L;
 
 	public static final int OPTIMIZER_SAMPLING_MAX_ROWS = 4096;
 
 	public static final long BACKGROUND_RAW_SAMPLING_MAX_MILLIS_PER_CYCLE = 10L;
+
+	public static final long MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS = 30_000L;
+
+	/**
+	 * The default allocated-page fullness threshold for scheduling map growth.
+	 */
+	public static final double MAP_GROWTH_THRESHOLD = 0.75d;
+
+	public static final int READ_ONLY_REPLAY_MAX_RETRIES = 3;
 
 	public static final long SKETCH_ESTIMATOR_THROTTLE_EVERY_N = 1024L * 1024L;
 
@@ -106,6 +116,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	private int valueCacheSize = -1;
 
 	private int valueIDCacheSize = -1;
+
+	private LmdbCacheImplementation cacheImplementation = LmdbCacheImplementation.LOSSY_CONCURRENT;
 
 	private int bulkOperationSize = -1;
 
@@ -170,6 +182,11 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	// null means unset: resolves to (mode != DISABLED) and is not exported
 	private Boolean directAdjacencyBuildOnStart;
+	private long mapGrowthReadDrainTimeoutMillis = MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS;
+
+	private double mapGrowthThreshold = MAP_GROWTH_THRESHOLD;
+
+	private int readOnlyReplayMaxRetries = READ_ONLY_REPLAY_MAX_RETRIES;
 
 	/*--------------*
 	 * Constructors *
@@ -543,6 +560,15 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	public long getMapGrowthReadDrainTimeoutMillis() {
+		return mapGrowthReadDrainTimeoutMillis;
+	}
+
+	public LmdbStoreConfig setMapGrowthReadDrainTimeoutMillis(long mapGrowthReadDrainTimeoutMillis) {
+		this.mapGrowthReadDrainTimeoutMillis = Math.max(0L, mapGrowthReadDrainTimeoutMillis);
+		return this;
+	}
+
 	/**
 	 * @return an unmodifiable copy of the selected predicate IRIs; empty for {@link DirectAdjacencyCoverage#FULL}
 	 */
@@ -591,6 +617,33 @@ public class LmdbStoreConfig extends BaseSailConfig {
 	}
 
 	/**
+	 * The soft allocated-page fullness fraction that starts admission closure and schedules phased map growth. The
+	 * value must be finite and strictly between {@code 0.0} and {@code 1.0}.
+	 */
+	public double getMapGrowthThreshold() {
+		return mapGrowthThreshold;
+	}
+
+	public LmdbStoreConfig setMapGrowthThreshold(double mapGrowthThreshold) {
+		if (!Double.isFinite(mapGrowthThreshold) || mapGrowthThreshold <= 0.0d || mapGrowthThreshold >= 1.0d) {
+			throw new IllegalArgumentException(
+					"mapGrowthThreshold must be finite and strictly between 0.0 and 1.0, but was "
+							+ mapGrowthThreshold);
+		}
+		this.mapGrowthThreshold = mapGrowthThreshold;
+		return this;
+	}
+
+	public int getReadOnlyReplayMaxRetries() {
+		return readOnlyReplayMaxRetries;
+	}
+
+	public LmdbStoreConfig setReadOnlyReplayMaxRetries(int readOnlyReplayMaxRetries) {
+		this.readOnlyReplayMaxRetries = Math.max(0, readOnlyReplayMaxRetries);
+		return this;
+	}
+
+	/**
 	 * Sets the direct adjacency memory limit in bytes. Zero means AUTO and resolves once, at store construction, to 50%
 	 * of the container-aware memory limit. A positive value below 256 MiB or a negative value is rejected.
 	 */
@@ -624,6 +677,25 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		return this;
 	}
 
+	/**
+	 * The backend shared by the generic value-ID, namespace and namespace-ID caches. Specialized value and snapshot
+	 * caches keep their own implementations. The default preserves the existing lossy concurrent cache.
+	 */
+	@Experimental
+	public LmdbCacheImplementation getCacheImplementation() {
+		return cacheImplementation;
+	}
+
+	/**
+	 * Selects a cache backend. Call {@link #validate()} to check its capacity constraints after configuring sizes;
+	 * opening a store also validates them. See {@link LmdbCacheImplementation} for zero-capacity semantics and limits.
+	 */
+	@Experimental
+	public LmdbStoreConfig setCacheImplementation(LmdbCacheImplementation cacheImplementation) {
+		this.cacheImplementation = Objects.requireNonNull(cacheImplementation, "cacheImplementation");
+		return this;
+	}
+
 	@Override
 	public void validate() throws SailConfigException {
 		super.validate();
@@ -638,6 +710,18 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (directAdjacencyEnabled && getDirectAdjacencyMode() == DirectAdjacencyMode.DISABLED) {
 			throw new SailConfigException("directAdjacencyEnabled requires a non-DISABLED directAdjacencyMode");
 		}
+		validateCacheCapacity(LmdbStoreSchema.VALUE_ID_CACHE_SIZE, getValueIDCacheSize());
+		validateCacheCapacity(LmdbStoreSchema.NAMESPACE_CACHE_SIZE, getNamespaceCacheSize());
+		validateCacheCapacity(LmdbStoreSchema.NAMESPACE_ID_CACHE_SIZE, getNamespaceIDCacheSize());
+	}
+
+	private void validateCacheCapacity(IRI property, int capacity) {
+		try {
+			cacheImplementation.validateCapacity(capacity);
+		} catch (IllegalArgumentException e) {
+			throw new SailConfigException("Invalid " + property + " for cacheImplementation " + cacheImplementation
+					+ ": " + e.getMessage(), e);
+		}
 	}
 
 	@Override
@@ -649,6 +733,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		m.add(implNode, LmdbStoreSchema.NATIVE_EVALUATION_ENABLED, vf.createLiteral(nativeEvaluationEnabled));
 		m.add(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_ENABLED, vf.createLiteral(directAdjacencyEnabled));
 		m.add(implNode, LmdbStoreSchema.VALUE_OVERLAY_ENABLED, vf.createLiteral(valueOverlayEnabled));
+		if (cacheImplementation != LmdbCacheImplementation.LOSSY_CONCURRENT) {
+			m.add(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, vf.createLiteral(cacheImplementation.name()));
+		}
 		if (tripleIndexes != null) {
 			m.add(implNode, LmdbStoreSchema.TRIPLE_INDEXES, vf.createLiteral(tripleIndexes));
 		}
@@ -773,12 +860,36 @@ public class LmdbStoreConfig extends BaseSailConfig {
 					vf.createLiteral(directAdjacencyBuildOnStart.booleanValue()));
 		}
 
+		if (mapGrowthReadDrainTimeoutMillis != MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS) {
+			m.add(implNode, LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS,
+					vf.createLiteral(mapGrowthReadDrainTimeoutMillis));
+		}
+		if (mapGrowthThreshold != MAP_GROWTH_THRESHOLD) {
+			m.add(implNode, LmdbStoreSchema.MAP_GROWTH_THRESHOLD, vf.createLiteral(mapGrowthThreshold));
+		}
+		if (readOnlyReplayMaxRetries != READ_ONLY_REPLAY_MAX_RETRIES) {
+			m.add(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES,
+					vf.createLiteral(readOnlyReplayMaxRetries));
+		}
 		return implNode;
 	}
 
 	@Override
 	public void parse(Model m, Resource implNode) throws SailConfigException {
 		super.parse(m, implNode);
+		Set<Value> implementations = m.filter(implNode, LmdbStoreSchema.CACHE_IMPLEMENTATION, null).objects();
+		if (!implementations.isEmpty()) {
+			if (implementations.size() != 1 || !(implementations.iterator().next()instanceof Literal literal)) {
+				throw new SailConfigException("One literal required for " + LmdbStoreSchema.CACHE_IMPLEMENTATION
+						+ " property, found " + implementations);
+			}
+			try {
+				setCacheImplementation(LmdbCacheImplementation.valueOf(literal.getLabel()));
+			} catch (IllegalArgumentException e) {
+				throw new SailConfigException("Unknown " + LmdbStoreSchema.CACHE_IMPLEMENTATION + " value "
+						+ literal + "; expected one of " + Arrays.toString(LmdbCacheImplementation.values()), e);
+			}
+		}
 
 		try {
 			Literal nativeEvaluationEnabledLiteral = singleBooleanLiteral(m, implNode,
@@ -1114,6 +1225,23 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS, null))
+					.ifPresent(lit -> setMapGrowthReadDrainTimeoutMillis(parseLong(lit,
+							LmdbStoreSchema.MAP_GROWTH_READ_DRAIN_TIMEOUT_MILLIS)));
+
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.MAP_GROWTH_THRESHOLD, null))
+					.ifPresent(lit -> {
+						double threshold = parseDouble(lit, LmdbStoreSchema.MAP_GROWTH_THRESHOLD);
+						try {
+							setMapGrowthThreshold(threshold);
+						} catch (IllegalArgumentException e) {
+							throw new SailConfigException(
+									"Finite double value strictly between 0.0 and 1.0 required for "
+											+ LmdbStoreSchema.MAP_GROWTH_THRESHOLD + " property, found " + lit,
+									e);
+						}
+					});
+
 			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.DIRECT_ADJACENCY_BUILD_ON_START, null))
 					.ifPresent(lit -> {
 						try {
@@ -1125,9 +1253,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 						}
 					});
 
+			Models.objectLiteral(m.getStatements(implNode, LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES, null))
+					.ifPresent(lit -> setReadOnlyReplayMaxRetries(parseInt(lit,
+							LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES)));
 		} catch (ModelException e) {
 			throw new SailConfigException(e.getMessage(), e);
 		}
+		validate();
 	}
 
 	private static int parseInt(org.eclipse.rdf4j.model.Literal lit, org.eclipse.rdf4j.model.IRI property) {
@@ -1168,6 +1300,14 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			return lit.longValue();
 		} catch (NumberFormatException e) {
 			throw new SailConfigException("Long value required for " + property + " property, found " + lit);
+		}
+	}
+
+	private static double parseDouble(Literal lit, IRI property) {
+		try {
+			return lit.doubleValue();
+		} catch (NumberFormatException e) {
+			throw new SailConfigException("Double value required for " + property + " property, found " + lit);
 		}
 	}
 }

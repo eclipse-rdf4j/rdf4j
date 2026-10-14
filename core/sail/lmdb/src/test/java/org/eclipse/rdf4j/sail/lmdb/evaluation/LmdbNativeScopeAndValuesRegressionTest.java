@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -477,9 +479,14 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 				+ "    <<( :a :p <<( :inner-p :inner-o :inner-v )>> )>> }\n"
 				+ "}";
 
-		List<String> generic = rows(query, false, null, null);
-		List<String> nativeRows = rows(query, true, null, null);
-		assertThat(nativeRows).as("nested RDF-star terms must use recursive term equality").isEqualTo(generic);
+		List<Map<String, RdfTermKey>> generic = bindings(query, false, null, null, null).stream()
+				.map(LmdbNativeScopeAndValuesRegressionTest::termKeys)
+				.toList();
+		List<Map<String, RdfTermKey>> nativeRows = bindings(query, true, null, null, null).stream()
+				.map(LmdbNativeScopeAndValuesRegressionTest::termKeys)
+				.toList();
+		assertThat(nativeRows).as("nested RDF-star terms must use recursive term equality")
+				.containsExactlyInAnyOrderElementsOf(generic);
 		assertThat(nativeRows).hasSize(2);
 	}
 
@@ -584,6 +591,14 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 
 	private List<String> rows(String query, boolean nativeEnabled, String bindingName, Value bindingValue,
 			String forcedStrategy) {
+		return bindings(query, nativeEnabled, bindingName, bindingValue, forcedStrategy).stream()
+				.map(LmdbNativeScopeAndValuesRegressionTest::canonical)
+				.sorted()
+				.collect(Collectors.toList());
+	}
+
+	private List<BindingSet> bindings(String query, boolean nativeEnabled, String bindingName, Value bindingValue,
+			String forcedStrategy) {
 		String previous = System.getProperty(NATIVE_FLAG);
 		try {
 			System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
@@ -595,15 +610,18 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 				if (bindingName != null) {
 					tupleQuery.setBinding(bindingName, bindingValue);
 				}
-				return QueryResults.asList(tupleQuery.evaluate())
-						.stream()
-						.map(LmdbNativeScopeAndValuesRegressionTest::canonical)
-						.sorted()
-						.collect(Collectors.toList());
+				return QueryResults.asList(tupleQuery.evaluate());
 			}
 		} finally {
 			restoreNativeFlag(previous);
 		}
+	}
+
+	private static Map<String, RdfTermKey> termKeys(BindingSet bindings) {
+		return bindings.getBindingNames()
+				.stream()
+				.filter(name -> bindings.getValue(name) != null)
+				.collect(Collectors.toMap(name -> name, name -> RdfTermKey.of(bindings.getValue(name))));
 	}
 
 	private String explain(String query) {

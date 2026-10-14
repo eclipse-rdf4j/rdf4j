@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_maxdbs;
 
+import java.io.ByteArrayInputStream;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.nio.file.Files;
@@ -224,7 +225,14 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 		} finally {
 			repository.shutDown();
 		}
-		assertThat(Files.readAllBytes(directory.resolve("store.properties"))).isEqualTo(originalProperties);
+		Properties expectedProperties = new Properties();
+		expectedProperties.load(new ByteArrayInputStream(originalProperties));
+		Properties reopenedProperties = new Properties();
+		try (var metadataInput = Files.newInputStream(directory.resolve("store.properties"))) {
+			reopenedProperties.load(metadataInput);
+		}
+		assertThat(reopenedProperties).as("canonical metadata keeps every protocol and capability property")
+				.isEqualTo(expectedProperties);
 		assertThat(directory.resolve("lmdbrdf.ver")).doesNotExist();
 
 		// Engagement assertions follow all functional import, duplicate, ownership, GC and reopen assertions.

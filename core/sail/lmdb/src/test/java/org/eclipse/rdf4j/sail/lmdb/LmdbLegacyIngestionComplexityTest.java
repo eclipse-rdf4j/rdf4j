@@ -134,7 +134,7 @@ class LmdbLegacyIngestionComplexityTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
-	void pendingCacheSemanticScansStayBoundedAndPreserveStatementFields(boolean inferred) throws Exception {
+	void nativeWriterSemanticScansStayBoundedAndPreserveStatementFields(boolean inferred) throws Exception {
 		openStore("v2-empty-inline-false.zip", 128L * 1024);
 		LmdbSailStore backing = backingStore();
 		TripleStore tripleStore = backing.getTripleStore();
@@ -150,9 +150,14 @@ class LmdbLegacyIngestionComplexityTest {
 				sink.approve(VALUES.createIRI("urn:complexity:filler:" + index), LABEL,
 						VALUES.createLiteral("pending cache filler " + index), CONTEXT);
 			}
-			assertThat(tripleStore.hasPendingRecordCache())
-					.as("the small configured map must overflow into the real pending record cache")
-					.isTrue();
+			int nativeSeedRows = 0;
+			try (RecordIterator rows = tripleStore.getTriplesForWrite(-1, -1, -1, -1, !inferred)) {
+				while (rows.next() != null) {
+					nativeSeedRows++;
+				}
+			}
+			assertThat(nativeSeedRows).as("the semantic pass must read the real native writer prefix")
+					.isEqualTo(PENDING_CACHE_SEED_ROWS);
 			tripleStore.setLegacyPendingScanObserver(pendingScans);
 			for (int index = 0; index < STATEMENT_GROUPS; index++) {
 				IRI subject = VALUES.createIRI("urn:complexity:subject:" + index);
@@ -178,8 +183,9 @@ class LmdbLegacyIngestionComplexityTest {
 				.as("one writer generation should scan each pending database at most once in bounded batches "
 						+ "(batches=%d, visited records=%d)", pendingScans.invocations(), pendingScans.visitedRecords())
 				.isLessThanOrEqualTo(2 * maximumPendingBatchesPerPass + 2);
+		assertThat(pendingScans.visitedRecords()).isPositive();
 		assertThat(pendingScans.visitedRecords())
-				.as("pending rows should be visited linearly, not once per added alias")
+				.as("native writer rows should be visited linearly, not once per added alias")
 				.isLessThanOrEqualTo(2L * (PENDING_CACHE_SEED_ROWS + expectedNewRows));
 
 		try (var connection = repository.getConnection()) {

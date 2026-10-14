@@ -510,10 +510,11 @@ final class LmdbNativeParallelPipelines {
 		if (consumerRow.source instanceof SyntheticValueSource synthetic) {
 			NativeExecutionContext executionContext = synthetic.executionContext();
 			if (executionContext != null) {
-				return executionContext.genericContext(() -> new EvaluationScopedQueryEvaluationContext(step.context));
+				return executionContext.genericContext(
+						() -> EvaluationScopedQueryEvaluationContext.create(step.context, step.strategy));
 			}
 		}
-		return new EvaluationScopedQueryEvaluationContext(step.context);
+		return EvaluationScopedQueryEvaluationContext.create(step.context, step.strategy);
 	}
 
 	private static Throwable closeChildren(SlotPlan[] children, Throwable failure) {
@@ -668,7 +669,7 @@ final class LmdbNativeParallelPipelines {
 		final AtomicReference<Throwable> cleanupFailure = new AtomicReference<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
 		final Object failureLock = new Object();
-		final CountDownLatch tasks;
+		final NativeExecutionContext.WorkerTasks tasks;
 		final ArrayList<Future<?>> futures;
 		final TaskReservation reservation;
 		final LmdbNativeAttemptMetrics attemptMetrics;
@@ -721,7 +722,7 @@ final class LmdbNativeParallelPipelines {
 			this.entrySlots = Arrays.copyOf(consumerRow.slots, consumerRow.slots.length);
 			this.input = partitions != null ? null : new ArrayBlockingQueue<>(workerPlans.length * 2);
 			this.output = new ArrayBlockingQueue<>(workerPlans.length * 2);
-			this.tasks = new CountDownLatch(workerPlans.length);
+			this.tasks = new NativeExecutionContext.WorkerTasks(workerPlans.length, reservation::close);
 			this.futures = new ArrayList<>(workerPlans.length);
 			this.reservation = reservation;
 			this.poisonRemaining = partitions == null ? workerPlans.length : 0;
@@ -740,11 +741,12 @@ final class LmdbNativeParallelPipelines {
 			try {
 				for (int i = 0; i < workerPlans.length; i++) {
 					int worker = i;
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(pool().submit(() -> {
 						if (templatePlan == null) {
-							runTask(() -> runWorker(worker), workerPlans[worker], sources[worker]);
+							runTask(() -> runWorker(worker), workerPlans[worker], sources[worker], replayContext);
 						} else {
-							runTask(worker);
+							runTask(worker, replayContext);
 						}
 					}));
 					submitted++;
@@ -773,49 +775,49 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
-			try {
-				task.run();
-			} catch (Throwable problem) {
-				recordTaskFailure(problem);
-			} finally {
-				Throwable filterFailure = closePlanFilters(ownedPlan, null);
-				if (filterFailure != null) {
-					recordCleanupFailure(filterFailure);
-				}
+			runTask(task, ownedPlan, ownedSource, NativeExecutionContext.captureWorkerContext());
+		}
+
+		private void runTask(IoTask task, MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource,
+				NativeExecutionContext.WorkerContext replayContext) {
+			try (var worker = tasks.enter(() -> closeWorker(ownedPlan, ownedSource), this::recordCleanupFailure)) {
 				try {
-					ownedSource.close();
-				} catch (Throwable closeFailure) {
-					recordCleanupFailure(closeFailure);
-				} finally {
-					taskFinished();
+					worker.activate(replayContext);
+					task.run();
+				} catch (Throwable problem) {
+					recordTaskFailure(problem);
 				}
 			}
 		}
 
 		/** Binds and owns one plan entirely inside the worker that owns its sibling source. */
-		void runTask(int worker) {
-			NativeLmdbQuerySource.ParallelSource ownedSource = sources[worker];
-			MultiJoinPlan ownedPlan = null;
-			try {
-				ownedPlan = forkWorkerPlan(templatePlan,
-						NativeScalarPlan.WorkerContext.forSource(ownedSource, workerEvaluationContext));
-				workerPlans[worker] = ownedPlan;
-				runWorker(worker, ownedPlan);
-			} catch (Throwable problem) {
-				recordTaskFailure(problem);
-			} finally {
-				Throwable filterFailure = closePlanFilters(ownedPlan, null);
-				if (filterFailure != null) {
-					recordCleanupFailure(filterFailure);
-				}
+		void runTask(int workerIndex, NativeExecutionContext.WorkerContext replayContext) {
+			NativeLmdbQuerySource.ParallelSource ownedSource = sources[workerIndex];
+			try (var worker = tasks.enter(() -> {
+				closeWorker(workerPlans[workerIndex], ownedSource);
+				workerPlans[workerIndex] = null;
+			}, this::recordCleanupFailure)) {
 				try {
-					ownedSource.close();
-				} catch (Throwable closeFailure) {
-					recordCleanupFailure(closeFailure);
-				} finally {
-					workerPlans[worker] = null;
-					taskFinished();
+					worker.activate(replayContext);
+					MultiJoinPlan ownedPlan = forkWorkerPlan(templatePlan,
+							NativeScalarPlan.WorkerContext.forSource(ownedSource, workerEvaluationContext));
+					workerPlans[workerIndex] = ownedPlan;
+					runWorker(workerIndex, ownedPlan);
+				} catch (Throwable problem) {
+					recordTaskFailure(problem);
 				}
+			}
+		}
+
+		private void closeWorker(MultiJoinPlan ownedPlan, NativeLmdbQuerySource.ParallelSource ownedSource) {
+			Throwable filterFailure = closePlanFilters(ownedPlan, null);
+			if (filterFailure != null) {
+				recordCleanupFailure(filterFailure);
+			}
+			try {
+				ownedSource.close();
+			} catch (Throwable closeFailure) {
+				recordCleanupFailure(closeFailure);
 			}
 		}
 
@@ -870,9 +872,6 @@ final class LmdbNativeParallelPipelines {
 
 		void taskFinished() {
 			tasks.countDown();
-			if (tasks.getCount() == 0) {
-				reservation.close();
-			}
 		}
 
 		void awaitTasks() {
@@ -1151,6 +1150,7 @@ final class LmdbNativeParallelPipelines {
 		@Override
 		public void close() {
 			if (closed) {
+				awaitTasks();
 				return;
 			}
 			closed = true;

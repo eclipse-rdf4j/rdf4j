@@ -231,20 +231,42 @@ class LmdbNodePredicateKernelFaultTest {
 			connection.add(F.createIRI(NS, "holder"), LONELY, F.createIRI(NS, "anything"));
 			connection.commit();
 		}
-		if (corrupt) {
-			// One middle subject's projection row gains a predicate that exists in the catalogue but has no run on
-			// that node. The corruption is applied while the base is built, below.
-			ValueStore values = (ValueStore) sail.getBackingStore().getValueFactory();
-			try {
-				LmdbNodePredicateIndex.injectCorruptionForTest(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
-						values.getId(F.createIRI(NS, "s" + (SUBJECTS / 2))), values.getId(LONELY));
-			} catch (Exception e) {
-				throw new IllegalStateException("could not resolve the ids to corrupt", e);
+		// Native family allocation and batched lexical ordering need not assign the last input the largest ID.
+		// The injector appends a pair, so choose a real catalogue predicate that sorts after every retained pair,
+		// then remove only that node's run through the ordinary repository API in both controls.
+		ValueStore values = (ValueStore) sail.getBackingStore().getValueFactory();
+		IRI missingPredicate = LONELY;
+		long missingPredicateId;
+		try {
+			missingPredicateId = values.getId(LONELY);
+			for (int p = 0; p < PREDICATES; p++) {
+				IRI candidate = F.createIRI(NS, "p" + p);
+				long candidateId = values.getId(candidate);
+				if (Long.compareUnsigned(candidateId, missingPredicateId) > 0) {
+					missingPredicate = candidate;
+					missingPredicateId = candidateId;
+				}
 			}
-		} else {
-			LmdbNodePredicateIndex.clearCorruptionForTest();
+			IRI middle = F.createIRI(NS, "s" + (SUBJECTS / 2));
+			try (RepositoryConnection connection = repo.getConnection()) {
+				connection.remove(middle, missingPredicate, null);
+			}
+			if (corrupt) {
+				LmdbNodePredicateIndex.injectCorruptionForTest(LmdbAdjacencyPlane.PLANE_OUTGOING_EXPLICIT,
+						values.getId(middle), missingPredicateId);
+			} else {
+				LmdbNodePredicateIndex.clearCorruptionForTest();
+			}
+		} catch (Exception e) {
+			throw new IllegalStateException("could not resolve the IDs to corrupt", e);
 		}
-		assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
+		if (corrupt) {
+			// Startup/commit maintenance may already have published a healthy base before IDs were available.
+			// Apply the structural fault to a real fresh build, rather than reusing that earlier publication.
+			assertThat(sail.getBackingStore().directAdjacencyStore().rebuildNowForTest()).isTrue();
+		} else {
+			assertThat(AdjacencyEngagementTestAccess.buildNow(sail)).isTrue();
+		}
 	}
 
 	private List<String> run(String query) {

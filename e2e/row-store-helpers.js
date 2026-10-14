@@ -45,12 +45,19 @@ async function storedResults(page) {
 }
 
 /** Waits for one newly registered result to persist its metadata and all of its physical rows. */
-async function waitForStoredResult(page, before, expectedCount) {
+async function waitForStoredQueryRows(page, before, expectedCount) {
 	const beforeIds = [...new Set([...before.databases, ...Object.keys(before.registry)])];
 	let persisted;
 	await expect.poll(async () => {
 		persisted = await page.evaluate(async ({ databasePrefix, registryPrefix, beforeIds, expectedCount }) => {
+			if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') {
+				throw new Error('IndexedDB database enumeration is unavailable.');
+			}
 			const previousIds = new Set(beforeIds);
+			const newDatabaseIds = (await indexedDB.databases())
+				.filter(database => database.version > 0 && database.name && database.name.startsWith(databasePrefix))
+				.map(database => database.name.substring(databasePrefix.length))
+				.filter(id => !previousIds.has(id));
 			const registryIds = [];
 			for (let index = 0; index < localStorage.length; index++) {
 				const key = localStorage.key(index);
@@ -61,11 +68,12 @@ async function waitForStoredResult(page, before, expectedCount) {
 					}
 				}
 			}
-			if (registryIds.length === 0) {
-				return false;
+			if (registryIds.length > 1 || newDatabaseIds.length > 1) {
+				throw new Error(`Expected one new query store, found ${registryIds.length} registry entries and `
+					+ `${newDatabaseIds.length} databases.`);
 			}
-			if (registryIds.length !== 1) {
-				throw new Error(`Expected one newly registered stored result, found ${registryIds.length}.`);
+			if (registryIds.length !== 1 || newDatabaseIds.length !== 1) {
+				return false;
 			}
 
 			// Exclude every pre-existing result before opening a database. Other tabs may hold their write transactions.
@@ -73,12 +81,10 @@ async function waitForStoredResult(page, before, expectedCount) {
 			if (previousIds.has(id)) {
 				throw new Error(`Stored result ${id} was present before this query.`);
 			}
-			const databaseName = databasePrefix + id;
-			const listed = (await indexedDB.databases())
-				.some(database => database.name === databaseName && database.version > 0);
-			if (!listed) {
-				return false;
+			if (newDatabaseIds[0] !== id) {
+				throw new Error(`The new query database ${newDatabaseIds[0]} does not match registry entry ${id}.`);
 			}
+			const databaseName = databasePrefix + id;
 
 			const persisted = await new Promise((resolve, reject) => {
 				const request = indexedDB.open(databaseName);
@@ -138,8 +144,13 @@ async function waitForStoredResult(page, before, expectedCount) {
 						if (!cursor) {
 							return;
 						}
-						const blockRows = cursor.value && cursor.value.count;
-						if (!Number.isSafeInteger(blockRows) || blockRows <= 0) {
+						const record = cursor.value;
+						const blockRows = record && record.count;
+						const lines = typeof record?.text === 'string' ? record.text.split('\n') : [];
+						if (record?.storeId !== id || record.index !== physicalRowCount
+							|| !Array.isArray(cursor.key) || cursor.key[0] !== id || cursor.key[1] !== physicalRowCount
+							|| !Number.isSafeInteger(blockRows) || blockRows <= 0
+							|| lines.length !== blockRows || lines.some(line => !line)) {
 							malformedRowBlock = true;
 							transaction.abort();
 							return;
@@ -150,7 +161,9 @@ async function waitForStoredResult(page, before, expectedCount) {
 					};
 					transaction.oncomplete = () => {
 						database.close();
-						resolve({ id, metadataCount: metadata && metadata.count, physicalBlockCount, physicalRowCount });
+						resolve({ id, metadataId: metadata && metadata.id, metadataFormat: metadata && metadata.format,
+							metadataCount: metadata && metadata.count, physicalBlockCount, physicalRowCount,
+							physicalRecordCount: physicalBlockCount, logicalRowCount: physicalRowCount });
 					};
 					transaction.onerror = transaction.onabort = () => {
 						database.close();
@@ -162,6 +175,12 @@ async function waitForStoredResult(page, before, expectedCount) {
 			});
 			if (!persisted) {
 				return false;
+			}
+			if (persisted.metadataId !== undefined && persisted.metadataId !== id) {
+				throw new Error(`Stored result ${id} has mismatched metadata identity ${persisted.metadataId}.`);
+			}
+			if (persisted.metadataFormat !== undefined && persisted.metadataFormat !== 'blocks-v2') {
+				throw new Error(`Unsupported persisted row format ${persisted.metadataFormat}.`);
 			}
 			if (persisted.metadataCount !== undefined
 				&& (!Number.isSafeInteger(persisted.metadataCount) || persisted.metadataCount < 0)) {
@@ -175,8 +194,8 @@ async function waitForStoredResult(page, before, expectedCount) {
 				throw new Error(
 					`Stored result ${id} contains ${persisted.physicalRowCount} physical rows; expected ${expectedCount}.`);
 			}
-			return persisted.metadataCount === expectedCount
-				&& persisted.physicalBlockCount > 0 && persisted.physicalRowCount === expectedCount
+			return persisted.metadataId === id && persisted.metadataFormat === 'blocks-v2'
+				&& persisted.metadataCount === expectedCount && persisted.physicalBlockCount > 0 && persisted.physicalRowCount === expectedCount
 				? persisted : false;
 		}, { databasePrefix: DATABASE_PREFIX, registryPrefix: REGISTRY_PREFIX, beforeIds, expectedCount });
 		return Boolean(persisted);
@@ -225,4 +244,4 @@ async function forgetLastCleanup(page) {
 }
 
 module.exports = { DATABASE_PREFIX, REGISTRY_PREFIX, largeQuery, storedResults, ageStoredResults, plantAbandonedStore,
-	forgetLastCleanup, waitForStoredResult };
+	forgetLastCleanup, waitForStoredQueryRows, waitForStoredResult: waitForStoredQueryRows };

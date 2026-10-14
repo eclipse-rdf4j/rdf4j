@@ -32,10 +32,12 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.concurrent.locks.LockManager;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
@@ -45,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceRes
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValueTripleSource;
 import org.eclipse.rdf4j.repository.sparql.federation.SPARQLServiceResolver;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -122,6 +125,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 */
 	private final LmdbStoreConfig config;
 	private LmdbStoreFormat format;
+
+	int getReadOnlyReplayMaxRetries() {
+		return config.getReadOnlyReplayMaxRetries();
+	}
 
 	private SailStore store;
 
@@ -345,6 +352,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	protected void initializeInternal() throws SailException {
 		logger.debug("Initializing LmdbStore...");
+		config.validate();
 
 		// Check initialization parameters
 		File dataDir = getDataDir();
@@ -389,8 +397,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
-			backingStore = new LmdbSailStore(dataDir, properties, config, useSketchBasedJoinEstimator, format,
-					getQueryExecutionPolicy());
+			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 			properties.save();
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
@@ -423,6 +430,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		} catch (Throwable e) {
 			// LmdbStore initialization failed, release any allocated files
 			dirLock.release();
+			logger.error("LmdbStore initialization failed for data directory: " + dataDir.getAbsolutePath(), e);
 
 			throw new SailException(e);
 		}
@@ -521,24 +529,66 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * @throws SailException
 	 */
 	protected Lock getTransactionLock(IsolationLevel level) throws SailException {
-		txnLockManager.lock();
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		boolean mutexAcquired = false;
+		Lock transactionLock = null;
 		try {
+			checkTransactionAdmissionDeadline(deadline);
+			if (deadline == null) {
+				txnLockManager.lockInterruptibly();
+			} else if (!txnLockManager.tryLock(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
+			mutexAcquired = true;
+			checkTransactionAdmissionDeadline(deadline);
 			if (IsolationLevels.NONE.isCompatibleWith(level)) {
 				// make sure no isolated transaction are active
-				isolatedLockManager.waitForActiveLocks();
+				waitForIsolationLocks(isolatedLockManager, deadline);
 				// mark isolation as disabled
-				return disabledIsolationLockManager.createLock(level.toString());
+				transactionLock = disabledIsolationLockManager.createLock(level.toString());
 			} else {
 				// make sure isolation is not disabled
-				disabledIsolationLockManager.waitForActiveLocks();
+				waitForIsolationLocks(disabledIsolationLockManager, deadline);
 				// mark isolated transaction as active
-				return isolatedLockManager.createLock(level.toString());
+				transactionLock = isolatedLockManager.createLock(level.toString());
 			}
+			checkTransactionAdmissionDeadline(deadline);
+			Lock admitted = transactionLock;
+			transactionLock = null;
+			return admitted;
 		} catch (InterruptedException e) {
 			Thread.currentThread().interrupt();
 			throw new InterruptedSailException(e);
 		} finally {
-			txnLockManager.unlock();
+			try {
+				if (transactionLock != null) {
+					transactionLock.release();
+				}
+			} finally {
+				if (mutexAcquired) {
+					txnLockManager.unlock();
+				}
+			}
+		}
+	}
+
+	private static void waitForIsolationLocks(LockManager locks, QueryExecutionDeadline deadline)
+			throws InterruptedException {
+		checkTransactionAdmissionDeadline(deadline);
+		if (deadline == null) {
+			locks.waitForActiveLocks();
+		} else if (!locks.waitForActiveLocks(deadline.remainingNanos(), TimeUnit.NANOSECONDS)) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		checkTransactionAdmissionDeadline(deadline);
+	}
+
+	private static void checkTransactionAdmissionDeadline(QueryExecutionDeadline deadline) {
+		if (deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+		if (Thread.currentThread().isInterrupted()) {
+			throw new InterruptedSailException("Interrupted while waiting for LMDB transaction admission");
 		}
 	}
 
@@ -556,46 +606,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	}
 
 	SailStore getConnectionSailStore() {
-		SailStore sharedStore = store;
-		Object transactionOwner = new Object();
-		return new SailStore() {
-			@Override
-			public ValueFactory getValueFactory() {
-				return sharedStore.getValueFactory();
-			}
+		// Connection-owned NONE sources and borrowed read scopes are selected by LmdbStoreConnection.
+		// Keep this decoration boundary without introducing a second, unrelated transaction owner.
+		return getSailStore();
+	}
 
-			@Override
-			public EvaluationStatistics getEvaluationStatistics() {
-				return sharedStore.getEvaluationStatistics();
-			}
-
-			@Override
-			public void prepareDataset(IsolationLevel level) {
-				if (isIsolationDisabled()) {
-					backingStore.prepareDataset(level);
-				} else {
-					sharedStore.prepareDataset(level);
-				}
-			}
-
-			@Override
-			public SailSource getExplicitSailSource() {
-				return isIsolationDisabled() ? backingStore.getExplicitSailSource(transactionOwner)
-						: sharedStore.getExplicitSailSource();
-			}
-
-			@Override
-			public SailSource getInferredSailSource() {
-				// Both sources belong to this connection's transaction, including with isolation NONE.
-				return isIsolationDisabled() ? backingStore.getInferredSailSource(transactionOwner)
-						: sharedStore.getInferredSailSource();
-			}
-
-			@Override
-			public void close() {
-				// This connection view does not own the shared store.
-			}
-		};
+	LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
+			boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+		return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format,
+				getQueryExecutionPolicy());
 	}
 
 	LmdbSailStore getBackingStore() {
@@ -819,7 +838,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
-			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, tripleSource, evaluationStatistics);
+			EvaluationStrategyFactory selected = getEvaluationStrategyFactory();
+			// The final built-in native factory owns its internal value boundary and needs the paired dataset source.
+			TripleSource exposed = selected == defaultEvalStratFactory
+					|| selected instanceof LmdbNativeEvaluationStrategyFactory ? tripleSource
+							: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
+			return selected.createEvaluationStrategy(dataset, exposed, evaluationStatistics);
 		}
 
 		@Override

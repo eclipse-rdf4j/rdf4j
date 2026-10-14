@@ -20,12 +20,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ReverseIdCacheTest {
 
@@ -56,6 +60,42 @@ class ReverseIdCacheTest {
 			return key.lexicalLength();
 		}
 	};
+
+	@Test
+	void maximumCapacityAllocatesOnlyPopulatedSets(@TempDir Path directory) throws Exception {
+		Path output = directory.resolve("maximum-capacity.log");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-Xmx64m", "-cp", System.getProperty("java.class.path"), MaximumCapacityMain.class.getName())
+						.redirectErrorStream(true)
+						.redirectOutput(output.toFile())
+						.start();
+		try {
+			assertTrue(child.waitFor(30, TimeUnit.SECONDS), "The bounded-cache constructor must complete");
+			assertEquals(0, child.exitValue(), Files.readString(output));
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+				child.waitFor(30, TimeUnit.SECONDS);
+			}
+		}
+	}
+
+	public static final class MaximumCapacityMain {
+		public static void main(String[] arguments) {
+			ReverseIdCache<RdfTermKey, Value> cache = new ReverseIdCache<>(1 << 30, false, 1024, KEYS);
+			assertEquals(1 << 30, cache.capacity());
+			Value value = VALUES.createBNode("maximum-capacity");
+			for (int generation = 0; generation < 3; generation++) {
+				var state = cache.state();
+				assertNull(cache.get(state, value, 0));
+				cache.put(state, RdfTermKey.of(value), 123, null, null, 0);
+				assertEquals(123, cache.get(state, value, 0).id());
+				cache.clear();
+				assertFalse(cache.isCurrent(state));
+				assertNull(cache.get(cache.state(), value, 0));
+			}
+		}
+	}
 
 	@Test
 	void hashCollisionsNeverReturnAnotherValuesId() {

@@ -243,6 +243,9 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 	 * compile-scoped source captured in this plan.
 	 */
 	CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeLmdbQuerySource evaluationSource) {
+		if (strategy != null) {
+			strategy.captureEvaluationValues(evaluationSource);
+		}
 		if (evaluationSource != source) {
 			return copyForEvaluation(evaluationSource).evaluateCurrentSource(bindings);
 		}
@@ -331,7 +334,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			QueryEvaluationContext evaluationContext = context;
 			if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
 				evaluationContext = synthetic.executionContext()
-						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
 			}
 			QueryEvaluationContext preparedContext = evaluationContext;
 			genericStep = strategy.withValuePositions(valuePositions,
@@ -718,8 +721,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 						int workerIndex = worker;
 						NativeLmdbQuerySource workerSource = sources[worker];
 						int[] workerAcceptedOrdinals = acceptedOrdinals;
+						var replayContext = NativeExecutionContext.captureWorkerContext();
 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+							try (var replayScope = replayContext.activate();
+									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+											.inherit(probeParent)) {
 								return scanSidewaysTypeMorsels(workerSource, workerIndex, deques, predicateCatalog,
 										workerAcceptedOrdinals, reverse, workerFailure);
 							} catch (IOException | RuntimeException | Error failure) {
@@ -1242,8 +1248,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					for (int worker = 0; worker < workers; worker++) {
 						int workerIndex = worker;
 						NativeLmdbQuerySource workerSource = sources[worker];
+						var replayContext = NativeExecutionContext.captureWorkerContext();
 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+							try (var replayScope = replayContext.activate();
+									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+											.inherit(probeParent)) {
 								return scanPageMorsels(workerSource, workerIndex, deques, predicateCatalog,
 										workerFailure);
 							} catch (IOException | RuntimeException | Error failure) {
@@ -1518,8 +1527,11 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 					for (int worker = 0; worker < workers; worker++) {
 						int workerIndex = worker;
 						NativeLmdbQuerySource workerSource = sources[worker];
+						var replayContext = NativeExecutionContext.captureWorkerContext();
 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent)) {
+							try (var replayScope = replayContext.activate();
+									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+											.inherit(probeParent)) {
 								return scanPlaneMorsels(workerSource, workerIndex, deques, workerFailure);
 							} catch (IOException | RuntimeException | Error failure) {
 								workerFailure.compareAndSet(null, failure);
@@ -4305,9 +4317,12 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 				try {
 					for (int w = 0; w < workers; w++) {
 						NativeLmdbQuerySource workerSource = sources[w];
+						var replayContext = NativeExecutionContext.captureWorkerContext();
 						futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 							Map<GroupKey, long[]> local = new HashMap<>();
-							try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.inherit(probeParent);
+							try (var replayScope = replayContext.activate();
+									LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline
+											.inherit(probeParent);
 									NativeLmdbQuerySource.NativeProbe targetTypes = linkageMode()
 											? workerSource.newProbe()
 											: null) {

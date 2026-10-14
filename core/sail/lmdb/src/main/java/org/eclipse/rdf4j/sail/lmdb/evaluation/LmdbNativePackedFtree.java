@@ -607,8 +607,9 @@ final class LmdbNativePackedFtree {
 				MultiJoinPlan workerJoin = workerJoins[i];
 				NativeLmdbQuerySource workerSource = sources[i];
 				try {
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try {
+						try (var replayScope = replayContext.activate()) {
 							return runPartitionWorker(workerJoin, workerSource, row, plan.root.slot, demandedSlots,
 									partitions, nextPartition, groupSlots, aggregates, strictCompare, workerFailure);
 						} catch (Throwable t) {

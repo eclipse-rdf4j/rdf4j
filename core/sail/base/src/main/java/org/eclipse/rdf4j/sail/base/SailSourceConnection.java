@@ -13,14 +13,17 @@
 package org.eclipse.rdf4j.sail.base;
 
 import java.util.AbstractSet;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.LockSupport;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
@@ -28,6 +31,7 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -42,6 +46,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -60,6 +65,7 @@ import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.UnknownSailTransactionStateException;
@@ -81,6 +87,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		implements InferencerConnection, FederatedServiceResolverClient {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceConnection.class);
+	// Caps dataset-acquisition retry backoff at about one millisecond.
+	private static final int MAX_RETRY_BACKOFF_SHIFT = 10;
+	// Bounds acquisition retries (roughly one second of backoff) for reads that have no query deadline.
+	private static final int MAX_DATASET_ACQUISITION_RETRIES = 1000;
 
 	/*-----------*
 	 * Variables *
@@ -140,6 +150,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * An {@link SailSource} of all statements when in an isolated transaction.
 	 */
 	private volatile SailSource includeInferredBranch;
+
+	/** Exact roots from which this isolated transaction's branches were created. */
+	private volatile SailSource transactionExplicitRoot;
+	private volatile SailSource transactionInferredRoot;
 
 	/**
 	 * {@link EvaluationStrategyFactory} to use.
@@ -266,6 +280,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		CloseableIteration<BindingSet> iteration = null;
 		try {
 			rdfDataset = datasetForRead(IncludeInferred.fromBoolean(includeInferred));
+			if (rdfDataset instanceof TreeOwnedDataset owned) {
+				// The interlock below closes the operator tree, and with it every cursor, before this dataset.
+				owned.cursorsCloseBeforeDataset();
+			}
 
 			TripleSource tripleSource = new SailDatasetTripleTermSource(vf, rdfDataset);
 			EvaluationStrategy strategy = getEvaluationStrategy(dataset, tripleSource);
@@ -320,6 +338,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			BindingSet bindings, boolean includeInferred, int timeoutSeconds) {
 		boolean queryTimedOut = false;
 		clearMetricsActual(tupleExpr);
+		TupleExpr explainedTupleExpr = tupleExpr;
 		setRuntimeTelemetryEnabled(tupleExpr, false);
 		setExecutionSummaryEnabled(tupleExpr, false);
 
@@ -371,22 +390,31 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 			}
 
+			explainedTupleExpr = getTupleExprForExplanation(tupleExpr);
 			if (level == Explanation.Level.Optimized) {
-				TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
+				TupleExpr reportTarget = explainedTupleExpr instanceof QueryRoot root ? root.getArg()
+						: explainedTupleExpr;
 				reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, explanationContext.decisions());
 			}
 			Set<String> incomingBindings = bindings == null ? Collections.emptySet() : bindings.getBindingNames();
-			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(tupleExpr,
+			QueryModelTreeToGenericPlanNode converter = new QueryModelTreeToGenericPlanNode(explainedTupleExpr,
 					incomingBindings, level);
-			tupleExpr.visit(converter);
+			explainedTupleExpr.visit(converter);
 
-			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, tupleExpr);
+			return new ExplanationImpl(converter.getGenericPlanNode(), queryTimedOut, explainedTupleExpr);
 
 		} finally {
 			TupleExpr reportTarget = tupleExpr instanceof QueryRoot root ? root.getArg() : tupleExpr;
 			reportTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
 			setRuntimeTelemetryEnabled(tupleExpr, false);
 			setExecutionSummaryEnabled(tupleExpr, false);
+			if (explainedTupleExpr != tupleExpr) {
+				TupleExpr explainedTarget = explainedTupleExpr instanceof QueryRoot root ? root.getArg()
+						: explainedTupleExpr;
+				explainedTarget.setQueryModelMetadata(StrategyDecision.METADATA_KEY, null);
+				setRuntimeTelemetryEnabled(explainedTupleExpr, false);
+				setExecutionSummaryEnabled(explainedTupleExpr, false);
+			}
 			this.cloneTupleExpression = true;
 			this.trackResultSize = false;
 			this.trackTime = false;
@@ -405,6 +433,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				super.meetNode(node);
 			}
 		});
+	}
+
+	/**
+	 * Returns the tuple expression to use when building an explanation. Implementations that optimize a detached
+	 * attempt-specific expression may override this to expose the expression that was actually evaluated.
+	 */
+	protected TupleExpr getTupleExprForExplanation(TupleExpr tupleExpr) {
+		return tupleExpr;
 	}
 
 	private boolean runQueryForExplain(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings,
@@ -493,6 +529,157 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		// no-op
 	}
 
+	/**
+	 * Opens a scope for admitting one or more datasets as a coherent read view. Implementations that coordinate
+	 * multiple backing sources can reserve their resources and publish a common generation here. Compound operations
+	 * may nest dataset acquisitions; an implementation should reuse its active scope for nested calls. The default
+	 * scope has no behavior.
+	 *
+	 * @param level the isolation level requested for the dataset or datasets
+	 * @return a scope that releases any admission resources when closed
+	 * @throws SailException if the read view cannot be admitted
+	 */
+	protected SailClosable beginDatasetAcquisition(IsolationLevel level) throws SailException {
+		return SailSource.DatasetAcquisition.wrap(() -> {
+		}, true);
+	}
+
+	/**
+	 * Returns this connection's explicit source for operations that do not use a transaction branch. Implementations
+	 * may provide a connection-owned source while preserving the store's default source for other isolation levels.
+	 */
+	protected SailSource getExplicitSailSource() throws SailException {
+		return store.getExplicitSailSource();
+	}
+
+	/**
+	 * Returns this connection's inferred source for operations that do not use a transaction branch. Implementations
+	 * may provide a connection-owned source while preserving the store's default source for other isolation levels.
+	 */
+	protected SailSource getInferredSailSource() throws SailException {
+		return store.getInferredSailSource();
+	}
+
+	/**
+	 * Returns whether the current read belongs to this connection's active transaction branch. A retained result from
+	 * an earlier transaction can provide its own read source and admission without inheriting a later transaction's
+	 * buffered changes. Such sources are used directly, including after transaction completion, because their retained
+	 * admission already owns the read lifetime.
+	 */
+	protected boolean useTransactionReadBranch() {
+		return true;
+	}
+
+	private SailDataset acquireDataset(SailSource source, IsolationLevel level) throws SailException {
+		return withDatasetAcquisition(level, () -> source.dataset(level));
+	}
+
+	/** Internal mutation probes/scans may use a current-writer view without changing caller read snapshots. */
+	protected SailDataset acquireMutationDataset(SailSource source, IsolationLevel level) throws SailException {
+		return withDatasetAcquisition(level, () -> source.dataset(level), true);
+	}
+
+	protected SailClosable beginMutationDatasetAcquisition(IsolationLevel level) throws SailException {
+		return beginDatasetAcquisition(level);
+	}
+
+	@FunctionalInterface
+	private interface DatasetAcquisitionOperation<T> {
+		T acquire() throws SailException;
+	}
+
+	private <T> T withDatasetAcquisition(IsolationLevel level, DatasetAcquisitionOperation<T> operation)
+			throws SailException {
+		return withDatasetAcquisition(level, operation, false);
+	}
+
+	private <T> T withDatasetAcquisition(IsolationLevel level, DatasetAcquisitionOperation<T> operation,
+			boolean mutation) throws SailException {
+		int retries = 0;
+		while (true) {
+			SailClosable admission = mutation ? beginMutationDatasetAcquisition(level) : beginDatasetAcquisition(level);
+			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
+			SailSource.RetryableDatasetAcquisitionException retryFailure = null;
+			try (admission) {
+				try {
+					return operation.acquire();
+				} catch (SailSource.RetryableDatasetAcquisitionException retry) {
+					if (!outermost || retry.getSuppressed().length != 0) {
+						throw retry;
+					}
+					retryFailure = retry;
+				}
+			}
+			if (Thread.currentThread().isInterrupted()) {
+				throw new SailException("Interrupted while retrying dataset acquisition", retryFailure);
+			}
+			QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+			if (deadline != null && deadline.isExpired()) {
+				throw new QueryInterruptedException("Query evaluation took too long", retryFailure);
+			}
+			if (retries >= MAX_DATASET_ACQUISITION_RETRIES) {
+				throw new SailConflictException("Unable to acquire a consistent dataset after " + retries
+						+ " attempts; retry the operation", retryFailure);
+			}
+			// Back off while the backing source finishes the change that invalidated this acquisition.
+			LockSupport.parkNanos(TimeUnit.MICROSECONDS.toNanos(1L << Math.min(retries++, MAX_RETRY_BACKOFF_SHIFT)));
+		}
+	}
+
+	private void acquireInferredAndExplicitDatasets(IsolationLevel level) throws SailException {
+		SailSource inferredBranch = branch(IncludeInferred.inferredOnly);
+		SailSource explicitBranch = branch(IncludeInferred.explicitOnly);
+		withDatasetAcquisition(level, () -> {
+			SailDataset inferredDataset = null;
+			SailDataset explicitDataset = null;
+			SailSink inferredSink = null;
+			Throwable failure = null;
+			try {
+				inferredDataset = inferredBranch.dataset(level);
+				explicitDataset = explicitBranch.dataset(level);
+				inferredSink = inferredBranch.sink(level);
+			} catch (Throwable acquisitionFailure) {
+				failure = acquisitionFailure;
+			}
+			if (failure != null) {
+				failure = closeResource(failure, inferredSink);
+				failure = closeResource(failure, explicitDataset);
+				failure = closeResource(failure, inferredDataset);
+				rethrow(failure);
+			}
+			inferredOnlyDataset = inferredDataset;
+			explicitOnlyDataset = explicitDataset;
+			inferredOnlySink = inferredSink;
+			return null;
+		}, true);
+	}
+
+	private static Throwable closeResource(Throwable failure, SailClosable resource) {
+		if (resource != null) {
+			try {
+				resource.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure == null) {
+					return closeFailure;
+				}
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+		}
+		return failure;
+	}
+
+	private static void rethrow(Throwable failure) throws SailException {
+		if (failure instanceof SailException sailException) {
+			throw sailException;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			throw runtimeException;
+		}
+		throw (Error) failure;
+	}
+
 	@Override
 	protected CloseableIteration<? extends Resource> getContextIDsInternal() throws SailException {
 		return readIteration(IncludeInferred.explicitOnly, SailDataset::getContextIDs);
@@ -558,47 +745,72 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		IsolationLevel level = getTransactionIsolation();
 		if (!IsolationLevels.NONE.isCompatibleWith(level)) {
 			// only create transaction branches if transaction is isolated
+			transactionExplicitRoot = store.getExplicitSailSource();
+			transactionInferredRoot = store.getInferredSailSource();
 			try {
 				if (level.isCompatibleWith(IsolationLevels.SNAPSHOT)) {
 					try (SailDatasetSnapshot snapshot = new SailDatasetSnapshot()) {
-						explicitOnlyBranch = snapshot.fork(store.getExplicitSailSource());
-						inferredOnlyBranch = snapshot.fork(store.getInferredSailSource());
+						explicitOnlyBranch = snapshot.fork(transactionExplicitRoot, this);
+						inferredOnlyBranch = snapshot.fork(transactionInferredRoot, this);
 					}
 				} else {
-					explicitOnlyBranch = store.getExplicitSailSource().fork();
-					inferredOnlyBranch = store.getInferredSailSource().fork();
+					explicitOnlyBranch = transactionExplicitRoot.fork(this);
+					inferredOnlyBranch = transactionInferredRoot.fork(this);
 				}
 				includeInferredBranch = new UnionSailSource(inferredOnlyBranch, explicitOnlyBranch);
 			} catch (RuntimeException | Error failure) {
 				SourceClosingSailDataset.closeAfterFailure(failure, explicitOnlyBranch, inferredOnlyBranch);
 				explicitOnlyBranch = null;
 				inferredOnlyBranch = null;
+				transactionExplicitRoot = null;
+				transactionInferredRoot = null;
 				throw failure;
 			}
 		}
+	}
+
+	/** Returns the original explicit root of the attached isolated transaction, or null for NONE. */
+	protected final SailSource getTransactionExplicitRoot() {
+		return transactionExplicitRoot;
+	}
+
+	/** Returns the original inferred root of the attached isolated transaction, or null for NONE. */
+	protected final SailSource getTransactionInferredRoot() {
+		return transactionInferredRoot;
 	}
 
 	@Override
 	protected void prepareInternal() throws SailException {
 		SailSource toCheckIncludeInferredBranch = includeInferredBranch;
 		if (toCheckIncludeInferredBranch != null) {
-			toCheckIncludeInferredBranch.prepare();
+			prepareTransaction(toCheckIncludeInferredBranch);
 		}
+	}
+
+	/** Prepares the still-attached logical transaction source. */
+	protected void prepareTransaction(SailSource source) throws SailException {
+		source.prepare();
+	}
+
+	/** Flushes the still-attached logical transaction source. */
+	protected void flushTransaction(SailSource source) throws SailException {
+		source.flush();
 	}
 
 	@Override
 	protected void commitInternal() throws SailException {
 		SailSource toCloseInferredBranch = includeInferredBranch;
-		explicitOnlyBranch = null;
-		inferredOnlyBranch = null;
-		includeInferredBranch = null;
-
-		queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 		try {
 			if (toCloseInferredBranch != null) {
-				toCloseInferredBranch.flush();
+				flushTransaction(toCloseInferredBranch);
 			}
 		} finally {
+			explicitOnlyBranch = null;
+			inferredOnlyBranch = null;
+			includeInferredBranch = null;
+			transactionExplicitRoot = null;
+			transactionInferredRoot = null;
+			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
 			if (toCloseInferredBranch != null) {
 				toCloseInferredBranch.close();
 			}
@@ -607,9 +819,98 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 
 	@Override
 	protected void rollbackInternal() throws SailException {
+		closeTransactionBranches(true);
+	}
+
+	/**
+	 * Replaces the logical branches of a read-only transaction while preserving connection-level query settings. This
+	 * is used only when a backing snapshot must be retried before any result has escaped to the caller.
+	 */
+	protected final void restartBranchesForReadReplay() throws SailException {
+		QueryEvaluationMode queryMode = queryEvaluationMode;
+		retireBranchesForReadReplay();
+		queryEvaluationMode = queryMode;
+		startBranchesForReadReplay();
+	}
+
+	/** Closes the current unobserved transaction branches without creating replacement branches. */
+	protected final void retireBranchesForReadReplay() throws SailException {
+		closeTransactionBranchesForReadReplay();
+	}
+
+	/** Starts replacement transaction branches after a read-replay handoff has completed. */
+	protected final void startBranchesForReadReplay() throws SailException {
+		startTransactionInternal();
+	}
+
+	/**
+	 * Releases transaction-managed read datasets before preparing a write transaction. The write sinks and transaction
+	 * branches remain open so their buffered changes and validation state are preserved for the prepare phase.
+	 */
+	protected final void releaseReadDatasetsBeforePrepare() throws SailException {
+		List<SailDataset> toCloseDatasets = new ArrayList<>();
 		synchronized (datasets) {
-			SailDataset toCloseDataset = null;
-			SailSink toCloseExplicitSink = null;
+			toCloseDatasets.addAll(datasets.values());
+			datasets.clear();
+			if (explicitOnlyDataset != null) {
+				toCloseDatasets.add(explicitOnlyDataset);
+				explicitOnlyDataset = null;
+			}
+			if (inferredOnlyDataset != null) {
+				toCloseDatasets.add(inferredOnlyDataset);
+				inferredOnlyDataset = null;
+			}
+		}
+
+		Throwable failure = null;
+		for (SailDataset dataset : toCloseDatasets) {
+			failure = closeResource(failure, dataset);
+		}
+		SailSource transactionBranch = includeInferredBranch;
+		if (transactionBranch != null) {
+			try {
+				transactionBranch.retireSnapshotsPreservingBorrowers();
+			} catch (RuntimeException | Error retireFailure) {
+				if (failure == null) {
+					failure = retireFailure;
+				} else if (failure != retireFailure) {
+					failure.addSuppressed(retireFailure);
+				}
+			}
+		}
+		if (failure != null) {
+			rethrow(failure);
+		}
+	}
+
+	private void closeTransactionBranchesForReadReplay() throws SailException {
+		closeTransactionBranches(false, true);
+	}
+
+	private void closeTransactionBranches(boolean resetQueryEvaluationMode) throws SailException {
+		closeTransactionBranches(resetQueryEvaluationMode, false);
+	}
+
+	private void closeTransactionBranches(boolean resetQueryEvaluationMode, boolean abandonUnobserved)
+			throws SailException {
+		synchronized (datasets) {
+			List<SailDataset> toCloseDatasets = new ArrayList<>();
+			List<SailSink> toCloseExplicitSinks = new ArrayList<>();
+			if (abandonUnobserved) {
+				toCloseDatasets.addAll(datasets.values());
+				datasets.clear();
+				toCloseExplicitSinks.addAll(explicitSinks.values());
+				explicitSinks.clear();
+			} else {
+				SailDataset currentDataset = datasets.remove(null);
+				if (currentDataset != null) {
+					toCloseDatasets.add(currentDataset);
+				}
+				SailSink currentSink = explicitSinks.remove(null);
+				if (currentSink != null) {
+					toCloseExplicitSinks.add(currentSink);
+				}
+			}
 			SailDataset toCloseExplicitOnlyDataset = explicitOnlyDataset;
 			explicitOnlyDataset = null;
 			SailDataset toCloseInferredDataset = inferredOnlyDataset;
@@ -620,56 +921,58 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			includeInferredBranch = null;
 			explicitOnlyBranch = null;
 			inferredOnlyBranch = null;
+			transactionExplicitRoot = null;
+			transactionInferredRoot = null;
 
-			queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+			if (resetQueryEvaluationMode) {
+				queryEvaluationMode = getSailBase().getDefaultQueryEvaluationMode();
+			}
 
-			try {
-				if (datasets.containsKey(null)) {
-					toCloseDataset = datasets.remove(null);
-				}
-			} finally {
-				try {
-					if (toCloseDataset != null) {
-						toCloseDataset.close();
-					}
-				} finally {
-					try {
-						if (explicitSinks.containsKey(null)) {
-							toCloseExplicitSink = explicitSinks.remove(null);
-						}
-					} finally {
-						try {
-							if (toCloseExplicitSink != null) {
-								toCloseExplicitSink.close();
-							}
-						} finally {
-							try {
-								if (toCloseExplicitOnlyDataset != null) {
-									toCloseExplicitOnlyDataset.close();
-								}
-							} finally {
-								try {
-									if (toCloseInferredDataset != null) {
-										toCloseInferredDataset.close();
-									}
-								} finally {
-									try {
-										if (toCloseInferredSink != null) {
-											toCloseInferredSink.close();
-										}
-									} finally {
-										if (toCloseIncludeInferredBranch != null) {
-											toCloseIncludeInferredBranch.close();
-										}
-									}
-								}
-							}
-						}
-					}
-				}
+			Throwable failure = null;
+			if (abandonUnobserved) {
+				failure = closeTransactionResource(failure, toCloseIncludeInferredBranch, true);
+			}
+			for (SailDataset dataset : toCloseDatasets) {
+				failure = closeTransactionResource(failure, dataset, abandonUnobserved);
+			}
+			for (SailSink sink : toCloseExplicitSinks) {
+				failure = closeResource(failure, sink);
+			}
+			failure = closeTransactionResource(failure, toCloseExplicitOnlyDataset, abandonUnobserved);
+			failure = closeTransactionResource(failure, toCloseInferredDataset, abandonUnobserved);
+			failure = closeResource(failure, toCloseInferredSink);
+			if (!abandonUnobserved) {
+				failure = closeTransactionResource(failure, toCloseIncludeInferredBranch, false);
+			}
+			if (failure != null) {
+				rethrow(failure);
 			}
 		}
 
+	}
+
+	private static Throwable closeTransactionResource(Throwable failure, SailClosable resource,
+			boolean abandonUnobserved) {
+		if (resource == null) {
+			return failure;
+		}
+		try {
+			if (abandonUnobserved && resource instanceof SailDataset dataset) {
+				dataset.abandonUnobserved();
+			} else if (abandonUnobserved && resource instanceof SailSource source) {
+				source.abandonUnobserved();
+			} else {
+				resource.close();
+			}
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure == null) {
+				return closeFailure;
+			}
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+		return failure;
 	}
 
 	@Override
@@ -682,15 +985,15 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 				SailSource source;
 				if (op.isIncludeInferred() && inferredOnlyBranch == null) {
 					// IsolationLevels.NONE
-					SailSource explicit = store.getExplicitSailSource();
-					SailSource inferred = store.getInferredSailSource();
+					SailSource explicit = getExplicitSailSource();
+					SailSource inferred = getInferredSailSource();
 					source = new UnionSailSource(explicit, inferred);
 				} else if (op.isIncludeInferred()) {
 					source = new UnionSailSource(explicitOnlyBranch, inferredOnlyBranch);
 				} else {
 					source = branch(IncludeInferred.explicitOnly);
 				}
-				datasets.put(op, source.dataset(level));
+				datasets.put(op, acquireMutationDataset(source, level));
 				explicitSinks.put(op, source.sink(level));
 			}
 		}
@@ -702,13 +1005,22 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		verifyIsOpen();
 		verifyIsActive();
 		synchronized (datasets) {
-			if (op == null && !datasets.containsKey(null)) {
+			// Sample the listener state once: a pure insertion consumes no read view, but a listener needs the
+			// dataset to preserve duplicate notifications. The notification path below must follow the same
+			// decision even when a listener registers concurrently.
+			boolean notifyListeners = hasConnectionListeners();
+			if (op == null && (!explicitSinks.containsKey(null)
+					|| notifyListeners && !datasets.containsKey(null))) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, source.dataset(getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				if (notifyListeners && !datasets.containsKey(null)) {
+					datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
+				}
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(op);
-			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), contexts);
+			add(subj, pred, obj, datasets.get(op), explicitSinks.get(op), notifyListeners, contexts);
 		}
 		if (op != null) {
 			recordDataImportMetricsStatementsAdded(contexts);
@@ -727,9 +1039,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return super.addStatementsInternal(statements, contexts);
 		}
 		synchronized (datasets) {
-			if (!datasets.containsKey(null)) {
+			if (!explicitSinks.containsKey(null)) {
+				// Like scalar insertion, an insertion without listeners needs no read view. Any later mutation
+				// probe acquires its dataset through connection admission, preserving the transaction's paired epoch.
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, source.dataset(getIsolationLevel()));
 				explicitSinks.put(null, source.sink(getIsolationLevel()));
 			}
 			SailSink sink = explicitSinks.get(null);
@@ -790,8 +1103,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			if (op == null && !datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, source.dataset(getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(op);
 			remove(subj, pred, obj, false, datasets.get(op), explicitSinks.get(op), contexts);
@@ -870,10 +1185,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		IsolationLevel level = getIsolationLevel();
 		synchronized (datasets) {
 			if (inferredOnlySink == null) {
-				SailSource branch = branch(IncludeInferred.inferredOnly);
-				inferredOnlyDataset = branch.dataset(level);
-				inferredOnlySink = branch.sink(level);
-				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
+				acquireInferredAndExplicitDatasets(level);
 			}
 			boolean modified = false;
 			if (contexts.length == 0 || contexts.length == 1 && contexts[0] == null) {
@@ -919,10 +1231,11 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		}
 	}
 
-	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink, Resource... contexts)
-			throws SailException {
+	private void add(Resource subj, IRI pred, Value obj, SailDataset dataset, SailSink sink,
+			boolean notifyListeners, Resource... contexts) throws SailException {
+		assert dataset != null || !notifyListeners : "listener notifications require a read view";
 		if (contexts.length == 0 || (contexts.length == 1 && contexts[0] == null)) {
-			if (hasConnectionListeners()) {
+			if (notifyListeners) {
 				if (!hasStatement(dataset, subj, pred, obj, NULL_CTX)) {
 					notifyStatementAdded(vf.createStatement(subj, pred, obj), false);
 				} else if (sink instanceof Changeset && ((Changeset) sink).hasDeprecated(subj, pred, obj, NULL_CTX)) {
@@ -948,7 +1261,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 					contextsToCheck = new Resource[] { ctx };
 				}
 
-				if (hasConnectionListeners()) {
+				if (notifyListeners) {
 					if (!hasStatement(dataset, subj, pred, obj, contextsToCheck)) {
 						notifyStatementAdded(vf.createStatement(subj, pred, obj, ctx), false);
 					} else if (sink instanceof Changeset
@@ -971,10 +1284,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			IsolationLevel level = getIsolationLevel();
 			if (inferredOnlySink == null) {
-				SailSource branch = branch(IncludeInferred.inferredOnly);
-				inferredOnlyDataset = branch.dataset(level);
-				inferredOnlySink = branch.sink(level);
-				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
+				acquireInferredAndExplicitDatasets(level);
 			}
 			removeStatementsInternal(subj, pred, obj, contexts);
 			boolean removed = remove(subj, pred, obj, true, inferredOnlyDataset, inferredOnlySink, contexts);
@@ -1015,8 +1325,10 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			if (!datasets.containsKey(null)) {
 				SailSource source = branch(IncludeInferred.explicitOnly);
-				datasets.put(null, source.dataset(getIsolationLevel()));
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+				datasets.put(null, acquireMutationDataset(source, getIsolationLevel()));
+				if (!explicitSinks.containsKey(null)) {
+					explicitSinks.put(null, source.sink(getIsolationLevel()));
+				}
 			}
 			assert explicitSinks.containsKey(null);
 			if (this.hasConnectionListeners()) {
@@ -1033,10 +1345,7 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 		synchronized (datasets) {
 			if (inferredOnlySink == null) {
 				IsolationLevel level = getIsolationLevel();
-				SailSource branch = branch(IncludeInferred.inferredOnly);
-				inferredOnlyDataset = branch.dataset(level);
-				inferredOnlySink = branch.sink(level);
-				explicitOnlyDataset = branch(IncludeInferred.explicitOnly).dataset(level);
+				acquireInferredAndExplicitDatasets(level);
 			}
 			if (this.hasConnectionListeners()) {
 				remove(null, null, null, true, inferredOnlyDataset, inferredOnlySink, contexts);
@@ -1144,6 +1453,14 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 	 * @throws SailException
 	 */
 	private SailSource branch(IncludeInferred includeinferred) throws SailException {
+		if (!useTransactionReadBranch()) {
+			SailSource retainedSource = switch (includeinferred) {
+			case all -> new UnionSailSource(getInferredSailSource(), getExplicitSailSource());
+			case inferredOnly -> getInferredSailSource();
+			case explicitOnly -> getExplicitSailSource();
+			};
+			return new DelegatingSailSource(retainedSource, false);
+		}
 		boolean active = isActive();
 		IsolationLevel level = getIsolationLevel();
 		boolean isolated = !IsolationLevels.NONE.isCompatibleWith(level);
@@ -1158,43 +1475,49 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return new DelegatingSailSource(explicitOnlyBranch, false);
 		} else if (includeinferred == IncludeInferred.all && active) {
 			// don't actually branch source
-			return new UnionSailSource(store.getInferredSailSource(), store.getExplicitSailSource());
+			return new UnionSailSource(getInferredSailSource(), getExplicitSailSource());
 		} else if (includeinferred == IncludeInferred.inferredOnly && active) {
 			// don't actually branch source
-			return store.getInferredSailSource();
+			return getInferredSailSource();
 		} else if (active) {
 			// don't actually branch source
-			return store.getExplicitSailSource();
+			return getExplicitSailSource();
 		} else if (includeinferred == IncludeInferred.all) {
 			// create a new branch for read operation
-			return new UnionSailSource(store.getInferredSailSource().fork(), store.getExplicitSailSource().fork());
+			return new UnionSailSource(getInferredSailSource().fork(), getExplicitSailSource().fork());
 		} else if (includeinferred == IncludeInferred.inferredOnly) {
 			// create a new branch for read operation
-			return store.getInferredSailSource().fork();
+			return getInferredSailSource().fork();
 		} else {
 			// create a new branch for read operation
-			return store.getExplicitSailSource().fork();
+			return getExplicitSailSource().fork();
 		}
 	}
 
 	private SailDataset datasetForRead(IncludeInferred includeInferred) {
 		IsolationLevel level = getIsolationLevel();
+		return withDatasetAcquisition(level, () -> datasetForReadWithinAdmission(includeInferred, level));
+	}
+
+	private SailDataset datasetForReadWithinAdmission(IncludeInferred includeInferred, IsolationLevel level) {
 		// Only owned Snapshot roots can omit observations for a read without an active transaction.
 		// Active transactions and other stores keep their ordinary source selection and dataset semantics.
-		if (!isActive() && store instanceof SnapshotSailStore snapshotStore) {
+		if (useTransactionReadBranch() && !isActive() && store instanceof SnapshotSailStore snapshotStore) {
 			if (includeInferred == IncludeInferred.all) {
 				SailDataset inferred = null;
 				SailDataset explicit = null;
 				try (SailDatasetSnapshot.Scope ignored = SailDatasetSnapshot.open()) {
-					inferred = snapshotStore.datasetForRead(true, level);
-					explicit = snapshotStore.datasetForRead(false, level);
+					inferred = snapshotStore.datasetForRead(getInferredSailSource(), true, level);
+					explicit = snapshotStore.datasetForRead(getExplicitSailSource(), false, level);
 					return UnionSailDataset.getInstance(inferred, explicit);
 				} catch (RuntimeException | Error failure) {
 					SourceClosingSailDataset.closeAfterFailure(failure, inferred, explicit);
 					throw failure;
 				}
 			}
-			return snapshotStore.datasetForRead(includeInferred == IncludeInferred.inferredOnly, level);
+			boolean inferred = includeInferred == IncludeInferred.inferredOnly;
+			SailSource source = inferred ? getInferredSailSource() : getExplicitSailSource();
+			return snapshotStore.datasetForRead(source, inferred, level);
 		}
 		return SourceClosingSailDataset.open(branch(includeInferred), level);
 	}

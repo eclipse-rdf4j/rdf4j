@@ -533,6 +533,38 @@ class TimeLimitIterationTest {
 				.hasMessage("closed while computing the next element");
 	}
 
+	@Test
+	void theTimeLimitClosesTheIterationBeforeReturning() {
+		AbstractCloseableIteration<String> source = new AbstractCloseableIteration<>() {
+			@Override
+			public boolean hasNext() {
+				return true;
+			}
+
+			@Override
+			public String next() {
+				return "element";
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			protected void handleClose() {
+				// nothing to release
+			}
+		};
+		TimeLimitIteration<String> limited = new ClosingTestTimeLimitIteration(source);
+
+		limited.interrupt();
+
+		assertThat(limited.isClosed()).as("the time limit closes the iteration itself").isTrue();
+		assertThat(source.isClosed()).as("the time limit closes the wrapped iteration before returning").isTrue();
+		assertThatThrownBy(limited::hasNext).isInstanceOf(TimeLimitReached.class);
+	}
+
 	/** The time limit's own exception. */
 	private static final class TimeLimitReached extends RuntimeException {
 		private static final long serialVersionUID = 1L;

@@ -71,6 +71,8 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	private Iterator<BindingSet> candidateRows;
 	private boolean currentLeftMatched;
 	private volatile boolean cancellationRequested;
+	/** An entered evaluator owns any resources still being created before their publication. */
+	private boolean evaluationStarted;
 
 	/**
 	 * @param left      the prepared left operand.
@@ -118,6 +120,9 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	protected BindingSet getNextElement() {
 		try {
 			if (resources == null) {
+				synchronized (lifecycleLock) {
+					evaluationStarted = true;
+				}
 				if (stopIfCancelled()) {
 					return null;
 				}
@@ -206,6 +211,9 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 		boolean published = false;
 		Throwable primaryFailure = null;
 		try {
+			if (stopIfCancelled()) {
+				return;
+			}
 			CloseableIteration<BindingSet> rightIter = right.evaluate(bindings);
 			createdResources.rightIter = rightIter;
 			if (indexedReplay) {
@@ -394,9 +402,16 @@ public class MaterializedReplayJoinIterator extends LookAheadIteration<BindingSe
 	@Override
 	public boolean requestCancellation() {
 		CloseableIteration<?> iteration;
+		boolean closeUnstarted;
 		synchronized (lifecycleLock) {
 			cancellationRequested = true;
 			iteration = activeIteration;
+			closeUnstarted = !evaluationStarted;
+		}
+		if (closeUnstarted) {
+			// No evaluator can have acquired resources. A rejected first consumer call need not enter us again.
+			close();
+			return true;
 		}
 		if (iteration instanceof CooperativeCancellation cancellation) {
 			cancellation.requestCancellation();

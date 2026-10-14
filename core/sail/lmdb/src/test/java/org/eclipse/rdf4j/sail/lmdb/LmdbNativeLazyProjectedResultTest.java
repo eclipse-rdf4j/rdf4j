@@ -27,19 +27,24 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
-/** Native row projection stays lazy internally and materializes when crossing the Sail result boundary. */
+/** Native row projection captures lazy handles at Sail and initializes values at the repository boundary. */
 public class LmdbNativeLazyProjectedResultTest {
 
 	private static final String EX = "http://example.com/";
@@ -73,7 +78,7 @@ public class LmdbNativeLazyProjectedResultTest {
 	}
 
 	@Test
-	public void sailBoundaryMaterializesAndDetachesProjectedRows() {
+	public void repositoryBoundaryMaterializesAndDetachesProjectedRows() {
 		BindingSet first;
 		try (SailRepositoryConnection connection = repository.getConnection();
 				TupleQueryResult rows = connection.prepareTupleQuery(
@@ -92,13 +97,44 @@ public class LmdbNativeLazyProjectedResultTest {
 
 		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(64);
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
-		assert first instanceof NativeProjectedBindingSet;
-		assertThat(((NativeProjectedBindingSet) first).source).isNull();
+		assertThat(((LmdbValue) first.getValue("value")).getValueStoreRevision())
+				.isInstanceOf(ValueStoreRevision.Default.class);
+		repository.shutDown();
 
 		assertThat(first.getValue("value").stringValue()).startsWith("stored literal payload ");
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
 		assertThat(first.getValue("value")).isSameAs(first.getValue("value"));
 		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
+	}
+
+	@Test
+	public void sailBoundaryCapturesProjectedHandlesWithoutLexicalInitialization() {
+		repository.shutDown();
+		repository = new SailRepository(new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)));
+		var query = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s ?value WHERE { ?s <" + EX + "value> ?value }", null);
+		List<BindingSet> retained = new ArrayList<>();
+		try (var connection = repository.getSail().getConnection();
+				var rows = connection.evaluate(query.getTupleExpr(), null, EmptyBindingSet.getInstance(), false)) {
+			while (rows.hasNext()) {
+				BindingSet row = rows.next();
+				assertThat(row).isInstanceOf(NativeProjectedBindingSet.class);
+				assertThat(((NativeProjectedBindingSet) row).source).isNull();
+				for (Binding binding : row) {
+					assertThat(((LmdbValue) binding.getValue()).getValueStoreRevision())
+							.isInstanceOf(ValueStoreRevision.Lazy.class);
+				}
+				retained.add(row);
+			}
+		}
+		assertThat(retained).hasSize(64);
+		assertThat(NativeProjectedBindingSet.CREATED.get()).isEqualTo(64);
+		assertThat(NativeProjectedBindingSet.MATERIALIZED_VALUES.get()).isEqualTo(128);
+		for (BindingSet row : retained) {
+			assertThat(((NativeProjectedBindingSet) row).source).isNull();
+		}
 	}
 
 	@Test

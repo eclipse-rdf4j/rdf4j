@@ -84,6 +84,18 @@ class LmdbSailStorePostCommitFailureTest {
 
 	@Test
 	@Timeout(60)
+	void optionalSynchronousPostCommitFailureRetainsAuthoritativeCommit() throws Exception {
+		exercisePostCommitFailure(false, false, false);
+	}
+
+	@Test
+	@Timeout(60)
+	void optionalAsynchronousPostCommitFailureRetainsAuthoritativeCommit() throws Exception {
+		exercisePostCommitFailure(true, false, false);
+	}
+
+	@Test
+	@Timeout(60)
 	void asynchronousWorkerFailureDuringFlushDoesNotHangAndAllowsSameStoreRecovery() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
 				.setForceSync(true)
@@ -271,7 +283,13 @@ class LmdbSailStorePostCommitFailureTest {
 			}, adjacency.newCommitDelta());
 
 			Throwable commitFailure = capture(() -> write(backing, attempted));
-			assertThat(commitFailure).as("the original post-commit throwable must escape unchanged").isSameAs(injected);
+			if (strict || fatal) {
+				assertThat(commitFailure).as("the original post-commit throwable must escape unchanged")
+						.isSameAs(injected);
+			} else {
+				assertThat(commitFailure).as("optional derived failure must retain the successful authoritative commit")
+						.isNull();
+			}
 			assertThat(failOnce.get()).as("the injected publication callback must run").isTrue();
 			tripleStore.setDirectAdjacencyCommitHooks(delegate, adjacency.newCommitDelta());
 			assertModel(backing, committed);

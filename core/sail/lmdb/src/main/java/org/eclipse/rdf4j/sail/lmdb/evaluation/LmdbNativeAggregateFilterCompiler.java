@@ -622,7 +622,8 @@ abstract class LmdbNativeAggregateFilterCompiler extends LmdbNativeAggregateValu
 			ValueExpr pinned = descriptor.pinnedExpr();
 			Function<NativeExecutionContext, NativeBindingSetValueEvaluator> perEvaluation = executionContext -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(compileContext));
+						.genericContext(
+								() -> EvaluationScopedQueryEvaluationContext.create(compileContext, compilingStrategy));
 				return compileSemanticValue(compilingStrategy, pinned,
 						new SlotAwareQueryEvaluationContext(scoped, layoutSnapshot));
 			};

@@ -370,13 +370,19 @@ final class LmdbNativeExistsIntersection {
 					long hi = i == splits.length ? Long.MAX_VALUE : splits[i];
 					NativeLmdbQuerySource workerSource = sources[i];
 					boolean adjacencyWorker = adjacency;
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool()
-							.submit(() -> adjacencyWorker
-									? mergeAdjacencyRange(workerSource, lo, hi)
-									: new RootIntersectionResult(
-											mergeRange(workerSource, outerSubj, outerPred, outerObj, outerContext, lo,
-													hi),
-											0L)));
+							.submit(() -> {
+								try (var replayScope = replayContext.activate()) {
+									return adjacencyWorker
+											? mergeAdjacencyRange(workerSource, lo, hi)
+											: new RootIntersectionResult(
+													mergeRange(workerSource, outerSubj, outerPred, outerObj,
+															outerContext, lo,
+															hi),
+													0L);
+								}
+							}));
 				}
 				long total = 0;
 				long rootsVisited = 0L;

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
@@ -79,12 +80,16 @@ public abstract class SailQuery extends AbstractParserQuery {
 		SailConnection sailCon = getConnection().getSailConnection();
 		String forcedStrategy = getForcedLmdbExecutionStrategy();
 		if (forcedStrategy == null) {
-			return sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);
+			Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred(), timeout);
+			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
 		}
 		SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 				.set(getParsedQuery().getSourceString(), getQueryType(), forcedStrategy);
 		try {
-			return sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred(), timeout);
+			Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+					getIncludeInferred(), timeout);
+			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
 		} finally {
 			SlowQueryContextHolder.restore(previous);
 		}

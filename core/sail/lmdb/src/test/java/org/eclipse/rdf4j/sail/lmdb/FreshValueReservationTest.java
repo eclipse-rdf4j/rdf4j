@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_env;
 
 import java.io.File;
@@ -25,6 +26,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -44,6 +46,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
+import org.lwjgl.util.lmdb.MDBStat;
 
 class FreshValueReservationTest {
 
@@ -186,10 +189,37 @@ class FreshValueReservationTest {
 				input[i] = factory.createLiteral("value-" + i, factory.createIRI(namespace, "datatype"));
 			}
 			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			long initialMapSize = mapSize(store);
+			AtomicLong projectedBytes = new AtomicLong();
+			store.setMapGrowthRequestListener((kind, bytes, capacityRequired) -> projectedBytes.set(bytes));
 			store.reservePreparedValueClosureCapacity(session, input);
 			long reservedMapSize = mapSize(store);
-			assertTrue(reservedMapSize < (long) namespace.length() * input.length,
-					"reservation must not allocate a copy of the shared namespace for every literal");
+			System.out.println("Shared namespace projection initial=" + initialMapSize + " projected="
+					+ projectedBytes.get() + " reserved=" + reservedMapSize);
+			String shortNamespace = "urn:shared:";
+			long baselineProjection;
+			ValueStore baseline = new ValueStore(new File(directory, "short-namespace"), config);
+			try {
+				Value[] shortInput = new Value[input.length];
+				for (int i = 0; i < shortInput.length; i++) {
+					shortInput[i] = factory.createLiteral("value-" + i, factory.createIRI(shortNamespace, "datatype"));
+				}
+				AtomicLong baselineBytes = new AtomicLong();
+				baseline.setMapGrowthRequestListener((kind, bytes, capacityRequired) -> baselineBytes.set(bytes));
+				ValueStore.FreshValueSession baselineSession = baseline.startFreshValueSessionIfEmpty();
+				assertTrue(baselineSession != null, "both matched projections must select actual fresh reservation");
+				baseline.reservePreparedValueClosureCapacity(baselineSession, shortInput);
+				baselineProjection = baselineBytes.get();
+			} finally {
+				baseline.close();
+			}
+			assertTrue(projectedBytes.get() > baselineProjection, "the longer namespace must contribute native bytes");
+			// The shared dependency contributes one UTF-8 payload, plus leaf/overflow page rounding. Structural
+			// pages per literal and the fullness policy are identical in these matched fresh stores.
+			long namespaceDeltaBound = ValueStore.utf8LengthUpperBound(namespace)
+					- ValueStore.utf8LengthUpperBound(shortNamespace) + 2L * pageSize(store);
+			assertTrue(projectedBytes.get() - baselineProjection <= namespaceDeltaBound,
+					"one shared namespace contribution must be independent of the literal count");
 			long reservedGrowth = store.getBulkMapGrowthCount();
 			long[] ids = persist(store, session, input);
 			assertEquals(reservedGrowth, store.getBulkMapGrowthCount());
@@ -285,6 +315,14 @@ class FreshValueReservationTest {
 		store.commitFreshValueTransaction(session);
 		store.publishPreparedValues(assignment.publication());
 		return Arrays.copyOf(assignment.ids(), input.length);
+	}
+
+	private static long pageSize(ValueStore store) throws Exception {
+		try (TxnManager.Txn txn = store.getTxnManager().createReadTxnUntracked(); MemoryStack stack = stackPush()) {
+			MDBStat stat = MDBStat.malloc(stack);
+			LmdbUtil.E(mdb_env_stat(mdb_txn_env(txn.get()), stat));
+			return stat.ms_psize();
+		}
 	}
 
 	private static long mapSize(ValueStore store) throws Exception {

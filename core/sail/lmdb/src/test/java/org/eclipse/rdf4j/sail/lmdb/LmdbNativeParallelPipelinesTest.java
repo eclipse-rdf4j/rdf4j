@@ -812,10 +812,15 @@ public class LmdbNativeParallelPipelinesTest {
 	@Test
 	public void earlyCloseCancelsWorkersAndLeavesStoreUsable() {
 		long cancelled = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult result = connection.prepareTupleQuery(chain("")).evaluate()) {
-			assertThat(result.hasNext()).isTrue();
-			result.next();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			// Probe/hedge execution may consume a complete parallel candidate before its caller sees one row.
+			// This lifecycle assertion owns the actual parallel producer that the caller closes early.
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(chain(""));
+			query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+			try (TupleQueryResult result = query.evaluate()) {
+				assertThat(result.hasNext()).isTrue();
+				result.next();
+			}
 		}
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(1L);
 		assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get()).isEqualTo(cancelled + 1L);

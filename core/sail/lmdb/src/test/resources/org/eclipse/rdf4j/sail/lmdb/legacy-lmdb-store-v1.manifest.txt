@@ -1,0 +1,13 @@
+format=RDF4J LMDB legacy store fixture v1
+source=pre-repair LmdbCrashRecoveryTest acknowledged child-process image
+producer_os=Mac OS X 26.6.2
+producer_arch=aarch64
+producer_java=26
+producer_lwjgl=3.3.6+1
+producer_lmdb=0.9.33 (observed from the LWJGL 3.3.6 native binding)
+included=store/namespaces.dat,store/triples/data.mdb,store/values/data.mdb
+excluded=ephemeral lock.mdb and process-lock files
+file=store/namespaces.dat	29	41d2eaac5439e8ff78fdaddd41a42b63b557ab6d4cae4fab39ae0972e45feeb9
+file=store/triples/data.mdb	278528	4e8e225fae3f2012bc69304ffcbfafa5590185834e61ce48b16b17afbf2be44c
+file=store/values/data.mdb	229376	11f45012e2a46e770e57a9f115d0f8041865e1934709d8b49424afc430547eea
+archive_sha256=a0c67e2bfe7d2c36e238e8b50c226b96cd330a7e874dfd57a2832fc27cd270af

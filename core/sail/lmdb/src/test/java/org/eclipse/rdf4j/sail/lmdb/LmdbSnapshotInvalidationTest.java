@@ -173,6 +173,7 @@ public class LmdbSnapshotInvalidationTest {
 
 	@ParameterizedTest
 	@CsvSource({ "false,statements", "true,statements", "false,contexts", "true,contexts",
+			"false,namespaces", "true,namespaces",
 			"false,terms", "true,terms", "true,ordered" })
 	public void prefetchedDatasetRowsRejectInvalidatedSnapshot(boolean experimental, String path) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
@@ -184,6 +185,7 @@ public class LmdbSnapshotInvalidationTest {
 			IRI predicate = vf.createIRI("urn:prefetched:predicate");
 			try (NotifyingSailConnection connection = store.getConnection()) {
 				connection.begin();
+				connection.setNamespace("prefetched", "urn:prefetched:namespace:");
 				connection.addStatement(vf.createIRI("urn:prefetched:subject"), predicate,
 						vf.createTripleTerm(vf.createIRI("urn:prefetched:inner"), predicate,
 								vf.createLiteral("canonical component")),
@@ -194,6 +196,7 @@ public class LmdbSnapshotInvalidationTest {
 			try (SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT);
 					CloseableIteration<?> rows = switch (path) {
 					case "contexts" -> dataset.getContextIDs();
+					case "namespaces" -> dataset.getNamespaces();
 					case "terms" -> dataset.getTriples(null, null, null);
 					case "ordered" -> dataset.getStatements(StatementOrder.S, null, null, null);
 					default -> dataset.getStatements(null, null, null);

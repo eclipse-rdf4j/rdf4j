@@ -128,8 +128,9 @@ final class LmdbNativeParallelPrefixRuns {
 				AtomicReference<Throwable> failure = new AtomicReference<>();
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						try {
+						try (var replayScope = replayContext.activate()) {
 							Integer range;
 							// abort check: once any worker failed (or the query thread was interrupted while
 							// draining), remaining ranges are abandoned instead of scanned to completion

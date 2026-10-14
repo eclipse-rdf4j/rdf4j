@@ -43,7 +43,7 @@ public class SnapshotSailStore implements SailStore {
 	 * {@link SailSource} of {@link SailStore#getInferredSailSource()} .
 	 */
 	private final SailSourceBranch inferredAutoFlush;
-	private final ReentrantLock snapshotAcquisition = new ReentrantLock();
+	private final ReentrantLock snapshotAcquisition = new SailModelCleanup.Lock();
 
 	/**
 	 * Wraps an {@link SailStore}, tracking changes in {@link ModelFactory} instances.
@@ -67,24 +67,64 @@ public class SnapshotSailStore implements SailStore {
 	}
 
 	private SailDataset datasetInSnapshot(boolean inferred, IsolationLevel level, boolean observe) {
-		SailDatasetSnapshot.DatasetPair pair = SailDatasetSnapshot.current().getOrCreate(this, () -> {
-			// Admission may wait for older datasets to close; their cleanup takes the root lock.
+		SailDatasetSnapshot.DatasetPair pair = SailDatasetSnapshot.current()
+				.getOrCreate(this,
+						() -> acquireDatasetPair(level, observe));
+		return pair.borrow(!inferred);
+	}
+
+	private SailDatasetSnapshot.DatasetPair acquireDatasetPair(IsolationLevel level, boolean observe) {
+		int retries = 0;
+		while (true) {
+			// Physical reader admission can wait for older datasets whose cleanup needs the root lock.
 			prepareDataset(level);
+			SailClosable admission = explicitAutoFlush.beginDatasetAcquisition(level);
+			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
 			SailDataset explicit = null;
 			SailDataset inferredDataset = null;
-			snapshotAcquisition.lock();
-			try {
-				explicit = explicitAutoFlush.datasetDirect(level, observe);
-				inferredDataset = inferredAutoFlush.datasetDirect(level, observe);
-				return new SailDatasetSnapshot.DatasetPair(explicit, inferredDataset);
-			} catch (RuntimeException | Error failure) {
-				SourceClosingSailDataset.closeAfterFailure(failure, explicit, inferredDataset);
-				throw failure;
-			} finally {
-				snapshotAcquisition.unlock();
+			Throwable failure = null;
+			try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+				snapshotAcquisition.lock();
+				try {
+					explicit = explicitAutoFlush.datasetDirect(level, observe);
+					inferredDataset = inferredAutoFlush.datasetDirect(level, observe);
+				} catch (RuntimeException | Error acquisitionFailure) {
+					failure = acquisitionFailure;
+				} finally {
+					snapshotAcquisition.unlock();
+				}
+			} catch (RuntimeException | Error cleanupFailure) {
+				failure = addFailure(failure, cleanupFailure);
 			}
-		});
-		return pair.borrow(!inferred);
+			try {
+				admission.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addFailure(failure, closeFailure);
+			}
+			if (failure == null) {
+				return new SailDatasetSnapshot.DatasetPair(explicit, inferredDataset);
+			}
+			SourceClosingSailDataset.closeAfterFailure(failure, explicit, inferredDataset);
+			if (failure instanceof SailSource.RetryableDatasetAcquisitionException && outermost
+					&& failure.getSuppressed().length == 0) {
+				SailSourceBranch.awaitDatasetAcquisitionRetry(retries++, failure);
+				continue;
+			}
+			if (failure instanceof RuntimeException runtime) {
+				throw runtime;
+			}
+			throw (Error) failure;
+		}
+	}
+
+	private static Throwable addFailure(Throwable failure, Throwable later) {
+		if (failure == null) {
+			return later;
+		}
+		if (failure != later) {
+			failure.addSuppressed(later);
+		}
+		return failure;
 	}
 
 	/**
@@ -147,6 +187,10 @@ public class SnapshotSailStore implements SailStore {
 	 */
 	SailDataset datasetForRead(boolean inferred, IsolationLevel level) {
 		SailSource source = inferred ? getInferredSailSource() : getExplicitSailSource();
+		return datasetForRead(source, inferred, level);
+	}
+
+	SailDataset datasetForRead(SailSource source, boolean inferred, IsolationLevel level) {
 		SailSourceBranch root = inferred ? inferredAutoFlush : explicitAutoFlush;
 		return source == root ? root.datasetWithoutObservations(level)
 				: SourceClosingSailDataset.open(source.fork(), level);

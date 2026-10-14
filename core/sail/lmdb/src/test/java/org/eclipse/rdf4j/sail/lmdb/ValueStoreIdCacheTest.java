@@ -27,6 +27,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -35,16 +36,161 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
 
 class ValueStoreIdCacheTest {
 
 	private static final SimpleValueFactory VALUES = SimpleValueFactory.getInstance();
+
+	@Test
+	void nativeIdentityLookupCannotCrossAConcurrentWriterAdmission(@TempDir File directory) throws Exception {
+		try (CountingValueStore store = store(directory); var reader = Executors.newSingleThreadExecutor()) {
+			CountDownLatch identityEntered = new CountDownLatch(1);
+			CountDownLatch releaseIdentity = new CountDownLatch(1);
+			AtomicBoolean firstRead = new AtomicBoolean(true);
+			Thread writer = Thread.currentThread();
+			LmdbBNode value = new LmdbBNode(store.getRevision(), "racing-native-identity") {
+				@Override
+				public long getInternalID() {
+					if (Thread.currentThread() != writer && firstRead.compareAndSet(true, false)) {
+						identityEntered.countDown();
+						try {
+							assertTrue(releaseIdentity.await(5, TimeUnit.SECONDS));
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(interrupted);
+						}
+					}
+					return super.getInternalID();
+				}
+			};
+			var lookup = reader.submit(() -> store.getId(value));
+			try {
+				assertTrue(identityEntered.await(5, TimeUnit.SECONDS));
+				store.startTransaction(true);
+				long pendingId = store.storeValue(value);
+				assertNotEquals(LmdbValue.UNKNOWN_ID, pendingId);
+				releaseIdentity.countDown();
+				assertEquals(LmdbValue.UNKNOWN_ID, lookup.get(5, TimeUnit.SECONDS),
+						"a lookup admitted before the writer must not return its subsequently assigned pending ID");
+			} finally {
+				releaseIdentity.countDown();
+				store.rollback();
+			}
+			assertEquals(LmdbValue.UNKNOWN_ID, store.getId(value));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void foreignPendingNativeIdentityCannotCrossCommittedReadBoundary(boolean commit,
+			@TempDir File directory) throws Exception {
+		Value pending;
+		long id;
+		try (CountingValueStore store = store(directory); var reader = Executors.newSingleThreadExecutor()) {
+			Value existing = store.createBNode("existing-native");
+			long existingId = persist(store, existing);
+			pending = store.createBNode("pending-native");
+			store.startTransaction(true);
+			id = store.storeValue(pending);
+			assertEquals(LmdbValue.UNKNOWN_ID, reader.submit(() -> store.getId(pending)).get(5, TimeUnit.SECONDS));
+			assertEquals(existingId, reader.submit(() -> store.getId(existing)).get(5, TimeUnit.SECONDS));
+			if (commit) {
+				store.commit();
+			} else {
+				store.rollback();
+			}
+			long expected = commit ? id : LmdbValue.UNKNOWN_ID;
+			assertEquals(expected, reader.submit(() -> store.getId(pending)).get(5, TimeUnit.SECONDS));
+			store.clearCaches();
+			assertEquals(expected, store.getId(pending));
+			if (commit) {
+				store.startTransaction(true);
+				store.gcIds(Set.of(id), new ArrayList<>());
+				store.commit();
+				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(pending));
+			}
+		}
+		try (CountingValueStore reopened = store(directory)) {
+			persist(reopened, VALUES.createBNode("subsequent-native"));
+			assertEquals(LmdbValue.UNKNOWN_ID, reopened.getId(pending));
+			assertNotEquals(LmdbValue.UNKNOWN_ID, reopened.getId(VALUES.createBNode("existing-native")));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void foreignThreadCreationUsesTheActiveWriterWithoutExposingItToReads(boolean bulk, boolean nested,
+			@TempDir File directory) throws Exception {
+		IRI subject = VALUES.createIRI("urn:writer-handoff:first");
+		IRI predicate = VALUES.createIRI("urn:writer-handoff:predicate");
+		IRI object = VALUES.createIRI("urn:writer-handoff:object:first");
+		List<Value> requested = new ArrayList<>(List.of(subject, predicate, object));
+		if (nested) {
+			requested.add(VALUES.createTripleTerm(subject, predicate, object));
+			requested.add(VALUES.createLiteral("shared datatype first", VALUES.createIRI("urn:writer-handoff:type")));
+			requested.add(VALUES.createLiteral("shared datatype second", VALUES.createIRI("urn:writer-handoff:type")));
+		}
+		Value[] values = requested.toArray(Value[]::new);
+		long[] ids = new long[values.length];
+		try (CountingValueStore store = store(directory); var executor = Executors.newSingleThreadExecutor()) {
+			store.startTransaction(true);
+			executor.submit(() -> {
+				if (bulk) {
+					store.storeValues(values, ids, values.length);
+				} else {
+					for (int i = 0; i < values.length; i++) {
+						ids[i] = store.storeValue(values[i]);
+					}
+				}
+				assertEquals(LmdbValue.UNKNOWN_ID, store.getId(subject),
+						"ordinary foreign reads must not borrow the pending writer after creation returns");
+				store.commit();
+				return null;
+			}).get(5, TimeUnit.SECONDS);
+			store.clearCaches();
+			for (int i = 0; i < values.length; i++) {
+				assertEquals(ids[i], store.getId(values[i]), "committed handoff value " + i);
+			}
+		}
+		try (CountingValueStore reopened = store(directory)) {
+			for (int i = 0; i < values.length; i++) {
+				assertEquals(ids[i], reopened.getId(values[i]), "reopened handoff value " + i);
+			}
+		}
+	}
+
+	@Test
+	void committedBatchKeepsEverySharedNamespaceLookupAfterIdleRollback(@TempDir File directory) throws Exception {
+		Value[] values = { VALUES.createIRI("urn:interrupted-commit:first"),
+				VALUES.createIRI("urn:interrupted-commit:predicate"),
+				VALUES.createIRI("urn:interrupted-commit:object:first") };
+		long[] ids = new long[values.length];
+		try (CountingValueStore store = store(directory)) {
+			store.startTransaction(true);
+			store.storeValues(values, ids, values.length);
+			store.commit();
+			store.rollback();
+			store.clearCaches();
+			for (int i = 0; i < values.length; i++) {
+				assertEquals(ids[i], store.getId(values[i]), "committed batch value " + i);
+			}
+		}
+		try (CountingValueStore reopened = store(directory)) {
+			for (int i = 0; i < values.length; i++) {
+				assertEquals(ids[i], reopened.getId(values[i]), "reopened batch value " + i);
+			}
+		}
+	}
 
 	@Test
 	void freshFullIriResolvesFactoryPreservedNamespaceSplit(@TempDir File directory) throws Exception {

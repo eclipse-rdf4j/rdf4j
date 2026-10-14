@@ -993,11 +993,25 @@ class LmdbDirectAdjacencyCommitTest {
 	}
 
 	@Test
-	void emptyCommittedRevisionsChargeTheirQueueMetadata() throws Exception {
-		store.pauseApplierForTest(true);
+	void noOpWriterDoesNotCreateAdjacencyRevisionOrQueueEntry() throws Exception {
+		long revision = tripleStore.getDataRevision();
+		long nativeCommit = tripleStore.getNativeCommitGeneration();
 		tripleStore.startTransaction();
 		tripleStore.commit();
-		store.applyCommitted(tripleStore.drainDirectAdjacencyCommitDelta());
+		assertThat(tripleStore.getDataRevision()).isEqualTo(revision);
+		assertThat(tripleStore.getNativeCommitGeneration()).isEqualTo(nativeCommit);
+		assertThat(tripleStore.drainDirectAdjacencyCommitDelta()).isNull();
+		assertThat(store.queuedCommitsForTest()).isZero();
+		assertThat(store.backlogBytes()).isZero();
+	}
+
+	@Test
+	void emptyCollectorRevisionsChargeTheirQueueMetadata() throws Exception {
+		store.pauseApplierForTest(true);
+		long revision = tripleStore.getDataRevision();
+		LmdbDirectAdjacencyCommitDelta collector = store.newCommitDelta();
+		collector.begin(revision);
+		store.applyCommitted(collector.seal(revision), false);
 		assertThat(store.queuedCommitsForTest()).isEqualTo(1);
 		assertThat(store.backlogBytes()).as("revision handles and queue nodes must be bounded too").isPositive();
 		assertThat(store.buildNowForTest()).isTrue();

@@ -85,7 +85,7 @@ class LmdbAutogrowSingleCommitIT {
 		repository.init();
 
 		try {
-			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open(store.getBackingStore());
 					SailSink sink = store.getBackingStore()
 							.getExplicitSailSource()
 							.sink(IsolationLevels.READ_COMMITTED)) {
@@ -96,10 +96,10 @@ class LmdbAutogrowSingleCommitIT {
 				sink.approveAll(secondBatch);
 				sink.flush();
 
-				assertThat(resizeLogs.valueResizeMessages())
+				assertThat(resizeLogs.growth.valueResizes())
 						.as("each separately approved prepared batch must reserve its own value footprint; resizes=%s",
 								resizeLogs.valueResizeMessages())
-						.hasSizeGreaterThan(1);
+						.isGreaterThan(1);
 				assertThat(countRows(repository)).isEqualTo(2 * SEPARATE_BATCH_ROWS);
 			}
 		} finally {
@@ -123,20 +123,20 @@ class LmdbAutogrowSingleCommitIT {
 		firstBatch.forEach(statement -> expectedTripleTerms.add((TripleTerm) statement.getObject()));
 		ValueStore valueStore = (ValueStore) store.getBackingStore().getValueFactory();
 		try {
-			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open();
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open(store.getBackingStore());
 					SailSink sink = store.getBackingStore()
 							.getExplicitSailSource()
 							.sink(IsolationLevels.READ_COMMITTED)) {
 				sink.approveAll(firstBatch);
 				sink.flush();
-				int resizesBeforePinnedReader = resizeLogs.valueResizeMessages().size();
+				long resizesBeforePinnedReader = resizeLogs.growth.valueResizes();
 				long predicateId = valueStore.getId(PREDICATE);
 				try (RecordIterator heldTriples = valueStore.getTripleTerms(-1, predicateId, -1)) {
 					long[] firstQuad = heldTriples.next();
 					assertThat(firstQuad).as("the committed first prepared batch must be readable").isNotNull();
 					sink.approveAll(secondBatch);
 					sink.flush();
-					assertThat(resizeLogs.valueResizeMessages().size())
+					assertThat(resizeLogs.growth.valueResizes())
 							.as("the second prepared batch must resize while a native value reader is held")
 							.isGreaterThan(resizesBeforePinnedReader);
 
@@ -173,20 +173,20 @@ class LmdbAutogrowSingleCommitIT {
 		Model expected = new LinkedHashModel();
 		expected.addAll(firstBatch);
 		expected.addAll(secondBatch);
-		try (ResizeLogCapture resizeLogs = ResizeLogCapture.open()) {
+		try (ResizeLogCapture resizeLogs = ResizeLogCapture.open(store.getBackingStore())) {
 			SailSink failedSink = store.getBackingStore()
 					.getExplicitSailSource()
 					.sink(IsolationLevels.READ_COMMITTED);
 			try {
 				failedSink.approveAll(firstBatch);
-				int resizesAfterFirstBatch = resizeLogs.valueResizeMessages().size();
+				long resizesAfterFirstBatch = resizeLogs.growth.valueResizes();
 				assertThat(resizesAfterFirstBatch)
 						.as("the first prepared batch must reserve its own value footprint")
 						.isGreaterThan(0);
 				failedSink.approveAll(secondBatch);
-				assertThat(resizeLogs.valueResizeMessages())
+				assertThat(resizeLogs.growth.valueResizes())
 						.as("the retry must begin after a prepared-batch value checkpoint")
-						.hasSizeGreaterThan(resizesAfterFirstBatch);
+						.isGreaterThan(resizesAfterFirstBatch);
 			} finally {
 				failedSink.close();
 			}
@@ -221,8 +221,9 @@ class LmdbAutogrowSingleCommitIT {
 		repository.init();
 
 		try {
-			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open()) {
+			try (ResizeLogCapture resizeLogs = ResizeLogCapture.open(store.getBackingStore())) {
 				int initialRows = seedQuotedTripleTerms(repository, ROWS);
+				long seedValueResizes = resizeLogs.growth.valueResizes();
 				List<String> beforeGrowth = resizeLogs.resizeMessages();
 				resizeLogs.clear();
 				if (holdReader) {
@@ -249,9 +250,9 @@ class LmdbAutogrowSingleCommitIT {
 					}
 				}
 
-				assertThat(beforeGrowth)
+				assertThat(seedValueResizes)
 						.as("preparing the quoted seed batch must grow the value map")
-						.anyMatch(message -> message.contains("Resizing map from"));
+						.isPositive();
 				assertThat(countRows(repository)).as("a successful single commit must preserve every input row")
 						.isEqualTo(initialRows + ROWS);
 			}
@@ -386,6 +387,8 @@ class LmdbAutogrowSingleCommitIT {
 
 	private static final class ResizeLogCapture implements AutoCloseable {
 
+		private final LmdbMapGrowthCapture growth;
+
 		private final Logger tripleLogger = (Logger) LoggerFactory.getLogger(TripleStore.class);
 		private final Logger valueLogger = (Logger) LoggerFactory.getLogger(ValueStore.class);
 		private final Level previousTripleLevel = tripleLogger.getLevel();
@@ -395,7 +398,8 @@ class LmdbAutogrowSingleCommitIT {
 		private final ListAppender<ILoggingEvent> tripleAppender = new ListAppender<>();
 		private final ListAppender<ILoggingEvent> valueAppender = new ListAppender<>();
 
-		private ResizeLogCapture() {
+		private ResizeLogCapture(LmdbSailStore store) {
+			growth = new LmdbMapGrowthCapture(store);
 			tripleLogger.setLevel(Level.DEBUG);
 			tripleLogger.setAdditive(false);
 			valueLogger.setLevel(Level.INFO);
@@ -406,8 +410,8 @@ class LmdbAutogrowSingleCommitIT {
 			valueLogger.addAppender(valueAppender);
 		}
 
-		private static ResizeLogCapture open() {
-			return new ResizeLogCapture();
+		private static ResizeLogCapture open(LmdbSailStore store) {
+			return new ResizeLogCapture(store);
 		}
 
 		private List<String> resizeMessages() {
@@ -428,6 +432,7 @@ class LmdbAutogrowSingleCommitIT {
 		}
 
 		private void clear() {
+			growth.clear();
 			tripleAppender.list.clear();
 			valueAppender.list.clear();
 		}

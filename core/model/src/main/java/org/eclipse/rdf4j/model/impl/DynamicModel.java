@@ -25,6 +25,7 @@ import java.util.ConcurrentModificationException;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -826,8 +827,11 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		IRI predicate = (IRI) canonicalValue(statement.getPredicate());
 		Value object = canonicalValue(statement.getObject());
 		Resource context = (Resource) canonicalValue(statement.getContext());
-		if (subject == statement.getSubject() && predicate == statement.getPredicate()
-				&& object == statement.getObject() && context == statement.getContext()) {
+		// Only the factory's concrete representation has a known structural key policy. Subclasses and other supplied
+		// implementations can override equality/hashCode, so replacing them could collapse distinct statement keys.
+		if (statement.getClass() != GenericStatement.class
+				|| subject == statement.getSubject() && predicate == statement.getPredicate()
+						&& object == statement.getObject() && context == statement.getContext()) {
 			return statement;
 		}
 		return SimpleValueFactory.getInstance().createStatement(subject, predicate, object, context);
@@ -846,19 +850,66 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 		if (value == null) {
 			return null;
 		}
+		if (value instanceof TripleTerm triple) {
+			return canonicalTriple(triple);
+		}
 		if (canonicalValues == null) {
 			canonicalValues = new HashMap<>();
 		}
-		if (value instanceof TripleTerm triple) {
-			Resource subject = (Resource) canonicalValue(triple.getSubject());
-			IRI predicate = (IRI) canonicalValue(triple.getPredicate());
-			Value object = canonicalValue(triple.getObject());
-			if (subject != triple.getSubject() || predicate != triple.getPredicate() || object != triple.getObject()) {
-				value = SimpleValueFactory.getInstance().createTripleTerm(subject, predicate, object);
-			}
-		}
 		Value existing = canonicalValues.putIfAbsent(value, value);
 		return existing == null ? value : existing;
+	}
+
+	/** Canonicalizes a term DAG without imposing structural hashing or equality on caller-supplied terms. */
+	private Value canonicalTriple(TripleTerm root) {
+		Map<TripleTerm, Value> resolved = new IdentityHashMap<>();
+		Set<TripleTerm> visiting = Collections.newSetFromMap(new IdentityHashMap<>());
+		Deque<CanonicalTerm> pending = new ArrayDeque<>();
+		pending.push(new CanonicalTerm(root));
+		visiting.add(root);
+		while (!pending.isEmpty()) {
+			CanonicalTerm frame = pending.peek();
+			if (frame.child < 3) {
+				Value child = frame.original[frame.child];
+				if (child instanceof TripleTerm nested) {
+					Value existing = resolved.get(nested);
+					if (existing != null) {
+						frame.canonical[frame.child++] = existing;
+					} else {
+						if (!visiting.add(nested)) {
+							throw new IllegalArgumentException("Cyclic triple term");
+						}
+						pending.push(new CanonicalTerm(nested));
+					}
+				} else {
+					frame.canonical[frame.child++] = canonicalValue(child);
+				}
+			} else {
+				Value canonical = frame.term;
+				if (frame.original[0] != frame.canonical[0] || frame.original[1] != frame.canonical[1]
+						|| frame.original[2] != frame.canonical[2]) {
+					canonical = SimpleValueFactory.getInstance()
+							.createTripleTerm((Resource) frame.canonical[0],
+									(IRI) frame.canonical[1], frame.canonical[2]);
+				}
+				resolved.put(frame.term, canonical);
+				visiting.remove(frame.term);
+				pending.pop();
+			}
+		}
+		return resolved.get(root);
+	}
+
+	private static final class CanonicalTerm {
+		private final TripleTerm term;
+		private final Value[] original;
+		private final Value[] canonical = new Value[3];
+		private int child;
+
+		private CanonicalTerm(TripleTerm term) {
+			this.term = term;
+			original = new Value[] { term.getSubject(), term.getPredicate(), term.getObject() };
+		}
 	}
 
 	private void recordCanonicalRemoval(Statement removedStatement) {
@@ -894,8 +945,24 @@ public class DynamicModel extends AbstractSet<Statement> implements Model {
 			return 0L;
 		}
 		if (value instanceof TripleTerm triple) {
-			return 1L + canonicalRemovalWeight(triple.getSubject()) + canonicalRemovalWeight(triple.getPredicate())
-					+ canonicalRemovalWeight(triple.getObject());
+			Set<Value> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+			Deque<Value> pending = new ArrayDeque<>();
+			pending.push(triple);
+			long weight = 0L;
+			while (!pending.isEmpty()) {
+				Value current = pending.pop();
+				if (!seen.add(current)) {
+					continue;
+				}
+				if (current instanceof TripleTerm term) {
+					pending.push(term.getSubject());
+					pending.push(term.getPredicate());
+					pending.push(term.getObject());
+				} else {
+					weight++;
+				}
+			}
+			return weight;
 		}
 		return 1L;
 	}

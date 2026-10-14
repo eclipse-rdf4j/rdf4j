@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static java.util.concurrent.TimeUnit.MILLISECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -29,8 +30,10 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -96,6 +99,44 @@ public class SailSourceModelTest extends ModelTest {
 				executor.shutdownNow();
 			}
 		}
+	}
+
+	@Test
+	void datasetRolloverReleasesOldReaderBeforePublishingWrites() {
+		assertReaderReleasedBeforeFlush(false);
+	}
+
+	@Test
+	void modelCloseReleasesOldReaderBeforePublishingWrites() {
+		assertReaderReleasedBeforeFlush(true);
+	}
+
+	private void assertReaderReleasedBeforeFlush(boolean closing) {
+		SailSource source = mock(SailSource.class);
+		SailDataset dataset = mock(SailDataset.class);
+		SailSink sink = mock(SailSink.class);
+		AtomicBoolean readerClosed = new AtomicBoolean();
+		when(source.dataset(IsolationLevels.NONE)).thenReturn(dataset);
+		when(source.sink(IsolationLevels.NONE)).thenReturn(sink);
+		when(dataset.getStatements(null, null, null)).thenReturn(new EmptyIteration<>());
+		doAnswer(invocation -> {
+			readerClosed.set(true);
+			return null;
+		}).when(dataset).close();
+		doAnswer(invocation -> {
+			assertThat(readerClosed).as("publication may require growth that drains this reader").isTrue();
+			return null;
+		}).when(sink).flush();
+		try (SailSourceModel model = new SailSourceModel(source)) {
+			model.contains(RDF.TYPE, RDF.VALUE, RDF.TYPE);
+			model.add(RDF.TYPE, RDF.VALUE, RDF.TYPE);
+			if (closing) {
+				model.close();
+			} else {
+				model.contains(RDF.TYPE, RDF.VALUE, RDF.TYPE);
+			}
+		}
+		verify(sink).flush();
 	}
 
 	@Test

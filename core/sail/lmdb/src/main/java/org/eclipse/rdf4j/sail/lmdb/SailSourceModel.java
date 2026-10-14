@@ -15,10 +15,13 @@ import java.util.Collection;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -28,6 +31,7 @@ import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.AbstractMemoryOverflowModel;
 import org.eclipse.rdf4j.model.impl.AbstractModel;
 import org.eclipse.rdf4j.model.impl.EmptyModel;
 import org.eclipse.rdf4j.model.impl.FilteredModel;
@@ -44,23 +48,64 @@ import org.slf4j.LoggerFactory;
 /**
  * A {@link Model} that keeps the {@link Statement}s in an {@link SailSource}.
  */
-class SailSourceModel extends AbstractModel {
+class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 	private static final Logger logger = LoggerFactory.getLogger(SailSourceModel.class);
 
+	private boolean closed;
+
 	public SailSourceModel(SailStore store, Model bulk) {
 		this(store);
-		sink().approveAll(bulk, bulk.contexts());
-		size = bulk.size();
-		sink.flush();
+		importBulk(bulk);
 	}
 
-	private final class StatementIterator implements Iterator<Statement> {
+	private void importBulk(Model bulk) {
+		Iterator<Statement> iterator = null;
+		Throwable failure = null;
+		long imported = 0;
+		Set<Statement> batch = new HashSet<>();
+		Set<Resource> contexts = new HashSet<>();
+		try {
+			iterator = bulk.iterator();
+			SailSink target = sink();
+			while (iterator.hasNext()) {
+				Statement statement = iterator.next();
+				batch.add(statement);
+				contexts.add(statement.getContext());
+				imported++;
+				if (batch.size() >= Math.max(1, AbstractMemoryOverflowModel.BATCH_SIZE)) {
+					target.approveAll(batch, contexts);
+					// Approval batches alone do not bound the writer's pending dictionary publication state.
+					// This private candidate is adopted only after the complete import succeeds.
+					target.flush();
+					batch.clear();
+					contexts.clear();
+				}
+			}
+			if (!batch.isEmpty()) {
+				target.approveAll(batch, contexts);
+			}
+			for (Namespace namespace : bulk.getNamespaces()) {
+				target.setNamespace(namespace.getPrefix(), namespace.getName());
+			}
+			target.flush();
+			size = imported;
+		} catch (Throwable e) {
+			failure = e;
+		}
+		failure = closeInputIterator(iterator, failure);
+		if (failure != null) {
+			failure = closePartialResources(failure);
+			throw propagate(failure);
+		}
+	}
+
+	private final class StatementIterator implements Iterator<Statement>, AutoCloseable {
 
 		final CloseableIteration<? extends Statement> stmts;
-		private final AtomicBoolean closed = new AtomicBoolean();
 
 		Statement last;
+		private final AtomicBoolean closed = new AtomicBoolean();
 
 		StatementIterator(CloseableIteration<? extends Statement> closeableIteration) {
 			this.stmts = closeableIteration;
@@ -69,6 +114,9 @@ class SailSourceModel extends AbstractModel {
 
 		@Override
 		public boolean hasNext() {
+			if (closed.get()) {
+				return false;
+			}
 			try {
 				if (stmts.hasNext()) {
 					return true;
@@ -76,12 +124,17 @@ class SailSourceModel extends AbstractModel {
 				close();
 				return false;
 			} catch (SailException e) {
-				throw new ModelException(e);
+				throw fail(e);
+			} catch (RuntimeException | Error e) {
+				throw fail(e);
 			}
 		}
 
 		@Override
 		public Statement next() {
+			if (closed.get()) {
+				throw new NoSuchElementException();
+			}
 			try {
 				last = stmts.next();
 				if (last == null) {
@@ -89,7 +142,39 @@ class SailSourceModel extends AbstractModel {
 				}
 				return last;
 			} catch (SailException e) {
+				throw fail(e);
+			} catch (RuntimeException | Error e) {
+				throw fail(e);
+			}
+		}
+
+		private RuntimeException fail(Throwable failure) {
+			if (closed.compareAndSet(false, true)) {
+				try {
+					stmts.close();
+				} catch (Throwable closeFailure) {
+					addSuppressed(failure, closeFailure);
+				} finally {
+					openStatementIterators.remove(this);
+				}
+			}
+			if (failure instanceof SailException) {
+				return new ModelException(failure);
+			}
+			return propagate(failure);
+		}
+
+		@Override
+		public void close() {
+			if (!closed.compareAndSet(false, true)) {
+				return;
+			}
+			try {
+				stmts.close();
+			} catch (SailException e) {
 				throw new ModelException(e);
+			} finally {
+				openStatementIterators.remove(this);
 			}
 		}
 
@@ -100,16 +185,6 @@ class SailSourceModel extends AbstractModel {
 			}
 			SailSourceModel.this.remove(last);
 			last = null;
-		}
-
-		void close() {
-			if (closed.compareAndSet(false, true)) {
-				try {
-					stmts.close();
-				} finally {
-					openStatementIterators.remove(this);
-				}
-			}
 		}
 	}
 
@@ -135,13 +210,63 @@ class SailSourceModel extends AbstractModel {
 
 	@Override
 	public void closeIterator(Iterator<?> iter) {
-		super.closeIterator(iter);
-		if (iter instanceof StatementIterator) {
-			try {
-				((StatementIterator) iter).close();
-			} catch (SailException e) {
-				throw new ModelException(e);
+		Throwable failure = null;
+		try {
+			super.closeIterator(iter);
+		} catch (Throwable e) {
+			failure = e;
+		}
+		if (failure != null) {
+			throw propagate(failure);
+		}
+	}
+
+	@Override
+	public void forEach(Consumer<? super Statement> action) {
+		Objects.requireNonNull(action);
+		Iterator<Statement> iterator = iterator();
+		Throwable failure = null;
+		try {
+			while (iterator.hasNext()) {
+				action.accept(iterator.next());
 			}
+		} catch (Throwable e) {
+			failure = e;
+		}
+		if (iterator instanceof AutoCloseable closeable) {
+			failure = closeResource(closeable, failure);
+		}
+		if (failure != null) {
+			throw propagate(failure);
+		}
+	}
+
+	@Override
+	public void close() {
+		SailSink currentSink;
+		SailDataset currentDataset;
+		synchronized (this) {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			currentSink = sink;
+			currentDataset = dataset;
+			sink = null;
+			dataset = null;
+		}
+		Throwable failure = closeOpenStatementIterators();
+		failure = closeResource(currentDataset, failure);
+		if (currentSink != null) {
+			try {
+				currentSink.flush();
+			} catch (Throwable e) {
+				failure = addSuppressed(failure, e);
+			}
+			failure = closeResource(currentSink, failure);
+		}
+		if (failure != null) {
+			throw propagate(failure);
 		}
 	}
 
@@ -302,11 +427,10 @@ class SailSourceModel extends AbstractModel {
 
 		HashSet<Statement> tempSet = new HashSet<>();
 		HashSet<Resource> contexts = new HashSet<>();
-		SailSink sink = sink();
 
 		for (Statement statement : statements) {
 			if (tempSet.size() >= 1024) {
-				sink.approveAll(tempSet, contexts);
+				sink().approveAll(tempSet, contexts);
 				if (size >= 0) {
 					size += tempSet.size();
 				}
@@ -322,7 +446,7 @@ class SailSourceModel extends AbstractModel {
 		}
 
 		if (!tempSet.isEmpty()) {
-			sink.approveAll(tempSet, contexts);
+			sink().approveAll(tempSet, contexts);
 			if (size >= 0) {
 				size += tempSet.size();
 			}
@@ -451,6 +575,9 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private synchronized SailSink sink() throws SailException {
+		if (closed) {
+			throw new IllegalStateException("SailSourceModel is closed");
+		}
 		if (sink == null) {
 			sink = source.sink(level);
 		}
@@ -458,31 +585,25 @@ class SailSourceModel extends AbstractModel {
 	}
 
 	private synchronized SailDataset dataset() throws SailException {
+		if (closed) {
+			throw new IllegalStateException("SailSourceModel is closed");
+		}
 		if (sink != null) {
+			SailSink pendingSink = sink;
+			SailDataset staleDataset = dataset;
+			sink = null;
+			dataset = null;
 			Throwable failure = closeOpenStatementIterators();
+			// The pending publication can require map growth. Release our obsolete reader before it drains views.
+			failure = closeResource(staleDataset, failure);
 			try {
-				sink.flush();
-			} catch (RuntimeException | Error e) {
-				failure = suppress(failure, e);
+				pendingSink.flush();
+			} catch (Throwable e) {
+				failure = addSuppressed(failure, e);
 			}
-			try {
-				sink.close();
-			} catch (RuntimeException | Error e) {
-				failure = suppress(failure, e);
-			} finally {
-				sink = null;
-			}
-			if (dataset != null) {
-				try {
-					dataset.close();
-				} catch (RuntimeException | Error e) {
-					failure = suppress(failure, e);
-				} finally {
-					dataset = null;
-				}
-			}
+			failure = closeResource(pendingSink, failure);
 			if (failure != null) {
-				rethrow(failure);
+				throw propagate(failure);
 			}
 		}
 		if (dataset == null) {
@@ -496,28 +617,64 @@ class SailSourceModel extends AbstractModel {
 		for (StatementIterator iterator : openStatementIterators.toArray(StatementIterator[]::new)) {
 			try {
 				iterator.close();
-			} catch (RuntimeException | Error e) {
-				failure = suppress(failure, e);
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addSuppressed(failure, closeFailure);
 			}
 		}
 		return failure;
 	}
 
-	private static Throwable suppress(Throwable first, Throwable next) {
-		if (first == null) {
-			return next;
+	private Throwable closeInputIterator(Iterator<?> iterator, Throwable failure) {
+		if (iterator == null) {
+			return failure;
 		}
-		if (first != next) {
-			first.addSuppressed(next);
+		try {
+			super.closeIterator(iterator);
+		} catch (Throwable closeFailure) {
+			failure = addSuppressed(failure, closeFailure);
 		}
-		return first;
+		return failure;
 	}
 
-	private static void rethrow(Throwable failure) {
-		if (failure instanceof RuntimeException runtimeException) {
-			throw runtimeException;
+	private Throwable closePartialResources(Throwable failure) {
+		SailSink partialSink = sink;
+		SailDataset partialDataset = dataset;
+		sink = null;
+		dataset = null;
+		failure = closeResource(partialSink, failure);
+		return closeResource(partialDataset, failure);
+	}
+
+	private static Throwable closeResource(AutoCloseable resource, Throwable failure) {
+		if (resource == null) {
+			return failure;
 		}
-		throw (Error) failure;
+		try {
+			resource.close();
+		} catch (Throwable closeFailure) {
+			return addSuppressed(failure, closeFailure);
+		}
+		return failure;
+	}
+
+	private static Throwable addSuppressed(Throwable failure, Throwable suppressed) {
+		if (failure == null) {
+			return suppressed;
+		}
+		if (failure != suppressed) {
+			failure.addSuppressed(suppressed);
+		}
+		return failure;
+	}
+
+	private static RuntimeException propagate(Throwable failure) {
+		if (failure instanceof Error error) {
+			throw error;
+		}
+		if (failure instanceof RuntimeException runtimeException) {
+			return runtimeException;
+		}
+		return new ModelException(failure);
 	}
 
 	private boolean contains(SailDataset dataset, Resource subj, IRI pred, Value obj, Resource... contexts)

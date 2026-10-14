@@ -91,7 +91,7 @@ class LegacySemanticWriterLifetimeTest {
 			});
 			try {
 				for (int index = 0; index < ids.size(); index++) {
-					assertThat(values.id2tripleTerm(ids.get(index), null)).isEqualTo(terms.get(index));
+					assertThat(values.getValue(ids.get(index))).isEqualTo(terms.get(index));
 				}
 				assertThat(opens).as("the actual owned-writer decoder must open native term cursors")
 						.hasValueGreaterThan(0);

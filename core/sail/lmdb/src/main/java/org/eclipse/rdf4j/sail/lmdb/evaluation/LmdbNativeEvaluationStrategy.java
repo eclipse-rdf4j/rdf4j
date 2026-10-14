@@ -264,6 +264,17 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return view;
 	}
 
+	QueryEvaluationContext evaluationContext(QueryEvaluationContext structural) {
+		return new EvaluationScopedQueryEvaluationContext(structural, valueCapturer());
+	}
+
+	NativeLmdbQuerySource captureEvaluationValues(NativeLmdbQuerySource source) {
+		if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
+			synthetic.executionContext().installValueCapturer(valueCapturer());
+		}
+		return source;
+	}
+
 	ValueFactory valueFactory() {
 		return tripleSourceArg.getValueFactory();
 	}

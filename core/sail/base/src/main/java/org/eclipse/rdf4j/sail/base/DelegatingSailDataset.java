@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.base;
 
 import java.util.Comparator;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -32,7 +33,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * @author James Leigh
  */
 @Experimental
-public abstract class DelegatingSailDataset implements SailDataset {
+public abstract class DelegatingSailDataset implements SailDataset, TreeOwnedDataset {
 
 	public final SailDataset delegate;
 
@@ -64,13 +65,40 @@ public abstract class DelegatingSailDataset implements SailDataset {
 	}
 
 	@Override
+	public void cursorsCloseBeforeDataset() {
+		if (delegate instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
+	}
+
+	@Override
+	public Function<Value, Value> getValuePreparer() {
+		return delegate.getValuePreparer();
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		return delegate.getValueCapturer();
+	}
+
+	@Override
 	public void close() throws SailException {
 		delegate.close();
 	}
 
 	@Override
+	public void abandonUnobserved() throws SailException {
+		delegate.abandonUnobserved();
+	}
+
+	@Override
 	public boolean isSnapshotCurrent() {
 		return delegate.isSnapshotCurrent();
+	}
+
+	@Override
+	public boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return delegate.isSnapshotCompatibleWithCurrentAdmission();
 	}
 
 	@Override

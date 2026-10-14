@@ -28,6 +28,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ConcurrentModificationException;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -43,6 +44,7 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractStatement;
 import org.junit.jupiter.api.Test;
 
 public class DynamicModelTest {
@@ -634,6 +636,139 @@ public class DynamicModelTest {
 		}
 
 		assertThat(model.canonicalValueCacheSize()).isLessThanOrEqualTo(1_024);
+	}
+
+	@Test
+	void suppliedStandardStatementsKeepCanonicalTerms() {
+		DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Statement first = values.createStatement(values.createIRI("urn:standard:s"),
+				values.createIRI("urn:standard:p"), values.createLiteral("first"), values.createIRI("urn:standard:c"));
+		Statement second = values.createStatement(values.createIRI("urn:standard:s"),
+				values.createIRI("urn:standard:p"), values.createLiteral("second"), values.createIRI("urn:standard:c"));
+		assertThat(second.getSubject()).isNotSameAs(first.getSubject());
+		assertThat(second.getPredicate()).isNotSameAs(first.getPredicate());
+		assertThat(second.getContext()).isNotSameAs(first.getContext());
+		assertThat(model.addAll(List.of(first, second))).isTrue();
+		Iterator<Statement> stored = model.iterator();
+		Statement canonicalFirst = stored.next();
+		Statement canonicalSecond = stored.next();
+		assertThat(canonicalSecond.getSubject()).isSameAs(canonicalFirst.getSubject());
+		assertThat(canonicalSecond.getPredicate()).isSameAs(canonicalFirst.getPredicate());
+		assertThat(canonicalSecond.getContext()).isSameAs(canonicalFirst.getContext());
+		assertThat(model.remove(first)).isTrue();
+		assertThat(model.remove(second)).isTrue();
+		assertThat(model).isEmpty();
+	}
+
+	@Test
+	void abstractStatementSubclassRetainsItsSuppliedKeyPolicy() {
+		for (boolean bulk : new boolean[] { false, true }) {
+			DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+			ValueFactory values = SimpleValueFactory.getInstance();
+			model.add(values.createIRI("urn:identity:s"), values.createIRI("urn:identity:p"),
+					values.createLiteral("value"), values.createIRI("urn:identity:c"));
+			class IdentityStatement extends AbstractStatement {
+				private final Resource subject = values.createIRI("urn:identity:s");
+				private final IRI predicate = values.createIRI("urn:identity:p");
+				private final Value object = values.createLiteral("value");
+				private final Resource context = values.createIRI("urn:identity:c");
+
+				@Override
+				public Resource getSubject() {
+					return subject;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return predicate;
+				}
+
+				@Override
+				public Value getObject() {
+					return object;
+				}
+
+				@Override
+				public Resource getContext() {
+					return context;
+				}
+
+				@Override
+				public boolean equals(Object other) {
+					return this == other;
+				}
+
+				@Override
+				public int hashCode() {
+					return System.identityHashCode(this);
+				}
+			}
+			Statement first = new IdentityStatement();
+			Statement second = new IdentityStatement();
+			if (bulk) {
+				assertThat(model.addAll(List.of(first, second))).isTrue();
+			} else {
+				assertThat(model.add(first)).isTrue();
+				assertThat(model.add(second)).isTrue();
+			}
+			assertThat(model).hasSize(3);
+			Iterator<Statement> stored = model.iterator();
+			stored.next();
+			assertThat(stored.next()).isSameAs(first);
+			assertThat(stored.next()).isSameAs(second);
+			assertThat(model.remove(first)).isTrue();
+			assertThat(model.remove(second)).isTrue();
+			assertThat(model).hasSize(1);
+			assertThat(model.getUpgradedModel()).isNull();
+		}
+	}
+
+	@Test
+	void deepSharedTermCanonicalizationPreservesCustomStatementKeysAndRemoval() {
+		for (boolean shared : new boolean[] { false, true }) {
+			DynamicModel model = new DynamicModel(new LinkedHashModelFactory());
+			ValueFactory values = SimpleValueFactory.getInstance();
+			IRI predicate = values.createIRI("urn:custom:p");
+			model.add(values.createIRI("urn:custom:s"), predicate, values.createLiteral("seed"));
+			Value nested = values.createLiteral("leaf");
+			for (int depth = 0; depth < (shared ? 1024 : 16384); depth++) {
+				Resource subject = shared && nested instanceof Resource resource ? resource
+						: values.createIRI("urn:custom:term");
+				nested = values.createTripleTerm(subject, predicate, nested);
+			}
+			Value object = nested;
+			Resource subject = values.createIRI("urn:custom:s");
+			Statement supplied = new Statement() {
+				@Override
+				public Resource getSubject() {
+					return subject;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return predicate;
+				}
+
+				@Override
+				public Value getObject() {
+					return object;
+				}
+
+				@Override
+				public Resource getContext() {
+					return null;
+				}
+			};
+			assertThat(model.add(supplied)).isTrue();
+			Iterator<Statement> statements = model.iterator();
+			statements.next();
+			assertThat(statements.next()).isSameAs(supplied);
+			assertThat(model.remove(supplied)).isTrue();
+			assertThat(model).hasSize(1);
+			model.clear();
+			assertThat(model.canonicalValueCacheSize()).isZero();
+		}
 	}
 
 	@Test

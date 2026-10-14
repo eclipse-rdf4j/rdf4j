@@ -188,6 +188,13 @@ public abstract class AbstractSailConnection implements SailConnection {
 		}
 	}
 
+	/** Enforces the prepared transaction contract before a subclass accepts application mutations. */
+	protected final void verifyNotPrepared() {
+		if (txnPrepared) {
+			throw new IllegalStateException("A prepared transaction cannot accept further mutations");
+		}
+	}
+
 	@Override
 	public void begin() throws SailException {
 		begin(sailBase.getDefaultIsolationLevel());
@@ -460,7 +467,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		try {
 			activeThread.setRelease(Thread.currentThread());
 			verifyIsOpen();
-			return hasStatementInternal(subj, pred, obj, includeInferred, contexts);
+			return executeReadOperation(() -> hasStatementInternal(subj, pred, obj, includeInferred, contexts));
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -486,7 +493,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 		try {
 			activeThread.setRelease(Thread.currentThread());
 			verifyIsOpen();
-			return sizeInternal(contexts);
+			return executeReadOperation(() -> sizeInternal(contexts));
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -498,6 +505,11 @@ public abstract class AbstractSailConnection implements SailConnection {
 
 	protected final boolean transactionActive() {
 		return txnActive;
+	}
+
+	/** Whether the active transaction has completed public preparation. */
+	protected final boolean transactionPrepared() {
+		return txnPrepared;
 	}
 
 	/**
@@ -933,7 +945,7 @@ public abstract class AbstractSailConnection implements SailConnection {
 			activeThread.setRelease(Thread.currentThread());
 
 			verifyIsOpen();
-			return getNamespaceInternal(prefix);
+			return executeReadOperation(() -> getNamespaceInternal(prefix));
 		} finally {
 			try {
 				activeThread.setRelease(null);
@@ -1117,6 +1129,24 @@ public abstract class AbstractSailConnection implements SailConnection {
 	}
 
 	protected abstract long sizeInternal(Resource... contexts) throws SailException;
+
+	/**
+	 * Executes a public scalar read operation. Implementations may use this hook to ensure that a stable read result is
+	 * returned when a backing snapshot is invalidated while the operation is running.
+	 *
+	 * @param operation the scalar read operation
+	 * @param <T>       the result type
+	 * @return the read result
+	 * @throws SailException if the read operation fails
+	 */
+	protected <T> T executeReadOperation(ReadOperation<T> operation) throws SailException {
+		return operation.execute();
+	}
+
+	@FunctionalInterface
+	protected interface ReadOperation<T> {
+		T execute() throws SailException;
+	}
 
 	protected abstract void startTransactionInternal() throws SailException;
 

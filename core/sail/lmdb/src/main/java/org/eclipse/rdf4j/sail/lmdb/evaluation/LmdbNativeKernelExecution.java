@@ -1079,6 +1079,7 @@ final class LmdbNativeKernelExecution {
 			throws IOException {
 		// With janino codegen disabled, the interpreted tier (M4) executes the same lowered IR through
 		// LmdbNativeKernelInterpreter.forRows. Only when BOTH tiers are off does the route decline.
+		boolean parallelAttempt = false;
 		NativeLmdbQuerySource.NativeProbe probe = null;
 		JaninoKernel kernel = null;
 		LmdbNativeKernelScanner scanner = null;
@@ -1288,11 +1289,13 @@ final class LmdbNativeKernelExecution {
 
 			// Workers create their own probes and adjacency views. The query-thread views are used only to choose the
 			// partitioning root and are closed by this method if the parallel cursor is accepted.
+			parallelAttempt = parallelExecution != ParallelExecution.DISABLE;
 			RowCursor parallel = parallelExecution == ParallelExecution.DISABLE ? null
 					: LmdbNativeParallelKernelRows.tryOpen(lowered, views, variableViews, domains, arg, row,
 							originalExpr,
 							workerKernelFactory(requestedTier, interpretedVariants, observedRowsForVariants,
 									LmdbNativeKernelInterpreter::forRows));
+			parallelAttempt = false;
 			if (parallel != null) {
 				String parallelRoute = parallelRowRoute(interpretedVariants, distinctSlots != null);
 				OPENED.incrementAndGet();
@@ -1364,6 +1367,10 @@ final class LmdbNativeKernelExecution {
 			hashReservation = null;
 			return cursor;
 		} catch (RuntimeException problem) {
+			if (parallelAttempt) {
+				// The parallel invocation owns clean declines; an escaping exception is an actual execution outcome.
+				throw problem;
+			}
 			LmdbNativeJaninoCodegen.rethrowValidationFailure(problem);
 			if (probe != null) {
 				probe.close();

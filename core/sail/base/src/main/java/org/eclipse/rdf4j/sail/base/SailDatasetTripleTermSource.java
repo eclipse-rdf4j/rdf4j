@@ -18,6 +18,7 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -222,6 +223,16 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	@Override
 	public ValueFactory getValueFactory() {
 		return vf;
+	}
+
+	@Override
+	public Function<Value, Value> getValuePreparer() {
+		return dataset.getValuePreparer();
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		return dataset.getValueCapturer();
 	}
 
 	@Override

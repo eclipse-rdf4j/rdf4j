@@ -192,7 +192,13 @@ final class LmdbValueMaterializingIteration extends AbstractCloseableIteration<B
 				// The caller polls immediately after traversal and closes on the reader thread, outside sourceLock.
 				return null;
 			}
-			return source.next();
+			BindingSet next = source.next();
+			// Capturing native handles still traverses the live source; lexical initialization may outlive it.
+			if (next instanceof NativeProjectedBindingSet nativeRow) {
+				nativeRow.collectMaterializationValues(ignored -> {
+				});
+			}
+			return next;
 		}
 	}
 

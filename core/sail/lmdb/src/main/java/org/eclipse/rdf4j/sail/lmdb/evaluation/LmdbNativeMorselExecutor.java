@@ -31,7 +31,7 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 
 	final NativeCancellationToken cancellation;
 	private final ArrayBlockingQueue<T> output;
-	private final CountDownLatch finished;
+	private final NativeExecutionContext.WorkerTasks finished;
 	private final int workers;
 	private volatile Throwable failure;
 	private boolean started;
@@ -43,7 +43,7 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 			throw new IllegalArgumentException("invalid parallel exchange dimensions");
 		this.workers = workers;
 		output = new ArrayBlockingQueue<>(queueCapacity);
-		finished = new CountDownLatch(workers);
+		finished = new NativeExecutionContext.WorkerTasks(workers);
 		cancellation = new NativeCancellationToken(Objects.requireNonNull(parent, "parent"));
 	}
 
@@ -58,14 +58,18 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 		try {
 			for (; submitted < workers; submitted++) {
 				int index = submitted;
+				var replayContext = NativeExecutionContext.captureWorkerContext();
 				executor.execute(() -> {
-					try {
-						if (!stopped())
-							task.run(index, this);
-					} catch (Throwable problem) {
-						fail(problem);
-					} finally {
-						finished.countDown();
+					try (var worker = finished.enter(() -> {
+					}, this::fail)) {
+						try {
+							worker.activate(replayContext);
+							if (!stopped()) {
+								task.run(index, this);
+							}
+						} catch (Throwable problem) {
+							fail(problem);
+						}
 					}
 				});
 			}
@@ -173,8 +177,10 @@ final class LmdbNativeMorselExecutor<T> implements AutoCloseable {
 
 	@Override
 	public void close() throws IOException {
-		if (closed)
+		if (closed) {
+			awaitWorkers();
 			return;
+		}
 		closed = true;
 		stop();
 		awaitWorkers();

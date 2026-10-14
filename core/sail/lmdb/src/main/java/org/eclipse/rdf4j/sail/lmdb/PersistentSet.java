@@ -26,6 +26,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_renew;
 import static org.lwjgl.util.lmdb.LMDB.mdb_del;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_stat;
 import static org.lwjgl.util.lmdb.LMDB.mdb_strerror;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_begin;
 
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
+import org.lwjgl.util.lmdb.MDBStat;
 import org.lwjgl.util.lmdb.MDBVal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -66,16 +68,37 @@ class PersistentSet<T extends Serializable> extends AbstractSet<T> {
 	}
 
 	public synchronized void clear() {
-		try {
-			if (factory.writeTxn == 0) {
+		boolean startedWriter = factory.writeTxn == 0;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			// start a write transaction
+			if (startedWriter) {
 				E(mdb_txn_begin(factory.env, NULL, 0, factory.writeTxnPp));
 				factory.writeTxn = factory.writeTxnPp.get(0);
 			}
-			// The writer belongs to every set in this factory. Preserve pending sibling updates.
-			E(mdb_drop(factory.writeTxn, dbi, false));
-			factory.commit();
-		} catch (Exception e) {
-			throw new RuntimeException(e);
+			// The cached size can describe an aborted writer or another wrapper for this named DB. Check the
+			// authoritative count while holding the native writer before making an empty DB dirty with mdb_drop.
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(factory.writeTxn, dbi, stat));
+			if (stat.ms_entries() == 0 && startedWriter) {
+				factory.abort();
+			} else {
+				if (stat.ms_entries() != 0) {
+					E(mdb_drop(factory.writeTxn, dbi, false));
+				}
+				factory.commit();
+			}
+		} catch (Exception | Error failure) {
+			try {
+				factory.abort();
+			} catch (RuntimeException | Error cleanupFailure) {
+				if (cleanupFailure != failure) {
+					failure.addSuppressed(cleanupFailure);
+				}
+			}
+			if (failure instanceof Error error) {
+				throw error;
+			}
+			throw new RuntimeException(failure);
 		}
 		size = 0;
 	}

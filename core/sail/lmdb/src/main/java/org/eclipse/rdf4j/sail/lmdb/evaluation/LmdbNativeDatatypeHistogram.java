@@ -588,18 +588,21 @@ final class LmdbNativeDatatypeHistogram implements QueryEvaluationStep {
 				List<Future<Map<IRI, long[]>>> futures = new ArrayList<>(workers);
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource workerSource = sources[w];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
-						Map<IRI, long[]> local = new HashMap<>();
-						DatatypeResolver resolver = new DatatypeResolver(workerSource, null);
-						LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
-						Integer range;
-						while ((range = queue.poll()) != null) {
-							long[] lo = range == 0 ? null : splits[range - 1];
-							long[] hi = range == splits.length ? null : splits[range];
-							collectRange(workerSource, resolver, literalHeaders, lo, hi, local);
+						try (var replayScope = replayContext.activate()) {
+							Map<IRI, long[]> local = new HashMap<>();
+							DatatypeResolver resolver = new DatatypeResolver(workerSource, null);
+							LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch();
+							Integer range;
+							while ((range = queue.poll()) != null) {
+								long[] lo = range == 0 ? null : splits[range - 1];
+								long[] hi = range == splits.length ? null : splits[range];
+								collectRange(workerSource, resolver, literalHeaders, lo, hi, local);
+							}
+							literalHeaders.flush(resolver, local);
+							return local;
 						}
-						literalHeaders.flush(resolver, local);
-						return local;
 					}));
 				}
 				Map<IRI, long[]> merged = new HashMap<>();

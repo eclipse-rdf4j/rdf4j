@@ -1808,7 +1808,7 @@ final class LmdbNativeLeapfrogJoin {
 		private final java.util.concurrent.ArrayBlockingQueue<long[]> output;
 		private final java.util.concurrent.atomic.AtomicReference<Throwable> failure = new java.util.concurrent.atomic.AtomicReference<>();
 		private final java.util.concurrent.atomic.AtomicBoolean cancelled = new java.util.concurrent.atomic.AtomicBoolean();
-		private final java.util.concurrent.CountDownLatch tasks;
+		private final NativeExecutionContext.WorkerTasks tasks;
 		private final LmdbNativeParallelPipelines.TaskReservation reservation;
 		private final NativeLmdbQuerySource.ParallelSource[] sources;
 		private final int workers;
@@ -1935,7 +1935,7 @@ final class LmdbNativeLeapfrogJoin {
 				this.freeSlots[d] = levels[d].slot;
 			}
 			this.output = new java.util.concurrent.ArrayBlockingQueue<>(workers * 2);
-			this.tasks = new java.util.concurrent.CountDownLatch(workers);
+			this.tasks = new NativeExecutionContext.WorkerTasks(workers, reservation::close);
 
 			long[] candidates = levels[0].values;
 			long[] candidateMults = levels[0].multiplicities;
@@ -1956,9 +1956,10 @@ final class LmdbNativeLeapfrogJoin {
 				for (int w = 0; w < workers; w++) {
 					NativeLmdbQuerySource.ParallelSource workerSource = sources[w];
 					MaskedFilter[] ownFilters = workerFilters[w];
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					java.util.concurrent.Future<?> ignored = LmdbNativeParallelPipelines.pool()
 							.submit(() -> runWorker(plan, workerSource, ownFilters, entrySlots, firstSlot, candidates,
-									candidateMults, ranges));
+									candidateMults, ranges, replayContext));
 					submitted++;
 				}
 			} finally {
@@ -1979,62 +1980,80 @@ final class LmdbNativeLeapfrogJoin {
 
 		private void runWorker(LeapfrogPlan sharedPlan, NativeLmdbQuerySource.ParallelSource workerSource,
 				MaskedFilter[] ownFilters, long[] entrySlots, int firstSlot, long[] candidates, long[] candidateMults,
-				java.util.concurrent.ConcurrentLinkedQueue<int[]> ranges) {
-			try (workerSource) {
-				// the plan and its frontier cache are shared: cached frontiers are immutable, and worker scans
-				// happen against snapshot-sibling sources of the same store snapshot
-				LeapfrogPlan workerPlan = sharedPlan;
-				RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base,
-						consumerRow.exactValuesMetrics, consumerRow.cancellation);
-				workerRow.memoryScope = consumerRow.memoryScope;
-				for (int i = 0; i < entrySlots.length; i++) {
-					workerRow.slots[i] = entrySlots[i];
+				java.util.concurrent.ConcurrentLinkedQueue<int[]> ranges,
+				NativeExecutionContext.WorkerContext replayContext) {
+			try (var worker = tasks.enter(() -> {
+				try {
+					closeWorkerFilters(new MaskedFilter[][] { ownFilters }, failure.get());
+				} finally {
+					workerSource.close();
 				}
-				workerRow.recomputeBoundMask();
-				int width = freeSlots.length;
-				long[] page = newPage(width);
-				int rows = 0;
-				int[] range;
-				while ((range = ranges.poll()) != null && !cancelled.get()) {
-					for (int i = range[0]; i < range[1] && !cancelled.get(); i++) {
-						long candidate = candidates[i];
-						long candidateMultiplicity = candidateMults == null ? 1 : candidateMults[i];
-						int mark = workerRow.mark();
-						if (!workerRow.bind(firstSlot, candidate)) {
-							workerRow.rollback(mark);
-							continue;
-						}
-						try (LeapfrogCursor cursor = new LeapfrogCursor(workerPlan, workerRow, false, ownFilters)) {
-							while (cursor.next()) {
-								for (long m = 0; m < candidateMultiplicity; m++) {
-									int base = 1 + rows * width;
-									for (int s = 0; s < width; s++) {
-										page[base + s] = workerRow.slots[freeSlots[s]];
-									}
-									rows++;
-									if (rows == PAGE_ROWS) {
-										page[0] = rows;
-										publish(page);
-										page = newPage(width);
-										rows = 0;
+			}, problem -> {
+				Throwable primary = failure.get();
+				if (primary == null && failure.compareAndSet(null, problem)) {
+					primary = problem;
+				} else {
+					primary = failure.get();
+				}
+				if (primary != problem) {
+					primary.addSuppressed(problem);
+				}
+				cancelled.set(true);
+			})) {
+				try {
+					worker.activate(replayContext);
+					// the plan and its frontier cache are shared: cached frontiers are immutable, and worker scans
+					// happen against snapshot-sibling sources of the same store snapshot
+					LeapfrogPlan workerPlan = sharedPlan;
+					RowState workerRow = new RowState(workerSource, consumerRow.layout, consumerRow.base,
+							consumerRow.exactValuesMetrics, consumerRow.cancellation);
+					workerRow.memoryScope = consumerRow.memoryScope;
+					for (int i = 0; i < entrySlots.length; i++) {
+						workerRow.slots[i] = entrySlots[i];
+					}
+					workerRow.recomputeBoundMask();
+					int width = freeSlots.length;
+					long[] page = newPage(width);
+					int rows = 0;
+					int[] range;
+					while ((range = ranges.poll()) != null && !cancelled.get()) {
+						for (int i = range[0]; i < range[1] && !cancelled.get(); i++) {
+							long candidate = candidates[i];
+							long candidateMultiplicity = candidateMults == null ? 1 : candidateMults[i];
+							int mark = workerRow.mark();
+							if (!workerRow.bind(firstSlot, candidate)) {
+								workerRow.rollback(mark);
+								continue;
+							}
+							try (LeapfrogCursor cursor = new LeapfrogCursor(workerPlan, workerRow, false, ownFilters)) {
+								while (cursor.next()) {
+									for (long m = 0; m < candidateMultiplicity; m++) {
+										int base = 1 + rows * width;
+										for (int s = 0; s < width; s++) {
+											page[base + s] = workerRow.slots[freeSlots[s]];
+										}
+										rows++;
+										if (rows == PAGE_ROWS) {
+											page[0] = rows;
+											publish(page);
+											page = newPage(width);
+											rows = 0;
+										}
 									}
 								}
 							}
+							workerRow.rollback(mark);
 						}
-						workerRow.rollback(mark);
+					}
+					if (rows > 0 && !cancelled.get()) {
+						page[0] = rows;
+						publish(page);
+					}
+				} catch (Throwable problem) {
+					if (failure.compareAndSet(null, problem)) {
+						cancelled.set(true);
 					}
 				}
-				if (rows > 0 && !cancelled.get()) {
-					page[0] = rows;
-					publish(page);
-				}
-			} catch (Throwable problem) {
-				if (failure.compareAndSet(null, problem)) {
-					cancelled.set(true);
-				}
-			} finally {
-				closeWorkerFilters(new MaskedFilter[][] { ownFilters }, failure.get());
-				taskFinished();
 			}
 		}
 
@@ -2048,9 +2067,6 @@ final class LmdbNativeLeapfrogJoin {
 
 		private void taskFinished() {
 			tasks.countDown();
-			if (tasks.getCount() == 0) {
-				reservation.close();
-			}
 		}
 
 		boolean next() throws IOException {

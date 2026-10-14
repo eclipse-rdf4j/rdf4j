@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetSnapshot;
 import org.eclipse.rdf4j.sail.base.SailSink;
@@ -142,7 +143,7 @@ class LmdbMixedPlaneSnapshotTest {
 			});
 			assertTrue(started.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			awaitReaderAdmission(acquiring.get());
-			assertEquals(availableTriples - 2, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+			assertEquals(availableTriples - 1, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
 			assertTrue(pendingRead.cancel(true));
 			assertTrue(finished.await(DIAGNOSTIC_TIMEOUT_SECONDS, TimeUnit.SECONDS));
 			assertTrue(failure.get() instanceof SailException);
@@ -161,7 +162,7 @@ class LmdbMixedPlaneSnapshotTest {
 	}
 
 	@Test
-	void failedRootAcquisitionReusesPhysicalPairWithoutMoreAdmission(@TempDir File directory) throws Exception {
+	void failedRootAcquisitionReleasesReadersBeforeOnePairedRetry(@TempDir File directory) throws Exception {
 		String previousPinning = System.getProperty(PINNING_PROPERTY);
 		System.setProperty(PINNING_PROPERTY, "true");
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc"));
@@ -181,14 +182,24 @@ class LmdbMixedPlaneSnapshotTest {
 						SailSource inferred = roots.getInferredSailSource()) {
 					gate.failInferredAcquisition.set(true);
 					assertThrows(SailException.class, () -> explicit.dataset(IsolationLevels.SNAPSHOT));
-					assertEquals(availableTriples - 2, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
-					TxnManager.Txn[] fillers = triples.createReadTxnPinnedFamily(availableTriples - 2, () -> 0L);
+					assertEquals(availableTriples, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+					assertEquals(availableDictionary, dictionary.availableReadTxnSlots(TxnManager.POOL_SIZE, 0));
+					assertEquals(Long.MAX_VALUE, triples.minPinnedSnapshotRevision());
+					assertEquals(Long.MAX_VALUE, dictionary.minPinnedSnapshotRevision());
+					TxnManager.Txn[] fillers = triples.createReadTxnPinnedFamily(availableTriples - 1, () -> 0L);
+					TxnManager.Txn[] dictionaryFillers = dictionary
+							.createReadTxnPinnedFamily(availableDictionary - 1, () -> 0L);
 					try (SailDataset acquired = explicit.dataset(IsolationLevels.SNAPSHOT)) {
 						assertEquals(0, acquired.getStatementCount(null, null, null));
 						assertEquals(0, triples.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
-								"A retry must reuse the retained physical pair without reserving another family");
+								"The retry must consume exactly one paired triple reader");
+						assertEquals(0, dictionary.availableReadTxnSlots(TxnManager.POOL_SIZE, 0),
+								"The retry must consume exactly one paired dictionary reader");
 					} finally {
 						for (TxnManager.Txn filler : fillers) {
+							filler.close();
+						}
+						for (TxnManager.Txn filler : dictionaryFillers) {
 							filler.close();
 						}
 					}
@@ -577,6 +588,16 @@ class LmdbMixedPlaneSnapshotTest {
 		@Override
 		public SailSource fork() {
 			return new InterleavingSource(delegate.fork(), inferred, gate);
+		}
+
+		@Override
+		public SailSource fork(Object writeOwner) {
+			return new InterleavingSource(delegate.fork(writeOwner), inferred, gate);
+		}
+
+		@Override
+		public SailClosable beginDatasetAcquisition(IsolationLevel level) {
+			return delegate.beginDatasetAcquisition(level);
 		}
 
 		@Override

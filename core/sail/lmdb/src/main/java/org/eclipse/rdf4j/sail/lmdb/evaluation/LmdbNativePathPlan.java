@@ -1130,6 +1130,7 @@ final class PathParallelExpansion implements AutoCloseable {
 		int submitted = 0;
 		try {
 			for (int i = 0; i < workers.length; i++) {
+				workers[i].replayContext = NativeExecutionContext.captureWorkerContext();
 				futures[i] = LmdbNativeParallelPipelines.pool().submit(workers[i]);
 				submitted++;
 			}
@@ -1370,6 +1371,7 @@ final class PathParallelExpansion implements AutoCloseable {
 	}
 
 	private final class PathWorker implements Runnable {
+		NativeExecutionContext.WorkerContext replayContext;
 		final int index;
 		final NativeLmdbQuerySource.ParallelSource source;
 		final ArrayBlockingQueue<PathLevelTask> input = new ArrayBlockingQueue<>(1);
@@ -1387,7 +1389,9 @@ final class PathParallelExpansion implements AutoCloseable {
 		public void run() {
 			boolean readySignalled = false;
 			try {
-				probe = source.newProbe();
+				try (var replayScope = replayContext.activate()) {
+					probe = source.newProbe();
+				}
 				ready.countDown();
 				readySignalled = true;
 				while (true) {
@@ -1396,7 +1400,7 @@ final class PathParallelExpansion implements AutoCloseable {
 						return;
 					}
 					boolean failed = false;
-					try {
+					try (var replayScope = replayContext.activate()) {
 						task.results[index] = expandSlice(task);
 					} catch (Throwable failure) {
 						task.failures[index] = failure;

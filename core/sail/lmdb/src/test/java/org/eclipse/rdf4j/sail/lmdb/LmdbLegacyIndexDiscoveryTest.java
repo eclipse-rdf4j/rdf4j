@@ -41,11 +41,13 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_put;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.stream.Stream;
@@ -63,6 +65,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.PointerBuffer;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBVal;
@@ -119,6 +122,186 @@ class LmdbLegacyIndexDiscoveryTest {
 		createNamedDatabase(directory.resolve("triples"), "future-index");
 
 		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void validatedNativeManifestRecoversOnlyItsStaleSidecarDescriptor(boolean statements) throws Exception {
+		extract("v2-610-default.zip", directory);
+		installMatchingManifest(statements);
+		Properties stale = properties(directory, "store.properties");
+		String key = statements ? StoreProperties.INDEXES_KEY : StoreProperties.TRIPLE_TERM_INDEXES_KEY;
+		Set<String> authoritative = statements ? Set.of("spoc", "posc") : Set.of("spoc", "cspo");
+		stale.setProperty(key, "ospc");
+		save(directory, stale);
+		var before = snapshot(directory);
+		StoreProperties discovered = new StoreProperties(directory.toFile());
+		assertThat(discovered.load()).isTrue();
+
+		LegacyStoreDiscovery.discover(directory.toFile(), discovered);
+
+		assertThat(TripleIndex.parseIndexSpecList(statements ? discovered.getTripleIndexes()
+				: discovered.getTripleTermIndexes())).isEqualTo(authoritative);
+		assertThat(snapshot(directory)).isEqualTo(before);
+		SailRepository repository = repository();
+		try (var connection = repository.getConnection()) {
+			assertThat(connection.size()).isEqualTo(4);
+		} finally {
+			repository.shutDown();
+		}
+		assertThat(TripleIndex.parseIndexSpecList(properties(directory, "store.properties").getProperty(key)))
+				.isEqualTo(authoritative);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void nativeManifestDoesNotAuthorizeAnotherIndexFamilysStaleDescriptor(boolean statementManifest) throws Exception {
+		extract("v2-610-default.zip", directory);
+		installMatchingManifest(statementManifest);
+		Properties stale = properties(directory, "store.properties");
+		stale.setProperty(statementManifest ? StoreProperties.TRIPLE_TERM_INDEXES_KEY : StoreProperties.INDEXES_KEY,
+				"ospc");
+		save(directory, stale);
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "spoc,spoc", "invalid" })
+	void nativeManifestDoesNotAuthorizeMalformedSidecarDescriptor(String descriptor) throws Exception {
+		extract("v2-610-default.zip", directory);
+		installMatchingManifest(true);
+		Properties stale = properties(directory, "store.properties");
+		stale.setProperty(StoreProperties.INDEXES_KEY, descriptor);
+		save(directory, stale);
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	private void installMatchingManifest(boolean statements) throws Exception {
+		if (statements) {
+			createNamedDatabase(directory.resolve("triples"), TripleStore.NAMESPACE_DATABASE_NAME);
+			putNamespaceMetadata(TripleStore.INDEX_FORMAT_KEY,
+					ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.INDEX_DATABASE_VERSION).array());
+			putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc,posc".getBytes(StandardCharsets.UTF_8));
+		} else {
+			createNamedDatabase(directory.resolve("values"), ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+			byte[] manifest = ByteBuffer.allocate(24)
+					.putInt(1)
+					.putInt(2)
+					.putInt(4)
+					.put("spoc".getBytes(StandardCharsets.US_ASCII))
+					.putInt(4)
+					.put("cspo".getBytes(StandardCharsets.US_ASCII))
+					.array();
+			nativePut(directory, ValueStore.TERM_INDEX_MANIFEST_DATABASE, ValueStore.TERM_INDEX_MANIFEST_KEY,
+					manifest);
+		}
+	}
+
+	@Test
+	void admitsAuthoritativeNamespaceSnapshotWithoutChangingLegacyGeneration() throws Exception {
+		extract("v2-610-default.zip", directory);
+		createNamedDatabase(directory.resolve("triples"), TripleStore.NAMESPACE_DATABASE_NAME);
+		putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY,
+				ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.NAMESPACE_DATABASE_VERSION).array());
+		putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY,
+				NamespaceStore.encodeSnapshot(Map.of("legacy", "urn:authoritative:")));
+		putNamespaceMetadata(TripleStore.INDEX_FORMAT_KEY,
+				ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.INDEX_DATABASE_VERSION).array());
+		putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc,posc".getBytes(StandardCharsets.UTF_8));
+		assertDiscoveryAcceptedWithoutMutation();
+		SailRepository repository = repository();
+		try (var connection = repository.getConnection()) {
+			assertThat(connection.getNamespace("legacy")).isEqualTo("urn:authoritative:");
+			assertThat(connection.size()).isEqualTo(4);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "version", "snapshot", "unpaired", "unknown-key", "index-version", "index-set" })
+	void rejectsMalformedAuthoritativeNamespaceMetadataWithoutMutation(String corruption) throws Exception {
+		extract("v2-610-default.zip", directory);
+		createNamedDatabase(directory.resolve("triples"), TripleStore.NAMESPACE_DATABASE_NAME);
+		putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY,
+				ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.NAMESPACE_DATABASE_VERSION).array());
+		putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, NamespaceStore.encodeSnapshot(Map.of()));
+		switch (corruption) {
+		case "version" -> putNamespaceMetadata(TripleStore.NAMESPACE_FORMAT_KEY, new byte[] { 2 });
+		case "snapshot" -> putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, new byte[] { 0 });
+		case "unpaired" -> putNamespaceMetadata(TripleStore.NAMESPACE_SNAPSHOT_KEY, null);
+		case "unknown-key" -> putNamespaceMetadata("future".getBytes(StandardCharsets.US_ASCII), new byte[] { 1 });
+		case "index-version" -> putNamespaceMetadata(TripleStore.INDEX_FORMAT_KEY, new byte[] { 2 });
+		case "index-set" -> {
+			putNamespaceMetadata(TripleStore.INDEX_FORMAT_KEY,
+					ByteBuffer.allocate(Integer.BYTES).putInt(TripleStore.INDEX_DATABASE_VERSION).array());
+			putNamespaceMetadata(TripleStore.INDEX_SPECS_KEY, "spoc,ospc".getBytes(StandardCharsets.UTF_8));
+		}
+		default -> throw new AssertionError(corruption);
+		}
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "version", "truncated", "index-set", "unknown-key", "missing" })
+	void rejectsMalformedTermIndexManifestWithoutMutation(String corruption) throws Exception {
+		extract("v2-610-default.zip", directory);
+		createNamedDatabase(directory.resolve("values"), ValueStore.TERM_INDEX_MANIFEST_DATABASE);
+		byte[] manifest = ByteBuffer.allocate(24)
+				.putInt(1)
+				.putInt(2)
+				.putInt(4)
+				.put("spoc".getBytes(StandardCharsets.US_ASCII))
+				.putInt(4)
+				.put("cspo".getBytes(StandardCharsets.US_ASCII))
+				.array();
+		if (corruption.equals("version")) {
+			ByteBuffer.wrap(manifest).putInt(2);
+		} else if (corruption.equals("truncated")) {
+			manifest = new byte[] { 1 };
+		} else if (corruption.equals("index-set")) {
+			manifest = ByteBuffer.allocate(16)
+					.putInt(1)
+					.putInt(1)
+					.putInt(4)
+					.put("spoc".getBytes(StandardCharsets.US_ASCII))
+					.array();
+		}
+		if (!corruption.equals("missing")) {
+			LmdbCompatibilityFixtures.nativePut(directory, ValueStore.TERM_INDEX_MANIFEST_DATABASE,
+					ValueStore.TERM_INDEX_MANIFEST_KEY, manifest);
+		}
+		if (corruption.equals("unknown-key")) {
+			LmdbCompatibilityFixtures.nativePut(directory, ValueStore.TERM_INDEX_MANIFEST_DATABASE,
+					new byte[] { 42 }, new byte[] { 1 });
+		}
+		assertInitializationRejectedWithoutMutation();
+	}
+
+	private void putNamespaceMetadata(byte[] key, byte[] value) throws Exception {
+		long env = NULL;
+		try (MemoryStack stack = MemoryStack.stackPush()) {
+			PointerBuffer handle = stack.mallocPointer(1);
+			E(mdb_env_create(handle));
+			env = handle.get(0);
+			E(mdb_env_set_maxdbs(env, 64));
+			E(mdb_env_open(env, directory.resolve("triples").toString(), MDB_NOTLS, 0664));
+			LmdbUtil.writeTransaction(env, (inner, txn) -> {
+				var database = inner.mallocInt(1);
+				E(mdb_dbi_open(txn, TripleStore.NAMESPACE_DATABASE_NAME, 0, database));
+				MDBVal nativeKey = MDBVal.calloc(inner).mv_data(inner.bytes(key));
+				if (value == null) {
+					E(mdb_del(txn, database.get(0), nativeKey, null));
+				} else {
+					E(mdb_put(txn, database.get(0), nativeKey, MDBVal.calloc(inner).mv_data(inner.bytes(value)), 0));
+				}
+				return null;
+			});
+		} finally {
+			if (env != NULL) {
+				mdb_env_close(env);
+			}
+		}
 	}
 
 	@Test

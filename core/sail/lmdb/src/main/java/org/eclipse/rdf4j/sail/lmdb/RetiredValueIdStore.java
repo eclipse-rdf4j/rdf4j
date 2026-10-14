@@ -85,6 +85,7 @@ final class RetiredValueIdStore {
 	 * initialized from {@code mdb_stat} at open. Only used as an O(1) "nothing to drain" fast path.
 	 */
 	private volatile long pendingCount;
+	private volatile long pendingChangeCount;
 
 	static final class DrainBatch {
 		/** IDs whose by-ID record matches their ordered-index entry: candidates for reclamation. */
@@ -125,6 +126,7 @@ final class RetiredValueIdStore {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, retiredSeqDbi, stat));
 			pendingCount = stat.ms_entries();
+			pendingChangeCount = 0L;
 			return null;
 		});
 		syncBootEpoch(env);
@@ -137,6 +139,7 @@ final class RetiredValueIdStore {
 		openDatabases(env);
 		bootEpoch = 1L;
 		pendingCount = 0L;
+		pendingChangeCount = 0L;
 		LmdbUtil.writeTransaction(env, (stack, txn) -> {
 			MDBVal keyVal = MDBVal.calloc(stack);
 			MDBVal dataVal = MDBVal.calloc(stack);
@@ -168,6 +171,7 @@ final class RetiredValueIdStore {
 			if (freshBulkLoad) {
 				bootEpoch = 1L;
 				pendingCount = 0L;
+				pendingChangeCount = 0L;
 			} else {
 				long lastEpoch = 0L;
 				int rc = mdb_get(txn, metaDbi, keyVal, dataVal);
@@ -183,6 +187,7 @@ final class RetiredValueIdStore {
 			MDBStat stat = MDBStat.malloc(stack);
 			E(mdb_stat(txn, retiredSeqDbi, stat));
 			pendingCount = freshBulkLoad ? 0L : stat.ms_entries();
+			pendingChangeCount = 0L;
 		}
 	}
 
@@ -273,7 +278,16 @@ final class RetiredValueIdStore {
 	}
 
 	boolean hasPending() {
-		return pendingCount > 0;
+		return pendingCount + pendingChangeCount > 0;
+	}
+
+	void transactionCommitted() {
+		pendingCount += pendingChangeCount;
+		pendingChangeCount = 0;
+	}
+
+	void transactionRolledBack() {
+		pendingChangeCount = 0;
 	}
 
 	int retiredByIdDbi() {
@@ -317,7 +331,7 @@ final class RetiredValueIdStore {
 			Varint.writeUnsigned(seqBb, id);
 			keyVal.mv_data(seqBb.flip());
 			if (E(mdb_put(writeTxn, retiredSeqDbi, keyVal, emptyVal, MDB_NOOVERWRITE)) != MDB_KEYEXIST) {
-				pendingCount++;
+				pendingChangeCount++;
 			}
 		}
 	}
@@ -329,7 +343,7 @@ final class RetiredValueIdStore {
 	 */
 	DrainBatch pollDrainable(MemoryStack stack, long txn, long maxRevisionInclusive, int maxIds) throws IOException {
 		DrainBatch batch = new DrainBatch();
-		if (pendingCount == 0) {
+		if (pendingCount + pendingChangeCount <= 0 || maxIds <= 0) {
 			return batch;
 		}
 		MDBVal keyVal = MDBVal.calloc(stack);
@@ -365,9 +379,12 @@ final class RetiredValueIdStore {
 				Varint.writeUnsigned(idBb, id);
 				idKeyVal.mv_data(idBb.flip());
 				boolean current = false;
-				if (mdb_get(txn, retiredByIdDbi, idKeyVal, recordVal) == MDB_SUCCESS) {
+				int recordRc = mdb_get(txn, retiredByIdDbi, idKeyVal, recordVal);
+				if (recordRc == MDB_SUCCESS) {
 					ByteBuffer recordBb = recordVal.mv_data();
 					current = Varint.readUnsigned(recordBb) == epoch && Varint.readUnsigned(recordBb) == revision;
+				} else if (recordRc != MDB_NOTFOUND) {
+					E(recordRc);
 				}
 				if (current) {
 					batch.ids.add(id);
@@ -393,19 +410,33 @@ final class RetiredValueIdStore {
 	void removeDrained(MemoryStack stack, long writeTxn, DrainBatch batch) throws IOException {
 		MDBVal keyVal = MDBVal.calloc(stack);
 		ByteBuffer keyBb = stack.malloc(3 * MAX_VARINT);
-
 		for (byte[] seqKey : batch.matchedSeqKeys) {
 			deleteSeqKey(writeTxn, keyVal, keyBb, seqKey);
 		}
 		for (byte[] seqKey : batch.staleSeqKeys) {
 			deleteSeqKey(writeTxn, keyVal, keyBb, seqKey);
 		}
+		// A newer retirement for an ID may have been recorded between poll and removal. Only clear the latest-by-ID
+		// entry when it still points at the exact sequence record this batch processed.
 		ByteBuffer idBb = stack.malloc(MAX_VARINT);
-		for (Long id : batch.ids) {
+		MDBVal recordVal = MDBVal.calloc(stack);
+		for (byte[] seqKey : batch.matchedSeqKeys) {
+			ByteBuffer seqBb = ByteBuffer.wrap(seqKey);
+			long epoch = Varint.readUnsigned(seqBb);
+			long revision = Varint.readUnsigned(seqBb);
+			long id = Varint.readUnsigned(seqBb);
 			idBb.clear();
 			Varint.writeUnsigned(idBb, id);
 			keyVal.mv_data(idBb.flip());
-			E(mdb_del(writeTxn, retiredByIdDbi, keyVal, null));
+			int recordRc = mdb_get(writeTxn, retiredByIdDbi, keyVal, recordVal);
+			if (recordRc == MDB_SUCCESS) {
+				ByteBuffer recordBb = recordVal.mv_data().duplicate();
+				if (Varint.readUnsigned(recordBb) == epoch && Varint.readUnsigned(recordBb) == revision) {
+					E(mdb_del(writeTxn, retiredByIdDbi, keyVal, null));
+				}
+			} else if (recordRc != MDB_NOTFOUND) {
+				E(recordRc);
+			}
 		}
 	}
 
@@ -413,8 +444,8 @@ final class RetiredValueIdStore {
 		keyBb.clear();
 		keyBb.put(seqKey);
 		keyVal.mv_data(keyBb.flip());
-		if (E(mdb_del(writeTxn, retiredSeqDbi, keyVal, null)) == MDB_SUCCESS && pendingCount > 0) {
-			pendingCount--;
+		if (E(mdb_del(writeTxn, retiredSeqDbi, keyVal, null)) == MDB_SUCCESS) {
+			pendingChangeCount--;
 		}
 	}
 }

@@ -30,6 +30,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -39,20 +40,48 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbStoreConnectionValueMaterializationTest {
 
 	@Test
-	void materializesBufferedRowsInInternalIdOrderAfterFirstResult(@TempDir File dataDir) {
-		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
-		try {
-			assertBufferedMaterializationOrder(dataDir);
-		} finally {
-			if (previousNative == null) {
-				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
-			} else {
-				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+	void materializesBufferedRowsInInternalIdOrderAfterFirstResult() {
+		assertBufferedMaterializationOrder();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void connectionInitializesForeignDictionaryValuesBeforeReturningRows(boolean nativeEnabled,
+			@TempDir File dataDir) {
+		List<String> materialized = new ArrayList<>();
+		ValueStoreRevision revision = new InitializingRevision();
+		List<RecordingLmdbValue> foreign = List.of(value("first", 40, revision, materialized),
+				value("second", 30, revision, materialized), value("third", 20, revision, materialized));
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setBindingSets(
+				foreign.stream().<BindingSet>map(LmdbStoreConnectionValueMaterializationTest::row).toList());
+		LmdbStoreConfig config = new LmdbStoreConfig().setNativeEvaluationEnabled(nativeEnabled);
+		config.setExperimentalQueryOptimizations(true);
+		LmdbStore store = new LmdbStore(dataDir, config);
+		List<BindingSet> returned = new ArrayList<>();
+		store.init();
+		try (SailConnection connection = store.getConnection()) {
+			connection.begin();
+			try (var rows = connection.evaluate(assignment, null, EmptyBindingSet.getInstance(), false)) {
+				while (rows.hasNext()) {
+					returned.add(rows.next());
+				}
 			}
+			connection.rollback();
+		} finally {
+			store.shutDown();
+		}
+		assertEquals(List.of("first", "second", "third"), materialized);
+		assertEquals(3, returned.size());
+		for (int i = 0; i < returned.size(); i++) {
+			assertEquals("urn:materialized:" + List.of("first", "second", "third").get(i),
+					returned.get(i).getValue("value").stringValue());
 		}
 	}
 
@@ -85,7 +114,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 	}
 
-	private static void assertBufferedMaterializationOrder(File dataDir) {
+	private static void assertBufferedMaterializationOrder() {
 		List<String> materialized = new ArrayList<>();
 		ValueStoreRevision revision = new InitializingRevision();
 		RecordingLmdbValue first = value("first", 40, revision, materialized);
@@ -102,24 +131,15 @@ class LmdbStoreConnectionValueMaterializationTest {
 		List<BindingSet> assignmentRows = new ArrayList<>();
 		assignment.getBindingSets().forEach(assignmentRows::add);
 
-		// Exercise the optional buffering path; prepared VALUES rows preserve binding values, not caller row identity.
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc");
-		config.setExperimentalQueryOptimizations(true);
-		LmdbStore store = new LmdbStore(dataDir, config);
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				new ListIteration(assignmentRows, new CountDownLatch(1)), 8)) {
 			assertEquivalentPreparedRow(assignmentRows.get(0), result.next());
 			assertEquals(List.of("first"), materialized);
-
 			assertEquivalentPreparedRow(assignmentRows.get(1), result.next());
 			assertEquals(List.of("first", "id10", "id20", "id30"), materialized);
 			assertEquivalentPreparedRow(assignmentRows.get(2), result.next());
 			assertEquivalentPreparedRow(assignmentRows.get(3), result.next());
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 	}
 
@@ -160,9 +180,17 @@ class LmdbStoreConnectionValueMaterializationTest {
 			value.init();
 			return true;
 		}
+
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			for (int i = 0; i < count; i++) {
+				values[order[i]].init();
+			}
+		}
+
 	}
 
-	private static class RecordingLmdbValue implements LmdbValue {
+	private static class RecordingLmdbValue implements LmdbValue, IRI {
 
 		private static final long serialVersionUID = 1L;
 
@@ -190,6 +218,21 @@ class LmdbStoreConnectionValueMaterializationTest {
 		}
 
 		@Override
+		public boolean isInitialized() {
+			return initialized;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:materialized:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return name;
+		}
+
+		@Override
 		public long retainedLexicalLength() {
 			return name.length();
 		}
@@ -214,7 +257,8 @@ class LmdbStoreConnectionValueMaterializationTest {
 
 		@Override
 		public String stringValue() {
-			return name;
+			init();
+			return "urn:materialized:" + name;
 		}
 
 		@Override

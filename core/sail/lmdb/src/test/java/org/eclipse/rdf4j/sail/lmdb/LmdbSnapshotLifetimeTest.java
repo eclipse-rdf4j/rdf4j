@@ -70,7 +70,9 @@ class LmdbSnapshotLifetimeTest {
 	}
 
 	private void open(int format, boolean inline) throws Exception {
-		open(format, inline, 64L * 1024);
+		// Ordinary removal reserves a bounded NONE chunk before touching native state. Keep those lifetime
+		// cases below capacity; the explicit growth method below retains the tiny map and invalidation checks.
+		open(format, inline, 64L * 1024 * 1024);
 	}
 
 	private void open(int format, boolean inline, long tripleMapSize) throws Exception {
@@ -86,7 +88,8 @@ class LmdbSnapshotLifetimeTest {
 				.setInlineLiterals(inline)
 				.setTripleDBSize(tripleMapSize)
 				.setValueDBSize(8L * 1024 * 1024)
-				.setForceSync(true));
+				.setForceSync(true)
+				.setMapGrowthReadDrainTimeoutMillis(0));
 		store.init();
 		assertThat(values().getFormat().getVersion()).isEqualTo(format);
 		try (var connection = store.getConnection()) {
@@ -506,7 +509,7 @@ class LmdbSnapshotLifetimeTest {
 			"2,false,contexts", "6,false,contexts", "2,false,terms", "6,false,terms" })
 	void actualConcurrentMapGrowthRejectsCachedRowsAndNewReads(int format, boolean inline, String path)
 			throws Exception {
-		open(format, inline);
+		open(format, inline, 64L * 1024);
 		add(doomedStatements());
 		var triples = store.getBackingStore().getTripleStore();
 		long before = nativeMapSize(triples.getTxnManager());

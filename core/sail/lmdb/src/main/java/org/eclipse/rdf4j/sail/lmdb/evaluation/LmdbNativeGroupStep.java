@@ -182,6 +182,9 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		NativeLmdbQuerySource evalSource = source instanceof SyntheticValueSource synthetic
 				? synthetic.forEvaluation(generatedKeys, layout, bindings)
 				: source;
+		if (strategy != null) {
+			strategy.captureEvaluationValues(evalSource);
+		}
 		initializeQueryBase(evalSource, bindings);
 		QueryEvaluationContext evaluationContext = evaluationContext(evalSource);
 		NativeGroupIteration nativeIteration = new NativeGroupIteration(evalSource, arg, layout, groupSlots,
@@ -242,7 +245,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			NativeExecutionContext executionContext = ((SyntheticValueSource) evalSource).executionContext();
 			NativeBindingSetValueEvaluator evaluator = executionContext.genericStep(havingDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
 				return LmdbNativeAggregateFilterCompiler.compileSemanticValue(strategy,
 						(ValueExpr) havingDescriptor.pinnedExpr(), new SlotAwareQueryEvaluationContext(scoped, layout));
 			});
@@ -269,10 +272,12 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 	 * with them get a fresh evaluation-scoped instance so runtime interning never lives in compiled-plan state.
 	 */
 	private NativeLmdbQuerySource evaluationSource() {
-		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation()
+		NativeLmdbQuerySource evaluated = source instanceof SyntheticValueSource
+				? ((SyntheticValueSource) source).forEvaluation()
 				: queryExecutionPolicy().experimentalQueryOptimizations()
 						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
 						: source;
+		return strategy == null ? evaluated : strategy.captureEvaluationValues(evaluated);
 	}
 
 	private QueryExecutionPolicy queryExecutionPolicy() {
@@ -297,10 +302,11 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		if (evalSource instanceof SyntheticValueSource synthetic) {
 			NativeExecutionContext executionContext = synthetic.executionContext();
 			if (executionContext != null) {
-				return executionContext.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+				return executionContext
+						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
 			}
 		}
-		return new EvaluationScopedQueryEvaluationContext(context);
+		return EvaluationScopedQueryEvaluationContext.create(context, strategy);
 	}
 
 	/** Group rows materialize interned values at emission, so the context may close with the iteration (gate 5). */
@@ -329,7 +335,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
 			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
 			return genericFallbackDescriptor.genericPrecompile(strategy,
-					new EvaluationScopedQueryEvaluationContext(context));
+					EvaluationScopedQueryEvaluationContext.create(context, strategy));
 		}
 		if (genericStep == null) {
 			genericStep = genericFallbackDescriptor.genericPrecompile(strategy, context);
@@ -344,7 +350,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
 				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}

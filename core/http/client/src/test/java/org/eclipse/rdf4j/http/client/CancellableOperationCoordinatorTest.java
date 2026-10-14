@@ -497,7 +497,9 @@ class CancellableOperationCoordinatorTest {
 		CountDownLatch releaseRemote = new CountDownLatch(1);
 		CountDownLatch remoteFinished = new CountDownLatch(1);
 		AtomicInteger forwarded = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
 		CancellableOperationCoordinator.Handle handle = coordinator.register("request-async", () -> {
+			remoteWorker.set(Thread.currentThread());
 			forwarded.incrementAndGet();
 			remoteStarted.countDown();
 			try {
@@ -508,42 +510,25 @@ class CancellableOperationCoordinatorTest {
 				remoteFinished.countDown();
 			}
 		});
-		ExecutorService executor = Executors.newSingleThreadExecutor();
+		assertThat(coordinator.cancelAsync(handle)).isTrue();
+		coordinator.complete(handle);
+		assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
+		assertThat(coordinator.cancelAsync(handle)).isFalse();
+		assertThatThrownBy(() -> coordinator.register("request-async"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("Request already active: request-async");
 
-		try {
-			assertThat(coordinator.cancelAsync(handle)).isTrue();
-			coordinator.complete(handle);
-			assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
-			assertThat(coordinator.cancelAsync(handle)).isFalse();
-			assertThatThrownBy(() -> coordinator.register("request-async"))
-					.isInstanceOf(IllegalStateException.class)
-					.hasMessage("Request already active: request-async");
-
-			Future<CancellableOperationCoordinator.Handle> reusableHandle = executor.submit(() -> {
-				long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-				while (System.nanoTime() < deadline) {
-					try {
-						return coordinator.register("request-async");
-					} catch (IllegalStateException e) {
-						if (!"Request already active: request-async".equals(e.getMessage())) {
-							throw e;
-						}
-						Thread.onSpinWait();
-					}
-				}
-				throw new AssertionError("Asynchronous cancellation did not release its request id");
-			});
-
-			releaseRemote.countDown();
-			assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
-			CancellableOperationCoordinator.Handle replacement = reusableHandle.get(5, TimeUnit.SECONDS);
-			assertThat(replacement).isNotSameAs(handle);
-			coordinator.complete(replacement);
-			assertThat(forwarded).hasValue(1);
-		} finally {
-			releaseRemote.countDown();
-			executor.shutdownNow();
-		}
+		releaseRemote.countDown();
+		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
+		Thread callbackWorker = remoteWorker.get();
+		assertThat(callbackWorker).isNotNull();
+		callbackWorker.join(TimeUnit.SECONDS.toMillis(5));
+		assertThat(callbackWorker.isAlive()).isFalse();
+		assertThat(forwarded).hasValue(1);
+		assertThat(coordinator.cancel("request-async")).isFalse();
+		CancellableOperationCoordinator.Handle replacement = coordinator.register("request-async");
+		assertThat(replacement).isNotSameAs(handle);
+		coordinator.complete(replacement);
 	}
 
 	@Test

@@ -19,14 +19,21 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -52,6 +59,202 @@ import org.eclipse.rdf4j.sail.lmdb.model.RdfTermKey;
  */
 @Experimental
 final class NativeExecutionContext implements AutoCloseable {
+	private static final WorkerContext NO_WORKER_CONTEXT = new WorkerContext(null);
+	private static final QueryExecutionContext.Activation NO_WORKER_ACTIVATION = () -> {
+	};
+
+	/** Captures ownership before dispatch; capture holds no worker resources if submission is rejected. */
+	static WorkerContext captureWorkerContext() {
+		QueryExecutionContext.ReplayContext context = QueryExecutionContext.captureReplayContext();
+		if (context == null) {
+			return NO_WORKER_CONTEXT;
+		}
+		context.checkActive();
+		return new WorkerContext(context);
+	}
+
+	static final class WorkerContext {
+		private final QueryExecutionContext.ReplayContext context;
+
+		private WorkerContext(QueryExecutionContext.ReplayContext context) {
+			this.context = context;
+		}
+
+		/** Called inside the worker's existing failure and source-cleanup guards. */
+		QueryExecutionContext.Activation activate() {
+			return context == null ? NO_WORKER_ACTIVATION : context.activate();
+		}
+	}
+
+	/** Native resources finish before captured scopes; only external closers wait for scope settlement too. */
+	static final class WorkerTasks {
+		private final AtomicInteger nativeRemaining;
+		private final CountDownLatch nativeDone;
+		private final CountDownLatch settled;
+		private final Runnable afterNativeCleanup;
+		private final AtomicReference<Throwable> cleanupProblem = new AtomicReference<>();
+		private final ThreadLocal<Task> current = new ThreadLocal<>();
+
+		WorkerTasks(int count) {
+			this(count, () -> {
+			});
+		}
+
+		WorkerTasks(int count, Runnable afterNativeCleanup) {
+			nativeRemaining = new AtomicInteger(count);
+			nativeDone = new CountDownLatch(count == 0 ? 0 : 1);
+			settled = new CountDownLatch(count);
+			this.afterNativeCleanup = afterNativeCleanup;
+		}
+
+		Throwable cleanupFailure() {
+			return cleanupProblem.get();
+		}
+
+		private void reportCleanupFailure(Throwable problem, Consumer<Throwable> handler) {
+			Throwable previous = cleanupProblem.get();
+			if (previous == null && cleanupProblem.compareAndSet(null, problem)) {
+				handler.accept(problem);
+				return;
+			}
+			previous = cleanupProblem.get();
+			if (previous != problem) {
+				previous.addSuppressed(problem);
+			}
+		}
+
+		Task enter(Runnable nativeCleanup, Consumer<Throwable> cleanupFailure) {
+			Task task = new Task(current.get(), nativeCleanup, cleanupFailure);
+			current.set(task);
+			return task;
+		}
+
+		boolean isWorkerThread() {
+			return current.get() != null;
+		}
+
+		long getCount() {
+			return pending().getCount();
+		}
+
+		/** Accounts for a task whose native resources have already been cleaned without submitting it. */
+		void countDown() {
+			Task task = current.get();
+			if (task == null) {
+				try {
+					nativeFinished();
+				} finally {
+					settled.countDown();
+				}
+			} else {
+				task.finishNative();
+			}
+		}
+
+		void await() throws InterruptedException {
+			pending().await();
+		}
+
+		boolean await(long timeout, TimeUnit unit) throws InterruptedException {
+			return pending().await(timeout, unit);
+		}
+
+		private CountDownLatch pending() {
+			Task task = current.get();
+			if (task != null) {
+				// Installing a captured scope can itself fail and drain its partially installed owner. No worker
+				// body has started, so release its admitted native resources before re-entering the owner's drain.
+				if (task.activating) {
+					task.finishNative();
+				}
+				return nativeDone;
+			}
+			return settled;
+		}
+
+		private void nativeFinished() {
+			if (nativeRemaining.decrementAndGet() == 0) {
+				try {
+					afterNativeCleanup.run();
+				} finally {
+					nativeDone.countDown();
+				}
+			}
+		}
+
+		final class Task implements AutoCloseable {
+			private final Task previous;
+			private final Runnable nativeCleanup;
+			private final Consumer<Throwable> cleanupFailure;
+			private QueryExecutionContext.Activation context;
+			private boolean activating;
+			private boolean cleanupStarted;
+			private boolean closed;
+
+			private Task(Task previous, Runnable nativeCleanup, Consumer<Throwable> cleanupFailure) {
+				this.previous = previous;
+				this.nativeCleanup = nativeCleanup;
+				this.cleanupFailure = cleanupFailure;
+			}
+
+			void activate(WorkerContext captured) {
+				activate(captured::activate);
+			}
+
+			void activate(Supplier<QueryExecutionContext.Activation> captured) {
+				activating = true;
+				try {
+					context = captured.get();
+				} finally {
+					activating = false;
+				}
+				if (cleanupStarted) {
+					throw new CancellationException("Native worker owner closed during context activation");
+				}
+			}
+
+			private void finishNative() {
+				if (!cleanupStarted) {
+					cleanupStarted = true;
+					try {
+						nativeCleanup.run();
+					} catch (Throwable problem) {
+						reportCleanupFailure(problem, cleanupFailure);
+					} finally {
+						nativeFinished();
+					}
+				}
+			}
+
+			@Override
+			public void close() {
+				if (closed) {
+					return;
+				}
+				closed = true;
+				try {
+					try {
+						finishNative();
+					} finally {
+						if (context != null) {
+							try {
+								context.close();
+							} catch (Throwable problem) {
+								reportCleanupFailure(problem, cleanupFailure);
+							}
+						}
+					}
+				} finally {
+					if (previous == null) {
+						current.remove();
+					} else {
+						current.set(previous);
+					}
+					settled.countDown();
+				}
+			}
+		}
+	}
 
 	private static final AtomicLong NEXT_EXECUTION_ID = new AtomicLong();
 
@@ -72,6 +275,7 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final ConcurrentHashMap<Long, Value> queryScopedStoreValuesById = new ConcurrentHashMap<>();
 	/** Whether the query owner retains canonical store representatives in addition to its runtime payload table. */
 	private volatile boolean hasQueryScopedStoreValues;
+	private Function<Value, Value> valueCapturer;
 	private final AtomicLong nextId = new AtomicLong(RUNTIME_INTERN_BASE);
 	private final AtomicLong nextSolutionId = new AtomicLong(1L);
 	private final AtomicLong nextBNodeId = new AtomicLong();
@@ -223,8 +427,22 @@ final class NativeExecutionContext implements AutoCloseable {
 		return queryScopeOwner == this ? evaluationSource : queryScopeOwner.evaluationSource();
 	}
 
+	void installValueCapturer(Function<Value, Value> capturer) {
+		if (queryScopeOwner != this) {
+			queryScopeOwner.installValueCapturer(capturer);
+			return;
+		}
+		synchronized (this) {
+			if (valueCapturer == null) {
+				valueCapturer = capturer;
+			}
+			installRegistrar(genericContext);
+		}
+	}
+
 	private void installRegistrar(QueryEvaluationContext context) {
 		if (context instanceof EvaluationScopedQueryEvaluationContext scoped) {
+			scoped.installValueCapturer(valueCapturer);
 			Consumer<Value> registrar = queryScopedValueRegistrar;
 			if (registrar != null) {
 				scoped.installQueryScopedValueRegistrar(registrar);
@@ -657,6 +875,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		if (queryScopeOwner == this) {
 			genericContext = null;
+			valueCapturer = null;
 			queryBase = null;
 			evaluationSource = null;
 		}

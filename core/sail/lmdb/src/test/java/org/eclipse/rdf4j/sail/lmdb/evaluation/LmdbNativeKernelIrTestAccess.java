@@ -44,6 +44,10 @@ public final class LmdbNativeKernelIrTestAccess {
 	/** Gates projection-free wildcard batching. */
 	public static final String WILDCARD_BATCH_PROPERTY = LmdbWildcardPredicateBatch.ENABLED_PROPERTY;
 
+	public static long pathEvaluations() {
+		return PathPlan.ENGAGED.get();
+	}
+
 	public static long wildcardPayloadRowsDecoded() {
 		return LmdbWildcardPredicateBatch.PAYLOAD_ROWS_DECODED.get();
 	}

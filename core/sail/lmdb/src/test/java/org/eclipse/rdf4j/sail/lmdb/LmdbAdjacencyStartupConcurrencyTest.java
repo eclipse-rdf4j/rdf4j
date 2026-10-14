@@ -154,7 +154,7 @@ class LmdbAdjacencyStartupConcurrencyTest {
 
 	@Test
 	@Timeout(60)
-	void emptyRepositoryCommitPublishesBothBackingBranchesBeforeReturning(@TempDir File dataDir) throws Exception {
+	void combinedRepositoryCommitPublishesBothPlanesBeforeReturning(@TempDir File dataDir) throws Exception {
 		LmdbStore sail = new LmdbStore(dataDir,
 				new LmdbStoreConfig().setDirectAdjacencyEnabled(true).setDirectAdjacencyBuildOnStart(false));
 		SailRepository repository = new SailRepository(sail);
@@ -162,7 +162,10 @@ class LmdbAdjacencyStartupConcurrencyTest {
 		LmdbDirectAdjacencyStore adjacency = sail.getBackingStore().directAdjacencyStore();
 		CountDownLatch scanned = new CountDownLatch(1);
 		CountDownLatch releaseScan = new CountDownLatch(1);
-		CountDownLatch deltasHandedOff = new CountDownLatch(2);
+		TripleStore triples = sail.getBackingStore().getTripleStore();
+		long nativeGenerationBefore = triples.getNativeCommitGeneration();
+		long revisionBefore = triples.getDataRevision();
+		CountDownLatch deltasHandedOff = new CountDownLatch(1);
 		adjacency.afterBuildScanForTest = () -> {
 			scanned.countDown();
 			awaitLifecycleLatch(releaseScan);
@@ -183,10 +186,14 @@ class LmdbAdjacencyStartupConcurrencyTest {
 			try {
 				assertThat(deltasHandedOff.await(30, TimeUnit.SECONDS)).isTrue();
 				assertThat(writer.isDone()).isFalse();
+				assertThat(triples.getNativeCommitGeneration()).isEqualTo(nativeGenerationBefore + 1);
+				LmdbStoreConnectionAdjacencyBatchTest.assertCommittedNativePlanes(sail, "urn:explicit", "urn:inferred",
+						"urn:p", "urn:o", "urn:o");
 			} finally {
 				releaseScan.countDown();
 			}
 			writer.get(30, TimeUnit.SECONDS);
+			assertThat(triples.getDataRevision()).isEqualTo(revisionBefore + 1);
 			adjacency.awaitCommitCleanupForTest();
 			assertThat(adjacency.backlogBytes()).isZero();
 			assertThat(adjacency.publishedStateForTest().appliedRevision())

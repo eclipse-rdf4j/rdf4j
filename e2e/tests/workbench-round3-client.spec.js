@@ -22,7 +22,7 @@ const {
 	waitForRoute,
 	workbenchBaseUrl
 } = require('./workbench-test-helpers.js');
-const { largeQuery, storedResults, waitForStoredResult } = require('../row-store-helpers.js');
+const { largeQuery, storedResults, waitForStoredResult, waitForStoredQueryRows } = require('../row-store-helpers.js');
 
 // Round-3 findings of GH-6071 (exploratory real-browser crawl), client side.
 const REPOSITORY_ID = uniqueRepositoryId('workbench-round3-client');
@@ -598,8 +598,12 @@ test('deleting a saved query leaves no delete parameter in the address', async (
 
 // C31: leaving the Query page by a full page load starts no IndexedDB work that the unload aborts (Firefox warns about
 // every such transaction); the page flags its stored result instead, and cleanup in the next page deletes it.
-test('a full page load after the Query page aborts no IndexedDB work and reclaims the rows', async ({ page }) => {
+for (const holdWorker of [false, true]) {
+test(`a full page load after the Query page aborts no IndexedDB work and reclaims the rows with a ${holdWorker ? 'held' : 'normal'} worker`, async ({ page }) => {
 	const warnings = [];
+	let releaseWorker;
+	let workerRequestHeld = false;
+	const workerReleased = new Promise(resolve => { releaseWorker = resolve; });
 	page.on('console', (message) => {
 		if (/IndexedDB transaction .* aborted/i.test(message.text())) {
 			warnings.push(message.text());
@@ -609,18 +613,37 @@ test('a full page load after the Query page aborts no IndexedDB work and reclaim
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'));
 	await waitForRoute(page, 'query');
 	const before = await storedResults(page);
-	await page.locator('.CodeMirror').first().evaluate((element, query) => element.CodeMirror.setValue(query),
-		largeQuery());
-	await page.locator('#exec').click();
-	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
-		{ timeout: 30000 });
-	const readyStore = await waitForStoredResult(page, before, 12000);
-	expect(readyStore.metadataCount).toBe(12000);
-	expect(readyStore.physicalBlockCount).toBeGreaterThan(0);
-	expect(readyStore.physicalRowCount).toBe(12000);
-	const storeIds = (await storedResults(page)).databases;
-	expect(storeIds, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
-	expect(storeIds).toContain(readyStore.id);
+	let storeIds;
+	try {
+		if (holdWorker) {
+			await page.route('**/scripts/queryStreamWorker.js*', async route => {
+				workerRequestHeld = true;
+				await workerReleased;
+				await route.continue();
+			});
+		}
+		await page.locator('.CodeMirror').first().evaluate((element, query) => element.CodeMirror.setValue(query),
+			largeQuery());
+		await page.locator('#exec').click();
+		await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
+			{ timeout: 30000 });
+		if (holdWorker) {
+			await expect.poll(() => workerRequestHeld, { message: 'the row-store worker script remains held' }).toBe(true);
+			const atCompletion = await storedResults(page);
+			const newRegistryIds = Object.keys(atCompletion.registry).filter(id => !before.databases.includes(id)
+				&& !(id in before.registry));
+			expect(newRegistryIds, 'the completed query registered one store').toHaveLength(1);
+			expect(atCompletion.databases.filter(id => !before.databases.includes(id)),
+				'the held worker has not created the query database yet').toEqual([]);
+		}
+		releaseWorker();
+		const persisted = await waitForStoredQueryRows(page, before, 12000);
+		storeIds = [persisted.id];
+		test.info().annotations.push({ type: 'row-store-persistence', description: JSON.stringify(persisted) });
+	} finally {
+		releaseWorker();
+		await page.unroute('**/scripts/queryStreamWorker.js*');
+	}
 
 	await page.reload({ waitUntil: 'load' });
 	await waitForRoute(page, 'query');
@@ -634,6 +657,7 @@ test('a full page load after the Query page aborts no IndexedDB work and reclaim
 	}, { message: 'the rows of the page that was left are reclaimed' }).toBe(0);
 	expect(warnings, 'no IndexedDB transaction aborted by a page load').toEqual([]);
 });
+}
 
 test('a full page load after the Query page waits for a delayed row-store worker', async ({ page }) => {
 	let workerRequestObserved = false;

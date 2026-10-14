@@ -522,7 +522,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 			// Query-scope state (NOW/BNODE/volatiles) present: this is called from evaluate(), and for a root step one
 			// evaluate() is one query evaluation, so compile the pinned snapshot fresh with a per-evaluation scope.
 			return genericFallbackDescriptor.genericPrecompile(strategy,
-					new EvaluationScopedQueryEvaluationContext(context));
+					EvaluationScopedQueryEvaluationContext.create(context, strategy));
 		}
 		if (genericStep == null) {
 			genericStep = genericFallbackDescriptor.genericPrecompile(strategy, context);
@@ -537,7 +537,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> new EvaluationScopedQueryEvaluationContext(context));
+						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
 				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}
@@ -551,18 +551,21 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 	 * instance, reached as {@code row.source}/{@code values.source}.
 	 */
 	NativeLmdbQuerySource evaluationSource(BindingSet bindings) {
-		return source instanceof SyntheticValueSource synthetic
+		NativeLmdbQuerySource evaluated = source instanceof SyntheticValueSource synthetic
 				? synthetic.forEvaluation(generatedKeys, layout, bindings)
 				: queryExecutionPolicy().experimentalQueryOptimizations()
 						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
 						: source;
+		return strategy == null ? evaluated : strategy.captureEvaluationValues(evaluated);
 	}
 
 	NativeLmdbQuerySource evaluationSource() {
-		return source instanceof SyntheticValueSource ? ((SyntheticValueSource) source).forEvaluation()
+		NativeLmdbQuerySource evaluated = source instanceof SyntheticValueSource
+				? ((SyntheticValueSource) source).forEvaluation()
 				: queryExecutionPolicy().experimentalQueryOptimizations()
 						? SyntheticValueSource.forEvaluation(source, queryExecutionPolicy())
 						: source;
+		return strategy == null ? evaluated : strategy.captureEvaluationValues(evaluated);
 	}
 
 	private QueryExecutionPolicy queryExecutionPolicy() {
@@ -2743,7 +2746,9 @@ final class NativeProbeBufferHarness implements LmdbNativeProbeHarness<NativeUno
 			try {
 				rows.close();
 			} catch (RuntimeException | Error cleanupFailure) {
-				failure.addSuppressed(cleanupFailure);
+				if (cleanupFailure != failure) {
+					failure.addSuppressed(cleanupFailure);
+				}
 			}
 			throw failure;
 		} finally {

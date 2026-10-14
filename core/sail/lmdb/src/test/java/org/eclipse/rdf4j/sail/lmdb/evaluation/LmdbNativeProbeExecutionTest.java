@@ -15,14 +15,21 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * End-to-end probe-execution invariants at the arbiter level with scripted openers: one bounded probe of an uncertain
@@ -31,6 +38,38 @@ import org.junit.jupiter.api.Test;
  * probe outright.
  */
 class LmdbNativeProbeExecutionTest {
+
+	@ParameterizedTest
+	@ValueSource(booleans = { true, false })
+	void bufferedProbePreservesFailureIdentityAndRestoresRowAfterCloseFailure(boolean sameFailure) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("value", 0), null);
+		layout.freeze(List.of("value"));
+		RowState row = new RowState(null, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = 17L;
+		RuntimeException operationFailure = new IllegalStateException("probe operation failed");
+		RuntimeException cleanupFailure = sameFailure ? operationFailure
+				: new IllegalStateException("probe cleanup failed");
+		NativeUnorderedInput input = NativeUnorderedInput.rows(row, new RowCursor() {
+			@Override
+			public boolean next() {
+				row.slots[0] = 93L;
+				throw operationFailure;
+			}
+
+			@Override
+			public void close() {
+				throw cleanupFailure;
+			}
+		});
+		RuntimeException observed = assertThrows(RuntimeException.class,
+				() -> new NativeProbeBufferHarness().drainBounded(input, null, 16));
+		assertSame(operationFailure, observed);
+		assertEquals(sameFailure ? 0 : 1, observed.getSuppressed().length);
+		if (!sameFailure) {
+			assertSame(cleanupFailure, observed.getSuppressed()[0]);
+		}
+		assertEquals(17L, row.slots[0], "failed probes restore their caller's row storage");
+	}
 
 	private static final double INCUMBENT_NANOS = 5_000_000.0; // 5 ms: deadline = 4 ms, spin stays short
 

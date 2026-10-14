@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -63,6 +64,164 @@ class LmdbValueGcOwnershipTest {
 
 	@TempDir
 	Path directory;
+
+	@Test
+	void owningCloseTerminatesWithIdleUnflushedWriter() throws Exception {
+		Path transcript = directory.resolve("idle-writer-close-child.txt");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-ea", "-Xmx256m", "-cp", System.getProperty("java.class.path"), getClass().getName(),
+				directory.resolve("idle-child").toString()).redirectErrorStream(true)
+						.redirectOutput(transcript.toFile())
+						.start();
+		boolean finished;
+		try {
+			finished = child.waitFor(15, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+				assertThat(child.waitFor(5, TimeUnit.SECONDS)).isTrue();
+			}
+		}
+		String output = Files.readString(transcript);
+		assertThat(finished).as("owning close must abort an idle native writer and release waiters: %s", output)
+				.isTrue();
+		assertThat(child.exitValue()).as("child transcript: %s", output).isZero();
+		assertThat(output).contains("IDLE_WRITER_CLOSED");
+	}
+
+	public static void main(String[] arguments) throws Exception {
+		LmdbValueGcOwnershipTest fixture = new LmdbValueGcOwnershipTest();
+		fixture.directory = Files.createDirectories(Path.of(arguments[0]));
+		fixture.owningCloseWakesWaitingWriterAndRejectsNewBackingTransactions();
+		System.out.println("IDLE_WRITER_CLOSED");
+	}
+
+	@Test
+	void interruptedPublicationDrainReportsFailureAfterClosingNativeReaders() throws Exception {
+		LmdbSailStore store = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), config(),
+				false);
+		AtomicReference<SailClosable> publication = new AtomicReference<>(
+				store.getExplicitSailSource().beginPublication());
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		Thread closer = new Thread(() -> {
+			try {
+				store.close();
+			} catch (Throwable failure) {
+				closeFailure.set(failure);
+			} finally {
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			}
+		}, "interrupted-publication-close");
+		try (TxnManager.Txn valueReader = store.valueStore().getTxnManager().createReadTxnUntracked();
+				TxnManager.Txn tripleReader = store.getTripleStore().getTxnManager().createReadTxnUntracked()) {
+			closer.start();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			boolean publicationWait = false;
+			while (!publicationWait && closer.isAlive() && System.nanoTime() < deadline) {
+				for (StackTraceElement frame : closer.getStackTrace()) {
+					if (frame.getMethodName().equals("awaitNativePublicationForShutdown")) {
+						publicationWait = true;
+					}
+				}
+				Thread.onSpinWait();
+			}
+			assertThat(publicationWait).as("close must join the admitted publication").isTrue();
+			closer.interrupt();
+			while (closer.isInterrupted() && closer.isAlive() && System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
+			assertThat(closer.isInterrupted()).as("publication join must record and clear interruption").isFalse();
+			assertThat(closer.isAlive()).isTrue();
+			assertThat(valueReader.get()).isNotZero();
+			assertThat(tripleReader.get()).isNotZero();
+			publication.getAndSet(null).close();
+			closer.join(5_000L);
+			assertThat(closer.isAlive()).isFalse();
+			assertThat(closeFailure.get()).isInstanceOf(InterruptedSailException.class);
+			assertThat(interruptRestored).isTrue();
+			assertThat(valueReader.get()).isZero();
+			assertThat(tripleReader.get()).isZero();
+		} finally {
+			SailClosable pending = publication.getAndSet(null);
+			if (pending != null) {
+				pending.close();
+			}
+			closer.join(5_000L);
+			store.close();
+		}
+	}
+
+	@Test
+	void interruptedPublicationDrainRestoresInterruptWhenIdleRollbackFails() throws Exception {
+		SailException rollbackFailure = new SailException("injected idle writer rollback failure");
+		AtomicBoolean failRollback = new AtomicBoolean();
+		LmdbStoreConfig options = config().setBulkOperationSize(0);
+		LmdbSailStore store = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), options,
+				false) {
+			@Override
+			void rollback() {
+				super.rollback();
+				if (failRollback.getAndSet(false)) {
+					throw rollbackFailure;
+				}
+			}
+		};
+		store.enableMultiThreading = false;
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		AtomicReference<SailClosable> publication = new AtomicReference<>(
+				store.getExplicitSailSource().beginPublication());
+		Thread closer = new Thread(() -> {
+			try {
+				store.close();
+			} catch (Throwable failure) {
+				closeFailure.set(failure);
+			} finally {
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			}
+		}, "interrupted-failing-idle-rollback");
+		SailSink idleWriter = store.getExplicitSailSource().sink(IsolationLevels.NONE);
+		try {
+			var values = SimpleValueFactory.getInstance();
+			idleWriter.approve(values.createIRI("urn:close:idle"), values.createIRI("urn:close:p"),
+					values.createLiteral("unflushed"), null);
+			failRollback.set(true);
+			closer.start();
+			long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+			boolean publicationWait = false;
+			while (!publicationWait && closer.isAlive() && System.nanoTime() < deadline) {
+				for (StackTraceElement frame : closer.getStackTrace()) {
+					if (frame.getMethodName().equals("awaitNativePublicationForShutdown")) {
+						publicationWait = true;
+					}
+				}
+				Thread.onSpinWait();
+			}
+			assertThat(publicationWait).as("close must drain the actual admitted publication").isTrue();
+			closer.interrupt();
+			while (closer.isInterrupted() && closer.isAlive() && System.nanoTime() < deadline) {
+				Thread.onSpinWait();
+			}
+			assertThat(closer.isInterrupted()).as("the drain records interruption while continuing cleanup").isFalse();
+			publication.getAndSet(null).close();
+			closer.join(5_000L);
+			assertThat(closer.isAlive()).isFalse();
+			assertThat(closeFailure.get()).isSameAs(rollbackFailure);
+			assertThat(rollbackFailure.getSuppressed()).anySatisfy(suppressed -> assertThat(suppressed)
+					.isInstanceOf(InterruptedSailException.class)
+					.hasMessageContaining("publication during shutdown"));
+			assertThat(interruptRestored).as("idle cleanup failure must retain the drain's interruption").isTrue();
+		} finally {
+			SailClosable pending = publication.getAndSet(null);
+			if (pending != null) {
+				pending.close();
+			}
+			closer.join(5_000L);
+			idleWriter.close();
+			store.close();
+		}
+	}
 
 	@Test
 	void collectingAnAbsentRecordNeverCreatesAFreeOrdinal() throws Exception {
@@ -382,6 +541,47 @@ class LmdbValueGcOwnershipTest {
 	}
 
 	@Test
+	void completedNoneWriterReclaimsRetirementsAfterItsIntermediateCheckpoint() throws Exception {
+		writeLegacyProperties();
+		SimpleValueFactory values = SimpleValueFactory.getInstance();
+		IRI predicate = values.createIRI("urn:checkpoint-gc:p");
+		LmdbStore store = new LmdbStore(directory.toFile(), config().setValueDBSize(24_576L)
+				.setValueEvictionInterval(60_000L)
+				.setBulkOperationSize(0));
+		store.init();
+		try (NotifyingSailConnection connection = store.getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			for (int index = 0; index < 1025; index++) {
+				connection.addStatement(values.createIRI("urn:checkpoint-gc:" + index), predicate,
+						values.createLiteral("retired " + index));
+			}
+			connection.commit();
+			connection.begin(IsolationLevels.NONE);
+			long nativeGeneration = store.getBackingStore().getTripleStore().getNativeCommitGeneration();
+			connection.clear();
+			connection.flush();
+			assertThat(connection.isActive()).as("the logical writer must survive its physical checkpoint").isTrue();
+			assertThat(store.getBackingStore().getTripleStore().getNativeCommitGeneration())
+					.as("the remove must publish a real intermediate NONE checkpoint")
+					.isGreaterThan(nativeGeneration);
+			connection.addStatement(values.createIRI("urn:checkpoint-gc:survivor"), predicate,
+					values.createLiteral("survivor"));
+			connection.commit();
+			assertThat(unusedIdCount((ValueStore) store.getValueFactory()))
+					.as("final completion must prepare unused rows before returning from commit")
+					.isPositive();
+			assertThat(connection.size()).isEqualTo(1);
+			try (var rows = connection.getStatements(null, predicate, null, false)) {
+				assertThat(rows.hasNext()).isTrue();
+				assertThat(rows.next().getObject().stringValue()).isEqualTo("survivor");
+				assertThat(rows.hasNext()).isFalse();
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
 	void legacyCloseReservesMapGrowthBeforeReclaimingUnusedTerms() throws Exception {
 		writeLegacyProperties();
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -580,7 +780,8 @@ class LmdbValueGcOwnershipTest {
 			boolean waitingForWorker = false;
 			while (!waitingForWorker && closeFinished.getCount() != 0L && System.nanoTime() < waitDeadline) {
 				for (StackTraceElement frame : closer.getStackTrace()) {
-					if (frame.getMethodName().equals("shutdownAndAwaitTripleStoreExecutor")) {
+					if (frame.getMethodName().equals("shutdownAndAwaitTripleStoreExecutor")
+							|| frame.getMethodName().equals("awaitNativePublicationForShutdown")) {
 						waitingForWorker = true;
 						break;
 					}
@@ -594,9 +795,11 @@ class LmdbValueGcOwnershipTest {
 				boolean resumedJoin = false;
 				while (!resumedJoin && closeFinished.getCount() != 0L
 						&& System.nanoTime() < waitDeadline) {
-					if (!closer.isInterrupted() && closer.getState() == Thread.State.TIMED_WAITING) {
+					if (!closer.isInterrupted() && (closer.getState() == Thread.State.TIMED_WAITING
+							|| closer.getState() == Thread.State.WAITING)) {
 						for (StackTraceElement frame : closer.getStackTrace()) {
-							if (frame.getMethodName().equals("shutdownAndAwaitTripleStoreExecutor")) {
+							if (frame.getMethodName().equals("shutdownAndAwaitTripleStoreExecutor")
+									|| frame.getMethodName().equals("awaitNativePublicationForShutdown")) {
 								resumedJoin = true;
 								break;
 							}

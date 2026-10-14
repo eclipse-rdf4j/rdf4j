@@ -285,14 +285,16 @@ final class LmdbNativeRunCountHistogram implements QueryEvaluationStep {
 					NativeLmdbQuerySource workerSource = sources[w];
 					boolean adjacencyWorker = adjacency;
 					long[] workerPredicates = adjacencyPredicates;
+					var replayContext = NativeExecutionContext.captureWorkerContext();
 					futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
 						LongHistogram local = new LongHistogram();
 						long roots = 0L;
 						long denseRanges = 0L;
 						long fallbackRanges = 0L;
-						try (DenseAdjacencyRangeCollector dense = adjacencyWorker
-								? DenseAdjacencyRangeCollector.open(workerSource, workerPredicates)
-								: null) {
+						try (var replayScope = replayContext.activate();
+								DenseAdjacencyRangeCollector dense = adjacencyWorker
+										? DenseAdjacencyRangeCollector.open(workerSource, workerPredicates)
+										: null) {
 							RangeWork work;
 							while ((work = queue.poll()) != null) {
 								if (adjacencyWorker) {

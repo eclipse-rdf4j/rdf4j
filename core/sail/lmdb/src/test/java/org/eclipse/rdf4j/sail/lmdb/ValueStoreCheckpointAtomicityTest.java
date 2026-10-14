@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -45,6 +46,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
@@ -66,6 +68,40 @@ class ValueStoreCheckpointAtomicityTest {
 
 	@TempDir
 	Path dataDir;
+
+	@Test
+	void preparedReservationCheckpointKeepsCommittedFreshAssignmentsAfterSuffixRollback() throws Exception {
+		ValueStore store = new ValueStore(dataDir.resolve("prepared-checkpoint").toFile(),
+				valueStoreConfig(1024L * 1024L));
+		Value[] seed = { SimpleValueFactory.getInstance().createLiteral("seed prepared value", "en") };
+		try {
+			store.startTransaction(true);
+			ValueStore.FreshValueSession session = store.startFreshValueSessionIfEmpty();
+			assertNotNull(session);
+			ValueStore.PreparedValueBatch prepared = store.prepareFreshValues(session, seed);
+			long seedId = prepared.ids()[0];
+			store.persistPreparedValues(prepared);
+			long committedBefore = store.nativeCommitGeneration();
+			Value[] closure = new Value[4096];
+			for (int i = 0; i < closure.length; i++) {
+				closure[i] = SimpleValueFactory.getInstance().createLiteral("prepared-growth-" + i + VALUE_SUFFIX);
+			}
+			store.reservePreparedValueClosureCapacity(session, closure);
+			assertTrue(store.nativeCommitGeneration() > committedBefore,
+					"the reservation must actually commit the existing dictionary prefix");
+			store.rollback();
+			store.rollbackFreshValueTransaction(session);
+			assertEquals(seed[0], store.getValue(seedId));
+			store.startTransaction(true);
+			assertEquals(seedId, store.assignFreshValues(session, seed, new int[0]).ids()[0],
+					"suffix rollback must not discard the fresh-session assignment committed by reservation growth");
+			store.rollback();
+			store.rollbackFreshValueTransaction(session);
+			store.discardFreshValueSession(session);
+		} finally {
+			store.close();
+		}
+	}
 
 	@Test
 	@Timeout(60)

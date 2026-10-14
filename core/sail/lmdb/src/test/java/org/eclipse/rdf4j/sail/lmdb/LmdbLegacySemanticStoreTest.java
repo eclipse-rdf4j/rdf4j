@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
@@ -583,6 +585,112 @@ class LmdbLegacySemanticStoreTest {
 				assertThat(connection.hasStatement(VALUES.createIRI("urn:legacy:aligned-owner:" + index), LABEL,
 						VALUES.createLiteral("language value", "eN"), true, CONTEXT)).isTrue();
 			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void noneConnectionRemovesPhysicalAliasesWithoutCrossingContextsOrPlanes(boolean nested, boolean inferred)
+			throws Exception {
+		Path transcript = directory.resolve("none-alias-child.txt");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-ea", "-Xmx256m", "-cp", System.getProperty("java.class.path"), getClass().getName(),
+				directory.resolve("none-child").toString(), Boolean.toString(nested), Boolean.toString(inferred))
+						.redirectErrorStream(true)
+						.redirectOutput(transcript.toFile())
+						.start();
+		boolean finished;
+		try {
+			finished = child.waitFor(15, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+				assertThat(child.waitFor(5, TimeUnit.SECONDS)).isTrue();
+			}
+		}
+		String output = Files.readString(transcript);
+		assertThat(finished).as("bounded public NONE alias removal must complete: %s", output).isTrue();
+		assertThat(child.exitValue()).as("child transcript: %s", output).isZero();
+		assertThat(output).contains("NONE_PHYSICAL_ALIASES_REMOVED");
+	}
+
+	public static void main(String[] arguments) throws Exception {
+		LmdbLegacySemanticStoreTest fixture = new LmdbLegacySemanticStoreTest();
+		fixture.directory = Path.of(arguments[0]);
+		fixture.openAuthenticAliases();
+		try {
+			if (arguments.length > 3 && arguments[3].equals("pending")) {
+				fixture.pendingCachedLanguageRowsAreRemovedBeforeTheWriterCommits(Boolean.parseBoolean(arguments[1]));
+			} else {
+				fixture.exerciseNonePhysicalAliases(Boolean.parseBoolean(arguments[1]),
+						Boolean.parseBoolean(arguments[2]));
+			}
+		} finally {
+			fixture.close();
+		}
+		System.out.println("NONE_PHYSICAL_ALIASES_REMOVED");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void pendingRetirementDoesNotWaitForFinishedAsyncWriter(boolean estimator) throws Exception {
+		Path transcript = directory.resolve("pending-retirement-child.txt");
+		Process child = new ProcessBuilder(Path.of(System.getProperty("java.home"), "bin", "java").toString(),
+				"-ea", "-Xmx256m", "-cp", System.getProperty("java.class.path"), getClass().getName(),
+				directory.resolve("pending-child").toString(), Boolean.toString(estimator), "false", "pending")
+						.redirectErrorStream(true)
+						.redirectOutput(transcript.toFile())
+						.start();
+		boolean finished;
+		try {
+			finished = child.waitFor(15, TimeUnit.SECONDS);
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+				assertThat(child.waitFor(5, TimeUnit.SECONDS)).isTrue();
+			}
+		}
+		String output = Files.readString(transcript);
+		assertThat(finished).as("post-commit retirement must finish without an inactive native writer: %s", output)
+				.isTrue();
+		assertThat(child.exitValue()).as("child transcript: %s", output).isZero();
+	}
+
+	private void exerciseNonePhysicalAliases(boolean nested, boolean inferred) throws Exception {
+		Path storeDirectory;
+		if (inferred) {
+			storeDirectory = openInferredAliases(2);
+		} else {
+			repository.shutDown();
+			open(2);
+			storeDirectory = directory;
+		}
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc"))
+				.as("immutable fixture establishes the untouched explicit plane")
+				.isEqualTo(inferred ? 4 : 8);
+		Value object = VALUES.createLiteral("language value", "eN");
+		if (nested) {
+			TripleTerm inner = VALUES.createTripleTerm(VALUES.createIRI("urn:legacy:inner"), LABEL, object);
+			object = VALUES.createTripleTerm(VALUES.createIRI("urn:legacy:inner"), LABEL, inner);
+		}
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) repository.getSail().getConnection()) {
+			connection.begin(IsolationLevels.NONE);
+			if (inferred) {
+				assertThat(connection.removeInferredStatement(null, LABEL, object, (Resource) null)).isFalse();
+				assertThat(connection.removeInferredStatement(null, LABEL, object, CONTEXT)).isTrue();
+			} else {
+				connection.removeStatements(null, LABEL, object, (Resource) null);
+				connection.removeStatements(null, LABEL, object, CONTEXT);
+			}
+			connection.commit();
+		}
+		repository.shutDown();
+		assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory,
+				inferred ? "spocspoc-inf" : "spocspoc"))
+						.as("remove every physical alias in the selected plane and context across bounded native chunks")
+						.isEqualTo(inferred ? nested ? 3 : 2 : nested ? 6 : 4);
+		if (inferred) {
+			assertThat(LmdbCompatibilityFixtures.nativeTripleEntryCount(storeDirectory, "spocspoc")).isEqualTo(4);
 		}
 	}
 

@@ -12,8 +12,17 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.eclipse.rdf4j.sail.lmdb.LmdbUtil.E;
+import static org.lwjgl.util.lmdb.LMDB.MDB_FIRST;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NEXT;
+import static org.lwjgl.util.lmdb.LMDB.MDB_NOTFOUND;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
+import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
+import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +34,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.lwjgl.util.lmdb.MDBVal;
 
 class LmdbStoreConnectionAdjacencyBatchTest {
 
@@ -32,7 +42,7 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 	File dataDir;
 
 	@Test
-	void logicalCommitSubmitsBothBranchesBeforeWaitingForAdjacency() throws Exception {
+	void combinedNativeCommitPublishesBothPlanesBeforeWaitingForAdjacency() throws Exception {
 		String property = LmdbDirectAdjacencyOptions.SYNCHRONOUS_MAINTENANCE_PROPERTY;
 		String previous = System.getProperty(property);
 		System.setProperty(property, "true");
@@ -45,7 +55,9 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			assertThat(adjacency).isNotNull();
 			assertThat(adjacency.buildNowForTest()).isTrue();
 			long revisionBefore = adjacency.snapshotMetrics().currentDataRevision;
-			CountDownLatch physicalCommits = new CountDownLatch(2);
+			TripleStore triples = sail.getBackingStore().getTripleStore();
+			long nativeGenerationBefore = triples.getNativeCommitGeneration();
+			CountDownLatch physicalCommits = new CountDownLatch(1);
 			adjacency.beforePreparedFinalizeWaitForTest = physicalCommits::countDown;
 
 			CountDownLatch firstDrainReached = new CountDownLatch(1);
@@ -76,17 +88,28 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			});
 
 			assertThat(firstDrainReached.await(30, TimeUnit.SECONDS)).isTrue();
-			boolean bothLmdbBranchesCommitted;
 			try {
-				bothLmdbBranchesCommitted = physicalCommits.await(2, TimeUnit.SECONDS);
+				assertThat(physicalCommits.await(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(commit.isDone()).isFalse();
+				assertThat(triples.getNativeCommitGeneration()).isEqualTo(nativeGenerationBefore + 1);
+				assertCommittedNativePlanes(sail, "urn:test:explicit", "urn:test:inferred",
+						"urn:test:predicate", "urn:test:explicit-object", "urn:test:inferred-object");
 			} finally {
 				releaseDrain.countDown();
 			}
 			commit.get(30, TimeUnit.SECONDS);
-
-			assertThat(bothLmdbBranchesCommitted)
-					.as("both authoritative branch commits should precede the one logical adjacency wait")
-					.isTrue();
+			assertThat(triples.getDataRevision()).isEqualTo(revisionBefore + 1);
+			try (var connection = sail.getConnection()) {
+				var values = SimpleValueFactory.getInstance();
+				assertThat(connection.size()).isEqualTo(1);
+				assertThat(connection.hasStatement(values.createIRI("urn:test:explicit"),
+						values.createIRI("urn:test:predicate"), values.createIRI("urn:test:explicit-object"), false))
+								.isTrue();
+				assertThat(connection.hasStatement(values.createIRI("urn:test:inferred"),
+						values.createIRI("urn:test:predicate"), values.createIRI("urn:test:inferred-object"), true))
+								.isTrue();
+			}
+			assertThat(adjacency.backlogBytes()).isZero();
 			assertThat(adjacency.snapshotMetrics().appliedRevision)
 					.isEqualTo(adjacency.snapshotMetrics().currentDataRevision);
 		} finally {
@@ -99,4 +122,38 @@ class LmdbStoreConnectionAdjacencyBatchTest {
 			}
 		}
 	}
+
+	/** A fresh native reader observes the committed generation while derived preparation still owns its barriers. */
+	static void assertCommittedNativePlanes(LmdbStore store, String explicitSubject, String inferredSubject,
+			String predicate, String explicitObject, String inferredObject) throws IOException {
+		var values = (ValueStore) store.getValueFactory();
+		var vf = SimpleValueFactory.getInstance();
+		long predicateId = values.getId(vf.createIRI(predicate));
+		long[] subjects = { values.getId(vf.createIRI(inferredSubject)), values.getId(vf.createIRI(explicitSubject)) };
+		long[] objects = { values.getId(vf.createIRI(inferredObject)), values.getId(vf.createIRI(explicitObject)) };
+		LmdbUtil.readTransaction(store.getBackingStore().getTripleStore().env, (stack, transaction) -> {
+			for (int plane = 0; plane < 2; plane++) {
+				var database = stack.mallocInt(1);
+				E(mdb_dbi_open(transaction, TripleIndex.nativeDatabaseName("spoc", plane == 1), 0, database));
+				var handle = stack.mallocPointer(1);
+				E(mdb_cursor_open(transaction, database.get(0), handle));
+				long cursor = handle.get(0);
+				try {
+					MDBVal key = MDBVal.calloc(stack), value = MDBVal.calloc(stack);
+					E(mdb_cursor_get(cursor, key, value, MDB_FIRST));
+					var encoded = key.mv_data().duplicate();
+					assertThat(Varint.readUnsigned(encoded)).isEqualTo(subjects[plane]);
+					assertThat(Varint.readUnsigned(encoded)).isEqualTo(predicateId);
+					assertThat(Varint.readUnsigned(encoded)).isEqualTo(objects[plane]);
+					assertThat(Varint.readUnsigned(encoded)).isZero();
+					assertThat(encoded.hasRemaining()).isFalse();
+					assertThat(mdb_cursor_get(cursor, key, value, MDB_NEXT)).isEqualTo(MDB_NOTFOUND);
+				} finally {
+					mdb_cursor_close(cursor);
+				}
+			}
+			return null;
+		});
+	}
+
 }
