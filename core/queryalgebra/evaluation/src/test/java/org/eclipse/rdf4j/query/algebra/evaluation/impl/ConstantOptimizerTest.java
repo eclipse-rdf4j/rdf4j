@@ -55,6 +55,22 @@ import org.junit.jupiter.api.Test;
  */
 public class ConstantOptimizerTest extends QueryOptimizerTest {
 
+
+	@Test
+	public void logicalIdentityFoldingPreservesBooleanDatatype() {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		for (String operator : List.of("true && ?a", "?a && true", "false || ?a", "?a || false")) {
+			TupleExpr expression = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+					"SELECT ?x WHERE { BIND(" + operator + " AS ?x) }", null).getTupleExpr();
+			new ConstantOptimizer(strategy).optimize(expression, null, EmptyBindingSet.getInstance());
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("a", SimpleValueFactory.getInstance().createLiteral(7));
+			assertThat(evaluate(strategy, expression, bindings)).as(operator)
+					.singleElement()
+					.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(BooleanLiteral.TRUE));
+		}
+	}
+
 	@Test
 	public void foldsIfConditionFromContextualRootVariable() throws RDF4JException {
 		QueryBindingSet sourceBinding = new QueryBindingSet();
