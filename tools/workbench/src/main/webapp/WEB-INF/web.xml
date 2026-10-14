@@ -46,6 +46,11 @@
 			<param-value>/rdf4j-server</param-value>
 		</init-param>
 		<!--
+			A relative default-server is resolved against the servlet container's local connector,
+			not the inbound Host header, and must match accepted-server-prefixes. Configure an
+			absolute URL when Workbench and RDF4J Server do not share a connector.
+		-->
+		<!--
 			Whitespace-separated prefixes for server URLs that Workbench users may select.
 			Use concrete path, HTTP(S), or file prefixes; avoid broad HTTP(S) prefixes unless
 			Workbench users should be allowed to trigger server-side connections to arbitrary hosts.
