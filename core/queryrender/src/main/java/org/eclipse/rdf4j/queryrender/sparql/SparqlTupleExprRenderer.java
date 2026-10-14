@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
@@ -58,6 +59,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.queryrender.BaseTupleExprRenderer;
@@ -587,4 +589,13 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 				renderValueExpr(thePattern.getObjectVar()) + "." + System.lineSeparator();
 		return sb;
 	}
+	@Override
+	public void meetOther(QueryModelNode node) throws Exception {
+		if (node instanceof ValueExprTripleRef triple) {
+			mJoinBuffer.append(renderValueExpr(triple));
+		} else {
+			super.meetOther(node);
+		}
+	}
+
 }

@@ -111,7 +111,6 @@ import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -376,9 +375,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
 	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
 	 * {@link TupleExprs#createConstVar(Value)}.</li>
-	 * <li>If it is a {@link UnaryValueOperator} (e.g. {@link Str}, {@link Lang}, {@link Datatype}), an anonymous
-	 * variable is created and the expression is registered as an {@link ExtensionElem} on the current graph pattern, so
-	 * that the expression is evaluated at runtime and its result bound to the returned var.</li>
 	 * </ul>
 	 *
 	 * @param expr the ValueExpr to map to a Var
@@ -390,17 +386,6 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			return (Var) expr;
 		} else if (expr instanceof ValueConstant) {
 			return TupleExprs.createConstVar(((ValueConstant) expr).getValue());
-		} else if (expr instanceof UnaryValueOperator) {
-			Var var = createAnonVar();
-			// Add to the current graph pattern's extension elements list,
-			// not as a new isolated Extension node
-			graphPattern.addRequiredTE(
-					new Extension(
-							graphPattern.buildTupleExpr(), // wrap the EXISTING pattern, not SingletonSet
-							new ExtensionElem(expr, var.getName())
-					)
-			);
-			return var;
 		} else {
 			throw new IllegalArgumentException("Unexpected expression type: " + expr.getClass().getName());
 		}
@@ -3127,11 +3112,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	}
 
 	@Override
-	public ValueExprTripleRef visit(ASTTripleFunc node, Object data) throws VisitorException {
+	public ValueExpr visit(ASTTripleFunc node, Object data) throws VisitorException {
 		// Visit the 3 child expressions
 		ValueExpr subjectExpr = castToValueExpr(node.getSubj().jjtAccept(this, data));
 		ValueExpr predicateExpr = castToValueExpr(node.getPred().jjtAccept(this, data));
 		ValueExpr objectExpr = castToValueExpr(node.getObj().jjtAccept(this, data));
+		List<ValueExpr> components = List.of(subjectExpr, predicateExpr, objectExpr);
+		if (components.stream().anyMatch(expr -> !(expr instanceof Var || expr instanceof ValueConstant))) {
+			// Keep scalar components inside the call so IF and COALESCE retain lazy evaluation and local errors.
+			return new FunctionCall(RDF.STATEMENT.stringValue(), components);
+		}
 
 		// Map each ValueExpr to a Var (same as how triple terms are built in the AST visitor)
 		Var s = toVar(subjectExpr);

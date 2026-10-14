@@ -91,6 +91,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
@@ -107,6 +108,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -1234,6 +1236,15 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		writeAsFunction("isTriple", node.getArg());
 	}
 
+	@Override
+	public void meetOther(QueryModelNode node) throws RuntimeException {
+		if (node instanceof ValueExprTripleRef triple) {
+			writeAsFunction("TRIPLE", List.of(triple.getSubjectVar(), triple.getPredicateVar(), triple.getObjectVar()));
+		} else {
+			super.meetOther(node);
+		}
+	}
+
 //    @Override
 //    public void meetOther(QueryModelNode node) throws RuntimeException {
 //        if (node instanceof NaryJoin) {
@@ -1319,6 +1330,9 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	protected String getFunctionNameAsString(FunctionCall expr) {
 		String uri = expr.getURI();
+		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement".equals(uri)) {
+			return "TRIPLE";
+		}
 		if (StringUtils.isEmpty(uri)) {
 			return uri;
 		}

@@ -92,6 +92,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -150,6 +151,7 @@ public class TupleExprToIrConverter {
 
 	static {
 		Map<String, String> m = new LinkedHashMap<>();
+		m.put("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement", "TRIPLE");
 		m.put(FN_NS + "string-length", "STRLEN");
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
@@ -600,6 +602,10 @@ public class TupleExprToIrConverter {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExpr(triple.getSubjectVar()) + ", " + renderExpr(triple.getPredicateVar())
+					+ ", " + renderExpr(triple.getObjectVar()) + ")";
+		}
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
@@ -2284,6 +2290,7 @@ public class TupleExprToIrConverter {
 			final String cond = ExprTextUtils.stripRedundantOuterParens(renderExpr(condExpr));
 			return new IrFilter(cond, false);
 		}
+
 
 		public void meet(final StatementPattern sp) {
 			final Var ctx = getContextVarSafe(sp);

@@ -102,7 +102,7 @@ public class SPARQLParserTest {
 	@Test
 	public void acceptsEmptyVariadicExpressionsInNestedContexts() {
 		for (String expression : List.of("COALESCE()", "CONCAT()", "IF(true, COALESCE(), CONCAT())",
-				"COALESCE(COALESCE(), CONCAT())")) {
+				"COALESCE(COALESCE(), CONCAT())", "COALESCE(1 / 0, TRIPLE(<urn:s>, <urn:p>, CONCAT()))")) {
 			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
 					"SELECT (" + expression + " AS ?result) WHERE {}", null), expression);
 			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(

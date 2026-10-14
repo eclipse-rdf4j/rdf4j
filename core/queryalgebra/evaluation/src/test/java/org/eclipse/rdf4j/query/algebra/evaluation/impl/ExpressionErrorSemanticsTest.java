@@ -49,7 +49,68 @@ import org.junit.jupiter.params.provider.EnumSource;
  */
 public class ExpressionErrorSemanticsTest {
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	public void tripleComponentsRetainScalarErrorsAndNestedEvaluation(QueryEvaluationMode mode) {
+		var vf = SimpleValueFactory.getInstance();
+		for (boolean optimize : List.of(false, true)) {
+			String expression = "TRIPLE(IF(true,<urn:s>,1/0),IRI(CONCAT('urn:','p')),CONCAT())";
+			assertThat(evaluate(mode, "SELECT (" + expression + " AS ?x) WHERE {}", optimize))
+					.singleElement()
+					.satisfies(row -> assertThat(row.getValue("x"))
+							.isEqualTo(vf.createTripleTerm(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+									vf.createLiteral(""))));
+			assertThat(evaluate(mode,
+					"SELECT (TRIPLE(<urn:s>,<urn:p>,TRIPLE(<urn:inner>,<urn:p>,CONCAT('x'))) AS ?x) WHERE {}",
+					optimize))
+							.singleElement()
+							.satisfies(row -> assertThat(row.getValue("x"))
+									.isEqualTo(vf.createTripleTerm(vf.createIRI("urn:s"), vf.createIRI("urn:p"),
+											vf.createTripleTerm(vf.createIRI("urn:inner"), vf.createIRI("urn:p"),
+													vf.createLiteral("x")))));
+			for (String invalid : List.of("TRIPLE('bad',<urn:p>,CONCAT('x'))", "TRIPLE(<urn:s>,'bad',CONCAT('x'))")) {
+				assertThat(evaluate(mode, "SELECT (COALESCE(" + invalid + ",'safe') AS ?x) WHERE {}", optimize))
+						.singleElement()
+						.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(vf.createLiteral("safe")));
+			}
+		}
+	}
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	public void unselectedTripleComponentsAreNeverEvaluated(QueryEvaluationMode mode) {
+		AtomicInteger calls = new AtomicInteger();
+		Function counter = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:triple:counter";
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				calls.incrementAndGet();
+				return factory.createLiteral("counted");
+			}
+		};
+		FunctionRegistry.getInstance().add(counter);
+		try {
+			for (boolean optimize : List.of(false, true)) {
+				for (String expression : List.of("IF(false,TRIPLE(<urn:s>,<urn:p>,STR(<urn:triple:counter>())),'safe')",
+						"COALESCE('safe',TRIPLE(<urn:s>,<urn:p>,STR(<urn:triple:counter>())))")) {
+					assertThat(evaluate(mode, "SELECT (" + expression + " AS ?x) WHERE {}", optimize)).singleElement()
+							.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo("safe"));
+					assertThat(calls).hasValue(0);
+				}
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(counter);
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(QueryEvaluationMode.class)
