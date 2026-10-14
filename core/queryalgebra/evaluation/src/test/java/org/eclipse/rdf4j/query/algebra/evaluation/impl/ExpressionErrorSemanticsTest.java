@@ -20,6 +20,7 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -186,12 +187,27 @@ public class ExpressionErrorSemanticsTest {
 									.satisfies(row -> assertThat(row.hasBinding("x")).isFalse());
 				}
 			}
-			for (String operand : List.of("'relative'", "<https://example.org/base/relative>")) {
-				assertThat(evaluate(mode, "BASE <https://example.org/base/> SELECT ?x WHERE { BIND(IRI("
-						+ operand + ") AS ?x) }", optimize)).singleElement()
-								.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(
-										SimpleValueFactory.getInstance()
-												.createIRI("https://example.org/base/relative")));
+			String[][] validControls = {
+					{ "'relative'", "https://example.org/base/relative" },
+					{ "\"relative\"^^xsd:string", "https://example.org/base/relative" },
+					{ "'https://example.org/base/absolute'", "https://example.org/base/absolute" },
+					{ "\"https://example.org/base/typed\"^^xsd:string", "https://example.org/base/typed" },
+					{ "<https://example.org/base/from-iri>", "https://example.org/base/from-iri" }
+			};
+			for (String function : List.of("IRI", "URI")) {
+				for (String[] control : validControls) {
+					String query = "BASE <https://example.org/base/> PREFIX xsd: "
+							+ "<http://www.w3.org/2001/XMLSchema#> SELECT ?x WHERE { BIND(" + function + "("
+							+ control[0] + ") AS ?x) }";
+					assertThat(evaluate(mode, query, optimize))
+							.as("%s(%s), optimize=%s", function, control[0], optimize)
+							.singleElement()
+							.satisfies(row -> {
+								assertThat(row.getValue("x")).isInstanceOf(IRI.class);
+								assertThat(row.getValue("x")).isEqualTo(
+										SimpleValueFactory.getInstance().createIRI(control[1]));
+							});
+				}
 			}
 		}
 	}
