@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -25,6 +26,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.IntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -33,28 +35,38 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 class OrderKeyEvaluationTest {
@@ -83,6 +95,81 @@ class OrderKeyEvaluationTest {
 			assertFalse(result.hasNext());
 		}
 		assertEquals(1, evaluations.get(), "evaluate each ORDER expression once per solution occurrence");
+	}
+
+	@Test
+	void parsedVolatileOrderReversesOffsetResultsAcrossDistinctAndSpilledExecution() {
+		String functionUri = "urn:rdf4j:test:parsed-order-offset-counter";
+		for (boolean distinct : new boolean[] { false, true }) {
+			for (boolean optimize : new boolean[] { false, true }) {
+				for (long threshold : new long[] { 0, 1 }) {
+					AtomicInteger invocations = new AtomicInteger();
+					Function counter = new Function() {
+						@Override
+						public String getURI() {
+							return functionUri;
+						}
+
+						@Override
+						public boolean mustReturnDifferentResult() {
+							return true;
+						}
+
+						@Override
+						@SuppressWarnings("deprecation")
+						public Value evaluate(ValueFactory valueFactory, Value... args) {
+							return valueFactory.createLiteral(-invocations.incrementAndGet());
+						}
+					};
+					FunctionRegistry registry = FunctionRegistry.getInstance();
+					registry.add(counter);
+					try {
+						DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(),
+								null,
+								null, threshold, new EvaluationStatistics());
+						String query = "SELECT " + (distinct ? "DISTINCT " : "")
+								+ "?x WHERE { VALUES ?x { 4 1 4 2 3 2 } } ORDER BY <" + functionUri
+								+ ">() OFFSET 1 LIMIT 2";
+						ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+						TupleExpr expression = parsed.getTupleExpr();
+						if (optimize) {
+							expression = strategy.optimize(expression, new EvaluationStatistics(),
+									EmptyBindingSet.getInstance());
+						}
+						Order order = findOrder(expression);
+						assertNotNull(order, query);
+						order.setRuntimeTelemetryEnabled(true);
+						var evaluation = strategy.precompile(expression);
+						assertEquals(0, invocations.get(), "ORDER functions are evaluated per input occurrence");
+
+						List<Value> actual = new ArrayList<>();
+						try (CloseableIteration<BindingSet> rows = evaluation.evaluate(EmptyBindingSet.getInstance())) {
+							while (rows.hasNext()) {
+								BindingSet row = rows.next();
+								assertEquals(Set.of("x"), row.getBindingNames());
+								actual.add(row.getValue("x"));
+							}
+						}
+
+						List<Value> expected = distinct
+								? List.of(SimpleValueFactory.getInstance().createLiteral("3", XSD.INTEGER),
+										SimpleValueFactory.getInstance().createLiteral("4", XSD.INTEGER))
+								: List.of(SimpleValueFactory.getInstance().createLiteral("3", XSD.INTEGER),
+										SimpleValueFactory.getInstance().createLiteral("2", XSD.INTEGER));
+						assertEquals(expected, actual,
+								"descending volatile keys must be applied before OFFSET and LIMIT");
+						assertEquals(6, invocations.get(), "evaluate the key once for each VALUES occurrence");
+						if (threshold == 1) {
+							assertEquals(6, order.getLongMetricActual(TelemetryMetricNames.ROWS_SORTED_ACTUAL));
+							assertTrue(order.getLongMetricActual(TelemetryMetricNames.SPILL_COUNT_ACTUAL) > 0,
+									"threshold one must exercise the spill path");
+						}
+					} finally {
+						registry.remove(counter);
+					}
+				}
+			}
+		}
 	}
 
 	@Test
@@ -257,6 +344,18 @@ class OrderKeyEvaluationTest {
 			assertSame(keyFailure, failure);
 			assertEquals(List.of(closeFailure), List.of(failure.getSuppressed()));
 		}
+	}
+
+	private static Order findOrder(TupleExpr expression) {
+		AtomicReference<Order> result = new AtomicReference<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Order node) {
+				result.set(node);
+				super.meet(node);
+			}
+		});
+		return result.get();
 	}
 
 	private static Set<Path> spillFiles() throws IOException {
