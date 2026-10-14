@@ -1579,11 +1579,6 @@ body.workbench-body .workbench-contextbar .workbench-brand img {
 	max-height: 28px;
 }
 
-body.workbench-body .workbench-contextbar .workbench-brand img.product {
-	height: 18px;
-	max-height: 18px;
-}
-
 body.workbench-body .workbench-switcher {
 	position: relative;
 	min-width: 0;
@@ -2042,11 +2037,6 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 	body.workbench-body .workbench-contextbar .workbench-brand img {
 		height: 24px;
 		max-height: 24px;
-	}
-
-	body.workbench-body .workbench-contextbar .workbench-brand img.product {
-		height: 16px;
-		max-height: 16px;
 	}
 
 	body.workbench-body .workbench-contextbar .workbench-switcher,
