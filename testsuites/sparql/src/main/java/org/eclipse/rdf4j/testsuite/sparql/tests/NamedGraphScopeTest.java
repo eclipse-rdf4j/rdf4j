@@ -306,28 +306,101 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 	}
 
 	private void zeroLengthMembership(RepositoryConnection conn, String path) {
+		Value signal = conn.getValueFactory().createLiteral("signal");
+		Value alternate = conn.getValueFactory().createLiteral("alternate");
+		IRI channel = iri(conn, "channel");
 		String sameEndpointPattern = "VALUES ?endpoint { \"signal\" } ?endpoint " + path + " ?endpoint";
-		String distinctPeerPattern = "VALUES ?endpoint { \"signal\" } BIND(?endpoint AS ?peer) "
-				+ "?endpoint " + path + " ?peer";
 		assertThat(rows(conn, "SELECT ?endpoint { " + sameEndpointPattern + " }"))
 				.as(path + " same endpoint before node insertion")
 				.isEmpty();
+
+		String distinctPeerPattern = "VALUES ?endpoint { \"signal\" } BIND(?endpoint AS ?peer) "
+				+ "?endpoint " + path + " ?peer";
 		assertThat(rows(conn, "SELECT ?endpoint { " + distinctPeerPattern + " }"))
 				.as(path + " distinct peer before node insertion")
 				.isEmpty();
 
-		conn.add(iri(conn, "sender"), iri(conn, "channel"), conn.getValueFactory().createLiteral("signal"));
-		assertThat(rows(conn, "SELECT ?endpoint { " + sameEndpointPattern + " }"))
-				.as(path + " same endpoint after node insertion")
-				.hasSize(1);
-		assertThat(rows(conn, "SELECT ?endpoint { " + distinctPeerPattern + " }"))
-				.as(path + " distinct peer after node insertion")
-				.hasSize(1);
+		IRI firstGraph = iri(conn, "first-graph");
+		IRI secondGraph = iri(conn, "second-graph");
+		Value namedNode = conn.getValueFactory().createLiteral("named-node");
+		conn.add(iri(conn, "sender"), channel, signal);
+		conn.add(iri(conn, "receiver"), channel, alternate);
+		conn.add(iri(conn, "named-sender"), channel, namedNode, firstGraph);
+		conn.add(iri(conn, "other-sender"), channel, conn.getValueFactory().createLiteral("other-node"), secondGraph);
 
-		String predicateOnly = "VALUES ?node { :channel } BIND(?node AS ?same) ?node :channel? ?same";
-		assertThat(rows(conn, "SELECT ?node { " + predicateOnly + " }")).as("predicate-only IRI").isEmpty();
-		String absentNode = "VALUES ?check { \"outside\" } :unlisted :channel? :unlisted";
-		assertThat(rows(conn, "SELECT ?check { " + absentNode + " }")).as("fixed absent endpoint").hasSize(1);
+		List<BindingSet> sameEndpoint = rows(conn, "SELECT ?endpoint { " + sameEndpointPattern + " }");
+		assertThat(sameEndpoint).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("endpoint");
+			assertThat(row.getValue("endpoint")).isEqualTo(signal);
+		});
+
+		List<BindingSet> distinctPeer = rows(conn, "SELECT ?endpoint ?peer { " + distinctPeerPattern + " }");
+		assertThat(distinctPeer).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("endpoint", "peer");
+			assertThat(row.getValue("endpoint")).isEqualTo(signal);
+			assertThat(row.getValue("peer")).isEqualTo(signal);
+		});
+
+		String subjectOnly = "VALUES ?s { \"signal\" } ?s " + path + " ?o";
+		assertEndpointPair(rows(conn, "SELECT ?s ?o { " + subjectOnly + " }"), signal, signal,
+				"subject-only bound endpoint " + path);
+		String objectOnly = "?s " + path + " ?o VALUES ?o { \"signal\" }";
+		assertEndpointPair(rows(conn, "SELECT ?s ?o { " + objectOnly + " }"), signal, signal,
+				"object-only bound endpoint " + path);
+		String bothCompatible = "VALUES (?s ?o) { (\"signal\" \"signal\") } ?s " + path + " ?o";
+		assertEndpointPair(rows(conn, "SELECT ?s ?o { " + bothCompatible + " }"), signal, signal,
+				"compatible bound endpoints " + path);
+		String bothIncompatible = "VALUES (?s ?o) { (\"signal\" \"alternate\") } ?s " + path + " ?o";
+		assertThat(rows(conn, "SELECT ?s ?o { " + bothIncompatible + " }"))
+				.as("incompatible bound endpoints " + path)
+				.isEmpty();
+
+		TupleQuery apiBound = conn.prepareTupleQuery(PREFIX + "SELECT ?endpoint { ?endpoint " + path
+				+ " ?endpoint }");
+		apiBound.setBinding("endpoint", signal);
+		List<BindingSet> apiRows = QueryResults.asList(apiBound.evaluate());
+		assertThat(apiRows).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("endpoint");
+			assertThat(row.getValue("endpoint")).isEqualTo(signal);
+		});
+
+		String predicateOnly = "VALUES ?node { :channel } BIND(?node AS ?same) ?node " + path + " ?same";
+		assertThat(rows(conn, "SELECT ?node { " + predicateOnly + " }"))
+				.as("predicate-only IRI " + path)
+				.isEmpty();
+		assertThat(rows(conn, "SELECT ?node { VALUES ?node { :unlisted } ?node " + path + " ?node }"))
+				.as("runtime-bound absent endpoint " + path)
+				.isEmpty();
+		List<BindingSet> constantEndpoint = rows(conn,
+				"SELECT ?check { VALUES ?check { \"outside\" } :unlisted :channel? :unlisted }");
+		assertThat(constantEndpoint).as("original fixed absent endpoint control " + path)
+				.singleElement()
+				.satisfies(row -> {
+					assertThat(row.getBindingNames()).containsExactlyInAnyOrder("check");
+					assertThat(row.getValue("check")).isEqualTo(conn.getValueFactory().createLiteral("outside"));
+				});
+
+		String selectedNamed = "SELECT ?g ?node { GRAPH ?g { VALUES ?node { \"named-node\" } ?node "
+				+ path + " ?node } }";
+		List<BindingSet> selectedRows = rows(conn, selectedNamed);
+		assertThat(selectedRows).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "node");
+			assertThat(row.getValue("g")).isEqualTo(firstGraph);
+			assertThat(row.getValue("node")).isEqualTo(namedNode);
+		});
+		assertThat(rows(conn, "SELECT ?g ?node { GRAPH ?g { VALUES ?node { \"signal\" } ?node " + path
+				+ " ?node } }"))
+						.as("default graph node is not a selected named-graph node " + path)
+						.isEmpty();
+	}
+
+	private void assertEndpointPair(List<BindingSet> rows, Value subject, Value object, String description) {
+		assertThat(rows).as(description).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).as(description + " binding names")
+					.containsExactlyInAnyOrder("s", "o");
+			assertThat(row.getValue("s")).as(description + " subject").isEqualTo(subject);
+			assertThat(row.getValue("o")).as(description + " object").isEqualTo(object);
+		});
 	}
 
 	private void pathGraphIsolation(RepositoryConnection conn, String path) {
