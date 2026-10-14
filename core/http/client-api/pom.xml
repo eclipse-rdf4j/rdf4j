@@ -11,6 +11,11 @@
 	<description>HTTP client facade API for RDF4J, with no third-party HTTP dependencies.</description>
 	<dependencies>
 		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-common-io</artifactId>
+			<version>${project.version}</version>
+		</dependency>
+		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
