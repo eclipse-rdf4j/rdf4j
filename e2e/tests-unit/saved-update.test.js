@@ -105,7 +105,7 @@ test('saved queries delete permissions and toggle behavior cover both branches',
 
     const yasqe = createYasqeStub(harness);
     harness.context.YASQE = yasqe.api;
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from('alice:secret').toString('base64'));
+    harness.document.cookie = 'server-user=alice';
 
     harness.loadScripts(['saved-queries.js']);
     harness.runLoadHandlers();
@@ -168,7 +168,7 @@ test('saved query controls bind inert data attributes to static handlers', () =>
 
     const yasqe = createYasqeStub(harness);
     harness.context.YASQE = yasqe.api;
-    harness.document.cookie = 'server-user-password=' + encodeURIComponent(Buffer.from(owner + ':secret').toString('base64'));
+    harness.document.cookie = 'server-user=' + encodeURIComponent(owner);
 
     harness.loadScripts(['saved-queries.js']);
     harness.runLoadHandlers();
