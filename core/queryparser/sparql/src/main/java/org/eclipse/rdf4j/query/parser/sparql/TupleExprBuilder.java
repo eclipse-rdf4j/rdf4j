@@ -629,42 +629,24 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 				group = new Group(tupleExpr);
 			}
 
-			ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(0).jjtAccept(this, tupleExpr);
+			Extension extension = new Extension(group);
+			tupleExpr = extension;
+			for (int i = 0; i < havingNode.jjtGetNumChildren(); i++) {
+				ValueExpr expr = (ValueExpr) havingNode.jjtGetChild(i).jjtAccept(this, tupleExpr);
 
-			// retrieve any aggregate operators from the expression.
-			AggregateCollector collector = new AggregateCollector();
-			collector.meetOther(expr);
+				AggregateCollector collector = new AggregateCollector();
+				collector.meetOther(expr);
+				for (AggregateOperator operator : collector.getOperators()) {
+					Var var = createAnonHavingVar();
+					AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);
+					replacer.meetOther(expr);
 
-			// replace operator occurrences with an anonymous var, and alias it
-			// to the group
-			Extension extension = new Extension();
-			for (AggregateOperator operator : collector.getOperators()) {
-				Var var = createAnonHavingVar();
-
-				// replace occurrence of the operator in the filter expression
-				// with the variable.
-				AggregateOperatorReplacer replacer = new AggregateOperatorReplacer(operator, var);
-				replacer.meetOther(expr);
-
-				String alias = var.getName();
-
-				// create an extension linking the operator to the variable
-				// name.
-				ExtensionElem pe = new ExtensionElem(operator.clone(), alias);
-				extension.addElement(pe);
-
-				// add the aggregate operator to the group.
-				GroupElem ge = new GroupElem(alias, operator);
-
-				// FIXME quite often the aggregate in the HAVING clause will be
-				// a duplicate of an aggregate in the projection. We could
-				// perhaps
-				// optimize for that, to avoid having to evaluate twice.
-				group.addGroupElement(ge);
+					String alias = var.getName();
+					extension.addElement(new ExtensionElem(operator.clone(), alias));
+					group.addGroupElement(new GroupElem(alias, operator));
+				}
+				tupleExpr = new Filter(tupleExpr, expr);
 			}
-
-			extension.setArg(group);
-			tupleExpr = new Filter(extension, expr);
 		}
 
 		return tupleExpr;

@@ -667,7 +667,7 @@ void GroupCondition() :
 void HavingClause() :
 {}
 {
-    <HAVING> Constraint()
+    <HAVING> (Constraint())+
 }
 
 void OrderCondition() :
