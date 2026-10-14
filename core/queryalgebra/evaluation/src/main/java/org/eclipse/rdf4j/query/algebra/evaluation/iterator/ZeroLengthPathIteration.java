@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -80,6 +81,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private final String contextVarName;
 
 	private final CollectionFactory cf;
+	private final boolean requiresNodeMembership;
 	private final boolean subjectConstant;
 	private final boolean objectConstant;
 	private final Var graphContextVar;
@@ -94,6 +96,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
+		this.requiresNodeMembership = !subjectVar.isConstant() && !objVar.isConstant();
 		this.subjectConstant = subjectVar.isConstant();
 		this.objectConstant = objVar.isConstant();
 		this.graphContextVar = contextVar;
@@ -203,7 +206,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		} else {
 			Value identity = subj != null ? subj : obj;
 			if (result != null) {
-				if (subj != null && obj != null && !subj.equals(obj)) {
+				if (subj != null && obj != null && !subj.equals(obj)
+						|| requiresNodeMembership && !isGraphNode(identity)) {
 					result = null;
 				}
 			}
@@ -227,7 +231,25 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		return iter;
 	}
 
+	private boolean isGraphNode(Value value) {
+		if (value instanceof Resource && containsNode(value, true)) {
+			return true;
+		}
+		return containsNode(value, false);
+	}
 
+	private boolean containsNode(Value value, boolean subjectPosition) {
+		Var subject = subjectPosition ? Var.of(ANON_SUBJECT_VAR, value, true) : createAnonVar(ANON_SUBJECT_VAR);
+		Var object = subjectPosition ? createAnonVar(ANON_OBJECT_VAR) : Var.of(ANON_OBJECT_VAR, value, true);
+		StatementPattern pattern = graphContextVar == null
+				? new StatementPattern(subject, createAnonVar(ANON_PREDICATE_VAR), object)
+				: new StatementPattern(Scope.NAMED_CONTEXTS, subject, createAnonVar(ANON_PREDICATE_VAR), object,
+						scanGraphVar());
+		try (CloseableIteration<BindingSet> nodes = evaluationStrategy.precompile(pattern, scanContext)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			return nodes.hasNext();
+		}
+	}
 
 	private Var scanGraphVar() {
 		Value value = graphContextVar.hasValue() ? graphContextVar.getValue()

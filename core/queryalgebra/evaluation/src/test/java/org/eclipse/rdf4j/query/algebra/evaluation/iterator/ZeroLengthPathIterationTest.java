@@ -140,6 +140,17 @@ public class ZeroLengthPathIterationTest {
 		assertEquals(1, closes.get());
 	}
 
+	@Test
+	void boundMembershipIgnoresInternalNameBindings() {
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding("v", RDF.ALT);
+		bindings.addBinding(ZeroLengthPathIteration.ANON_PREDICATE_VAR, RDF.VALUE);
+		try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(evaluator, Var.of("v"), Var.of("v"),
+				RDF.ALT, RDF.ALT, null, bindings, new QueryEvaluationContext.Minimal(null))) {
+			assertTrue(iteration.hasNext());
+			assertEquals(RDF.ALT, iteration.next().getValue("v"));
+		}
+	}
 
 	@Test
 	void unboundEnumerationIgnoresInternalNameBindings() {

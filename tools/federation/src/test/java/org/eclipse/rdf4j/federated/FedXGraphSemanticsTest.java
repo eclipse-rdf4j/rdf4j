@@ -202,6 +202,25 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 				.containsExactly(G1);
 	}
 
+	@Test
+	public void runtimeIdentityRespectsTheQueriesSelectedMembers() {
+		try (RepositoryConnection excluded = getRepository(2).getConnection()) {
+			excluded.add(VF.createIRI("urn:excluded"), P, literal("excluded"), G1);
+		}
+		for (String pattern : List.of("GRAPH <urn:g1> { VALUES ?v { <urn:excluded> } ?v <urn:p>? ?v }",
+				"VALUES ?v { <urn:excluded> } ?v <urn:p>? ?v")) {
+			try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+				TupleQuery query = connection.prepareTupleQuery("SELECT ?v WHERE { " + pattern + " }");
+				FedXDataset dataset = new FedXDataset(query.getDataset());
+				dataset.addEndpoint(
+						federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId());
+				query.setDataset(dataset);
+				try (var result = query.evaluate()) {
+					assertThat(QueryResults.asList(result)).as(pattern).isEmpty();
+				}
+			}
+		}
+	}
 
 	@Test
 	public void fixedEndpointsCrossMembersWithoutLosingPrivatePathVariables() {
@@ -330,6 +349,16 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 				.containsExactlyInAnyOrder(A, B);
 	}
 
+	@ParameterizedTest
+	@ValueSource(strings = { "<urn:p>?", "<urn:p>*", "^<urn:p>?", "^<urn:p>*" })
+	public void runtimePathIdentityRequiresANodeInTheSelectedGraph(String path) {
+		assertThat(query("SELECT ?v WHERE { GRAPH <urn:g1> { VALUES ?v { <urn:absent> } ?v "
+				+ path + " ?v } }")).isEmpty();
+		assertThat(query("SELECT ?v WHERE { GRAPH <urn:g1> { VALUES ?v { <urn:a> } ?v "
+				+ path + " ?v } }"))
+						.singleElement()
+						.satisfies(row -> assertThat(row.getValue("v")).isEqualTo(A));
+	}
 
 	private List<BindingSet> query(String text) {
 		try (RepositoryConnection connection = fedxRule.getRepository().getConnection();

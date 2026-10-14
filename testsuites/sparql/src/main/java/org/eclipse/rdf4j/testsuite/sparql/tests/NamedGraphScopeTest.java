@@ -254,7 +254,38 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				.hasSize(6);
 	}
 
+	private void zeroLengthMembership(RepositoryConnection conn, String path) {
+		String sameEndpointPattern = "VALUES ?endpoint { \"signal\" } ?endpoint " + path + " ?endpoint";
+		String distinctPeerPattern = "VALUES ?endpoint { \"signal\" } BIND(?endpoint AS ?peer) "
+				+ "?endpoint " + path + " ?peer";
+		assertThat(rows(conn, "SELECT ?endpoint { " + sameEndpointPattern + " }"))
+				.as(path + " same endpoint before node insertion")
+				.isEmpty();
+		assertThat(rows(conn, "SELECT ?endpoint { " + distinctPeerPattern + " }"))
+				.as(path + " distinct peer before node insertion")
+				.isEmpty();
 
+		conn.add(iri(conn, "sender"), iri(conn, "channel"), conn.getValueFactory().createLiteral("signal"));
+		assertThat(rows(conn, "SELECT ?endpoint { " + sameEndpointPattern + " }"))
+				.as(path + " same endpoint after node insertion")
+				.hasSize(1);
+		assertThat(rows(conn, "SELECT ?endpoint { " + distinctPeerPattern + " }"))
+				.as(path + " distinct peer after node insertion")
+				.hasSize(1);
+
+		String predicateOnly = "VALUES ?node { :channel } BIND(?node AS ?same) ?node :channel? ?same";
+		assertThat(rows(conn, "SELECT ?node { " + predicateOnly + " }")).as("predicate-only IRI").isEmpty();
+		String absentNode = "VALUES ?check { \"outside\" } :unlisted :channel? :unlisted";
+		assertThat(rows(conn, "SELECT ?check { " + absentNode + " }")).as("fixed absent endpoint").hasSize(1);
+	}
+
+	private void pathGraphIsolation(RepositoryConnection conn, String path) {
+		seed(conn);
+		assertThat(rows(conn, "SELECT ?g { GRAPH ?g { VALUES ?v { :a } ?v " + path + " ?v } }"))
+				.as(path)
+				.extracting(bs -> bs.getValue("g"))
+				.containsExactly(iri(conn, "g1"));
+	}
 
 	public Stream<DynamicTest> tests() {
 		Stream<DynamicTest> graphTests = Stream.of(makeTest("emptyBody", this::emptyBody),
@@ -271,6 +302,10 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				makeTest("explicitEmptyDataset", this::explicitEmptyDataset),
 				makeTest("blankNodeGraph", this::blankNodeGraph),
 				makeTest("defaultAliases", this::defaultAliases), makeTest("duplicates", this::duplicates));
-		return graphTests;
+		Stream<DynamicTest> membershipTests = Stream.of(":p?", ":p*", "^:p?", "(:p?/:p?)")
+				.map(path -> makeTest("zeroLengthMembership " + path, conn -> zeroLengthMembership(conn, path)));
+		Stream<DynamicTest> isolationTests = Stream.of(":p?", ":p*", "^:p*")
+				.map(path -> makeTest("pathGraphIsolation " + path, conn -> pathGraphIsolation(conn, path)));
+		return Stream.concat(graphTests, Stream.concat(membershipTests, isolationTests));
 	}
 }
