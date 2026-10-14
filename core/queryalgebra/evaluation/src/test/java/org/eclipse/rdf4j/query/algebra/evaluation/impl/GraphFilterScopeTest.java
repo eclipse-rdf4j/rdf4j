@@ -59,9 +59,19 @@ class GraphFilterScopeTest {
 								(full ? "pipeline: " : "sameTerm: ") + body, () -> {
 									String query = "SELECT ?g WHERE { " + body + " }";
 									List<BindingSet> raw = evaluate(query, 0);
-									assertThat(raw).isNotEmpty();
-									assertThat(evaluate(query, full ? 2 : 1)).containsExactlyInAnyOrderElementsOf(raw);
+									assertExpectedGraphRow(raw, query, "raw");
+									List<BindingSet> optimized = evaluate(query, full ? 2 : 1);
+									assertExpectedGraphRow(optimized, query, full ? "pipeline" : "sameTerm optimizer");
+									assertThat(optimized).containsExactlyInAnyOrderElementsOf(raw);
 								})));
+	}
+
+	private static void assertExpectedGraphRow(List<BindingSet> rows, String query, String route) {
+		assertThat(rows).as("%s result for %s", route, query).hasSize(1);
+		BindingSet row = rows.get(0);
+		assertThat(row.getBindingNames()).as("%s binding names for %s", route, query)
+				.containsExactlyInAnyOrder("g");
+		assertThat(row.getValue("g")).as("%s graph name for %s", route, query).isEqualTo(G1);
 	}
 
 	private List<BindingSet> evaluate(String query, int optimization) {

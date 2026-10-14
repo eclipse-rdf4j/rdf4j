@@ -19,6 +19,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -52,6 +53,16 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 
 	private List<BindingSet> rows(RepositoryConnection conn, String query) {
 		return QueryResults.asList(conn.prepareTupleQuery(PREFIX + query).evaluate());
+	}
+
+	private void assertGraphNames(List<BindingSet> matches, List<IRI> expected, String description) {
+		assertThat(matches).as(description)
+				.allSatisfy(row -> assertThat(row.getBindingNames())
+						.as(description + " binding names")
+						.containsExactlyInAnyOrder("g"));
+		assertThat(matches).as(description)
+				.extracting(row -> row.getValue("g"))
+				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
 	private void emptyBody(RepositoryConnection conn) {
@@ -131,10 +142,14 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				+ "BIND(CONCAT(?edition, \"-\", STR(?rank + 1)) AS ?label) }";
 		List<BindingSet> result = rows(conn, "SELECT ?shelf ?label { " + graphBody + " }");
 		assertThat(result)
-				.extracting(bs -> (bs.hasBinding("shelf") ? bs.getValue("shelf").stringValue() : "<unbound>") + "/"
-						+ (bs.hasBinding("label") ? bs.getValue("label").stringValue() : "<unbound>"))
-				.containsExactlyInAnyOrder("http://example/amber-shelf/any-4", "http://example/teal-shelf/any-4",
-						"http://example/teal-shelf/selected-9");
+				.allSatisfy(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("shelf", "label"));
+		List<List<Value>> actual = result.stream()
+				.map(row -> List.of(row.getValue("shelf"), row.getValue("label")))
+				.toList();
+		assertThat(actual).containsExactlyInAnyOrder(
+				List.of(amberShelf, conn.getValueFactory().createLiteral("any-4")),
+				List.of(tealShelf, conn.getValueFactory().createLiteral("any-4")),
+				List.of(tealShelf, conn.getValueFactory().createLiteral("selected-9")));
 	}
 
 	private void minusDisjoint(RepositoryConnection conn) {
@@ -148,57 +163,90 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 		String graphBody = "?book :caption ?caption " + minus + " FILTER(CONTAINS(?caption, \"Guide\"))";
 		assertThat(rows(conn,
 				"SELECT ?shelf ?book { VALUES ?shelf { :reading-room } GRAPH ?shelf { " + graphBody + " } }"))
-				.extracting(bs -> List.of(bs.getValue("shelf"), bs.getValue("book")))
-				.containsExactly(List.of(readingRoom, book));
+						.extracting(bs -> List.of(bs.getValue("shelf"), bs.getValue("book")))
+						.containsExactly(List.of(readingRoom, book));
 	}
 
 	private void arbitraryBodies(RepositoryConnection conn) {
 		seed(conn);
+		IRI graphOne = iri(conn, "g1");
+		IRI graphTwo = iri(conn, "g2");
 		for (String body : List.of("{} UNION {}", "OPTIONAL { ?s :absent ?o }", "BIND(1 AS ?v)",
 				"FILTER(!BOUND(?g))", "{ SELECT (COUNT(*) AS ?n) WHERE {} }", "FILTER NOT EXISTS { ?s :absent ?o }")) {
-			assertThat(rows(conn, "SELECT ?g { GRAPH ?g { " + body + " } }")).as(body)
-					.hasSize(body.contains("UNION") ? 4 : 2);
+			List<IRI> expected = body.contains("UNION")
+					? List.of(graphOne, graphOne, graphTwo, graphTwo)
+					: List.of(graphOne, graphTwo);
+			assertGraphNames(rows(conn, "SELECT ?g { GRAPH ?g { " + body + " } }"), expected, body);
 		}
 	}
 
 	private void nestedGraph(RepositoryConnection conn) {
 		seed(conn);
-		assertThat(rows(conn, "SELECT ?g ?h ?s { GRAPH ?g { GRAPH ?h { ?s ?p ?o } } }"))
-				.hasSize(4);
-		assertThat(rows(conn, "SELECT ?g ?s { GRAPH ?g { GRAPH :g2 { ?s ?p ?o } } }"))
-				.extracting(bs -> bs.getValue("s"))
-				.containsExactly(iri(conn, "b"), iri(conn, "b"));
+		IRI graphOne = iri(conn, "g1");
+		IRI graphTwo = iri(conn, "g2");
+		IRI subjectOne = iri(conn, "a");
+		IRI subjectTwo = iri(conn, "b");
+		List<BindingSet> nested = rows(conn, "SELECT ?g ?h ?s { GRAPH ?g { GRAPH ?h { ?s ?p ?o } } }");
+		assertThat(nested)
+				.allSatisfy(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "h", "s"));
+		List<List<Value>> nestedRows = nested.stream()
+				.map(row -> List.of(row.getValue("g"), row.getValue("h"), row.getValue("s")))
+				.toList();
+		assertThat(nestedRows).containsExactlyInAnyOrder(
+				List.of(graphOne, graphOne, subjectOne), List.of(graphOne, graphTwo, subjectTwo),
+				List.of(graphTwo, graphOne, subjectOne), List.of(graphTwo, graphTwo, subjectTwo));
+
+		List<BindingSet> fixedInner = rows(conn, "SELECT ?g ?s { GRAPH ?g { GRAPH :g2 { ?s ?p ?o } } }");
+		assertThat(fixedInner).allSatisfy(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s"));
+		List<List<Value>> fixedInnerRows = fixedInner.stream()
+				.map(row -> List.of(row.getValue("g"), row.getValue("s")))
+				.toList();
+		assertThat(fixedInnerRows).containsExactlyInAnyOrder(
+				List.of(graphOne, subjectTwo), List.of(graphTwo, subjectTwo));
 	}
 
 	private void siblingBindings(RepositoryConnection conn) {
 		seed(conn);
-		for (String suffix : List.of("", " OPTIONAL")) {
-			String query = suffix.isEmpty()
-					? "SELECT ?v { VALUES ?v { 1 } GRAPH ?g { FILTER(!BOUND(?v)) } }"
-					: "SELECT ?g { VALUES ?v { 1 } OPTIONAL { GRAPH ?g { FILTER(!BOUND(?v)) } } }";
-			assertThat(rows(conn, query)).as(query).hasSize(2);
-		}
-		assertThat(rows(conn, "SELECT ?g { VALUES ?g { :g1 } GRAPH ?g { FILTER(!BOUND(?g)) } }"))
-				.hasSize(1);
+		var one = conn.getValueFactory().createLiteral("1", XSD.INTEGER);
+		List<BindingSet> independent = rows(conn,
+				"SELECT ?v { VALUES ?v { 1 } GRAPH ?g { FILTER(!BOUND(?v)) } }");
+		assertThat(independent).hasSize(2).allSatisfy(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("v");
+			assertThat(row.getValue("v")).isEqualTo(one);
+		});
+		assertGraphNames(rows(conn,
+				"SELECT ?g { VALUES ?v { 1 } OPTIONAL { GRAPH ?g { FILTER(!BOUND(?v)) } } }"),
+				List.of(iri(conn, "g1"), iri(conn, "g2")), "OPTIONAL sibling binding");
+		assertGraphNames(rows(conn,
+				"SELECT ?g { VALUES ?g { :g1 } GRAPH ?g { FILTER(!BOUND(?g)) } }"),
+				List.of(iri(conn, "g1")), "prebound graph name");
 	}
 
 	private void invocationBindings(RepositoryConnection conn) {
 		seed(conn);
 		TupleQuery query = conn.prepareTupleQuery(PREFIX + "SELECT ?g { GRAPH ?g { FILTER(?v = 1) } }");
-		query.setBinding("v", conn.getValueFactory().createLiteral(1));
-		assertThat(QueryResults.asList(query.evaluate())).hasSize(2);
+		query.setBinding("v", conn.getValueFactory().createLiteral("1", XSD.INTEGER));
+		assertGraphNames(QueryResults.asList(query.evaluate()),
+				List.of(iri(conn, "g1"), iri(conn, "g2")), "API value binding");
 		query.setBinding("g", iri(conn, "g1"));
-		assertThat(QueryResults.asList(query.evaluate())).hasSize(1);
+		assertGraphNames(QueryResults.asList(query.evaluate()), List.of(iri(conn, "g1")), "API graph binding");
 	}
 
 	private void existsInvocation(RepositoryConnection conn) {
 		seed(conn);
-		assertThat(rows(conn, "SELECT ?v { VALUES ?v { 1 2 } FILTER EXISTS { GRAPH ?g { FILTER(?v = 1) } } }"))
-				.extracting(bs -> bs.getValue("v"))
-				.containsExactly(conn.getValueFactory().createLiteral("1", XSD.INTEGER));
-		assertThat(rows(conn,
-				"SELECT ?v { VALUES ?v { 1 } FILTER EXISTS { VALUES ?local { 2 } GRAPH ?g { FILTER(!BOUND(?local)) } } }"))
-				.hasSize(1);
+		var one = conn.getValueFactory().createLiteral("1", XSD.INTEGER);
+		List<BindingSet> inherited = rows(conn,
+				"SELECT ?v { VALUES ?v { 1 2 } FILTER EXISTS { GRAPH ?g { FILTER(?v = 1) } } }");
+		assertThat(inherited).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("v");
+			assertThat(row.getValue("v")).isEqualTo(one);
+		});
+		List<BindingSet> local = rows(conn,
+				"SELECT ?v { VALUES ?v { 1 } FILTER EXISTS { VALUES ?local { 2 } GRAPH ?g { FILTER(!BOUND(?local)) } } }");
+		assertThat(local).singleElement().satisfies(row -> {
+			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("v");
+			assertThat(row.getValue("v")).isEqualTo(one);
+		});
 	}
 
 	private void activeGraphInExistsAndSubselect(RepositoryConnection conn) {
@@ -250,8 +298,11 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 
 	private void duplicates(RepositoryConnection conn) {
 		seed(conn);
-		assertThat(rows(conn, "SELECT ?g { GRAPH ?g { VALUES ?v { 1 1 UNDEF } } }"))
-				.hasSize(6);
+		List<BindingSet> result = rows(conn, "SELECT ?g { GRAPH ?g { VALUES ?v { 1 1 UNDEF } } }");
+		assertGraphNames(result,
+				List.of(iri(conn, "g1"), iri(conn, "g1"), iri(conn, "g1"),
+						iri(conn, "g2"), iri(conn, "g2"), iri(conn, "g2")),
+				"duplicate VALUES rows");
 	}
 
 	private void zeroLengthMembership(RepositoryConnection conn, String path) {
