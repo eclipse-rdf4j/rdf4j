@@ -1581,13 +1581,16 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			Var objVar = mapValueExprToVar(object);
 			graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);
 
-			// handle annotation if present
+			// handle reifier/annotation if present
 			ASTPropertyList annotation = propListNode.getAnnotation();
-			if (annotation != null) {
-				Var reifVar = buildReifiedTripleVar(propListNode.getReifier(), subjVar, predVar, objVar);
+			Object reifier = propListNode.getReifier();
+			if (annotation != null || propListNode.hasReifier()) {
+				Var reifVar = buildReifiedTripleVar(reifier, subjVar, predVar, objVar);
 
 				// annotation's PropertyList with reifVar as subject
-				annotation.jjtAccept(this, reifVar);
+				if (annotation != null) {
+					annotation.jjtAccept(this, reifVar);
+				}
 			}
 		}
 
@@ -1982,19 +1985,24 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			for (ValueExpr object : objectList) {
 				Var objVar = mapValueExprToVar(object);
 				graphPattern.addRequiredSP(subjVar.clone(), predVar.clone(), objVar);
-				if (annotation != null) {
-					annotation.jjtAccept(this, buildReifiedTripleVar(reifier, subjVar, predVar, objVar));
+				if (annotation != null || propListNode.hasReifier()) {
+					Var reifVar = buildReifiedTripleVar(reifier, subjVar, predVar, objVar);
+					if (annotation != null) {
+						annotation.jjtAccept(this, reifVar);
+					}
 				}
 			}
 		} else if (verbPath instanceof TupleExpr) {
-			if (annotation != null) {
+			if (annotation != null || propListNode.hasReifier()) {
 				if (verbPath instanceof StatementPattern sp) {
-					annotation.jjtAccept(this,
-							buildReifiedTripleVar(reifier, sp.getSubjectVar(), sp.getPredicateVar(),
-									sp.getObjectVar()));
+					Var reifVar = buildReifiedTripleVar(reifier, sp.getSubjectVar(), sp.getPredicateVar(),
+							sp.getObjectVar());
+					if (annotation != null) {
+						annotation.jjtAccept(this, reifVar);
+					}
 				} else {
 					throw new MalformedQueryException(
-							"SPARQL 1.2 annotation syntax is only allowed for triple patterns " +
+							"SPARQL 1.2 reifier/annotation syntax is only allowed for triple patterns " +
 									"with a simple predicate (IRI, variable, or 'a')");
 				}
 			}

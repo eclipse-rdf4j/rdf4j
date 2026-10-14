@@ -328,4 +328,4 @@ public interface SyntaxTreeBuilderVisitor {
 
 	public Object visit(ASTModify node, Object data) throws VisitorException;
 }
-/* JavaCC - OriginalChecksum=737e41e22025c9cd9ff3e27d425e96d6 (do not edit this line) */
+/* JavaCC - OriginalChecksum=d8eda6cf3595e1847082ad02f07f56dd (do not edit this line) */

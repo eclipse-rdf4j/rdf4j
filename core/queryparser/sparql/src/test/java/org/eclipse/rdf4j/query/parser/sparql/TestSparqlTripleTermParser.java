@@ -1686,4 +1686,156 @@ public class TestSparqlTripleTermParser {
 
 		assertThat(exception.getMessage()).contains("DELETE WHERE may not contain blank nodes");
 	}
+
+	/*-
+	 * SPARQL 1.2 grammar: Reifier ::= '~' VarOrReifierId? and
+	 * VarOrReifierId ::= Var | iri | BlankNode.
+	 * A variable is a valid reifier identifier directly after an ordinary
+	 * (non-reified-triple-term) triple pattern, exactly as it already is
+	 * inside a reified triple term (<< ?h :p ?s ~?r >> already parses).
+	 */
+	@Test
+	public void testReifierWithVariableAfterTriplePattern() {
+		String query = "PREFIX : <urn:> SELECT * WHERE { ?h :p ?s ~?r }";
+
+		ParsedQuery q = parser.parseQuery(query, null);
+		assertNotNull(q);
+
+		List<StatementPattern> reifiesPatterns = new ArrayList<>();
+		q.getTupleExpr().visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar().hasValue()
+						&& RDF.REIFIES.stringValue().equals(node.getPredicateVar().getValue().stringValue())) {
+					reifiesPatterns.add(node);
+				}
+			}
+		});
+
+		assertEquals(1, reifiesPatterns.size(), "expect exactly one rdf:reifies statement pattern");
+		assertEquals("r", reifiesPatterns.get(0).getSubjectVar().getName(),
+				"the ~?r variable should be bound to the reifier of the triple pattern");
+	}
+
+	/*-
+	 * SPARQL 1.2 grammar: Reifier ::= '~' VarOrReifierId? -- the identifier
+	 * after '~' is optional, so a bare '~' (anonymous reifier) must be
+	 * accepted directly after an ordinary triple pattern in a SELECT query,
+	 * not just inside INSERT/DELETE DATA blocks.
+	 */
+	@Test
+	public void testBareReifierWithoutIdentifierAfterTriplePattern() {
+		String query = "PREFIX : <urn:> SELECT * WHERE { ?x :p ?y ~ }";
+
+		ParsedQuery q = parser.parseQuery(query, null);
+		assertNotNull(q);
+
+		List<StatementPattern> reifiesPatterns = new ArrayList<>();
+		q.getTupleExpr().visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<>() {
+			@Override
+			public void meet(StatementPattern node) {
+				if (node.getPredicateVar().hasValue()
+						&& RDF.REIFIES.stringValue().equals(node.getPredicateVar().getValue().stringValue())) {
+					reifiesPatterns.add(node);
+				}
+			}
+		});
+
+		assertEquals(1, reifiesPatterns.size(), "expect exactly one rdf:reifies statement pattern");
+		assertTrue(reifiesPatterns.get(0).getSubjectVar().isAnonymous(),
+				"a bare '~' with no identifier should generate an anonymous reifier variable");
+	}
+
+	/*-
+	 * SPARQL 1.2 grammar note: "A reifier or annotation syntax is only permitted
+	 * after a triple when the property position is a simple path (an IRI, the
+	 * keyword 'a', or a variable), and not for other path expressions."
+	 * A named reifier ('~:r') after a complex property path must be rejected,
+	 * exactly like the annotation block ('{| |}') already is.
+	 */
+	@Test
+	public void testReifierAfterComplexPropertyPathIsRejected() {
+		String query = "PREFIX : <urn:> SELECT * WHERE { ?x :a/:b ?y ~:r }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseQuery(query, null));
+
+		assertThat(exception.getMessage()).contains("simple predicate");
+	}
+
+	/*-
+	 * Same restriction, but for a bare reifier (no explicit identifier) after
+	 * a complex property path.
+	 */
+	@Test
+	public void testBareReifierAfterComplexPropertyPathIsRejected() {
+		String query = "PREFIX : <urn:> SELECT * WHERE { ?x :a/:b ?y ~ }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseQuery(query, null));
+
+		assertThat(exception.getMessage()).contains("simple predicate");
+	}
+
+	/*-
+	 * A bare '~' (anonymous reifier) after a ground triple pattern in DELETE
+	 * WHERE allocates a fresh blank node reifier, exactly like an anonymous
+	 * annotation block ('{| |}') already does (see testDeleteWhereReifiedTripleTerm
+	 * and the DELETE WHERE / {| |} case below). SPARQL forbids blank nodes in
+	 * DELETE WHERE, so this must be rejected too.
+	 */
+	@Test
+	public void testDeleteWhereBareReifierIsRejected() {
+		String update = "PREFIX : <urn:> DELETE WHERE { :s :p :o ~ }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseUpdate(update, null));
+
+		assertThat(exception.getMessage()).contains("DELETE WHERE may not contain blank nodes");
+	}
+
+	/*-
+	 * Same restriction, for an anonymous annotation block that is not preceded
+	 * by a named reifier.
+	 */
+	@Test
+	public void testDeleteWhereAnonymousAnnotationIsRejected() {
+		String update = "PREFIX : <urn:> DELETE WHERE { :s :p :o {| :c :d |} }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseUpdate(update, null));
+
+		assertThat(exception.getMessage()).contains("DELETE WHERE may not contain blank nodes");
+	}
+
+	/*-
+	 * SPARQL 1.1/1.2 grammar: "Blank node syntax is not allowed in DELETE
+	 * WHERE, the DeleteClause for DELETE, nor in DELETE DATA."
+	 * A reified triple term used without an explicit reifier id implicitly
+	 * allocates a blank node (the statement identifier), which must be
+	 * rejected inside DELETE DATA just like an explicit "_:b" would be.
+	 */
+	@Test
+	public void testDeleteDataReifiedTripleTermWithoutIdIsRejected() {
+		String update = "PREFIX : <urn:> DELETE DATA { GRAPH :g { << :s :p :o >> :q :z } }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseUpdate(update, null));
+
+		assertThat(exception.getMessage()).contains("blank node");
+	}
+
+	/*-
+	 * Same restriction for a bare '~' (anonymous reifier, no explicit id)
+	 * directly after a ground triple in DELETE DATA.
+	 */
+	@Test
+	public void testDeleteDataBareReifierIsRejected() {
+		String update = "PREFIX : <urn:> DELETE DATA { GRAPH :g { :s :p :o ~ } }";
+
+		MalformedQueryException exception = assertThrows(MalformedQueryException.class,
+				() -> parser.parseUpdate(update, null));
+
+		assertThat(exception.getMessage()).contains("blank node");
+	}
 }
