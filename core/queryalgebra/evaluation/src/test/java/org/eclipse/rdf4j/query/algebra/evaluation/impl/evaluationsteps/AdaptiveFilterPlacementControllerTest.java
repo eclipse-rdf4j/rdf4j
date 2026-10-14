@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterPlacementController.LearningBudget;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class AdaptiveFilterPlacementControllerTest {
 
@@ -32,13 +34,14 @@ class AdaptiveFilterPlacementControllerTest {
 		assertThat(controller.generation()).isEqualTo(1);
 	}
 
-	@Test
-	void realTrialMustBeatBothInterleavedControlWindows() {
+	@ParameterizedTest
+	@CsvSource({ "100,50,40", "40,50,100", "100,100,100", "100,125,100", "100,100,200", "200,100,100" })
+	void realTrialMustBeatBothInterleavedControlWindows(long before, long trial, long after) {
 		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
-		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
-		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, 50);
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, before);
+		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, trial);
 		assertThat(controller.selected(0)).isZero();
-		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 40);
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, after);
 		assertThat(controller.selected(0)).isZero();
 		assertThat(controller.rejectedTrials()).isEqualTo(1);
 		assertThat(controller.commits()).isZero();
@@ -53,6 +56,24 @@ class AdaptiveFilterPlacementControllerTest {
 		assertThat(controller.selected(0)).isEqualTo(1);
 		assertThat(controller.commits()).isEqualTo(1);
 		assertThat(controller.completedCohorts()).isEqualTo(160);
+	}
+
+	@Test
+	void aRejectedTrialCanRetryAndCommitAFasterPlacement() {
+		var controller = withFixedCandidates(new int[] { 2 }, new LearningBudget());
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
+		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, 100);
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
+		assertThat(controller.selected(0)).isZero();
+		assertThat(controller.rejectedTrials()).isEqualTo(1);
+		// The interval doubles after the first trial: one interval cools down, one measures the next baseline.
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS * 4, 100);
+		complete(controller, AdaptiveFilterPlacementController.TRIAL_COHORTS, 25);
+		complete(controller, AdaptiveFilterPlacementController.CONTROL_COHORTS, 100);
+		assertThat(controller.selected(0)).isEqualTo(1);
+		assertThat(controller.trials()).isEqualTo(2);
+		assertThat(controller.commits()).isEqualTo(1);
+		assertThat(controller.rejectedTrials()).isEqualTo(1);
 	}
 
 	@Test

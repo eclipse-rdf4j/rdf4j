@@ -18,7 +18,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.never;
@@ -30,7 +29,9 @@ import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.function.IntConsumer;
@@ -90,7 +91,7 @@ public class LmdbSailStoreTest {
 		defaultLocale = Locale.getDefault();
 		Locale.setDefault(Locale.ENGLISH);
 		this.dataDir = dataDir;
-		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
+		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)));
 		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -325,6 +326,15 @@ public class LmdbSailStoreTest {
 		tripleStoreField.setAccessible(true);
 		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
 		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		List<Integer> alignedCounts = new ArrayList<>();
+		List<Integer> alignedCapacities = new ArrayList<>();
+		doAnswer(invocation -> {
+			alignedCounts.add(invocation.getArgument(4));
+			alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
+			return invocation.callRealMethod();
+		}).when(tripleStoreSpy)
+				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+						any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 
 		Set<Statement> statements = new LinkedHashSet<>();
 		for (int i = 0; i < 1025; i++) {
@@ -341,9 +351,21 @@ public class LmdbSailStoreTest {
 			sink.approveAll(statements, Set.of());
 			sink.flush();
 
-			verify(tripleStoreSpy, atMost(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			assertEquals(List.of(256, 256, 256, 256, 1), alignedCounts);
+			assertEquals(List.of(256, 256, 256, 256, 1), alignedCapacities);
+			verify(tripleStoreSpy, times(5)).storeTriplesAligned(any(long[].class), any(long[].class),
+					any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+			verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+
+		try (RepositoryConnection observer = repo.getConnection()) {
+			assertEquals("bulk addition must preserve the three seed rows and add every input", 1028L, observer.size());
+			for (Statement statement : statements) {
+				assertTrue("every aligned input row must be stored: " + statement,
+						observer.hasStatement(statement, false));
+			}
 		}
 	}
 
@@ -395,6 +417,15 @@ public class LmdbSailStoreTest {
 			tripleStoreField.setAccessible(true);
 			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
 			TripleStore tripleStoreSpy = spy(originalTripleStore);
+			List<Integer> alignedCounts = new ArrayList<>();
+			List<Integer> alignedCapacities = new ArrayList<>();
+			doAnswer(invocation -> {
+				alignedCounts.add(invocation.getArgument(4));
+				alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
+				return invocation.callRealMethod();
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
@@ -402,7 +433,11 @@ public class LmdbSailStoreTest {
 				sink.approveAll(sampleStatements(5), Set.of());
 				sink.flush();
 
-				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
+				assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
+						alignedCounts);
+				assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
+						alignedCapacities);
+				verify(tripleStoreSpy, times(3)).storeTriplesAligned(any(long[].class), any(long[].class),
 						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {

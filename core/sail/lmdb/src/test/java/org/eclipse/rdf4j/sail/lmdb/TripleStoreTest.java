@@ -15,25 +15,22 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
-import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
+import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
-import static org.lwjgl.util.lmdb.LMDB.mdb_del;
-import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 
 import java.io.File;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.Set;
-import java.util.function.IntConsumer;
 import java.util.stream.Collectors;
 
-import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -41,7 +38,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.lwjgl.system.MemoryStack;
-import org.lwjgl.util.lmdb.MDBVal;
+import org.lwjgl.util.lmdb.MDBEnvInfo;
 
 /**
  * Low-level tests for {@link TripleStore}.
@@ -120,49 +117,107 @@ public class TripleStoreTest {
 	public void testAlignedWriteFallbackRemovesSecondaryInferredRowsForPromotions() throws Exception {
 		File fallbackDir = new File(dataDir, "aligned-fallback-store");
 		fallbackDir.mkdirs();
-		try (TripleStore fallbackStore = new TripleStore(fallbackDir, new LmdbStoreConfig("spoc,ospc,psoc"), null)) {
-			long[] subj = { 11 };
-			long[] pred = { 22 };
-			long[] obj = { 33 };
-			long[] context = { 44 };
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,ospc,psoc")
+				.setTripleDBSize(512L * 1024)
+				.setAutoGrow(true);
+		int count = 12_000;
+		long[] subj = new long[count];
+		long[] pred = new long[count];
+		long[] obj = new long[count];
+		long[] context = new long[count];
+		for (int i = 0; i < count; i++) {
+			subj[i] = 100_000L + i;
+			pred[i] = i % 31 + 1;
+			obj[i] = 200_000L + i;
+			context[i] = 1_000L + i % 5;
+		}
 
+		try (TripleStore fallbackStore = new TripleStore(fallbackDir, config, null)) {
 			fallbackStore.startTransaction();
-			fallbackStore.storeTriple(subj[0], pred[0], obj[0], context[0], false);
+			fallbackStore.storeTriplesAligned(subj, pred, obj, context, count, false);
 			fallbackStore.commit();
 
+			long mapSizeBeforePromotion = mapSize(fallbackStore);
 			fallbackStore.startTransaction();
-			TripleIndex mainIndex = getIndexes(fallbackStore).getFirst();
-			long writeTxn = getWriteTxn(fallbackStore);
-			try (MemoryStack stack = MemoryStack.stackPush()) {
-				MDBVal keyVal = MDBVal.malloc(stack);
-				MDBVal dataVal = MDBVal.calloc(stack);
-				ByteBuffer keyBuf = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
-				mainIndex.toKey(keyBuf, subj[0], pred[0], obj[0], context[0]);
-				keyBuf.flip();
-				keyVal.mv_data(keyBuf);
-				LmdbUtil.E(mdb_put(writeTxn, mainIndex.getDB(true), keyVal, dataVal, MDB_NOOVERWRITE));
-				assertEquals("Main inferred row should be removed before fallback replay", MDB_SUCCESS,
-						mdb_del(writeTxn, mainIndex.getDB(false), keyVal, dataVal));
-			}
-
-			Method fallBackFromAlignedWrite = TripleStore.class.getDeclaredMethod("fallBackFromAlignedWrite",
-					int[].class, int.class, long[].class, long[].class, long[].class, long[].class, boolean[].class,
-					int.class, int.class, boolean.class, LongIntHashMap.class, IntConsumer.class);
-			fallBackFromAlignedWrite.setAccessible(true);
-			fallBackFromAlignedWrite.invoke(fallbackStore, new int[] { 0 }, 1, subj, pred, obj, context,
-					new boolean[] { true }, 1, 1, true, new LongIntHashMap(), null);
+			fallbackStore.storeTriplesAligned(subj, pred, obj, context, count, true);
 			fallbackStore.commit();
+			assertTrue("promoting the existing inferred batch must exercise native map growth and full replay",
+					mapSize(fallbackStore) > mapSizeBeforePromotion);
+			assertPromotedBatch(fallbackStore, subj, pred, obj, context);
+		}
 
-			try (Txn txn = fallbackStore.getTxnManager().createReadTxn()) {
-				assertEquals("PSOC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, false)));
-				assertEquals("OSPC inferred row should be removed after fallback replay", 0,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, false)));
-				assertEquals("PSOC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, pred[0], -1, -1, true)));
-				assertEquals("OSPC explicit row should exist after fallback replay", 1,
-						count(fallbackStore.getTriples(txn, -1, -1, obj[0], -1, true)));
+		try (TripleStore reopened = new TripleStore(fallbackDir, config, null)) {
+			assertPromotedBatch(reopened, subj, pred, obj, context);
+		}
+	}
+
+	private void assertPromotedBatch(TripleStore store, long[] subj, long[] pred, long[] obj, long[] context)
+			throws Exception {
+		try (Txn txn = store.getTxnManager().createReadTxn()) {
+			boolean[] found = new boolean[subj.length];
+			int foundCount = 0;
+			try (RecordIterator records = store.getTriples(txn, -1, -1, -1, -1, true)) {
+				long[] record;
+				while ((record = records.next()) != null) {
+					int index = Math.toIntExact(record[0] - subj[0]);
+					assertTrue("unexpected explicit statement subject", index >= 0 && index < found.length);
+					assertFalse("an aligned promotion must not duplicate a statement", found[index]);
+					assertEquals(subj[index], record[0]);
+					assertEquals(pred[index], record[1]);
+					assertEquals(obj[index], record[2]);
+					assertEquals(context[index], record[3]);
+					found[index] = true;
+					foundCount++;
+				}
 			}
+			assertEquals("every promoted statement must remain in the primary index", subj.length, foundCount);
+			for (int i = 0; i < found.length; i++) {
+				assertTrue("a promoted statement is missing at batch offset " + i, found[i]);
+			}
+			try (RecordIterator inferred = store.getTriples(txn, -1, -1, -1, -1, false)) {
+				assertEquals("promotion must remove every inferred primary row", 0, count(inferred));
+			}
+			for (long predicate = 1; predicate <= 31; predicate++) {
+				int expected = 0;
+				for (long value : pred) {
+					if (value == predicate) {
+						expected++;
+					}
+				}
+				try (RecordIterator explicit = store.getTriples(txn, -1, predicate, -1, -1, true);
+						RecordIterator inferred = store.getTriples(txn, -1, predicate, -1, -1, false)) {
+					assertEquals("PSOC explicit entries must remain queryable", expected, count(explicit));
+					assertEquals("PSOC must not retain stale inferred entries", 0, count(inferred));
+				}
+			}
+			for (long value = 1_000; value < 1_005; value++) {
+				int expected = 0;
+				for (long contextId : context) {
+					if (contextId == value) {
+						expected++;
+					}
+				}
+				try (RecordIterator explicit = store.getTriples(txn, -1, -1, -1, value, true)) {
+					assertEquals("all promoted context entries must remain queryable", expected, count(explicit));
+				}
+			}
+			List<Long> actualContexts = new ArrayList<>();
+			try (LmdbContextIdIterator contexts = store.getContexts(txn)) {
+				long[] next;
+				while ((next = contexts.next()) != null) {
+					actualContexts.add(next[0]);
+				}
+			}
+			assertEquals("promotion must retain exactly the previously committed contexts",
+					List.of(1_000L, 1_001L, 1_002L, 1_003L, 1_004L), actualContexts);
+		}
+	}
+
+	private long mapSize(TripleStore store) {
+		try (MemoryStack stack = stackPush()) {
+			MDBEnvInfo info = MDBEnvInfo.malloc(stack);
+			assertEquals(MDB_SUCCESS, mdb_env_info(store.env, info));
+			return info.me_mapsize();
 		}
 	}
 
@@ -470,19 +525,6 @@ public class TripleStoreTest {
 		char leadingField = index.getFieldSeq()[0];
 		return Long.compare(fieldValue(leadingField, leftStatementIndex, subj, pred, obj, context),
 				fieldValue(leadingField, rightStatementIndex, subj, pred, obj, context));
-	}
-
-	@SuppressWarnings("unchecked")
-	private List<TripleIndex> getIndexes(TripleStore store) throws Exception {
-		Field indexesField = TripleStore.class.getDeclaredField("indexes");
-		indexesField.setAccessible(true);
-		return (List<TripleIndex>) indexesField.get(store);
-	}
-
-	private long getWriteTxn(TripleStore store) throws Exception {
-		Field writeTxnField = TripleStore.class.getDeclaredField("writeTxn");
-		writeTxnField.setAccessible(true);
-		return (long) writeTxnField.get(store);
 	}
 
 	private long fieldValue(char field, int statementIndex, long[] subj, long[] pred, long[] obj, long[] context) {

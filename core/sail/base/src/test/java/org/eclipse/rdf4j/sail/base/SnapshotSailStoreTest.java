@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -26,6 +27,8 @@ import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -162,6 +165,64 @@ public class SnapshotSailStoreTest {
 			assertEquals(beforeImplicitRead, observations.get(), "An implicit default read must not observe patterns");
 		} finally {
 			sail.shutDown();
+		}
+	}
+
+	@Test
+	public void commitUsesOrderedConnectionHooksWhileBranchesRemainAttached() {
+		List<String> events = new ArrayList<>();
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink());
+		Sail sail = createHookSail(store, events);
+		try (SailConnection connection = sail.getConnection()) {
+			connection.begin();
+			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("hook"));
+			connection.commit();
+		} finally {
+			sail.shutDown();
+		}
+		assertEquals(List.of("prepare", "flush", "attached"), events,
+				"commit preparation and flush hooks run in order, and flush observes the live transaction branch");
+	}
+
+	@Test
+	public void acknowledgedAliasCannotEraseSerializableNegativeReadConflict() throws Exception {
+		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink());
+		try {
+			SailSource root = store.getExplicitSailSource();
+			try (SailSourceBranch competitor = (SailSourceBranch) root.fork();
+					SailSourceBranch writer = (SailSourceBranch) root.fork()) {
+				var vf = SimpleValueFactory.getInstance();
+				Resource subject = vf.createIRI("urn:frozen:negative-read");
+				IRI predicate = vf.createIRI("urn:frozen:predicate");
+				Value object = vf.createLiteral("committed");
+				Statement statement = vf.createStatement(subject, predicate, object);
+
+				try (SailDataset dataset = competitor.dataset(IsolationLevels.SERIALIZABLE);
+						CloseableIteration<? extends Statement> statements = dataset.getStatements(subject, predicate,
+								object)) {
+					assertFalse(statements.hasNext(), "the competitor establishes an admitted negative read");
+				}
+
+				SailSink original = writer.sink(IsolationLevels.NONE);
+				original.approve(statement);
+				original.flush();
+				SailSource.FlushBatch batch = writer.freezeForFlush();
+				try {
+					try (SailClosable publication = writer.beginPublication()) {
+						batch.flush();
+					}
+					batch.unFreezeAndDiscardFlushed();
+					assertAll(
+							() -> assertThrows(IllegalStateException.class, () -> original.deprecate(statement)),
+							() -> assertThrows(IllegalStateException.class, original::clear),
+							() -> assertThrows(SailConflictException.class, competitor::prepare));
+				} finally {
+					batch.close();
+					original.close();
+				}
+			}
+		} finally {
+			store.close();
 		}
 	}
 
@@ -467,6 +528,8 @@ public class SnapshotSailStoreTest {
 		AtomicInteger writes = new AtomicInteger();
 		SailException failure = new SailException("root statement iterator creation failed");
 		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(dataset.isSnapshotCurrent()).thenReturn(true);
 		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenThrow(failure);
 		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
 			@Override
@@ -656,6 +719,8 @@ public class SnapshotSailStoreTest {
 		SailException failure = new SailException("backing close failed");
 		SailException cleanup = new SailException("root auto-flush failed");
 		SailDataset backing = mock(SailDataset.class);
+		when(backing.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(backing.isSnapshotCurrent()).thenReturn(true);
 		when(backing.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(new EmptyIteration<>());
 		doThrow(failure).when(backing).close();
 		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
@@ -699,6 +764,8 @@ public class SnapshotSailStoreTest {
 		AtomicInteger writes = new AtomicInteger();
 		SailException failure = new SailException("backing dataset close failed");
 		SailDataset dataset = mock(SailDataset.class);
+		when(dataset.isSnapshotCompatibleWithCurrentAdmission()).thenReturn(true);
+		when(dataset.isSnapshotCurrent()).thenReturn(true);
 		when(dataset.getStatements(RDF.TYPE, RDFS.LABEL, null)).thenReturn(new EmptyIteration<>());
 		doThrow(failure).when(dataset).close();
 		SnapshotSailStore store = createSnapshotSailStore(level -> new TestSailSink() {
@@ -1019,30 +1086,52 @@ public class SnapshotSailStoreTest {
 	}
 
 	@Test
-	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterCommit() {
-		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.READ_COMMITTED);
+	public void testAutoFlushClosesLastOwnedAutoCloseableModelAfterReadCommittedCommit() {
+		assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels.READ_COMMITTED);
 	}
 
 	@Test
-	public void testAutoFlushDoesNotCloseAutoCloseableModelAfterSerializableCommit() {
-		assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels.SERIALIZABLE);
+	public void testAutoFlushClosesLastOwnedAutoCloseableModelAfterSerializableCommit() {
+		assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels.SERIALIZABLE);
 	}
 
-	private void assertAutoFlushDoesNotCloseAutoCloseableModelAfterCommit(IsolationLevels level) {
+	private void assertAutoFlushClosesLastOwnedAutoCloseableModelAfterCommit(IsolationLevels level) {
 		AtomicInteger closeCount = new AtomicInteger();
-		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink(),
+		AtomicBoolean approvalBatchConsumed = new AtomicBoolean();
+		AtomicInteger approvedStatementCount = new AtomicInteger();
+		Statement expectedStatement = SimpleValueFactory.getInstance()
+				.createStatement(RDF.TYPE, RDFS.LABEL,
+						SimpleValueFactory.getInstance().createLiteral("type"));
+		SnapshotSailStore sailStore = createSnapshotSailStore(isolation -> new TestSailSink() {
+			@Override
+			public void approveAll(Set<Statement> approved, Set<Resource> approvedContexts) {
+				assertEquals(0, closeCount.get(), "the retained model stays open while the sink consumes approvals");
+				assertFalse(approved.isEmpty(), "the sink must receive the buffered statement");
+				for (Statement statement : approved) {
+					assertEquals(expectedStatement, statement);
+					approvedStatementCount.incrementAndGet();
+				}
+				assertEquals(0, closeCount.get(), "the model remains open through approval consumption");
+				approvalBatchConsumed.set(true);
+			}
+		},
 				() -> new CloseCountingModel(closeCount));
 		Sail sail = createSail(sailStore);
 
-		try (SailConnection connection = sail.getConnection()) {
-			connection.begin(level);
-			connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
-			connection.commit();
+		try {
+			try (SailConnection connection = sail.getConnection()) {
+				connection.begin(level);
+				connection.addStatement(RDF.TYPE, RDFS.LABEL, sail.getValueFactory().createLiteral("type"));
+				connection.commit();
 
-			assertEquals(0, closeCount.get());
+				assertTrue(approvalBatchConsumed.get(), "the sink consumed the approved model before commit completed");
+				assertEquals(1, approvedStatementCount.get(), "the sink consumed the actual buffered statement");
+				assertEquals(1, closeCount.get(), "commit releases the final owner after approval consumption");
+			}
 		} finally {
 			sail.shutDown();
 		}
+		assertEquals(1, closeCount.get(), "connection close and sail shutdown do not dispose the model again");
 	}
 
 	@Test
@@ -1120,6 +1209,76 @@ public class SnapshotSailStoreTest {
 					@Override
 					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
 						return strategy == null ? super.getEvaluationStrategy(dataset, tripleSource) : strategy;
+					}
+
+					@Override
+					protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+							throws SailException {
+					}
+
+					@Override
+					protected void removeStatementsInternal(Resource subj, IRI pred, Value obj, Resource... contexts)
+							throws SailException {
+					}
+				};
+			}
+
+			@Override
+			public boolean isWritable() throws SailException {
+				return true;
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+		};
+	}
+
+	private Sail createHookSail(SailStore sailStore, List<String> events) {
+		return new AbstractNotifyingSail() {
+			{
+				setSupportedIsolationLevels(IsolationLevels.values());
+				setDefaultIsolationLevel(IsolationLevels.READ_COMMITTED);
+			}
+
+			@Override
+			protected void shutDownInternal() throws SailException {
+				sailStore.close();
+			}
+
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new SailSourceConnection(this, sailStore, (FederatedServiceResolver) null) {
+					private boolean checkingAttachment;
+					private SailSource preparedDuringFlush;
+
+					@Override
+					protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+						return super.getEvaluationStrategy(dataset, tripleSource);
+					}
+
+					@Override
+					protected void prepareTransaction(SailSource source) throws SailException {
+						if (checkingAttachment) {
+							preparedDuringFlush = source;
+							return;
+						}
+						events.add("prepare");
+						source.prepare();
+					}
+
+					@Override
+					protected void flushTransaction(SailSource source) throws SailException {
+						events.add("flush");
+						checkingAttachment = true;
+						try {
+							prepareInternal();
+						} finally {
+							checkingAttachment = false;
+						}
+						events.add(preparedDuringFlush == source ? "attached" : "detached");
+						source.flush();
 					}
 
 					@Override

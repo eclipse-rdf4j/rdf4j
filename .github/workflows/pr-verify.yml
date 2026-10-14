@@ -51,6 +51,10 @@ jobs:
   build:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      checks: write
     strategy:
       fail-fast: true
       matrix:
@@ -74,11 +78,17 @@ jobs:
         uses: scacap/action-surefire-report@v1.9.0
         with:
           check_name: Test report - build - ${{ matrix.jdk }}
+          # Read-only fork and Dependabot tokens retain parsed failure details in the action log.
+          skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
 
 
   integration-tests:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -98,10 +108,15 @@ jobs:
         uses: scacap/action-surefire-report@v1.9.0
         with:
           check_name: Test report - integration-tests
+          skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
 
   slow-tests:
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+      checks: write
     steps:
       - uses: actions/checkout@v4
       - name: Register JVM thread dump on cancel
@@ -121,6 +136,7 @@ jobs:
         uses: scacap/action-surefire-report@v1.9.0
         with:
           check_name: Test report - slow-tests
+          skip_publishing: ${{ github.event.pull_request.head.repo.full_name != github.repository || github.actor == 'dependabot[bot]' }}
 
   package-assembly:
     needs: formatting-and-quick-compile

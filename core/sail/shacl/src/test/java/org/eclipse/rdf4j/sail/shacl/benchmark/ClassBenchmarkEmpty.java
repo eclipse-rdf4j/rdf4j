@@ -88,7 +88,6 @@ public class ClassBenchmarkEmpty {
 
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			for (List<Statement> statements : allStatements) {
-//				System.out.println(".");
 				connection.begin();
 				connection.add(statements);
 				connection.commit();

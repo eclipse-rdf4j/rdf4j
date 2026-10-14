@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.federation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
@@ -19,13 +20,19 @@ import static org.mockito.Mockito.when;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.LockSupport;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -164,6 +171,93 @@ class ServiceJoinIteratorTelemetryTest {
 
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL)).isEqualTo(-1L);
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_BYTES_RECEIVED_ACTUAL)).isEqualTo(-1L);
+	}
+
+	@Test
+	void closesFallbackResultWhenReplayCheckpointFiresBeforeQueueOwnership() {
+		Service service = new Service(
+				Var.of("serviceRef"),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(false);
+
+		ClosingIteration result = new ClosingIteration();
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.evaluate(eq(service), any(BindingSet.class))).thenReturn(result);
+		BindingSet leftBindings = singleBindingSet("serviceRef", "http://example.com/service");
+		AtomicInteger checkpoints = new AtomicInteger();
+
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			if (checkpoints.incrementAndGet() == 2) {
+				throw new IllegalStateException("simulate replay after fallback SERVICE returned");
+			}
+		});
+				ServiceJoinIterator iterator = new ServiceJoinIterator(
+						new CloseableIteratorIteration<>(List.of(leftBindings).iterator()),
+						service,
+						EmptyBindingSet.getInstance(),
+						strategy)) {
+			assertThatThrownBy(iterator::hasNext)
+					.isInstanceOf(QueryEvaluationException.class)
+					.satisfies(failure -> assertThat(QueryExecutionContext.isReplaySafepointFailure(failure)).isTrue());
+		}
+
+		assertThat(result.closed.get()).as("the fallback SERVICE result must be closed on replay unwind").isTrue();
+	}
+
+	@Test
+	void closesFederatedResultWhenReplayCheckpointFiresBeforeQueueOwnership() throws Exception {
+		Service service = new Service(
+				Var.of("serviceRef", SimpleValueFactory.getInstance().createIRI("http://example.com/service")),
+				new SingletonSet(),
+				"{ VALUES ?x { 1 } }",
+				Collections.emptyMap(),
+				null,
+				false);
+		service.setRuntimeTelemetryEnabled(false);
+
+		ClosingIteration result = new ClosingIteration();
+		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI()))).thenReturn(result);
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getService("http://example.com/service")).thenReturn(federatedService);
+
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			throw new IllegalStateException("simulate replay after federated SERVICE returned");
+		});
+				ServiceJoinIterator iterator = new ServiceJoinIterator(
+						new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator()),
+						service,
+						EmptyBindingSet.getInstance(),
+						strategy)) {
+			assertThatThrownBy(iterator::hasNext)
+					.isInstanceOf(QueryEvaluationException.class)
+					.satisfies(failure -> assertThat(QueryExecutionContext.isReplaySafepointFailure(failure)).isTrue());
+		}
+
+		assertThat(result.closed.get()).as("the federated SERVICE result must be closed on replay unwind").isTrue();
+	}
+
+	private static final class ClosingIteration extends AbstractCloseableIteration<BindingSet> {
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		@Override
+		public boolean hasNext() {
+			return false;
+		}
+
+		@Override
+		public BindingSet next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		protected void handleClose() {
+			closed.set(true);
+		}
 	}
 
 	private static BindingSet singleBindingSet(String name, String value) {

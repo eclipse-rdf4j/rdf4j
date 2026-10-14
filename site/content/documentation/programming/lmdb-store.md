@@ -16,6 +16,9 @@ key-value database using memory-mapped IO for great performance and stability.
 The LMDB Store can be used in any RDF4J project that requires persistent
 storage that is fast, scalable and reliable.
 
+For the user-visible effects of transaction snapshots, map growth, recovery and store upgrades, see
+[LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/).
+
 ## Dependencies for the LMDB Store and native extensions
 
 To make use of the LMDB Store, you'll need to include the following Maven dependency:
@@ -120,6 +123,42 @@ config.setTripleDBSize(1_073_741_824L);
 Repository repo = new SailRepository(new LmdbStore(dataDir, config));
 ```
 
+The generic value-ID, namespace and namespace-ID caches can use a selected implementation:
+
+```java
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbCacheImplementation;
+
+config.setCacheImplementation(LmdbCacheImplementation.ADAPTIVE_SLOT)
+      .setValueIDCacheSize(1024)
+      .setNamespaceCacheSize(512)
+      .setNamespaceIDCacheSize(32);
+config.validate();
+```
+
+The default is `LOSSY_CONCURRENT`. The other choices are `CONCURRENT`, `BOUNDED_CONCURRENT`, `ADAPTIVE_SLOT`,
+`MEMOIZING_SLOT`, `COMPACT_SLOT`, `SLOT_CAS`, `SLOT_CELL`, and `SLOT_SNAPSHOT`. Specialized value, hash, snapshot
+and transaction caches keep their own implementations. Admission is best-effort; cache hits still undergo the
+store's existing validity checks, and misses resolve against the native dictionary.
+
+The six slot implementations accept capacities from 1 to 2^25. The other three accept 0 to 2^30. Positive sizes
+round up to a power of two with at least four slots. Zero is unbounded for `LOSSY_CONCURRENT` and `CONCURRENT`,
+disables `BOUNDED_CONCURRENT`, and is invalid for the slot implementations. Negative size settings retain their
+existing meaning of using the default size. Invalid combinations fail validation before native store initialization;
+the store does not substitute a different implementation.
+
+For RDF configuration, add the following property to the LMDB Sail configuration node. Enum names are case-sensitive;
+omitting the property preserves `LOSSY_CONCURRENT`:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:cacheImplementation "ADAPTIVE_SLOT" .
+```
+
+`DatagovLoadIsolationBenchmark` includes every selectable implementation through its `cacheImplementation` JMH
+parameter. See the module's `cache-competition/README.md` for real LMDB benchmark commands and the distinction
+between those runs and the supplied synthetic cache benchmarks.
+
 The optional value hash cache stores precomputed `Value.hashCode()` results in `hashes.dat`. It is disabled by default.
 When enabled, LMDB writes a `hashes.dat.integrity` sidecar on clean shutdown and only trusts the cache again on the
 next startup if that integrity metadata validates. Invalid or stale hash cache files are discarded automatically and
@@ -207,16 +246,22 @@ choosing the value and triple db sizes.
 ## Autogrow feature
 RDF4J implements an **autogrow** feature to simplify the management of memory map sizes.
 
-If it is enabled (which is the default) then RDF4J monitors the actual used pages and
+If it is enabled (which is the default), RDF4J monitors used pages and increases the map size when required. Resizing
+requires coordinating native readers while LMDB remaps the environment. Ordinary statement reads preserve their
+TripleStore snapshot when only the ValueStore dictionary grows. TripleStore growth, or a read that depends on the
+dictionary's triple-term membership, can invalidate a pinned query result or an established
+`SNAPSHOT`/`SERIALIZABLE` transaction and require a retry. Writes normally retain a
+complete TripleStore replay journal, which may use temporary disk space. Large, lightly filled paired maps with
+conservative successful allocation history may omit tracking; unexpected exhaustion then attempts capacity growth and reports
+`LmdbTransactionRetryException` through the cause chain. Roll back and retry the entire transaction in that case;
+recovery retains tracking. See
+[LMDB transactions, map growth, and recovery](/documentation/programming/lmdb-store-transactions/) for retry guidance,
+reader lifetime, and persistence details.
 
-automatically increases the map size if required.
-
-This monitoring only has a very minimal overhead.
-The only downsides are:
-  - Some kind of stop the world approach is required to set the new map sizes where all running
-
-    transactions are suspended for a short time.
-  - A running write transaction may lead to a temporary overflow of data to disk if the
-    current map size needs to be increased. This may be an issue with large transactions that
-
-    can get slowed down.
+The per-store `mapGrowthThreshold` setting (default `0.75`) controls the soft allocated-page fullness trigger for
+closing admission and scheduling phased map growth. It also guides growth sizing below that trigger. The threshold
+measures allocated high-water pages rather than live RDF statements, and must be finite and strictly between `0` and
+`1`. `mapGrowthReadDrainTimeoutMillis` (default `30000`) is the reader grace after logical writers finish; setting it
+to `0` skips that grace without disabling the early admission warning or writer drain. Query admission waiters keep the
+query's original deadline, and waits without a deadline remain interruptible. See the transaction and recovery guide
+for the phased behavior and retry details.
