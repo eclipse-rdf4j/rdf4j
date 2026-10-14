@@ -3586,7 +3586,8 @@ public class ValueStoreTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
-	public void testReclamationRejectsAnActiveForwardOwnerWithoutIncomingReferences(boolean tripleTerm) throws Exception {
+	public void testReclamationRejectsAnActiveForwardOwnerWithoutIncomingReferences(boolean tripleTerm)
+			throws Exception {
 		Value active = activeUnreferencedValue(tripleTerm);
 		valueStore.startTransaction(true);
 		long id = valueStore.storeValue(active);
