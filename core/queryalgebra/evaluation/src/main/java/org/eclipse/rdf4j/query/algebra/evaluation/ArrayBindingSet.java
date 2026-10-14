@@ -73,7 +73,7 @@ public class ArrayBindingSet extends AbstractBindingSet implements MutableBindin
 	private boolean empty;
 
 	private final Value[] values;
-	private final SortedBindingNamesCache sharedSortedBindingNamesCache;
+	private final transient SortedBindingNamesCache sharedSortedBindingNamesCache;
 	private long activeBindingMask;
 	private int cachedSize = -1;
 	private int cachedHashCode;
