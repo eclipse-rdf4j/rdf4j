@@ -212,6 +212,96 @@ public class ExpressionErrorSemanticsTest {
 		}
 	}
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	public void queryLevelRuntimeIfConditionErrorSkipsBothBranchesAfterPrecompile(QueryEvaluationMode mode) {
+		AtomicInteger conditionCalls = new AtomicInteger();
+		AtomicInteger innerThenCalls = new AtomicInteger();
+		AtomicInteger innerElseCalls = new AtomicInteger();
+		AtomicInteger outerThenCalls = new AtomicInteger();
+		AtomicInteger outerElseCalls = new AtomicInteger();
+		Function condition = countedFunction("urn:rdf4j:test:if-runtime-error", conditionCalls, null, true);
+		Function innerThen = countedFunction("urn:rdf4j:test:if-inner-then", innerThenCalls,
+				BooleanLiteral.TRUE, false);
+		Function innerElse = countedFunction("urn:rdf4j:test:if-inner-else", innerElseCalls,
+				BooleanLiteral.FALSE, false);
+		Function outerThen = countedFunction("urn:rdf4j:test:if-outer-then", outerThenCalls,
+				SimpleValueFactory.getInstance().createLiteral("then"), false);
+		Function outerElse = countedFunction("urn:rdf4j:test:if-outer-else", outerElseCalls,
+				SimpleValueFactory.getInstance().createLiteral("else"), false);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		registry.add(condition);
+		registry.add(innerThen);
+		registry.add(innerElse);
+		registry.add(outerThen);
+		registry.add(outerElse);
+		try {
+			for (boolean optimize : List.of(false, true)) {
+				conditionCalls.set(0);
+				innerThenCalls.set(0);
+				innerElseCalls.set(0);
+				outerThenCalls.set(0);
+				outerElseCalls.set(0);
+				DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+				strategy.setQueryEvaluationMode(mode);
+				ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+						"SELECT ?result WHERE { BIND(IF(isIRI(IF(<urn:rdf4j:test:if-runtime-error>(), "
+								+ "<urn:rdf4j:test:if-inner-then>(), <urn:rdf4j:test:if-inner-else>())), "
+								+ "<urn:rdf4j:test:if-outer-then>(), <urn:rdf4j:test:if-outer-else>()) AS ?result) }",
+						null);
+				TupleExpr expression = parsed.getTupleExpr();
+				if (optimize) {
+					expression = strategy.optimize(expression, new EvaluationStatistics(),
+							EmptyBindingSet.getInstance());
+				}
+				var evaluationStep = strategy.precompile(expression);
+				assertThat(conditionCalls).as("condition calls during precompile, optimize=%s", optimize).hasValue(0);
+				assertThat(innerThenCalls).as("inner then calls during precompile, optimize=%s", optimize).hasValue(0);
+				assertThat(innerElseCalls).as("inner else calls during precompile, optimize=%s", optimize).hasValue(0);
+				assertThat(outerThenCalls).as("outer then calls during precompile, optimize=%s", optimize).hasValue(0);
+				assertThat(outerElseCalls).as("outer else calls during precompile, optimize=%s", optimize).hasValue(0);
+				try (CloseableIteration<BindingSet> rows = evaluationStep.evaluate(EmptyBindingSet.getInstance())) {
+					assertThat(QueryResults.asList(rows)).singleElement()
+							.satisfies(row -> assertThat(row.hasBinding("result")).isFalse());
+				}
+				assertThat(conditionCalls).as("runtime condition calls, optimize=%s", optimize).hasValue(1);
+				assertThat(innerThenCalls).as("inner then branch calls, optimize=%s", optimize).hasValue(0);
+				assertThat(innerElseCalls).as("inner else branch calls, optimize=%s", optimize).hasValue(0);
+				assertThat(outerThenCalls).as("outer then branch calls, optimize=%s", optimize).hasValue(0);
+				assertThat(outerElseCalls).as("outer else branch calls, optimize=%s", optimize).hasValue(0);
+			}
+		} finally {
+			registry.remove(condition);
+			registry.remove(innerThen);
+			registry.remove(innerElse);
+			registry.remove(outerThen);
+			registry.remove(outerElse);
+		}
+	}
+
+	private static Function countedFunction(String uri, AtomicInteger calls, Value result, boolean fail) {
+		return new Function() {
+			@Override
+			public String getURI() {
+				return uri;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				calls.incrementAndGet();
+				if (fail) {
+					throw new ValueExprEvaluationException("runtime IF condition error");
+				}
+				return result;
+			}
+		};
+	}
+
 	@Test
 	public void erroneousIfConditionEvaluatesNeitherBranch() {
 		AtomicInteger selected = new AtomicInteger();
