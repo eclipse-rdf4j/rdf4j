@@ -609,6 +609,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						.outputFacts(leftJoin.getRightArg(), rightInput);
 				boolean scopedOperand = TupleExprs.containsSubquery(leftJoin.getLeftArg())
 						|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getLeftArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getRightArg())
 						|| TupleExprs.containsResultSetModifier(leftJoin.getLeftArg(), optionalAnalysis)
 						|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), optionalAnalysis);
 
@@ -1171,7 +1173,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> subselects = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsSubquery(expr)) {
+				if (TupleExprs.containsSubquery(expr) || TupleExprs.containsGraphBoundary(expr)) {
 					if (subselects.isEmpty()) {
 						subselects = List.of(expr);
 					} else {

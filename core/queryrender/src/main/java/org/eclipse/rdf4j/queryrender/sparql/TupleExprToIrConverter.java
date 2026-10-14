@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -102,6 +103,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraphScope;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTripleTerm;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrLateral;
@@ -2291,6 +2293,11 @@ public class TupleExprToIrConverter {
 			return new IrFilter(cond, false);
 		}
 
+		@Override
+		public void meet(final Graph graph) {
+			where.add(new IrGraphScope(graph.getGraphName(), childBuilder().build(graph.getArg()),
+					graph.isVariableScopeChange()));
+		}
 
 		public void meet(final StatementPattern sp) {
 			final Var ctx = getContextVarSafe(sp);

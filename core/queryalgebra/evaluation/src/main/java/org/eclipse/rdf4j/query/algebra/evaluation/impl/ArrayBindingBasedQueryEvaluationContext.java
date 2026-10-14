@@ -134,6 +134,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public ActiveGraph getActiveGraph() {
+		return context.getActiveGraph();
+	}
+
+	@Override
 	public BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
 		return context.getOrCreateBNode(nodeLabel, bindings, valueFactory);
 	}

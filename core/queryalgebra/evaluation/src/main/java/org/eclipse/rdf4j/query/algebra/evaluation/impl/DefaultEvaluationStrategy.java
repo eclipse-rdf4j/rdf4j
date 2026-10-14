@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.HasLang;
 import org.eclipse.rdf4j.query.algebra.HasLangDir;
@@ -142,6 +143,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
@@ -393,7 +395,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (expr instanceof StatementPattern) {
 				result = precompile(expr).evaluate(bindings);
 			} else if (expr instanceof UnaryTupleOperator) {
-				if (expr instanceof Projection) {
+				if (expr instanceof Graph) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Projection) {
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof MultiProjection) {
 					result = precompile(expr).evaluate(bindings);
@@ -664,7 +668,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings);
+				contextVar, minLength, bindings, context);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -979,7 +983,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (expr instanceof Projection) {
+		if (expr instanceof Graph graph) {
+			return GraphQueryEvaluationStep.supply(graph, this, tripleSource, context);
+		} else if (expr instanceof Projection) {
 			return prepare((Projection) expr, context);
 		} else if (expr instanceof MultiProjection) {
 			return prepare((MultiProjection) expr, context);

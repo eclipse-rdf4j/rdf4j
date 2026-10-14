@@ -1316,6 +1316,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 
 		@Override
+		public ActiveGraph getActiveGraph() {
+			return delegate.getActiveGraph();
+		}
+
+		@Override
 		public Comparator<Value> getComparator() {
 			return delegate.getComparator();
 		}

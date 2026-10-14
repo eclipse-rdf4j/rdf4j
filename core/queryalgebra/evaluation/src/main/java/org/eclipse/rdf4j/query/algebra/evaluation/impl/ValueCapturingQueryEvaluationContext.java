@@ -80,6 +80,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public ActiveGraph getActiveGraph() {
+		return delegate.getActiveGraph();
+	}
+
+	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}

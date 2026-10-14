@@ -65,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -1482,19 +1483,15 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTGraphGraphPattern node, Object data) throws VisitorException {
-		Var oldContext = graphPattern.getContextVar();
-		Scope oldScope = graphPattern.getStatementPatternScope();
-
-		ValueExpr newContext = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
-
-		graphPattern.setContextVar(mapValueExprToVar(newContext));
-		graphPattern.setStatementPatternScope(Scope.NAMED_CONTEXTS);
-
-		node.jjtGetChild(1).jjtAccept(this, null);
-
-		graphPattern.setContextVar(oldContext);
-		graphPattern.setStatementPatternScope(oldScope);
-
+		GraphPattern parent = graphPattern;
+		Var graphName = mapValueExprToVar((ValueExpr) node.jjtGetChild(0).jjtAccept(this, null));
+		graphPattern = new GraphPattern();
+		try {
+			node.jjtGetChild(1).jjtAccept(this, null);
+			parent.addRequiredTE(new Graph(graphName, graphPattern.buildTupleExpr()));
+		} finally {
+			graphPattern = parent;
+		}
 		return null;
 	}
 

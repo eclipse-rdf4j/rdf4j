@@ -18,6 +18,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -26,6 +27,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -42,6 +44,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * evaluation.
  */
 public interface QueryEvaluationContext {
+
+	/** A selected graph's public name and storage context; null physical graph denotes the default graph. */
+	record ActiveGraph(Resource logicalGraph, Resource physicalGraph) {
+		public ActiveGraph {
+			Objects.requireNonNull(logicalGraph, "logicalGraph");
+		}
+	}
+
+	/** Returns null when no GRAPH operator overrides the active default graph. */
+	default ActiveGraph getActiveGraph() {
+		return null;
+	}
 
 	@Experimental
 	default Comparator<Value> getComparator() {
