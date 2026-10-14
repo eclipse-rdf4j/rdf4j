@@ -56,8 +56,18 @@ public class AggregateTest extends AbstractComplianceTest {
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("MultipleHavingConstraints", this::testMultipleHavingConstraints),
+				makeTest("MultipleHavingAsk", this::testMultipleHavingAsk),
 				makeTest("MultipleHavingConstruct", this::testMultipleHavingConstruct),
 				makeTest("DescribeMultipleHaving", this::testDescribeMultipleHaving),
+				makeTest("AskHavingImplicitGroup", this::testAskHavingImplicitGroup),
+				makeTest("AskHavingEmptyImplicitGroup", this::testAskHavingEmptyImplicitGroup),
+				makeTest("AskHavingLaterExplicitGroup", this::testAskHavingLaterExplicitGroup),
+				makeTest("AskHavingTrailingValues", this::testAskHavingTrailingValues),
+				makeTest("AskLimitZero", this::testAskLimitZero),
+				makeTest("AskOffsetZero", this::testAskOffsetZero),
+				makeTest("AskOffsetOne", this::testAskOffsetOne),
+				makeTest("AskOffsetPastOnlyRow", this::testAskOffsetPastOnlyRow),
+				makeTest("AskOffsetBeyondInput", this::testAskOffsetBeyondInput),
 				makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
 				makeTest("MaxAggregateWithoutGroupEmptySolution", this::testMaxAggregateWithoutGroupEmptySolution),
 				makeTest("MinAggregateWithGroupEmptyResult", this::testMinAggregateWithGroupEmptyResult),
@@ -136,6 +146,65 @@ public class AggregateTest extends AbstractComplianceTest {
 		}
 	}
 
+	private void testMultipleHavingAsk(RepositoryConnection conn) {
+		String input = " WHERE { VALUES (?batch ?score) { (1 2) (1 5) (1 9) } } GROUP BY ?batch HAVING ";
+		for (String conditions : List.of("(COUNT(?score) = 3) (SUM(?score) = 16)",
+				"(SUM(?score) = 16) (COUNT(?score) = 3)")) {
+			assertThat(conn.prepareBooleanQuery("ASK" + input + conditions).evaluate())
+					.as("ASK with both true conditions: %s", conditions)
+					.isTrue();
+		}
+		for (String conditions : List.of("(COUNT(?score) = 3) (SUM(?score) = 15)",
+				"(SUM(?score) = 15) (COUNT(?score) = 3)", "(1 / 0 > 0) (COUNT(?score) = 3)",
+				"(COUNT(?score) = 3) (1 / 0 > 0)")) {
+			assertThat(conn.prepareBooleanQuery("ASK" + input + conditions).evaluate())
+					.as("ASK with false or erroneous condition: %s", conditions)
+					.isFalse();
+		}
+	}
+
+	private void testAskHavingImplicitGroup(RepositoryConnection conn) {
+		String query = "ASK WHERE { VALUES ?score { 2 5 9 } } "
+				+ "HAVING (COUNT(?score) = 3) (SUM(?score) = 16)";
+		assertThat(conn.prepareBooleanQuery(query).evaluate()).isTrue();
+	}
+
+	private void testAskHavingEmptyImplicitGroup(RepositoryConnection conn) {
+		String query = "ASK WHERE { VALUES ?score { } } HAVING (COUNT(?score) = 0) (COUNT(*) = 0)";
+		assertThat(conn.prepareBooleanQuery(query).evaluate()).isTrue();
+	}
+
+	private void testAskHavingLaterExplicitGroup(RepositoryConnection conn) {
+		String query = "ASK WHERE { VALUES (?batch ?score) { (1 2) (2 2) (2 5) (2 9) } } "
+				+ "GROUP BY ?batch HAVING (COUNT(?score) = 3) (SUM(?score) = 16)";
+		assertThat(conn.prepareBooleanQuery(query).evaluate()).isTrue();
+	}
+
+	private void testAskHavingTrailingValues(RepositoryConnection conn) {
+		String query = "ASK WHERE { VALUES (?batch ?score) { (1 2) (1 5) (1 9) (2 2) (2 5) (2 9) } } "
+				+ "GROUP BY ?batch HAVING (COUNT(?score) = 3) (SUM(?score) = 16) VALUES ?batch { 99 2 }";
+		assertThat(conn.prepareBooleanQuery(query).evaluate()).isTrue();
+	}
+
+	private void testAskLimitZero(RepositoryConnection conn) {
+		assertThat(conn.prepareBooleanQuery("ASK WHERE { VALUES ?x { 1 } } LIMIT 0").evaluate()).isFalse();
+	}
+
+	private void testAskOffsetZero(RepositoryConnection conn) {
+		assertThat(conn.prepareBooleanQuery("ASK WHERE { VALUES ?x { 1 } } OFFSET 0").evaluate()).isTrue();
+	}
+
+	private void testAskOffsetOne(RepositoryConnection conn) {
+		assertThat(conn.prepareBooleanQuery("ASK WHERE { VALUES ?x { 1 2 } } OFFSET 1 LIMIT 1").evaluate()).isTrue();
+	}
+
+	private void testAskOffsetPastOnlyRow(RepositoryConnection conn) {
+		assertThat(conn.prepareBooleanQuery("ASK WHERE { VALUES ?x { 1 } } OFFSET 1").evaluate()).isFalse();
+	}
+
+	private void testAskOffsetBeyondInput(RepositoryConnection conn) {
+		assertThat(conn.prepareBooleanQuery("ASK WHERE { VALUES ?x { 1 2 } } OFFSET 3 LIMIT 8").evaluate()).isFalse();
+	}
 
 	private void testMultipleHavingConstruct(RepositoryConnection conn) {
 		String input = " WHERE { VALUES (?batch ?score) { (1 2) (1 5) (1 9) } } GROUP BY ?batch HAVING ";

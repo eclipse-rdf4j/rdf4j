@@ -102,6 +102,80 @@ public class TupleExprBuilderTest {
 	}
 
 	@Test
+	public void askSliceFollowsSolutionModifiers() throws Exception {
+		ASTQueryContainer query = SyntaxTreeBuilder
+				.parseQuery("ASK WHERE { VALUES (?batch ?score) { (1 2) (1 5) (1 9) } } "
+						+ "GROUP BY ?batch HAVING (COUNT(?score) = 3) (SUM(?score) = 16)");
+		TupleExpr expression = builder.visit(query, null);
+
+		assertThat(expression).isInstanceOf(Slice.class);
+		Slice askSlice = (Slice) expression;
+		assertThat(askSlice.getOffset()).isZero();
+		assertThat(askSlice.getLimit()).isEqualTo(1L);
+
+		List<Group> groups = new ArrayList<>();
+		List<Filter> filters = new ArrayList<>();
+		askSlice.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Group node) {
+				groups.add(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				filters.add(node);
+				super.meet(node);
+			}
+		});
+		assertThat(groups).hasSize(1);
+		assertThat(filters).hasSize(2);
+	}
+
+	@Test
+	public void askSliceAppliesLimitAndOffsetAfterTheBody() throws Exception {
+		assertAskSlice("ASK WHERE { VALUES ?x { 1 } } LIMIT 0", 0, 0);
+		assertAskSlice("ASK WHERE { VALUES ?x { 1 2 } } OFFSET 0", 0, 1);
+		assertAskSlice("ASK WHERE { VALUES ?x { 1 2 } } OFFSET 1 LIMIT 1", 1, 1);
+		assertAskSlice("ASK WHERE { VALUES ?x { 1 } } OFFSET 7 LIMIT " + Long.MAX_VALUE, 7, 1);
+
+		TupleExpr nested = builder.visit(SyntaxTreeBuilder.parseQuery("ASK WHERE { { SELECT ?x "
+				+ "WHERE { VALUES (?x ?score) { (1 2) (1 5) (1 9) (2 3) (2 6) (2 7) } } "
+				+ "GROUP BY ?x HAVING (COUNT(?score) = 3) ORDER BY ?x OFFSET 1 LIMIT 1 } }"), null);
+		assertThat(nested).isInstanceOf(Slice.class);
+		List<Slice> slices = new ArrayList<>();
+		List<Filter> filters = new ArrayList<>();
+		nested.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Slice node) {
+				slices.add(node);
+				super.meet(node);
+			}
+
+			@Override
+			public void meet(Filter node) {
+				filters.add(node);
+				super.meet(node);
+			}
+		});
+		assertThat(slices).hasSize(2);
+		assertThat(slices.getFirst().getOffset()).isZero();
+		assertThat(slices.getFirst().getLimit()).isEqualTo(1L);
+		assertThat(slices.getLast().getOffset()).isEqualTo(1L);
+		assertThat(slices.getLast().getLimit()).isEqualTo(1L);
+		assertThat(filters).hasSize(1);
+	}
+
+	private Slice assertAskSlice(String sparql, long expectedOffset, long expectedLimit) throws Exception {
+		TupleExpr expression = builder.visit(SyntaxTreeBuilder.parseQuery(sparql), null);
+		assertThat(expression).isInstanceOf(Slice.class);
+		Slice slice = (Slice) expression;
+		assertThat(slice.getOffset()).isEqualTo(expectedOffset);
+		assertThat(slice.getLimit()).isEqualTo(expectedLimit);
+		return slice;
+	}
+
+	@Test
 	public void testSimpleAliasHandling() {
 		String query = "SELECT (?a as ?b) WHERE { ?a ?x ?z }";
 
@@ -271,7 +345,8 @@ public class TupleExprBuilderTest {
 		try {
 			ASTQueryContainer qc = SyntaxTreeBuilder.parseQuery(query);
 			TupleExpr result = builder.visit(qc, null);
-			assertTrue(result instanceof Order);
+			assertThat(result).isInstanceOf(Slice.class);
+			assertThat(((Slice) result).getArg()).isInstanceOf(Order.class);
 		} catch (Exception e) {
 			e.printStackTrace();
 			fail("should parse ask query with solution modifiers");

@@ -1262,10 +1262,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	public TupleExpr visit(ASTAskQuery node, Object data) throws VisitorException {
 		graphPattern = new GraphPattern();
 
-		super.visit(node, null);
+		node.getWhereClause().jjtAccept(this, null);
 
 		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
-		tupleExpr = new Slice(tupleExpr, 0, 1);
 
 		// Apply grouping
 		Group group = null;
@@ -1301,6 +1300,21 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// Apply result ordering
 			tupleExpr = processOrderClause(node.getOrderClause(), tupleExpr, group);
 		}
+
+		long limit = 1L;
+		ASTLimit limitNode = node.getLimit();
+		if (limitNode != null) {
+			limit = Math.min((Long) limitNode.jjtAccept(this, null), limit);
+		}
+
+		long offset = 0L;
+		ASTOffset offsetNode = node.getOffset();
+		if (offsetNode != null) {
+			offset = (Long) offsetNode.jjtAccept(this, null);
+		}
+
+		// ASK returns whether any solution remains after all solution modifiers.
+		tupleExpr = new Slice(tupleExpr, offset, limit);
 
 		return tupleExpr;
 	}
