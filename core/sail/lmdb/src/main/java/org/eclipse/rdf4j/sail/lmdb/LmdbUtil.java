@@ -59,11 +59,21 @@ final class LmdbUtil {
 
 	static int E(int rc) throws IOException {
 		if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND && rc != MDB_KEYEXIST) {
-			IOException ioException = new IOException(mdb_strerror(rc));
+			IOException ioException = new LmdbException(rc);
 			logger.info("Possible LMDB error: {}", mdb_strerror(rc), ioException);
 			throw ioException;
 		}
 		return rc;
+	}
+
+	static final class LmdbException extends IOException {
+		private static final long serialVersionUID = 1L;
+		final int errorCode;
+
+		private LmdbException(int errorCode) {
+			super(mdb_strerror(errorCode));
+			this.errorCode = errorCode;
+		}
 	}
 
 	static <T> T readTransaction(long env, Transaction<T> transaction) throws IOException {
