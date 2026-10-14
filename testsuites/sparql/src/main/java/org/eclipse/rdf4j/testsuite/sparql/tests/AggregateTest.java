@@ -56,6 +56,8 @@ public class AggregateTest extends AbstractComplianceTest {
 	public Stream<DynamicTest> tests() {
 		return Stream.of(
 				makeTest("MultipleHavingConstraints", this::testMultipleHavingConstraints),
+				makeTest("MultipleHavingConstruct", this::testMultipleHavingConstruct),
+				makeTest("DescribeMultipleHaving", this::testDescribeMultipleHaving),
 				makeTest("MaxAggregateWithGroupEmptyResult", this::testMaxAggregateWithGroupEmptyResult),
 				makeTest("MaxAggregateWithoutGroupEmptySolution", this::testMaxAggregateWithoutGroupEmptySolution),
 				makeTest("MinAggregateWithGroupEmptyResult", this::testMinAggregateWithGroupEmptyResult),
@@ -131,6 +133,44 @@ public class AggregateTest extends AbstractComplianceTest {
 					.evaluate()) {
 				assertThat(QueryResults.asList(result)).isEmpty();
 			}
+		}
+	}
+
+
+	private void testMultipleHavingConstruct(RepositoryConnection conn) {
+		String input = " WHERE { VALUES (?batch ?score) { (1 2) (1 5) (1 9) } } GROUP BY ?batch HAVING ";
+		String construct = "CONSTRUCT { <urn:summary> <urn:status> <urn:accepted> }" + input;
+		String passingConditions = "(COUNT(?score) = 3) (SUM(?score) = 16)";
+		assertThat(QueryResults.asModel(conn.prepareGraphQuery(construct + passingConditions).evaluate()))
+				.containsExactly(conn.getValueFactory()
+						.createStatement(iri("urn:summary"), iri("urn:status"),
+								iri("urn:accepted")));
+		for (String conditions : List.of("(COUNT(?score) = 3) (SUM(?score) = 15)",
+				"(1 / 0 > 0) (COUNT(?score) = 3)")) {
+			assertThat(QueryResults.asModel(conn.prepareGraphQuery(construct + conditions).evaluate()))
+					.as("CONSTRUCT with false or erroneous condition: %s", conditions)
+					.isEmpty();
+		}
+	}
+
+	private void testDescribeMultipleHaving(RepositoryConnection conn) {
+		IRI item = iri("urn:describe:item");
+		IRI predicate = iri("urn:describe:property");
+		Literal description = literal("the item");
+		conn.add(item, predicate, description);
+
+		String input = " WHERE { VALUES (?item ?score) { (<urn:describe:item> 2) "
+				+ "(<urn:describe:item> 5) (<urn:describe:item> 9) } } GROUP BY ?item HAVING ";
+		String prefix = "DESCRIBE ?item" + input;
+		String passingConditions = "(COUNT(?score) = 3) (SUM(?score) = 16)";
+		assertThat(QueryResults.asModel(conn.prepareGraphQuery(prefix + passingConditions).evaluate()))
+				.containsExactly(conn.getValueFactory().createStatement(item, predicate, description));
+
+		for (String conditions : List.of("(false) (COUNT(?score) = 3)", "(COUNT(?score) = 3) (false)",
+				"(1 / 0 > 0) (COUNT(?score) = 3)", "(COUNT(?score) = 3) (1 / 0 > 0)")) {
+			assertThat(QueryResults.asModel(conn.prepareGraphQuery(prefix + conditions).evaluate()))
+					.as("DESCRIBE with false or erroneous condition: %s", conditions)
+					.isEmpty();
 		}
 	}
 
