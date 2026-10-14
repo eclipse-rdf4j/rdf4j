@@ -51,6 +51,30 @@ public class ExpressionErrorSemanticsTest {
 
 
 
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
+	public void ifConditionErrorsPropagateThroughNestedExpressions(QueryEvaluationMode mode) {
+		for (boolean optimize : List.of(false, true)) {
+			for (String condition : List.of("?unbound", "!?unbound", "1 / 0", "<urn:error>",
+					"\"value\"@en", "\"value\"^^<urn:datatype>")) {
+				String nested = "IF(" + condition + ", 'yes', 'no')";
+				for (String expression : List.of(nested, nested + " = 'no'",
+						"IF(" + nested + " = 'no', true, false)", "!(" + nested + ")")) {
+					assertThat(evaluate(mode, "SELECT ?x WHERE { BIND(" + expression + " AS ?x) }", optimize))
+							.as("%s, optimize=%s", expression, optimize)
+							.singleElement()
+							.satisfies(row -> assertThat(row.hasBinding("x")).isFalse());
+				}
+				assertThat(evaluate(mode, "SELECT ?x WHERE { BIND(COALESCE(" + nested
+						+ ", 'fallback') AS ?x) }", optimize))
+								.singleElement()
+								.satisfies(row -> assertThat(row.getValue("x").stringValue())
+										.isEqualTo("fallback"));
+				assertThat(evaluate(mode, "SELECT * WHERE { FILTER(" + nested + " = 'no') }", optimize))
+						.isEmpty();
+			}
+		}
+	}
 
 	@ParameterizedTest
 	@EnumSource(QueryEvaluationMode.class)
@@ -89,6 +113,18 @@ public class ExpressionErrorSemanticsTest {
 	}
 
 
+	@Test
+	public void erroneousIfConditionEvaluatesNeitherBranch() {
+		AtomicInteger selected = new AtomicInteger();
+		QueryValueEvaluationStep branch = bindings -> {
+			selected.incrementAndGet();
+			return BooleanLiteral.TRUE;
+		};
+		QueryValueEvaluationStep condition = new QueryValueEvaluationStep.Fail("condition error");
+		IfValueEvaluationStep step = new IfValueEvaluationStep(branch, condition, branch);
+		assertThrows(ValueExprEvaluationException.class, () -> step.evaluate(EmptyBindingSet.getInstance()));
+		assertThat(selected).hasValue(0);
+	}
 
 	@Test
 	public void logicalStepsShortCircuitAndPreserveIncompatibleErrors() {

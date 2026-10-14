@@ -1684,14 +1684,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(If node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryValueEvaluationStep condition;
-		try {
-			condition = precompile(node.getCondition(), context);
-		} catch (ValueExprEvaluationException e) {
-			// in case of type error, if-construction should result in empty
-			// binding.
-			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> null);
-		}
+		QueryValueEvaluationStep condition = precompileOrFail(node.getCondition(), context);
 		// only the selected branch is evaluated, so an error in the other branch must not surface
 		QueryValueEvaluationStep result = precompileOrFail(node.getResult(), context);
 		QueryValueEvaluationStep alternative = precompileOrFail(node.getAlternative(), context);

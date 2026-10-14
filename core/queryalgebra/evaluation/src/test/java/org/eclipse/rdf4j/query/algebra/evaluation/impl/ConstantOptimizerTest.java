@@ -55,6 +55,26 @@ import org.junit.jupiter.api.Test;
  */
 public class ConstantOptimizerTest extends QueryOptimizerTest {
 
+	@Test
+	public void invalidConstantIfConditionRetainsItsError() {
+		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		for (String condition : List.of("<urn:error>", "'text'@en", "'text'^^<urn:datatype>")) {
+			TupleExpr expression = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+					"SELECT ?x WHERE { BIND(IF(" + condition + ", 'yes', 'no') AS ?x) }", null).getTupleExpr();
+			new ConstantOptimizer(strategy).optimize(expression, null, EmptyBindingSet.getInstance());
+			List<If> retained = new ArrayList<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(If node) {
+					retained.add(node);
+					super.meet(node);
+				}
+			});
+			assertThat(retained).as(condition).hasSize(1);
+			assertThat(evaluate(strategy, expression, EmptyBindingSet.getInstance())).singleElement()
+					.satisfies(row -> assertThat(row.hasBinding("x")).isFalse());
+		}
+	}
 
 	@Test
 	public void logicalIdentityFoldingPreservesBooleanDatatype() {
