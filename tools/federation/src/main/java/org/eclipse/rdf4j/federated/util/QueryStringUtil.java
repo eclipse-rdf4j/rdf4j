@@ -36,9 +36,11 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -848,7 +850,14 @@ public class QueryStringUtil {
 		if (value instanceof BNode) {
 			return appendBNode(sb, (BNode) value);
 		}
-		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
+		if (value instanceof TripleTerm triple) {
+			sb.append("<<(");
+			appendValue(sb, triple.getSubject()).append(' ');
+			appendValue(sb, triple.getPredicate()).append(' ');
+			appendValue(sb, triple.getObject()).append(")>>");
+			return sb;
+		}
+		throw new QueryEvaluationException("Type not supported: " + value.getClass().getCanonicalName());
 	}
 
 	/**
@@ -874,11 +883,8 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendBNode(StringBuilder sb, BNode bNode) {
-		log.debug("Cannot express BNodes in SPARQl: Bnode " + bNode.toString() + " is replaced with "
-				+ BNODE_URI.stringValue());
-		// TODO think how this can be done in queries, for now we just append a
-		// dummy URI which does not produce any results
-		return appendURI(sb, BNODE_URI);
+		throw new QueryEvaluationException(
+				"Unsupported blank-node identity: FedX transport has no trusted scope mapping");
 	}
 
 	/**

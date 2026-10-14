@@ -36,11 +36,15 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
 import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -96,6 +100,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 	private final boolean distinct;
 
 	private final List<SerializedQueue<BindingSet>> serialized = new LinkedList<>();
+	private volatile boolean closing;
+	private volatile CloseableIteration<BindingSet> creationResult;
 
 	/**
 	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is done and all
@@ -131,6 +137,39 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
+		QueryExecutionContext.ReplayContext ownership = QueryExecutionContext.captureReplayContext();
+		CloseableIteration<BindingSet> result = null;
+		try {
+			result = createIteration(ownership);
+			// Publish before checking close, so either the creating thread or handleClose owns retirement.
+			creationResult = result;
+			checkOwnership(ownership);
+			return result;
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(result, failure);
+			ExternalValuePreparation.closeWithSuppressed(this, failure);
+			throw failure;
+		}
+	}
+
+	private void checkOwnership(QueryExecutionContext.ReplayContext ownership) {
+		if (ownership != null) {
+			// Unlike cooperative replay checkpoints, lifetime checks remain active inside replay deferral.
+			ownership.checkOwnership();
+		}
+		if (closing || isClosed()) {
+			throw new QueryEvaluationException("ORDER BY iteration has been closed");
+		}
+	}
+
+	private List<SerializedQueue<BindingSet>> spillSnapshot() {
+		synchronized (serialized) {
+			return List.copyOf(serialized);
+		}
+	}
+
+	private CloseableIteration<BindingSet> createIteration(QueryExecutionContext.ReplayContext ownership) {
+		checkOwnership(ownership);
 		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
@@ -143,8 +182,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
 		try {
 			while (true) {
+				checkOwnership(ownership);
 				QueryExecutionContext.checkpointReplaySafepoint();
 				boolean hasNext = iter.hasNext();
+				checkOwnership(ownership);
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (!hasNext) {
 					break;
@@ -156,7 +197,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					try {
 						sort(list).forEach(queue::add);
 						QueryExecutionContext.checkpointReplaySafepoint();
-						serialized.add(queue);
+						synchronized (serialized) {
+							checkOwnership(ownership);
+							serialized.add(queue);
+						}
 					} catch (RuntimeException | Error failure) {
 						try {
 							queue.close();
@@ -171,9 +215,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					onSpillToDisk(queue.size(), bytes);
 					decrement(list.size() - queue.size());
 					list = new ArrayList<>(list.size());
-					if (threshold == null && serialized.stream().mapToLong(SerializedQueue::size).sum() >= limit) {
-						Stream<BindingSet> stream = serialized.stream().map(SerializedQueue::peekLast);
-						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().orElseThrow();
+					List<SerializedQueue<BindingSet>> spills = spillSnapshot();
+					if (threshold == null && spills.stream().mapToLong(SerializedQueue::size).sum() >= limit) {
+						Stream<BindingSet> stream = spills.stream().map(SerializedQueue::peekLast);
+						threshold = stream.sorted(comparator).skip(spills.size() - 1).findFirst().orElseThrow();
 					}
 				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
 					List<BindingSet> sorted = new ArrayList<>(limit2);
@@ -185,7 +230,8 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 						threshold = sorted.getLast();
 					}
 				}
-				BindingSet next = iter.next();
+				BindingSet next = prepareInputRow(iter.next());
+				checkOwnership(ownership);
 				inputRowsRead++;
 				if ((inputRowsRead & (INPUT_CHECKPOINT_INTERVAL - 1)) == 0) {
 					QueryExecutionContext.checkpoint(OPERATOR_NAME + "_INPUT");
@@ -202,18 +248,35 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			iter.close();
 		}
 
-		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);
-		serialized
+		checkOwnership(ownership);
+		List<SerializedQueue<BindingSet>> spills = spillSnapshot();
+		List<Iterator<BindingSet>> iterators = new ArrayList<>(spills.size() + 1);
+		spills
 				.stream()
 				.map(SerializedQueue::iterator)
 				.forEach(iterators::add);
 
 		iterators.add(sort(list).iterator());
+		checkOwnership(ownership);
 
 		SortedIterators<BindingSet> iterator = new SortedIterators<>(comparator, distinct, iterators);
 		onSortCompleted(inputRowsRead, spillCount, spillBytes);
 
-		return new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit);
+		return new ConvertingIteration<BindingSet, BindingSet>(
+				new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit)) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				return restoreResultRow(row);
+			}
+		};
+	}
+
+	protected BindingSet prepareInputRow(BindingSet row) {
+		return comparator instanceof OrderComparator order ? order.prepareRow(row) : row;
+	}
+
+	protected BindingSet restoreResultRow(BindingSet row) {
+		return comparator instanceof OrderComparator order ? order.restoreRow(row) : row;
 	}
 
 	protected void increment() throws QueryEvaluationException {
@@ -265,14 +328,27 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
+		closing = true;
 		try {
 			super.handleClose();
 		} finally {
 			try {
-				iter.close();
+				try {
+					CloseableIteration<BindingSet> result = creationResult;
+					if (result != null) {
+						result.close();
+					}
+				} finally {
+					iter.close();
+				}
 			} finally {
+				List<SerializedQueue<BindingSet>> spills;
+				synchronized (serialized) {
+					spills = List.copyOf(serialized);
+					serialized.clear();
+				}
 				IOException closeFailure = null;
-				for (SerializedQueue<BindingSet> queue : serialized) {
+				for (SerializedQueue<BindingSet> queue : spills) {
 					try {
 						queue.close();
 					} catch (IOException e) {
@@ -283,7 +359,6 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 						}
 					}
 				}
-				serialized.clear();
 				if (closeFailure != null) {
 					throw new QueryEvaluationException(closeFailure);
 				}
@@ -296,6 +371,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		private final File file;
 
 		private final ObjectOutputStream output;
+		private final RemoteBNode.SpillScope provenance = new RemoteBNode.SpillScope();
 
 		private ObjectInputStream input;
 
@@ -311,7 +387,16 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		public SerializedQueue(String prefix, File directory) throws IOException {
 			file = File.createTempFile(prefix, "", directory);
-			output = new ObjectOutputStream(new FileOutputStream(file));
+			output = new ObjectOutputStream(new FileOutputStream(file)) {
+				{
+					enableReplaceObject(true);
+				}
+
+				@Override
+				protected Object replaceObject(Object value) {
+					return provenance.replace(value);
+				}
+			};
 		}
 
 		public E peekLast() {
@@ -341,7 +426,16 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					return next;
 				} else if (input == null) {
 					output.close();
-					input = new ObjectInputStream(new FileInputStream(file));
+					input = new ObjectInputStream(new FileInputStream(file)) {
+						{
+							enableResolveObject(true);
+						}
+
+						@Override
+						protected Object resolveObject(Object value) {
+							return provenance.resolve(value);
+						}
+					};
 				}
 				size--;
 				return (E) input.readObject();
@@ -390,7 +484,11 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		@Override
 		public void close() throws IOException {
-			closeSpillResources(output, input, file);
+			try {
+				closeSpillResources(output, input, file);
+			} finally {
+				provenance.close();
+			}
 		}
 
 		public long estimatedBytes() {
@@ -408,7 +506,10 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		private final List<Iterator<E>> iterators;
 
-		private final TreeMap<E, ArrayDeque<Integer>> head;
+		private final TreeMap<E, ArrayDeque<Head<E>>> head;
+
+		private record Head<E> (E value, int source) {
+		}
 
 		private final boolean distinct;
 
@@ -447,24 +548,25 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			if (head.isEmpty()) {
 				return null;
 			} else {
-				Entry<E, ArrayDeque<Integer>> e = head.firstEntry();
-				advance(e.getValue().removeFirst());
+				Entry<E, ArrayDeque<Head<E>>> e = head.firstEntry();
+				Head<E> current = e.getValue().removeFirst();
+				advance(current.source());
 				if (e.getValue().isEmpty()) {
 					head.remove(e.getKey());
 				}
-				return e.getKey();
+				return current.value();
 			}
 		}
 
 		private void advance(int i) {
 			while (iterators.get(i).hasNext()) {
 				E key = iterators.get(i).next();
-				ArrayDeque<Integer> integers = head.get(key);
-				if (integers == null) {
-					head.put(key, new ArrayDeque<>(List.of(i)));
+				ArrayDeque<Head<E>> heads = head.get(key);
+				if (heads == null) {
+					head.put(key, new ArrayDeque<>(List.of(new Head<>(key, i))));
 					break;
 				} else if (!distinct) {
-					integers.add(i);
+					heads.add(new Head<>(key, i));
 					break;
 				}
 			}

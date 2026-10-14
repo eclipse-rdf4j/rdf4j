@@ -241,8 +241,8 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
-	 * to guarantee uniqueness.
+	 * Creates an (anonymous) Var representing a constant value using a legacy hash-derived name hint. Distinct values
+	 * may receive the same name; translators that combine constants must allocate unique names in their own scope.
 	 *
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.
@@ -252,6 +252,7 @@ public class TupleExprs {
 		return Var.of(varName, value, true, true);
 	}
 
+	/** Returns a stable hash-derived name hint, which is not guaranteed to be unique. */
 	public static String getConstVarName(Value value) {
 		if (value == null) {
 			throw new IllegalArgumentException("value can not be null");

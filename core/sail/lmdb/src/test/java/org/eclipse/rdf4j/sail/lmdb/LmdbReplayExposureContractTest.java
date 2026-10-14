@@ -878,11 +878,11 @@ class LmdbReplayExposureContractTest {
 		@Override
 		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 			if (invocations.incrementAndGet() == 1) {
-				boolean comparing = StackWalker.getInstance()
+				boolean preparing = StackWalker.getInstance()
 						.walk(frames -> frames
 								.anyMatch(frame -> frame.getClassName().equals(OrderComparator.class.getName())
-										&& frame.getMethodName().equals("compare")));
-				assertTrue(comparing, "the cancellation barrier must run inside the application sort comparator");
+										&& frame.getMethodName().equals("prepareRow")));
+				assertTrue(preparing, "the cancellation barrier must run while preparing an ORDER key");
 				entered.countDown();
 				try {
 					if (!release.await(10, TimeUnit.SECONDS)) {

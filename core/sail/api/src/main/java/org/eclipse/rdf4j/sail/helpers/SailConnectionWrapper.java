@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -293,5 +294,11 @@ public class SailConnectionWrapper
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return wrappedCon.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type,
+			String query, String baseURI, QueryParseOptions options) {
+		return getWrappedConnection().prepareQuery(language, type, query, baseURI, options);
 	}
 }

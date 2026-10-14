@@ -13,17 +13,23 @@ package org.eclipse.rdf4j.queryrender.sparql;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.queryrender.QueryRenderer;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 
 /**
  * <p>
@@ -45,6 +51,34 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	@Override
 	public QueryLanguage getLanguage() {
 		return QueryLanguage.SPARQL;
+	}
+
+	public String render(final ParsedQuery query, QueryParseOptions options) throws Exception {
+		if (!options.blankNodeReferences()) {
+			query.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Var var) {
+					if (var.hasValue()) {
+						RenderUtils.toSPARQL(var.getValue(), new StringBuilder(), options);
+					}
+				}
+
+				@Override
+				public void meet(ValueConstant constant) {
+					RenderUtils.toSPARQL(constant.getValue(), new StringBuilder(), options);
+				}
+
+				@Override
+				public void meet(BindingSetAssignment assignment) {
+					for (var row : assignment.getBindingSets()) {
+						for (var binding : row) {
+							RenderUtils.toSPARQL(binding.getValue(), new StringBuilder(), options);
+						}
+					}
+				}
+			});
+		}
+		return render(query);
 	}
 
 	/**
@@ -132,11 +166,15 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 
 		if (theQuery.getDataset() != null) {
 			for (IRI aURI : theQuery.getDataset().getDefaultGraphs()) {
-				aQuery.append("from <").append(aURI).append(">").append(System.lineSeparator());
+				aQuery.append("from ")
+						.append(RenderUtils.toSPARQLIRI(aURI.stringValue()))
+						.append(System.lineSeparator());
 			}
 
 			for (IRI aURI : theQuery.getDataset().getNamedGraphs()) {
-				aQuery.append("from named <").append(aURI).append(">").append(System.lineSeparator());
+				aQuery.append("from named ")
+						.append(RenderUtils.toSPARQLIRI(aURI.stringValue()))
+						.append(System.lineSeparator());
 			}
 		}
 

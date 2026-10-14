@@ -138,7 +138,7 @@ public class BindingScopeReviewRegressionTest {
 	public void zeroLengthPathDoesNotGuaranteeGraphVariable() throws Exception {
 		assertThat(query("<urn:G1> { <urn:a> <urn:p> <urn:b> }",
 				"SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
-						.containsExactly("{g=urn:G1, o=urn:b}");
+						.containsExactly("{g=urn:G1, o=urn:a}", "{g=urn:G1, o=urn:b}");
 	}
 
 	@Test

@@ -71,11 +71,11 @@ public class GenericInfoOptimizerTest extends FedXBaseTest {
 				         ProjectionElem "jobTitle"
 				      TripleRefStatementPattern
 				         Var (name=node)
-				         Var (name=_const_9fd69527_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
+				         Var (name=_const_0, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
 				         Var (name=_anon_2ce88c483427245f9ab5869662768984301, anonymous)
 				         TripleRef
-				            Var (name=_const_ad4a55dd_uri, value=http://www.example.org/bob, anonymous)
-				            Var (name=_const_d9dc6573_uri, value=http://www.example.org/jobTitle, anonymous)
+				            Var (name=_const_1, value=http://www.example.org/bob, anonymous)
+				            Var (name=_const_2, value=http://www.example.org/jobTitle, anonymous)
 				            Var (name=jobTitle)
 				            Var (name=_anon_2ce88c483427245f9ab5869662768984301, anonymous)
 								""";
@@ -112,17 +112,17 @@ public class GenericInfoOptimizerTest extends FedXBaseTest {
 				      NJoin
 				         TripleRefStatementPattern
 				            Var (name=_anon_18a7b5c1b9b9045c4b34845786c50a85f0, anonymous)
-				            Var (name=reifies, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
+				            Var (name=_const_2, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
 				            Var (name=_anon_28a7b5c1b9b9045c4b34845786c50a85f01, anonymous)
 				            ReifiedTripleRef
-				               Var (name=_const_ad4a55dd_uri, value=http://www.example.org/bob, anonymous)
-				               Var (name=_const_d9dc6573_uri, value=http://www.example.org/jobTitle, anonymous)
+				               Var (name=_const_0, value=http://www.example.org/bob, anonymous)
+				               Var (name=_const_1, value=http://www.example.org/jobTitle, anonymous)
 				               Var (name=jobTitle)
 				               Var (name=_anon_28a7b5c1b9b9045c4b34845786c50a85f01, anonymous)
 				               Var (name=_anon_18a7b5c1b9b9045c4b34845786c50a85f0, anonymous)
 				         StatementPattern
 				            Var (name=_anon_18a7b5c1b9b9045c4b34845786c50a85f0, anonymous)
-				            Var (name=_const_50f03f65_uri, value=http://www.example.org/accordingTo, anonymous)
+				            Var (name=_const_3, value=http://www.example.org/accordingTo, anonymous)
 				            Var (name=source)
 								""";
 
@@ -160,16 +160,16 @@ public class GenericInfoOptimizerTest extends FedXBaseTest {
 				      NJoin
 				         TripleRefStatementPattern
 				            Var (name=node)
-				            Var (name=_const_9fd69527_uri, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
+				            Var (name=_const_0, value=http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies, anonymous)
 				            Var (name=_anon_22aef978a7edb4a9ba38159091244d07501, anonymous)
 				            TripleRef
-				               Var (name=_const_ad4a55dd_uri, value=http://www.example.org/bob, anonymous)
-				               Var (name=_const_d9dc6573_uri, value=http://www.example.org/jobTitle, anonymous)
+				               Var (name=_const_1, value=http://www.example.org/bob, anonymous)
+				               Var (name=_const_2, value=http://www.example.org/jobTitle, anonymous)
 				               Var (name=jobTitle)
 				               Var (name=_anon_22aef978a7edb4a9ba38159091244d07501, anonymous)
 				         StatementPattern
 				            Var (name=node)
-				            Var (name=_const_50f03f65_uri, value=http://www.example.org/accordingTo, anonymous)
+				            Var (name=_const_3, value=http://www.example.org/accordingTo, anonymous)
 				            Var (name=source)
 								""";
 

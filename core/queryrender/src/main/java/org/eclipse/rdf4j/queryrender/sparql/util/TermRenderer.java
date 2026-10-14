@@ -20,6 +20,10 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex;
 import org.eclipse.rdf4j.queryrender.sparql.PrefixIndex.PrefixHit;
 
@@ -30,7 +34,9 @@ public final class TermRenderer {
 
 	public static String convertIRIToString(final IRI iri, final PrefixIndex index, final boolean usePrefixCompaction) {
 		final String s = iri.stringValue();
-		if (usePrefixCompaction) {
+		String encoded = RenderUtils.toSPARQLIRI(s);
+		// Explicit envelopes preserve escaped spellings independently of namespace compaction.
+		if (usePrefixCompaction && encoded.equals("<" + s + ">")) {
 			final PrefixHit hit = index.longestMatch(s);
 			if (hit != null) {
 				final String local = s.substring(hit.namespace.length());
@@ -39,11 +45,20 @@ public final class TermRenderer {
 				}
 			}
 		}
-		return "<" + s + ">";
+		return encoded;
 	}
 
 	public static String convertValueToString(final Value val, final PrefixIndex index,
 			final boolean usePrefixCompaction) {
+		return convertValueToString(val, index, usePrefixCompaction, QueryParseOptions.DEFAULT);
+	}
+
+	public static String convertValueToString(final Value val, final PrefixIndex index,
+			final boolean usePrefixCompaction, QueryParseOptions options) {
+		if (val instanceof RemoteBNode) {
+			throw new IllegalArgumentException(
+					"Unsupported blank-node identity: imported alias is not a local reference");
+		}
 		if (val instanceof IRI) {
 			return convertIRIToString((IRI) val, index, usePrefixCompaction);
 		} else if (val instanceof Literal) {
@@ -76,13 +91,16 @@ public final class TermRenderer {
 			}
 			return "\"" + TextEscapes.escapeLiteral(label) + "\"";
 		} else if (val instanceof BNode) {
-			return "_:" + ((BNode) val).getID();
+			if (!options.blankNodeReferences()) {
+				throw new IllegalArgumentException("Fixed blank-node operands cannot be rendered in strict SPARQL");
+			}
+			return BlankNodeReferences.toReference(((BNode) val).getID());
 		} else if (val instanceof TripleTerm) {
 			TripleTerm t = (TripleTerm) val;
 			// Render components recursively; nested triples are allowed.
-			String s = convertValueToString(t.getSubject(), index, usePrefixCompaction);
-			String p = convertValueToString(t.getPredicate(), index, usePrefixCompaction);
-			String o = convertValueToString(t.getObject(), index, usePrefixCompaction);
+			String s = convertValueToString(t.getSubject(), index, usePrefixCompaction, options);
+			String p = convertValueToString(t.getPredicate(), index, usePrefixCompaction, options);
+			String o = convertValueToString(t.getObject(), index, usePrefixCompaction, options);
 			return "<<(" + s + " " + p + " " + o + ")>>";
 		}
 		return "\"" + TextEscapes.escapeLiteral(String.valueOf(val)) + "\"";

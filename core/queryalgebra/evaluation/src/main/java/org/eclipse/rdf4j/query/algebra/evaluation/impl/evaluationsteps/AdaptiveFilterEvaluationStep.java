@@ -71,6 +71,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ValueKind;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
@@ -1318,6 +1319,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		@Override
 		public Comparator<Value> getComparator() {
 			return delegate.getComparator();
+		}
+
+		@Override
+		public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+			return delegate.getBlankNodeAllocationScope();
 		}
 
 		@Override

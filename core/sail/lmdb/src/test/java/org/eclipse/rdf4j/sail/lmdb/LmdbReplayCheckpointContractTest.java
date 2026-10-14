@@ -314,11 +314,11 @@ class LmdbReplayCheckpointContractTest {
 		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
 			int invocation = calls.incrementAndGet();
 			if (invocation == 1 || invocation == 3) {
-				boolean comparing = StackWalker.getInstance()
+				boolean preparing = StackWalker.getInstance()
 						.walk(frames -> frames
 								.anyMatch(frame -> frame.getClassName().equals(OrderComparator.class.getName())
-										&& frame.getMethodName().equals("compare")));
-				assertTrue(comparing, "The checkpoint fixture must pause an actual ORDER comparator operand");
+										&& frame.getMethodName().equals("prepareRow")));
+				assertTrue(preparing, "The checkpoint fixture must pause ORDER key preparation");
 				comparatorThread.set(Thread.currentThread());
 				(invocation == 1 ? firstComparison : nextComparison).countDown();
 				try {

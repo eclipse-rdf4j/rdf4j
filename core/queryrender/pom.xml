@@ -39,7 +39,6 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-queryparser-sparql</artifactId>
 			<version>${project.version}</version>
-			<scope>test</scope>
 		</dependency>
 		<!-- Optional JSON logging for tests (enable via -Dlogback.configurationFile=...logback-test-logstash.xml) -->
 		<dependency>

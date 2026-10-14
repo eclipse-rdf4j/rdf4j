@@ -40,6 +40,7 @@ import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
@@ -85,6 +86,7 @@ import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateFunctionRe
 import org.eclipse.rdf4j.query.parser.sparql.aggregate.CustomAggregateNAryFunctionRegistry;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -408,12 +410,30 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testLongUnicode() {
-		ParsedUpdate ru = parser.parseUpdate("insert data {<urn:test:foo> <urn:test:bar> \"\\U0001F61F\" .}",
-				"urn:test");
+	public void testLongUnicode() throws Exception {
+		String supplementaryEscapes = "\\" + "U0001F61F" + "\\" + "U0001F600";
+		String delimiterAndBackslashEscapes = "\\" + "u0022" + "\\" + "u005Cu0061";
+		String update = "INSERT DATA {\r\n"
+				+ "<urn:test:foo> <urn:test:bar> \"" + supplementaryEscapes + "\" .\r\n"
+				+ "<urn:test:foo2> <urn:test:bar> \"" + delimiterAndBackslashEscapes + "\" .\r\n"
+				+ "}";
+		ParsedUpdate ru = parser.parseUpdate(update, "urn:test");
 		InsertData insertData = (InsertData) ru.getUpdateExprs().get(0);
-		String[] lines = insertData.getDataBlock().split("\n");
-		assertEquals("\uD83D\uDE1F", lines[lines.length - 1].replaceAll(".*\"(.*)\".*", "$1"));
+		String dataBlock = insertData.getDataBlock();
+		assertTrue(dataBlock.contains("\\U0001F61F"), "the original supplementary escape must remain in DATA text");
+		assertTrue(dataBlock.contains("\\u0022"), "the escaped delimiter must remain in DATA text");
+		assertTrue(dataBlock.contains("\\u005Cu0061"), "the escaped backslash sequence must not decode twice");
+		assertTrue(dataBlock.contains("\r\n"), "raw DATA extraction must preserve CRLF line endings");
+
+		StatementCollector statements = new StatementCollector();
+		SPARQLUpdateDataBlockParser dataParser = new SPARQLUpdateDataBlockParser();
+		dataParser.setRDFHandler(statements);
+		dataParser.parse(new StringReader(dataBlock), "urn:test");
+		Iterator<Statement> parsed = statements.getStatements().iterator();
+		assertEquals("\uD83D\uDE1F\uD83D\uDE00",
+				((Literal) parsed.next().getObject()).getLabel());
+		assertEquals("\"\\u0061", ((Literal) parsed.next().getObject()).getLabel());
+		assertFalse(parsed.hasNext());
 	}
 
 	@Test
