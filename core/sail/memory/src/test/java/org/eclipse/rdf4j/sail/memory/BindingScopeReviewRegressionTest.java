@@ -135,10 +135,12 @@ public class BindingScopeReviewRegressionTest {
 	}
 
 	@Test
-	public void zeroLengthPathDoesNotGuaranteeGraphVariable() throws Exception {
-		assertThat(query("<urn:G1> { <urn:a> <urn:p> <urn:b> }",
-				"SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
-						.containsExactly("{g=urn:G1, o=urn:b}");
+	public void graphVariableIsBoundForZeroLengthAndPositivePathRows() throws Exception {
+		String data = "<urn:G1> { <urn:a> <urn:p> <urn:b> }";
+		assertThat(query(data, "SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
+				.containsExactly("{g=urn:G1, o=urn:a}", "{g=urn:G1, o=urn:b}");
+		assertThat(query(data, "SELECT ?o { GRAPH <urn:missingGraph> { <urn:a> <urn:p>* ?o } }"))
+				.isEmpty();
 	}
 
 	@Test
