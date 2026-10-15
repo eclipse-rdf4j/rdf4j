@@ -19,8 +19,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 const base = 'https://example.test/workbench/repositories/repo-1/';
 
 function deferred() {

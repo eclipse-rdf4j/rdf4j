@@ -21,8 +21,7 @@ const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables, settle } = require('./page-result-table-harness.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadWorkbench() {
     const window = {};

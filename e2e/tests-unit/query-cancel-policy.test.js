@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const queryCancelPolicy = require('../../tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
+const queryCancelPolicy = require(require('./workbench-scripts.js').workbenchScriptPath('queryCancelPolicy.js'));
 
 test('uses compare cancel while compare refresh is pending', () => {
     assert.equal(queryCancelPolicy.getExplainCancelAction(2, false), 'compare');

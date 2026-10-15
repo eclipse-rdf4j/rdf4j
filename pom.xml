@@ -1076,6 +1076,17 @@
 					<version>3.8.1</version>
 				</plugin>
 				<plugin>
+					<!-- Builds the Workbench front end (npm project in tools/workbench) without a locally installed Node.
+					     The Node tarball is cached in the Maven local repository, so offline builds work after one online run. -->
+					<groupId>com.github.eirslett</groupId>
+					<artifactId>frontend-maven-plugin</artifactId>
+					<version>2.0.2</version>
+					<configuration>
+						<nodeVersion>v22.23.3</nodeVersion>
+						<installDirectory>${project.build.directory}</installDirectory>
+					</configuration>
+				</plugin>
+				<plugin>
 					<groupId>org.apache.maven.plugins</groupId>
 					<artifactId>maven-deploy-plugin</artifactId>
 					<version>3.1.4</version>

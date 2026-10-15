@@ -1,0 +1,16 @@
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix schema: <http://schema.org/> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<http://example.org/alice> a schema:Person ;
+    rdfs:label "Alice \"Al\" Smith"@en, "line\nbreak" ;
+    schema:age "39"^^xsd:integer ;
+    schema:knows <http://example.org/bob>, _:b1 ;
+    <http://example.org/odd#name.> "x" .
+
+<http://example.org/bob> schema:worksFor <http://example.org/acme%20corp> .
+
+<http://example.org/claim> rdf:reifies <<( <http://example.org/alice> schema:knows <http://example.org/bob> )>> .
+
+_:b1 rdfs:label "Somebody" .

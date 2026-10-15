@@ -1,0 +1,14 @@
+SELECT DISTINCT ?kind ?about ?property ?value WHERE {
+{ BIND("reifier" AS ?kind)
+ ?about <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies> <<( <urn:ex:six> <urn:ex:mentions> <urn:ex:seven> )>> .
+ OPTIONAL { ?about ?property ?value FILTER(?property != <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>) } }
+UNION
+{ BIND("reification" AS ?kind)
+ ?about <http://www.w3.org/1999/02/22-rdf-syntax-ns#subject> <urn:ex:six> ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate> <urn:ex:mentions> ; <http://www.w3.org/1999/02/22-rdf-syntax-ns#object> <urn:ex:seven> .
+ OPTIONAL { ?about ?property ?value
+ FILTER(?property NOT IN (<http://www.w3.org/1999/02/22-rdf-syntax-ns#subject>, <http://www.w3.org/1999/02/22-rdf-syntax-ns#predicate>, <http://www.w3.org/1999/02/22-rdf-syntax-ns#object>) && (?property != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> || ?value != <http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement>)) } }
+UNION
+{ BIND("reference" AS ?kind)
+ ?about ?property <<( <urn:ex:six> <urn:ex:mentions> <urn:ex:seven> )>> .
+ FILTER(?property != <http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies>) }
+} LIMIT 500

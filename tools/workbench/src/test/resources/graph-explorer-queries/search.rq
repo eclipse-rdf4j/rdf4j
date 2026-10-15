@@ -1,0 +1,12 @@
+SELECT ?source ?predicate ?target WHERE {
+ { SELECT ?source (MIN(?rank) AS ?best) WHERE {
+ VALUES ?labelProperty { <http://www.w3.org/2004/02/skos/core#prefLabel> <http://www.w3.org/2000/01/rdf-schema#label> <https://schema.org/name> <http://schema.org/name> <http://purl.org/dc/terms/title> <http://purl.org/dc/elements/1.1/title> <http://xmlns.com/foaf/0.1/name> <http://www.w3.org/2006/vcard/ns#fn> <http://www.w3.org/2001/vcard-rdf/3.0#FN> <http://www.geonames.org/ontology#name> <https://www.omg.org/spec/Commons/TextDatatype/hasName> <http://www.w3.org/2004/02/skos/core#altLabel> <https://schema.org/alternateName> <http://schema.org/alternateName> <http://purl.org/dc/terms/alternative> <http://purl.obolibrary.org/obo/IAO_0000111> <http://purl.obolibrary.org/obo/IAO_0000118> }
+ ?source ?labelProperty ?label .
+ FILTER(isIRI(?source) && isLiteral(?label))
+ BIND(LCASE(STR(?label)) AS ?text)
+ FILTER(CONTAINS(?text, LCASE("Second resource")))
+ BIND(IF(?text = LCASE("Second resource"), 0, IF(STRSTARTS(?text, LCASE("Second resource")), 1, 2)) AS ?rank)
+ } GROUP BY ?source ORDER BY ?best LIMIT 20 }
+ BIND(?source AS ?__matchedSource)
+ ?source ?predicate ?target .
+} LIMIT 100

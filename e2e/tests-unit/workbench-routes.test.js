@@ -19,8 +19,7 @@ const vm = require('node:vm');
 const { FakeWindow } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadWorkbench(window = {}) {
     const workbench = {};
@@ -141,7 +140,7 @@ test('the built-in definitions carry the script lists the pages load today', () 
     assert.deepEqual(Array.from(routes.get('create').scripts({ vars: ['location'] })), []);
     assert.deepEqual(Array.from(routes.get('create').scripts({ vars: ['description', 'location'] })), []);
     for (const viewId of ['summary', 'information', 'repositories', 'delete', 'namespaces', 'contexts', 'types', 'explore',
-        'export', 'add', 'remove', 'clear', 'server', 'create']) {
+        'graph', 'export', 'add', 'remove', 'clear', 'server', 'create']) {
         assert.equal(routes.get(viewId).viewId, viewId);
         assert.equal(routes.isRouterReady(viewId), true, viewId + ' is converted (M7.2)');
     }
@@ -485,7 +484,7 @@ test('route scripts define their mount functions even when they load before any 
     for (const [file, name] of [['add.js', 'add'], ['export.js', 'exportPage'], ['explore.js', 'explore'],
         ['create.js', 'create'], ['create-federate.js', 'createFederate'], ['update.js', 'update'],
         ['saved-queries.js', 'savedQueries']]) {
-        const absolutePath = path.resolve(__dirname, '../..', routeScriptsDir + file);
+        const absolutePath = require('./workbench-scripts.js').workbenchScriptPath(file);
         const context = vm.createContext({});
         vm.runInContext(fs.readFileSync(absolutePath, 'utf8'), context, { filename: absolutePath });
         assert.equal(typeof context.workbench[name].mount, 'function', file);
@@ -968,7 +967,7 @@ test('no page but Query renders the element ids the kept Query page keeps', () =
         return new Set(Array.from(templateText(mount.template).matchAll(/\bid="([^"]+)"/g), (match) => match[1]));
     };
     const others = ['summary', 'information', 'repositories', 'delete', 'namespaces', 'contexts', 'types', 'explore',
-        'saved-queries', 'export', 'add', 'remove', 'clear', 'update', 'server', 'create']
+        'graph', 'saved-queries', 'export', 'add', 'remove', 'clear', 'update', 'server', 'create']
         .map((viewId) => ({ viewId, ids: idsOf(viewId) }));
     // The shell and the outlet's title, notice and surface are on every page; the rest belong to the Query page.
     const own = Array.from(idsOf('query')).filter((id) => !others.every((other) => other.ids.has(id)));

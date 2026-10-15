@@ -1,0 +1,17 @@
+SELECT ?selected ?source ?predicate ?target WHERE { {
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?selected)
+ BIND(?selected AS ?source)
+ ?source ?predicate ?target .
+ MINUS { VALUES (?predicate ?target) { (<urn:ex:relation> <urn:ex:two>) (<urn:ex:relation> <urn:ex:three>) } }
+ } LIMIT 10
+ } UNION {
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?selected)
+ BIND(?selected AS ?target)
+ ?source ?predicate ?target .
+ MINUS { VALUES (?source ?predicate) { (<urn:ex:two> <urn:ex:relation>) } }
+ } LIMIT 10
+ } }

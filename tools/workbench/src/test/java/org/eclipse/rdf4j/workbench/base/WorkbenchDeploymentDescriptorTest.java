@@ -49,4 +49,23 @@ class WorkbenchDeploymentDescriptorTest {
 		assertThat(loadOnStartup).as("load-on-startup of the workbench servlet").isNotNull();
 		assertThat(Integer.parseInt(loadOnStartup)).isGreaterThanOrEqualTo(0);
 	}
+
+	@Test
+	void theGraphCommandIsDeclaredWithItsQueryLengthLimit() throws Exception {
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+		Document descriptor = factory.newDocumentBuilder()
+				.parse(Path.of("src/main/webapp/WEB-INF/web.xml").toFile());
+
+		java.util.Map<String, String> params = new java.util.HashMap<>();
+		NodeList initParams = descriptor.getElementsByTagName("init-param");
+		for (int index = 0; index < initParams.getLength(); index++) {
+			Element param = (Element) initParams.item(index);
+			params.put(param.getElementsByTagName("param-name").item(0).getTextContent().trim(),
+					param.getElementsByTagName("param-value").item(0).getTextContent().trim());
+		}
+
+		assertThat(params).containsEntry("/graph", "org.eclipse.rdf4j.workbench.commands.GraphServlet")
+				.containsEntry("graph-max-query-length", "150000");
+	}
 }

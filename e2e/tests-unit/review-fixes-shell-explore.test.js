@@ -9,8 +9,7 @@ const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createFormBrowserHarness } = require('./form-browser-harness.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadViews(search = '') {
     const window = { location: { href: 'http://x.test/workbench/repositories/r/explore' + search, search } };

@@ -5,8 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 /** workbenchApp.js with a document whose script elements fail to load while `failing` says so. */
 function loadApp() {
@@ -84,7 +83,7 @@ test('A21: the shared runtime scripts are requested together (their order kept b
     const boot = workbench.app.bootstrap(mount);
     await new Promise(setImmediate);
     assert.deepEqual(appended.map((script) => script.src), ['workbenchViews.js', 'workbenchRoutes.js',
-        'workbenchRouter.js', 'queryStream.js', 'workbench-theme.js'].map((name) => '/wb/scripts/' + name),
+        'workbenchRouter.js', 'queryStream.js', 'graphAdditions.js', 'workbench-theme.js'].map((name) => '/wb/scripts/' + name),
         'every shared script is requested before the first one has loaded');
     assert.ok(appended.every((script) => script.async === false), 'they still run in this order');
     appended.forEach((script) => { script.setAttribute('data-workbench-loaded', 'true'); script.onload(); });

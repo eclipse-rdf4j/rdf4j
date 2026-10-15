@@ -6,8 +6,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 /** The Query page markup for these policy features, with an optional cookie jar for the signed-in user. */
 function queryMarkup(queryFeatures, options = {}) {

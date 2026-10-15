@@ -325,6 +325,8 @@ public class Rdf4jServerWorkbenchApplication {
 		params.put("/contexts", "org.eclipse.rdf4j.workbench.commands.ContextsServlet");
 		params.put("/types", "org.eclipse.rdf4j.workbench.commands.TypesServlet");
 		params.put("/explore", "org.eclipse.rdf4j.workbench.commands.ExploreServlet");
+		params.put("/graph", "org.eclipse.rdf4j.workbench.commands.GraphServlet");
+		params.put("graph-max-query-length", "150000");
 		params.put("/query", "org.eclipse.rdf4j.workbench.commands.QueryServlet");
 		params.put("/saved-queries", "org.eclipse.rdf4j.workbench.commands.SavedQueriesServlet");
 		params.put("/export", "org.eclipse.rdf4j.workbench.commands.ExportServlet");

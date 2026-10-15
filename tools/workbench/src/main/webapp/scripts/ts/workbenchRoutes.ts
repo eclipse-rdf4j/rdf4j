@@ -173,9 +173,13 @@ module workbench {
             resume?: () => void;
         }
 
-        /** The mount function a route script exports (workbench.<name>.mount). */
+        /**
+         * The mount function a route script exports (workbench.<name>.mount). The route context is passed as a
+         * second argument for scripts that need the base path, repository id or page model (the graph explorer);
+         * the classic page scripts ignore it.
+         */
         function scriptMount(name: string): (ctx: RouteMountContext) => () => void {
-            return (ctx: RouteMountContext) => (workbench as any)[name].mount(ctx.outlet);
+            return (ctx: RouteMountContext) => (workbench as any)[name].mount(ctx.outlet, ctx);
         }
 
         /**
@@ -274,6 +278,8 @@ module workbench {
         register(staticRoute('server', ['server.js'], routeMount()));
         register(staticRoute('delete', ['delete.js'], routeMount()));
         register(staticRoute('explore', ['paging.js', 'explore.js'], routeMount(scriptMount('explore'))));
+        // The graph explorer is an ES module bundle (Vite); workbenchApp loads *.mjs names with type="module".
+        register(staticRoute('graph', ['graph-explorer/graph-explorer.mjs'], routeMount(scriptMount('graphExplorer'))));
         register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
         register(staticRoute('saved-queries',

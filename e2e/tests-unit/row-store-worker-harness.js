@@ -21,7 +21,7 @@ function loadWorker(scopeOverrides = {}, globals = {}) {
         addEventListener(type, listener) { if (type === 'message') listeners.push(listener); },
         postMessage(response) { responses.push(response); }
     }, scopeOverrides);
-    const workerPath = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts/queryStreamWorker.js');
+    const workerPath = require('./workbench-scripts.js').workbenchScriptPath('queryStreamWorker.js');
     vm.runInContext(fs.readFileSync(workerPath, 'utf8'), vm.createContext(Object.assign({ self: scope }, globals)),
         { filename: workerPath });
     return {

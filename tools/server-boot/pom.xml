@@ -139,6 +139,15 @@
 			<classifier>classes</classifier>
 		</dependency>
 		<dependency>
+			<!-- The Workbench WAR carries the npm-built front end (compiled classic scripts and the graph explorer);
+			     it is unpacked below into the classpath resources, never put on the runtime classpath. -->
+			<groupId>org.eclipse.rdf4j</groupId>
+			<artifactId>rdf4j-http-workbench</artifactId>
+			<version>${project.version}</version>
+			<type>war</type>
+			<scope>provided</scope>
+		</dependency>
+		<dependency>
 			<groupId>ch.qos.logback</groupId>
 			<artifactId>logback-classic</artifactId>
 		</dependency>
@@ -226,11 +235,38 @@
 				<targetPath>rdf4j/server-webapp</targetPath>
 			</resource>
 			<resource>
-				<directory>${project.basedir}/../workbench/src/main/webapp</directory>
+				<!-- the built Workbench web application, unpacked from its WAR by maven-dependency-plugin below -->
+				<directory>${project.build.directory}/workbench-webapp</directory>
 				<targetPath>rdf4j/workbench-webapp</targetPath>
 			</resource>
 		</resources>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-dependency-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>unpack-workbench-webapp</id>
+						<goals>
+							<goal>unpack</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<artifactItems>
+								<artifactItem>
+									<groupId>org.eclipse.rdf4j</groupId>
+									<artifactId>rdf4j-http-workbench</artifactId>
+									<version>${project.version}</version>
+									<type>war</type>
+									<outputDirectory>${project.build.directory}/workbench-webapp</outputDirectory>
+									<excludes>WEB-INF/lib/**,WEB-INF/classes/**,META-INF/maven/**</excludes>
+								</artifactItem>
+							</artifactItems>
+							<overWriteSnapshots>true</overWriteSnapshots>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
 			<plugin>
 				<groupId>org.springframework.boot</groupId>
 				<artifactId>spring-boot-maven-plugin</artifactId>

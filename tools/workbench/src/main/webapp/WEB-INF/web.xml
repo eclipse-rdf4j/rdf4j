@@ -145,6 +145,15 @@
 			<param-value>org.eclipse.rdf4j.workbench.commands.ExploreServlet</param-value>
 		</init-param>
 		<init-param>
+			<param-name>/graph</param-name>
+			<param-value>org.eclipse.rdf4j.workbench.commands.GraphServlet</param-value>
+		</init-param>
+		<init-param>
+			<!-- longest SPARQL query (characters) the Graph page accepts from the browser -->
+			<param-name>graph-max-query-length</param-name>
+			<param-value>150000</param-value>
+		</init-param>
+		<init-param>
 			<param-name>/query</param-name>
 			<param-value>org.eclipse.rdf4j.workbench.commands.QueryServlet</param-value>
 		</init-param>

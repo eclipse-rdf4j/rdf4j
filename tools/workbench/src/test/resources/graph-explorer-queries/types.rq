@@ -1,0 +1,3 @@
+SELECT ?node ?type WHERE { { SELECT DISTINCT ?node ?type WHERE { VALUES ?__anchor { <urn:ex:one> }
+BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . FILTER(isIRI(?type)) } LIMIT 32 } UNION { SELECT DISTINCT ?node ?type WHERE { VALUES ?__anchor { <urn:ex:two> }
+BIND(?__anchor AS ?node) ?node <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> ?type . FILTER(isIRI(?type)) } LIMIT 32 } }

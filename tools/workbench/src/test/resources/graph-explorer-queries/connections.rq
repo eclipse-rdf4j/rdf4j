@@ -1,0 +1,1 @@
+SELECT DISTINCT ?source ?predicate ?target WHERE { VALUES ?source { <urn:ex:one> <urn:ex:two> } ?source ?predicate ?target . FILTER(isIRI(?target)) } LIMIT 4096

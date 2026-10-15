@@ -6,8 +6,7 @@ const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables } = require('./page-result-table-harness.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadWorkbench() {
     const window = {};
@@ -1499,10 +1498,11 @@ test('page bootstrap loads shared view and stream runtimes before requesting the
     });
 
     assert.equal(result.status, 'rendered');
-    assert.deepEqual(order.slice(0, 5),
-        ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'workbench-theme.js']);
-    assert.equal(order[5], 'page-request');
-    assert.equal(scripts.length, 5);
+    assert.deepEqual(order.slice(0, 6),
+        ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js', 'graphAdditions.js',
+            'workbench-theme.js']);
+    assert.equal(order[6], 'page-request');
+    assert.equal(scripts.length, 6);
 });
 
 test('page bootstrap consumes the shared incremental reader and keeps streamed rows in the row store', async () => {

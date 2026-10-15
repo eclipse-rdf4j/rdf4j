@@ -116,6 +116,70 @@ body.workbench-body #workbench-page-surface {
 	max-width: var(--workbench-content-max, 1200px);
 }
 
+/* The Graph page fills the whole outlet: the explorer brings its own panels, so the surface drops its width cap,
+ * padding and card chrome and the mount element becomes the explorer's viewport. */
+body.workbench-body #workbench-page-surface.workbench-page-surface--full-bleed {
+	max-width: none;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+body.workbench-body .graph-explorer-mount {
+	position: relative;
+	min-height: 480px;
+}
+
+/* A full-bleed page keeps the page header but in one compact row (a 32px icon tile, the title and the description on
+ * one line), so the explorer below it gets the height. */
+body.workbench-body #content.workbench-main:has(.workbench-page-surface--full-bleed) {
+	margin-top: var(--workbench-space-subgroup);
+	padding-bottom: 0;
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) > .workbench-page-header {
+	align-items: center;
+	gap: var(--workbench-space-field);
+	margin-bottom: var(--workbench-space-field);
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) .workbench-page-header__icon {
+	width: 32px;
+	height: 32px;
+	margin-top: 0;
+	border-radius: var(--workbench-control-radius);
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) .workbench-page-header__icon .workbench-page-header__icon-glyph {
+	flex-basis: 18px;
+	width: 18px;
+	height: 18px;
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) .workbench-page-header__text {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: var(--workbench-space-field);
+	padding-top: 0;
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) #title_heading {
+	font-size: 20px;
+}
+
+body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) .workbench-page-header__description {
+	font-size: 13px;
+}
+
+@media (max-width: 600px) {
+	body.workbench-body #workbench-outlet:has(> .workbench-page-surface--full-bleed) .workbench-page-header__description {
+		display: none;
+	}
+}
+
 body.workbench-body #workbench-page-surface > form,
 body.workbench-body #workbench-page-surface > .workbench-island,
 body.workbench-body #workbench-page-surface > #saved-queries {
@@ -4197,6 +4261,41 @@ body.workbench-body .workbench-page-surface table.data img {
 
 body.workbench-body .workbench-page-surface a.resourceURL {
 	color: var(--workbench-teal);
+}
+
+/* "Add to graph" after an IRI in result tables and after a type or graph name: shown on hover and keyboard focus, and
+   always on touch screens; a check-styled link to the Graph page once added. */
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) {
+	width: 24px;
+	min-width: 24px;
+	height: 24px;
+	min-height: 24px;
+	margin-left: 4px;
+	padding: 0;
+	vertical-align: middle;
+	opacity: 0;
+	transition: opacity 120ms ease;
+}
+
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) .workbench-action-icon {
+	width: 14px;
+	height: 14px;
+}
+
+body.workbench-body .workbench-page-surface :is(.resource, td):hover > :is(.resource-add-to-graph, .workbench-add-to-graph),
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph):focus-visible,
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph).is-added {
+	opacity: 1;
+}
+
+body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph).is-added {
+	color: var(--workbench-success, var(--workbench-teal));
+}
+
+@media (hover: none) {
+	body.workbench-body .workbench-page-surface :is(.resource-add-to-graph, .workbench-add-to-graph.workbench-action--icon) {
+		opacity: 1;
+	}
 }
 
 body.workbench-body #footer.workbench-footer {

@@ -21,8 +21,7 @@ const { FakeDocument } = require('./browser-fakes.js');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 const { renderPageResultTables, resultTableHosts, settle } = require('./page-result-table-harness.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-    || path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadWorkbench() {
     const window = {};
@@ -213,4 +212,33 @@ test('a page keeps its result tables across renders and disposes the ones it no 
     outgoing.querySelector('.query-result-table-wrap').trigger('keydown', { key: 'ArrowRight' });
     assert.equal(outgoing.querySelector('.query-result-table-wrap').scrollLeft || 0, 0,
         'releasing the page disposes its tables');
+});
+
+test('"Add to graph" follows every IRI, calls its owner with the term and marks itself added', async () => {
+    const workbench = loadWorkbench();
+    const rows = [[iri('http://example.org/a'), { kind: 'literal', value: 'hallo', language: 'de' }]];
+    const added = [];
+    const { root, table } = standaloneTable(workbench, rows, ['subject', 'object'], {
+        layout: 'table',
+        addToGraph: term => {
+            added.push(term.value);
+            return true;
+        }
+    });
+    await table.render();
+    const buttons = root.querySelectorAll('.resource-add-to-graph');
+    assert.equal(buttons.length, 1, 'only the IRI gets the button, not the literal');
+    assert.equal(buttons[0].getAttribute('aria-label'), 'Add http://example.org/a to graph');
+    buttons[0].dispatchEvent({ type: 'click', preventDefault() {}, stopPropagation() {} });
+    assert.deepEqual(added, ['http://example.org/a']);
+    assert.ok(buttons[0].classList.contains('is-added'));
+    table.dispose();
+});
+
+test('tables without a Graph page have no "Add to graph"', async () => {
+    const workbench = loadWorkbench();
+    const { root, table } = standaloneTable(workbench, [[iri('http://example.org/a')]], ['subject'], { layout: 'table' });
+    await table.render();
+    assert.equal(root.querySelectorAll('.resource-add-to-graph').length, 0);
+    table.dispose();
 });

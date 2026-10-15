@@ -688,10 +688,60 @@ module workbench {
             return promises[url];
         }
 
+        /** Route scripts named *.mjs are ES modules (the graph explorer bundle); the rest are classic scripts. */
+        function isModuleScript(name: string): boolean {
+            return /\.mjs$/.test(name);
+        }
+
+        /** Load an ES module once, like loadClassicScript but with type="module" (modules run in insertion order too). */
+        function loadModuleScript(url: string, dependencies: any): Promise<void> {
+            if (dependencies && dependencies.skipScripts) {
+                return Promise.resolve();
+            }
+            const targetWindow: any = typeof window !== 'undefined' ? window : null;
+            const document = targetWindow && targetWindow.document;
+            if (!document || !document.createElement) {
+                return Promise.resolve();
+            }
+            const existing = document.querySelector('script[src="' + url.replace(/"/g, '%22') + '"]');
+            if (existing && existing.getAttribute('data-workbench-loaded') === 'true') {
+                return Promise.resolve();
+            }
+            if (!targetWindow[scriptPromiseKey]) {
+                targetWindow[scriptPromiseKey] = {};
+            }
+            const promises = targetWindow[scriptPromiseKey];
+            if (promises[url]) {
+                return promises[url];
+            }
+            promises[url] = new Promise<void>((resolve, reject) => {
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = url;
+                script.onload = () => {
+                    script.setAttribute('data-workbench-loaded', 'true');
+                    resolve();
+                };
+                script.onerror = () => {
+                    delete promises[url];
+                    if (script.parentNode) {
+                        script.parentNode.removeChild(script);
+                    }
+                    reject(new Error('Unable to load Workbench module ' + url));
+                };
+                (document.head || document.body).appendChild(script);
+            });
+            return promises[url];
+        }
+
+        function loadRouteScript(url: string, name: string, dependencies: any): Promise<void> {
+            return isModuleScript(name) ? loadModuleScript(url, dependencies) : loadClassicScript(url, dependencies);
+        }
+
         function loadSharedRuntime(basePath: string, dependencies: any): Promise<void> {
             // Requested together: scripts inserted with async=false still run in the order they were inserted.
             const loads = ['workbenchViews.js', 'workbenchRoutes.js', 'workbenchRouter.js', 'queryStream.js',
-                'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
+                'graphAdditions.js', 'workbench-theme.js'].map((name: string) => loadClassicScript(scriptUrl(basePath, name), dependencies));
             return Promise.all(loads).then(() => {
                 if (!workbench.views || typeof workbench.views.render !== 'function') {
                     throw new Error('The Workbench route renderer is unavailable');
@@ -984,7 +1034,7 @@ module workbench {
             const definition = routes.get(viewId);
             let sequence = Promise.resolve();
             (definition ? definition.scripts(model) : []).forEach((name) => {
-                sequence = sequence.then(() => loadClassicScript(scriptUrl(basePath, name), dependencies));
+                sequence = sequence.then(() => loadRouteScript(scriptUrl(basePath, name), name, dependencies));
             });
             return sequence;
         }
@@ -1058,7 +1108,7 @@ module workbench {
         export function loadScripts(names: string[]): Promise<void> {
             let sequence = Promise.resolve();
             names.forEach((name) => {
-                sequence = sequence.then(() => loadClassicScript(scriptUrl(scriptSource.basePath, name),
+                sequence = sequence.then(() => loadRouteScript(scriptUrl(scriptSource.basePath, name), name,
                     scriptSource.dependencies));
             });
             return sequence;

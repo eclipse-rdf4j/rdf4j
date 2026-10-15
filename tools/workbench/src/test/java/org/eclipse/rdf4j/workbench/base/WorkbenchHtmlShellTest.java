@@ -43,6 +43,7 @@ class WorkbenchHtmlShellTest {
 	void titleNamesThePageAndRepository() throws Exception {
 		assertThat(shellTitle("summary", "bsbm")).isEqualTo("Summary · bsbm — RDF4J Workbench");
 		assertThat(shellTitle("contexts", "bsbm")).isEqualTo("Graphs · bsbm — RDF4J Workbench");
+		assertThat(shellTitle("graph", "bsbm")).isEqualTo("Graph · bsbm — RDF4J Workbench");
 		assertThat(shellTitle("repositories", "NONE")).isEqualTo("Repositories — RDF4J Workbench");
 		assertThat(shellTitle("server", null)).isEqualTo("Connection — RDF4J Workbench");
 		assertThat(shellTitle("query", "a<b")).isEqualTo("Query · a&lt;b — RDF4J Workbench");

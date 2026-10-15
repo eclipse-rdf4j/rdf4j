@@ -18,6 +18,7 @@ module workbench {
         contexts: 'M5 5h14v14H5zM2 2h14v14H2z',
         types: 'm20 13-7 7-9-9V4h7l9 9Z',
         explore: 'M10.5 4a6.5 6.5 0 1 0 0 13 6.5 6.5 0 0 0 0-13ZM16 16l5 5',
+        graph: 'M6 6a2 2 0 1 0 0 .01M18 6a2 2 0 1 0 0 .01M12 18a2 2 0 1 0 0 .01M7.5 7.5l3 8.5M16.5 7.5l-3 8.5M8 6h8',
         query: 'm5 7 5 5-5 5M13 17h6',
         saved: 'M6 4h12v16l-6-3-6 3V4Z',
         export: 'M12 4v12m-5-5 5 5 5-5M5 20h14',
@@ -185,7 +186,8 @@ module workbench {
         const shortTitles: { [key: string]: string } = {
             summary: 'Summary', information: 'Information', repositories: 'Repositories',
             create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces', contexts: 'Graphs',
-            types: 'Types', explore: 'Explore', query: 'Query', 'saved-queries': 'Saved queries', export: 'Export',
+            types: 'Types', explore: 'Explore', graph: 'Graph', query: 'Query', 'saved-queries': 'Saved queries',
+            export: 'Export',
             add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
         };
 
@@ -209,6 +211,7 @@ module workbench {
             contexts: 'Graphs',
             types: 'Types In Repository',
             explore: 'Explore',
+            graph: 'Graph Explorer',
             query: 'Query Repository',
             'saved-queries': 'Saved Queries',
             export: 'Export Repository',
@@ -230,6 +233,7 @@ module workbench {
             contexts: 'See the named graphs in this repository and how many statements each holds.',
             types: 'See the classes used in this repository and how many resources belong to each.',
             explore: 'Look up a resource and see every statement it appears in.',
+            graph: 'Explore this repository as an interactive graph of resources and the links between them.',
             query: 'Run SPARQL queries against this repository.',
             'saved-queries': 'Run the queries saved for this repository again.',
             export: 'Download all the data in this repository as an RDF file.',
@@ -530,6 +534,51 @@ module workbench {
          * for this page. Without menu items nothing is known to be hidden: an Info answer with an empty menu (a user the
          * server does not authorize, a failed Info) must still offer the pages to sign in or pick another repository.
          */
+        /**
+         * The repository whose Graph page "Add to graph" feeds (workbench.graphAdditions), or undefined when this
+         * page has no repository or the Graph page is hidden by the Workbench policy.
+         */
+        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string } {
+            if (!context || !context.repositoryId || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
+                return undefined;
+            }
+            return { basePath: context.basePath || '', repositoryId: context.repositoryId };
+        }
+
+        /**
+         * An "Add to graph" button that queues `entry` for the repository's Graph page and then turns into a link to
+         * that page; nothing when the Graph page is unavailable.
+         */
+        function addToGraphControl(runtime: LitRuntime, context: ViewContext, entry: any, label: string,
+                                   compact: boolean): any {
+            const h = runtime.html;
+            const graph = graphContext(context);
+            if (!graph) {
+                return '';
+            }
+            const additions: any = (workbench as any).graphAdditions;
+            const add = (event: any) => {
+                const button = event && event.currentTarget;
+                if (!additions.add(graph, entry) || !button || !button.ownerDocument) {
+                    return;
+                }
+                const link = button.ownerDocument.createElement('a');
+                link.className = button.className + ' is-added';
+                link.setAttribute('href', additions.graphUrl(graph));
+                link.setAttribute('title', 'Added: open the Graph page');
+                if (!compact) {
+                    link.textContent = 'Open graph';
+                }
+                workbench.icons.decorateButton(link, 'graph', compact ? 'Added: open the Graph page' : 'Open graph');
+                button.replaceWith(link);
+            };
+            return compact
+                ? h`<button class="workbench-action workbench-action--ghost workbench-action--icon workbench-add-to-graph" type="button"
+                    aria-label=${label} title=${label} @click=${add}>${icon(runtime, 'graph')}</button>`
+                : h`<button class="workbench-action workbench-action--secondary workbench-add-to-graph" type="button"
+                    title=${label} @click=${add}>${icon(runtime, 'graph')}<span>Add to graph</span></button>`;
+        }
+
         function pageEnabled(context: ViewContext, pageId: string): boolean {
             if (pageId === 'server' && context.serverFixed) {
                 return false;
@@ -545,8 +594,8 @@ module workbench {
         }
 
         /** The pages a repository can open with, in the order the server picks its landing page. */
-        const repositoryLandingPages = ['summary', 'query', 'explore', 'namespaces', 'contexts', 'types', 'saved-queries',
-            'export', 'update', 'add', 'remove', 'clear'];
+        const repositoryLandingPages = ['summary', 'query', 'explore', 'graph', 'namespaces', 'contexts', 'types',
+            'saved-queries', 'export', 'update', 'add', 'remove', 'clear'];
 
         /** The first page of a repository the policy shows (Summary unless it is hidden). */
         function repositoryLanding(context: ViewContext): string {
@@ -1176,7 +1225,10 @@ module workbench {
                 }
                 // The page's Display choices so far, so the next Explore resource or preview starts with them.
                 const presentation = tablePresentation(model.viewId);
+                const graph = graphContext(context);
                 const table = new stream.ResultTable(host, source, {
+                    addToGraph: graph && typeof stream.addResourceToGraph === 'function'
+                        ? (term: any) => stream.addResourceToGraph(graph, term) : undefined,
                     layout: presentation.layout,
                     wrap: presentation.wrap,
                     label: spec.label,
@@ -1418,7 +1470,8 @@ module workbench {
             const access = repositoryAccess(record);
             const menuId = 'repository-actions-' + index;
             // Pages the policy hides are not offered (the server would refuse them).
-            const items = [['query', 'query', 'Query'], ['explore', 'explore', 'Explore'], ['summary', 'summary', 'Summary']]
+            const items = [['query', 'query', 'Query'], ['explore', 'explore', 'Explore'], ['graph', 'graph', 'Graph'],
+                ['summary', 'summary', 'Summary']]
                 .filter((entry: string[]) => pageEnabled(context, entry[0]))
                 .map((entry: string[]) => h`<li><a href="${repositoryUrl(context, id, entry[0])}">${
                     icon(runtime, entry[1])}${entry[2]}</a></li>`);
@@ -1983,7 +2036,7 @@ module workbench {
             return holder.browseCounts;
         }
 
-        function browseNameCell(runtime: LitRuntime, model: PageModel, list: any, term: any): any {
+        function browseNameCell(runtime: LitRuntime, model: PageModel, list: any, term: any, context?: ViewContext): any {
             const h = runtime.html;
             if (!term) {
                 return h`<td data-label=${list.label}>Default graph</td>`;
@@ -1995,8 +2048,17 @@ module workbench {
             const full = termText(term);
             const prefixed = list.column === 'type' && term.kind === 'iri' ? stream.abbreviateIri(term.value, exploreNamespaces(model)) : '';
             const label = prefixed && prefixed.charAt(0) !== '<' ? prefixed : full;
+            // Types add 50 of their instances with their statements; graphs add 200 of their statements.
+            const iri = term.kind === 'iri' ? '<' + term.value + '>' : '';
+            const addition = !context || !iri ? '' : list.column === 'type'
+                ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ?s WHERE { ?s a '
+                    + iri + ' } LIMIT 50 } ?s ?p ?o }' }, 'Add instances of ' + label + ' to the graph', true)
+                : list.column === 'context'
+                    ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ' + iri
+                        + ' { ?s ?p ?o } } LIMIT 200' }, 'Add statements of ' + label + ' to the graph', true)
+                    : '';
             return h`<td data-label=${list.label}><a href="${'explore?resource=' + encodeURIComponent(stream.exploreResource(term))}"
-                title=${full}>${label}</a></td>`;
+                title=${full}>${label}</a>${addition}</td>`;
         }
 
         function browseCountCell(runtime: LitRuntime, list: any, counts: BrowseCounts, value: any,
@@ -2052,7 +2114,7 @@ module workbench {
             const cells = (record: any) => {
                 const term = record[nameColumn];
                 const value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
-                return h`${browseNameCell(runtime, model, list, term)}${browseCountCell(runtime, list, counts, value, context)}${
+                return h`${browseNameCell(runtime, model, list, term, context)}${browseCountCell(runtime, list, counts, value, context)}${
                     list.actions ? browseActionsCell(runtime, term, context) : ''}`;
             };
             // The default graph has no name, so it is listed only without a filter (the server omits it too).
@@ -2206,6 +2268,8 @@ module workbench {
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
                 ${isIri && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
                     href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
+                ${isIri ? addToGraphControl(runtime, context, { kind: 'resource', term: key },
+                    'Add this resource and its neighbours to the graph', false) : ''}
             </section>`;
         }
         const exploreGroups: any[] = [
@@ -2474,6 +2538,15 @@ module workbench {
          */
         function pagerLabel(direction: string, pageSize: number): string {
             return pageSize > 0 ? direction + ' ' + pageSize : direction;
+        }
+
+        /**
+         * The Graph page: a static mount point for the React graph explorer (scripts/graph-explorer/graph-explorer.mjs).
+         * Lit renders this once and never re-renders it; the explorer owns everything inside the mount element.
+         */
+        function graphPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
+            return runtime.html`<div id="graph-explorer-mount" class="graph-explorer-mount" data-graph-explorer-mount
+                data-repository-id="${context.repositoryId || ''}"></div>`;
         }
 
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -4359,6 +4432,7 @@ module workbench {
                 case 'contexts':
                 case 'types': return browseListPage(runtime, model, context);
                 case 'explore': return explorePage(runtime, model, context);
+                case 'graph': return graphPage(runtime, model, context);
                 case 'query': return runtime.html`<div id="query-page-content">${queryPage(runtime, model, context)}</div>`;
                 case 'saved-queries': return savedQueriesPage(runtime, model, context);
                 case 'export': return exportPage(runtime, model, context);
@@ -4377,7 +4451,7 @@ module workbench {
         }
 
         const repositoryScopedViews: { [view: string]: boolean } = {
-            summary: true, namespaces: true, contexts: true, types: true, explore: true, query: true,
+            summary: true, namespaces: true, contexts: true, types: true, explore: true, graph: true, query: true,
             'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true
         };
 

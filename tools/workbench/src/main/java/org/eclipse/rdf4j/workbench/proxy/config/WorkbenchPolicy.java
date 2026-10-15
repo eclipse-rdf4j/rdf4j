@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.workbench.commands.CreateServlet;
 import org.eclipse.rdf4j.workbench.commands.DeleteServlet;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet;
 import org.eclipse.rdf4j.workbench.commands.ExportServlet;
+import org.eclipse.rdf4j.workbench.commands.GraphServlet;
 import org.eclipse.rdf4j.workbench.commands.InformationServlet;
 import org.eclipse.rdf4j.workbench.commands.NamespacesServlet;
 import org.eclipse.rdf4j.workbench.commands.QueryServlet;
@@ -282,7 +283,8 @@ public final class WorkbenchPolicy {
 		}
 		List<String> candidates = context == LandingContext.WORKBENCH
 				? List.of("repositories", "server")
-				: List.of("summary", "query", "explore", "namespaces", "contexts", "types", "saved-queries", "export",
+				: List.of("summary", "query", "explore", "graph", "namespaces", "contexts", "types", "saved-queries",
+						"export",
 						"information", "update", "add", "remove", "clear");
 		for (String candidate : candidates) {
 			String candidatePath = landingPathFor(candidate);
@@ -490,6 +492,7 @@ public final class WorkbenchPolicy {
 		addPage(pages, "query", "explore", "query", "query", "Query", "query");
 		addPage(pages, "saved-queries", "explore", "saved-queries", "saved-queries", "Saved queries", "saved");
 		addPage(pages, "explore", "explore", "explore", "explore", "Explore", "explore");
+		addPage(pages, "graph", "explore", "graph", "graph", "Graph", "graph");
 		addPage(pages, "summary", "explore", "summary", "summary", "Summary", "summary");
 		addPage(pages, "namespaces", "explore", "namespaces", "namespaces", "Namespaces", "namespaces");
 		addPage(pages, "contexts", "explore", "contexts", "contexts", "Graphs", "contexts");
@@ -529,6 +532,7 @@ public final class WorkbenchPolicy {
 		servlets.put(ContextsServlet.class, "contexts");
 		servlets.put(TypesServlet.class, "types");
 		servlets.put(ExploreServlet.class, "explore");
+		servlets.put(GraphServlet.class, "graph");
 		servlets.put(QueryServlet.class, "query");
 		servlets.put(SavedQueriesServlet.class, "saved-queries");
 		servlets.put(ExportServlet.class, "export");

@@ -2997,6 +2997,8 @@ namespace workbench {
             onRetry?: () => void;
             /** The clock for the running time, in milliseconds; Date.now when absent. */
             now?: () => number;
+            /** The repository whose Graph page "Add to graph" feeds; absent where that page is unavailable. */
+            graphContext?: { basePath: string; repositoryId: string };
         }
 
         var queryResultRendererSequence = 0;
@@ -3394,6 +3396,7 @@ namespace workbench {
             private downloadError: any = null;
             private booleanResult: any;
             private errorResult: any;
+            private addToGraphButton: any;
             private normalWrapBeforeFullscreen: boolean = null;
             private options: QueryResultRendererOptions;
             private requestedOffset: number;
@@ -3513,6 +3516,12 @@ namespace workbench {
                 toolbar.appendChild(header);
                 var actions = createElement(this.document, 'div',
                     'workbench-action-toolbar__actions query-result-toolbar__actions');
+                this.addToGraphButton = this.createButton('Add to graph', () => this.addResultsToGraph());
+                this.addToGraphButton.className = 'query-result-add-to-graph workbench-action workbench-action--secondary';
+                this.addToGraphButton.setAttribute('title', 'Run this query on the Graph page and add its statements');
+                decorateWithWorkbenchIcon(this.addToGraphButton, 'graph', 'Add the results to the graph');
+                this.addToGraphButton.hidden = true;
+                actions.appendChild(this.addToGraphButton);
                 actions.appendChild(this.fullscreenButton);
                 // Each pane stays in its own disclosure right after its toggle, so Tab from an open pane's toggle moves
                 // into the pane. The panes open over the page (M14.3), so where they sit does not move the toolbar.
@@ -3653,6 +3662,8 @@ namespace workbench {
                     // CONSTRUCT and DESCRIBE results are statements: subject, predicate, object and context.
                     statements: () => this.state.view === 'graph'
                 }, {
+                    addToGraph: this.options.graphContext
+                        ? (term: RdfTerm) => addResourceToGraph(this.options.graphContext, term) : undefined,
                     layout: initialLayout,
                     wrap: initialWrap,
                     showDatatypes: initialShowDatatypes,
@@ -4503,6 +4514,26 @@ namespace workbench {
                 }
             }
 
+            /** The query the result came from, when the Graph page can be fed with it. */
+            private graphQueryText(): string {
+                var snapshot = this.options.executionSnapshot;
+                var query = snapshot && snapshot.body && typeof snapshot.body.get === 'function' ? snapshot.body.get('query') : '';
+                return this.options.graphContext && query ? String(query) : '';
+            }
+
+            /** Queues the query for the Graph page, which runs it and adds its statements. */
+            private addResultsToGraph(): void {
+                var additions = (workbench as any).graphAdditions;
+                var query = this.graphQueryText();
+                if (!additions || !query || !additions.add(this.options.graphContext, { kind: 'query', query: query })) {
+                    return;
+                }
+                this.addToGraphButton.classList.add('is-added');
+                this.addToGraphButton.textContent = 'Added to graph';
+                decorateWithWorkbenchIcon(this.addToGraphButton, 'graph', 'The results are added to the graph');
+                this.addToGraphButton.setAttribute('title', 'Added: open the Graph page to see the statements');
+            }
+
             private createButton(label: string, callback: () => void): any {
                 var button = createElement(this.document, 'button');
                 button.type = 'button';
@@ -4873,6 +4904,8 @@ namespace workbench {
                 this.loadMoreButton.disabled = this.busy;
                 // No rows to show: a failure without retained rows, or a complete empty result.
                 var rowsHidden = state.rowCount === 0 && (!!state.error && !this.appendFailure || state.complete);
+                this.addToGraphButton.hidden = !this.graphQueryText() || rowsHidden || !!state.error
+                    || !(state.view === 'graph' || state.view === 'tuple' && hasStatementColumns(state.variables));
                 this.fullscreenButton.hidden = !state.view || state.view === 'error' || state.view === 'boolean'
                     || rowsHidden || !this.featureEnabled('result-fullscreen')
                     || this.fullscreenButton.getAttribute('data-result-fullscreen-enabled') === 'false';
@@ -4992,9 +5025,29 @@ namespace workbench {
             render?: () => void;
             /** Lay the table out again in the next animation frame. */
             schedule?: () => void;
+            /**
+             * Adds an IRI to the repository's Graph page ("Add to graph" after each IRI); true when it was queued.
+             * Absent where the Graph page is unavailable.
+             */
+            addToGraph?: (term: RdfTerm) => boolean;
         }
 
         var resultTableSequence = 0;
+
+        /** Whether SELECT variables name a statement the Graph page reads (source/predicate/target, s/p/o, …). */
+        export function hasStatementColumns(variables: string[]): boolean {
+            var names = (variables || []).map((name: string) => String(name).toLowerCase());
+            var has = (aliases: string[]) => aliases.some((alias: string) => names.indexOf(alias) >= 0);
+            return has(['source', 's', 'subject', 'from']) && has(['predicate', 'p', 'property', 'relation', 'edge'])
+                && has(['target', 'o', 'object', 'to']);
+        }
+
+        /** Queues a resource for the Graph page of `context` (workbench.graphAdditions); true when it was queued. */
+        export function addResourceToGraph(context: any, term: RdfTerm): boolean {
+            var additions = (workbench as any).graphAdditions;
+            return Boolean(additions && term && term.kind === 'iri'
+                && additions.add(context, { kind: 'resource', term: ntriplesTerm(term) }) > 0);
+        }
 
         /**
          * The RDF result table shared by the Query page and every page that lists statements: the header, the table
@@ -5705,6 +5758,9 @@ namespace workbench {
                         external.textContent = '↗';
                         resource.appendChild(external);
                     }
+                    if (this.options.addToGraph && display.kind === 'iri') {
+                        resource.appendChild(this.addToGraphButton(term, display.title));
+                    }
                     target.appendChild(resource);
                     this.appendTermTags(resource, display, term && term.direction, namespaces);
                 } else {
@@ -5713,6 +5769,27 @@ namespace workbench {
                 if (display.language) {
                     target.setAttribute('lang', display.language);
                 }
+            }
+
+            /** The "Add to graph" button after an IRI: it turns into a check once the IRI is queued. */
+            private addToGraphButton(term: RdfTerm, title: string): any {
+                var button = createElement(this.document, 'button',
+                    'resource-add-to-graph workbench-action workbench-action--ghost workbench-action--icon');
+                button.setAttribute('type', 'button');
+                button.setAttribute('title', 'Add to graph');
+                decorateWithWorkbenchIcon(button, 'graph', 'Add ' + title + ' to graph');
+                button.addEventListener('click', (event: any) => {
+                    if (event && typeof event.preventDefault === 'function') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                    }
+                    if (this.options.addToGraph && this.options.addToGraph(term)) {
+                        button.classList.add('is-added');
+                        button.setAttribute('aria-label', title + ' is added to the graph');
+                        button.setAttribute('title', 'Added to graph');
+                    }
+                }, false);
+                return button;
             }
 
             /** A language badge, and a datatype tag unless the value is a string or a number (M4.3). */
@@ -7000,6 +7077,7 @@ namespace workbench {
                     features: config.features || config.workbench && config.workbench.queryFeatures,
                     downloadFormatsByView: config.downloadFormatsByView,
                     downloadLimits: config.downloadLimits,
+                    graphContext: config.graphContext,
                     onLoadMore: () => loadMore(),
                     onCancel: () => cancel(true),
                     onRetry: () => { submit(); }
@@ -7332,6 +7410,12 @@ namespace workbench {
                 });
             }
 
+            /** The repository whose Graph page "Add to graph" feeds, when that page is offered (views.graphContext). */
+            function graphContextOf(shellContext: any): any {
+                var views = (workbench as any).views;
+                return views && typeof views.graphContext === 'function' ? views.graphContext(shellContext) : undefined;
+            }
+
             export function renderInto(mount: any, model: any, shellContext: any): (reason?: string) => void {
                 disposeMountedPage();
                 var document = mount && mount.ownerDocument;
@@ -7374,7 +7458,8 @@ namespace workbench {
                         rowStoreOptions: shellContext && shellContext.rowStoreOptions,
                         downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
                         downloadLimits: shellContext && shellContext.downloadLimits,
-                        maxDomRows: shellContext && shellContext.maxDomRows
+                        maxDomRows: shellContext && shellContext.maxDomRows,
+                        graphContext: graphContextOf(shellContext)
                     });
                 }
                 mountedSubmitHandler = (event: any) => {

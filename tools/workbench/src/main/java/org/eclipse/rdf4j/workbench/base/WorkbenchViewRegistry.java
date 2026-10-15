@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.workbench.commands.CreateServlet;
 import org.eclipse.rdf4j.workbench.commands.DeleteServlet;
 import org.eclipse.rdf4j.workbench.commands.ExploreServlet;
 import org.eclipse.rdf4j.workbench.commands.ExportServlet;
+import org.eclipse.rdf4j.workbench.commands.GraphServlet;
 import org.eclipse.rdf4j.workbench.commands.InfoServlet;
 import org.eclipse.rdf4j.workbench.commands.InformationServlet;
 import org.eclipse.rdf4j.workbench.commands.NamespacesServlet;
@@ -55,6 +56,7 @@ public final class WorkbenchViewRegistry {
 			Map.entry(ContextsServlet.class, new View("contexts", true)),
 			Map.entry(TypesServlet.class, new View("types", true)),
 			Map.entry(ExploreServlet.class, new View("explore", true)),
+			Map.entry(GraphServlet.class, new View("graph", true)),
 			Map.entry(QueryServlet.class, new View("query", true)),
 			Map.entry(SavedQueriesServlet.class, new View("saved-queries", true)),
 			Map.entry(ExportServlet.class, new View("export", true)),

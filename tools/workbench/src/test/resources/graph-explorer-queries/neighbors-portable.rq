@@ -1,0 +1,15 @@
+SELECT ?selected ?source ?predicate ?target WHERE { {
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ VALUES ?selected { <urn:ex:one> }
+ BIND(?selected AS ?source)
+ ?source <urn:ex:relation> ?target .
+ BIND(<urn:ex:relation> AS ?predicate)
+ } LIMIT 2
+ } UNION {
+ SELECT DISTINCT ?selected ?source ?predicate ?target WHERE {
+ VALUES ?selected { <urn:ex:two> }
+ BIND(?selected AS ?source)
+ ?source <urn:ex:relation> ?target .
+ BIND(<urn:ex:relation> AS ?predicate)
+ } LIMIT 2
+ } }

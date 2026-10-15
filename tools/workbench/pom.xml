@@ -10,6 +10,12 @@
 	<packaging>war</packaging>
 	<name>RDF4J: Workbench</name>
 	<description>Workbench to interact with RDF4J servers.</description>
+	<properties>
+		<!-- -DskipFrontend=true skips the npm install and build (Java-only loops); the WAR then lacks the compiled scripts. -->
+		<skipFrontend>false</skipFrontend>
+		<!-- npm ci is skipped on a warm tree (profile frontend-installed below); rm -rf node_modules to force it. -->
+		<skipFrontendInstall>${skipFrontend}</skipFrontendInstall>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -166,12 +172,87 @@
 	<build>
 		<plugins>
 			<plugin>
+				<!-- Guarantees target/frontend exists (the WAR lists it as a web resource) even when -DskipFrontend=true. -->
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-resources-plugin</artifactId>
+				<executions>
+					<execution>
+						<id>create-frontend-output-directory</id>
+						<goals>
+							<goal>copy-resources</goal>
+						</goals>
+						<phase>initialize</phase>
+						<configuration>
+							<outputDirectory>${project.build.directory}/frontend</outputDirectory>
+							<resources>
+								<resource>
+									<directory>${project.basedir}/src/main/frontend</directory>
+									<includes>
+										<include>**/*.frontend-output-placeholder</include>
+									</includes>
+								</resource>
+							</resources>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
+				<groupId>com.github.eirslett</groupId>
+				<artifactId>frontend-maven-plugin</artifactId>
+				<configuration>
+					<environmentVariables>
+						<npm_config_cache>${settings.localRepository}/npm-cache</npm_config_cache>
+						<npm_config_update_notifier>false</npm_config_update_notifier>
+					</environmentVariables>
+				</configuration>
+				<executions>
+					<execution>
+						<id>install-node-and-npm</id>
+						<goals>
+							<goal>install-node-and-npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<skip>${skipFrontend}</skip>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-ci</id>
+						<goals>
+							<goal>npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<arguments>ci --prefer-offline --no-audit --no-fund</arguments>
+							<skip>${skipFrontendInstall}</skip>
+						</configuration>
+					</execution>
+					<execution>
+						<id>npm-build</id>
+						<goals>
+							<goal>npm</goal>
+						</goals>
+						<phase>generate-resources</phase>
+						<configuration>
+							<arguments>run build</arguments>
+							<skip>${skipFrontend}</skip>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
 				<configuration>
 					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>
 					<attachClasses>true</attachClasses>
+					<webResources>
+						<resource>
+							<!-- compiled classic scripts and the graph explorer bundle, produced by npm run build -->
+							<directory>${project.build.directory}/frontend</directory>
+						</resource>
+					</webResources>
 				</configuration>
 			</plugin>
 			<plugin>
@@ -180,6 +261,10 @@
 				<configuration>
 					<webApp>
 						<contextPath>/rdf4j-workbench</contextPath>
+						<resourceBases>
+							<resourceBase>${project.basedir}/src/main/webapp</resourceBase>
+							<resourceBase>${project.build.directory}/frontend</resourceBase>
+						</resourceBases>
 					</webApp>
 					<contextHandlers>
 						<contextHandler implementation="org.eclipse.jetty.maven.plugin.JettyWebAppContext">
@@ -198,4 +283,18 @@
 			</plugin>
 		</plugins>
 	</build>
+	<profiles>
+		<profile>
+			<!-- A warm checkout already has node_modules; skip npm ci so mvnf loops only run the build. -->
+			<id>frontend-installed</id>
+			<activation>
+				<file>
+					<exists>${basedir}/node_modules</exists>
+				</file>
+			</activation>
+			<properties>
+				<skipFrontendInstall>true</skipFrontendInstall>
+			</properties>
+		</profile>
+	</profiles>
 </project>

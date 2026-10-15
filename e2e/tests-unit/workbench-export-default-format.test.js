@@ -5,8 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-disclosure-runtime.js');
 
-const scripts = process.env.WORKBENCH_SCRIPT_DIR
-	|| path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts');
+const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadExportMarkup({ search = '', cookie = '', configuredFormat = 'application/n-quads' } = {}) {
 	const window = { location: { search } };

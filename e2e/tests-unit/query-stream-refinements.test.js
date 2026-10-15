@@ -1787,9 +1787,10 @@ test('query result download and options controls use the shared icon adapter', (
 		assert.equal(chevron.getAttribute('aria-hidden'), 'true');
 	}
 	assert.deepEqual(actionCalls, [
+		{ text: 'Add to graph', name: 'graph', accessibleName: 'Add the results to the graph' },
 		{ text: 'Download', name: 'download', accessibleName: 'Download' },
 		{ text: 'Cancel query', name: 'stop', accessibleName: 'Cancel query' }
-	], 'the Download action keeps its download icon and Cancel query carries the stop icon');
+	], 'Add to graph carries the graph icon, the Download action its download icon and Cancel query the stop icon');
     renderer.dispose();
 });
 

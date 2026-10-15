@@ -11,13 +11,14 @@ if (major < 22) {
 const e2eDir = path.resolve(__dirname, '..');
 const repoRoot = path.resolve(e2eDir, '..');
 const scriptsDir = path.resolve(repoRoot, 'tools/workbench/src/main/webapp/scripts');
+const compiledDir = require('./workbench-scripts.js').compiledScriptsDir();
 // Every script compiled from scripts/ts (declaration files produce none), so the list cannot name a deleted script or
 // miss a new one. Only scripts a test loads under their absolute path are attributed; tests that evaluate a script
 // under a relative vm filename are not counted, so these totals understate what the tests exercise.
 const workbenchScripts = fs.readdirSync(path.join(scriptsDir, 'ts'))
     .filter((fileName) => fileName.endsWith('.ts') && !fileName.endsWith('.d.ts'))
     .sort()
-    .map((fileName) => path.join(scriptsDir, fileName.replace(/\.ts$/, '.js')));
+    .map((fileName) => path.join(compiledDir, fileName.replace(/\.ts$/, '.js')));
 // Floors for the totals over those scripts, a little below what the suite reaches (about 59 % lines, 77 % branches,
 // 64 % functions in October 2026), so a drop fails the run. Override them with WORKBENCH_COVERAGE_LINES,
 // WORKBENCH_COVERAGE_BRANCHES and WORKBENCH_COVERAGE_FUNCTIONS.

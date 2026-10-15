@@ -46,9 +46,14 @@ jobs:
     - name: Install Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: 20
+        node-version: 22
         cache: npm
-        cache-dependency-path: e2e/package-lock.json
+        cache-dependency-path: |
+          tools/workbench/package-lock.json
+          e2e/package-lock.json
+    - name: Build the Workbench front end
+      working-directory: ./tools/workbench
+      run: npm ci && npm run build
     - name: Install dependencies
       working-directory: ./e2e
       run: npm ci
