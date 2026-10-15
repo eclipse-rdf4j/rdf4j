@@ -49,6 +49,8 @@ export type ExplorerToolbarProps = {
   filterCount: number;
   onToggleFilters: () => void;
   layoutBusy: boolean;
+  /** What the layouts apply to, when not the whole graph (a selection). */
+  layoutNote?: string;
   layoutItems: readonly ToolbarMenuItem[];
   toolItems: readonly ToolbarMenuItem[];
   isFullscreen: boolean;
@@ -223,6 +225,11 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
             <Icon name="chevron" className="workbench-disclosure-chevron" />
           </summary>
           <div className="toolbar-menu-popover" onClick={closeOnChoice}>
+            {props.layoutNote ? (
+              <div className="toolbar-menu-note" role="note">
+                {props.layoutNote}
+              </div>
+            ) : null}
             {props.layoutItems.map((item) => (
               <MenuItem key={item.label} item={item} strong />
             ))}

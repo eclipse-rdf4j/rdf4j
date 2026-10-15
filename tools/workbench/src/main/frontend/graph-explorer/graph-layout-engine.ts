@@ -19,6 +19,8 @@ import { refineLayoutGeometry } from './graph-layout.ts';
 import {layoutScoreGeometry, layoutCandidateScore} from './graph-layout-score.ts';
 import {improveLayoutReadability} from './graph-layout-readability.ts';
 import {computeHubNeighborhoodLayout} from './graph-layout-hub.ts';
+import {computeSquareLayout} from './graph-layout-square.ts';
+import {layoutSubset} from './graph-layout-selection.ts';
 import type { Graph, PointerPosition } from './graph-types.ts';
 
 export type LayoutOptions = {
@@ -28,7 +30,7 @@ export type LayoutOptions = {
   refine?: boolean;
   seed?: number;
   aspectRatio?: number;
-  mode?: 'network' | 'hierarchy';
+  mode?: 'network' | 'hierarchy' | 'square';
   nodeSizes?: Map<string, {width: number; height: number}>;
   groups?: readonly {id: string; nodeIds: readonly string[]}[];
   repairOnly?: boolean;
@@ -90,6 +92,20 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     checked(repair);
     if (graph.nodes.length <= 1500) repair.bends = optimizeEdgeBends(graph.nodes.map(n => ({...n, ...repair.positions.get(n.id)})), graph.edges, graph.edges.length <= 1600 ? 1 : 0);
     return repair;
+  }
+  // Square, and Hierarchy of a selection, shape a block of nodes (the selection, or every unpinned node) and leave the
+  // others where they are.
+  if (!options.refine && (options.mode === 'square' || (options.mode === 'hierarchy' && options.localNodeIds?.size))) {
+    const ids = options.localNodeIds?.size ? options.localNodeIds : new Set(graph.nodes.map(node => node.id));
+    const positions = await layoutSubset(graph, ids, async part => {
+      if (options.mode === 'square') return computeSquareLayout(part);
+      const {computeGraphvizLayout} = await import('./graph-layout-graphviz.ts');
+      return (await computeGraphvizLayout(part, 'dot')).positions;
+    });
+    const bends = graph.nodes.length <= 1500
+      ? optimizeEdgeBends(graph.nodes.map(n => ({...n, ...positions.get(n.id)})), graph.edges, graph.edges.length <= 1600 ? 1 : 0)
+      : new Map<string, number>();
+    return {positions, bends};
   }
   const constrained = graph.nodes.some(node => layoutNodeFixed(node, options));
   if (options.refine && graph.nodes.length <= 1500) {

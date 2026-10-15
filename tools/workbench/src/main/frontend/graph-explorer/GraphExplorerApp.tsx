@@ -79,6 +79,7 @@ import {
   visibleArea,
   zoomTransformAt,
   wheelTransform,
+  isApplePlatform,
 } from "./graph-viewport";
 import {
   sparqlNodeId,
@@ -173,7 +174,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   const drawnGraphRef = useRef(drawnGraph);
   const showValuesRef = useRef(showValues);
   const layoutJobRef = useRef<ReturnType<typeof startGraphLayout> | null>(null);
-  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy'; refine?: boolean; repairOnly?: boolean} | null>(null);
+  const requestedLayoutRef = useRef<{mode: 'network' | 'hierarchy' | 'square'; refine?: boolean; repairOnly?: boolean} | null>(null);
   const layoutSizeSnapshotRef = useRef<{revision: number; nodes: GraphNode[]} | null>(null);
   const namedGroupsRef = useRef(namedGroups);
   const provenanceBatchesRef = useRef(provenanceBatches);
@@ -273,6 +274,24 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     completedAt: number;
   } | null>(null);
   const suppressNodeClickUntilRef = useRef(0);
+  /** After a double-click drag, the browser's dblclick must not expand the node. */
+  const suppressNodeDoubleClickUntilRef = useRef(0);
+  /** A Shift-, ⌘- or Ctrl-drag's selection box (client coordinates), drawn into `marqueeRectRef` without re-rendering. */
+  const marqueeRef = useRef<{
+    pointerId: number;
+    start: PointerPosition;
+    current: PointerPosition;
+    moved: boolean;
+    /** Started on a node: that node's click follows the release. */
+    fromNode: boolean;
+  } | null>(null);
+  const marqueeRectRef = useRef<SVGRectElement | null>(null);
+  /** Safari's trackpad pinch, as its scale at the previous gesture event; null outside a pinch. */
+  const gestureScaleRef = useRef<number | null>(null);
+  /** The wheel zooms on Windows and Linux; on a Mac it pans and a pinch zooms. */
+  const zoomOnScroll = useMemo(() => !isApplePlatform(), []);
+  const wheelHandlerRef = useRef<(event: WheelEvent) => void>(() => {});
+  const gestureHandlerRef = useRef<(event: Event & { scale?: number; clientX?: number; clientY?: number }) => void>(() => {});
   const holdRef = useRef<number | null>(null);
   const contextOpenRef = useRef<{ nodeId: string; openedAt: number } | null>(
     null,
@@ -744,6 +763,11 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     [selectedNodeIds],
   );
   const hasSelectionCriteria = filters.hasActive || manualSelectedNodeIds.size > 0;
+  /** Two or more selected nodes on the canvas: every layout arranges them alone and leaves the rest in place. */
+  const layoutSelection = useMemo(() => {
+    const ids = selectedNodeIdList.filter((id) => drawnNodeById.has(id));
+    return ids.length >= 2 ? new Set(ids) : null;
+  }, [selectedNodeIdList, drawnNodeById]);
   const batchById = useMemo(
     () => new Map(provenanceBatches.map((batch) => [batch.id, batch])),
     [provenanceBatches],
@@ -1431,30 +1455,45 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
         event.preventDefault();
       }
     };
+    // React listens to wheel events passively, so the canvas listens itself: only then can it stop the page (or, for
+    // Ctrl-wheel, the browser) from zooming too.
+    const wheel = (event: WheelEvent) => {
+      if (isCanvasTarget(event.target)) wheelHandlerRef.current(event);
+    };
+    // Safari reports a trackpad pinch as gesture events with a scale.
+    const gestureStart = (event: Event) => {
+      suppressNativeCanvasInteraction(event);
+      if (isCanvasTarget(event.target)) gestureScaleRef.current = 1;
+    };
+    const gestureChange = (event: Event) => {
+      suppressNativeCanvasInteraction(event);
+      if (isCanvasTarget(event.target)) gestureHandlerRef.current(event);
+    };
+    const gestureEnd = () => {
+      gestureScaleRef.current = null;
+    };
     canvas.addEventListener("touchstart", containTouchGesture, {
       passive: false,
     });
     canvas.addEventListener("touchmove", containTouchGesture, { passive: false });
-    canvas.addEventListener("gesturestart", suppressNativeCanvasInteraction, {
+    canvas.addEventListener("wheel", wheel, { passive: false });
+    canvas.addEventListener("gesturestart", gestureStart, {
       passive: false,
     });
-    canvas.addEventListener("gesturechange", suppressNativeCanvasInteraction, {
+    canvas.addEventListener("gesturechange", gestureChange, {
       passive: false,
     });
+    canvas.addEventListener("gestureend", gestureEnd);
     canvas.addEventListener("contextmenu", suppressNativeCanvasInteraction);
     canvas.addEventListener("selectstart", suppressNativeCanvasInteraction);
     canvas.addEventListener("dragstart", suppressNativeCanvasInteraction);
     return () => {
       canvas.removeEventListener("touchstart", containTouchGesture);
       canvas.removeEventListener("touchmove", containTouchGesture);
-      canvas.removeEventListener(
-        "gesturestart",
-        suppressNativeCanvasInteraction,
-      );
-      canvas.removeEventListener(
-        "gesturechange",
-        suppressNativeCanvasInteraction,
-      );
+      canvas.removeEventListener("wheel", wheel);
+      canvas.removeEventListener("gesturestart", gestureStart);
+      canvas.removeEventListener("gesturechange", gestureChange);
+      canvas.removeEventListener("gestureend", gestureEnd);
       canvas.removeEventListener(
         "contextmenu",
         suppressNativeCanvasInteraction,
@@ -2381,9 +2420,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     }
   }, [endpoint, finishTransientAction, invalidateAsyncRequests, pushHistory, graphScope]);
 
-  const onWheel = (event: React.WheelEvent<SVGSVGElement>) => {
+  wheelHandlerRef.current = (event) => {
     event.preventDefault();
-    const rect = event.currentTarget.getBoundingClientRect();
+    const svg = canvasRef.current;
+    // During a Safari pinch the gesture events zoom; a Ctrl-wheel as well would zoom twice.
+    if (!svg || (gestureScaleRef.current !== null && event.ctrlKey)) return;
+    const rect = svg.getBoundingClientRect();
     const focalPoint = clientPointToViewport(
       event.clientX,
       event.clientY,
@@ -2391,7 +2433,22 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       { width: GRAPH_WIDTH, height: GRAPH_HEIGHT },
     );
     applyInteractiveTransform(wheelTransform(transformRef.current, event, focalPoint,
-      Math.min(rect.width / GRAPH_WIDTH, rect.height / GRAPH_HEIGHT), largeGraph ? 0.001 : undefined));
+      Math.min(rect.width / GRAPH_WIDTH, rect.height / GRAPH_HEIGHT), largeGraph ? 0.001 : undefined,
+      { wheelZooms: zoomOnScroll }));
+  };
+  gestureHandlerRef.current = (event) => {
+    const svg = canvasRef.current;
+    if (!svg) return;
+    const scale = event.scale ?? 1;
+    const previous = gestureScaleRef.current ?? 1;
+    gestureScaleRef.current = scale;
+    const rect = svg.getBoundingClientRect();
+    zoomAt(
+      scale / previous,
+      clientPointToViewport(event.clientX ?? rect.left + rect.width / 2, event.clientY ?? rect.top + rect.height / 2, rect,
+        { width: GRAPH_WIDTH, height: GRAPH_HEIGHT }),
+      true,
+    );
   };
 
   const zoomAt = (
@@ -2562,6 +2619,67 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     }
   };
 
+  const addToManualSelection = (nodeIds: Iterable<string>) =>
+    setManualSelectedNodeIds((current) => {
+      const next = new Set(current);
+      for (const nodeId of nodeIds) next.add(nodeId);
+      return next.size === current.size ? current : next;
+    });
+
+  /** Shift, ⌘ or Ctrl held: a drag from here draws a selection box (a click on a node still toggles it). */
+  const startMarquee = (pointerId: number, clientX: number, clientY: number, fromNode: boolean) => {
+    marqueeRef.current = { pointerId, start: { x: clientX, y: clientY }, current: { x: clientX, y: clientY }, moved: false, fromNode };
+    panRef.current = null;
+    backgroundPressRef.current = null;
+  };
+  const drawMarquee = () => {
+    const rect = marqueeRectRef.current;
+    const svg = canvasRef.current;
+    const marquee = marqueeRef.current;
+    if (!rect) return;
+    if (!svg || !marquee?.moved) {
+      rect.setAttribute("visibility", "hidden");
+      return;
+    }
+    const bounds = svg.getBoundingClientRect();
+    const viewport = { width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
+    const a = clientPointToViewport(marquee.start.x, marquee.start.y, bounds, viewport);
+    const b = clientPointToViewport(marquee.current.x, marquee.current.y, bounds, viewport);
+    rect.setAttribute("x", String(Math.min(a.x, b.x)));
+    rect.setAttribute("y", String(Math.min(a.y, b.y)));
+    rect.setAttribute("width", String(Math.abs(b.x - a.x)));
+    rect.setAttribute("height", String(Math.abs(b.y - a.y)));
+    rect.setAttribute("visibility", "visible");
+  };
+  const moveMarquee = (clientX: number, clientY: number) => {
+    const marquee = marqueeRef.current;
+    if (!marquee) return;
+    marquee.current = { x: clientX, y: clientY };
+    if (Math.hypot(clientX - marquee.start.x, clientY - marquee.start.y) > TAP_MOVE_TOLERANCE) marquee.moved = true;
+    drawMarquee();
+  };
+  /** Adds every drawn node the box touches to the selection. */
+  const finishMarquee = (clientX: number, clientY: number, cancelled: boolean) => {
+    const marquee = marqueeRef.current;
+    marqueeRef.current = null;
+    drawMarquee();
+    if (!marquee?.moved || cancelled) return;
+    // The node the drag started on must not toggle when its click arrives.
+    if (marquee.fromNode) suppressNodeClickUntilRef.current = performance.now() + 800;
+    const a = clientToGraph(marquee.start.x, marquee.start.y);
+    const b = clientToGraph(clientX, clientY);
+    const left = Math.min(a.x, b.x), right = Math.max(a.x, b.x), top = Math.min(a.y, b.y), bottom = Math.max(a.y, b.y);
+    const inside = drawnGraphRef.current.nodes.flatMap((node) => {
+      if (node.x === undefined || node.y === undefined) return [];
+      const size = graphNodeSize(node);
+      return node.x + size.width / 2 >= left && node.x - size.width / 2 <= right &&
+        node.y + size.height / 2 >= top && node.y - size.height / 2 <= bottom
+        ? [node.id]
+        : [];
+    });
+    if (inside.length) addToManualSelection(inside);
+  };
+
   nodeHandlerImpl.current = {
     click(nodeId, event) {
       event.stopPropagation();
@@ -2578,6 +2696,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     doubleClick(nodeId, event) {
       event.stopPropagation();
       if (event.shiftKey || event.metaKey || event.ctrlKey) return;
+      // A double click that dragged moved the node and its leaves; it loads nothing.
+      if (performance.now() < suppressNodeDoubleClickUntilRef.current) {
+        suppressNodeDoubleClickUntilRef.current = 0;
+        return;
+      }
       void expandNodes([nodeId], nodeId);
     },
     more(nodeId) {
@@ -2597,6 +2720,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       event.stopPropagation();
       if (event.pointerType === "touch") event.preventDefault();
       closeHold();
+      if (event.pointerType !== "touch" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+        // The canvas follows the box (moves and the release bubble to it); a click without dragging toggles the node.
+        startMarquee(event.pointerId, event.clientX, event.clientY, true);
+        event.currentTarget.setPointerCapture(event.pointerId);
+        return;
+      }
       // Direct manipulation always wins. Stop at the exact interpolated position before capturing drag origins.
       cancelProgrammaticNodeAnimation();
       layoutJobRef.current?.cancel();
@@ -2605,6 +2734,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       localLayoutNodeIdsRef.current = null;
       const now = performance.now();
       const previousTap = lastNodeTapRef.current;
+      // The second press of a double click or double tap: dragging it brings the node's leaves along (neighbours linked
+      // to it alone, in either direction, as the canvas draws them).
       const leafGroupDrag =
         previousTap !== null &&
         previousTap.nodeId === nodeId &&
@@ -2612,12 +2743,9 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         Math.hypot(event.clientX - previousTap.x, event.clientY - previousTap.y) <= DOUBLE_TAP_DISTANCE;
       const selectionGroupDrag = selectedNodeIds.has(nodeId) && selectedNodeIds.size > 1;
       const groupDrag = selectionGroupDrag || leafGroupDrag;
-      if (groupDrag) lastNodeTapRef.current = null;
-      const draggedNodeIds = selectionGroupDrag
-        ? new Set(selectedNodeIds)
-        : leafGroupDrag
-          ? leafClusterForNode(graphRef.current, nodeId)
-          : new Set([nodeId]);
+      if (leafGroupDrag) lastNodeTapRef.current = null;
+      const draggedNodeIds = new Set(selectionGroupDrag ? selectedNodeIds : [nodeId]);
+      if (leafGroupDrag) leafClusterForNode(drawnGraphRef.current, nodeId).forEach((id) => draggedNodeIds.add(id));
       const origins = new Map<string, PointerPosition>();
       graphRef.current.nodes.forEach((candidate) => {
         if (draggedNodeIds.has(candidate.id)) origins.set(candidate.id, { x: candidate.x ?? 0, y: candidate.y ?? 0 });
@@ -2696,17 +2824,19 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (!drag || drag.pointerId !== pointerId) return;
     if (drag.moved) {
       suppressNodeClickUntilRef.current = performance.now() + 800;
+      if (drag.leafGroupDrag) suppressNodeDoubleClickUntilRef.current = performance.now() + 800;
       lastNodeTapRef.current = null;
     } else if (!cancelled && drag.leafGroupDrag && drag.pointerType === "touch") {
       // A double tap that did not drag expands the node, as a double click does.
       suppressNodeClickUntilRef.current = performance.now() + 800;
       lastNodeTapRef.current = null;
       void expandNodes([drag.nodeId], drag.nodeId);
-    } else if (!cancelled && !drag.groupDrag) {
-      if (drag.pointerType === "touch") {
+    } else if (!cancelled && !drag.leafGroupDrag) {
+      if (drag.pointerType === "touch" && !drag.groupDrag) {
         suppressNodeClickUntilRef.current = performance.now() + 800;
         selectNode(drag.nodeId);
       }
+      // A press that did not move, on a selected node too, may be the first half of a double click.
       lastNodeTapRef.current = {
         nodeId: drag.nodeId,
         x: clientX ?? drag.startClient.x,
@@ -2993,14 +3123,14 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(next);
   };
 
-  const refineLayout = (mode: 'network' | 'hierarchy' = 'network', refine = true) => {
+  const refineLayout = (mode: 'network' | 'hierarchy' | 'square' = 'network', refine = true) => {
     if (!graph.nodes.length) return;
     setViewMode("graph");
     invalidateAsyncRequests();
     pushHistory();
     requestedLayoutRef.current = {mode, refine};
     layoutIntentRef.current = null;
-    localLayoutNodeIdsRef.current = null;
+    localLayoutNodeIdsRef.current = layoutSelection;
     setIsLayoutAnimating(false);
     setEdgeBends(new Map());
     setGraph((current) => ({
@@ -3008,7 +3138,16 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       revision: current.revision + 1,
     }));
     setLayoutNonce((value) => value + 1);
-    setStatus(refine ? "Refining positions…" : mode === 'hierarchy' ? "Arranging as a hierarchy…" : "Organizing the network…");
+    const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
+    setStatus(
+      refine
+        ? what ? `Tidying ${what}…` : "Refining positions…"
+        : mode === 'hierarchy'
+          ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
+          : mode === 'square'
+            ? what ? `Arranging ${what} in a square…` : "Arranging in a square…"
+            : what ? `Organizing ${what}…` : "Organizing the network…",
+    );
   };
 
   const focusReadableNode = () => {
@@ -3240,14 +3379,19 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               setFilterSidebarOpen((current) => !current);
             }}
             layoutBusy={isLayoutComputing}
+            layoutNote={layoutSelection ? `Applies to the ${layoutSelection.size} selected nodes` : undefined}
             layoutItems={[
               { label: "Organize network", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout("network", false) },
               {
                 label: "Hierarchy",
-                disabled: !drawnGraph.nodes.length || drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned),
-                title: drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
+                // A selection is arranged on its own (pinned nodes stay put); the whole graph only without pins.
+                disabled: layoutSelection
+                  ? [...layoutSelection].filter((id) => !drawnNodeById.get(id)?.pinned).length < 2
+                  : !drawnGraph.nodes.length || drawnGraph.nodes.length > 1500 || drawnGraph.nodes.some((node) => node.pinned),
+                title: !layoutSelection && drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
                 onSelect: () => refineLayout("hierarchy", false),
               },
+              { label: "Square", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout("square", false) },
               { label: "Tidy current layout", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout() },
               { label: "Zoom to selected node", disabled: !focusedNodeId && !selectedNodeIds.size, onSelect: focusReadableNode },
             ]}
@@ -3465,7 +3609,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             ) : null}
             {largeGraph ? <LargeGraphCanvas
               graph={drawnGraph} transform={transform} selected={selectedNodeIds} focused={focusedNodeId}
-              showLabels={showAllEdgeLabels} groups={namedGroups} arranging={isLayoutComputing}
+              showLabels={showAllEdgeLabels} groups={namedGroups} arranging={isLayoutComputing} zoomOnScroll={zoomOnScroll}
               onTransform={next => { transformRef.current = next; setTransform(next); }}
               onInterrupt={() => { cancelProgrammaticNodeAnimation(); layoutJobRef.current?.cancel(); layoutJobRef.current = null; }}
               onDragStart={() => {setIsLargeGraphDragging(true); pushHistory();}}
@@ -3475,11 +3619,15 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 const next = { ...current, nodes: current.nodes.map(node => positions.has(node.id) ? { ...node, ...positions.get(node.id) } : node) };
                 graphRef.current = next; setGraph(next);
               }}
+              onBoxSelect={addToManualSelection}
               onSelect={(id, multiple) => {
                 if (id && multiple) {
                   setManualSelectedNodeIds(current => {const next = new Set(current); if(next.has(id))next.delete(id);else next.add(id);return next;});
                   return;
                 }
+                // A Shift-click on the background keeps the selection; a plain one clears it.
+                if (!id && multiple) return;
+                if (!id) clearManualSelection();
                 // As on the SVG canvas: the first click or tap shows the node, a second one right after expands it.
                 const now = performance.now();
                 const previous = largeGraphTapRef.current;
@@ -3507,8 +3655,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }`}
               viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
               role="img"
-              aria-label="Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan; scroll, pinch or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions."
-              onWheel={onWheel}
+              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. Shift-, ⌘- or Ctrl-drag to select nodes with a box; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"} or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions.`}
               onDoubleClick={(event) => {
                 if (event.target !== event.currentTarget) return;
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -3540,6 +3687,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               onPointerDown={(event) => {
                 if (event.pointerType === "mouse" && event.button !== 0) return;
                 if (event.pointerType === "touch") event.preventDefault();
+                if (event.pointerType !== "touch" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+                  startMarquee(event.pointerId, event.clientX, event.clientY, false);
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  return;
+                }
                 const isBackground = event.target === event.currentTarget;
                 if (isBackground) {
                   setFocusedNodeId(null);
@@ -3607,6 +3759,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 event.currentTarget.setPointerCapture(event.pointerId);
               }}
               onPointerMove={(event) => {
+                // A selection box, started here or on a node (whose captured moves bubble here).
+                if (marqueeRef.current?.pointerId === event.pointerId) {
+                  moveMarquee(event.clientX, event.clientY);
+                  return;
+                }
                 if (event.pointerType === "mouse" && !panRef.current && edgeHoverFrameRef.current === null) {
                   const { clientX, clientY } = event;
                   const onNode = event.target instanceof Element && Boolean(event.target.closest(".graph-node"));
@@ -3692,15 +3849,22 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 );
               }}
               onPointerUp={(event) => {
+                if (marqueeRef.current?.pointerId === event.pointerId) {
+                  finishMarquee(event.clientX, event.clientY, false);
+                  return;
+                }
                 const completedAt = performance.now();
-                // A click on the background opens the statement card of the edge under it, or closes the card.
+                // A click on the background opens the statement card of the edge under it; on empty canvas it closes
+                // the card and clears the selection.
                 const press = backgroundPressRef.current;
                 backgroundPressRef.current = null;
                 if (
                   press?.pointerId === event.pointerId &&
                   Math.hypot(event.clientX - press.x, event.clientY - press.y) <= TAP_MOVE_TOLERANCE
                 ) {
-                  selectEdge(press.edgeId ?? edgeAt(event.clientX, event.clientY));
+                  const edgeId = press.edgeId ?? edgeAt(event.clientX, event.clientY);
+                  selectEdge(edgeId);
+                  if (!edgeId) clearManualSelection();
                 }
                 const doubleTapZoom = doubleTapZoomRef.current;
                 if (doubleTapZoom?.pointerId === event.pointerId) {
@@ -3730,6 +3894,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }}
               onPointerLeave={() => setHoveredEdgeId(null)}
               onPointerCancel={(event) => {
+                if (marqueeRef.current?.pointerId === event.pointerId) finishMarquee(event.clientX, event.clientY, true);
                 backgroundPressRef.current = null;
                 if (backgroundTapRef.current?.pointerId === event.pointerId) {
                   backgroundTapRef.current = null;
@@ -3745,6 +3910,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }}
               onLostPointerCapture={(event) => {
                 if (event.currentTarget.hasPointerCapture(event.pointerId)) return;
+                if (marqueeRef.current?.pointerId === event.pointerId) finishMarquee(event.clientX, event.clientY, true);
                 if (backgroundTapRef.current?.pointerId === event.pointerId) {
                   backgroundTapRef.current = null;
                 }
@@ -3839,6 +4005,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   />
                 ))}
               </g>
+              <rect ref={marqueeRectRef} className="selection-marquee" visibility="hidden" />
             </svg>
             </>}
           </div>

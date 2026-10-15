@@ -68,9 +68,11 @@ current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mj
 ## Layout
 
 The island root (`.graph-explorer`) is sized by `main.tsx` to the viewport height below its own top edge
-(`--graph-explorer-height: calc(100dvh - <top>px)`), keeps a 16px bottom gutter, and the Graph page's
-`#workbench-page-surface` gets `workbench-page-surface--full-bleed` (no width cap, padding or card chrome) while the
-island is mounted.
+(`--graph-explorer-height: calc(100dvh - <top>px)`, measured again on window resize and whenever the elements above
+it change size), keeps a 16px bottom gutter, and the Graph page's `#workbench-page-surface` gets
+`workbench-page-surface--full-bleed` (no width cap, padding or card chrome) while the island is mounted. The page never
+scrolls: on `#workbench-app[data-workbench-view="graph"]` the Workbench footer is hidden and the document's vertical
+overflow is clipped (rules in `workbench-refresh.css`, which apply before the island loads).
 
 ## Responsive layout
 

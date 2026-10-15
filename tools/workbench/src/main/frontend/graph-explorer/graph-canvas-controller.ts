@@ -13,6 +13,7 @@ import { GraphScene } from "./graph-scene.ts";
 import { nodeVisual } from "./graph-visuals.ts";
 import { IndexedGraphGl } from "./graph-indexed-gl.ts";
 import { GRAPH_WIDTH, GRAPH_HEIGHT } from "./graph-config.ts";
+import { DOUBLE_TAP_DELAY } from "./explorer-config.ts";
 import {
   pinchPanTransform,
   zoomTransformAt,
@@ -35,11 +36,15 @@ export type LargeGraphProps = {
   onTransform: (value: GraphTransform) => void;
   onPositions: (value: Map<string, PointerPosition>) => void;
   onSelect: (id: string | null, multiple: boolean) => void;
+  /** A Shift-, ⌘- or Ctrl-drag drew a box around these nodes. */
+  onBoxSelect: (ids: string[]) => void;
   onMenu: (node: GraphNode, x: number, y: number) => void;
   onInterrupt: () => void;
   onDragStart: () => void;
   /** The layout is still running: the nodes stand where they were first put. */
   arranging?: boolean;
+  /** The wheel zooms (Windows, Linux) instead of panning (macOS, where a pinch zooms). */
+  zoomOnScroll?: boolean;
 };
 
 /** The note in the corner of the large canvas. */
@@ -156,6 +161,10 @@ export class CanvasGraph {
     moved: boolean;
   } | null = null;
   private pan: Point | null = null;
+  /** A selection box, in client coordinates, while a Shift-, ⌘- or Ctrl-drag lasts. */
+  private marquee: { start: Point; current: Point; moved: boolean } | null = null;
+  /** Safari's trackpad pinch (a GestureEvent), as its scale at the previous event. */
+  private gestureScale: number | null = null;
   private doubleTap: { y: number; focal: Point } | null = null;
   private tap: { x: number; y: number; time: number; node: number } | null =
     null;
@@ -215,6 +224,9 @@ export class CanvasGraph {
     });
     this.resize.observe(overlay);
     overlay.addEventListener("wheel", this.wheel, { passive: false });
+    overlay.addEventListener("gesturestart", this.gestureStart, { passive: false });
+    overlay.addEventListener("gesturechange", this.gestureChange, { passive: false });
+    overlay.addEventListener("gestureend", this.gestureEnd);
     canvas.addEventListener("webglcontextlost", this.contextLost);
     this.request();
   }
@@ -571,6 +583,23 @@ export class CanvasGraph {
         palette.edgeLabel,
       );
     }
+    if (this.marquee?.moved) {
+      const r = this.overlay.getBoundingClientRect(),
+        m = this.marquee,
+        left = Math.min(m.start.x, m.current.x) - r.left,
+        top = Math.min(m.start.y, m.current.y) - r.top,
+        width = Math.abs(m.current.x - m.start.x),
+        height = Math.abs(m.current.y - m.start.y);
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = palette.selection;
+      ctx.fillRect(left, top, width, height);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = palette.selection;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([5, 4]);
+      ctx.strokeRect(left + 0.5, top + 0.5, width, height);
+      ctx.setLineDash([]);
+    }
     ctx.strokeStyle = palette.selection;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -602,15 +631,47 @@ export class CanvasGraph {
   };
   private wheel = (event: WheelEvent) => {
     event.preventDefault();
+    // Safari reports a pinch as gesture events; a Ctrl-wheel during one would zoom twice.
+    if (this.gestureScale !== null && event.ctrlKey) return;
+    this.viewportMoved(
+      wheelTransform(
+        this.transform,
+        event,
+        this.point({ x: event.clientX, y: event.clientY }),
+        Math.min(this.width / GRAPH_WIDTH, this.height / GRAPH_HEIGHT),
+        0.001,
+        { wheelZooms: Boolean(this.props().zoomOnScroll) },
+      ),
+    );
+  };
+  private gestureStart = (event: Event) => {
+    event.preventDefault();
+    this.gestureScale = 1;
+  };
+  private gestureChange = (event: Event) => {
+    event.preventDefault();
+    const gesture = event as Event & { scale?: number; clientX?: number; clientY?: number };
+    const scale = gesture.scale ?? 1,
+      previous = this.gestureScale ?? 1;
+    this.gestureScale = scale;
+    const r = this.overlay.getBoundingClientRect();
+    this.viewportMoved(
+      zoomTransformAt(
+        this.transform,
+        scale / previous,
+        this.point({ x: gesture.clientX ?? r.left + r.width / 2, y: gesture.clientY ?? r.top + r.height / 2 }),
+        0.001,
+      ),
+    );
+  };
+  private gestureEnd = () => {
+    this.gestureScale = null;
+  };
+  /** A wheel or pinch moved the view: draw it now, tell React once the motion pauses. */
+  private viewportMoved(next: GraphTransform) {
     if (this.origins) this.freeze();
     this.props().onInterrupt();
-    this.transform = wheelTransform(
-      this.transform,
-      event,
-      this.point({ x: event.clientX, y: event.clientY }),
-      Math.min(this.width / GRAPH_WIDTH, this.height / GRAPH_HEIGHT),
-      0.001,
-    );
+    this.transform = next;
     this.targetTransform = { ...this.transform };
     this.request();
     clearTimeout(this.wheelTimer);
@@ -618,7 +679,7 @@ export class CanvasGraph {
       () => this.props().onTransform({ ...this.transform }),
       120,
     );
-  };
+  }
   downAt(e: Contact) {
     if (e.button !== undefined && e.button !== 0) return;
     this.freeze();
@@ -630,19 +691,28 @@ export class CanvasGraph {
       this.down = null;
       this.tap = null;
       this.doubleTap = null;
+      this.marquee = null;
       this.pinch = this.pinchState();
       this.pan = null;
       return;
     }
     const node = this.hit(e),
-      now = performance.now();
+      now = performance.now(),
+      multiple = Boolean(e.shiftKey || e.metaKey || e.ctrlKey);
     this.down = {
       ...e,
       time: now,
       node,
       moved: false,
-      multiple: Boolean(e.shiftKey || e.metaKey || e.ctrlKey),
+      multiple,
     };
+    // Shift, ⌘ or Ctrl: a drag, from a node or from the background, draws a selection box; a click toggles the node.
+    if (multiple && e.pointerType !== "touch") {
+      this.marquee = { start: { x: e.x, y: e.y }, current: { x: e.x, y: e.y }, moved: false };
+      this.drag = null;
+      this.pan = null;
+      return;
+    }
     if (
       e.pointerType === "touch" &&
       this.tap &&
@@ -661,17 +731,10 @@ export class CanvasGraph {
           ? new Set(this.props().selected)
           : new Set([n.id]),
         origins = new Map<number, Point>();
-      if (
-        e.pointerType === "touch" &&
-        this.tap?.node === node &&
-        now - this.tap.time < 330
-      )
-        for (const neighbor of this.scene.neighbors(node))
-          if (
-            this.scene.offsets[neighbor + 1] - this.scene.offsets[neighbor] ===
-            1
-          )
-            ids.add(this.scene.node(neighbor).id);
+      // A double click or double tap that drags brings the node's leaves (neighbours linked to it alone) along.
+      if (this.tap?.node === node && now - this.tap.time < DOUBLE_TAP_DELAY)
+        for (const leaf of this.scene.leafNeighbors(node))
+          ids.add(this.scene.node(leaf).id);
       for (const id of ids) {
         const i = this.scene.index.get(id);
         if (i !== undefined)
@@ -732,6 +795,12 @@ export class CanvasGraph {
     if (this.down && Math.hypot(e.x - this.down.x, e.y - this.down.y) > 5) {
       this.down.moved = true;
       clearTimeout(this.hold);
+    }
+    if (this.marquee) {
+      this.marquee.current = { x: e.x, y: e.y };
+      if (this.down?.moved) this.marquee.moved = true;
+      this.request();
+      return;
     }
     if (this.doubleTap) {
       this.transform = zoomTransformAt(
@@ -795,6 +864,18 @@ export class CanvasGraph {
     this.drag = null;
     this.pinch = null;
     this.doubleTap = null;
+    const marquee = this.marquee;
+    this.marquee = null;
+    if (marquee?.moved && !cancelled) {
+      const a = this.world(marquee.start),
+        b = this.world({ x: e.x, y: e.y });
+      const inside = this.scene.visible(
+        { left: Math.min(a.x, b.x), right: Math.max(a.x, b.x), top: Math.min(a.y, b.y), bottom: Math.max(a.y, b.y) },
+        Infinity,
+      );
+      this.props().onBoxSelect(inside.map((i) => this.scene.node(i).id));
+    }
+    if (marquee) this.request();
     const down = this.down;
     if (
       down &&
@@ -824,6 +905,9 @@ export class CanvasGraph {
     clearTimeout(this.wheelTimer);
     this.resize.disconnect();
     this.overlay.removeEventListener("wheel", this.wheel);
+    this.overlay.removeEventListener("gesturestart", this.gestureStart);
+    this.overlay.removeEventListener("gesturechange", this.gestureChange);
+    this.overlay.removeEventListener("gestureend", this.gestureEnd);
     this.canvas.removeEventListener("webglcontextlost", this.contextLost);
     this.gl?.dispose();
   }

@@ -132,6 +132,20 @@ body.workbench-body .graph-explorer-mount {
 	min-height: 480px;
 }
 
+/* The Graph page fills the window and never scrolls: the explorer takes the height below the page header, so the
+ * page has no footer. The shell and the router set the view attribute before the explorer loads, so nothing flashes. */
+body.workbench-body #workbench-app[data-workbench-view="graph"] #footer.workbench-footer {
+	display: none;
+}
+
+html:has(> body.workbench-body #workbench-app[data-workbench-view="graph"]) {
+	overflow-y: hidden;
+}
+
+body.workbench-body #workbench-page-surface.workbench-page-surface--full-bleed .graph-explorer-mount {
+	min-height: 0;
+}
+
 /* A full-bleed page keeps the page header but in one compact row (a 32px icon tile, the title and the description on
  * one line), so the explorer below it gets the height. */
 body.workbench-body #content.workbench-main:has(.workbench-page-surface--full-bleed) {

@@ -63,7 +63,7 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
         className="large-graph-interactive"
         tabIndex={0}
         role="img"
-        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Drag to pan or move a node. Pinch with two fingers to pan and zoom. Right-click a node for actions.`}
+        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Drag to pan or move a node; double-click a node and keep dragging to move its leaf neighbours with it. Shift-, ⌘- or Ctrl-drag to select nodes with a box. ${props.zoomOnScroll ? "Scroll" : "Pinch"} to zoom. Right-click a node for actions.`}
         onPointerDown={(e) => {
           if (e.button !== 0) return;
           e.preventDefault();

@@ -23,7 +23,7 @@ const {
 } = require('./workbench-test-helpers.js');
 
 // The Graph page's React island reuses the Workbench design system: its background, text and font come from the
-// --workbench-* tokens, it follows the light/dark switch, and it never widens the document at phone width.
+// --workbench-* tokens, it follows the light/dark switch, and it fills the window: no footer, no page scroll.
 const REPOSITORY_ID = uniqueRepositoryId('graph-visual');
 const EVIDENCE_DIR = process.env.E2E_GRAPH_EXPLORER_EVIDENCE_DIR || '';
 
@@ -63,6 +63,9 @@ async function islandColours(page) {
             expected,
             scrollWidth: document.documentElement.scrollWidth,
             innerWidth: window.innerWidth,
+            scrollHeight: document.documentElement.scrollHeight,
+            innerHeight: window.innerHeight,
+            footer: getComputedStyle(document.getElementById('footer')).display,
             topbar: document.querySelectorAll('.graph-explorer .topbar').length,
             fullBleed: document.getElementById('workbench-page-surface').classList.contains('workbench-page-surface--full-bleed')
         };
@@ -82,6 +85,8 @@ for (const theme of ['light', 'dark']) {
         expect(colours.topbar).toBe(0);
         expect(colours.fullBleed).toBe(true);
         expect(colours.scrollWidth).toBeLessThanOrEqual(colours.innerWidth);
+        expect(colours.scrollHeight).toBeLessThanOrEqual(colours.innerHeight);
+        expect(colours.footer).toBe('none');
         if (evidenceScreenshots()) {
             await page.screenshot({ path: evidencePath(EVIDENCE_DIR, `graph-explorer-${theme}-1440.png`), fullPage: false });
         }
@@ -89,10 +94,12 @@ for (const theme of ['light', 'dark']) {
 }
 
 for (const [width, height] of [[1024, 768], [390, 844]]) {
-    test(`the graph explorer never widens the document at ${width}px`, async ({ page }) => {
+    test(`the graph explorer fills the window at ${width}px without scrolling it either way`, async ({ page }) => {
         await openGraphPage(page, width, height);
         const colours = await islandColours(page);
         expect(colours.scrollWidth).toBeLessThanOrEqual(colours.innerWidth);
+        expect(colours.scrollHeight).toBeLessThanOrEqual(colours.innerHeight);
+        expect(colours.footer).toBe('none');
         if (evidenceScreenshots()) {
             await page.screenshot({ path: evidencePath(EVIDENCE_DIR, `graph-explorer-light-${width}.png`), fullPage: false });
         }

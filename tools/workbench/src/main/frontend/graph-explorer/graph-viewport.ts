@@ -116,7 +116,21 @@ export function pinchPanTransform(
   );
 }
 
-/** Browsers deliver trackpad pinch as Ctrl-wheel; ordinary two-finger scrolling pans. */
+type NavigatorLike = { platform?: string; userAgent?: string; userAgentData?: { platform?: string } };
+
+/**
+ * Macs, iPhones and iPads: their trackpads scroll with two fingers and zoom with a pinch, so the wheel pans the graph.
+ * Elsewhere a wheel is most often a mouse wheel, and it zooms.
+ */
+export function isApplePlatform(nav: NavigatorLike | undefined = typeof navigator === "undefined" ? undefined : navigator) {
+  const platform = nav?.userAgentData?.platform || nav?.platform || nav?.userAgent || "";
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+/**
+ * Browsers deliver trackpad pinch as Ctrl-wheel, and it always zooms. An ordinary wheel pans (two-finger scrolling on
+ * a Mac) or, with `wheelZooms`, zooms about the cursor (a mouse wheel on Windows and Linux).
+ */
 export function wheelTransform(
   current: ViewportTransform,
   event: {
@@ -130,6 +144,7 @@ export function wheelTransform(
   focalPoint: ViewportPoint,
   screenScale = 1,
   minimum = MIN_GRAPH_ZOOM,
+  { wheelZooms = false }: { wheelZooms?: boolean } = {},
 ): ViewportTransform {
   const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 780 : 1;
   const dx = Number.isFinite(event.deltaX) ? event.deltaX * unit : 0;
@@ -138,6 +153,14 @@ export function wheelTransform(
     return zoomTransformAt(
       current,
       Math.exp(-Math.max(-200, Math.min(200, dy)) * 0.003),
+      focalPoint,
+      minimum,
+    );
+  if (wheelZooms)
+    // Shift-wheel arrives as a horizontal delta on Windows.
+    return zoomTransformAt(
+      current,
+      Math.exp(-Math.max(-300, Math.min(300, dy || dx)) * 0.002),
       focalPoint,
       minimum,
     );

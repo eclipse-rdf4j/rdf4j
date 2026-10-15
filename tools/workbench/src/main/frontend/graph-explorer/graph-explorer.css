@@ -669,6 +669,13 @@ html[data-theme="dark"] .graph-explorer {
   width: 240px;
 }
 
+/* "Applies to the 12 selected nodes": a selection makes every layout local. */
+.graph-explorer #graph-explorer-app .toolbar-menu-note {
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font: 400 12px/1.35 var(--sans);
+}
+
 .graph-explorer #graph-explorer-app :is(.toolbar-menu-popover, .view-menu-popover) button {
   display: grid;
   width: 100%;
@@ -1613,6 +1620,16 @@ html[data-theme="dark"] .graph-explorer {
 .graph-explorer .graph-canvas .statement-link.is-selected circle {
   stroke: var(--accent);
   stroke-width: 2px;
+}
+
+/* The box a Shift-, ⌘- or Ctrl-drag draws to select nodes (in view-box units, above the graph). */
+.graph-explorer .graph-canvas .selection-marquee {
+  fill: color-mix(in srgb, var(--accent) 10%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1px;
+  stroke-dasharray: 5 4;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
 }
 
 /* A value or link with the button that opens its statement (shown on hover and keyboard focus). */

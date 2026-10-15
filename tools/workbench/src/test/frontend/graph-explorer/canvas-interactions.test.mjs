@@ -12,7 +12,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { CanvasGraph, largeGraphHint } from "../../../main/frontend/graph-explorer/graph-canvas-controller.ts";
-const makeView = () => {
+const makeView = (graphOverride, extraProps = {}) => {
   let frames = 0;
   globalThis.requestAnimationFrame = () => ++frames;
   globalThis.cancelAnimationFrame = () => {};
@@ -36,8 +36,12 @@ const makeView = () => {
     addEventListener() {},
     removeEventListener() {},
   };
+  const listeners = {};
   const overlay = {
     ...canvas,
+    addEventListener(type, listener) {
+      listeners[type] = listener;
+    },
     dataset: {},
     style: {},
     getBoundingClientRect: () => ({
@@ -51,7 +55,7 @@ const makeView = () => {
   const commits = [],
     transforms = [];
   let histories = 0;
-  const graph = {
+  const graph = graphOverride ?? {
     nodes: [
       { id: "urn:a", kind: "iri", label: "A", x: 100, y: 100 },
       { id: "urn:b", kind: "iri", label: "B", x: 200, y: 100 },
@@ -82,9 +86,12 @@ const makeView = () => {
     onDragStart() {
       histories++;
     },
+    onBoxSelect: (ids) => boxes.push([...ids].sort()),
+    ...extraProps,
   };
+  const boxes = [];
   const view = new CanvasGraph(canvas, overlay, () => props);
-  return { view, props, commits, transforms, histories: () => histories };
+  return { view, props, commits, transforms, boxes, listeners, histories: () => histories };
 };
 const touch = (id, x, y) => ({ pointerId: id, pointerType: "touch", x, y });
 test("a second finger takes over node dragging and midpoint motion pans during a pinch", () => {
@@ -155,4 +162,75 @@ test("label hydration during a drag preserves the current pointer-driven coordin
 test("the large canvas says when its nodes are still being arranged", () => {
   assert.equal(largeGraphHint(50000, true), "50,000 nodes · Arranging…");
   assert.equal(largeGraphHint(50000, false), "50,000 nodes · Zoom in or select a node for labels");
+});
+
+const mouse = (x, y, modifiers = {}) => ({ pointerId: 1, pointerType: "mouse", button: 0, x, y, ...modifiers });
+const edge = (id, source, target) => ({ id, source, target, predicate: `urn:${id}`, label: id });
+
+test("a double press on a node drags it with its leaf neighbours, whichever way their links point", () => {
+  const graph = {
+    nodes: [
+      { id: "urn:hub", kind: "iri", label: "Hub", x: 100, y: 100 },
+      { id: "urn:leaf", kind: "iri", label: "Leaf", x: 100, y: 220 },
+      { id: "urn:other", kind: "iri", label: "Other", x: 320, y: 100 },
+      { id: "urn:far", kind: "iri", label: "Far", x: 520, y: 100 },
+    ],
+    // The leaf is linked to the hub twice, once in each direction; "other" has a second neighbour, so it stays.
+    edges: [edge("out", "urn:hub", "urn:leaf"), edge("in", "urn:leaf", "urn:hub"), edge("a", "urn:hub", "urn:other"), edge("b", "urn:other", "urn:far")],
+    revision: 1,
+  };
+  const { view, commits } = makeView(graph);
+  view.downAt(mouse(100, 100));
+  view.upAt(mouse(100, 100));
+  view.downAt(mouse(100, 100));
+  for (let i = 1; i <= 50; i++) view.moveAt(mouse(100 + i, 100 + i));
+  view.upAt(mouse(150, 150));
+  assert.deepEqual([...view.scene.positions], [150, 150, 150, 270, 320, 100, 520, 100]);
+  assert.deepEqual([...commits[0].keys()].sort(), ["urn:hub", "urn:leaf"]);
+  view.dispose();
+});
+
+test("Shift-dragging the background draws a selection box instead of panning", () => {
+  const { view, boxes, commits } = makeView();
+  view.downAt(mouse(50, 50, { shiftKey: true }));
+  view.moveAt(mouse(150, 120, { shiftKey: true }));
+  view.moveAt(mouse(250, 150, { shiftKey: true }));
+  view.upAt(mouse(250, 150, { shiftKey: true }));
+  assert.deepEqual(view.transform, { x: 0, y: 0, k: 1 });
+  assert.deepEqual(boxes, [["urn:a", "urn:b"]]);
+  assert.equal(commits.length, 0);
+  view.dispose();
+});
+
+test("⌘-dragging from a node selects with a box and leaves the node where it is", () => {
+  const { view, boxes, commits } = makeView();
+  view.downAt(mouse(98, 98, { metaKey: true }));
+  view.moveAt(mouse(210, 130, { metaKey: true }));
+  view.upAt(mouse(210, 130, { metaKey: true }));
+  assert.deepEqual([...view.scene.positions], [100, 100, 200, 100]);
+  assert.deepEqual(boxes, [["urn:a", "urn:b"]]);
+  assert.equal(commits.length, 0);
+  view.dispose();
+});
+
+test("a Shift-click on a node without dragging toggles it in the selection", () => {
+  const selections = [];
+  const { view, boxes } = makeView(undefined, { onSelect: (id, multiple) => selections.push([id, multiple]) });
+  view.downAt(mouse(100, 100, { shiftKey: true }));
+  view.upAt(mouse(100, 100, { shiftKey: true }));
+  assert.deepEqual(selections, [["urn:a", true]]);
+  assert.deepEqual(boxes, []);
+  view.dispose();
+});
+
+test("the wheel zooms where scrolling zooms and pans where pinching zooms", () => {
+  const wheel = { preventDefault() {}, deltaX: 0, deltaY: -100, deltaMode: 0, clientX: 640, clientY: 390 };
+  const scrolling = makeView(undefined, { zoomOnScroll: true });
+  scrolling.listeners.wheel(wheel);
+  assert.ok(scrolling.view.transform.k > 1);
+  scrolling.view.dispose();
+  const pinching = makeView(undefined, { zoomOnScroll: false });
+  pinching.listeners.wheel(wheel);
+  assert.deepEqual(pinching.view.transform, { x: 0, y: 100, k: 1 });
+  pinching.view.dispose();
 });

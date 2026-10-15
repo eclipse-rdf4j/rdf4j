@@ -68,7 +68,8 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   const container = document.createElement("div");
   container.className = "graph-explorer";
   host.appendChild(container);
-  // The explorer fills the viewport below the Workbench page header; the header's height is measured, not assumed.
+  // The explorer fills the viewport below the Workbench page header; the header's height is measured, not assumed,
+  // and measured again whenever it changes (a description that wraps, a wider sidebar, a message above the page).
   const view = document.defaultView;
   const sizeToViewport = () => {
     const top = Math.max(0, Math.round(container.getBoundingClientRect().top + (view?.scrollY ?? 0)));
@@ -76,6 +77,11 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   };
   sizeToViewport();
   view?.addEventListener("resize", sizeToViewport);
+  const header = typeof ResizeObserver === "function" ? new ResizeObserver(sizeToViewport) : null;
+  const outletElement = surface?.parentElement ?? null;
+  if (header && outletElement) {
+    for (const child of Array.from(outletElement.children)) if (child !== surface) header.observe(child);
+  }
   const root = createRoot(container);
   if (repositoryId) {
     root.render(<GraphExplorerApp basePath={basePath} repositoryId={repositoryId} />);
@@ -84,6 +90,7 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   }
   return () => {
     view?.removeEventListener("resize", sizeToViewport);
+    header?.disconnect();
     root.unmount();
     container.remove();
     surface?.classList.remove(FULL_BLEED_CLASS);

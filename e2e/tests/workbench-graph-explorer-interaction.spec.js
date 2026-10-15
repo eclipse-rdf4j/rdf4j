@@ -21,7 +21,9 @@ const {
 } = require('./workbench-test-helpers.js');
 
 // The Graph page's gestures: a click shows a node's details, a double-click loads its neighbours, literal values and
-// types stay off the canvas until "Values" is pressed, and the legend selects the nodes of a type.
+// types stay off the canvas until "Values" is pressed, and the legend selects the nodes of a type. Shift- or ⌘-drag
+// selects with a box, selected nodes move together, a double-click drag brings a node's leaves along, layouts act on
+// the selection, and the wheel zooms where scrolling zooms (Windows, Linux) but pans where pinching zooms (macOS).
 const REPOSITORY_ID = uniqueRepositoryId('graph-gestures');
 const DATA = `
 @prefix ex: <http://example.org/gestures/> .
@@ -115,3 +117,130 @@ test('the legend selects the nodes of a type', async ({ page }) => {
     await person.click();
     await expect(explorer.locator('.selection-summary')).toHaveCount(0);
 });
+
+async function centre(locator) {
+    const box = await locator.boundingBox();
+    expect(box).not.toBeNull();
+    return { x: box.x + box.width / 2, y: box.y + box.height / 2, box };
+}
+
+/** A box drawn with a modifier held, from `from` to `to` (client coordinates). */
+async function boxSelect(page, from, to, modifier = 'Shift') {
+    await page.keyboard.down(modifier);
+    await page.mouse.move(from.x, from.y);
+    await page.mouse.down();
+    await page.mouse.move((from.x + to.x) / 2, (from.y + to.y) / 2, { steps: 4 });
+    await page.mouse.move(to.x, to.y, { steps: 4 });
+    await page.mouse.up();
+    await page.keyboard.up(modifier);
+}
+
+/** A point on the canvas with nothing under it (no node, no edge, no overlay) for a few pixels around. */
+async function emptyCanvasPoint(explorer) {
+    return explorer.locator('svg.graph-canvas').evaluate((svg) => {
+        const rect = svg.getBoundingClientRect();
+        for (let y = rect.top + 60; y < rect.bottom - 60; y += 23) {
+            for (let x = rect.left + 60; x < rect.right - 60; x += 23) {
+                const around = [[0, 0], [-14, 0], [14, 0], [0, -14], [0, 14]];
+                if (around.every(([dx, dy]) => document.elementFromPoint(x + dx, y + dy) === svg)) return { x, y };
+            }
+        }
+        return null;
+    });
+}
+
+test('Shift-drag selects with a box; dragging a selected node moves the whole selection', async ({ page }) => {
+    const explorer = await openGraphPage(page);
+    await page.waitForTimeout(800);
+    const alice = await centre(node(explorer, 'Alice'));
+    const bob = await centre(node(explorer, 'Bob'));
+    // One tight box around each node: the second adds to the first.
+    await boxSelect(page, { x: alice.box.x - 6, y: alice.box.y - 6 }, { x: alice.box.x + alice.box.width + 6, y: alice.box.y + alice.box.height + 6 });
+    await boxSelect(page, { x: bob.box.x - 6, y: bob.box.y - 6 }, { x: bob.box.x + bob.box.width + 6, y: bob.box.y + bob.box.height + 6 }, 'Meta');
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(2);
+    await expect(explorer.locator('.selection-summary strong')).toHaveText('2 nodes selected');
+    // A Shift-click right after a box still toggles its node.
+    await node(explorer, 'Oslo').click({ modifiers: ['Shift'] });
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(3);
+    await node(explorer, 'Oslo').click({ modifiers: ['Shift'] });
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(2);
+
+    await page.mouse.move(alice.x, alice.y);
+    await page.mouse.down();
+    await page.mouse.move(alice.x + 70, alice.y + 40, { steps: 8 });
+    await page.mouse.up();
+    const movedAlice = await centre(node(explorer, 'Alice'));
+    const movedBob = await centre(node(explorer, 'Bob'));
+    expect(Math.abs(movedAlice.x - alice.x - 70)).toBeLessThan(2);
+    expect(Math.abs(movedBob.x - bob.x - 70)).toBeLessThan(2);
+    expect(Math.abs(movedBob.y - bob.y - 40)).toBeLessThan(2);
+
+    const empty = await emptyCanvasPoint(explorer);
+    expect(empty).not.toBeNull();
+    await page.mouse.click(empty.x, empty.y);
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(0);
+});
+
+test('a double-click drag moves a node with its leaf neighbours and loads nothing', async ({ page }) => {
+    const explorer = await openGraphPage(page);
+    await page.waitForTimeout(800);
+    const acme = await centre(node(explorer, 'Acme'));
+    const oslo = await centre(node(explorer, 'Oslo'));
+    const bob = await centre(node(explorer, 'Bob'));
+    await page.mouse.move(acme.x, acme.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.mouse.down({ clickCount: 2 });
+    await page.mouse.move(acme.x + 60, acme.y + 50, { steps: 8 });
+    await page.mouse.up({ clickCount: 2 });
+    const movedOslo = await centre(node(explorer, 'Oslo'));
+    const stillBob = await centre(node(explorer, 'Bob'));
+    expect(Math.abs(movedOslo.x - oslo.x - 60)).toBeLessThan(2);
+    expect(Math.abs(movedOslo.y - oslo.y - 50)).toBeLessThan(2);
+    expect(Math.abs(stillBob.x - bob.x)).toBeLessThan(1);
+    await page.waitForTimeout(600);
+    await expect(explorer.locator('.graph-node')).toHaveCount(4);
+});
+
+test('a layout acts on the selected nodes only', async ({ page }) => {
+    const explorer = await openGraphPage(page);
+    await page.waitForTimeout(800);
+    await node(explorer, 'Alice').click({ modifiers: ['Shift'] });
+    await node(explorer, 'Bob').click({ modifiers: ['Shift'] });
+    await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(2);
+    const acme = await centre(node(explorer, 'Acme'));
+    const oslo = await centre(node(explorer, 'Oslo'));
+    await explorer.locator('.layout-menu > summary').click();
+    await expect(explorer.locator('.layout-menu .toolbar-menu-popover')).toContainText('Applies to the 2 selected nodes');
+    await explorer.locator('.layout-menu').getByRole('button', { name: 'Square', exact: true }).click();
+    await page.waitForTimeout(1200);
+    const alice = await centre(node(explorer, 'Alice'));
+    const bob = await centre(node(explorer, 'Bob'));
+    expect(Math.abs(alice.y - bob.y)).toBeLessThan(1);
+    for (const [label, before] of [['Acme', acme], ['Oslo', oslo]]) {
+        const after = await centre(node(explorer, label));
+        expect(Math.abs(after.x - before.x)).toBeLessThan(1);
+        expect(Math.abs(after.y - before.y)).toBeLessThan(1);
+    }
+});
+
+for (const [platform, zooms] of [['Win32', true], ['Linux x86_64', true], ['MacIntel', false]]) {
+    test(`the wheel ${zooms ? 'zooms' : 'pans'} on ${platform}`, async ({ page }) => {
+        await page.addInitScript((value) => {
+            Object.defineProperty(Navigator.prototype, 'platform', { get: () => value });
+            Object.defineProperty(Navigator.prototype, 'userAgentData', { get: () => undefined });
+        }, platform);
+        const explorer = await openGraphPage(page);
+        await page.waitForTimeout(800);
+        const layer = explorer.locator('svg.graph-canvas > g').first();
+        const scale = async () => Number(/scale\(([^)]+)\)/.exec(await layer.getAttribute('transform'))[1]);
+        const translate = async () => /translate\(([^)]+)\)/.exec(await layer.getAttribute('transform'))[1];
+        const before = { k: await scale(), t: await translate() };
+        const empty = await emptyCanvasPoint(explorer);
+        await page.mouse.move(empty.x, empty.y);
+        await page.mouse.wheel(0, -240);
+        await expect.poll(async () => (await scale()) !== before.k || (await translate()) !== before.t).toBe(true);
+        if (zooms) expect(await scale()).toBeGreaterThan(before.k);
+        else expect(await scale()).toBe(before.k);
+    });
+}

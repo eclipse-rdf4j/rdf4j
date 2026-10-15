@@ -137,6 +137,17 @@ export class GraphScene {
     }
     return result;
   }
+  /** Neighbours whose only neighbour is `i`, however many links join them and whichever way the links point. */
+  leafNeighbors(i: number) {
+    const result: number[] = [];
+    for (const neighbor of this.neighbors(i)) {
+      if (neighbor === i) continue;
+      const around = this.neighbors(neighbor);
+      around.delete(neighbor);
+      if (around.size === 1 && around.has(i)) result.push(neighbor);
+    }
+    return result;
+  }
   changes(ids: Iterable<string>): Map<string, PointerPosition> {
     const result = new Map<string, PointerPosition>();
     for (const id of ids) {

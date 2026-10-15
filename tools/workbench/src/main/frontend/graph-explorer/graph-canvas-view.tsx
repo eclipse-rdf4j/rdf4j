@@ -96,7 +96,7 @@ export const NodeView = memo(function NodeView({
       tabIndex={0}
       role="button"
       aria-pressed={pressed}
-      aria-label={`${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected as part of the movable group." : ""} Select to show its details; double-click to load its neighbours. Shift-click to add or remove it from the selection. Right-click or long-press for more actions.`}
+      aria-label={`${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected as part of the movable group." : ""} Select to show its details; double-click to load its neighbours, or double-click and keep dragging to move it with its leaf neighbours. Shift- or ⌘-click to add or remove it from the selection. Right-click or long-press for more actions.`}
       onClick={(event) => handlers.click(node.id, event)}
       onDoubleClick={(event) => handlers.doubleClick(node.id, event)}
       onMouseEnter={() => handlers.hover(node.id, true)}
