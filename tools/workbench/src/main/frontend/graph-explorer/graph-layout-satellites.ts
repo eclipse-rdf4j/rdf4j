@@ -16,6 +16,8 @@
  * satellites are fanned back on the side of their anchor that faces away from its skeleton neighbours, grouped by
  * predicate and type. Hubs stay apart; their leaves show which cards belong to them.
  */
+import {RDF_TYPE} from './graph-canvas-scope.ts';
+import {segmentIntersectsBounds} from './graph-curve-collision.ts';
 import {graphNodeSize} from './graph-geometry.ts';
 import {layoutNodeFixed} from './graph-layout-topology.ts';
 import {LAYOUT_SPACING as gap} from './graph-layout-spacing.ts';
@@ -26,6 +28,8 @@ import type {LayoutOptions} from './graph-layout-engine.ts';
 export const SATELLITE_SUBTREE_LIMIT = 8;
 /** Widest arc a fan may take around its anchor. */
 const FAN_SPAN = Math.PI * 1.1;
+/** Widest arc for the fan of a satellite (it must keep pointing away from the satellite's own anchor). */
+const NESTED_FAN_SPAN = Math.PI * 0.8;
 const MIN_FAN_RADIUS = 110;
 /** Side of the square the force layout keeps clear around a hub, relative to its fan radius. */
 const HALO_SCALE = 1.5;
@@ -33,6 +37,8 @@ const HALO_SCALE = 1.5;
 const SINGLE_RING_LIMIT = 12;
 /** Angular margin kept between a fan and the anchor's other neighbours. */
 const FAN_MARGIN = 0.5;
+/** A class with at least this many instances is a class hub: its type links do not make its instances non-leaves. */
+export const CLASS_HUB_MIN_INSTANCES = 6;
 
 export type PeeledGraph = {
   skeleton: Graph;
@@ -42,20 +48,42 @@ export type PeeledGraph = {
   satellitesOf: Map<string, string[]>;
   /** skeleton node id → side of the square reserved for it in the force layout */
   halos: Map<string, number>;
+  /** node id → room its fan takes (see `FanGeometry`) */
+  fans: Map<string, FanGeometry>;
+  /** classes with many instances; they sit among their instances instead of pulling the layout */
+  classHubs: Set<string>;
+};
+
+/** Room a node's fan takes, its own sub-fans included. */
+export type FanGeometry = {
+  /** spoke length from the node to its satellites */
+  radius: number;
+  /** width the node and its fan occupy sideways on its anchor's arc */
+  lateral: number;
+  /** how far beyond the node its fan reaches outward (0 for a node without satellites) */
+  reach: number;
 };
 
 type Adjacency = {index: Map<string, number>; neighbors: Set<number>[]};
 
-function adjacency(graph: Graph): Adjacency {
+function adjacency(graph: Graph, skip?: (edge: Graph['edges'][number]) => boolean): Adjacency {
   const index = new Map(graph.nodes.map((node, i) => [node.id, i]));
   const neighbors = graph.nodes.map(() => new Set<number>());
   for (const edge of graph.edges) {
+    if (skip?.(edge)) continue;
     const a = index.get(edge.source), b = index.get(edge.target);
     if (a === undefined || b === undefined || a === b) continue;
     neighbors[a].add(b);
     neighbors[b].add(a);
   }
   return {index, neighbors};
+}
+
+/** Classes that are the type of at least `CLASS_HUB_MIN_INSTANCES` drawn nodes. */
+export function classHubsOf(graph: Graph) {
+  const instances = new Map<string, number>();
+  for (const edge of graph.edges) if (edge.predicate === RDF_TYPE) instances.set(edge.target, (instances.get(edge.target) ?? 0) + 1);
+  return new Set([...instances].filter(([, count]) => count >= CLASS_HUB_MIN_INSTANCES).map(([id]) => id));
 }
 
 /** One node linked to every other node and nothing else: `computeNetworkLayout` draws it as a sunflower. */
@@ -72,18 +100,55 @@ export function fanRadius(anchor: GraphNode, satellites: readonly GraphNode[]) {
   return Math.max(MIN_FAN_RADIUS, graphNodeSize(anchor).height / 2 + 90, arc / FAN_SPAN);
 }
 
+/** Lateral room an arc needs for these footprints. */
+const arcLength = (laterals: readonly number[]) => laterals.reduce((sum, width) => sum + width + gap.nodeGapX, 0);
+
+/**
+ * Fan geometry for every node with satellites, bottom-up: a satellite that carries its own fan is wider on its
+ * anchor's arc than its card, and reaches further out, so the anchor's spoke and halo grow with it.
+ */
+function fanGeometries(graph: Graph, anchorOf: Map<string, string>, satellitesOf: Map<string, string[]>) {
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const fans = new Map<string, FanGeometry>();
+  const geometry = (id: string): FanGeometry => {
+    const known = fans.get(id);
+    if (known) return known;
+    const node = byId.get(id)!, size = graphNodeSize(node), kids = satellitesOf.get(id) ?? [];
+    let result: FanGeometry;
+    if (!kids.length) {
+      result = {radius: 0, lateral: size.width, reach: 0};
+    } else {
+      const nested = anchorOf.has(id), spanCap = nested ? NESTED_FAN_SPAN : FAN_SPAN;
+      const kidFans = kids.map(geometry), kidSizes = kids.map(kid => graphNodeSize(byId.get(kid)!));
+      const arc = arcLength(kidFans.map(fan => fan.lateral));
+      const radius = Math.max(MIN_FAN_RADIUS, size.height / 2 + 90, arc / spanCap);
+      const span = kids.length === 1 ? 0 : Math.min(spanCap, arc / radius);
+      const reach = radius + Math.max(...kidFans.map((fan, i) => fan.reach + Math.hypot(kidSizes[i].width, kidSizes[i].height) / 2));
+      const lateral = Math.max(size.width, kids.length === 1 ? kidFans[0].lateral : 2 * radius * Math.sin(Math.min(span, Math.PI) / 2) + kidSizes[0].width / 2);
+      result = {radius, lateral, reach};
+    }
+    fans.set(id, result);
+    return result;
+  };
+  graph.nodes.forEach(node => geometry(node.id));
+  return fans;
+}
+
 /**
  * Splits a component into satellites and skeleton. Fixed nodes are never satellites. Nothing is peeled while a map is
  * being extended or repaired (`incremental`, `refine`, `repairOnly`), inside named groups, for coarse group graphs
  * (`nodeSizes`) or for a pure star, which has its own layout.
  */
 export function peelSatellites(graph: Graph, options: LayoutOptions): PeeledGraph {
-  const none = (): PeeledGraph => ({skeleton: graph, anchorOf: new Map(), satellitesOf: new Map(), halos: new Map()});
+  const classHubs = classHubsOf(graph);
+  const none = (): PeeledGraph => ({skeleton: graph, anchorOf: new Map(), satellitesOf: new Map(), halos: new Map(), fans: new Map(), classHubs});
   if (options.incremental || options.refine || options.repairOnly || options.groups?.length || options.nodeSizes ||
       graph.nodes.length < 2 || isPureStar(graph)) return none();
-  const {neighbors} = adjacency(graph);
+  // A type link to a class hub says what a node is, not where it belongs: it neither keeps the node in the skeleton
+  // nor makes the class a satellite.
+  const {neighbors} = adjacency(graph, edge => edge.predicate === RDF_TYPE && classHubs.has(edge.target));
   const n = graph.nodes.length;
-  const fixed = graph.nodes.map(node => layoutNodeFixed(node, options));
+  const fixed = graph.nodes.map(node => layoutNodeFixed(node, options) || classHubs.has(node.id));
   const anchor = new Int32Array(n).fill(-1);
   const subtree = new Int32Array(n).fill(1);
   let remaining = n, changed = true;
@@ -114,19 +179,24 @@ export function peelSatellites(graph: Graph, options: LayoutOptions): PeeledGrap
   const skeletonIds = new Set(skeletonNodes.map(node => node.id));
   const skeleton: Graph = {...graph, nodes: skeletonNodes,
     edges: graph.edges.filter(edge => skeletonIds.has(edge.source) && skeletonIds.has(edge.target))};
-  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const fans = fanGeometries(graph, anchorOf, satellitesOf);
   const halos = new Map<string, number>();
   for (const node of skeletonNodes) {
     const satellites = satellitesOf.get(node.id);
-    if (satellites?.length) halos.set(node.id, fanRadius(node, satellites.map(id => byId.get(id)!)) * HALO_SCALE);
+    if (!satellites?.length) continue;
+    const fan = fans.get(node.id)!;
+    // The square reserved in the force layout: the spoke with margin, plus half of what the sub-fans add outward.
+    halos.set(node.id, fan.radius * HALO_SCALE + (fan.reach - fan.radius) / 2);
   }
-  return {skeleton, anchorOf, satellitesOf, halos};
+  return {skeleton, anchorOf, satellitesOf, halos, fans, classHubs};
 }
 
 /** Neighbours considered per node when looking for shared neighbours; bounds the work on hubs. */
 const SIMILARITY_NEIGHBOR_LIMIT = 48;
 const SIMILARITY_IDEAL_LENGTH = 40;
-const SIMILARITY_ELASTICITY = 0.1;
+const SIMILARITY_ELASTICITY = 0.2;
+/** Shared neighbours count 1/log2(1 + degree) each (Adamic–Adar): a hub everyone links to says nothing about similarity. */
+const SIMILARITY_MIN_WEIGHT = 0.3;
 
 export type LayoutSpring = {source: string; target: string; ideal: number; elasticity: number};
 
@@ -144,20 +214,22 @@ export function similaritySprings(graph: Graph, peeled: PeeledGraph): LayoutSpri
     let seen = 0;
     for (const w of neighbors[v]) {
       if (seen++ >= SIMILARITY_NEIGHBOR_LIMIT) break;
+      const weight = 1 / Math.log2(1 + neighbors[w].size);
       let inner = 0;
       for (const u of neighbors[w]) {
         if (inner++ >= SIMILARITY_NEIGHBOR_LIMIT) break;
         if (u <= v || typeOf[u] !== typeOf[v]) continue;
         const key = `${v}:${u}`;
-        shared.set(key, (shared.get(key) ?? 0) + 1);
+        shared.set(key, (shared.get(key) ?? 0) + weight);
       }
     }
   });
   return [...shared]
+    .filter(([, weight]) => weight >= SIMILARITY_MIN_WEIGHT)
     .sort(([a], [b]) => a.localeCompare(b))
-    .map(([key, count]) => {
+    .map(([key, weight]) => {
       const [v, u] = key.split(':').map(Number);
-      return {source: skeleton.nodes[v].id, target: skeleton.nodes[u].id, ideal: SIMILARITY_IDEAL_LENGTH, elasticity: SIMILARITY_ELASTICITY * count};
+      return {source: skeleton.nodes[v].id, target: skeleton.nodes[u].id, ideal: SIMILARITY_IDEAL_LENGTH, elasticity: SIMILARITY_ELASTICITY * weight};
     });
 }
 
@@ -176,7 +248,8 @@ function segmentsCross(a: PointerPosition, b: PointerPosition, c: PointerPositio
  */
 export function placeSatellites(graph: Graph, positions: Map<string, PointerPosition>, peeled: PeeledGraph, options: LayoutOptions) {
   const byId = new Map(graph.nodes.map(node => [node.id, node]));
-  const {index, neighbors} = adjacency(graph);
+  // The direction to a class hub is not an occupied direction: fans face away from structural neighbours only.
+  const {index, neighbors} = adjacency(graph, edge => edge.predicate === RDF_TYPE && peeled.classHubs.has(edge.target));
   const predicateTo = new Map<string, string>();
   for (const edge of graph.edges.slice().sort((a, b) => a.id.localeCompare(b.id))) {
     for (const [self, other] of [[edge.source, edge.target], [edge.target, edge.source]]) {
@@ -225,8 +298,9 @@ export function placeSatellites(graph: Graph, positions: Map<string, PointerPosi
       const fullCircle = !occupied.length;
       const cards = movable.map(id => byId.get(id)!), sizes = cards.map(graphNodeSize);
       const anchorSize = graphNodeSize(byId.get(anchorId)!);
-      const arc = sizes.reduce((sum, size) => sum + size.width + gap.nodeGapX, 0);
-      const available = fullCircle ? Math.PI * 2 : Math.max(0.3, Math.min(FAN_SPAN, gapSize - FAN_MARGIN * 2));
+      const arc = arcLength(movable.map(id => peeled.fans.get(id)?.lateral ?? graphNodeSize(byId.get(id)!).width));
+      const spanCap = peeled.anchorOf.has(anchorId) ? NESTED_FAN_SPAN : FAN_SPAN;
+      const available = fullCircle ? Math.PI * 2 : Math.max(0.3, Math.min(spanCap, gapSize - FAN_MARGIN * 2));
       const rings = Math.max(1, Math.ceil(Math.sqrt(movable.length / SINGLE_RING_LIMIT)));
       const stride = Math.max(...sizes.map(size => Math.hypot(size.width + gap.nodeGapX, size.height + gap.nodeGapY)));
       const radius = Math.max(MIN_FAN_RADIUS, anchorSize.height / 2 + 90, arc / rings / available);
@@ -281,5 +355,25 @@ export function placeSatellites(graph: Graph, positions: Map<string, PointerPosi
     if (positions.has(node.id)) continue;
     const owner = peeled.anchorOf.get(node.id);
     positions.set(node.id, (owner ? positions.get(owner) : undefined) ?? {x: node.x ?? 0, y: node.y ?? 0});
+  }
+  // A class hub sits among its instances, at the spot near their centroid that the fewest placed links run through;
+  // the readability pass never moves a node with that many links, and overlap removal only keeps it off cards.
+  for (const id of peeled.classHubs) {
+    const node = byId.get(id);
+    if (!node || layoutNodeFixed(node, options)) continue;
+    const members = graph.edges.flatMap(edge => (edge.predicate === RDF_TYPE && edge.target === id ? [positions.get(edge.source)] : [])).filter((p): p is PointerPosition => Boolean(p));
+    if (!members.length) continue;
+    const centroid = {x: members.reduce((sum, p) => sum + p.x, 0) / members.length, y: members.reduce((sum, p) => sum + p.y, 0) / members.length};
+    const size = graphNodeSize(node), exclude = new Set([id]);
+    const candidates: PointerPosition[] = [centroid];
+    for (const r of [140, 280, 420]) for (let k = 0; k < 8; k++) candidates.push({x: centroid.x + Math.cos((k / 8) * Math.PI * 2) * r, y: centroid.y + Math.sin((k / 8) * Math.PI * 2) * r});
+    let best = centroid, bestCost = Number.POSITIVE_INFINITY;
+    for (const p of candidates) {
+      const bounds = {minX: p.x - size.width / 2 - gap.nodeGapX / 2, minY: p.y - size.height / 2 - gap.nodeGapY / 2, maxX: p.x + size.width / 2 + gap.nodeGapX / 2, maxY: p.y + size.height / 2 + gap.nodeGapY / 2};
+      let cost = Math.hypot(p.x - centroid.x, p.y - centroid.y) / 400 + cardNear(p, exclude);
+      for (const [a, b] of placed) if (segmentIntersectsBounds(a, b, bounds)) cost += 1;
+      if (cost < bestCost) {bestCost = cost; best = p;}
+    }
+    positions.set(id, best);
   }
 }

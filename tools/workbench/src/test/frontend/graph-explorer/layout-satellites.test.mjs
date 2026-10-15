@@ -16,6 +16,7 @@ import { computeGraphLayout } from '../../../main/frontend/graph-explorer/graph-
 import { computeNetworkLayout } from '../../../main/frontend/graph-explorer/graph-layout-network.ts';
 import { peelSatellites, similaritySprings } from '../../../main/frontend/graph-explorer/graph-layout-satellites.ts';
 import { demoGraph, iri } from './fixtures/layout-demo-graph.mjs';
+import { conferenceHub, geoTree } from './fixtures/layout-shapes.mjs';
 import { layoutMetrics } from './support/benchmark-layout.mjs';
 
 const degrees = (radians) => (radians * 180) / Math.PI;
@@ -107,13 +108,14 @@ test('peeling is off for incremental, refine, repair-only, named-group and pure-
   assert.ok(!peelSatellites(pinned, {}).anchorOf.has(iri('Dave')), 'a pinned leaf is never a satellite');
 });
 
-test('same-typed nodes that share neighbours are pulled together by similarity springs when that costs no crossings', async () => {
-  // Two researchers (same class) with no link between them but the same two universities; a third researcher of
-  // the same class shares nothing with them.
+test('same-typed nodes that share a neighbour are pulled together by similarity springs when that costs no crossings', async () => {
+  // Two researchers (same class) with no link between them share one university and have one of their own; a third
+  // researcher of the same class shares nothing with them.
   const person = (id, x) => ({ id, label: id, kind: 'iri', types: [{ id: 'urn:Person', label: 'Person' }], x, y: 0 });
-  const nodes = [person('p1', -200), person('p2', 200), person('p3', 400), { id: 'u1', label: 'University one', kind: 'iri', x: 0, y: -200 },
-    { id: 'u2', label: 'University two', kind: 'iri', x: 0, y: 200 }, { id: 'u3', label: 'University three', kind: 'iri', x: 600, y: 0 }, { id: 'u4', label: 'University four', kind: 'iri', x: 600, y: 200 }];
-  const edges = [['p1', 'u1'], ['p1', 'u2'], ['p2', 'u1'], ['p2', 'u2'], ['p3', 'u3'], ['p3', 'u4'], ['u3', 'u2']]
+  const uni = (id, x, y) => ({ id, label: `University ${id}`, kind: 'iri', x, y });
+  const nodes = [person('p1', -200), person('p2', 200), person('p3', 600), uni('u1', 0, -200), uni('u2', -400, 0), uni('u3', 400, 0), uni('u4', 800, -200), uni('u5', 800, 200)];
+  // Cycles keep every node in the skeleton (nothing is a leaf): p1-u1-p2-u3-u2-p1 and p3-u4-u5-p3, joined by u3-u4.
+  const edges = [['p1', 'u1'], ['p2', 'u1'], ['p1', 'u2'], ['p2', 'u3'], ['u2', 'u3'], ['p3', 'u4'], ['p3', 'u5'], ['u4', 'u5'], ['u3', 'u4']]
     .map(([a, b]) => ({ id: `${a}-${b}`, source: a, target: b, predicate: 'urn:educatedAt', label: 'educated at' }));
   const graph = { nodes, edges, revision: 1 };
   const springs = similaritySprings(graph, peelSatellites(graph, {}));
@@ -124,5 +126,68 @@ test('same-typed nodes that share neighbours are pulled together by similarity s
   assert.ok(distance(sprung) < distance(plain) * 0.8, `springs: ${distance(sprung).toFixed(0)} vs plain ${distance(plain).toFixed(0)}`);
   const result = await computeGraphLayout(graph, { mode: 'network' });
   assert.ok(layoutMetrics(graph, result.positions).edgeCrossings <= layoutMetrics(graph, plain).edgeCrossings);
-  assert.ok(distance(result.positions) < distance(plain) * 0.8, 'the organize result keeps the similar researchers together');
+  assert.ok(distance(result.positions) < distance(plain) * 0.8, `organize keeps the similar researchers together: ${distance(result.positions).toFixed(0)} vs plain ${distance(plain).toFixed(0)}`);
+});
+
+test('type links to a class with many instances do not stop instances from being satellites', async () => {
+  const graph = geoTree(5, 4, 3, { values: true });
+  const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
+  const peeled = peelSatellites(graph, {});
+  const skeleton = peeled.skeleton.nodes.map((node) => node.label).sort();
+  assert.deepEqual(skeleton, ['City', 'District', 'Norway', 'Region', 'Region 1', 'Region 2', 'Region 3', 'Region 4', 'Region 5'], skeleton.join(', '));
+  const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
+  const withoutTypes = { ...graph, edges: graph.edges.filter((edge) => edge.predicate !== RDF_TYPE) };
+  const metrics = layoutMetrics(withoutTypes, result.positions);
+  assert.equal(metrics.nodeOverlaps, 0);
+  assert.equal(metrics.edgeNodeOverlaps, 0, `tree edges through cards: ${metrics.edgeNodeOverlaps}`);
+  assert.ok(metrics.edgeCrossings <= 2, `tree crossings: ${metrics.edgeCrossings}`);
+  // A class with many instances sits among them, not far away.
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const districtClass = graph.nodes.find((node) => node.label === 'District');
+  const districts = graph.edges.filter((edge) => edge.predicate === RDF_TYPE && edge.target === districtClass.id).map((edge) => result.positions.get(edge.source));
+  const centroid = { x: districts.reduce((sum, p) => sum + p.x, 0) / districts.length, y: districts.reduce((sum, p) => sum + p.y, 0) / districts.length };
+  const classPosition = result.positions.get(districtClass.id);
+  const spread = Math.max(...districts.map((p) => Math.hypot(p.x - centroid.x, p.y - centroid.y)));
+  assert.ok(Math.hypot(classPosition.x - centroid.x, classPosition.y - centroid.y) < spread * 0.5, 'the District class is placed among the districts');
+  void byId;
+});
+
+test('nested fans keep their room: a three-level tree has no crossings and no edge through a card', async () => {
+  const graph = geoTree();
+  const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
+  const metrics = layoutMetrics(graph, result.positions, result.bends);
+  assert.equal(metrics.nodeOverlaps, 0);
+  assert.equal(metrics.edgeNodeOverlaps, 0, `edges through cards: ${metrics.edgeNodeOverlaps}`);
+  assert.equal(metrics.edgeCrossings, 0, `crossings: ${metrics.edgeCrossings}`);
+});
+
+test('a ring of resources with eight values each keeps the fans apart', async () => {
+  const nodes = [], edges = [];
+  for (let i = 0; i < 12; i++) {
+    nodes.push({ id: `p${i}`, label: `Person ${i + 1}`, kind: 'iri', types: [{ id: 'urn:Person', label: 'Person' }] });
+    edges.push({ id: `c${i}`, source: `p${i}`, target: `p${(i + 1) % 12}`, predicate: 'urn:colleague', label: 'colleague' });
+    for (let v = 0; v < 8; v++) {
+      nodes.push({ id: `p${i}v${v}`, label: `${['name', 'born', 'mail', 'phone', 'height', 'weight', 'bio', 'home'][v]} of ${i + 1}`, kind: 'literal' });
+      edges.push({ id: `p${i}e${v}`, source: `p${i}`, target: `p${i}v${v}`, predicate: `urn:v${v}`, label: `v${v}` });
+    }
+  }
+  const graph = { nodes, edges, revision: 1 };
+  const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
+  const metrics = layoutMetrics(graph, result.positions, result.bends);
+  assert.equal(metrics.nodeOverlaps, 0);
+  assert.equal(metrics.edgeNodeOverlaps, 0, `edges through cards: ${metrics.edgeNodeOverlaps}`);
+  assert.ok(metrics.edgeCrossings <= 2, `crossings: ${metrics.edgeCrossings}`);
+});
+
+test('similarity springs discount a shared hub: papers linked only through the conference get none', () => {
+  const graph = conferenceHub();
+  const springs = similaritySprings(graph, peelSatellites(graph, {}));
+  const byId = new Map(graph.nodes.map((node) => [node.id, node]));
+  const papers = springs.filter((s) => byId.get(s.source).label.startsWith('Paper') && byId.get(s.target).label.startsWith('Paper'));
+  const authorsOf = (id) => new Set(graph.edges.filter((e) => e.source === id && e.label === 'author').map((e) => e.target));
+  for (const s of papers) {
+    const shared = [...authorsOf(s.source)].filter((a) => authorsOf(s.target).has(a));
+    assert.ok(shared.length > 0, `${byId.get(s.source).label} and ${byId.get(s.target).label} share only the conference`);
+  }
+  assert.ok(papers.length > 0 && papers.length < 200, `${papers.length} paper springs`);
 });

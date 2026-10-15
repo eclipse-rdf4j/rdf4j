@@ -1214,6 +1214,14 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
         const targetGraph = applyGraphPositions(graphRef.current, positionByEntityId);
         const targetNodes = targetGraph.nodes;
         setEdgeBends(result.bends);
+        // "Organizing the network…" becomes "Organized the network." once the positions are in; other messages stay.
+        setStatus((current) =>
+          /^(Organizing|Arranging|Tidying|Refining) .*…$/.test(current)
+            ? current
+                .replace(/^(Organizing|Arranging|Tidying|Refining)/, (verb) => ({ Organizing: "Organized", Arranging: "Arranged", Tidying: "Tidied", Refining: "Refined" })[verb] ?? verb)
+                .replace(/…$/, ".")
+            : current,
+        );
         if (result.fixedOverlaps) setStatus(`${result.fixedOverlaps >= 1000 ? 'At least ' : ''}${result.fixedOverlaps} fixed-node clearance conflicts remain. Unpin nodes or organize the whole network to make room.`);
 
         const finishLayoutIntent = () => {

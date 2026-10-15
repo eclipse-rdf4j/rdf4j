@@ -214,6 +214,7 @@ test('a layout acts on the selected nodes only', async ({ page }) => {
     await expect(explorer.locator('.layout-menu .toolbar-menu-popover')).toContainText('Applies to the 2 selected nodes');
     await explorer.locator('.layout-menu').getByRole('button', { name: 'Square', exact: true }).click();
     await page.waitForTimeout(1200);
+    await expect(explorer.locator('footer')).toContainText('Arranged the 2 selected nodes in a square.');
     const alice = await centre(node(explorer, 'Alice'));
     const bob = await centre(node(explorer, 'Bob'));
     expect(Math.abs(alice.y - bob.y)).toBeLessThan(1);

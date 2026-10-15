@@ -45,7 +45,37 @@ the people form one tight cluster, and no arrow crosses another.
       `mvnf tools/workbench`: 1010 tests, 0 failures (GraphServletTest 13, GraphExplorerQueryTest 31; root -Pquick
       install 27 s); memory note `workbench-graph-layout-hubs.md`; nothing committed.
 
+## Progress (second pass: example datasets)
+
+- [x] (2026-10-15 20:30Z) Six example datasets (social communities, product catalog, conference hub, geo tree,
+      student courses, rich literals; generator in the session scratchpad, deterministic twins in
+      `src/test/frontend/graph-explorer/fixtures/layout-shapes.mjs`) loaded into memory repositories on the :8081
+      server-boot and rendered with Values off and on; node harness `measure-datasets.mjs` reproduces the app's graph
+      from SPARQL JSON for fast iteration.
+- [x] (2026-10-15 21:40Z) Nested fan geometry (`fanGeometries`, `FanGeometry`), class hubs (`classHubsOf`,
+      `CLASS_HUB_MIN_INSTANCES`), Adamic–Adar similarity weights, class hubs placed at the least obstructed spot near
+      their instances. Red → green: `layout-satellites.test.mjs` 10/10 (tree fixture 20 → 0 edges through cards;
+      Values-on tree skeleton = country, regions and class hubs; paper springs only through shared authors).
+- [x] (2026-10-15 22:00Z) Layout completion status: "Organizing the network…" → "Organized the network." (and
+      Arranged/Tidied/Refined); Playwright "a layout acts on the selected nodes only" red → green. Unit suite 234/234.
+
 ## Surprises & Discoveries
+
+- Observation (second pass, example datasets): with Values on, every instance links to its class, so in a tree like
+  country → regions → cities → districts nothing is a leaf any more (a district has city + label + `District` class)
+  and no fan forms; the `District` class with 60 instances then dominates the force layout (903 crossings, 409 edges
+  through cards on the 197-node geo-tree). Type links to a class hub (≥ 6 instances) now neither keep a node in the
+  skeleton nor count as an occupied direction, and the class hub is placed at the least obstructed spot near the
+  centroid of its instances (the readability pass never moves a node with more than 24 links).
+- Observation: nested fans (a city's districts inside a region's fan) overlapped their neighbours because the halo and
+  the arc only counted direct satellites' card widths (geo-tree: 20 edges through cards). Fan geometry is now computed
+  bottom-up: a satellite's lateral footprint includes its own sub-fan, halos add half of the sub-fans' outward reach,
+  nested fans are capped at 0.8π (0.6π and 0.5π only enlarge the drawing: 16–19M vs 13M px²).
+- Observation: similarity springs through a shared hub (every paper shares the conference) connected all 40 papers.
+  Shared neighbours are now weighted 1/log2(1 + degree) (Adamic–Adar) with a 0.3 minimum.
+- Observation: dense bipartite shapes (30 students × 8 courses; a conference whose 40 papers each have 1–3 authors)
+  stay hairballs in a force layout (260–310 crossings with Values off); no satellites exist there. A radial layering
+  around the dominant hub would be the next structural improvement (follow-up).
 
 - Observation: the compact drawing the user dislikes is exactly what `computeGraphLayout(demo, {mode: 'network'})`
   returns today (same angles and distances as the exported SVG), so it is the default, not a stale layout.
@@ -68,6 +98,12 @@ the people form one tight cluster, and no arrow crosses another.
   they are a scored alternative, never unconditional.
 
 ## Decision Log
+
+- Decision: a class with ≥ 6 instances is a *class hub*: its type links are ignored when peeling satellites and when
+  choosing a fan's free direction, it is never a satellite, and it is placed among its instances after the fans.
+  Rationale: with Values on these links otherwise prevent every fan and let one node pull the whole drawing; the
+  colour legend already conveys the type, the class card among its instances keeps the link visible.
+  Date/Author: 2026-10-15 / Claude.
 
 - Decision: the router counts only the card body as an obstruction; a curve inside the 9 px margin is a *graze* that
   adds 400 to the score (1200 when within 4 px), and the detour rounds also run while the best route still grazes.
@@ -129,6 +165,15 @@ edge length without losing near-endpoint clearance; the greedy repair-only overl
 refinement both destroy deliberate fan geometry, so a structured candidate has to run smooth overlap removal itself
 and skip refinement. Possible follow-up: orthogonal (polyline) routing for grid layouts, where a single quadratic bend
 can only go around a whole row of cards.
+
+Second pass (example datasets): six synthetic repositories exercised the layout. Trees now render as clean radial
+fans at every depth (geo tree, Values off: 0 crossings, 0 edges through cards, in node and in the browser); with
+Values on the class hubs sit among their instances and the tree edges stay clean, while the class spokes themselves
+still cross fans (inherent to drawing a class with 60 instances). Social communities (Louvain groups), the product
+catalog (tripartite) and the two dense bipartite shapes (students × courses, conference papers × authors) are
+unchanged in structure and remain crossing-heavy: no leaves to fan, and a force layout cannot order a bipartite graph.
+Radial layering around a dominant hub is the next structural improvement. The layout status line now reports
+completion. Playwright graph specs 33/33 after the second pass; unit suite 234/234.
 
 ## Context and Orientation
 
