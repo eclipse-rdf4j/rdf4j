@@ -115,8 +115,8 @@ public class SparqlTripleSource extends TripleSourceBase {
 
 		} else {
 			/* remote select limit 1 query */
+			String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, queryInfo);
 				applyMaxExecutionTimeUpperBound(query);
@@ -142,9 +142,9 @@ public class SparqlTripleSource extends TripleSourceBase {
 		if (!useASKQueries) {
 
 			/* remote select limit 1 query */
+			String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
+					expr.getQueryInfo().getDataset());
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
-						expr.getQueryInfo().getDataset());
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, expr.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);

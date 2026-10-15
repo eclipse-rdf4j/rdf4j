@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
@@ -77,6 +78,7 @@ public abstract class TripleSourceBase implements TripleSource {
 
 		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
 		BindingSet outgoing = identity.outgoing(queryBindings);
+		Dataset dataset = identity.outgoingDataset(queryInfo.getDataset());
 		return withConnection((conn, resultHolder) -> {
 			QueryResult<?> evaluate = null;
 
@@ -90,7 +92,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					applyBindings(tQuery, outgoing);
 					applyMaxExecutionTimeUpperBound(tQuery);
 					configureInference(tQuery, queryInfo);
-					tQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
+					tQuery.setDataset(dataset);
 					if (queryInfo.getResultHandler().isPresent()) {
 						// pass through result to configured handler, and return an empty iteration as marker result
 						tQuery.evaluate(identity.handler(queryInfo.getResultHandler().get(), queryBindings));
@@ -104,7 +106,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				case DESCRIBE:
 					monitorRemoteRequest();
 					GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
-					gQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
+					gQuery.setDataset(dataset);
 					applyBindings(gQuery, outgoing);
 					applyMaxExecutionTimeUpperBound(gQuery);
 					configureInference(gQuery, queryInfo);
@@ -117,7 +119,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					boolean hasResults;
 					try (conn) {
 						BooleanQuery bQuery = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
-						bQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
+						bQuery.setDataset(dataset);
 						applyBindings(bQuery, outgoing);
 						applyMaxExecutionTimeUpperBound(bQuery);
 						configureInference(bQuery, queryInfo);
@@ -163,12 +165,13 @@ public abstract class TripleSourceBase implements TripleSource {
 			return new EmptyIteration<>();
 		}
 		BindingSet outgoing = identity.outgoing(queryBindings);
+		Dataset dataset = identity.outgoingDataset(queryInfo.getDataset());
 		return withConnection((conn, resultHolder) -> {
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
 			applyMaxExecutionTimeUpperBound(query);
 			configureInference(query, queryInfo);
-			query.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
+			query.setDataset(dataset);
 			applyBindings(query, outgoing);
 
 			// evaluate the query

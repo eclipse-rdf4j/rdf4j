@@ -121,8 +121,9 @@ public final class EndpointIdentity {
 		return mapped.toArray(Resource[]::new);
 	}
 
+	/** Validates and maps read graph selectors at the typed endpoint boundary, independently of transport. */
 	public Dataset outgoingDataset(Dataset dataset) {
-		if (dataset == null || !local) {
+		if (dataset == null) {
 			return dataset;
 		}
 		SimpleDataset mapped = new SimpleDataset();

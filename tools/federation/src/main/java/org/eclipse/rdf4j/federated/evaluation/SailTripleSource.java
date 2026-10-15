@@ -275,12 +275,13 @@ public class SailTripleSource extends TripleSourceBase {
 			return false;
 		}
 		BindingSet outgoing = identity.outgoing(typed.getQueryBindings());
+		Dataset outgoingDataset = identity.outgoingDataset(dataset);
 		try (RepositoryConnection connection = endpoint.getConnection()) {
 			var query = connection.prepareBooleanQuery(QueryLanguage.SPARQL, sparql);
 			for (Binding binding : outgoing) {
 				query.setBinding(binding.getName(), binding.getValue());
 			}
-			query.setDataset(identity.outgoingDataset(dataset));
+			query.setDataset(outgoingDataset);
 			configureInference(query, queryInfo);
 			applyMaxExecutionTimeUpperBound(query);
 			monitorRemoteRequest();

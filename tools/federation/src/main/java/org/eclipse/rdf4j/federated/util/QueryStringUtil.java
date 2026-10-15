@@ -1023,12 +1023,20 @@ public class QueryStringUtil {
 		if (dataset == null) {
 			return sb;
 		}
-		for (IRI context : dataset.getDefaultGraphs()) {
-			sb.append("FROM <").append(context.stringValue()).append("> ");
+		for (Resource context : dataset.getDefaultGraphResources()) {
+			appendGraphSource(sb, context, false);
 		}
-		for (IRI namedContext : dataset.getNamedGraphs()) {
-			sb.append("FROM NAMED <").append(namedContext.stringValue()).append("> ");
+		for (Resource namedContext : dataset.getNamedGraphResources()) {
+			appendGraphSource(sb, namedContext, true);
 		}
 		return sb;
+	}
+
+	private static void appendGraphSource(StringBuilder sb, Resource graph, boolean named) {
+		if (!(graph instanceof IRI)) {
+			throw new QueryEvaluationException(
+					"Unsupported blank-node identity: SPARQL Protocol graph sources require IRIs");
+		}
+		sb.append(named ? "FROM NAMED <" : "FROM <").append(graph.stringValue()).append("> ");
 	}
 }
