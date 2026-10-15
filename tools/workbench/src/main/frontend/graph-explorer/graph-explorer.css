@@ -1603,6 +1603,18 @@ html[data-theme="dark"] .graph-explorer {
 }
 
 /* On the canvas: a dashed line from the node to the middle of the statement's edge. */
+/* Type links of a class with many instances, shown for the cards pointed at or selected. */
+.graph-explorer .graph-canvas .class-links {
+  pointer-events: none;
+}
+
+.graph-explorer .graph-canvas .class-links .class-link {
+  fill: none;
+  stroke: var(--graph-explorer-edge);
+  stroke-width: 1.1px;
+  stroke-dasharray: 5 4;
+}
+
 .graph-explorer .graph-canvas .statement-link path {
   fill: none;
   stroke: var(--graph-explorer-edge);

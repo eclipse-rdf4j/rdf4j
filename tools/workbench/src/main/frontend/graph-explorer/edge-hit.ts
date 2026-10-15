@@ -15,11 +15,26 @@ import type { EdgeCurve, PointerPosition } from "./graph-types.ts";
 const SAMPLES = 24;
 
 function pointAt(curve: EdgeCurve, t: number): PointerPosition {
+  if (curve.points) return polylinePoint(curve.points, t);
   const u = 1 - t;
   return {
     x: u * u * curve.start.x + 2 * u * t * curve.control.x + t * t * curve.end.x,
     y: u * u * curve.start.y + 2 * u * t * curve.control.y + t * t * curve.end.y,
   };
+}
+
+/** The point at a fraction of a stepped route's length. */
+function polylinePoint(points: readonly PointerPosition[], t: number): PointerPosition {
+  const lengths = points.slice(1).map((point, i) => Math.hypot(point.x - points[i].x, point.y - points[i].y));
+  let remaining = Math.max(0, Math.min(1, t)) * lengths.reduce((sum, length) => sum + length, 0);
+  for (let i = 0; i < lengths.length; i++) {
+    if (remaining <= lengths[i] || i === lengths.length - 1) {
+      const f = lengths[i] ? Math.min(1, remaining / lengths[i]) : 0;
+      return { x: points[i].x + (points[i + 1].x - points[i].x) * f, y: points[i].y + (points[i + 1].y - points[i].y) * f };
+    }
+    remaining -= lengths[i];
+  }
+  return points[0];
 }
 
 function segmentDistance(point: PointerPosition, from: PointerPosition, to: PointerPosition) {
@@ -36,13 +51,24 @@ export function nearestEdge(point: PointerPosition, curves: ReadonlyMap<string, 
   let bestDistance = tolerance;
   for (const [id, curve] of curves) {
     const { start, control, end } = curve;
+    const extent = curve.points ?? [start, control, end];
     if (
-      point.x < Math.min(start.x, control.x, end.x) - tolerance ||
-      point.x > Math.max(start.x, control.x, end.x) + tolerance ||
-      point.y < Math.min(start.y, control.y, end.y) - tolerance ||
-      point.y > Math.max(start.y, control.y, end.y) + tolerance
+      point.x < Math.min(...extent.map((p) => p.x)) - tolerance ||
+      point.x > Math.max(...extent.map((p) => p.x)) + tolerance ||
+      point.y < Math.min(...extent.map((p) => p.y)) - tolerance ||
+      point.y > Math.max(...extent.map((p) => p.y)) + tolerance
     )
       continue;
+    if (curve.points) {
+      for (let index = 1; index < curve.points.length; index += 1) {
+        const distance = segmentDistance(point, curve.points[index - 1], curve.points[index]);
+        if (distance <= bestDistance) {
+          bestDistance = distance;
+          best = id;
+        }
+      }
+      continue;
+    }
     let previous = start;
     for (let index = 1; index <= SAMPLES; index += 1) {
       const next = pointAt(curve, index / SAMPLES);

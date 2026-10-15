@@ -22,13 +22,26 @@ export function createGraphVertexCache() {
     if (graph.nodes === previousNodes && graph.edges === previousEdges && curves === previousCurves) return vertices;
     const nodes = new Map(graph.nodes.map(node => [node.id, node]));
     const segments = curves ? 12 : 1;
-    const lines = new Float32Array(graph.edges.length * 4 * segments);
+    let lines = new Float32Array(graph.edges.length * 4 * segments);
     const points = new Float32Array(graph.nodes.length * 2);
     let lineOffset = 0, pointOffset = 0;
     for (const edge of graph.edges) {
       const source = nodes.get(edge.source), target = nodes.get(edge.target);
       if (source?.x === undefined || source.y === undefined || target?.x === undefined || target.y === undefined) continue;
       const curve = curves?.get(edge.id);
+      if (curve?.points) {
+        // A stepped route has few segments; draw them exactly instead of sampling a quadratic.
+        if (lineOffset + (curve.points.length - 1) * 4 > lines.length) {
+          const grown = new Float32Array(lines.length + curve.points.length * 4 + 1024);
+          grown.set(lines);
+          lines = grown;
+        }
+        for (let step = 1; step < curve.points.length; step++) {
+          lines[lineOffset++] = curve.points[step - 1].x; lines[lineOffset++] = curve.points[step - 1].y;
+          lines[lineOffset++] = curve.points[step].x; lines[lineOffset++] = curve.points[step].y;
+        }
+        continue;
+      }
       if (curve) {
         let x = curve.start.x, y = curve.start.y;
         for (let step = 1; step <= segments; step++) {

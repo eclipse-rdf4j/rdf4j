@@ -20,10 +20,12 @@ import {layoutScoreGeometry, layoutCandidateScore} from './graph-layout-score.ts
 import {improveLayoutReadability} from './graph-layout-readability.ts';
 import {computeHubNeighborhoodLayout} from './graph-layout-hub.ts';
 import {computeSquareLayout} from './graph-layout-square.ts';
-import {isStatementLinkEdge} from './statement-links.ts';
-import {peelSatellites, placeSatellites, similaritySprings} from './graph-layout-satellites.ts';
+import {repairRoutedObstructions, routedEdgesOf, routingPasses} from './graph-layout-routed-repair.ts';
+import {compactFans, peelSatellites, placeSatellites, similaritySprings} from './graph-layout-satellites.ts';
+import {keepPreviousOrientation, orientToViewport} from './graph-layout-orientation.ts';
 import {layoutSubset} from './graph-layout-selection.ts';
-import type { Graph, PointerPosition } from './graph-types.ts';
+import type { EdgeRoute, Graph, PointerPosition } from './graph-types.ts';
+import {steppedRoutes} from './graph-stepped-routing.ts';
 
 export type LayoutOptions = {
   incremental?: boolean;
@@ -41,13 +43,16 @@ export type LayoutOptions = {
   /** Extra force-layout springs that are not statements (similarity); never drawn, scored or routed. */
   springs?: readonly {source: string; target: string; ideal: number; elasticity: number}[];
 };
-export type LayoutResult = {positions: Map<string, PointerPosition>; bends: Map<string, number>; grouped?: boolean; fanned?: boolean; fixedOverlaps?: number; protectedNodeIds?: Set<string>};
+export type LayoutResult = {positions: Map<string, PointerPosition>; bends: Map<string, number>; routes?: Map<string, EdgeRoute>; grouped?: boolean; fanned?: boolean; fixedOverlaps?: number; protectedNodeIds?: Set<string>};
 
-/** Bends for the drawn edges: statement-link springs shape the layout but are never drawn, laned or ported. */
+/**
+ * Bends for the drawn edges: statement-link springs shape the layout but are never drawn, laned or ported, and links
+ * to class hubs are collapsed on the canvas.
+ */
 function routeEdges(graph: Graph, positions: Map<string, PointerPosition>, preferredPasses: number) {
-  const edges = graph.edges.filter(edge => !isStatementLinkEdge(edge));
-  const passes = edges.length <= 500 ? Math.min(preferredPasses, 2) : edges.length <= 1600 ? Math.min(preferredPasses, 1) : 0;
-  return optimizeEdgeBends(graph.nodes.map(n => ({...n, ...positions.get(n.id)})), edges, passes);
+  const edges = routedEdgesOf(graph), placed = graph.nodes.map(n => ({...n, ...positions.get(n.id)}));
+  const bends = optimizeEdgeBends(placed, edges, routingPasses(edges.length, preferredPasses));
+  return {bends, routes: steppedRoutes(placed, edges, bends)};
 }
 
 /**
@@ -63,6 +68,7 @@ function flatCandidates(graph: Graph, options: LayoutOptions): LayoutResult[] {
     const positions = new Map(inner.positions);
     placeSatellites(graph, positions, peeled, options);
     separateLayoutRectangles(graph, positions, options);
+    compactFans(graph, positions, peeled, options);
     return {positions, bends: new Map(), fanned: true};
   };
   const candidates = [solve()];
@@ -81,7 +87,7 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
   const multiStart = graph.nodes.length >= 80 && graph.nodes.length <= 350 && graph.edges.length <= 600 &&
     !options.refine && !options.incremental && !options.localNodeIds?.size && !graph.nodes.some(n => n.pinned);
   let best: LayoutResult | undefined, bestScore = Infinity;
-  const seen = new Set<string>();
+  const seen = new Set<string>(), pool: LayoutResult[] = [];
   for (const seed of multiStart ? [42, 101] : [42]) {
     const grouped = computeGroupedLayout(graph, {...options, seed});
     const candidates: LayoutResult[] = grouped ? [grouped] : flatCandidates(graph, {...options, seed});
@@ -90,6 +96,7 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
     if (grouped && seed === 42 && !options.groups?.length && graph.nodes.length <= 1000 && graph.edges.length <= 1600) {
       candidates.push(...flatCandidates(graph, {...options, seed}));
     }
+
     for (const candidate of candidates) {
       // Specialized deterministic layouts (notably pure stars) may return the
       // same proposal for both seeds. Do not repeat their expensive cleanup.
@@ -98,18 +105,26 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
       }).join(';');
       if (seen.has(signature)) continue;
       seen.add(signature);
-      // Fans are deliberate geometry; coordinate descent would drag satellites into their anchor's spokes.
-      if (!candidate.grouped && !candidate.fanned && graph.nodes.length <= 350 && graph.edges.length <= 500) {
-        const g = layoutScoreGeometry(graph, candidate.positions, options);
-        refineLayoutGeometry(g.nodes, g.edges, {passes: 2, radiusScale: .7});
-        g.nodes.forEach(node => candidate.positions.set(node.entityId, {x: node.x, y: node.y}));
-        separateLayoutRectangles(graph, candidate.positions, options);
-      }
-      if (!multiStart && candidates.length === 1) return candidate;
-      const score = layoutCandidateScore(graph, candidate.positions, options);
-      if (score < bestScore) {bestScore = score; best = candidate;}
+      pool.push(candidate);
     }
   }
+  // Fans are deliberate geometry; coordinate descent would drag satellites into their anchor's spokes.
+  const refinable = (candidate: LayoutResult) => !candidate.grouped && !candidate.fanned && graph.nodes.length <= 350 && graph.edges.length <= 500;
+  const refine = (candidate: LayoutResult) => {
+    const g = layoutScoreGeometry(graph, candidate.positions, options);
+    refineLayoutGeometry(g.nodes, g.edges, {passes: 2, radiusScale: .7});
+    g.nodes.forEach(node => candidate.positions.set(node.entityId, {x: node.x, y: node.y}));
+    separateLayoutRectangles(graph, candidate.positions, options);
+  };
+  if (pool.length === 1) {
+    if (refinable(pool[0])) refine(pool[0]);
+    return pool[0];
+  }
+  // Coordinate descent is the expensive step: score the raw proposals and refine only the most promising one.
+  const scored = pool.map(candidate => ({candidate, score: layoutCandidateScore(graph, candidate.positions, options)}));
+  const first = scored.filter(entry => refinable(entry.candidate)).sort((a, b) => a.score - b.score)[0];
+  if (first) {refine(first.candidate); first.score = layoutCandidateScore(graph, first.candidate.positions, options);}
+  for (const {candidate, score} of scored) if (score < bestScore) {bestScore = score; best = candidate;}
   return best!;
 }
 
@@ -127,7 +142,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     // because its abstract group bounding boxes interleave.
     if (moved) repair = computeGroupedLayout(graph, options) ?? repair;
     checked(repair);
-    if (graph.nodes.length <= 1500) repair.bends = routeEdges(graph, repair.positions, 1);
+    if (graph.nodes.length <= 1500) Object.assign(repair, routeEdges(graph, repair.positions, 1));
     return repair;
   }
   // Square, and Hierarchy of a selection, shape a block of nodes (the selection, or every unpinned node) and leave the
@@ -139,8 +154,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
       const {computeGraphvizLayout} = await import('./graph-layout-graphviz.ts');
       return (await computeGraphvizLayout(part, 'dot')).positions;
     });
-    const bends = graph.nodes.length <= 1500 ? routeEdges(graph, positions, 1) : new Map<string, number>();
-    return {positions, bends};
+    return {positions, ...(graph.nodes.length <= 1500 ? routeEdges(graph, positions, 1) : {bends: new Map<string, number>()})};
   }
   const constrained = graph.nodes.some(node => layoutNodeFixed(node, options));
   if (options.refine && graph.nodes.length <= 1500) {
@@ -148,7 +162,8 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     // used to erase deliberate placement even when no conflicts existed.
     const result = checked(computeSparseLayout(graph, {...options, repairOnly: true}));
     improveLayoutReadability(graph, result.positions, options, layoutNeighborhoods(graph, options).groups);
-    result.bends = routeEdges(graph, result.positions, 1);
+    repairRoutedObstructions(graph, result.positions, options);
+    Object.assign(result, routeEdges(graph, result.positions, 1));
     return result;
   }
   if (graph.nodes.length > 1500) {
@@ -176,15 +191,21 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
       organized.protectedNodeIds?.forEach(id => protectedNodeIds.add(id));
       for (const [id, p] of organized.positions) positions.set(id, p);
     }
-    if (!constrained && !options.refine) packLayoutComponents(parts, positions, options.aspectRatio);
+    if (!constrained && !options.refine) {
+      packLayoutComponents(parts, positions, options.aspectRatio);
+      orientToViewport(graph, positions, options);
+      keepPreviousOrientation(graph, positions);
+    }
     result = {positions, bends: new Map(), grouped, protectedNodeIds};
   }
   checked(result);
   const cleanupGraph = result.protectedNodeIds?.size ? {...graph, nodes: graph.nodes.map(n =>
     result.protectedNodeIds!.has(n.id) ? {...n, pinned: true} : n)} : graph;
-  if (options.mode !== 'hierarchy') improveLayoutReadability(cleanupGraph, result.positions, options,
-    result.grouped ? layoutNeighborhoods(graph, options).groups : []);
+  if (options.mode !== 'hierarchy') {
+    improveLayoutReadability(cleanupGraph, result.positions, options, result.grouped ? layoutNeighborhoods(graph, options).groups : []);
+    repairRoutedObstructions(cleanupGraph, result.positions, options);
+  }
   // Routing is worker-only and bounded. Medium graphs used to skip this pass.
-  result.bends = routeEdges(graph, result.positions, 2);
+  Object.assign(result, routeEdges(graph, result.positions, 2));
   return result;
 }

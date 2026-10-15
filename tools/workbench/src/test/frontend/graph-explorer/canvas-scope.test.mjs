@@ -69,3 +69,35 @@ test("resources without links, such as a search hit with only literal values, st
   const lonely = {revision: 1, nodes: [iri("urn:solo"), literal('"Solo"')], edges: [edge("urn:solo", "urn:name", '"Solo"')]};
   assert.deepEqual(canvasGraph(lonely, false).nodes.map((node) => node.id), ["urn:solo"]);
 });
+
+const RDFS_LABEL = "http://www.w3.org/2000/01/rdf-schema#label";
+const SKOS_ALT = "http://www.w3.org/2004/02/skos/core#altLabel";
+const titled = {
+  revision: 3,
+  nodes: [
+    iri("urn:oslo", {label: "Oslo"}), iri("urn:bergen", {label: "Bergen"}), iri("urn:norway", {label: "Norway"}),
+    {id: '"Oslo"', label: "Oslo", kind: "literal"}, {id: '"Kristiania"', label: "Kristiania", kind: "literal"},
+    {id: '"Bergen"', label: "Bergen", kind: "literal"}, {id: '"700000"', label: "700000", kind: "literal"},
+  ],
+  edges: [
+    edge("urn:oslo", RDFS_LABEL, '"Oslo"'),
+    edge("urn:oslo", SKOS_ALT, '"Kristiania"'),
+    edge("urn:oslo", "urn:population", '"700000"'),
+    edge("urn:bergen", RDFS_LABEL, '"Bergen"'),
+    edge("urn:norway", "urn:motto", '"Bergen"'),
+    edge("urn:oslo", "urn:in", "urn:norway"),
+  ],
+};
+
+test("with values shown, a label value that repeats its card's title is not drawn again", () => {
+  const drawn = canvasGraph(titled, true);
+  assert.ok(!drawn.nodes.some((node) => node.id === '"Oslo"'), "the title of Oslo is its card");
+  assert.ok(!drawn.edges.some((candidate) => candidate.id === `urn:oslo ${RDFS_LABEL} "Oslo"`));
+  assert.ok(drawn.nodes.some((node) => node.id === '"Kristiania"'), "a label that differs from the title is a value");
+  assert.ok(drawn.nodes.some((node) => node.id === '"700000"'));
+  // "Bergen" is also Norway's motto, so it is a value of its own: the card and both links stay.
+  assert.ok(drawn.nodes.some((node) => node.id === '"Bergen"'));
+  assert.equal(drawn.edges.length, titled.edges.length - 1);
+  assert.equal(drawn.revision, titled.revision);
+  assert.equal(canvasGraph(titled, true), drawn, "the drawn graph of a graph is computed once");
+});

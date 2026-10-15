@@ -75,8 +75,19 @@ export type GraphBox = PointerPosition & {
 export type EdgeCurve = {
   path: string;
   start: PointerPosition;
+  /** The quadratic's control point; for a stepped route, the route's middle. */
   control: PointerPosition;
   end: PointerPosition;
+  /** A stepped route's corners from start to end (both included); absent for a quadratic curve. */
+  points?: PointerPosition[];
+};
+
+/** A stepped route through the gaps between cards, valid while both cards keep the centres it was computed for. */
+export type EdgeRoute = {
+  source: PointerPosition;
+  target: PointerPosition;
+  /** From the source card's border to the target card's border, corners included. */
+  points: PointerPosition[];
 };
 
 export type EdgeLabelPlacement = {

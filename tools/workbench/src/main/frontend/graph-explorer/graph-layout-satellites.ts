@@ -17,6 +17,7 @@
  * predicate and type. Hubs stay apart; their leaves show which cards belong to them.
  */
 import {RDF_TYPE} from './graph-canvas-scope.ts';
+import {classHubsOf} from './graph-class-links.ts';
 import {segmentIntersectsBounds} from './graph-curve-collision.ts';
 import {graphNodeSize} from './graph-geometry.ts';
 import {layoutNodeFixed} from './graph-layout-topology.ts';
@@ -37,8 +38,8 @@ const HALO_SCALE = 1.5;
 const SINGLE_RING_LIMIT = 12;
 /** Angular margin kept between a fan and the anchor's other neighbours. */
 const FAN_MARGIN = 0.5;
-/** A class with at least this many instances is a class hub: its type links do not make its instances non-leaves. */
-export const CLASS_HUB_MIN_INSTANCES = 6;
+/** Linked hubs stay at least this many times their longest spoke apart, so each hub's satellites read as its own. */
+const HUB_SEPARATION = 1.3;
 
 export type PeeledGraph = {
   skeleton: Graph;
@@ -79,12 +80,7 @@ function adjacency(graph: Graph, skip?: (edge: Graph['edges'][number]) => boolea
   return {index, neighbors};
 }
 
-/** Classes that are the type of at least `CLASS_HUB_MIN_INSTANCES` drawn nodes. */
-export function classHubsOf(graph: Graph) {
-  const instances = new Map<string, number>();
-  for (const edge of graph.edges) if (edge.predicate === RDF_TYPE) instances.set(edge.target, (instances.get(edge.target) ?? 0) + 1);
-  return new Set([...instances].filter(([, count]) => count >= CLASS_HUB_MIN_INSTANCES).map(([id]) => id));
-}
+
 
 /** One node linked to every other node and nothing else: `computeNetworkLayout` draws it as a sunflower. */
 export function isPureStar(graph: Graph) {
@@ -356,24 +352,198 @@ export function placeSatellites(graph: Graph, positions: Map<string, PointerPosi
     const owner = peeled.anchorOf.get(node.id);
     positions.set(node.id, (owner ? positions.get(owner) : undefined) ?? {x: node.x ?? 0, y: node.y ?? 0});
   }
-  // A class hub sits among its instances, at the spot near their centroid that the fewest placed links run through;
-  // the readability pass never moves a node with that many links, and overlap removal only keeps it off cards.
-  for (const id of peeled.classHubs) {
+  placeClassHubs(graph, positions, peeled, options);
+}
+
+/** Card pairs closer than this (centre distance per axis beyond the half-sizes) break overlap removal's clearance. */
+const tooClose = (a: PointerPosition, as: {width: number; height: number}, b: PointerPosition, bs: {width: number; height: number}) =>
+  Math.abs(a.x - b.x) < (as.width + bs.width) / 2 + gap.nodeGapX && Math.abs(a.y - b.y) < (as.height + bs.height) / 2 + gap.nodeGapY;
+
+/**
+ * A class hub sits among its instances, at the spot near their centroid that the fewest links run through and no card
+ * crowds; the readability pass never moves a node with that many links, and overlap removal only keeps it off cards.
+ */
+export function placeClassHubs(graph: Graph, positions: Map<string, PointerPosition>, peeled: PeeledGraph, options: LayoutOptions) {
+  if (!peeled.classHubs.size) return;
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
+  const segments = graph.edges.flatMap(edge => {
+    if (edge.predicate === RDF_TYPE && peeled.classHubs.has(edge.target)) return [];
+    const a = positions.get(edge.source), b = positions.get(edge.target);
+    return a && b && edge.source !== edge.target ? [[a, b] as const] : [];
+  });
+  for (const id of [...peeled.classHubs].sort()) {
     const node = byId.get(id);
     if (!node || layoutNodeFixed(node, options)) continue;
     const members = graph.edges.flatMap(edge => (edge.predicate === RDF_TYPE && edge.target === id ? [positions.get(edge.source)] : [])).filter((p): p is PointerPosition => Boolean(p));
     if (!members.length) continue;
     const centroid = {x: members.reduce((sum, p) => sum + p.x, 0) / members.length, y: members.reduce((sum, p) => sum + p.y, 0) / members.length};
-    const size = graphNodeSize(node), exclude = new Set([id]);
+    const size = graphNodeSize(node);
     const candidates: PointerPosition[] = [centroid];
     for (const r of [140, 280, 420]) for (let k = 0; k < 8; k++) candidates.push({x: centroid.x + Math.cos((k / 8) * Math.PI * 2) * r, y: centroid.y + Math.sin((k / 8) * Math.PI * 2) * r});
     let best = centroid, bestCost = Number.POSITIVE_INFINITY;
     for (const p of candidates) {
       const bounds = {minX: p.x - size.width / 2 - gap.nodeGapX / 2, minY: p.y - size.height / 2 - gap.nodeGapY / 2, maxX: p.x + size.width / 2 + gap.nodeGapX / 2, maxY: p.y + size.height / 2 + gap.nodeGapY / 2};
-      let cost = Math.hypot(p.x - centroid.x, p.y - centroid.y) / 400 + cardNear(p, exclude);
-      for (const [a, b] of placed) if (segmentIntersectsBounds(a, b, bounds)) cost += 1;
+      let cost = Math.hypot(p.x - centroid.x, p.y - centroid.y) / 400;
+      for (const [other, q] of positions) {
+        if (other === id) continue;
+        const otherSize = graphNodeSize(byId.get(other)!);
+        if (Math.abs(q.x - p.x) < otherSize.width / 2 + size.width / 2 + 32 && Math.abs(q.y - p.y) < otherSize.height / 2 + size.height / 2 + 24) cost += 0.7;
+      }
+      for (const [a, b] of segments) if (segmentIntersectsBounds(a, b, bounds)) cost += 1;
       if (cost < bestCost) {bestCost = cost; best = p;}
     }
     positions.set(id, best);
   }
+}
+
+/**
+ * Fans are sized for their widest case, so a drawing of nested fans is roomier than it needs to be. Widens every fan
+ * into the free angle around its anchor (shorter spokes for the same arc), shrinks fans toward their anchors, and
+ * slides every skeleton node, with all its satellites, toward its skeleton neighbours: each step only as far as
+ * overlap removal's clearance allows without adding a crossing or an edge through a card. Deepest fans go first.
+ */
+export function compactFans(graph: Graph, positions: Map<string, PointerPosition>, peeled: PeeledGraph, options: LayoutOptions) {
+  if (!peeled.anchorOf.size || graph.nodes.length > 350) return;
+  const sizes = new Map(graph.nodes.map(node => [node.id, graphNodeSize(node)]));
+  const fixed = new Set(graph.nodes.filter(node => layoutNodeFixed(node, options)).map(node => node.id));
+  const edges = graph.edges.filter(edge => edge.source !== edge.target && positions.has(edge.source) && positions.has(edge.target) &&
+    !(edge.predicate === RDF_TYPE && peeled.classHubs.has(edge.target)));
+  const edgeIndex = new Map(edges.map((edge, i) => [edge, i]));
+  const neighbours = new Map<string, string[]>();
+  for (const edge of edges) {
+    neighbours.set(edge.source, [...(neighbours.get(edge.source) ?? []), edge.target]);
+    neighbours.set(edge.target, [...(neighbours.get(edge.target) ?? []), edge.source]);
+  }
+  const descendants = new Map<string, string[]>();
+  const subtree = (id: string): string[] => {
+    const known = descendants.get(id);
+    if (known) return known;
+    const result = (peeled.satellitesOf.get(id) ?? []).flatMap(child => [child, ...subtree(child)]);
+    descendants.set(id, result);
+    return result;
+  };
+  const depth = (id: string) => {let d = 0; for (let at = peeled.anchorOf.get(id); at; at = peeled.anchorOf.get(at)) d++; return d;};
+  const skeletonIds = new Set(peeled.skeleton.nodes.map(node => node.id));
+  const maxHalf = Math.max(...[...sizes.values()].map(size => Math.max(size.width, size.height))) + gap.nodeGapX;
+  const crosses = (a: PointerPosition, b: PointerPosition, c: PointerPosition, d: PointerPosition) => {
+    if (Math.max(a.x, b.x) < Math.min(c.x, d.x) || Math.max(c.x, d.x) < Math.min(a.x, b.x) ||
+        Math.max(a.y, b.y) < Math.min(c.y, d.y) || Math.max(c.y, d.y) < Math.min(a.y, b.y)) return false;
+    const o = (p: PointerPosition, q: PointerPosition, r: PointerPosition) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    return o(a, b, c) * o(a, b, d) < -1e-6 && o(c, d, a) * o(c, d, b) < -1e-6;
+  };
+  const through = (a: PointerPosition, b: PointerPosition, id: string, at: PointerPosition) => {
+    const size = sizes.get(id)!;
+    if (Math.max(a.x, b.x) < at.x - size.width / 2 || Math.min(a.x, b.x) > at.x + size.width / 2 ||
+        Math.max(a.y, b.y) < at.y - size.height / 2 || Math.min(a.y, b.y) > at.y + size.height / 2) return false;
+    return segmentIntersectsBounds(a, b, {minX: at.x - size.width / 2, minY: at.y - size.height / 2, maxX: at.x + size.width / 2, maxY: at.y + size.height / 2});
+  };
+  /** Conflicts a move of `moved` can change: pairs and edge–card pairs with a moved part; Infinity on a clash. */
+  const localConflicts = (moved: Set<string>, at: (id: string) => PointerPosition, limit = Number.POSITIVE_INFINITY) => {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of moved) {const p = at(id); minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x); minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);}
+    for (const [other, q0] of positions) {
+      const q = moved.has(other) ? at(other) : q0;
+      if (q.x < minX - maxHalf || q.x > maxX + maxHalf || q.y < minY - maxHalf || q.y > maxY + maxHalf) continue;
+      const otherSize = sizes.get(other)!;
+      for (const id of moved) if (id !== other && tooClose(at(id), sizes.get(id)!, q, otherSize)) return Number.POSITIVE_INFINITY;
+    }
+    let count = 0;
+    for (const edge of edges) {
+      if (!moved.has(edge.source) && !moved.has(edge.target)) continue;
+      const a = at(edge.source), b = at(edge.target), index = edgeIndex.get(edge)!;
+      for (const other of edges) {
+        if (other === edge || other.source === edge.source || other.source === edge.target || other.target === edge.source || other.target === edge.target) continue;
+        if ((moved.has(other.source) || moved.has(other.target)) && edgeIndex.get(other)! < index) continue;
+        if (crosses(a, b, at(other.source), at(other.target))) count++;
+      }
+      for (const id of sizes.keys()) if (id !== edge.source && id !== edge.target && positions.has(id) && through(a, b, id, at(id))) count++;
+      if (count > limit) return count;
+    }
+    for (const edge of edges) {
+      if (moved.has(edge.source) || moved.has(edge.target)) continue;
+      const a = positions.get(edge.source)!, b = positions.get(edge.target)!;
+      for (const id of moved) if (through(a, b, id, at(id))) count++;
+      if (count > limit) return count;
+    }
+    return count;
+  };
+  /** Tries the proposals in order and keeps the first that clears the cards, adds no conflict and passes `valid`. */
+  const tryMoves = (moved: Set<string>, proposals: Array<(id: string, p: PointerPosition) => PointerPosition>,
+    valid: (at: (id: string) => PointerPosition) => boolean = () => true) => {
+    if ([...moved].some(id => fixed.has(id))) return false;
+    const before = localConflicts(moved, id => positions.get(id)!);
+    for (const proposal of proposals) {
+      const next = new Map([...moved].map(id => [id, proposal(id, positions.get(id)!)]));
+      const at = (id: string) => next.get(id) ?? positions.get(id)!;
+      if (!valid(at)) continue;
+      if (localConflicts(moved, at, before) > before) continue;
+      next.forEach((p, id) => positions.set(id, p));
+      return true;
+    }
+    return false;
+  };
+  const turn = (p: PointerPosition, c: PointerPosition, angle: number) => ({
+    x: c.x + (p.x - c.x) * Math.cos(angle) - (p.y - c.y) * Math.sin(angle),
+    y: c.y + (p.x - c.x) * Math.sin(angle) + (p.y - c.y) * Math.cos(angle),
+  });
+  /** Proposals that open a fan into its free angle: arc length kept, spokes shortened, sub-fans carried along. */
+  const spreads = (anchor: string) => {
+    const centre = positions.get(anchor)!, kids = (peeled.satellitesOf.get(anchor) ?? []).filter(id => positions.has(id));
+    if (kids.length < 2) return [];
+    const kidSet = new Set(kids);
+    const angleOf = (id: string) => Math.atan2(positions.get(id)!.y - centre.y, positions.get(id)!.x - centre.x);
+    const mean = Math.atan2(kids.reduce((sum, id) => sum + Math.sin(angleOf(id)), 0), kids.reduce((sum, id) => sum + Math.cos(angleOf(id)), 0));
+    const offsets = new Map(kids.map(id => [id, Math.atan2(Math.sin(angleOf(id) - mean), Math.cos(angleOf(id) - mean))]));
+    const span = Math.max(...offsets.values()) - Math.min(...offsets.values());
+    if (span < 0.2) return [];
+    const occupied = (neighbours.get(anchor) ?? []).filter(id => !kidSet.has(id)).map(id => {
+      const q = positions.get(id)!; return Math.atan2(q.y - centre.y, q.x - centre.x);
+    });
+    const room = occupied.length ? Math.min(...occupied.map(a => Math.abs(Math.atan2(Math.sin(a - mean), Math.cos(a - mean))))) : Math.PI;
+    const widest = Math.min(Math.PI * 2 - (Math.PI * 2) / kids.length, 2 * (room - FAN_MARGIN));
+    const radius = kids.reduce((sum, id) => sum + Math.hypot(positions.get(id)!.x - centre.x, positions.get(id)!.y - centre.y), 0) / kids.length;
+    const owner = new Map<string, string>();
+    for (const kid of kids) for (const d of [kid, ...subtree(kid)]) owner.set(d, kid);
+    // Neighbouring satellites keep their distance (the chord, not the arc: a wider angle needs a little more radius).
+    const step = span / (kids.length - 1);
+    return [1.6, 1.3, 1.12].flatMap(factor => {
+      const wider = Math.min(widest, span * factor);
+      if (wider <= span * 1.02) return [];
+      const shorter = Math.max(MIN_FAN_RADIUS, radius * Math.sin(step / 2) / Math.sin(wider / (kids.length - 1) / 2));
+      return [(id: string, p: PointerPosition) => {
+        const kid = owner.get(id)!, delta = offsets.get(kid)! * (wider / span - 1);
+        const turned = turn(p, centre, delta), kidAngle = mean + offsets.get(kid)! * wider / span;
+        return {x: turned.x + Math.cos(kidAngle) * (shorter - radius), y: turned.y + Math.sin(kidAngle) * (shorter - radius)};
+      }];
+    });
+  };
+  /** Longest spoke from a node to its own satellites (0 without satellites). */
+  const spoke = (id: string) => {
+    const centre = positions.get(id)!;
+    return Math.max(0, ...(peeled.satellitesOf.get(id) ?? []).map(kid => Math.hypot(positions.get(kid)!.x - centre.x, positions.get(kid)!.y - centre.y)));
+  };
+  const anchors = [...peeled.satellitesOf.keys()].filter(id => positions.has(id)).sort((a, b) => depth(b) - depth(a) || a.localeCompare(b));
+  const bodies = [...skeletonIds].filter(id => (neighbours.get(id) ?? []).some(other => skeletonIds.has(other)) && !peeled.classHubs.has(id)).sort();
+  for (let pass = 0; pass < 4; pass++) {
+    let movedAny = false;
+    for (const anchor of anchors) {
+      const moved = new Set(subtree(anchor));
+      if (tryMoves(moved, spreads(anchor))) movedAny = true;
+      const centre = positions.get(anchor)!;
+      if (tryMoves(moved, [0.55, 0.7, 0.8, 0.9].map(s => (_id: string, p: PointerPosition) => ({x: centre.x + (p.x - centre.x) * s, y: centre.y + (p.y - centre.y) * s})))) movedAny = true;
+    }
+    for (const body of bodies) {
+      const linked = (neighbours.get(body) ?? []).filter(id => skeletonIds.has(id));
+      const around = linked.map(id => positions.get(id)!);
+      const target = {x: around.reduce((sum, p) => sum + p.x, 0) / around.length, y: around.reduce((sum, p) => sum + p.y, 0) / around.length};
+      const from = positions.get(body)!;
+      const separated = (at: (id: string) => PointerPosition) => linked.every(other => {
+        const needed = HUB_SEPARATION * Math.max(spoke(body), spoke(other));
+        return !needed || Math.hypot(at(body).x - at(other).x, at(body).y - at(other).y) >= needed;
+      });
+      if (tryMoves(new Set([body, ...subtree(body)]), [0.5, 0.3, 0.15, 0.08].map(f => (_id: string, p: PointerPosition) => ({x: p.x + (target.x - from.x) * f, y: p.y + (target.y - from.y) * f})), separated)) movedAny = true;
+    }
+    if (!movedAny) break;
+  }
+  placeClassHubs(graph, positions, peeled, options);
 }

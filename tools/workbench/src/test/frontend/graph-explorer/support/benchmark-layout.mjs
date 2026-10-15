@@ -17,7 +17,7 @@ import { computeGraphLayout } from '../../../../main/frontend/graph-explorer/gra
 import { graphNodeSize, computeEdgePorts, edgeGeometry, edgePortKey, curveSamples } from '../../../../main/frontend/graph-explorer/graph-geometry.ts';
 import { measureLayoutConflicts } from '../../../../main/frontend/graph-explorer/graph-layout.ts';
 
-export function layoutMetrics(graph, positions, bends) {
+export function layoutMetrics(graph, positions, bends, routes) {
   const index = new Map(graph.nodes.map((n, i) => [n.id, i]));
   const nodes = graph.nodes.map(n => {
     const size = graphNodeSize(n);
@@ -33,7 +33,7 @@ export function layoutMetrics(graph, positions, bends) {
     const placed = graph.nodes.map(n => ({...n, ...positions.get(n.id)}));
     const byId = new Map(placed.map(n => [n.id, n])), ports = computeEdgePorts(placed, graph.edges);
     for (const edge of graph.edges) {
-      const curve = edgeGeometry(byId.get(edge.source), byId.get(edge.target), bends.get(edge.id) ?? 0, ports.get(edgePortKey(edge.id, edge.source)), ports.get(edgePortKey(edge.id, edge.target)));
+      const curve = edgeGeometry(byId.get(edge.source), byId.get(edge.target), bends.get(edge.id) ?? 0, ports.get(edgePortKey(edge.id, edge.source)), ports.get(edgePortKey(edge.id, edge.target)), routes?.get(edge.id));
       const samples = curveSamples(curve, 12);
       for (const box of nodes) {
         if (box.entityId === edge.source || box.entityId === edge.target) continue;

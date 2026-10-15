@@ -173,7 +173,7 @@ export function graphSvg({ nodes, edges, curves, labels, color, palette, connect
   for (const edge of edges) {
     const curve = curves.get(edge.id);
     if (!curve) continue;
-    for (const point of [curve.start, curve.control, curve.end]) {
+    for (const point of curve.points ?? [curve.start, curve.control, curve.end]) {
       xs.push(point.x);
       ys.push(point.y);
     }

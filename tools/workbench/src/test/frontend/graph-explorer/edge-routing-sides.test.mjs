@@ -12,8 +12,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canvasGraph } from '../../../main/frontend/graph-explorer/graph-canvas-scope.ts';
-import { routeDrawnEdges } from '../../../main/frontend/graph-explorer/graph-edge-routing.ts';
-import { computeEdgePorts, edgeGeometry, edgePortKey, graphNodeSize, optimizeEdgeBends, quadraticPoint } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
+import { routeDrawnEdges, routeDrawnGraph } from '../../../main/frontend/graph-explorer/graph-edge-routing.ts';
+import { curveMidpoint, nearestEdge } from '../../../main/frontend/graph-explorer/edge-hit.ts';
+import { createGraphVertexCache } from '../../../main/frontend/graph-explorer/graph-webgl.ts';
+import { computeEdgePorts, curveSamples, edgeGeometry, edgePortKey, graphNodeSize, optimizeEdgeBends, quadraticPoint } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
 import { computeGraphLayout } from '../../../main/frontend/graph-explorer/graph-layout-engine.ts';
 import { STATEMENT_LINK_EDGE_PREFIX } from '../../../main/frontend/graph-explorer/statement-links.ts';
 import { badExportGraph, iri } from './fixtures/layout-demo-graph.mjs';
@@ -108,4 +110,61 @@ test('an arrow that only grazes the margin of a card stays straight when the onl
   // Through the card body, the arc is still taken.
   const blocked = { ...graph, nodes: graph.nodes.map((node) => (node.id === 'A' ? { ...node, y: 10 } : node)) };
   assert.notEqual(optimizeEdgeBends(blocked.nodes, blocked.edges, 2).get('s-t'), 0);
+});
+
+// The user's stored Square layout (Values off): four columns, three rows, card centres from the live page.
+const STORED_GRID = { Alice: [956.19, 295.95], Bob: [476.19, 295.95], Carol: [796.19, 295.95], Acme: [796.19, 377.95], Dave: [956.19, 377.95],
+  Oslo: [636.19, 295.95], Widget: [636.19, 459.95], Gadget: [476.19, 459.95], Gizmo: [636.19, 377.95], Norway: [476.19, 377.95] };
+
+test('an arrow that no single bend can clear follows the gaps between the cards of a grid', () => {
+  const graph = badExportGraph((name, kind) => (kind === 'literal' ? { x: 0, y: 0 } : { x: 0, y: 0 }));
+  graph.nodes = graph.nodes.map((node) => (STORED_GRID[node.label] && node.kind === 'iri' ? { ...node, x: STORED_GRID[node.label][0], y: STORED_GRID[node.label][1] } : node));
+  const drawn = canvasGraph(graph, false);
+  const { bends, routes } = routeDrawnGraph(graph, false, 3);
+  assert.ok(routes.size > 0, 'some arrow needs a stepped route');
+  const byId = new Map(drawn.nodes.map((node) => [node.id, node]));
+  const ports = computeEdgePorts(drawn.nodes, drawn.edges);
+  const minX = Math.min(...drawn.nodes.map((n) => n.x)) - 56 - 120, maxX = Math.max(...drawn.nodes.map((n) => n.x)) + 56 + 120;
+  const minY = Math.min(...drawn.nodes.map((n) => n.y)) - 23 - 120, maxY = Math.max(...drawn.nodes.map((n) => n.y)) + 23 + 120;
+  for (const edge of drawn.edges) {
+    const curve = edgeGeometry(byId.get(edge.source), byId.get(edge.target), bends.get(edge.id) ?? 0,
+      ports.get(edgePortKey(edge.id, edge.source)), ports.get(edgePortKey(edge.id, edge.target)), routes.get(edge.id));
+    for (const p of curveSamples(curve, 400)) {
+      assert.ok(p.x >= minX && p.x <= maxX && p.y >= minY && p.y <= maxY, `${edge.id} leaves the grid at ${Math.round(p.x)},${Math.round(p.y)}`);
+      for (const node of drawn.nodes) {
+        if (node.id === edge.source || node.id === edge.target) continue;
+        const size = graphNodeSize(node);
+        assert.ok(Math.abs(p.x - node.x) >= size.width / 2 || Math.abs(p.y - node.y) >= size.height / 2, `${edge.id} crosses ${node.label}`);
+      }
+    }
+  }
+});
+
+test('a stepped route is drawn only while both cards are where it was computed for', () => {
+  const a = card('a', 0, 0), b = card('b', 400, 200);
+  const route = { source: { x: 0, y: 0 }, target: { x: 400, y: 200 }, points: [{ x: 57.5, y: 0 }, { x: 200, y: 0 }, { x: 200, y: 200 }, { x: 342.5, y: 200 }] };
+  const routed = edgeGeometry(a, b, 0, undefined, undefined, route);
+  assert.deepEqual(routed.points, route.points);
+  assert.equal(routed.start.x, 57.5);
+  assert.ok(!routed.path.includes(' Q ') || routed.path.split(' Q ').length === 3, 'two rounded corners');
+  const moved = edgeGeometry({ ...a, x: 30 }, b, 0, undefined, undefined, route);
+  assert.equal(moved.points, undefined, 'a card moved: the stale route is ignored');
+});
+
+test('hit testing, the middle and the WebGL lines follow a stepped route', () => {
+  // Right along the top, down, a short way right: the straight line from a to b runs well away from most of it.
+  const route = { source: { x: 0, y: 0 }, target: { x: 400, y: 200 }, points: [{ x: 57.5, y: 0 }, { x: 300, y: 0 }, { x: 300, y: 200 }, { x: 342.5, y: 200 }] };
+  const curve = edgeGeometry(card('a', 0, 0), card('b', 400, 200), 0, undefined, undefined, route);
+  const curves = new Map([['a-b', curve]]);
+  assert.equal(nearestEdge({ x: 296, y: 60 }, curves, 7), 'a-b', 'the vertical leg');
+  assert.equal(nearestEdge({ x: 100, y: 50 }, curves, 7), null, 'the straight line between the cards is not the arrow');
+  const middle = curveMidpoint(curve);
+  assert.ok(Math.abs(middle.x - 300) < 1 && Math.abs(middle.y) < 12, `middle ${JSON.stringify(middle)}`);
+  const vertices = createGraphVertexCache()({ nodes: [card('a', 0, 0), card('b', 400, 200)], edges: [link('a', 'b')], revision: 1 }, curves);
+  const points = [];
+  for (let i = 0; i < vertices.lines.length; i += 2) points.push({ x: vertices.lines[i], y: vertices.lines[i + 1] });
+  const segments = [];
+  for (let i = 0; i < points.length; i += 2) segments.push([points[i], points[i + 1]]);
+  assert.ok(segments.some(([a, b]) => Math.abs(a.x - 300) < 0.5 && Math.abs(b.x - 300) < 0.5 && Math.abs(a.y - b.y) > 150), 'the vertical leg is drawn');
+  assert.ok(!points.some((p) => Math.abs(p.y - p.x / 2) < 2 && p.x > 120 && p.x < 280), 'no straight line is drawn');
 });

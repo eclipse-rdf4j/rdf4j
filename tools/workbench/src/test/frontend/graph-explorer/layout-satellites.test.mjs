@@ -12,6 +12,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canvasGraph } from '../../../main/frontend/graph-explorer/graph-canvas-scope.ts';
+import { graphNodeSize } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
 import { computeGraphLayout } from '../../../main/frontend/graph-explorer/graph-layout-engine.ts';
 import { computeNetworkLayout } from '../../../main/frontend/graph-explorer/graph-layout-network.ts';
 import { peelSatellites, similaritySprings } from '../../../main/frontend/graph-explorer/graph-layout-satellites.ts';
@@ -130,7 +131,7 @@ test('same-typed nodes that share a neighbour are pulled together by similarity 
 });
 
 test('type links to a class with many instances do not stop instances from being satellites', async () => {
-  const graph = geoTree(5, 4, 3, { values: true });
+  const graph = canvasGraph(geoTree(5, 4, 3, { values: true }), true);
   const RDF_TYPE = 'http://www.w3.org/1999/02/22-rdf-syntax-ns#type';
   const peeled = peelSatellites(graph, {});
   const skeleton = peeled.skeleton.nodes.map((node) => node.label).sort();
@@ -190,4 +191,21 @@ test('similarity springs discount a shared hub: papers linked only through the c
     assert.ok(shared.length > 0, `${byId.get(s.source).label} and ${byId.get(s.target).label} share only the conference`);
   }
   assert.ok(papers.length > 0 && papers.length < 200, `${papers.length} paper springs`);
+});
+
+
+test('fans are compacted toward their anchors while hubs stay apart: a three-level tree takes a tenth less area', async () => {
+  const graph = geoTree();
+  const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
+  const metrics = layoutMetrics(graph, result.positions, result.bends);
+  assert.equal(metrics.nodeOverlaps, 0);
+  assert.equal(metrics.edgeCrossings, 0, `crossings: ${metrics.edgeCrossings}`);
+  assert.equal(metrics.edgeNodeOverlaps, 0, `edges through cards: ${metrics.edgeNodeOverlaps}`);
+  assert.ok(metrics.area <= 11.7e6, `area ${(metrics.area / 1e6).toFixed(1)}M px² (uncompacted fans: 13.0M)`);
+  // Compaction keeps the clearance between cards that overlap removal guarantees.
+  const cards = graph.nodes.map((node) => ({ ...result.positions.get(node.id), ...graphNodeSize(node) }));
+  for (let i = 0; i < cards.length; i++) for (let j = i + 1; j < cards.length; j++) {
+    const a = cards[i], b = cards[j];
+    assert.ok(Math.abs(a.x - b.x) >= (a.width + b.width) / 2 + 47.5 || Math.abs(a.y - b.y) >= (a.height + b.height) / 2 + 35.5, `cards ${i} and ${j} are too close`);
+  }
 });
