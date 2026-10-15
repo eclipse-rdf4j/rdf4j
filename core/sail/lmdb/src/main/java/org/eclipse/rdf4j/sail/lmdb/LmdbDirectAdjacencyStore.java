@@ -14,6 +14,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.lang.ref.WeakReference;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -30,6 +31,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -141,6 +143,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private final ReentrantLock publicationLock = new ReentrantLock(true);
 	private final Condition noPreparationsInFlight = publicationLock.newCondition();
 
+	private final TrackedThreadFactory maintenanceThreadFactory;
+	private final TrackedThreadFactory preparationThreadFactory;
+	private final TrackedThreadFactory compactionThreadFactory;
 	private final ScheduledThreadPoolExecutor maintenanceExecutor;
 	private volatile Future<?> buildRetryFuture;
 	private final ExecutorService preparationExecutor;
@@ -176,9 +181,6 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private volatile boolean quiescentRebuildRetryAllowed;
 	/** {@link #GAP_RECOVERY_NEVER_ATTEMPTED} until the read path has requested one gap recovery. */
 	private final AtomicLong lastGapRecoveryNanos = new AtomicLong(GAP_RECOVERY_NEVER_ATTEMPTED);
-	private volatile Thread maintenanceThread;
-	private volatile Thread preparationThread;
-	private volatile Thread compactionThread;
 	/**
 	 * Set once the projection has been proven inconsistent with the authoritative rows. It gates serving rather than
 	 * destroying the structure, and it clears on the next successful publication, so a fault degrades this one
@@ -252,31 +254,44 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		this.workspaceRegionBytes = Math.max(1L << 16, region >>> 3);
 		this.published = new AtomicReference<>(
 				new LmdbAdjacencyPublishedState(0, null, -1, Long.MAX_VALUE, AdjacencyServingState.UNAVAILABLE));
-		this.maintenanceExecutor = new ScheduledThreadPoolExecutor(1, runnable -> {
-			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-maintenance");
-			thread.setDaemon(true);
-			maintenanceThread = thread;
-			return thread;
-		});
+		this.maintenanceThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-maintenance");
+		this.preparationThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-preparation");
+		this.compactionThreadFactory = new TrackedThreadFactory("lmdb-direct-adjacency-compaction");
+		this.maintenanceExecutor = new ScheduledThreadPoolExecutor(1, maintenanceThreadFactory);
 		maintenanceExecutor.setExecuteExistingDelayedTasksAfterShutdownPolicy(false);
 		maintenanceExecutor.setRemoveOnCancelPolicy(true);
-		this.preparationExecutor = Executors.newSingleThreadExecutor(runnable -> {
-			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-preparation");
-			thread.setDaemon(true);
-			preparationThread = thread;
-			return thread;
-		});
-		this.compactionExecutor = Executors.newSingleThreadExecutor(runnable -> {
-			Thread thread = new Thread(runnable, "lmdb-direct-adjacency-compaction");
-			thread.setDaemon(true);
-			compactionThread = thread;
-			return thread;
-		});
+		this.preparationExecutor = Executors.newSingleThreadExecutor(preparationThreadFactory);
+		this.compactionExecutor = Executors.newSingleThreadExecutor(compactionThreadFactory);
 		if (options.memoryRefused()) {
 			maintenanceState = MaintenanceState.MEMORY_REFUSED;
 			logger.warn("Direct adjacency stays unavailable: the effective memory cap {} bytes is below the {}-byte "
 					+ "minimum; the store remains fully usable through LMDB", options.effectiveMaxBytes(),
 					LmdbDirectAdjacencyOptions.MIN_EXPLICIT_BYTES);
+		}
+	}
+
+	/**
+	 * Tracks the latest worker weakly without retaining its enclosing store. Single-thread executor cleaners retain
+	 * their thread factory while they are registered, and a not-yet-started worker can still retain its first task.
+	 */
+	static final class TrackedThreadFactory implements ThreadFactory {
+		private final String threadName;
+		private volatile WeakReference<Thread> currentThread = new WeakReference<>(null);
+
+		TrackedThreadFactory(String threadName) {
+			this.threadName = threadName;
+		}
+
+		@Override
+		public Thread newThread(Runnable runnable) {
+			Thread thread = new Thread(runnable, threadName);
+			thread.setDaemon(true);
+			currentThread = new WeakReference<>(thread);
+			return thread;
+		}
+
+		Thread currentThread() {
+			return currentThread.get();
 		}
 	}
 
@@ -1069,7 +1084,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private void awaitSynchronousMaintenance(Future<?> future, String operation) {
 		if (!options.synchronousMaintenance() || !synchronousUpdatesActivated.get() || future == null
-				|| Thread.currentThread() == maintenanceThread) {
+				|| Thread.currentThread() == maintenanceThreadFactory.currentThread()) {
 			return;
 		}
 		try {
@@ -2564,7 +2579,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	void awaitCompactionForTest() {
-		if (Thread.currentThread() == compactionThread) {
+		if (Thread.currentThread() == compactionThreadFactory.currentThread()) {
 			return;
 		}
 		while (true) {
@@ -3334,7 +3349,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		maintenanceExecutor.shutdown();
 		preparationExecutor.shutdown();
 		// Interrupt blocked work but retain queued tasks: their finally blocks own batches and futures.
-		Thread preparer = preparationThread;
+		Thread preparer = preparationThreadFactory.currentThread();
 		if (preparer != null) {
 			preparer.interrupt();
 		}
@@ -3357,14 +3372,14 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				if (!preparationExecutor.awaitTermination(60, TimeUnit.SECONDS)) {
 					logger.warn("Direct adjacency preparation executor did not terminate within 60 seconds; "
 							+ "interrupting prepared work before continuing close");
-					Thread preparerToInterrupt = preparationThread;
+					Thread preparerToInterrupt = preparationThreadFactory.currentThread();
 					if (preparerToInterrupt != null) {
 						preparerToInterrupt.interrupt();
 					}
 				}
 			} catch (InterruptedException e) {
 				interrupted = true;
-				Thread preparerToInterrupt = preparationThread;
+				Thread preparerToInterrupt = preparationThreadFactory.currentThread();
 				if (preparerToInterrupt != null) {
 					preparerToInterrupt.interrupt();
 				}

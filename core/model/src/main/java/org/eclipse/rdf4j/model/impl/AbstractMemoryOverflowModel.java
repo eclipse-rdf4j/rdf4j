@@ -457,8 +457,8 @@ public abstract class AbstractMemoryOverflowModel<T extends AbstractModel> exten
 					return;
 				}
 
-				if (overflow || highGcLoad) {
-					logger.debug("Syncing triples to disk due to gc load");
+				if (overflow || highGcLoad || mbFree() < MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING) {
+					logger.debug("Syncing triples to disk due to memory pressure or retry");
 					overflowToDisk();
 					if (!highGcLoad) {
 						overflow = false;

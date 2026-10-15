@@ -244,7 +244,6 @@ class LmdbDeferredDelegateCloseTest {
 				LmdbSailStore backing = store.getBackingStore();
 				TripleStore triples = backing.getTripleStore();
 				long mapSize = triples.mapSizeBytes();
-				long replayRequests = backing.growthMetricsSnapshot().replayRequests();
 				long replayAccepted = backing.growthMetricsSnapshot().replayAccepted();
 				Object growthOwner = new Object();
 				var growth = growthExecutor.submit(() -> {
@@ -274,8 +273,8 @@ class LmdbDeferredDelegateCloseTest {
 				try {
 					long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
 					while (!backing.growthAdmissionClosed()
-							|| backing.growthMetricsSnapshot().replayRequests() == replayRequests) {
-						assertThat(System.nanoTime()).as("real growth must request replay while callback is gated")
+							|| backing.growthMetricsSnapshot().replayAccepted() == replayAccepted) {
+						assertThat(System.nanoTime()).as("real growth must accept replay while callback is gated")
 								.isLessThan(deadline);
 						if (growth.isDone()) {
 							growth.get();

@@ -63,12 +63,15 @@ class LmdbEmergencyProjectedDemandTest {
 			LmdbSailStore backing = store.getBackingStore();
 			backing.enableMultiThreading = false;
 			Object publishingOwner = new Object();
-			List<Statement> planned = dictionaryBatch("nested-explicit", 0, VALUE_COUNT, LITERAL_LENGTH);
 			ValueStore valueStore = store.capturedValueStore();
 			TripleStore tripleStore = store.capturedTripleStore();
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int literalLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> planned = dictionaryBatch("nested-explicit", 0, VALUE_COUNT, literalLength);
 			long projectedValueBytes = estimate(valueStore, planned);
 			assertInitialValueDemandRequiresGrowth(initialValueMapBytes, initialOccupiedBytes, projectedValueBytes);
 			MapGrowthMetrics.Snapshot growthBefore = backing.growthMetricsSnapshot();
@@ -128,12 +131,15 @@ class LmdbEmergencyProjectedDemandTest {
 			store.init();
 			LmdbSailStore backing = store.getBackingStore();
 			backing.enableMultiThreading = false;
-			List<Statement> planned = dictionaryBatch("unscoped-nested", 0, VALUE_COUNT, LITERAL_LENGTH);
 			ValueStore valueStore = store.capturedValueStore();
 			TripleStore tripleStore = store.capturedTripleStore();
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int literalLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> planned = dictionaryBatch("unscoped-nested", 0, VALUE_COUNT, literalLength);
 			long projectedValueBytes = estimate(valueStore, planned);
 			assertInitialValueDemandRequiresGrowth(initialValueMapBytes, initialOccupiedBytes, projectedValueBytes);
 			MapGrowthMetrics.Snapshot growthBefore = backing.growthMetricsSnapshot();
@@ -238,11 +244,15 @@ class LmdbEmergencyProjectedDemandTest {
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
-			List<Statement> oldGenerationPlan = dictionaryBatch("old-native-generation", 0, VALUE_COUNT,
-					LITERAL_LENGTH);
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int literalLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> oldGenerationPlan = dictionaryBatch("old-native-generation", 0, VALUE_COUNT, literalLength);
+			List<Statement> laterGeneration = dictionaryBatch("later-native-generation", 0, VALUE_COUNT, literalLength);
+			Statement firstGeneration = dictionaryStatement("first-native-generation", 0, 32);
 			long oldGenerationEstimate = estimate(valueStore, oldGenerationPlan);
 			long staleForecastTarget = new MapGrowthPolicy(LmdbStoreConfig.MAP_GROWTH_THRESHOLD)
-					.grownMapSize(initialValueMapBytes, 4096L,
+					.grownMapSize(initialValueMapBytes, valuePageSize,
 							LmdbUtil.saturatedAdd(initialOccupiedBytes, oldGenerationEstimate));
 			assertTrue(staleForecastTarget > initialValueMapBytes,
 					"the deliberately retained forecast must have a larger target than the initial map");
@@ -250,7 +260,6 @@ class LmdbEmergencyProjectedDemandTest {
 			try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				SailSource source = backing.getExplicitSailSource(connection);
-				Statement firstGeneration = dictionaryBatch("first-native-generation", 0, 1, 32).getFirst();
 				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
 					sink.approve(firstGeneration.getSubject(), firstGeneration.getPredicate(),
 							firstGeneration.getObject(),
@@ -261,8 +270,6 @@ class LmdbEmergencyProjectedDemandTest {
 				assertEquals(initialValueMapBytes, valueStore.mapSizeBytes(),
 						"the active logical transaction must keep the warning pending after its first native generation");
 
-				List<Statement> laterGeneration = dictionaryBatch("later-native-generation", 0, VALUE_COUNT,
-						LITERAL_LENGTH);
 				MapGrowthMetrics.Snapshot beforeLaterGeneration = backing.growthMetricsSnapshot();
 				long firstEmergencyMapBytes = -1L;
 				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
@@ -293,8 +300,8 @@ class LmdbEmergencyProjectedDemandTest {
 			}
 
 			List<Statement> expected = new ArrayList<>();
-			expected.add(dictionaryBatch("first-native-generation", 0, 1, 32).getFirst());
-			expected.addAll(dictionaryBatch("later-native-generation", 0, VALUE_COUNT, LITERAL_LENGTH));
+			expected.add(firstGeneration);
+			expected.addAll(laterGeneration);
 			assertCompletePublication(store, expected);
 			assertTrue(valueStore.retainsGrowthReserve(),
 					"the final map must retain reserve for all committed native allocations");
@@ -320,16 +327,20 @@ class LmdbEmergencyProjectedDemandTest {
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
-			List<Statement> oldAttemptPlan = dictionaryBatch("old-logical-attempt", 0, VALUE_COUNT, LITERAL_LENGTH);
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int literalLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> oldAttemptPlan = dictionaryBatch("old-logical-attempt", 0, VALUE_COUNT, literalLength);
+			List<Statement> laterAttempt = dictionaryBatch("later-logical-attempt", 0, VALUE_COUNT, literalLength);
+			Statement firstAttempt = dictionaryStatement("first-logical-attempt", 0, 32);
 			long oldAttemptEstimate = estimate(valueStore, oldAttemptPlan);
 			long staleForecastTarget = new MapGrowthPolicy(LmdbStoreConfig.MAP_GROWTH_THRESHOLD)
-					.grownMapSize(initialValueMapBytes, 4096L,
+					.grownMapSize(initialValueMapBytes, valuePageSize,
 							LmdbUtil.saturatedAdd(initialOccupiedBytes, oldAttemptEstimate));
 
 			try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection()) {
 				connection.begin(IsolationLevels.SNAPSHOT);
 				SailSource source = backing.getExplicitSailSource(connection);
-				Statement firstAttempt = dictionaryBatch("first-logical-attempt", 0, 1, 32).getFirst();
 				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
 					sink.approve(firstAttempt.getSubject(), firstAttempt.getPredicate(), firstAttempt.getObject(),
 							null);
@@ -342,8 +353,6 @@ class LmdbEmergencyProjectedDemandTest {
 						"an abandoned forecast must not grow a map when the completed attempt left its reserve intact");
 
 				connection.begin(IsolationLevels.SNAPSHOT);
-				List<Statement> laterAttempt = dictionaryBatch("later-logical-attempt", 0, VALUE_COUNT,
-						LITERAL_LENGTH);
 				MapGrowthMetrics.Snapshot beforeLaterAttempt = backing.growthMetricsSnapshot();
 				long firstEmergencyMapBytes = -1L;
 				try (SailSink sink = source.sink(IsolationLevels.NONE)) {
@@ -372,8 +381,8 @@ class LmdbEmergencyProjectedDemandTest {
 			}
 
 			List<Statement> expected = new ArrayList<>();
-			expected.add(dictionaryBatch("first-logical-attempt", 0, 1, 32).getFirst());
-			expected.addAll(dictionaryBatch("later-logical-attempt", 0, VALUE_COUNT, LITERAL_LENGTH));
+			expected.add(firstAttempt);
+			expected.addAll(laterAttempt);
 			assertCompletePublication(store, expected);
 			assertTrue(valueStore.retainsGrowthReserve(),
 					"the final map must retain reserve for the later attempt's committed native allocations");
@@ -399,17 +408,25 @@ class LmdbEmergencyProjectedDemandTest {
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
-			List<Statement> unrelatedPlan = dictionaryBatch("unrelated-owner", 0, VALUE_COUNT, LITERAL_LENGTH);
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int unrelatedLiteralLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			int writerSuffixLiteralLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> unrelatedPlan = dictionaryBatch("unrelated-owner", 0, VALUE_COUNT,
+					unrelatedLiteralLength);
+			Statement writerPrefix = dictionaryStatement("current-writer", 0, 32);
+			List<Statement> writerSuffix = dictionaryBatch("current-writer", 1, VALUE_COUNT,
+					writerSuffixLiteralLength);
 			long unrelatedEstimate = estimate(valueStore, unrelatedPlan);
 			long unrelatedForecastTarget = new MapGrowthPolicy(LmdbStoreConfig.MAP_GROWTH_THRESHOLD)
-					.grownMapSize(initialValueMapBytes, 4096L,
+					.grownMapSize(initialValueMapBytes, valuePageSize,
 							LmdbUtil.saturatedAdd(initialOccupiedBytes, unrelatedEstimate));
 
 			try (LmdbStoreConnection writer = (LmdbStoreConnection) store.getConnection();
 					LmdbStoreConnection unrelated = (LmdbStoreConnection) store.getConnection()) {
 				writer.begin(IsolationLevels.SNAPSHOT);
 				SailSource writerSource = backing.getExplicitSailSource(writer);
-				Statement writerPrefix = dictionaryBatch("current-writer", 0, 1, 32).getFirst();
 				try (SailSink sink = writerSource.sink(IsolationLevels.NONE)) {
 					sink.approve(writerPrefix.getSubject(), writerPrefix.getPredicate(), writerPrefix.getObject(),
 							null);
@@ -417,7 +434,6 @@ class LmdbEmergencyProjectedDemandTest {
 					unrelated.begin(IsolationLevels.SNAPSHOT);
 					SailSource unrelatedSource = backing.getExplicitSailSource(unrelated);
 					unrelatedForecast = unrelatedSource.beginWritePreflight(writePreflight(unrelatedPlan), unrelated);
-					List<Statement> writerSuffix = dictionaryBatch("current-writer", 1, VALUE_COUNT, LITERAL_LENGTH);
 					MapGrowthMetrics.Snapshot beforeEmergency = backing.growthMetricsSnapshot();
 					long firstEmergencyMapBytes = -1L;
 					for (Statement statement : writerSuffix) {
@@ -442,8 +458,8 @@ class LmdbEmergencyProjectedDemandTest {
 			}
 
 			List<Statement> expected = new ArrayList<>();
-			expected.add(dictionaryBatch("current-writer", 0, 1, 32).getFirst());
-			expected.addAll(dictionaryBatch("current-writer", 1, VALUE_COUNT, LITERAL_LENGTH));
+			expected.add(writerPrefix);
+			expected.addAll(writerSuffix);
 			assertCompletePublication(store, expected);
 			assertTrue(valueStore.retainsGrowthReserve(),
 					"the current writer's map must retain reserve for its committed native allocations");
@@ -465,16 +481,19 @@ class LmdbEmergencyProjectedDemandTest {
 			store.init();
 			LmdbSailStore backing = store.getBackingStore();
 			backing.enableMultiThreading = false;
-			List<Statement> explicit = dictionaryBatch("grouped-explicit", 0, VALUE_COUNT / 2, LITERAL_LENGTH);
-			List<Statement> inferred = dictionaryBatch("grouped-inferred", VALUE_COUNT / 2, VALUE_COUNT / 2,
-					LITERAL_LENGTH);
-			List<Statement> planned = new ArrayList<>(explicit);
-			planned.addAll(inferred);
 			ValueStore valueStore = store.capturedValueStore();
 			TripleStore tripleStore = store.capturedTripleStore();
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int literalLength = literalLengthForBatch(initialValueMapBytes, initialOccupiedBytes,
+					valuePageSize, VALUE_COUNT);
+			List<Statement> explicit = dictionaryBatch("grouped-explicit", 0, VALUE_COUNT / 2, literalLength);
+			List<Statement> inferred = dictionaryBatch("grouped-inferred", VALUE_COUNT / 2, VALUE_COUNT / 2,
+					literalLength);
+			List<Statement> planned = new ArrayList<>(explicit);
+			planned.addAll(inferred);
 			long projectedValueBytes = estimate(valueStore, planned);
 			assertInitialValueDemandRequiresGrowth(initialValueMapBytes, initialOccupiedBytes, projectedValueBytes);
 			MapGrowthMetrics.Snapshot growthBefore = backing.growthMetricsSnapshot();
@@ -545,11 +564,16 @@ class LmdbEmergencyProjectedDemandTest {
 			backing.enableMultiThreading = false;
 			ValueStore valueStore = store.capturedValueStore();
 			TripleStore tripleStore = store.capturedTripleStore();
-			List<Statement> planned = dictionaryBatch("direct-suffix", 1, VALUE_COUNT - 1, LITERAL_LENGTH);
-			planned.add(0, dictionaryStatement("direct-suffix", 0, 12 * LITERAL_LENGTH));
 			long initialValueMapBytes = valueStore.mapSizeBytes();
 			long initialTripleMapBytes = tripleStore.mapSizeBytes();
 			long initialOccupiedBytes = valueStore.occupiedBytes();
+			int valuePageSize = valueStore.getLmdbStats().get("main").pageSize();
+			int firstLiteralLength = literalLengthExceedingRemainingMap(initialValueMapBytes,
+					initialOccupiedBytes, valuePageSize);
+			assertTrue(firstLiteralLength > initialValueMapBytes - initialOccupiedBytes,
+					"the first literal must exceed measured native map headroom before its suffix is consumed");
+			List<Statement> planned = dictionaryBatch("direct-suffix", 1, VALUE_COUNT - 1, LITERAL_LENGTH);
+			planned.add(0, dictionaryStatement("direct-suffix", 0, firstLiteralLength));
 			long projectedValueBytes = estimate(valueStore, planned);
 			assertInitialValueDemandRequiresGrowth(initialValueMapBytes, initialOccupiedBytes, projectedValueBytes);
 			MapGrowthMetrics.Snapshot before = backing.growthMetricsSnapshot();
@@ -642,6 +666,25 @@ class LmdbEmergencyProjectedDemandTest {
 			statements.add(dictionaryStatement(subjectPrefix, index, literalLength));
 		}
 		return statements;
+	}
+
+	private static int literalLengthForBatch(long initialMapBytes, long initialOccupiedBytes, int pageSize,
+			int statementCount) {
+		assertTrue(statementCount > 0, "a capacity-derived batch must include at least one statement");
+		long headroom = Math.max(0L, initialMapBytes - initialOccupiedBytes);
+		long requiredPayloadBytes = LmdbUtil.saturatedAdd(headroom, pageSize);
+		long perLiteralBytes = LmdbUtil.saturatedAdd(requiredPayloadBytes, statementCount - 1L) / statementCount;
+		int literalLength = Math.toIntExact(Math.max(LITERAL_LENGTH, perLiteralBytes));
+		assertTrue((long) literalLength * statementCount > headroom,
+				"the frozen ASCII payload plan must exceed measured native map headroom; headroom=" + headroom
+						+ ", count=" + statementCount + ", literalLength=" + literalLength);
+		return literalLength;
+	}
+
+	private static int literalLengthExceedingRemainingMap(long initialMapBytes, long initialOccupiedBytes,
+			int pageSize) {
+		long headroom = Math.max(0L, initialMapBytes - initialOccupiedBytes);
+		return Math.toIntExact(LmdbUtil.saturatedAdd(headroom, pageSize));
 	}
 
 	private static Statement dictionaryStatement(String subjectPrefix, int index, int literalLength) {

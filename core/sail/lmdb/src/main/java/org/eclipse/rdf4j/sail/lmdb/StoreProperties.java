@@ -233,9 +233,9 @@ class StoreProperties {
 		});
 	}
 
-	private static void forceParentDirectory(Path parent) throws IOException {
-		// This improves rename durability on filesystems that support forcing directories, but it is not a portable
-		// durability guarantee for the sidecar. Native index and term-index manifests are authoritative on reopen.
+	static void forceParentDirectory(Path parent) throws IOException {
+		// Directory forcing improves durability where supported. Windows and providers that reject directory channels
+		// retain file-force semantics, without a portable guarantee that a new directory entry survives power loss.
 		if (System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT).startsWith("windows")) {
 			return;
 		}
