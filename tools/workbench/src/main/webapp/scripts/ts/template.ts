@@ -11,7 +11,7 @@ module workbench {
     // The following is to allow composed XSLT style sheets to each add
     // functions to the window.onload event.
     function chain(args: LoadRoutine[]): LoadRoutine {
-            return function() {
+        return function() {
             for (var i = 0; i < args.length; i++) {
                 args[i]();
             }
@@ -79,6 +79,63 @@ module workbench {
         encodeURIComponent(tag.value);
         sb[sb.length] = '&';
     }
+
+    /** Adds the session-bound request-integrity token to forms and Ajax requests. */
+    export function installCsrfProtection() {
+        var token = getCookie('rdf4j-workbench-csrf');
+        if (token) {
+            var forms = document.getElementsByTagName('form');
+            for (var i = 0; i < forms.length; i++) {
+                addCsrfToken(forms[i], token);
+            }
+        }
+
+        $.ajaxPrefilter(function(options: JQueryAjaxSettings) {
+            if (!options.crossDomain) {
+                var requestToken = getCookie('rdf4j-workbench-csrf');
+                if (requestToken) {
+                    options.headers = options.headers || {};
+                    options.headers['X-RDF4J-CSRF-Token'] = requestToken;
+                }
+            }
+        });
+    }
+
+    export function protectSubmittedForm(form: HTMLFormElement) {
+        addCsrfToken(form, getCookie('rdf4j-workbench-csrf'));
+    }
+
+    function addCsrfToken(form: HTMLFormElement, token: string) {
+        if (token && form.method.toLowerCase() == 'post') {
+            var input = <HTMLInputElement>form.querySelector('input[name="_csrf"]');
+            if (!input) {
+                input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = '_csrf';
+                form.appendChild(input);
+            }
+            input.value = token;
+        }
+    }
+}
+
+// Catch user submissions even if slow assets delay the window load event.
+document.addEventListener('submit', function(event) {
+    workbench.protectSubmittedForm(<HTMLFormElement>event.target);
+}, true);
+
+// Native form.submit() does not dispatch a submit event. Protect dynamically
+// constructed forms and existing programmatic submissions at the shared DOM boundary.
+if (typeof HTMLFormElement != 'undefined' && typeof HTMLFormElement.prototype.submit == 'function') {
+    var nativeFormSubmit: any = HTMLFormElement.prototype.submit;
+    if (!nativeFormSubmit.rdf4jCsrfProtected) {
+        var csrfProtectedFormSubmit: any = function() {
+            workbench.protectSubmittedForm(this);
+            nativeFormSubmit.call(this);
+        };
+        csrfProtectedFormSubmit.rdf4jCsrfProtected = true;
+        HTMLFormElement.prototype.submit = csrfProtectedFormSubmit;
+    }
 }
 
 /**
@@ -87,6 +144,7 @@ module workbench {
  */
 workbench
     .addLoad(function() {
+        workbench.installCsrfProtection();
         document.getElementById('noscript-message').style.display = 'none';
         var encoded = workbench.getCookie("server-user-password");
         var decoded = encoded && window.atob ? window.atob(encoded) : encoded;
