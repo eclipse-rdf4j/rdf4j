@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.parser.sparql.ast;
 
 public class ASTWhereClause extends SimpleNode {
 	private int groupStartOffset = -1;
+	private int groupEndOffset = -1;
 
 	/** Raw source offset of this WHERE group's opening brace. */
 	public int getGroupStartOffset() {
@@ -23,6 +24,15 @@ public class ASTWhereClause extends SimpleNode {
 
 	public void setGroupStartOffset(int offset) {
 		groupStartOffset = offset;
+	}
+
+	/** Raw source offset of this WHERE group's closing brace. */
+	public int getGroupEndOffset() {
+		return groupEndOffset;
+	}
+
+	public void setGroupEndOffset(int offset) {
+		groupEndOffset = offset;
 	}
 
 	public ASTWhereClause(int id) {

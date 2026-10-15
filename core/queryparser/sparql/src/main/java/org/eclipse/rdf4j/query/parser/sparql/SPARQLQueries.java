@@ -164,9 +164,6 @@ public class SPARQLQueries {
 			Set<String> assured = new LinkedHashSet<>(assuredBindings(root.getWhereClause(), assurance));
 			assured.addAll(assuredBindings(root.getBindingsClause(), assurance));
 			checkBindingScope(root, root, names, assured, assurance, 0, false);
-			if (root instanceof ASTConstructQuery construct && construct.getConstruct().isWildcard()) {
-				throw unsupportedBindings("shorthand CONSTRUCT");
-			}
 			ASTWhereClause where = root.getWhereClause();
 			if (where == null || where.getGroupStartOffset() < 0) {
 				throw unsupportedBindings("query without an outer WHERE group");
@@ -182,6 +179,14 @@ public class SPARQLQueries {
 			}
 			values.append(") } ");
 			int insertion = where.getGroupStartOffset() + 1;
+			if (root instanceof ASTConstructQuery construct && construct.getConstruct().isWildcard()) {
+				// A VALUES clause is not part of a shorthand CONSTRUCT template. Preserve the original basic
+				// pattern as an explicit template before adding the initial mapping to its WHERE group.
+				int templateInsertion = construct.getConstruct().getTemplateInsertionOffset();
+				String template = query.substring(where.getGroupStartOffset(), where.getGroupEndOffset() + 1);
+				return query.substring(0, templateInsertion) + " " + template + " "
+						+ query.substring(templateInsertion, insertion) + values + query.substring(insertion);
+			}
 			return query.substring(0, insertion) + values + query.substring(insertion);
 		} catch (ParseException | TokenMgrError failure) {
 			throw new MalformedQueryException(failure.getMessage(), failure);

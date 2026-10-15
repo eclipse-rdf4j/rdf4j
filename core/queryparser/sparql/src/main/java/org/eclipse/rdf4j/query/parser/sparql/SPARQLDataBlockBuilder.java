@@ -211,9 +211,10 @@ final class SPARQLDataBlockBuilder extends AbstractASTVisitor {
 	@Override
 	public Object visit(ASTQuadsNotTriples node, Object data) throws VisitorException {
 		Resource previous = context;
-		context = (Resource) value(node.jjtGetChild(0));
+		boolean defaultGraph = node.isDefaultGraph();
+		context = defaultGraph ? null : (Resource) value(node.jjtGetChild(0));
 		try {
-			for (int i = 1; i < node.jjtGetNumChildren(); i++) {
+			for (int i = defaultGraph ? 0 : 1; i < node.jjtGetNumChildren(); i++) {
 				node.jjtGetChild(i).jjtAccept(this, null);
 			}
 		} finally {

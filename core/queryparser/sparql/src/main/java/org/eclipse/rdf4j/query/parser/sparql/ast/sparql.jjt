@@ -577,7 +577,9 @@ void ConstructQuery() :
 void Construct() :
 {}
 {
-	<CONSTRUCT> [ LOOKAHEAD(2) ConstructClause() ]
+	<CONSTRUCT>
+    { jjtThis.setTemplateInsertionOffset(rawOffset(getToken(0).endLine, getToken(0).endColumn) + 1); }
+    [ LOOKAHEAD(2) ConstructClause() { jjtThis.setExplicitTemplate(true); } ]
 
 }
 
@@ -631,11 +633,12 @@ void DatasetClause() :
 }
 
 void WhereClause() :
-{}
+{ Token closing; }
 {
 	 [<WHERE>]
      { jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
-     GroupGraphPattern()
+     closing = GroupGraphPattern()
+     { jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
 }
 
 void BindingsClause() :
@@ -2225,9 +2228,27 @@ ASTUpdateContainer DataBlockContainer() #UpdateContainer : { boolean hasPrologue
     { jjtThis.setTurtleDirectives(turtleDirectives); return jjtThis; }
 }
 
-void DataQuads() #void : {} {
-    ( TriplesTemplate() | QuadsNotTriples() [<DOT>] [TriplesTemplate()] )
-    ( QuadsNotTriples() [<DOT>] [TriplesTemplate()] )*
+void DataQuads() #void : { boolean needsSeparator = false; } {
+    (
+        LOOKAHEAD( [<GRAPH>] (ResourceName() | BlankNode()) <LBRACE> | <LBRACE> )
+        DataGraphBlock() [<DOT>] { needsSeparator = false; }
+    |
+        {
+            if (needsSeparator) {
+                throw new ParseException("Expected '.' between DATA triples at line "
+                    + getToken(1).beginLine + ", column " + getToken(1).beginColumn);
+            }
+        }
+        TriplesSameSubject() { needsSeparator = true; } [<DOT> { needsSeparator = false; }]
+    )+
+}
+
+// DATA historically accepts TriG graph blocks, including omitted GRAPH and default graph braces.
+// Keep these forms separate from the SPARQL query and update-template quad productions.
+void DataGraphBlock() #QuadsNotTriples : { boolean named = false; } {
+    ( <GRAPH> (ResourceName() | BlankNode()) { named = true; }
+    | [ (ResourceName() | BlankNode()) { named = true; } ] )
+    <LBRACE> { jjtThis.setDefaultGraph(!named); } [TriplesTemplate()] <RBRACE>
 }
 
 void DataDirective() #void : {} {

@@ -13,21 +13,34 @@ package org.eclipse.rdf4j.sail.memory;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.util.Models;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -171,6 +184,133 @@ class MemoryInitialBindingSerializationTest {
 	}
 
 	@Test
+	void shorthandConstructWhereSupportsLiteralBindingsAndNestedTriplePatterns() {
+		var selected = VF.createLiteral("selected");
+		var namedSubject = VF.createIRI("urn:named-subject");
+		var blankSubject = VF.createBNode("source-blank");
+		var nestedPredicate = VF.createIRI("urn:nested");
+		var quoted = VF.createTripleTerm(VF.createIRI("urn:inner"), PREDICATE, selected);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(namedSubject, PREDICATE, selected);
+			connection.add(blankSubject, PREDICATE, selected);
+			connection.add(VF.createIRI("urn:unmatched"), PREDICATE, VF.createLiteral("other"));
+			connection.add(namedSubject, nestedPredicate, quoted);
+			connection.add(blankSubject, nestedPredicate, quoted);
+
+			MapBindingSet initialBindings = binding("o", selected);
+			String shorthand = "CONSTRUCT WHERE { [] <urn:p> ?o }";
+			Model constructed = assertGraphParity(connection, shorthand, initialBindings);
+			assertEquals(2, constructed.size());
+			Set<Resource> resultSubjects = new HashSet<>();
+			for (Statement statement : constructed) {
+				assertTrue(statement.getSubject() instanceof BNode,
+						"the anonymous shorthand template node must be freshly constructed");
+				assertTrue(resultSubjects.add(statement.getSubject()),
+						"each matching named or blank input subject needs a distinct constructed node");
+			}
+
+			String nestedShorthand = "CONSTRUCT WHERE { ?s <urn:nested> "
+					+ "<<( <urn:inner> <urn:p> ?o )>> }";
+			Model nestedConstructed = assertGraphParity(connection, nestedShorthand, initialBindings);
+			assertEquals(2, nestedConstructed.size());
+		}
+	}
+
+	@Test
+	void constructBindingRewritePreservesDatasetModifiersValuesCommentsAndLiteralBraces() {
+		IRI graph = VF.createIRI("http://example.org/base/graph");
+		IRI constructPredicate = VF.createIRI("http://example.org/vocab#p");
+		IRI rowPredicate = VF.createIRI("http://example.org/vocab#row");
+		Literal selected = VF.createLiteral("selected");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:subject-a"), constructPredicate, selected, graph);
+			connection.add(VF.createIRI("urn:subject-a"), rowPredicate, VF.createIRI("urn:row:a"), graph);
+			connection.add(VF.createIRI("urn:subject-b"), constructPredicate, selected, graph);
+			connection.add(VF.createIRI("urn:subject-b"), rowPredicate, VF.createIRI("urn:row:b"), graph);
+			connection.add(VF.createIRI("urn:subject-c"), constructPredicate, VF.createLiteral("other"), graph);
+			connection.add(VF.createIRI("urn:subject-c"), rowPredicate, VF.createIRI("urn:row:c"), graph);
+
+			String query = "BASE <http://example.org/base/>\n"
+					+ "PREFIX ex: <../vocab#>\n"
+					+ "CONSTRUCT { ?s ex:p ?o . ?s ex:row ?row } FROM <graph> WHERE {\n"
+					+ "  ?s ex:p ?o . ?s ex:row ?row .\n"
+					+ "  BIND(\"literal { ?o }\" AS ?text) # comment with { ?row }\n"
+					+ "  VALUES ?o { \"selected\" \"other\" }\n"
+					+ "}\nORDER BY ?s ?row\nLIMIT 2 OFFSET 1";
+			MapBindingSet initialBindings = binding("o", selected);
+			String rewritten = withInitialBindings(query, initialBindings);
+			assertTrue(rewritten.contains("BIND(\"literal { ?o }\" AS ?text) # comment with { ?row }"), rewritten);
+			assertTrue(rewritten.contains("VALUES ?o { \"selected\" \"other\" }"), rewritten);
+			assertTrue(rewritten.contains("FROM <graph>") && rewritten.contains("ORDER BY ?s ?row")
+					&& rewritten.contains("LIMIT 2 OFFSET 1"), rewritten);
+
+			Model result = assertGraphParity(connection, query, initialBindings);
+			assertEquals(2, result.size(), "OFFSET/LIMIT must select one subject's two constructed statements");
+			assertTrue(result.contains(VF.createIRI("urn:subject-b"), constructPredicate, selected));
+			assertTrue(result.contains(VF.createIRI("urn:subject-b"), rowPredicate, VF.createIRI("urn:row:b")));
+
+			String shorthand = "BASE <http://example.org/base/> PREFIX ex: <../vocab#> "
+					+ "CONSTRUCT FROM <graph> WHERE { ?s ex:p ?o } ORDER BY ?s LIMIT 1 OFFSET 1";
+			Model shorthandResult = assertGraphParity(connection, shorthand, initialBindings);
+			assertEquals(1, shorthandResult.size(), "shorthand CONSTRUCT must preserve its solution offset");
+			assertTrue(shorthandResult.contains(VF.createIRI("urn:subject-b"), constructPredicate, selected));
+		}
+	}
+
+	@Test
+	void constructTemplateBlankNodesStaySharedPerSolutionAndFreshAcrossSolutions() {
+		Literal selected = VF.createLiteral("selected");
+		String query = "CONSTRUCT { _:result <urn:source> ?s . _:result <urn:value> ?o . "
+				+ "_:result <urn:nested> <<( <urn:inner> <urn:value> _:result )>> } "
+				+ "WHERE { ?s <urn:p> ?o }";
+		MapBindingSet initialBindings = binding("o", selected);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:subject-a"), PREDICATE, selected);
+			connection.add(VF.createBNode("subject-b"), PREDICATE, selected);
+
+			Model constructed = assertGraphParity(connection, query, initialBindings);
+			assertEquals(6, constructed.size());
+			Set<BNode> constructedNodes = new HashSet<>();
+			for (Statement statement : constructed) {
+				BNode constructedNode = assertInstanceOf(BNode.class, statement.getSubject());
+				constructedNodes.add(constructedNode);
+				if (statement.getPredicate().equals(VF.createIRI("urn:nested"))) {
+					TripleTerm nested = assertInstanceOf(TripleTerm.class, statement.getObject());
+					assertEquals(constructedNode, nested.getObject(),
+							"one template blank-node label must be shared into nested template terms");
+				}
+			}
+			assertEquals(2, constructedNodes.size(), "each solution occurrence needs a fresh template node");
+			for (BNode constructedNode : constructedNodes) {
+				assertTrue(constructed.contains(constructedNode, VF.createIRI("urn:source"), null));
+				assertTrue(constructed.contains(constructedNode, VF.createIRI("urn:value"), selected));
+				assertTrue(constructed.contains(constructedNode, VF.createIRI("urn:nested"), null));
+			}
+		}
+	}
+
+	@Test
+	void constructBindingConflictsAndEmptyTemplatesProduceEmptyGraphs() {
+		Literal selected = VF.createLiteral("selected");
+		String shorthand = "CONSTRUCT WHERE { ?s <urn:p> ?o }";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:present"), PREDICATE, selected);
+			for (MapBindingSet bindings : List.of(
+					binding("s", VF.createIRI("urn:missing-subject")),
+					binding("o", VF.createLiteral("missing-object")))) {
+				assertTrue(assertGraphParity(connection, shorthand, bindings).isEmpty());
+			}
+
+			MapBindingSet selectedBinding = binding("o", selected);
+			assertTrue(assertGraphParity(connection,
+					"CONSTRUCT {} WHERE { ?s <urn:p> ?o }", selectedBinding).isEmpty(),
+					"an explicitly empty template remains empty after initial-binding injection");
+			assertTrue(assertGraphParity(connection, "CONSTRUCT WHERE { }", selectedBinding).isEmpty(),
+					"an empty shorthand template remains empty after initial-binding injection");
+		}
+	}
+
+	@Test
 	void unsafeBindingScopesAreRejectedAsUnsupportedTransport() {
 		MapBindingSet bnode = binding("b", VF.createBNode("fixed"));
 		assertUnsupported("SELECT ?b WHERE { BIND(<urn:other> AS ?b) }", bnode);
@@ -179,7 +319,6 @@ class MemoryInitialBindingSerializationTest {
 		assertUnsupported("SELECT ?x WHERE { { SELECT ?x WHERE { ?x <urn:p> ?o } } }",
 				binding("x", VF.createBNode("fixed")));
 		assertUnsupported("SELECT ?b WHERE { { SELECT ?b WHERE { ?s <urn:p> ?o } } }", bnode);
-		assertUnsupported("CONSTRUCT WHERE { ?s ?p ?o }", binding("s", VF.createBNode("fixed")));
 		assertUnsupported("SELECT ?o WHERE { SERVICE <urn:service> { ?s <urn:p> ?o } }",
 				binding("s", VF.createBNode("fixed")));
 	}
@@ -212,6 +351,30 @@ class MemoryInitialBindingSerializationTest {
 			}
 		}
 		return results;
+	}
+
+	private static Model assertGraphParity(RepositoryConnection connection, String query, BindingSet bindings) {
+		Model nativeResult = evaluateGraph(connection, query, bindings);
+		String rewrittenQuery = withInitialBindings(query, bindings);
+		Model rewrittenResult = evaluateGraph(connection, rewrittenQuery, new MapBindingSet());
+		assertTrue(Models.isomorphic(nativeResult, rewrittenResult),
+				() -> "rewritten CONSTRUCT graph differs from Query.setBinding result\n" + rewrittenQuery
+						+ "\nNative: " + nativeResult + "\nRewritten: " + rewrittenResult);
+		return rewrittenResult;
+	}
+
+	private static Model evaluateGraph(RepositoryConnection connection, String query, BindingSet bindings) {
+		GraphQuery graphQuery = connection.prepareGraphQuery(query);
+		for (Binding binding : bindings) {
+			graphQuery.setBinding(binding.getName(), binding.getValue());
+		}
+		Model result = new LinkedHashModel();
+		try (GraphQueryResult statements = graphQuery.evaluate()) {
+			while (statements.hasNext()) {
+				result.add(statements.next());
+			}
+		}
+		return result;
 	}
 
 	private static ParsedQuery parse(String query) {

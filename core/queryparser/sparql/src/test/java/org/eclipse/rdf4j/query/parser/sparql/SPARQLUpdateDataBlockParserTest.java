@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.rio.ParserConfig;
@@ -64,6 +66,134 @@ public class SPARQLUpdateDataBlockParserTest {
 		for (String block : blocksToCheck) {
 			parser.parse(new StringReader(block), "http://example.org");
 		}
+	}
+
+	@Test
+	public void testTriGShorthandGraphBlocksRestoreDefaultContextAndShareDocumentBlankNodes() throws Exception {
+		String dataBlock = "@base <http://example.org/base/first/> .\n"
+				+ "@prefix ex: <http://example.org/first#> .\n"
+				+ "<relative-before> ex:p _:shared .\n"
+				+ "{ <relative-default> ex:p <<(<urn:inner> <urn:quoted> _:shared)>> . }\n"
+				+ "ex:prefixedGraph { <relative-named> ex:p _:shared }\n"
+				+ "<urn:bareGraph> { <urn:bareSubject> ex:p \"bare\" } .\n"
+				+ "GRAPH ex:explicitGraph { <urn:explicitSubject> ex:p <_:fixed> }\n"
+				+ "<_:fixed> { <urn:fixedGraphSubject> ex:p "
+				+ "<<(<urn:inner> <urn:graph> _:shared)>> }\n"
+				+ "_:allocatedGraph { <urn:blankGraphSubject> ex:p "
+				+ "<<(<_:fixed> <urn:nested> _:shared)>> }\n"
+				+ "[] ex:p <urn:anonymousDefault> .\n"
+				+ "[] { <urn:anonymousGraphSubject> ex:p \"anonymous\" } . "
+				+ "[] { <urn:anonymousGraphAfterDotSubject> ex:p \"anonymous-after-dot\" } . "
+				+ "[] ex:p <urn:anonymousDefaultAfterDot> .\n"
+				+ "<relative-after> ex:p _:shared .\n"
+				+ "@base <http://example.org/base/second/> .\n"
+				+ "@prefix ex: <http://example.org/second#> .\n"
+				+ "ex:secondGraph { <relative-second> ex:p _:shared }\n"
+				+ "<relative-default-second> ex:p _:shared";
+		LinkedHashModel actual = parseDataBlock(dataBlock);
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		IRI predicate = vf.createIRI("http://example.org/first#p");
+		BNode fixed = vf.createBNode("fixed");
+		BNode shared = (BNode) actual.stream()
+				.filter(statement -> statement.getSubject()
+						.equals(vf.createIRI("http://example.org/base/first/relative-before")))
+				.map(Statement::getObject)
+				.findFirst()
+				.orElseThrow();
+		Resource allocatedGraph = actual.stream()
+				.filter(statement -> statement.getSubject().equals(vf.createIRI("urn:blankGraphSubject")))
+				.map(Statement::getContext)
+				.findFirst()
+				.orElseThrow();
+		Resource anonymousGraph = actual.stream()
+				.filter(statement -> statement.getSubject().equals(vf.createIRI("urn:anonymousGraphSubject")))
+				.map(Statement::getContext)
+				.findFirst()
+				.orElseThrow();
+		Resource anonymousGraphAfterDot = actual.stream()
+				.filter(statement -> statement.getSubject().equals(vf.createIRI("urn:anonymousGraphAfterDotSubject")))
+				.map(Statement::getContext)
+				.findFirst()
+				.orElseThrow();
+		Resource anonymousDefaultSubject = actual.stream()
+				.filter(statement -> statement.getObject().equals(vf.createIRI("urn:anonymousDefault")))
+				.map(Statement::getSubject)
+				.findFirst()
+				.orElseThrow();
+		Resource anonymousDefaultAfterDotSubject = actual.stream()
+				.filter(statement -> statement.getObject().equals(vf.createIRI("urn:anonymousDefaultAfterDot")))
+				.map(Statement::getSubject)
+				.findFirst()
+				.orElseThrow();
+		assertTrue(allocatedGraph instanceof BNode);
+		assertTrue(anonymousGraph instanceof BNode);
+		assertTrue(anonymousGraphAfterDot instanceof BNode);
+		assertTrue(anonymousDefaultSubject instanceof BNode);
+		assertTrue(anonymousDefaultAfterDotSubject instanceof BNode);
+		assertNotEquals(allocatedGraph, anonymousGraph);
+		assertNotEquals(anonymousGraph, anonymousGraphAfterDot);
+
+		Model expected = new LinkedHashModel();
+		expected.add(vf.createIRI("http://example.org/base/first/relative-before"), predicate, shared);
+		expected.add(vf.createIRI("http://example.org/base/first/relative-default"), predicate,
+				vf.createTripleTerm(vf.createIRI("urn:inner"), vf.createIRI("urn:quoted"), shared));
+		expected.add(vf.createIRI("http://example.org/base/first/relative-named"), predicate, shared,
+				vf.createIRI("http://example.org/first#prefixedGraph"));
+		expected.add(vf.createIRI("urn:bareSubject"), predicate, vf.createLiteral("bare"),
+				vf.createIRI("urn:bareGraph"));
+		expected.add(vf.createIRI("urn:explicitSubject"), predicate, fixed,
+				vf.createIRI("http://example.org/first#explicitGraph"));
+		expected.add(vf.createIRI("urn:fixedGraphSubject"), predicate,
+				vf.createTripleTerm(vf.createIRI("urn:inner"), vf.createIRI("urn:graph"), shared), fixed);
+		expected.add(vf.createIRI("urn:blankGraphSubject"), predicate,
+				vf.createTripleTerm(fixed, vf.createIRI("urn:nested"), shared), allocatedGraph);
+		expected.add(vf.createIRI("urn:anonymousGraphSubject"), predicate, vf.createLiteral("anonymous"),
+				anonymousGraph);
+		expected.add(anonymousDefaultSubject, predicate, vf.createIRI("urn:anonymousDefault"));
+		expected.add(vf.createIRI("urn:anonymousGraphAfterDotSubject"), predicate,
+				vf.createLiteral("anonymous-after-dot"), anonymousGraphAfterDot);
+		expected.add(anonymousDefaultAfterDotSubject, predicate, vf.createIRI("urn:anonymousDefaultAfterDot"));
+		expected.add(vf.createIRI("http://example.org/base/first/relative-after"), predicate, shared);
+		expected.add(vf.createIRI("http://example.org/base/second/relative-second"),
+				vf.createIRI("http://example.org/second#p"), shared,
+				vf.createIRI("http://example.org/second#secondGraph"));
+		expected.add(vf.createIRI("http://example.org/base/second/relative-default-second"),
+				vf.createIRI("http://example.org/second#p"), shared);
+
+		assertEquals(Set.copyOf(expected), Set.copyOf(actual),
+				"shorthand graph blocks must preserve context, directive scope, fixed references, and shared ordinary labels");
+	}
+
+	@Test
+	public void testParseUpdateHandlesShorthandGraphBlocksAndDeleteDataBlankNodeRestrictions() throws Exception {
+		SPARQLParser sparqlParser = new SPARQLParser();
+		ParsedUpdate update = sparqlParser.parseUpdate("PREFIX ex: <urn:example:> INSERT DATA { "
+				+ "<urn:default> ex:p <urn:o> . ex:graph { <urn:named> ex:p <urn:o> } }", "urn:base:");
+		InsertData insert = assertInstanceOf(InsertData.class, update.getUpdateExprs().get(0));
+		Model parsed = parseDataBlock(insert.getDataBlock());
+		assertEquals(2, parsed.size());
+		assertTrue(parsed.contains(vf().createIRI("urn:default"), vf().createIRI("urn:example:p"),
+				vf().createIRI("urn:o")));
+		assertTrue(parsed.contains(vf().createIRI("urn:named"), vf().createIRI("urn:example:p"),
+				vf().createIRI("urn:o"), vf().createIRI("urn:example:graph")));
+
+		for (String invalidGraph : new String[] { "?graph", "\"literal\"", "<<( <urn:s> <urn:p> <urn:o> )>>" }) {
+			assertThrows(RDFParseException.class,
+					() -> parseDataBlock(invalidGraph + " { <urn:s> <urn:p> <urn:o> }"), invalidGraph);
+		}
+		for (String malformed : new String[] {
+				"<urn:s1> <urn:p> <urn:o> <urn:s2> <urn:p> <urn:o>",
+				"GRAPH <urn:g> { <urn:s> <urn:p> <<(<urn:inner> <urn:p> <urn:o>) }" }) {
+			assertThrows(RDFParseException.class, () -> parseDataBlock(malformed), malformed);
+		}
+
+		for (String allocatingGraph : new String[] { "_:allocated", "[]" }) {
+			assertThrows(MalformedQueryException.class, () -> sparqlParser.parseUpdate(
+					"DELETE DATA { " + allocatingGraph + " { <urn:s> <urn:p> <urn:o> } }", null), allocatingGraph);
+		}
+		ParsedUpdate delete = sparqlParser.parseUpdate(
+				"DELETE DATA { GRAPH <_:fixed> { <urn:s> <urn:p> <_:fixed> } }", null);
+		assertInstanceOf(DeleteData.class, delete.getUpdateExprs().get(0));
 	}
 
 	@Test
@@ -276,5 +406,18 @@ public class SPARQLUpdateDataBlockParserTest {
 		parser.setRDFHandler(statements);
 		parser.parse(new StringReader(dataBlock), "urn:base:");
 		return (Literal) statements.getStatements().iterator().next().getObject();
+	}
+
+	private LinkedHashModel parseDataBlock(String dataBlock)
+			throws IOException, RDFParseException, RDFHandlerException {
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
+		LinkedHashModel statements = new LinkedHashModel();
+		parser.setRDFHandler(new StatementCollector(statements));
+		parser.parse(new StringReader(dataBlock), "http://example.org/original/");
+		return statements;
+	}
+
+	private static SimpleValueFactory vf() {
+		return SimpleValueFactory.getInstance();
 	}
 }
