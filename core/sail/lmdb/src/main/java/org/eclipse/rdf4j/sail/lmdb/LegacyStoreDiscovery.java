@@ -111,7 +111,7 @@ final class LegacyStoreDiscovery {
 				int triplesMain = openMainDatabase(stack, triplesTxn);
 				Map<String, Integer> valuesDatabases = readDatabaseCatalog(stack, valuesTxn, valuesMain, false);
 				Map<String, Integer> triplesDatabases = readDatabaseCatalog(stack, triplesTxn, triplesMain, true);
-				boolean hasLegacyRetirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
+				LegacyRetirementQueue retirementQueue = validateLegacyRetirementQueue(stack, valuesTxn,
 						valuesDatabases, legacy);
 				Set<String> statementIndexes = classifyStatementIndexes(triplesDatabases);
 				Set<String> physicalTermIndexes = classifyTermIndexes(valuesDatabases, properties, legacy);
@@ -122,7 +122,7 @@ final class LegacyStoreDiscovery {
 				boolean termManifest = activeTermIndexes != null;
 				Set<String> termIndexes = termManifest ? activeTermIndexes : physicalTermIndexes;
 				validateKnownDatabases(valuesDatabases, triplesDatabases, statementIndexes, physicalTermIndexes,
-						properties, legacy, hasLegacyRetirementQueue);
+						properties, legacy, retirementQueue);
 				if (legacy) {
 					int termCspoDatabase = termIndexes.contains("cspo")
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-cspo", true))
@@ -298,7 +298,7 @@ final class LegacyStoreDiscovery {
 
 	private static void validateKnownDatabases(Map<String, Integer> valueDatabases,
 			Map<String, Integer> tripleDatabases, Set<String> statementIndexes, Set<String> termIndexes,
-			StoreProperties properties, boolean legacy, boolean hasLegacyRetirementQueue) throws IOException {
+			StoreProperties properties, boolean legacy, LegacyRetirementQueue retirementQueue) throws IOException {
 		Set<String> expectedTriples = new LinkedHashSet<>();
 		expectedTriples.add("contexts");
 		if (tripleDatabases.containsKey(TripleStore.NAMESPACE_DATABASE_NAME)) {
@@ -321,7 +321,7 @@ final class LegacyStoreDiscovery {
 		Set<String> expectedValues = new LinkedHashSet<>(VALUE_METADATA_DBS);
 		if (!legacy && LmdbStoreFormat.CURRENT_VERSION == parseVersion(properties.getVersion())) {
 			expectedValues = new LinkedHashSet<>(V6_VALUE_METADATA_DBS);
-		} else if (legacy && hasLegacyRetirementQueue) {
+		} else if (legacy && retirementQueue != LegacyRetirementQueue.ABSENT) {
 			expectedValues.add("retired_ids");
 			expectedValues.add("retired_ids_seq");
 		}
@@ -342,6 +342,12 @@ final class LegacyStoreDiscovery {
 			missing.removeAll(valueDatabases.keySet());
 			// Some supported legacy writers omit an auxiliary database until its first use.
 			missing.removeAll(VALUE_METADATA_DBS);
+			if (retirementQueue == LegacyRetirementQueue.EMPTY_BOOTSTRAP) {
+				// Historical bootstrap committed each empty queue DB separately. Only the validated uninitialized
+				// state may omit a queue table; a published schema still requires both indexes.
+				missing.remove("retired_ids");
+				missing.remove("retired_ids_seq");
+			}
 			if (!missing.isEmpty()) {
 				throw new IOException("Missing named database in values environment: " + missing.iterator().next());
 			}
@@ -447,56 +453,74 @@ final class LegacyStoreDiscovery {
 		}
 	}
 
-	/** Accepts only the frozen retirement queue schema when it is present in a legacy format-2 generation. */
-	private static boolean validateLegacyRetirementQueue(MemoryStack stack, long transaction,
+	private enum LegacyRetirementQueue {
+		ABSENT,
+		EMPTY_BOOTSTRAP,
+		INITIALIZED
+	}
+
+	/** Validates the published schema or proves a schema-less historical queue bootstrap contains no records. */
+	private static LegacyRetirementQueue validateLegacyRetirementQueue(MemoryStack stack, long transaction,
 			Map<String, Integer> namedDatabases, boolean legacy) throws IOException {
 		if (!legacy) {
-			return false;
+			return LegacyRetirementQueue.ABSENT;
 		}
 		boolean hasById = namedDatabases.containsKey("retired_ids");
 		boolean hasSequence = namedDatabases.containsKey("retired_ids_seq");
+		Integer metadataDatabase = namedDatabases.get("gc_meta");
+		byte[] schema = metadataDatabase == null ? null : getValue(transaction, metadataDatabase, new byte[] { 2 });
+		if (metadataDatabase != null && getValue(transaction, metadataDatabase, new byte[] { 3 }) != null) {
+			throw new IOException("ValueStore native format fence disagrees with LmdbStore format 2");
+		}
+
+		if (schema == null) {
+			validateRetirementBootEpoch(transaction, metadataDatabase, false);
+			if (!isEmptyDatabase(stack, transaction, namedDatabases.get("retired_ids"))
+					|| !isEmptyDatabase(stack, transaction, namedDatabases.get("retired_ids_seq"))) {
+				throw new IOException("Missing ValueStore retirement schema marker");
+			}
+			// The old writer committed the named DBs separately and initially wrote only a boot epoch. Empty
+			// containers carry no retirement authority to interpret; normal startup can complete their bootstrap
+			// atomically without changing dictionary or statement data, or assuming a schema for queued records.
+			return hasById || hasSequence ? LegacyRetirementQueue.EMPTY_BOOTSTRAP : LegacyRetirementQueue.ABSENT;
+		}
 		if (hasById != hasSequence) {
 			throw new IOException("Incomplete ValueStore retirement queue");
 		}
-
-		Integer metadataDatabase = namedDatabases.get("gc_meta");
 		if (!hasById) {
-			if (metadataDatabase != null) {
-				if (getValue(transaction, metadataDatabase, new byte[] { 3 }) != null) {
-					throw new IOException("ValueStore native format fence disagrees with LmdbStore format 2");
-				}
-				if (getValue(transaction, metadataDatabase, new byte[] { 2 }) != null) {
-					throw new IOException("Retirement schema metadata exists without a complete queue");
-				}
-			}
-			return false;
-		}
-		if (metadataDatabase == null) {
-			throw new IOException("Missing ValueStore retirement metadata database");
-		}
-
-		byte[] schema = getValue(transaction, metadataDatabase, new byte[] { 2 });
-		if (schema == null) {
-			throw new IOException("Missing ValueStore retirement schema marker");
+			throw new IOException("Retirement schema metadata exists without a complete queue");
 		}
 		if (!Arrays.equals(schema, new byte[] { 1 })) {
 			throw new IOException("Unsupported ValueStore retirement metadata schema");
 		}
-		if (getValue(transaction, metadataDatabase, new byte[] { 3 }) != null) {
-			throw new IOException("ValueStore native format fence disagrees with LmdbStore format 2");
+		validateRetirementBootEpoch(transaction, metadataDatabase, true);
+		validateRetirementQueueIndexes(stack, transaction, namedDatabases.get("retired_ids"),
+				namedDatabases.get("retired_ids_seq"));
+		return LegacyRetirementQueue.INITIALIZED;
+	}
+
+	private static boolean isEmptyDatabase(MemoryStack stack, long transaction, Integer database) throws IOException {
+		if (database == null) {
+			return true;
 		}
-		byte[] bootEpoch = getValue(transaction, metadataDatabase, new byte[] { 1 });
+		MDBStat stat = MDBStat.malloc(stack);
+		E(mdb_stat(transaction, database, stat));
+		return stat.ms_entries() == 0L;
+	}
+
+	private static void validateRetirementBootEpoch(long transaction, Integer metadataDatabase, boolean required)
+			throws IOException {
+		byte[] bootEpoch = metadataDatabase == null ? null : getValue(transaction, metadataDatabase, new byte[] { 1 });
 		if (bootEpoch == null) {
-			throw new IOException("Missing ValueStore retirement boot epoch");
+			if (required) {
+				throw new IOException("Missing ValueStore retirement boot epoch");
+			}
+			return;
 		}
 		ByteBuffer encodedEpoch = ByteBuffer.wrap(bootEpoch);
 		if (readCanonicalUnsigned(encodedEpoch) <= 0 || encodedEpoch.hasRemaining()) {
 			throw new IOException("Malformed ValueStore retirement boot epoch");
 		}
-
-		validateRetirementQueueIndexes(stack, transaction, namedDatabases.get("retired_ids"),
-				namedDatabases.get("retired_ids_seq"));
-		return true;
 	}
 
 	/** Validates both queue indexes with fixed cursor state; stale sequence hints remain valid and recoverable. */

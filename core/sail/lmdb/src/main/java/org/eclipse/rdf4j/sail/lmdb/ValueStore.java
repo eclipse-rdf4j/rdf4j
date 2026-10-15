@@ -434,6 +434,13 @@ public class ValueStore extends AbstractValueFactory {
 			if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
 				E(rc);
 			}
+			if (rc == MDB_SUCCESS && format.isLegacy()
+					&& markerValue.mv_data().remaining() == REF_COUNTS_VERSION.length
+					&& markerValue.mv_data().get(markerValue.mv_data().position()) == REF_COUNTS_VERSION[0]) {
+				// The format-2 writer's completion marker predates native transaction/CRC validation. Recognize
+				// that historical schema, but never treat it as clean: rebuild counts from active dictionary owners.
+				return new RefCountMarkerStatus(false, false, nativeTransactionId);
+			}
 			if (rc == MDB_SUCCESS) {
 				validateRefCountMarkerSchema(markerValue.mv_data());
 			}

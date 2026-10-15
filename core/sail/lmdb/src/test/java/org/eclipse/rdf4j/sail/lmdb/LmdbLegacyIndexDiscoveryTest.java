@@ -348,8 +348,11 @@ class LmdbLegacyIndexDiscoveryTest {
 	}
 
 	@Test
-	void rejectsRetirementQueueWithoutSchemaMarkerWithoutMutation() throws Exception {
+	void rejectsNonemptyRetirementQueueWithoutSchemaMarkerWithoutMutation() throws Exception {
 		extract("v2-610-optimize-retirement-schema.zip", directory);
+		// An empty historical queue can bootstrap its schema, but queued records require published authority.
+		nativePut(directory, "retired_ids", new byte[] { 2 }, new byte[] { 1, 3 });
+		nativePut(directory, "retired_ids_seq", new byte[] { 1, 3, 2 }, new byte[0]);
 		nativePut(directory, "gc_meta", new byte[] { 2 }, null);
 
 		assertDiscoveryRejectedWithoutMutation("Missing ValueStore retirement schema marker");
