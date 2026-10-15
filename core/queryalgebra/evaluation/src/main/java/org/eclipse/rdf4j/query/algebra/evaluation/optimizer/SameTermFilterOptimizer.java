@@ -364,11 +364,6 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		@Override
-		public void meet(Graph graph) {
-			graph.getGraphName().visit(this);
-		}
-
-		@Override
 		public void meet(Var var) {
 			if (var.getName().equals(varName)) {
 				var.replaceWith(Var.of(varName, value, var.isAnonymous(), var.isConstant()));
