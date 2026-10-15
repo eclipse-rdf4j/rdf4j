@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 class SourceSelectionCacheScopeTest {
@@ -80,6 +81,8 @@ class SourceSelectionCacheScopeTest {
 			SimpleDataset excluded = new SimpleDataset();
 			if (fixed) {
 				excluded.addNamedGraph(VF.createIRI("urn:g1"));
+			} else {
+				excluded.addDefaultGraph(VF.createIRI("urn:default-only"));
 			}
 			SubQuery negative = new SubQuery(pattern, excluded);
 			cache.updateInformation(negative, member, false);
@@ -87,6 +90,19 @@ class SourceSelectionCacheScopeTest {
 			assertThat(cache.getAssurance(new SubQuery(pattern, null), member))
 					.isEqualTo(StatementSourceAssurance.POSSIBLY_HAS_STATEMENTS);
 		}));
+	}
+
+	@Test
+	void bothEmptyReadSetsShareTheStoreDefaultCacheFamily() {
+		for (Scope scope : Scope.values()) {
+			StatementPattern pattern = new StatementPattern(scope, Var.of("s"), Var.of("p"), Var.of("o"),
+					scope == Scope.NAMED_CONTEXTS ? Var.of("g") : null);
+			SimpleDataset defaults = new SimpleDataset();
+			defaults.setDefaultInsertGraph(VF.createIRI("urn:mutation-target"));
+			SubQuery implicit = new SubQuery(pattern, null);
+			SubQuery bothEmpty = new SubQuery(pattern, defaults);
+			assertThat(bothEmpty).isEqualTo(implicit).hasSameHashCodeAs(implicit);
+		}
 	}
 
 	private static Endpoint member() {

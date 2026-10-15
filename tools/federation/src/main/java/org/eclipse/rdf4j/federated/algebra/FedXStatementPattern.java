@@ -18,6 +18,7 @@ import java.util.List;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
@@ -36,7 +37,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public abstract class FedXStatementPattern extends StatementPattern
-		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr {
+		implements StatementTupleExpr, FilterTuple, BoundJoinTupleExpr, ExecutionDatasetAware {
 	private static final Logger log = LoggerFactory.getLogger(FedXStatementPattern.class);
 
 	private static final long serialVersionUID = 6588020780262348806L;
@@ -49,6 +50,8 @@ public abstract class FedXStatementPattern extends StatementPattern
 	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
 	// additional bindings
 	protected long upperLimit = -1; // if set to a positive number, this upper limit is applied to any subquery
+	private Dataset executionDataset;
+	private ResolvedGraphSelection graphSelection;
 
 	public FedXStatementPattern(StatementPattern node, QueryInfo queryInfo) {
 		super(node.getScope(), node.getSubjectVar().clone(), node.getPredicateVar().clone(),
@@ -80,6 +83,8 @@ public abstract class FedXStatementPattern extends StatementPattern
 		target.filterExpr = filterExpr == null ? null : (FilterValueExpr) filterExpr.clone();
 		target.boundFilters = boundFilters == null ? null : new QueryBindingSet(boundFilters);
 		target.upperLimit = upperLimit;
+		target.executionDataset = executionDataset;
+		target.graphSelection = graphSelection;
 	}
 
 	@Override
@@ -145,6 +150,26 @@ public abstract class FedXStatementPattern extends StatementPattern
 	@Override
 	public QueryInfo getQueryInfo() {
 		return this.queryInfo;
+	}
+
+	@Override
+	public Dataset getExecutionDataset() {
+		return executionDataset == null ? queryInfo.getDataset() : executionDataset;
+	}
+
+	@Override
+	public void setExecutionDataset(Dataset dataset) {
+		this.executionDataset = dataset;
+	}
+
+	@Override
+	public ResolvedGraphSelection getResolvedGraphSelection() {
+		return graphSelection;
+	}
+
+	@Override
+	public void setResolvedGraphSelection(ResolvedGraphSelection selection) {
+		this.graphSelection = selection;
 	}
 
 	@Override

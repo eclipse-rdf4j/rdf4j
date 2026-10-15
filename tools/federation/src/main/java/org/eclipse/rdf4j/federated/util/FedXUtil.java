@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FederationContext;
+import org.eclipse.rdf4j.federated.algebra.GraphSelectionAware;
 import org.eclipse.rdf4j.federated.repository.FedXRepositoryConnection;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.model.IRI;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.impl.FallbackDataset;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.slf4j.Logger;
@@ -148,10 +150,12 @@ public class FedXUtil {
 	 * dataset implicit.
 	 */
 	public static boolean isContextAvailable(StatementPattern statement, Dataset dataset) {
-		while (dataset instanceof FedXDataset fedx) {
-			dataset = fedx.getDelegate();
+		if (statement instanceof GraphSelectionAware aware && aware.getResolvedGraphSelection() != null) {
+			// GRAPH has already checked membership; its physical selection is independent of default graph sets.
+			return true;
 		}
-		if (dataset == null) {
+		dataset = toRdfDataset(dataset);
+		if (!hasGraphSelection(dataset)) {
 			return true;
 		}
 		if (statement.getScope() == Scope.NAMED_CONTEXTS) {
@@ -164,15 +168,50 @@ public class FedXUtil {
 
 	/** Retrieve the physical contexts selected by the statement and dataset. */
 	public static Resource[] toContexts(StatementPattern stmt, Dataset dataset) {
+		if (stmt instanceof GraphSelectionAware aware && aware.getResolvedGraphSelection() != null) {
+			return new Resource[] { aware.getResolvedGraphSelection().physicalGraph() };
+		}
+		dataset = toRdfDataset(dataset);
 		if (stmt.getScope() == Scope.NAMED_CONTEXTS) {
 			if (stmt.getContextVar() != null && stmt.getContextVar().hasValue()) {
 				Resource graph = (Resource) stmt.getContextVar().getValue();
-				return new Resource[] { physicalContext(graph) };
+				return new Resource[] { dataset != null && dataset.getNamedGraphs().contains(graph)
+						? graph
+						: physicalContext(graph) };
 			}
-			return dataset == null ? new Resource[0]
+			return !hasGraphSelection(dataset) ? new Resource[0]
 					: dataset.getNamedGraphs().stream().map(FedXUtil::physicalContext).toArray(Resource[]::new);
 		}
 		return toContexts(dataset);
+	}
+
+	/**
+	 * Removes federation-only endpoint selection wrappers before a dataset is passed to a repository query. When a
+	 * parser fallback combines an external dataset with a query-level dataset, rebuild it through the same fallback
+	 * factory so its primary-versus-fallback graph-set semantics remain intact.
+	 */
+	public static Dataset toRdfDataset(Dataset dataset) {
+		if (dataset instanceof FedXDataset fedx) {
+			return toRdfDataset(fedx.getDelegate());
+		}
+		if (dataset instanceof FallbackDataset fallback) {
+			Dataset primary = toRdfDataset(fallback.getPrimary());
+			Dataset secondary = toRdfDataset(fallback.getFallback());
+			return FallbackDataset.fallback(primary, secondary);
+		}
+		return dataset;
+	}
+
+	/**
+	 * Whether the effective RDF dataset selects read graphs. Both empty read sets use store defaults, regardless of
+	 * mutation targets; retain the dataset itself so INSERT/DELETE metadata and fallback precedence remain intact.
+	 */
+	public static boolean hasDatasetGraphSelection(Dataset dataset) {
+		return hasGraphSelection(toRdfDataset(dataset));
+	}
+
+	private static boolean hasGraphSelection(Dataset dataset) {
+		return dataset != null && (!dataset.getDefaultGraphs().isEmpty() || !dataset.getNamedGraphs().isEmpty());
 	}
 
 	private static Resource physicalContext(Resource graph) {

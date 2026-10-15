@@ -32,7 +32,10 @@ import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
@@ -74,8 +77,9 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 	protected List<StatementPattern> stmts = new ArrayList<>();
 	private Graph activeGraph;
 	private boolean hasGraph;
-	private final List<Graph> graphs = new ArrayList<>();
 	private final Map<StatementPattern, QueryRoot> graphProbes = new IdentityHashMap<>();
+	private TupleExpr queryModel;
+	private GraphSourceDelegation.Proof delegationProof;
 
 	// internal helpers
 	private boolean seenProjection = false; // whether the main projection has been visited
@@ -124,6 +128,8 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 
 	@Override
 	public void optimize(TupleExpr tupleExpr) {
+		queryModel = tupleExpr;
+		delegationProof = null;
 
 		try {
 			tupleExpr.visit(this);
@@ -210,7 +216,6 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		hasGraph = true;
 		Graph previous = activeGraph;
 		FedXGraph graph = new FedXGraph(node, queryInfo);
-		graphs.add(graph);
 		activeGraph = graph;
 		graph.getArg().visit(this);
 		activeGraph = previous;
@@ -256,56 +261,51 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		return hasGraph;
 	}
 
-	/**
-	 * A positive graph body must obtain a statement before it can produce a solution. When source selection finds
-	 * exactly one relevant endpoint, that endpoint therefore contains every graph that can contribute. Sending the
-	 * original query there keeps blank-node graph names within one atomic remote evaluation. Membership-sensitive
-	 * bodies must still enumerate the entire federation, including endpoints with no selected statements.
-	 */
+	/** Requires both mandatory active-graph origins and accounted source dependencies. */
 	public boolean canDelegateGraphsToSingleSource() {
-		return graphs.stream()
-				.allMatch(graph -> hasMandatoryPositiveGraphBody(graph.getArg(),
-						graph.getGraphName().getName()));
+		return !hasGraph || graphDelegationProof().eligible();
 	}
 
 	static boolean hasMandatoryPositiveGraphBody(TupleExpr expression, String graphName) {
-		return positiveStatementCount(expression, graphName) > 0;
+		return GraphSourceDelegation.mandatoryOrigin(expression);
 	}
 
-	private static int positiveStatementCount(TupleExpr expression, String graphName) {
-		if (expression.getClass() == StatementPattern.class || expression instanceof ExclusiveStatement
-				|| expression instanceof StatementSourcePattern) {
-			StatementPattern statement = (StatementPattern) expression;
-			// A lowered nested GRAPH has its own context and cannot prove membership in the outer active graph.
-			return statement.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS && statement.getContextVar() == null
-					? 1
-					: -1;
+	private GraphSourceDelegation.Proof graphDelegationProof() {
+		if (delegationProof == null) {
+			delegationProof = GraphSourceDelegation.analyze(queryModel);
 		}
-		if (expression instanceof SingletonSet) {
-			return 0;
+		return delegationProof;
+	}
+
+	/** Detached physical-data probes required before excluding otherwise unaccounted federation members. */
+	public List<StatementPattern> additionalGraphSourceSelectionPatterns() {
+		if (!hasGraph || !graphDelegationProof().eligible()) {
+			return List.of();
 		}
-		if (expression instanceof BindingSetAssignment values) {
-			// Unknown streaming rows cannot prove that they leave the public graph name untouched.
-			return values.hasRepeatableBindingSets() && !values.getBindingNames().contains(graphName)
-					&& !values.getPossibleBindingNames().contains(graphName) ? 0 : -1;
+		GraphSourceDelegation.Dependency dependency = graphDelegationProof().dependency();
+		if (dependency == GraphSourceDelegation.Dependency.COVERED) {
+			return List.of();
 		}
-		if (expression instanceof Join join) {
-			int left = positiveStatementCount(join.getLeftArg(), graphName);
-			int right = positiveStatementCount(join.getRightArg(), graphName);
-			return left < 0 || right < 0 ? -1 : left + right;
-		}
-		if (expression instanceof NJoin join) {
-			int statements = 0;
-			for (TupleExpr argument : join.getArgs()) {
-				int count = positiveStatementCount(argument, graphName);
-				if (count < 0) {
-					return -1;
-				}
-				statements += count;
+		List<StatementPattern> patterns = new ArrayList<>();
+		for (StatementPattern.Scope scope : StatementPattern.Scope.values()) {
+			if (dependency == GraphSourceDelegation.Dependency.PHYSICAL_RDF) {
+				patterns.add(dependencyPattern(scope, null, null));
+			} else {
+				patterns.add(dependencyPattern(scope, RDF.TYPE, RDF.PROPOSITION_FORM));
+				patterns.add(dependencyPattern(scope, RDF.PROPOSITION_FORM_SUBJECT, null));
+				patterns.add(dependencyPattern(scope, RDF.PROPOSITION_FORM_PREDICATE, null));
+				patterns.add(dependencyPattern(scope, RDF.PROPOSITION_FORM_OBJECT, null));
 			}
-			return statements;
 		}
-		return -1;
+		return patterns;
+	}
+
+	private static StatementPattern dependencyPattern(StatementPattern.Scope scope, IRI predicate, Value object) {
+		String id = NodeFactory.getNextId();
+		return new StatementPattern(scope, Var.of("dependency_subject_" + id),
+				Var.of("dependency_predicate_" + id, predicate, predicate != null, predicate != null),
+				Var.of("dependency_object_" + id, object, object != null, object != null),
+				scope == StatementPattern.Scope.NAMED_CONTEXTS ? Var.of("dependency_context_" + id) : null);
 	}
 
 	public StatementPattern sourceSelectionPattern(StatementPattern node) {

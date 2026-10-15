@@ -15,8 +15,10 @@ import java.io.BufferedReader;
 import java.io.FileNotFoundException;
 import java.io.FileReader;
 import java.io.IOException;
+import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -28,6 +30,8 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FedXStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.GraphSelectionAware;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.evaluation.iterator.BoundJoinVALUESConversionIteration;
@@ -41,10 +45,12 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +65,107 @@ public class QueryStringUtil {
 	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
 
 	private static final Logger log = LoggerFactory.getLogger(QueryStringUtil.class);
+
+	/** Keeps helper names separate from the public projection and reserves the entire fragment before rendering. */
+	private static final class ProjectionVariables extends AbstractSet<String> {
+		private final Set<String> projected;
+		private final Set<String> reserved = new HashSet<>();
+		private int nextGraphName;
+
+		ProjectionVariables(QueryModelNode expression, Iterable<? extends BindingSet> bindings,
+				FilterValueExpr filter, boolean ordered) {
+			projected = ordered ? new LinkedHashSet<>() : new HashSet<>();
+			var collector = new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+				@Override
+				public void meet(Var var) {
+					reserved.add(var.getName());
+				}
+			};
+			expression.visit(collector);
+			if (filter != null) {
+				filter.visit(collector);
+			}
+			for (BindingSet input : bindings) {
+				reserved.addAll(input.getBindingNames());
+			}
+			reserved.add(BoundJoinVALUESConversionIteration.INDEX_BINDING_NAME);
+		}
+
+		String graphName() {
+			return privateName("__fedx_graph_");
+		}
+
+		String privateName(String prefix) {
+			String name;
+			do {
+				name = prefix + nextGraphName++;
+			} while (!reserved.add(name));
+			return name;
+		}
+
+		@Override
+		public boolean add(String name) {
+			reserved.add(name);
+			return projected.add(name);
+		}
+
+		@Override
+		public Iterator<String> iterator() {
+			return projected.iterator();
+		}
+
+		@Override
+		public int size() {
+			return projected.size();
+		}
+	}
+
+	private static Set<String> projectionVariables(QueryModelNode expression, BindingSet bindings,
+			FilterValueExpr filter) {
+		return new ProjectionVariables(expression, List.of(bindings), filter, false);
+	}
+
+	private static void appendProbeProjection(StringBuilder query, Set<String> varNames) {
+		query.append("SELECT ");
+		if (varNames.isEmpty()) {
+			// A fully bound existence probe still needs a legal SELECT projection. The graph helper itself
+			// remains private, even for transports that implement ASK by SELECT ... LIMIT 1.
+			String probe = ((ProjectionVariables) varNames).privateName("__fedx_probe_");
+			query.append("(1 AS ?").append(probe).append(") ");
+		} else {
+			for (String name : varNames) {
+				query.append("?").append(name).append(" ");
+			}
+		}
+	}
+
+	private static String graphScope(QueryModelNode expression, Scope scope, Var context, String body,
+			Set<String> varNames, BindingSet bindings) {
+		ResolvedGraphSelection selection = expression instanceof GraphSelectionAware aware
+				? aware.getResolvedGraphSelection()
+				: null;
+		if (selection != null) {
+			if (selection.enumeratedAlias()) {
+				ProjectionVariables variables;
+				if (varNames instanceof ProjectionVariables allocated) {
+					variables = allocated;
+				} else {
+					variables = new ProjectionVariables(expression, List.of(bindings), null, false);
+					variables.reserved.addAll(varNames);
+				}
+				String helper = variables.graphName();
+				return "GRAPH ?" + helper + " { " + body + "} FILTER(sameTerm(?" + helper + ", "
+						+ getValueString(selection.logicalGraph()) + ")) ";
+			}
+			return "GRAPH " + getValueString(selection.logicalGraph()) + " { " + body + "} ";
+		}
+		if (scope == Scope.NAMED_CONTEXTS) {
+			StringBuilder graph = new StringBuilder("GRAPH ");
+			appendVar(graph, context, varNames, bindings);
+			return graph.append(" { ").append(body).append("} ").toString();
+		}
+		return body;
+	}
 
 	/**
 	 * A dummy URI which is used as a replacement for {@link BNode}s in {@link #appendBNode(StringBuilder, BNode)} since
@@ -126,7 +233,6 @@ public class QueryStringUtil {
 		StatementPattern stmt = (StatementPattern) node.getPathExpression();
 
 		StringBuilder sb = new StringBuilder();
-
 		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
 
 		// append the path expression with the modifier
@@ -135,8 +241,7 @@ public class QueryStringUtil {
 		sb.append(" ");
 
 		sb = appendVar(sb, stmt.getObjectVar(), varNames, bindings).append(" . ");
-
-		return sb.toString();
+		return graphScope(node, node.getScope(), node.getContextVar(), sb.toString(), varNames, bindings);
 	}
 
 	public static String toString(Var var) {
@@ -176,7 +281,7 @@ public class QueryStringUtil {
 	public static String selectQueryString(StatementPattern stmt, BindingSet bindings, FilterValueExpr filterExpr,
 			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(stmt, bindings, filterExpr);
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -234,7 +339,7 @@ public class QueryStringUtil {
 			FilterValueExpr filterExpr,
 			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(expr, bindings, filterExpr);
 		String s = constructJoinArg(expr, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -292,7 +397,7 @@ public class QueryStringUtil {
 			AtomicBoolean evaluated, Dataset dataset) throws IllegalQueryException {
 
 		StringBuilder sb = new StringBuilder();
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(group, bindings, filterExpr);
 
 		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {
 			sb.append(constructJoinArg(s, varNames, bindings));
@@ -339,7 +444,7 @@ public class QueryStringUtil {
 	 */
 	public static String askQueryString(ExclusiveTupleExpr expr, BindingSet bindings, Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(expr, bindings, null);
 
 		StringBuilder res = new StringBuilder();
 		res.append("ASK ");
@@ -379,7 +484,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundJoinVALUES(StatementPattern stmt, List<BindingSet> unionBindings,
 			FilterValueExpr filterExpr, AtomicBoolean evaluated, Dataset dataset) {
 
-		Set<String> varNames = new LinkedHashSet<>();
+		Set<String> varNames = new ProjectionVariables(stmt, unionBindings, filterExpr, true);
 		StringBuilder res = new StringBuilder();
 
 		String stmtPattern = constructStatement(stmt, varNames, new EmptyBindingSet());
@@ -446,7 +551,15 @@ public class QueryStringUtil {
 	public static String selectQueryStringBoundCheck(StatementPattern stmt, List<BindingSet> unionBindings,
 			Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
+		ProjectionVariables varNames = new ProjectionVariables(stmt, unionBindings, null, false);
+		// Later UNION branches introduce public row-indexed variables. Reserve every branch before
+		// allocating any private graph helper, so an earlier branch cannot capture a later public name.
+		for (int row = 0; row < unionBindings.size(); row++) {
+			for (Var variable : stmt.getVarList()) {
+				varNames.reserved.add(variable.getName() + "_" + row);
+			}
+			varNames.reserved.add("o_" + row);
+		}
 
 		StringBuilder unions = new StringBuilder();
 		for (int i = 0; i < unionBindings.size(); i++) {
@@ -477,7 +590,7 @@ public class QueryStringUtil {
 	public static String selectQueryStringTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup, BindingSet bindings,
 			Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(tripleRefJoinGroup, bindings, null);
 
 		StringBuilder body = new StringBuilder();
 		body.append(constructStatement(tripleRefJoinGroup.getTripleRefStatementPattern(), varNames, bindings));
@@ -564,7 +677,7 @@ public class QueryStringUtil {
 	 */
 	public static String askQueryString(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(stmt, bindings, null);
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
@@ -587,12 +700,12 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(StatementPattern stmt, BindingSet bindings, Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(stmt, bindings, null);
 		String s = constructStatement(stmt, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
-		res.append("SELECT * ");
+		appendProbeProjection(res, varNames);
 		appendDatasetClause(res, dataset);
 		res.append("WHERE { ");
 		res.append(s).append(" } LIMIT 1");
@@ -614,12 +727,12 @@ public class QueryStringUtil {
 			return selectQueryStringLimit1((ExclusiveGroup) expr, bindings, dataset);
 		}
 
-		Set<String> varNames = new HashSet<>();
+		Set<String> varNames = projectionVariables(expr, bindings, null);
 		String s = constructJoinArg(expr, varNames, bindings);
 
 		StringBuilder res = new StringBuilder();
 
-		res.append("SELECT * ");
+		appendProbeProjection(res, varNames);
 		appendDatasetClause(res, dataset);
 		res.append("WHERE {");
 		res.append(s).append(" } LIMIT 1");
@@ -637,18 +750,16 @@ public class QueryStringUtil {
 	 */
 	public static String selectQueryStringLimit1(ExclusiveGroup group, BindingSet bindings, Dataset dataset) {
 
-		Set<String> varNames = new HashSet<>();
-		StringBuilder res = new StringBuilder();
-
-		res.append("SELECT * ");
-		appendDatasetClause(res, dataset);
-		res.append("WHERE {");
-
+		Set<String> varNames = projectionVariables(group, bindings, null);
+		StringBuilder body = new StringBuilder();
 		for (ExclusiveTupleExpr s : group.getExclusiveExpressions()) {
-			res.append(constructJoinArg(s, varNames, bindings));
+			body.append(constructJoinArg(s, varNames, bindings));
 		}
 
-		res.append(" } LIMIT 1");
+		StringBuilder res = new StringBuilder();
+		appendProbeProjection(res, varNames);
+		appendDatasetClause(res, dataset);
+		res.append("WHERE {").append(body).append(" } LIMIT 1");
 
 		return res.toString();
 	}
@@ -665,21 +776,11 @@ public class QueryStringUtil {
 	 */
 	protected static String constructStatement(StatementPattern stmt, Set<String> varNames, BindingSet bindings) {
 		StringBuilder sb = new StringBuilder();
-
-		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
-			sb.append("GRAPH ");
-			appendVar(sb, stmt.getContextVar(), varNames, bindings);
-			sb.append(" { ");
-		}
 		sb = appendVar(sb, stmt.getSubjectVar(), varNames, bindings).append(" ");
 		sb = appendVar(sb, stmt.getPredicateVar(), varNames, bindings).append(" ");
 		appendStmtObjectOrTripleRef(sb, stmt, varNames, bindings);
 
-		if (stmt.getScope().equals(Scope.NAMED_CONTEXTS)) {
-			sb.append("} ");
-		}
-
-		return sb.toString();
+		return graphScope(stmt, stmt.getScope(), stmt.getContextVar(), sb.toString(), varNames, bindings);
 	}
 
 	/**
@@ -737,7 +838,7 @@ public class QueryStringUtil {
 
 		sb.append(" FILTER (?o_").append(_varID).append(" = ").append(objValue).append(" )");
 
-		return sb.toString();
+		return graphScope(stmt, stmt.getScope(), stmt.getContextVar(), sb.toString(), varNames, bindings);
 	}
 
 	protected static StringBuilder appendStmtObjectOrTripleRef(StringBuilder sb, StatementPattern stmt,

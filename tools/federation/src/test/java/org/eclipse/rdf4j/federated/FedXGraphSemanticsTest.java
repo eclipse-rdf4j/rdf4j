@@ -12,26 +12,38 @@
 package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.federated.algebra.ExclusiveArbitraryLengthPath;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
 import org.eclipse.rdf4j.federated.structures.FedXDataset;
+import org.eclipse.rdf4j.federated.structures.FedXTupleQuery;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
+import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.FallbackDataset;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -51,6 +63,7 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 	private static final IRI B = VF.createIRI("urn:b");
 	private static final IRI C = VF.createIRI("urn:c");
 	private static final IRI P = VF.createIRI("urn:p");
+	private static final IRI Q = VF.createIRI("urn:q");
 
 	@BeforeEach
 	public void prepareDistributedGraphs() throws Exception {
@@ -141,6 +154,105 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void nestedFixedGraphKeepsOuterReservedAliasSelectionWithoutDataset() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI outerMarker = VF.createIRI("urn:nestedFixedOuterMarker");
+		IRI innerGraph = VF.createIRI("urn:nestedFixedInnerGraph");
+		IRI innerSubject = VF.createIRI("urn:nestedFixedInnerSubject");
+		IRI innerObject = VF.createIRI("urn:nestedFixedInnerObject");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(rdf4jAlias, outerMarker, literal("rdf4j"), rdf4jAlias);
+			first.add(innerSubject, P, innerObject, innerGraph);
+			second.add(sesameAlias, outerMarker, literal("sesame"), sesameAlias);
+		}
+
+		assertThat(query("SELECT ?outer ?marker ?s ?o WHERE { GRAPH ?outer { ?outer <" + outerMarker
+				+ "> ?marker . GRAPH <" + innerGraph + "> { ?s <urn:p> ?o } } "
+				+ "FILTER(?outer = <" + rdf4jAlias + "> || ?outer = <" + sesameAlias + ">) }"))
+						.extracting(row -> tuple(row.getValue("outer"), row.getValue("marker"), row.getValue("s"),
+								row.getValue("o")))
+						.containsExactlyInAnyOrder(tuple(rdf4jAlias, literal("rdf4j"), innerSubject, innerObject),
+								tuple(sesameAlias, literal("sesame"), innerSubject, innerObject));
+	}
+
+	@Test
+	public void nestedVariableGraphsKeepBothGraphNamesAndRowsSeparateWithoutDataset() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI innerGraph = VF.createIRI("urn:nestedVariableInnerGraph");
+		IRI outerMarker = VF.createIRI("urn:nestedVariableOuterMarker");
+		IRI innerPredicate = VF.createIRI("urn:nestedVariablePredicate");
+		IRI defaultSubject = VF.createIRI("urn:nestedVariableDefaultSubject");
+		IRI defaultObject = VF.createIRI("urn:nestedVariableDefaultObject");
+		IRI rdf4jObject = VF.createIRI("urn:nestedVariableRdf4jObject");
+		IRI sesameObject = VF.createIRI("urn:nestedVariableSesameObject");
+		IRI namedSubject = VF.createIRI("urn:nestedVariableNamedSubject");
+		IRI namedObject = VF.createIRI("urn:nestedVariableNamedObject");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(defaultSubject, innerPredicate, defaultObject);
+			first.add(rdf4jAlias, outerMarker, literal("rdf4j"), rdf4jAlias);
+			first.add(rdf4jAlias, innerPredicate, rdf4jObject, rdf4jAlias);
+			first.add(namedSubject, innerPredicate, namedObject, innerGraph);
+			second.add(sesameAlias, outerMarker, literal("sesame"), sesameAlias);
+			second.add(sesameAlias, innerPredicate, sesameObject, sesameAlias);
+		}
+
+		assertThat(query("SELECT ?outer ?marker ?inner ?s ?o WHERE { GRAPH ?outer { ?outer <" + outerMarker
+				+ "> ?marker . GRAPH ?inner { ?s <" + innerPredicate + "> ?o } } FILTER(?outer = <"
+				+ rdf4jAlias + "> || ?outer = <" + sesameAlias + ">) }"))
+						.extracting(row -> tuple(row.getValue("outer"), row.getValue("marker"), row.getValue("inner"),
+								row.getValue("s"), row.getValue("o")))
+						.containsExactlyInAnyOrder(
+								tuple(rdf4jAlias, literal("rdf4j"), rdf4jAlias, rdf4jAlias, rdf4jObject),
+								tuple(rdf4jAlias, literal("rdf4j"), sesameAlias, sesameAlias, sesameObject),
+								tuple(rdf4jAlias, literal("rdf4j"), innerGraph, namedSubject, namedObject),
+								tuple(sesameAlias, literal("sesame"), rdf4jAlias, rdf4jAlias, rdf4jObject),
+								tuple(sesameAlias, literal("sesame"), sesameAlias, sesameAlias, sesameObject),
+								tuple(sesameAlias, literal("sesame"), innerGraph, namedSubject, namedObject));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "urn:sharedBlankNodeOuterGraph", "http://rdf4j.org/schema/rdf4j#nil",
+			"http://www.openrdf.org/schema/sesame#nil" })
+	public void sameEndpointNestedGraphJoinKeepsBlankNodeInAnAtomicGroup(String outerGraphName) throws Exception {
+		IRI outerGraph = VF.createIRI(outerGraphName);
+		IRI innerGraph = VF.createIRI("urn:sharedBlankNodeInnerGraph");
+		IRI outerPredicate = VF.createIRI("urn:sharedBlankNodeOuterPredicate");
+		IRI innerPredicate = VF.createIRI("urn:sharedBlankNodeInnerPredicate");
+		var sharedBlankNode = VF.createBNode("sharedGraphSubject");
+		IRI remoteSubject = VF.createIRI("urn:remoteGraphSubject");
+		var unrelatedRemoteBlankNode = VF.createBNode("differentEndpointSubject");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(sharedBlankNode, outerPredicate, literal("local outer"), outerGraph);
+			first.add(sharedBlankNode, innerPredicate, literal("local inner"), innerGraph);
+			second.add(remoteSubject, VF.createIRI("urn:unrelatedOuterPredicate"), literal("remote outer"), outerGraph);
+			second.add(unrelatedRemoteBlankNode, VF.createIRI("urn:unrelatedInnerPredicate"), literal("remote inner"),
+					innerGraph);
+		}
+
+		String queryText = "SELECT ?g ?s ?outer ?inner WHERE { GRAPH ?g { ?s <" + outerPredicate
+				+ "> ?outer . GRAPH <" + innerGraph + "> { ?s <" + innerPredicate + "> ?inner } } }";
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryText, null);
+		var federation = federationContext();
+		var strategy = federation.createStrategy(null);
+		var queryInfo = new QueryInfo(null, null, QueryType.SELECT, 0, false, federation, strategy,
+				parsed.getDataset());
+		TupleExpr optimized = strategy.optimize(parsed.getTupleExpr(),
+				new FederationEvaluationStatistics(queryInfo, null), EmptyBindingSet.getInstance());
+		assertThat(optimized).isNotInstanceOf(SingleSourceQuery.class);
+		assertThat(countNodes(optimized, ExclusiveGroup.class)).as(optimized.toString()).isEqualTo(1);
+
+		assertThat(query(queryText))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("outer"),
+						row.getValue("inner")))
+				.containsExactly(tuple(outerGraph, sharedBlankNode, literal("local outer"), literal("local inner")));
+	}
+
+	@Test
 	public void graphOperandsAreIndependentOfSiblingBindings() {
 		for (String graph : List.of("GRAPH ?g { FILTER(!BOUND(?v)) }",
 				"OPTIONAL { GRAPH ?g { FILTER(!BOUND(?v)) } }")) {
@@ -148,6 +260,243 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 					.extracting(row -> row.getValue("g"))
 					.containsExactlyInAnyOrder(G1, G2, SHARED);
 		}
+	}
+
+	@Test
+	public void selectedGraphTransportReservesPublicNamesAndReusablePlans() {
+		IRI predicate = VF.createIRI("urn:privateNameOuterPredicate");
+		IRI innerPredicate = VF.createIRI("urn:privateNameInnerPredicate");
+		IRI innerGraph = VF.createIRI("urn:privateNameInnerGraph");
+		IRI aliasSubject = VF.createIRI("urn:privateNameAliasSubject");
+		IRI ordinarySubject = VF.createIRI("urn:privateNameOrdinarySubject");
+		IRI ordinaryGraph = VF.createIRI("urn:privateNameOrdinaryGraph");
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		try (RepositoryConnection endpoint = getRepository(1).getConnection()) {
+			endpoint.add(aliasSubject, predicate, literal("alias outer"), rdf4jAlias, sesameAlias);
+			endpoint.add(aliasSubject, predicate, literal("default decoy"));
+			endpoint.add(aliasSubject, innerPredicate, literal("alias inner"), innerGraph);
+			endpoint.add(ordinarySubject, predicate, literal("ordinary outer"), ordinaryGraph);
+			endpoint.add(ordinarySubject, innerPredicate, literal("ordinary inner"), innerGraph);
+		}
+		String text = "SELECT * WHERE { GRAPH ?g { ?__fedx_graph_0 <" + predicate
+				+ "> ?__fedx_graph_1 . GRAPH <" + innerGraph + "> { ?__fedx_graph_0 <" + innerPredicate
+				+ "> ?__fedx_graph_2 } } }";
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			FedXTupleQuery prepared = (FedXTupleQuery) connection.prepareTupleQuery(text);
+			String originalPlan = prepared.getParsedQuery().getTupleExpr().toString();
+			for (int evaluation = 0; evaluation < 2; evaluation++) {
+				try (TupleQueryResult result = prepared.evaluate()) {
+					assertThat(result.getBindingNames()).containsExactlyInAnyOrder("g", "__fedx_graph_0",
+							"__fedx_graph_1", "__fedx_graph_2");
+					List<BindingSet> rows = QueryResults.asList(result);
+					rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g",
+							"__fedx_graph_0", "__fedx_graph_1", "__fedx_graph_2"));
+					assertThat(rows).extracting(row -> tuple(row.getValue("g"), row.getValue("__fedx_graph_0"),
+							row.getValue("__fedx_graph_1"), row.getValue("__fedx_graph_2")))
+							.containsExactlyInAnyOrder(
+									tuple(rdf4jAlias, aliasSubject, literal("alias outer"), literal("alias inner")),
+									tuple(sesameAlias, aliasSubject, literal("alias outer"), literal("alias inner")),
+									tuple(ordinaryGraph, ordinarySubject, literal("ordinary outer"),
+											literal("ordinary inner")));
+				}
+				assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+			}
+		}
+	}
+
+	@Test
+	public void existsWithinFixedGraphPreservesOuterSolutionBindings() {
+		IRI graph = VF.createIRI("urn:existsGraph");
+		IRI subjectA = VF.createIRI("urn:existsA");
+		IRI subjectB = VF.createIRI("urn:existsB");
+		IRI firstObject = VF.createIRI("urn:existsO1");
+		IRI secondObject = VF.createIRI("urn:existsO2");
+		try (RepositoryConnection endpoint = getRepository(1).getConnection()) {
+			endpoint.add(subjectA, P, firstObject, graph);
+			endpoint.add(subjectB, P, firstObject, graph);
+			endpoint.add(subjectB, P, secondObject, graph);
+		}
+		assertThat(query("SELECT ?s ?p WHERE { GRAPH <urn:existsGraph> { ?s ?p <urn:existsO1> "
+				+ "FILTER EXISTS { ?s ?p <urn:existsO2> } } }"))
+						.singleElement()
+						.satisfies(row -> {
+							assertThat(row.getValue("s")).isEqualTo(subjectB);
+							assertThat(row.getValue("p")).isEqualTo(P);
+						});
+	}
+
+	@Test
+	public void preparedGraphQueryCanBeReusedAcrossGraphSelections() {
+		IRI firstSubject = VF.createIRI("urn:existsFirstSubject");
+		IRI matchingSubject = VF.createIRI("urn:existsMatchingSubject");
+		IRI firstObject = VF.createIRI("urn:existsFirstObject");
+		IRI secondObject = VF.createIRI("urn:existsSecondObject");
+		try (RepositoryConnection endpoint = getRepository(1).getConnection()) {
+			endpoint.add(firstSubject, P, firstObject, G1);
+			endpoint.add(matchingSubject, P, firstObject, G2);
+			endpoint.add(matchingSubject, P, secondObject, G2);
+		}
+		String queryText = "SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> <urn:existsFirstObject> "
+				+ "FILTER EXISTS { ?s <urn:p> <urn:existsSecondObject> } } }";
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			FedXTupleQuery prepared = (FedXTupleQuery) connection.prepareTupleQuery(queryText);
+			SimpleDataset dataset = new SimpleDataset();
+			dataset.addNamedGraph(G1);
+			dataset.addNamedGraph(G2);
+			prepared.setDataset(dataset);
+			String originalPlan = prepared.getParsedQuery().getTupleExpr().toString();
+
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows)).singleElement().satisfies(row -> {
+					assertThat(row.getValue("g")).isEqualTo(G2);
+					assertThat(row.getValue("s")).isEqualTo(matchingSubject);
+				});
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.setBinding("g", G1);
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows)).isEmpty();
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.clearBindings();
+			prepared.setBinding("g", G2);
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows)).singleElement().satisfies(row -> {
+					assertThat(row.getValue("g")).isEqualTo(G2);
+					assertThat(row.getValue("s")).isEqualTo(matchingSubject);
+				});
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+		}
+	}
+
+	@Test
+	public void preparedGraphQueryCanBeReusedAcrossDefaultAliasesAndNamedGraphs() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:reusedOrdinaryGraph");
+		IRI defaultSubjectFromFixture = VF.createIRI("urn:default");
+		IRI defaultSubject = VF.createIRI("urn:reusedDefaultSubject");
+		IRI rdf4jPhysicalSubject = VF.createIRI("urn:reusedRdf4jPhysicalSubject");
+		IRI sesamePhysicalSubject = VF.createIRI("urn:reusedSesamePhysicalSubject");
+		IRI namedSubject = VF.createIRI("urn:reusedNamedSubject");
+		try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
+			endpoint.add(defaultSubject, P, literal("default"));
+			endpoint.add(rdf4jPhysicalSubject, P, literal("physical-rdf4j"), rdf4jAlias);
+			endpoint.add(sesamePhysicalSubject, P, literal("physical-sesame"), sesameAlias);
+			endpoint.add(namedSubject, P, literal("named"), ordinaryGraph);
+		}
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			FedXTupleQuery prepared = (FedXTupleQuery) connection.prepareTupleQuery(
+					"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+			SimpleDataset dataset = new SimpleDataset();
+			dataset.addNamedGraph(rdf4jAlias);
+			dataset.addNamedGraph(sesameAlias);
+			dataset.addNamedGraph(ordinaryGraph);
+			prepared.setDataset(dataset);
+			String originalPlan = prepared.getParsedQuery().getTupleExpr().toString();
+
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(rdf4jAlias, defaultSubjectFromFixture),
+								tuple(rdf4jAlias, defaultSubject), tuple(sesameAlias, defaultSubjectFromFixture),
+								tuple(sesameAlias, defaultSubject), tuple(ordinaryGraph, namedSubject));
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.setBinding("g", rdf4jAlias);
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactly(tuple(rdf4jAlias, rdf4jPhysicalSubject));
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.clearBindings();
+			prepared.setBinding("g", ordinaryGraph);
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactly(tuple(ordinaryGraph, namedSubject));
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.clearBindings();
+			prepared.setBinding("g", sesameAlias);
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactly(tuple(sesameAlias, sesamePhysicalSubject));
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+
+			prepared.clearBindings();
+			try (var rows = prepared.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(rdf4jAlias, defaultSubjectFromFixture),
+								tuple(rdf4jAlias, defaultSubject), tuple(sesameAlias, defaultSubjectFromFixture),
+								tuple(sesameAlias, defaultSubject), tuple(ordinaryGraph, namedSubject));
+			}
+			assertThat(prepared.getParsedQuery().getTupleExpr().toString()).isEqualTo(originalPlan);
+		}
+	}
+
+	@Test
+	public void selectedDefaultAliasKeepsJoinAndNestedExistsScopesSeparate() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:scopedOrdinaryGraph");
+		IRI membershipGraph = VF.createIRI("urn:scopedMembershipGraph");
+		IRI defaultSubject = VF.createIRI("urn:scopedDefaultSubject");
+		IRI defaultMiddle = VF.createIRI("urn:scopedDefaultMiddle");
+		IRI physicalSubject = VF.createIRI("urn:scopedPhysicalSubject");
+		IRI physicalMiddle = VF.createIRI("urn:scopedPhysicalMiddle");
+		IRI namedSubject = VF.createIRI("urn:scopedNamedSubject");
+		IRI namedMiddle = VF.createIRI("urn:scopedNamedMiddle");
+		try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
+			endpoint.add(defaultSubject, P, defaultMiddle);
+			endpoint.add(defaultMiddle, Q, literal("default-label"));
+			endpoint.add(physicalSubject, P, physicalMiddle, rdf4jAlias);
+			endpoint.add(physicalMiddle, Q, literal("physical-label"), rdf4jAlias);
+			endpoint.add(namedSubject, P, namedMiddle, ordinaryGraph);
+			endpoint.add(namedMiddle, Q, literal("named-label"), ordinaryGraph);
+			endpoint.add(defaultSubject, VF.createIRI("urn:r"), literal("member"), membershipGraph);
+			endpoint.add(namedSubject, VF.createIRI("urn:r"), literal("member"), membershipGraph);
+		}
+
+		String dataset = "FROM NAMED <" + rdf4jAlias + "> FROM NAMED <" + sesameAlias + "> FROM NAMED <"
+				+ ordinaryGraph + "> FROM NAMED <" + membershipGraph + "> ";
+		String body = "GRAPH ?g { ?s <urn:p> ?middle . ?middle <urn:q> ?label . "
+				+ "FILTER EXISTS { GRAPH <" + membershipGraph + "> { ?s <urn:r> 'member' } } }";
+		assertThat(query("SELECT ?g ?s ?label " + dataset + "WHERE { " + body + " }"))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("label")))
+				.containsExactlyInAnyOrder(tuple(rdf4jAlias, defaultSubject, literal("default-label")),
+						tuple(sesameAlias, defaultSubject, literal("default-label")),
+						tuple(ordinaryGraph, namedSubject, literal("named-label")));
+	}
+
+	@Test
+	public void selectedDefaultAliasDoesNotIncludeExcludedNestedGraph() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI excludedGraph = VF.createIRI("urn:excludedNestedGraph");
+		IRI subject = VF.createIRI("urn:excludedNestedGraphSubject");
+		IRI middle = VF.createIRI("urn:excludedNestedGraphMiddle");
+		try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
+			endpoint.add(subject, P, middle);
+			endpoint.add(subject, VF.createIRI("urn:r"), literal("member"), excludedGraph);
+			assertThat(endpoint.hasStatement(subject, VF.createIRI("urn:r"), literal("member"), false, excludedGraph))
+					.isTrue();
+		}
+
+		assertThat(query("SELECT ?g ?s FROM NAMED <" + rdf4jAlias + "> WHERE { GRAPH ?g { ?s <urn:p> <"
+				+ middle + "> FILTER EXISTS { GRAPH <" + excludedGraph + "> { ?s <urn:r> 'member' } } } }"))
+						.isEmpty();
 	}
 
 	@Test
@@ -295,6 +644,40 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 	}
 
 	@Test
+	public void positiveGraphStatementDoesNotCoverSplitZeroLengthNodeUniverse() {
+		IRI graph = VF.createIRI("urn:splitNodeUniverseGraph");
+		IRI positiveSubject = VF.createIRI("urn:splitNodeUniversePositiveSubject");
+		IRI positiveObject = VF.createIRI("urn:splitNodeUniversePositiveObject");
+		IRI remoteSubject = VF.createIRI("urn:splitNodeUniverseRemoteSubject");
+		IRI remoteObject = VF.createIRI("urn:splitNodeUniverseRemoteObject");
+		IRI positivePredicate = VF.createIRI("urn:splitNodeUniversePositivePredicate");
+		IRI unrelatedPredicate = VF.createIRI("urn:splitNodeUniverseUnrelatedPredicate");
+		IRI missingPathPredicate = VF.createIRI("urn:splitNodeUniverseMissingPathPredicate");
+		try (RepositoryConnection positive = getRepository(1).getConnection();
+				RepositoryConnection nodeUniverse = getRepository(2).getConnection()) {
+			positive.add(positiveSubject, positivePredicate, positiveObject, graph);
+			nodeUniverse.add(remoteSubject, unrelatedPredicate, remoteObject, graph);
+		}
+
+		String queryText = "SELECT ?g ?s ?node WHERE { GRAPH ?g { ?s <" + positivePredicate
+				+ "> ?p . ?node <" + missingPathPredicate + ">* ?node } }";
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryText, null);
+		var federation = federationContext();
+		var strategy = federation.createStrategy(null);
+		var queryInfo = new QueryInfo(null, null, QueryType.SELECT, 0, false, federation, strategy,
+				parsed.getDataset());
+		TupleExpr optimized = strategy.optimize(parsed.getTupleExpr(),
+				new FederationEvaluationStatistics(queryInfo, null), EmptyBindingSet.getInstance());
+		assertThat(optimized).isNotInstanceOf(SingleSourceQuery.class);
+
+		assertThat(query(queryText))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("node")))
+				.containsExactlyInAnyOrder(tuple(graph, positiveSubject, positiveSubject),
+						tuple(graph, positiveSubject, positiveObject), tuple(graph, positiveSubject, remoteSubject),
+						tuple(graph, positiveSubject, remoteObject));
+	}
+
+	@Test
 	public void namedGraphNegativeSourceCacheDoesNotHideDefaultGraphData() {
 		assertThat(query("SELECT ?g WHERE { GRAPH ?g { <urn:default> <urn:p> 'default' } }")).isEmpty();
 		assertThat(query("SELECT (true AS ?found) WHERE { <urn:default> <urn:p> 'default' }"))
@@ -308,21 +691,444 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 				.stream()
 				.flatMap(alias -> Stream.of("variable", "fixed", "default")
 						.map(kind -> DynamicTest.dynamicTest(alias + " / " + kind, () -> {
+							IRI aliasGraph = VF.createIRI(alias);
+							IRI physicalSubject = VF.createIRI(alias + "-physical");
 							try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
 								endpoint.add(VF.createIRI("urn:defaultTwo"), P, literal("defaultTwo"));
+								endpoint.add(physicalSubject, P, literal("physical"), aliasGraph);
 							}
 							String query;
 							if (kind.equals("default")) {
 								query = "SELECT ?s FROM <" + alias + "> WHERE { ?s <urn:p> ?o }";
 							} else {
 								String graph = kind.equals("variable") ? "?g" : "<" + alias + ">";
-								query = "SELECT ?s FROM NAMED <" + alias + "> WHERE { GRAPH " + graph
+								query = "SELECT " + (kind.equals("variable") ? "?g " : "")
+										+ "?s FROM NAMED <" + alias + "> WHERE { GRAPH " + graph
 										+ " { ?s <urn:p> ?o } }";
 							}
-							assertThat(query(query)).extracting(row -> row.getValue("s"))
-									.containsExactlyInAnyOrder(VF.createIRI("urn:default"),
-											VF.createIRI("urn:defaultTwo"));
+							if (kind.equals("variable")) {
+								assertThat(query(query))
+										.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+										.containsExactlyInAnyOrder(tuple(aliasGraph, VF.createIRI("urn:default")),
+												tuple(aliasGraph, VF.createIRI("urn:defaultTwo")));
+							} else if (kind.equals("fixed")) {
+								assertThat(query(query)).extracting(row -> row.getValue("s"))
+										.containsExactly(physicalSubject);
+							} else {
+								assertThat(query(query)).extracting(row -> row.getValue("s"))
+										.containsExactlyInAnyOrder(VF.createIRI("urn:default"),
+												VF.createIRI("urn:defaultTwo"));
+							}
 						})));
+	}
+
+	@Test
+	public void variableGraphKeepsBothDefaultAliasesSeparateFromOrdinaryNamedGraphs() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:ordinaryGraph");
+		IRI rdf4jPhysical = VF.createIRI("urn:rdf4jPhysical");
+		IRI sesamePhysical = VF.createIRI("urn:sesamePhysical");
+		IRI ordinarySubject = VF.createIRI("urn:ordinarySubject");
+		try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
+			endpoint.add(VF.createIRI("urn:defaultTwo"), P, literal("defaultTwo"));
+			endpoint.add(rdf4jPhysical, P, literal("rdf4jPhysical"), rdf4jAlias);
+			endpoint.add(sesamePhysical, P, literal("sesamePhysical"), sesameAlias);
+			endpoint.add(ordinarySubject, P, literal("ordinary"), ordinaryGraph);
+		}
+
+		assertThat(query("SELECT ?g ?s FROM NAMED <" + rdf4jAlias + "> FROM NAMED <" + sesameAlias
+				+ "> FROM NAMED <" + ordinaryGraph + "> WHERE { GRAPH ?g { ?s <urn:p> ?o } }"))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(
+								tuple(rdf4jAlias, VF.createIRI("urn:default")),
+								tuple(rdf4jAlias, VF.createIRI("urn:defaultTwo")),
+								tuple(sesameAlias, VF.createIRI("urn:default")),
+								tuple(sesameAlias, VF.createIRI("urn:defaultTwo")),
+								tuple(ordinaryGraph, ordinarySubject));
+	}
+
+	@Test
+	public void variableGraphAliasesPreserveComposedPathsAndExcludePhysicalAliasPaths() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:pathGraph");
+		IRI pathStart = VF.createIRI("urn:pathStart");
+		IRI defaultMiddle = VF.createIRI("urn:defaultMiddle");
+		IRI defaultEnd = VF.createIRI("urn:defaultEnd");
+		IRI rdf4jMiddle = VF.createIRI("urn:rdf4jPhysicalMiddle");
+		IRI rdf4jEnd = VF.createIRI("urn:rdf4jPhysicalEnd");
+		IRI sesameMiddle = VF.createIRI("urn:sesamePhysicalMiddle");
+		IRI sesameEnd = VF.createIRI("urn:sesamePhysicalEnd");
+		IRI ordinaryMiddle = VF.createIRI("urn:ordinaryMiddle");
+		IRI ordinaryEnd = VF.createIRI("urn:ordinaryEnd");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(pathStart, P, defaultMiddle);
+			first.add(defaultMiddle, Q, defaultEnd);
+			first.add(pathStart, P, rdf4jMiddle, rdf4jAlias);
+			first.add(rdf4jMiddle, Q, rdf4jEnd, rdf4jAlias);
+			second.add(pathStart, P, sesameMiddle, sesameAlias);
+			second.add(sesameMiddle, Q, sesameEnd, sesameAlias);
+			second.add(pathStart, P, ordinaryMiddle, ordinaryGraph);
+			second.add(ordinaryMiddle, Q, ordinaryEnd, ordinaryGraph);
+		}
+
+		String dataset = " FROM NAMED <" + rdf4jAlias + "> FROM NAMED <" + sesameAlias + "> FROM NAMED <"
+				+ ordinaryGraph + "> ";
+		assertThat(query("SELECT ?g ?s ?o" + dataset + "WHERE { GRAPH ?g { ?s <urn:p>/<urn:q> ?o } }"))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(rdf4jAlias, pathStart, defaultEnd),
+						tuple(sesameAlias, pathStart, defaultEnd),
+						tuple(ordinaryGraph, pathStart, ordinaryEnd));
+	}
+
+	@Test
+	public void variableGraphAliasesKeepStarPathMembershipWithinSelectedGraph() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:pathGraph");
+		IRI pathStart = VF.createIRI("urn:pathStart");
+		IRI defaultMiddle = VF.createIRI("urn:defaultMiddle");
+		IRI sesameMiddle = VF.createIRI("urn:sesamePhysicalMiddle");
+		IRI ordinaryMiddle = VF.createIRI("urn:ordinaryMiddle");
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.add(pathStart, P, defaultMiddle);
+			first.add(pathStart, P, VF.createIRI("urn:rdf4jPhysicalMiddle"), rdf4jAlias);
+			second.add(pathStart, P, sesameMiddle, sesameAlias);
+			second.add(pathStart, P, ordinaryMiddle, ordinaryGraph);
+		}
+
+		String dataset = " FROM NAMED <" + rdf4jAlias + "> FROM NAMED <" + sesameAlias + "> FROM NAMED <"
+				+ ordinaryGraph + "> ";
+		assertThat(query("SELECT ?g ?seed ?o" + dataset + "WHERE { GRAPH ?g { VALUES ?seed { <" + pathStart
+				+ "> } OPTIONAL { ?seed <urn:p>* ?o } } }"))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("seed"), row.getValue("o")))
+						.containsExactlyInAnyOrder(tuple(rdf4jAlias, pathStart, pathStart),
+								tuple(rdf4jAlias, pathStart, defaultMiddle),
+								tuple(sesameAlias, pathStart, pathStart),
+								tuple(sesameAlias, pathStart, defaultMiddle),
+								tuple(ordinaryGraph, pathStart, pathStart),
+								tuple(ordinaryGraph, pathStart, ordinaryMiddle));
+	}
+
+	@Test
+	public void singleSourcePathUsesSelectedAliasDefaultContextWithoutLeakingPhysicalDecoys() {
+		IRI alias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI predicate = VF.createIRI("urn:singleSourceAliasPath");
+		IRI start = VF.createIRI("urn:singleSourceAliasPathStart");
+		IRI middle = VF.createIRI("urn:singleSourceAliasPathMiddle");
+		IRI end = VF.createIRI("urn:singleSourceAliasPathEnd");
+		IRI decoy = VF.createIRI("urn:singleSourceAliasPathPhysicalDecoy");
+		try (RepositoryConnection positive = getRepository(1).getConnection();
+				RepositoryConnection physicalAlias = getRepository(2).getConnection()) {
+			positive.add(start, predicate, middle);
+			positive.add(middle, predicate, end);
+			physicalAlias.add(start, predicate, decoy, alias);
+		}
+
+		String queryText = "SELECT ?g ?o FROM NAMED <" + alias + "> WHERE { GRAPH ?g { <" + start + "> <"
+				+ predicate + ">+ ?o } }";
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryText, null);
+		var federation = federationContext();
+		var strategy = federation.createStrategy(null);
+		var queryInfo = new QueryInfo(null, null, QueryType.SELECT, 0, false, federation, strategy,
+				parsed.getDataset());
+		TupleExpr optimized = strategy.optimize(parsed.getTupleExpr(),
+				new FederationEvaluationStatistics(queryInfo, null), EmptyBindingSet.getInstance());
+		assertThat(optimized).isNotInstanceOf(SingleSourceQuery.class);
+		assertThat(countNodes(optimized, ExclusiveArbitraryLengthPath.class)).isEqualTo(1);
+
+		assertThat(query(queryText))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(alias, middle), tuple(alias, end));
+	}
+
+	@Test
+	public void singleSourcePathRetainsOrdinaryNamedGraphScope() {
+		IRI graph = VF.createIRI("urn:exclusiveNamedPathGraph");
+		IRI excludedGraph = VF.createIRI("urn:exclusiveNamedPathExcludedGraph");
+		IRI predicate = VF.createIRI("urn:exclusiveNamedPathPredicate");
+		IRI start = VF.createIRI("urn:exclusiveNamedPathStart");
+		IRI first = VF.createIRI("urn:exclusiveNamedPathFirst");
+		IRI end = VF.createIRI("urn:exclusiveNamedPathEnd");
+		IRI excluded = VF.createIRI("urn:exclusiveNamedPathExcluded");
+		IRI markerSubject = VF.createIRI("urn:exclusiveNamedPathMarkerSubject");
+		IRI marker = VF.createIRI("urn:exclusiveNamedPathMarker");
+		try (RepositoryConnection positive = getRepository(1).getConnection();
+				RepositoryConnection decoy = getRepository(2).getConnection()) {
+			positive.add(start, predicate, first, graph);
+			positive.add(first, predicate, end, graph);
+			positive.add(start, predicate, excluded);
+			decoy.add(markerSubject, marker, literal("marker"), graph);
+		}
+
+		String queryText = "SELECT ?g ?o ?m FROM NAMED <" + graph + "> FROM NAMED <" + excludedGraph
+				+ "> WHERE { GRAPH ?g { <" + start + "> <" + predicate + ">+ ?o . <" + markerSubject + "> <"
+				+ marker + "> ?m } }";
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, queryText, null);
+		var federation = federationContext();
+		var strategy = federation.createStrategy(null);
+		var queryInfo = new QueryInfo(null, null, QueryType.SELECT, 0, false, federation, strategy,
+				parsed.getDataset());
+		TupleExpr optimized = strategy.optimize(parsed.getTupleExpr(),
+				new FederationEvaluationStatistics(queryInfo, null), EmptyBindingSet.getInstance());
+		assertThat(optimized).isNotInstanceOf(SingleSourceQuery.class);
+		assertThat(countNodes(optimized, ExclusiveArbitraryLengthPath.class)).as(optimized.toString()).isEqualTo(1);
+
+		assertThat(query(queryText))
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("o"), row.getValue("m")))
+				.containsExactlyInAnyOrder(tuple(graph, first, literal("marker")),
+						tuple(graph, end, literal("marker")));
+	}
+
+	private int countNodes(TupleExpr expression, Class<? extends TupleExpr> nodeType) {
+		int[] count = { 0 };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ArbitraryLengthPath node) {
+				if (nodeType.isInstance(node)) {
+					count[0]++;
+				}
+				super.meet(node);
+			}
+
+			@Override
+			public void meetOther(org.eclipse.rdf4j.query.algebra.QueryModelNode node) {
+				if (nodeType.isInstance(node)) {
+					count[0]++;
+				}
+				super.meetOther(node);
+			}
+		});
+		return count[0];
+	}
+
+	@Test
+	public void boundAliasSelectionPreservesPhysicalContextAndEndpointOnlyDatasetSemantics() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI ordinaryGraph = VF.createIRI("urn:ordinaryGraph");
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(rdf4jAlias);
+		dataset.addNamedGraph(sesameAlias);
+		dataset.addNamedGraph(ordinaryGraph);
+		StatementPattern fixedAlias = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g", rdf4jAlias, true, true));
+		assertThat(FedXUtil.toContexts(fixedAlias, dataset)).containsExactly(rdf4jAlias);
+
+		StatementPattern enumeratedGraphs = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+				Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"));
+		assertThat(FedXUtil.toContexts(enumeratedGraphs, dataset))
+				.containsExactlyInAnyOrder(null, null, ordinaryGraph);
+		assertThat(FedXUtil.isContextAvailable(fixedAlias, new FedXDataset(null))).isTrue();
+		assertThat(FedXUtil.isContextAvailable(fixedAlias, new FedXDataset(new SimpleDataset()))).isTrue();
+		assertThat(FedXUtil.toRdfDataset(new FedXDataset(null))).isNull();
+
+		SimpleDataset queryDataset = new SimpleDataset();
+		queryDataset.addNamedGraph(ordinaryGraph);
+		Dataset queryFallback = FallbackDataset.fallback(new FedXDataset(null), queryDataset);
+		assertThat(FedXUtil.toRdfDataset(queryFallback).getNamedGraphs()).containsExactly(ordinaryGraph);
+
+		SimpleDataset primaryDataset = new SimpleDataset();
+		primaryDataset.addNamedGraph(rdf4jAlias);
+		Dataset primaryWins = FallbackDataset.fallback(new FedXDataset(primaryDataset), queryDataset);
+		assertThat(FedXUtil.toRdfDataset(primaryWins).getNamedGraphs()).containsExactly(rdf4jAlias);
+	}
+
+	@Test
+	public void fixedAliasSourceSelectionFindsPhysicalEndpointWithoutDefaultPRow() {
+		IRI alias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI physicalSubject = VF.createIRI("urn:physicalAliasEndpoint");
+		try (RepositoryConnection endpoint = getRepository(2).getConnection()) {
+			endpoint.add(physicalSubject, P, literal("physical"), alias);
+		}
+
+		assertThat(query("SELECT ?s FROM NAMED <" + alias + "> WHERE { GRAPH <" + alias
+				+ "> { ?s <urn:p> ?o } }"))
+						.extracting(row -> row.getValue("s"))
+						.containsExactly(physicalSubject);
+	}
+
+	@Test
+	public void implicitGraphVariableDoesNotTreatReservedAliasesAsDefaultGraphs() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		IRI rdf4jMembership = VF.createIRI("urn:implicitAliasRdf4jMembership");
+		IRI sesameMembership = VF.createIRI("urn:implicitAliasSesameMembership");
+		IRI defaultOnlySubject = VF.createIRI("urn:implicitAliasDefaultOnlySubject");
+		try (RepositoryConnection membership = getRepository(1).getConnection();
+				RepositoryConnection defaultData = getRepository(2).getConnection()) {
+			membership.add(rdf4jMembership, Q, literal("rdf4j-membership"), rdf4jAlias);
+			membership.add(sesameMembership, Q, literal("sesame-membership"), sesameAlias);
+			defaultData.add(defaultOnlySubject, P, literal("default-only"));
+		}
+
+		assertThat(query("SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s <urn:q> ?o } "
+				+ "FILTER(?g = <" + rdf4jAlias + "> || ?g = <" + sesameAlias + ">) }"))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+						.containsExactlyInAnyOrder(tuple(rdf4jAlias, rdf4jMembership, literal("rdf4j-membership")),
+								tuple(sesameAlias, sesameMembership, literal("sesame-membership")));
+		assertThat(query("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } "
+				+ "FILTER(?g = <" + rdf4jAlias + "> || ?g = <" + sesameAlias + ">) }"))
+						.isEmpty();
+	}
+
+	@Test
+	public void endpointOnlyAndBothEmptyDatasetsRetainStoreDefaultBehavior() {
+		String firstEndpoint = federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId();
+		FedXDataset endpointOnly = new FedXDataset(null);
+		endpointOnly.addEndpoint(firstEndpoint);
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection
+					.prepareTupleQuery("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+			query.setDataset(endpointOnly);
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(G1, A), tuple(G2, C));
+			}
+		}
+
+		FedXDataset bothEmpty = new FedXDataset(new SimpleDataset());
+		bothEmpty.addEndpoint(firstEndpoint);
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection
+					.prepareTupleQuery("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+			query.setDataset(bothEmpty);
+			try (var rows = query.evaluate()) {
+				List<BindingSet> actual = QueryResults.asList(rows);
+				actual.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s"));
+				assertThat(actual).extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(G1, A), tuple(G2, C));
+			}
+		}
+	}
+
+	@Test
+	public void endpointOnlyFallbackAcrossMultipleMembersRetainsGraphEvaluation() {
+		String firstEndpoint = federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId();
+		String secondEndpoint = federationContext().getEndpointManager().getEndpointByName("http://endpoint2").getId();
+		FedXDataset primary = new FedXDataset(null);
+		primary.addEndpoints(List.of(firstEndpoint, secondEndpoint));
+		FedXDataset fallback = new FedXDataset(null);
+		fallback.addEndpoint(firstEndpoint);
+		Dataset endpointFallback = FallbackDataset.fallback(primary, fallback);
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(
+					"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+			query.setDataset(endpointFallback);
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(G1, A), tuple(G1, B), tuple(G2, C));
+			}
+		}
+	}
+
+	@Test
+	public void bothEmptyDatasetRetainsDefaultOptionalAndAggregateRows() {
+		FedXDataset bothEmpty = new FedXDataset(new SimpleDataset());
+		bothEmpty.addEndpoint(federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId());
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery optional = connection.prepareTupleQuery("SELECT ?v ?s WHERE { VALUES ?v { 1 } "
+					+ "OPTIONAL { ?s <urn:p> ?o } }");
+			optional.setDataset(bothEmpty);
+			List<BindingSet> rows = QueryResults.asList(optional.evaluate());
+			rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("v", "s"));
+			assertThat(rows).extracting(row -> tuple(row.getValue("v"), row.getValue("s")))
+					.containsExactlyInAnyOrder(tuple(VF.createLiteral("1", XSD.INTEGER), VF.createIRI("urn:default")),
+							tuple(VF.createLiteral("1", XSD.INTEGER), A), tuple(VF.createLiteral("1", XSD.INTEGER), C));
+			TupleQuery count = connection.prepareTupleQuery("SELECT (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o }");
+			count.setDataset(bothEmpty);
+			assertThat(QueryResults.asList(count.evaluate())).singleElement().satisfies(row -> {
+				assertThat(row.getBindingNames()).containsExactly("count");
+				assertThat(row.getValue("count")).isEqualTo(VF.createLiteral("3", XSD.INTEGER));
+			});
+		}
+	}
+
+	@Test
+	public void bothEmptyDatasetKeepsPhysicalAliasEnumerationAndFixedDefaultSelection() {
+		IRI rdf4jAlias = VF.createIRI("http://rdf4j.org/schema/rdf4j#nil");
+		IRI sesameAlias = VF.createIRI("http://www.openrdf.org/schema/sesame#nil");
+		try (RepositoryConnection first = getRepository(1).getConnection()) {
+			first.add(rdf4jAlias, P, literal("rdf4j-physical"), rdf4jAlias);
+			first.add(sesameAlias, P, literal("sesame-physical"), sesameAlias);
+		}
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery selected = connection.prepareTupleQuery("SELECT ?g ?s ?o ?copy WHERE { "
+					+ "GRAPH ?g { ?s <urn:p> ?o . BIND(?s AS ?copy) } }");
+			selected.setDataset(new SimpleDataset());
+			List<BindingSet> rows = QueryResults.asList(selected.evaluate());
+			rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s", "o", "copy"));
+			assertThat(rows).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o"),
+					row.getValue("copy")))
+					.containsExactlyInAnyOrder(tuple(G1, A, B, A), tuple(G1, B, C, B),
+							tuple(G2, C, VF.createIRI("urn:d"), C),
+							tuple(rdf4jAlias, rdf4jAlias, literal("rdf4j-physical"), rdf4jAlias),
+							tuple(sesameAlias, sesameAlias, literal("sesame-physical"), sesameAlias));
+			for (IRI alias : List.of(rdf4jAlias, sesameAlias)) {
+				TupleQuery fixed = connection.prepareTupleQuery("SELECT ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+				fixed.setDataset(new SimpleDataset());
+				fixed.setBinding("g", alias);
+				assertThat(QueryResults.asList(fixed.evaluate()))
+						.extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+						.containsExactly(tuple(VF.createIRI("urn:default"), literal("default")));
+			}
+		}
+	}
+
+	@Test
+	public void namedOnlyDatasetPreservesValuesResults() {
+		FedXDataset namedOnly = namedOnlyDatasetRestrictedToFirstEndpoint();
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery values = connection.prepareTupleQuery("SELECT ?v WHERE { VALUES ?v { 1 } }");
+			values.setDataset(namedOnly);
+			assertThat(QueryResults.asList(values.evaluate()))
+					.extracting(row -> row.getValue("v"))
+					.containsExactly(VF.createLiteral("1", XSD.INTEGER));
+		}
+	}
+
+	@Test
+	public void namedOnlyDatasetLeavesDefaultOptionalBindingsUnbound() {
+		FedXDataset namedOnly = namedOnlyDatasetRestrictedToFirstEndpoint();
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery optional = connection.prepareTupleQuery("SELECT ?v ?s WHERE { VALUES ?v { 1 } "
+					+ "OPTIONAL { ?s <urn:p> ?o } }");
+			optional.setDataset(namedOnly);
+			assertThat(QueryResults.asList(optional.evaluate()))
+					.singleElement()
+					.satisfies(row -> {
+						assertThat(row.getValue("v")).isEqualTo(VF.createLiteral("1", XSD.INTEGER));
+						assertThat(row.hasBinding("s")).isFalse();
+					});
+		}
+	}
+
+	@Test
+	public void namedOnlyDatasetImplicitCountHasNoDefaultWhereSolutions() {
+		FedXDataset namedOnly = namedOnlyDatasetRestrictedToFirstEndpoint();
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery count = connection.prepareTupleQuery(
+					"SELECT (COUNT(*) AS ?count) WHERE { ?s <urn:p> ?o }");
+			count.setDataset(namedOnly);
+			assertThat(QueryResults.asList(count.evaluate()))
+					.extracting(row -> row.getValue("count"))
+					.containsExactly(VF.createLiteral("0", XSD.INTEGER));
+		}
+	}
+
+	private FedXDataset namedOnlyDatasetRestrictedToFirstEndpoint() {
+		SimpleDataset rdfDataset = new SimpleDataset();
+		rdfDataset.addNamedGraph(G1);
+		FedXDataset dataset = new FedXDataset(rdfDataset);
+		dataset.addEndpoint(
+				federationContext().getEndpointManager().getEndpointByName("http://endpoint1").getId());
+		return dataset;
 	}
 
 	@Test
@@ -331,13 +1137,23 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 		assertThat(query("SELECT ?s WHERE { GRAPH <urn:g2> { ?s <urn:p> ?o } }")).isNotEmpty();
 		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
 			TupleQuery query = connection.prepareTupleQuery("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
-			query.setDataset(new SimpleDataset());
+			SimpleDataset defaultOnly = new SimpleDataset();
+			defaultOnly.addDefaultGraph(G1);
+			query.setDataset(defaultOnly);
 			try (var rows = query.evaluate()) {
 				assertThat(QueryResults.asList(rows)).isEmpty();
 			}
+			query.setDataset(new SimpleDataset());
+			try (var rows = query.evaluate()) {
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(G1, A), tuple(G1, B), tuple(G2, C));
+			}
 			query.setDataset(null);
 			try (var rows = query.evaluate()) {
-				assertThat(QueryResults.asList(rows)).isNotEmpty();
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactlyInAnyOrder(tuple(G1, A), tuple(G1, B), tuple(G2, C));
 			}
 		}
 	}

@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.slf4j.Logger;
@@ -130,6 +131,11 @@ public class SourceSelection {
 		this.queryInfo = queryInfo;
 	}
 
+	/** The immutable dataset of this selection operation; QueryInfo still owns all task lifecycle state. */
+	protected Dataset getSelectionDataset() {
+		return queryInfo.getDataset();
+	}
+
 	/**
 	 * Map statements to their sources. Use synchronized access!
 	 */
@@ -159,11 +165,11 @@ public class SourceSelection {
 			}
 
 			stmtToSources.put(stmt, new ArrayList<>());
-			if (!FedXUtil.isContextAvailable(stmt, queryInfo.getDataset())) {
+			if (!FedXUtil.isContextAvailable(stmt, getSelectionDataset())) {
 				continue;
 			}
 
-			SubQuery q = new SubQuery(stmt, queryInfo.getDataset());
+			SubQuery q = new SubQuery(stmt, getSelectionDataset());
 
 			// check for each current federation member (cache or remote ASK)
 			for (Endpoint e : endpoints) {
@@ -442,11 +448,12 @@ public class SourceSelection {
 		protected CloseableIteration<BindingSet> performTaskInternal() throws Exception {
 			try {
 				TripleSource t = endpoint.getTripleSource();
-				boolean hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo,
-						queryInfo.getDataset());
-
 				SourceSelection sourceSelection = control.sourceSelection;
-				sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,
+				boolean hasResults = t.hasStatements(stmt, EmptyBindingSet.getInstance(), queryInfo,
+						sourceSelection.getSelectionDataset());
+
+				sourceSelection.cache.updateInformation(new SubQuery(stmt, sourceSelection.getSelectionDataset()),
+						endpoint,
 						hasResults);
 
 				if (hasResults) {
@@ -492,7 +499,8 @@ public class SourceSelection {
 				for (var stmt : stmts) {
 
 					boolean hasResults = ((Literal) sourceSelectionBs.getValue("stmt_" + stmtId++)).booleanValue();
-					sourceSelection.cache.updateInformation(new SubQuery(stmt, queryInfo.getDataset()), endpoint,
+					sourceSelection.cache.updateInformation(new SubQuery(stmt, sourceSelection.getSelectionDataset()),
+							endpoint,
 							hasResults);
 
 					if (hasResults) {

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
@@ -43,7 +44,7 @@ import org.slf4j.LoggerFactory;
  *
  */
 public class ExclusiveGroup extends AbstractQueryModelNode
-		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr {
+		implements StatementTupleExpr, FilterTuple, ExclusiveTupleExpr, ExecutionDatasetAware {
 	private static final long serialVersionUID = 9215353191021766797L;
 
 	private static final Logger log = LoggerFactory.getLogger(ExclusiveGroup.class);
@@ -57,6 +58,8 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	protected QueryBindingSet boundFilters = null; // contains bound filter bindings, that need to be added as
 	// additional bindings
 	protected transient Endpoint ownedEndpoint;
+	private Dataset executionDataset;
+	private ResolvedGraphSelection graphSelection;
 
 	public ExclusiveGroup(Collection<? extends ExclusiveTupleExpr> ownedNodes, StatementSource owner,
 			QueryInfo queryInfo) {
@@ -251,6 +254,26 @@ public class ExclusiveGroup extends AbstractQueryModelNode
 	@Override
 	public QueryInfo getQueryInfo() {
 		return this.queryInfo;
+	}
+
+	@Override
+	public Dataset getExecutionDataset() {
+		return executionDataset == null ? queryInfo.getDataset() : executionDataset;
+	}
+
+	@Override
+	public void setExecutionDataset(Dataset dataset) {
+		this.executionDataset = dataset;
+	}
+
+	@Override
+	public ResolvedGraphSelection getResolvedGraphSelection() {
+		return graphSelection;
+	}
+
+	@Override
+	public void setResolvedGraphSelection(ResolvedGraphSelection selection) {
+		this.graphSelection = selection;
 	}
 
 	@Override

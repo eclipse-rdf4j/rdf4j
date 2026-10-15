@@ -15,11 +15,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -32,7 +35,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 class NativeGraphDatasetSelectionTest {
@@ -64,7 +69,30 @@ class NativeGraphDatasetSelectionTest {
 							Var.of("o", vf.createLiteral("o")),
 							Var.of("graph", forbidden, true, true));
 					assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), mock(QueryInfo.class),
-							dataset)).isFalse();
+							dataset)).isEqualTo(
+									dataset.getDefaultGraphs().isEmpty() && dataset.getNamedGraphs().isEmpty());
 				}));
+	}
+
+	@Test
+	void bothEmptyDatasetEnumeratesPhysicalNamedContextsDuringSourceSelection() {
+		var vf = SimpleValueFactory.getInstance();
+		IRI graph = vf.createIRI("urn:physical:named");
+		for (SimpleDataset dataset : Arrays.asList(null, new SimpleDataset())) {
+			Endpoint endpoint = mock(Endpoint.class);
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			when(endpoint.getConnection()).thenReturn(connection);
+			when(connection.getContextIDs()).thenAnswer(invocation -> new RepositoryResult<>(
+					new CloseableIteratorIteration<>(List.<Resource>of(graph).iterator())));
+			when(connection.hasStatement(any(Resource.class), any(IRI.class), any(Value.class), anyBoolean(),
+					any(Resource[].class))).thenReturn(true);
+			SailTripleSource source = new SailTripleSource(endpoint, mock(FederationContext.class));
+			StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+					Var.of("s", vf.createIRI("urn:s")), Var.of("p", vf.createIRI("urn:p")),
+					Var.of("o", vf.createLiteral("object")), Var.of("g"));
+			assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), mock(QueryInfo.class), dataset))
+					.isTrue();
+			verify(connection).getContextIDs();
+		}
 	}
 }

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
+import org.eclipse.rdf4j.federated.algebra.ExecutionDatasetAware;
 import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FedXGraph;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
@@ -48,6 +49,8 @@ import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
 import org.eclipse.rdf4j.federated.algebra.HolderNode;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
+import org.eclipse.rdf4j.federated.algebra.QueryRef;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
@@ -123,8 +126,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.ServiceJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.ActiveGraphQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext.ActiveGraph;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
@@ -220,7 +225,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			query = new QueryRoot(clone);
 		}
 
-		Dataset queryDataset = rdfDataset(queryInfo.getDataset());
+		Dataset queryDataset = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		StandardQueryOptimizerPipeline.BINDING_ASSIGNER.optimize(query, queryDataset, bindings);
 		StandardQueryOptimizerPipeline.GRAPH_SCOPE_OPTIMIZER.optimize(query, queryDataset, bindings);
 
@@ -258,9 +263,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		// Note: UPDATE queries are always handled in the federation engine to adhere to the configured
 		// write strategy. Also DESCRIBE queries are handled in the federation
 		Set<Endpoint> relevantSources = performSourceSelection(members, cache, queryInfo, info);
-		if (queryInfo.getQuery() != null && info.canDelegateGraphsToSingleSource() && relevantSources.size() == 1
+		if (queryInfo.getQuery() != null
+				&& info.canDelegateGraphsToSingleSource() && relevantSources.size() == 1
 				&& propagateServices(info.getServices())
-				&& queryInfo.getQueryType() != QueryType.UPDATE && queryInfo.getQueryType() != QueryType.DESCRIBE) {
+				&& queryInfo.getQueryType() != QueryType.UPDATE && queryInfo.getQueryType() != QueryType.DESCRIBE
+				&& hasCompleteGraphSourceCoverage(members, relevantSources.iterator().next(), queryInfo, info)) {
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
 		}
 
@@ -299,6 +306,30 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		return query;
+	}
+
+	private boolean hasCompleteGraphSourceCoverage(List<Endpoint> members, Endpoint selected, QueryInfo queryInfo,
+			GenericInfoOptimizer info) {
+		List<StatementPattern> dependencies = info.additionalGraphSourceSelectionPatterns();
+		if (dependencies.isEmpty()) {
+			return true;
+		}
+		List<Endpoint> excluded = members.stream().filter(member -> !member.getId().equals(selected.getId())).toList();
+		if (excluded.isEmpty()) {
+			return true;
+		}
+		// Disposable holders let the normal source selector annotate these probes without modifying the query.
+		dependencies.forEach(QueryRoot::new);
+		SourceSelection coverage = new SourceSelection(excluded, cache, federationContext, queryInfo) {
+			@Override
+			protected Dataset getSelectionDataset() {
+				// Physical dependencies can live outside the query's named/default selections. Keep QueryInfo
+				// itself unchanged so registered tasks, cancellation, endpoint policy and time budgets stay shared.
+				return null;
+			}
+		};
+		coverage.doSourceSelection(dependencies);
+		return coverage.getRelevantSources().isEmpty();
 	}
 
 	/**
@@ -601,20 +632,25 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		return super.precompile(expr, context);
 	}
 
-	private static Dataset rdfDataset(Dataset dataset) {
-		return dataset instanceof FedXDataset fedx ? rdfDataset(fedx.getDelegate()) : dataset;
-	}
-
 	private QueryEvaluationStep prepareGraph(FedXGraph graph, QueryEvaluationContext context) {
 		QueryInfo query = graph.getQueryInfo();
 		DatasetQueryEvaluationContext graphContext = new DatasetQueryEvaluationContext(context,
-				rdfDataset(query.getDataset()));
+				FedXUtil.toRdfDataset(query.getDataset()));
 		List<Endpoint> members = getMembersFromContext(new FederationEvaluationStatistics(query, query.getDataset()));
 		return GraphQueryEvaluationStep.supply(graph, new FederationGraphSource(this, query, members), graphContext,
 				(body, selectedContext) -> {
+					var activeGraph = selectedContext.getActiveGraph();
+					Dataset executionDataset = activeGraph.physicalGraph() == null
+							&& FedXUtil.hasDatasetGraphSelection(selectedContext.getDataset())
+									? new GraphExecutionDataset(selectedContext.getDataset())
+									: null;
+					QueryEvaluationContext bodyContext = executionDataset == null ? selectedContext
+							: new DatasetQueryEvaluationContext(selectedContext, executionDataset);
 					QueryRoot selected = new QueryRoot(body.clone());
-					selected.getArg().visit(new GraphScopeSpecializer(selectedContext.getActiveGraph().logicalGraph()));
-					return precompile(selected.getArg(), selectedContext);
+					selected.getArg()
+							.visit(new GraphScopeSpecializer(activeGraph, executionDataset,
+									selectedContext.getDataset()));
+					return precompile(selected.getArg(), bodyContext);
 				});
 	}
 
@@ -816,10 +852,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	protected QueryEvaluationStep prepare(FedXArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		QueryEvaluationContext pathContext = executionDatasetContext(alp, context);
 		return (bindings) -> new FedXPathIteration(FederationEvaluationStrategy.this, alp.getScope(),
 				alp.getSubjectVar(),
 				alp.getPathExpression(), alp.getObjectVar(), alp.getContextVar(), alp.getMinLength(), bindings,
-				alp.getQueryInfo(), context);
+				alp.getQueryInfo(), pathContext, alp.getResolvedGraphSelection());
 	}
 
 	protected CloseableIteration<BindingSet> evaluateZeroLengthPath(FedXZeroLengthPath zlp,
@@ -831,15 +868,31 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	protected QueryEvaluationStep prepare(FedXZeroLengthPath zlp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		QueryEvaluationContext pathContext = executionDatasetContext(zlp, context);
 
 		final Var subjectVar = zlp.getSubjectVar();
 		final Var objVar = zlp.getObjectVar();
 		final Var contextVar = zlp.getContextVar();
-		QueryValueEvaluationStep subPrep = precompile(subjectVar, context);
-		QueryValueEvaluationStep objPrep = precompile(objVar, context);
+		QueryValueEvaluationStep subPrep = precompile(subjectVar, pathContext);
+		QueryValueEvaluationStep objPrep = precompile(objVar, pathContext);
 
-		return new FedXZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, context,
-				() -> zlp.getStatementSources(), () -> zlp.getQueryInfo());
+		return new FedXZeroLengthPathEvaluationStep(subjectVar, objVar, contextVar, subPrep, objPrep, this, pathContext,
+				() -> zlp.getStatementSources(), () -> zlp.getQueryInfo(), zlp.getResolvedGraphSelection());
+	}
+
+	private QueryEvaluationContext executionDatasetContext(QueryRef expression, QueryEvaluationContext context) {
+		Dataset executionDataset = FedXUtil.toRdfDataset(expression.getExecutionDataset());
+		if (context.getDataset() != executionDataset) {
+			context = new DatasetQueryEvaluationContext(context, executionDataset);
+		}
+		ResolvedGraphSelection selection = expression.getResolvedGraphSelection();
+		if (selection != null) {
+			ActiveGraph active = new ActiveGraph(selection.logicalGraph(), selection.physicalGraph());
+			if (!active.equals(context.getActiveGraph())) {
+				context = new ActiveGraphQueryEvaluationContext(context, active);
+			}
+		}
+		return context;
 	}
 
 	/**
@@ -1063,7 +1116,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		try {
 			String preparedQuery = QueryStringUtil.selectQueryString(group, bindings, group.getFilterExpr(),
-					isEvaluated, group.getQueryInfo().getDataset());
+					isEvaluated, group.getExecutionDataset());
 			return tripleSource.getStatements(preparedQuery, bindings,
 					(isEvaluated.get() ? null : group.getFilterExpr()), group.getQueryInfo());
 		} catch (IllegalQueryException e) {
@@ -1123,7 +1176,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
 			try {
 				String preparedQuery = QueryStringUtil.selectQueryString((ExclusiveTupleExprRenderer) expr,
-						bindings, filterValueExpr, isEvaluated, expr.getQueryInfo().getDataset());
+						bindings, filterValueExpr, isEvaluated, expr.getExecutionDataset());
 				return t.getStatements(preparedQuery, bindings, (isEvaluated.get() ? null : filterValueExpr),
 						expr.getQueryInfo());
 			} catch (IllegalQueryException e) {
@@ -1163,7 +1216,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+				filterExpr, isEvaluated, stmt.getExecutionDataset());
 
 		CloseableIteration<BindingSet> result = null;
 		try {
@@ -1212,7 +1265,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 		String preparedQuery = QueryStringUtil.selectQueryStringBoundJoinVALUES((StatementPattern) stmt, bindings,
-				filterExpr, isEvaluated, stmt.getQueryInfo().getDataset());
+				filterExpr, isEvaluated, stmt.getExecutionDataset());
 
 		CloseableIteration<BindingSet> result = null;
 		try {
@@ -1246,7 +1299,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			BindingSet bindings) {
 
 		String preparedQuery = QueryStringUtil.selectQueryStringTripleRefJoinGroup(tripleRefJoinGroup, bindings,
-				tripleRefJoinGroup.getQueryInfo().getDataset());
+				tripleRefJoinGroup.getExecutionDataset());
 
 		CloseableIteration<BindingSet> result = null;
 		try {

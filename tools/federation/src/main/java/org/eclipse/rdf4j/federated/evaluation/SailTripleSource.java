@@ -15,10 +15,10 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.QueryRef;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
-import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
@@ -54,7 +54,8 @@ public class SailTripleSource extends TripleSourceBase {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
-		if (!FedXUtil.isContextAvailable(stmt, queryInfo.getDataset())) {
+		Dataset dataset = stmt instanceof QueryRef queryRef ? queryRef.getExecutionDataset() : queryInfo.getDataset();
+		if (!FedXUtil.isContextAvailable(stmt, dataset)) {
 			return new EmptyIteration<>();
 		}
 
@@ -70,7 +71,7 @@ public class SailTripleSource extends TripleSourceBase {
 			RepositoryResult<Statement> repoResult = null;
 			try {
 				repoResult = conn.getStatements((Resource) subjValue, (IRI) predValue, objValue,
-						queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, queryInfo.getDataset()));
+						queryInfo.getIncludeInferred(), FedXUtil.toContexts(stmt, dataset));
 
 				// XXX implementation remark and TODO taken from Sesame
 				// The same variable might have been used multiple times in this
@@ -141,12 +142,9 @@ public class SailTripleSource extends TripleSourceBase {
 		Resource[] contexts = FedXUtil.toContexts(stmt, dataset);
 
 		try (RepositoryConnection conn = endpoint.getConnection()) {
-			Dataset rdfDataset = dataset;
-			while (rdfDataset instanceof FedXDataset fedx) {
-				rdfDataset = fedx.getDelegate();
-			}
+			Dataset rdfDataset = FedXUtil.toRdfDataset(dataset);
 			if (stmt.getScope() == Scope.NAMED_CONTEXTS && !stmt.getContextVar().hasValue()) {
-				if (rdfDataset != null) {
+				if (FedXUtil.hasDatasetGraphSelection(rdfDataset)) {
 					for (Resource graph : contexts) {
 						if (conn.hasStatement((Resource) subjValue, (IRI) predValue, objValue,
 								queryInfo.getIncludeInferred(), graph)) {
@@ -178,7 +176,7 @@ public class SailTripleSource extends TripleSourceBase {
 		if (stmt.getContextVar() != null && !stmt.getContextVar().hasValue()) {
 			return true;
 		}
-		Dataset ds = queryInfo.getDataset();
+		Dataset ds = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		if (ds != null) {
 
 			// if FROM NAMED is used we rely on a prepared query

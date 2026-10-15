@@ -21,6 +21,8 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
+import org.eclipse.rdf4j.federated.algebra.ExecutionDatasetAware;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -95,13 +97,22 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 	private final boolean objectConstant;
 	private final Var graphContextVar;
 	private final QueryEvaluationContext scanContext;
+	private final ResolvedGraphSelection graphSelection;
 	private static final String SCAN_CONTEXT_VAR = "zero_length_internal_context";
 
 	public FedXZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar,
 			Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context,
 			QueryInfo queryInfo, List<StatementSource> statementSources) {
+		this(evaluationStrategyImpl, subjectVar, objVar, subj, obj, contextVar, bindings, context, queryInfo,
+				statementSources, null);
+	}
+
+	public FedXZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar,
+			Value subj, Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context,
+			QueryInfo queryInfo, List<StatementSource> statementSources, ResolvedGraphSelection graphSelection) {
 		this.evaluationStrategy = evaluationStrategyImpl;
+		this.graphSelection = graphSelection;
 		this.queryInfo = queryInfo;
 		this.statementSources = statementSources;
 		this.context = context;
@@ -245,15 +256,21 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 	}
 
 	private TupleExpr annotate(StatementPattern pattern) {
+		TupleExpr annotated;
 		if (statementSources.size() == 1) {
-			return new ExclusiveStatement(pattern, statementSources.getFirst(), queryInfo);
+			annotated = new ExclusiveStatement(pattern, statementSources.getFirst(), queryInfo);
+		} else if (statementSources.isEmpty()) {
+			annotated = new EmptyStatementPattern(pattern);
+		} else {
+			StatementSourcePattern selected = new StatementSourcePattern(pattern, queryInfo);
+			statementSources.forEach(selected::addStatementSource);
+			annotated = selected;
 		}
-		if (statementSources.isEmpty()) {
-			return new EmptyStatementPattern(pattern);
+		if (annotated instanceof ExecutionDatasetAware aware) {
+			aware.setExecutionDataset(scanContext.getDataset());
+			aware.setResolvedGraphSelection(graphSelection);
 		}
-		StatementSourcePattern selected = new StatementSourcePattern(pattern, queryInfo);
-		statementSources.forEach(selected::addStatementSource);
-		return selected;
+		return annotated;
 	}
 
 	private boolean isGraphNode(Value value) {
@@ -270,7 +287,8 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 				? new StatementPattern(subject, createAnonVar(ANON_PREDICATE_VAR), object)
 				: new StatementPattern(Scope.NAMED_CONTEXTS, subject, createAnonVar(ANON_PREDICATE_VAR), object,
 						scanGraphVar());
-		try (CloseableIteration<BindingSet> nodes = evaluationStrategy.precompile(annotate(pattern), scanContext)
+		TupleExpr annotated = annotate(pattern);
+		try (CloseableIteration<BindingSet> nodes = evaluationStrategy.precompile(annotated, scanContext)
 				.evaluate(EmptyBindingSet.getInstance())) {
 			return nodes.hasNext();
 		}

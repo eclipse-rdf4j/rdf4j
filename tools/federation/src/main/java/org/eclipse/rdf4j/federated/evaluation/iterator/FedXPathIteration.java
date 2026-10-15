@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -103,6 +104,7 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 	private final String endVarName = "END_" + JOINVAR_PREFIX + pathIteratorId;
 
 	private final QueryEvaluationContext context;
+	private final ResolvedGraphSelection graphSelection;
 
 	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
@@ -115,7 +117,16 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			QueryInfo queryInfo, QueryEvaluationContext context) throws QueryEvaluationException {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, queryInfo, context,
+				null);
+	}
+
+	public FedXPathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryInfo queryInfo, QueryEvaluationContext context, ResolvedGraphSelection graphSelection)
+			throws QueryEvaluationException {
 		this.context = context;
+		this.graphSelection = graphSelection;
 		this.strategy = strategy;
 		this.scope = scope;
 		this.startVar = startVar;
@@ -384,6 +395,8 @@ public class FedXPathIteration extends LookAheadIteration<BindingSet> {
 
 			FedXZeroLengthPath zlp = new FedXZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null, queryInfo, statementSources);
+			zlp.setExecutionDataset(context.getDataset());
+			zlp.setResolvedGraphSelection(graphSelection);
 
 			currentIter = this.strategy.precompile(zlp, context).evaluate(bindings);
 			currentLength++;

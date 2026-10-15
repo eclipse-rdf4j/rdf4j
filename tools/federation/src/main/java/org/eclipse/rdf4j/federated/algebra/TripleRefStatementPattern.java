@@ -162,7 +162,7 @@ public class TripleRefStatementPattern extends FedXStatementPattern {
 					if (preparedQuery == null) {
 						try {
 							preparedQuery = QueryStringUtil.selectQueryString(this, bindings, filterExpr, isEvaluated,
-									queryInfo.getDataset());
+									getExecutionDataset());
 						} catch (IllegalQueryException e1) {
 							/* all vars are bound, this must be handled as a check query, can occur in joins */
 							CloseableIteration<BindingSet> res = handleStatementSourcePatternCheck(
@@ -216,7 +216,7 @@ public class TripleRefStatementPattern extends FedXStatementPattern {
 					.getEndpointManager()
 					.getEndpoint(source.getEndpointID());
 			TripleSource t = ownedEndpoint.getTripleSource();
-			if (t.hasStatements(this, bindings, queryInfo, queryInfo.getDataset())) {
+			if (t.hasStatements(this, bindings, queryInfo, getExecutionDataset())) {
 				return new SingleBindingSetIteration(bindings);
 			}
 		}
