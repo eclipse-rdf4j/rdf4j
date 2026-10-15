@@ -47,6 +47,8 @@ export function computeNetworkLayout(graph: Graph, options: LayoutOptions = {}) 
     separateLayoutRectangles(graph, positions, options);
     return {positions, bends: new Map<string, number>()};
   }
+  const index = new Map(graph.nodes.map((node, i) => [node.id, i]));
+  const springs = (options.springs ?? []).filter(spring => index.has(spring.source) && index.has(spring.target) && spring.source !== spring.target);
   let seed = options.seed ?? 42;
   const random = Math.random;
   let cy: Core | undefined;
@@ -61,18 +63,22 @@ export function computeNetworkLayout(graph: Graph, options: LayoutOptions = {}) 
       style: [{selector: 'node', style: {width: 'data(width)', height: 'data(height)', 'border-width': 0, padding: '0px'}}],
       elements: [
         ...graph.nodes.map((node, i) => {
-          const size = sizeOf(node, options);
+          const size = sizeOf(node, options), halo = options.halos?.get(node.id) ?? 0;
           return {data: {id: 'n' + i,
-            width: size.width + 24, height: size.height + 18}, position: {x: node.x ?? 0, y: node.y ?? 0}};
+            width: Math.max(size.width + 24, halo), height: Math.max(size.height + 18, halo)}, position: {x: node.x ?? 0, y: node.y ?? 0}};
         }),
-        ...topology.mapEdges((edge, _attributes, source, target) => ({data: {id: 'e' + edge, source: 'n' + source, target: 'n' + target}})),
+        ...topology.mapEdges((edge, _attributes, source, target) => ({data: {id: 'e' + edge, source: 'n' + source, target: 'n' + target, ideal: 70, el: .35}})),
+        ...springs.map((spring, i) => ({data: {id: 's' + i, source: 'n' + index.get(spring.source), target: 'n' + index.get(spring.target), ideal: spring.ideal, el: spring.elasticity}})),
       ],
     });
-    const index = new Map(graph.nodes.map((node, i) => [node.id, i]));
     cy.layout({name: 'fcose', quality: 'proof', randomize: !options.incremental && !options.localNodeIds?.size && !options.refine,
       animate: false, fit: false, packComponents: false, nodeDimensionsIncludeLabels: false,
       uniformNodeDimensions: false, sampleSize: Math.min(50, graph.nodes.length), nodeSeparation: 100,
-      nodeRepulsion: 6500, idealEdgeLength: 70, edgeElasticity: .35, numIter: 2500,
+      nodeRepulsion: 6500, numIter: 2500,
+      // Function-valued only when springs ask for their own lengths: fcose treats constants and functions alike per
+      // edge, but the plain path stays byte-identical to the one every layout test was tuned on.
+      idealEdgeLength: springs.length ? (edge: {data: (key: string) => number}) => edge.data('ideal') : 70,
+      edgeElasticity: springs.length ? (edge: {data: (key: string) => number}) => edge.data('el') : .35,
       gravity: .2, gravityRange: 3.8, tile: true, tilingPaddingHorizontal: gap.nodeGapX, tilingPaddingVertical: gap.nodeGapY,
       fixedNodeConstraint: fixed.map(node => ({nodeId: 'n' + index.get(node.id), position: {x: node.x ?? 0, y: node.y ?? 0}})),
     } as unknown as CytoscapeLayoutOptions).run();

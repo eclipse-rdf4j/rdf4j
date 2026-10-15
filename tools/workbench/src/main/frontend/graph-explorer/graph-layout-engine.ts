@@ -20,6 +20,8 @@ import {layoutScoreGeometry, layoutCandidateScore} from './graph-layout-score.ts
 import {improveLayoutReadability} from './graph-layout-readability.ts';
 import {computeHubNeighborhoodLayout} from './graph-layout-hub.ts';
 import {computeSquareLayout} from './graph-layout-square.ts';
+import {isStatementLinkEdge} from './statement-links.ts';
+import {peelSatellites, placeSatellites, similaritySprings} from './graph-layout-satellites.ts';
 import {layoutSubset} from './graph-layout-selection.ts';
 import type { Graph, PointerPosition } from './graph-types.ts';
 
@@ -34,8 +36,42 @@ export type LayoutOptions = {
   nodeSizes?: Map<string, {width: number; height: number}>;
   groups?: readonly {id: string; nodeIds: readonly string[]}[];
   repairOnly?: boolean;
+  /** Side of the square the force layout keeps clear around a hub whose satellites are fanned afterwards. */
+  halos?: Map<string, number>;
+  /** Extra force-layout springs that are not statements (similarity); never drawn, scored or routed. */
+  springs?: readonly {source: string; target: string; ideal: number; elasticity: number}[];
 };
-export type LayoutResult = {positions: Map<string, PointerPosition>; bends: Map<string, number>; grouped?: boolean; fixedOverlaps?: number; protectedNodeIds?: Set<string>};
+export type LayoutResult = {positions: Map<string, PointerPosition>; bends: Map<string, number>; grouped?: boolean; fanned?: boolean; fixedOverlaps?: number; protectedNodeIds?: Set<string>};
+
+/** Bends for the drawn edges: statement-link springs shape the layout but are never drawn, laned or ported. */
+function routeEdges(graph: Graph, positions: Map<string, PointerPosition>, preferredPasses: number) {
+  const edges = graph.edges.filter(edge => !isStatementLinkEdge(edge));
+  const passes = edges.length <= 500 ? Math.min(preferredPasses, 2) : edges.length <= 1600 ? Math.min(preferredPasses, 1) : 0;
+  return optimizeEdgeBends(graph.nodes.map(n => ({...n, ...positions.get(n.id)})), edges, passes);
+}
+
+/**
+ * The flat candidates: satellites peeled, the skeleton solved by the force layout, satellites fanned back on. When
+ * similarity springs exist (same type, shared neighbours) a second candidate uses them; the score decides, because
+ * springs can also add crossings.
+ */
+function flatCandidates(graph: Graph, options: LayoutOptions): LayoutResult[] {
+  const peeled = peelSatellites(graph, options);
+  const solve = (springs?: LayoutOptions['springs']): LayoutResult => {
+    if (!peeled.anchorOf.size) return computeNetworkLayout(graph, {...options, springs});
+    const inner = computeNetworkLayout(peeled.skeleton, {...options, halos: peeled.halos, springs});
+    const positions = new Map(inner.positions);
+    placeSatellites(graph, positions, peeled, options);
+    separateLayoutRectangles(graph, positions, options);
+    return {positions, bends: new Map(), fanned: true};
+  };
+  const candidates = [solve()];
+  if (!options.incremental && !options.localNodeIds?.size && !options.refine && !options.nodeSizes && graph.nodes.length <= 350) {
+    const springs = similaritySprings(graph, peeled);
+    if (springs.length) candidates.push(solve(springs));
+  }
+  return candidates;
+}
 
 function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
   const hub = computeHubNeighborhoodLayout(graph, options, core => organizeComponent(core, options));
@@ -48,11 +84,11 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
   const seen = new Set<string>();
   for (const seed of multiStart ? [42, 101] : [42]) {
     const grouped = computeGroupedLayout(graph, {...options, seed});
-    const candidates: LayoutResult[] = [grouped ?? computeNetworkLayout(graph, {...options, seed})];
-    // Topology is evidence, not an instruction to force compounds. Compare a
-    // flat candidate when grouping is automatic; explicit named groups win.
+    const candidates: LayoutResult[] = grouped ? [grouped] : flatCandidates(graph, {...options, seed});
+    // Topology is evidence, not an instruction to force compounds. Compare the
+    // flat candidates when grouping is automatic; explicit named groups win.
     if (grouped && seed === 42 && !options.groups?.length && graph.nodes.length <= 1000 && graph.edges.length <= 1600) {
-      candidates.push(computeNetworkLayout(graph, {...options, seed}));
+      candidates.push(...flatCandidates(graph, {...options, seed}));
     }
     for (const candidate of candidates) {
       // Specialized deterministic layouts (notably pure stars) may return the
@@ -62,7 +98,8 @@ function organizeComponent(graph: Graph, options: LayoutOptions): LayoutResult {
       }).join(';');
       if (seen.has(signature)) continue;
       seen.add(signature);
-      if (!candidate.grouped && graph.nodes.length <= 350 && graph.edges.length <= 500) {
+      // Fans are deliberate geometry; coordinate descent would drag satellites into their anchor's spokes.
+      if (!candidate.grouped && !candidate.fanned && graph.nodes.length <= 350 && graph.edges.length <= 500) {
         const g = layoutScoreGeometry(graph, candidate.positions, options);
         refineLayoutGeometry(g.nodes, g.edges, {passes: 2, radiusScale: .7});
         g.nodes.forEach(node => candidate.positions.set(node.entityId, {x: node.x, y: node.y}));
@@ -90,7 +127,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     // because its abstract group bounding boxes interleave.
     if (moved) repair = computeGroupedLayout(graph, options) ?? repair;
     checked(repair);
-    if (graph.nodes.length <= 1500) repair.bends = optimizeEdgeBends(graph.nodes.map(n => ({...n, ...repair.positions.get(n.id)})), graph.edges, graph.edges.length <= 1600 ? 1 : 0);
+    if (graph.nodes.length <= 1500) repair.bends = routeEdges(graph, repair.positions, 1);
     return repair;
   }
   // Square, and Hierarchy of a selection, shape a block of nodes (the selection, or every unpinned node) and leave the
@@ -102,9 +139,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
       const {computeGraphvizLayout} = await import('./graph-layout-graphviz.ts');
       return (await computeGraphvizLayout(part, 'dot')).positions;
     });
-    const bends = graph.nodes.length <= 1500
-      ? optimizeEdgeBends(graph.nodes.map(n => ({...n, ...positions.get(n.id)})), graph.edges, graph.edges.length <= 1600 ? 1 : 0)
-      : new Map<string, number>();
+    const bends = graph.nodes.length <= 1500 ? routeEdges(graph, positions, 1) : new Map<string, number>();
     return {positions, bends};
   }
   const constrained = graph.nodes.some(node => layoutNodeFixed(node, options));
@@ -113,7 +148,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     // used to erase deliberate placement even when no conflicts existed.
     const result = checked(computeSparseLayout(graph, {...options, repairOnly: true}));
     improveLayoutReadability(graph, result.positions, options, layoutNeighborhoods(graph, options).groups);
-    result.bends = optimizeEdgeBends(graph.nodes.map(n => ({...n, ...result.positions.get(n.id)})), graph.edges, graph.edges.length <= 1600 ? 1 : 0);
+    result.bends = routeEdges(graph, result.positions, 1);
     return result;
   }
   if (graph.nodes.length > 1500) {
@@ -149,8 +184,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     result.protectedNodeIds!.has(n.id) ? {...n, pinned: true} : n)} : graph;
   if (options.mode !== 'hierarchy') improveLayoutReadability(cleanupGraph, result.positions, options,
     result.grouped ? layoutNeighborhoods(graph, options).groups : []);
-  const placed = graph.nodes.map(node => ({...node, ...result.positions.get(node.id)}));
   // Routing is worker-only and bounded. Medium graphs used to skip this pass.
-  result.bends = optimizeEdgeBends(placed, graph.edges, graph.edges.length <= 500 ? 2 : graph.edges.length <= 1600 ? 1 : 0);
+  result.bends = routeEdges(graph, result.positions, 2);
   return result;
 }

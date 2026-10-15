@@ -923,8 +923,13 @@ export function optimizeEdgeBends(
       : [{ id: node.id, x: node.x, y: node.y, ...graphNodeSize(node) }],
   );
 
-  const nodeBounds = nodeBoxes.map(box => ({minX: box.x - box.width / 2 - 9, minY: box.y - box.height / 2 - 9,
-    maxX: box.x + box.width / 2 + 9, maxY: box.y + box.height / 2 + 9}));
+  // A curve through a card's body misleads (it looks attached), so body hits are avoided first. A curve inside the
+  // 9 px margin around a card only grazes it: worth a small bend, never a wide arc; nearly touching (within 4 px)
+  // costs more than passing at the margin's edge, so corridors are not threaded with no clearance.
+  const padded = (padding: number) => nodeBoxes.map(box => ({minX: box.x - box.width / 2 - padding, minY: box.y - box.height / 2 - padding,
+    maxX: box.x + box.width / 2 + padding, maxY: box.y + box.height / 2 + padding}));
+  const nodeBounds = padded(9), nearBounds = padded(4), bodyBounds = padded(0);
+  const GRAZE_PENALTY = 400, NEAR_PENALTY = 800;
   const nodeIndex = new SpatialGrid(256), curveIndex = new SpatialGrid(256);
   nodeBounds.forEach(b => nodeIndex.insert(b));
   const curveIds = new Map<string, number>(), indexedEdges: GraphEdge[] = [];
@@ -957,34 +962,42 @@ export function optimizeEdgeBends(
         lane === 0
           ? [bends.get(edge.id) ?? 0, 0, 30, -30, 52, -52, 78, -78]
           : [bends.get(edge.id) ?? preferred, ...[0.66, 1, 1.46].map((factor) => preferred * factor)];
-      // Infer useful detours from actual blockers instead of seven fixed bends.
-      // Candidate generation is approximate; analytic collision is authoritative.
-      const baseCurve = curveFor(edge, preferred)!;
-      const baseBounds = quadraticBounds(baseCurve);
       const dx = (target.x ?? 0) - (source.x ?? 0), dy = (target.y ?? 0) - (source.y ?? 0);
       const direction = source.id.localeCompare(target.id) <= 0 ? 1 : -1;
       const nx = -dy / Math.max(1, distance) * direction, ny = dx / Math.max(1, distance) * direction;
+      // A card right beside an end port needs a bend close to the edge length (the quadratic offset 2t(1-t) is
+      // tiny there); obstruction-first scoring keeps such arcs for cases where nothing smaller clears.
       const cap = Math.min(2400, Math.max(180, distance * 1.25));
-      for (const id of nodeIndex.search(baseBounds.minX, baseBounds.minY, baseBounds.maxX, baseBounds.maxY)) {
-        const box = nodeBoxes[id];
-        if (box.id === edge.source || box.id === edge.target || !quadraticIntersectsBounds(baseCurve, nodeBounds[id])) continue;
-        const ox = box.x - (source.x ?? 0), oy = box.y - (source.y ?? 0);
-        const projection = (ox * dx + oy * dy) / Math.max(1, distance * distance);
-        const alongRadius = (Math.abs(dx) * (box.width / 2 + 18) + Math.abs(dy) * (box.height / 2 + 18)) / Math.max(1, distance * distance);
-        const t = Math.max(.015, Math.min(.985, projection + (projection < .5 ? -alongRadius : alongRadius)));
-        const perpendicular = ox * nx + oy * ny;
-        const radius = Math.abs(nx) * (box.width / 2 + 18) + Math.abs(ny) * (box.height / 2 + 18);
-        for (const side of [-1, 1]) {
-          const bend = Math.max(-cap, Math.min(cap, (perpendicular + side * radius) / (2 * t * (1 - t))));
-          candidates.push(bend, Math.max(-cap, Math.min(cap, bend * 1.25)));
+      // Infer useful detours from actual blockers instead of seven fixed bends.
+      // Candidate generation is approximate; analytic collision is authoritative.
+      const deriveDetours = (curve: EdgeCurve, into: number[], limit: number) => {
+        const curveBounds = quadraticBounds(curve);
+        for (const id of nodeIndex.search(curveBounds.minX, curveBounds.minY, curveBounds.maxX, curveBounds.maxY)) {
+          const box = nodeBoxes[id];
+          if (box.id === edge.source || box.id === edge.target || !quadraticIntersectsBounds(curve, nodeBounds[id])) continue;
+          const ox = box.x - (source.x ?? 0), oy = box.y - (source.y ?? 0);
+          const projection = (ox * dx + oy * dy) / Math.max(1, distance * distance);
+          const alongRadius = (Math.abs(dx) * (box.width / 2 + 18) + Math.abs(dy) * (box.height / 2 + 18)) / Math.max(1, distance * distance);
+          const t = Math.max(.015, Math.min(.985, projection + (projection < .5 ? -alongRadius : alongRadius)));
+          const perpendicular = ox * nx + oy * ny;
+          const radius = Math.abs(nx) * (box.width / 2 + 18) + Math.abs(ny) * (box.height / 2 + 18);
+          for (const side of [-1, 1]) {
+            const bend = Math.max(-cap, Math.min(cap, (perpendicular + side * radius) / (2 * t * (1 - t))));
+            into.push(bend, Math.max(-cap, Math.min(cap, bend * 1.25)));
+          }
+          if (into.length >= limit) break;
         }
-        if (candidates.length >= 26) break;
-      }
+      };
+      deriveDetours(curveFor(edge, preferred)!, candidates, 26);
       let bestBend = bends.get(edge.id) ?? preferred;
       let bestScore = Number.POSITIVE_INFINITY;
-      let bestObstructions = Number.POSITIVE_INFINITY;
+      let bestObstructions = Number.POSITIVE_INFINITY, bestGrazes = 0;
+      const tried = new Set<number>();
+      const blocked: Array<{bend: number; obstructions: number; curve: EdgeCurve}> = [];
 
-      new Set(candidates).forEach((candidate) => {
+      const evaluate = (candidate: number) => {
+        if (tried.has(candidate)) return;
+        tried.add(candidate);
         if (sign && Math.sign(candidate) !== sign) return;
         const curve = curveFor(edge, candidate);
         if (!curve) return;
@@ -995,12 +1008,17 @@ export function optimizeEdgeBends(
           Math.abs(candidate) * 0.18;
         if (bestObstructions === 0 && score >= bestScore) return;
 
-        let obstructions = 0;
+        let obstructions = 0, grazes = 0;
         for (const id of nodeIndex.search(bounds.minX, bounds.minY, bounds.maxX, bounds.maxY)) {
           const box = nodeBoxes[id];
           if (box.id === edge.source || box.id === edge.target) continue;
-          if (quadraticIntersectsBounds(curve, nodeBounds[id])) obstructions++;
+          if (quadraticIntersectsBounds(curve, bodyBounds[id])) obstructions++;
+          else if (quadraticIntersectsBounds(curve, nodeBounds[id])) {
+            grazes++;
+            score += GRAZE_PENALTY + (quadraticIntersectsBounds(curve, nearBounds[id]) ? NEAR_PENALTY : 0);
+          }
         }
+        if (obstructions + grazes > 0 && obstructions <= 2) blocked.push({bend: candidate, obstructions, curve});
         // Obstacle validity outranks aesthetic preferences. Include the current
         // route among candidates so this pass cannot add blocked-card pairs.
         if (obstructions > bestObstructions) return;
@@ -1044,10 +1062,31 @@ export function optimizeEdgeBends(
 
         if (obstructions < bestObstructions || score < bestScore) {
           bestObstructions = obstructions;
+          bestGrazes = grazes;
           bestScore = score;
           bestBend = candidate;
         }
-      });
+      };
+      candidates.forEach(evaluate);
+      // A detour that runs into a second card only produced candidates for the first card. Derive candidates from
+      // the cards the least-obstructed detours hit, on both sides, so the emptier side is tried at the bend it
+      // actually needs instead of falling back to the least obstructed guess.
+      // Each round clears one more card per side, so a stacked corridor needs a few bounded rounds.
+      const derivedFrom = new Set<EdgeCurve>();
+      for (let round = 0; round < 6 && (bestObstructions > 0 || bestGrazes > 0) && blocked.length; round += 1) {
+        const more: number[] = [];
+        blocked.sort((a, b) => a.obstructions - b.obstructions || Math.abs(a.bend) - Math.abs(b.bend));
+        let sources = 0;
+        for (const entry of blocked) {
+          if (derivedFrom.has(entry.curve)) continue;
+          if (entry.obstructions > bestObstructions) break;
+          derivedFrom.add(entry.curve);
+          deriveDetours(entry.curve, more, 26);
+          if (++sources >= 6 || more.length >= 26) break;
+        }
+        if (!more.length) break;
+        more.forEach(evaluate);
+      }
       bends.set(edge.id, bestBend);
       cacheCurve(edge);
     });

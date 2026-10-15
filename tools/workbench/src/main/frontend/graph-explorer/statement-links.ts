@@ -17,6 +17,13 @@ import type { EdgeCurve, Graph, GraphNode, StatementLink } from "./graph-types.t
 import { isSparqlTerm, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
 
 type TripleValue = { type: "triple"; value: { subject?: unknown; predicate?: unknown; object?: unknown } };
+
+/**
+ * Id prefix of the springs the layout gets for a statement link (reifier → subject, reifier → object). They pull a
+ * reifier next to the statement it describes; they are not drawn, so routing, lanes and ports must ignore them.
+ */
+export const STATEMENT_LINK_EDGE_PREFIX = "statement-link:";
+export const isStatementLinkEdge = (edge: { id: string }) => edge.id.startsWith(STATEMENT_LINK_EDGE_PREFIX);
 export type FoundStatementLink = { link: StatementLink; source: SparqlValue };
 
 function isTriple(value: unknown): value is TripleValue {
