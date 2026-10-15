@@ -1687,14 +1687,47 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		scope.externalValueBinding = QueryExecutionContext
 				.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
 		activeReadExposureScope.set(scope);
-		synchronized (readAttemptLock) {
-			activeReadExposureScopes.add(scope);
+		try {
+			synchronized (readAttemptLock) {
+				activeReadExposureScopes.add(scope);
+			}
+			if (observationOwner != null) {
+				scope.captureAll(observationOwner.readViews());
+			}
+			scope.readResourceBinding = lmdbStore.getBackingStore().enterReadResourceContext(scope::readViews);
+			scope.replaySafepoint = QueryExecutionContext.activateReplaySafepoint(scope, scope);
+			return scope;
+		} catch (RuntimeException | Error failure) {
+			if (scope.replaySafepoint != null) {
+				try {
+					scope.replaySafepoint.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			if (activeReadExposureScope.get() == scope) {
+				if (parent == null) {
+					activeReadExposureScope.remove();
+				} else {
+					activeReadExposureScope.set(parent);
+				}
+			}
+			synchronized (readAttemptLock) {
+				activeReadExposureScopes.remove(scope);
+			}
+			closeResources(failure, () -> {
+				if (scope.readResourceBinding != null) {
+					scope.readResourceBinding.close();
+				}
+			}, scope.externalValueBinding::close, () -> {
+				if (scope.valueBinding != null) {
+					scope.valueBinding.close();
+				}
+			});
+			throw failure;
 		}
-		if (observationOwner != null) {
-			scope.captureAll(observationOwner.readViews());
-		}
-		scope.replaySafepoint = QueryExecutionContext.activateReplaySafepoint(scope, scope);
-		return scope;
 	}
 
 	private OperationReadAttempt createOperationReadAttempt(IsolationLevel isolationLevel,
@@ -1767,22 +1800,47 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		if (activeReadExposureScope.get() != scope) {
 			throw new IllegalStateException("LMDB read-exposure scopes must close in nesting order");
 		}
+		Throwable failure = null;
+		try {
+			if (scope.replaySafepoint != null) {
+				scope.replaySafepoint.close();
+			}
+		} catch (RuntimeException | Error cleanup) {
+			failure = cleanup;
+		}
+		if (scope.parent == null) {
+			activeReadExposureScope.remove();
+		} else {
+			activeReadExposureScope.set(scope.parent);
+		}
 		synchronized (readAttemptLock) {
 			activeReadExposureScopes.remove(scope);
 		}
-		try {
-			scope.replaySafepoint.close();
-		} finally {
-			if (scope.parent == null) {
-				activeReadExposureScope.remove();
-			} else {
-				activeReadExposureScope.set(scope.parent);
+		Runnable closeReadResourceBinding = () -> {
+			if (scope.readResourceBinding != null) {
+				scope.readResourceBinding.close();
 			}
-			closeResources(null, scope.externalValueBinding::close, () -> {
-				if (scope.valueBinding != null) {
-					scope.valueBinding.close();
-				}
-			});
+		};
+		Runnable closeExternalValueBinding = scope.externalValueBinding::close;
+		Runnable closeValueBinding = () -> {
+			if (scope.valueBinding != null) {
+				scope.valueBinding.close();
+			}
+		};
+		if (failure == null) {
+			try {
+				closeResources(null, closeReadResourceBinding, closeExternalValueBinding, closeValueBinding);
+			} catch (RuntimeException | Error cleanup) {
+				failure = cleanup;
+			}
+		} else {
+			closeResources(failure, closeReadResourceBinding, closeExternalValueBinding, closeValueBinding);
+		}
+		if (failure instanceof RuntimeException runtime) {
+			throw runtime;
+		}
+		if (failure instanceof Error error) {
+			throw error;
 		}
 	}
 
@@ -2766,6 +2824,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			SailClosable valueBinding = null;
 			QueryExecutionContext.Activation externalValueBinding = null;
 			QueryExecutionContext.Activation workerAdmission = null;
+			SailClosable readResourceBinding = null;
 			int oldDepth = internalReadScopeDepth.get();
 			T result = null;
 			Throwable failure = null;
@@ -2773,6 +2832,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				valueBinding = valueScope == null ? null : valueScope.activateForeground();
 				externalValueBinding = QueryExecutionContext
 						.activateExternalValueInitializer(LmdbStoreConnection::protectValueTree);
+				readResourceBinding = lmdbStore.getBackingStore()
+						.enterReadResourceContext(() -> owner.readViews);
 				workerAdmission = QueryExecutionContext.activateReplaySafepoint(NO_REPLAY_CHECKPOINT,
 						() -> observedWorkerScope(owner, deadline));
 				internalReadScopeDepth.set(oldDepth + 1);
@@ -2791,6 +2852,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 				QueryExecutionContext.Activation closeWorkerAdmission = workerAdmission;
 				QueryExecutionContext.Activation closeExternalValueBinding = externalValueBinding;
 				SailClosable closeValueBinding = valueBinding;
+				SailClosable closeReadResourceBinding = readResourceBinding;
 				try {
 					closeResources(failure, () -> {
 						if (closeWorkerAdmission != null) {
@@ -2799,6 +2861,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					}, () -> {
 						if (closeExternalValueBinding != null) {
 							closeExternalValueBinding.close();
+						}
+					}, () -> {
+						if (closeReadResourceBinding != null) {
+							closeReadResourceBinding.close();
 						}
 					}, () -> {
 						if (closeValueBinding != null) {
@@ -3117,6 +3183,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private ValueResolutionScope valueScope;
 		private SailClosable valueBinding;
 		private QueryExecutionContext.Activation externalValueBinding;
+		private SailClosable readResourceBinding;
 		private int replayAttempts;
 		private boolean exposed;
 

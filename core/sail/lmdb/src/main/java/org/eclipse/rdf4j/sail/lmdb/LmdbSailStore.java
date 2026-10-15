@@ -3865,6 +3865,7 @@ class LmdbSailStore implements SailStore {
 	private volatile Thread pendingDictionaryCheckpointThread;
 	private final ThreadLocal<PublicationContext> publicationContext = new ThreadLocal<>();
 	private final ThreadLocal<ReadView> activeReadView = new ThreadLocal<>();
+	private final ThreadLocal<ReadResourceContext> activeReadResourceContext = new ThreadLocal<>();
 	private volatile long namespaceGeneration;
 	private final Object writerOwnerMonitor = new Object();
 	private final IdentityHashMap<WriterLease, Boolean> activeWriterLeases = new IdentityHashMap<>();
@@ -4463,6 +4464,135 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
+	/** Scoped ownership of already-admitted read views when the active admission is intentionally unbound. */
+	final class ReadResourceContext implements SailClosable {
+		private final ReadResourceContext previous;
+		private final Supplier<? extends Iterable<ReadViewLease>> ownedViews;
+		private boolean closed;
+
+		private ReadResourceContext(ReadResourceContext previous,
+				Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+			this.previous = previous;
+			this.ownedViews = ownedViews;
+		}
+
+		private List<ReadViewLease> readViews() {
+			IdentityHashMap<ReadViewLease, Boolean> unique = new IdentityHashMap<>();
+			for (ReadResourceContext context = this; context != null; context = context.previous) {
+				for (ReadViewLease lease : Objects.requireNonNull(context.ownedViews.get(), "owned read views")) {
+					if (lease != null) {
+						unique.put(lease, Boolean.TRUE);
+					}
+				}
+			}
+			return List.copyOf(unique.keySet());
+		}
+
+		@Override
+		public void close() {
+			if (closed) {
+				return;
+			}
+			if (activeReadResourceContext.get() != this) {
+				throw new IllegalStateException("LMDB read-resource contexts must close in nesting order");
+			}
+			closed = true;
+			if (previous == null) {
+				activeReadResourceContext.remove();
+			} else {
+				activeReadResourceContext.set(previous);
+			}
+		}
+	}
+
+	SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+		ReadResourceContext previous = activeReadResourceContext.get();
+		ReadResourceContext installed = new ReadResourceContext(previous,
+				Objects.requireNonNull(ownedViews, "ownedViews"));
+		activeReadResourceContext.set(installed);
+		return installed;
+	}
+
+	List<ReadViewLease> currentReadResourceViews() {
+		ReadResourceContext current = activeReadResourceContext.get();
+		return current == null ? List.of() : current.readViews();
+	}
+
+	private ReadView retainLiveReadView(ReadViewLease lease) throws SailException {
+		ReadView view;
+		mapGrowthCoordinator.lock.lock();
+		try {
+			lease.ensureNotInvalidated();
+			view = lease.view;
+			if (lease.closed || view == null || !mapGrowthCoordinator.views.containsKey(lease)) {
+				throw new SailConflictException("The captured LMDB paired view has already finished; retry the read");
+			}
+			view.retain();
+		} finally {
+			mapGrowthCoordinator.lock.unlock();
+		}
+		try {
+			view.ensureNativeSnapshotsValid();
+			return view;
+		} catch (RuntimeException | Error failure) {
+			try {
+				view.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	private DatasetAdmission beginDatasetAdmissionForEstimator(ReadViewLease lease) throws SailException {
+		ReadView current = activeReadView.get();
+		if (current != null) {
+			current.ensureNativeSnapshotsValid();
+			ReadView retained = current.retain();
+			try {
+				return new DatasetAdmission(retained, current, false);
+			} catch (RuntimeException | Error failure) {
+				try {
+					retained.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+				throw failure;
+			}
+		}
+		ReadView borrowed = retainLiveReadView(lease);
+		try {
+			activeReadView.set(borrowed);
+			return new DatasetAdmission(borrowed, current, true);
+		} catch (RuntimeException | Error failure) {
+			try {
+				if (activeReadView.get() == borrowed) {
+					if (current == null) {
+						activeReadView.remove();
+					} else {
+						activeReadView.set(current);
+					}
+				}
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			try {
+				borrowed.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+	}
+
 	DatasetAdmission beginDatasetAdmission(IsolationLevel level, ReadView transactionView) throws SailException {
 		return beginDatasetAdmission(level, transactionView, null, null);
 	}
@@ -4485,6 +4615,7 @@ class LmdbSailStore implements SailStore {
 		List<ReadView> retained = new ArrayList<>(capturedViews.size());
 		ReadView previous = activeReadView.get();
 		ReadView bound = null;
+		SailClosable resourceBinding = null;
 		try {
 			mapGrowthCoordinator.lock.lock();
 			try {
@@ -4519,7 +4650,24 @@ class LmdbSailStore implements SailStore {
 			if (bound != null) {
 				activeReadView.set(bound);
 			}
+			resourceBinding = enterReadResourceContext(() -> capturedViews);
 		} catch (RuntimeException | Error failure) {
+			if (resourceBinding != null) {
+				try {
+					resourceBinding.close();
+				} catch (RuntimeException | Error cleanup) {
+					if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
+				}
+			}
+			if (bound != null && activeReadView.get() == bound) {
+				if (previous == null) {
+					activeReadView.remove();
+				} else {
+					activeReadView.set(previous);
+				}
+			}
 			for (ReadView view : retained) {
 				try {
 					view.close();
@@ -4532,7 +4680,14 @@ class LmdbSailStore implements SailStore {
 			throw failure;
 		}
 		ReadView installed = bound;
+		SailClosable installedResourceBinding = Objects.requireNonNull(resourceBinding, "resourceBinding");
 		return () -> {
+			Throwable failure = null;
+			try {
+				installedResourceBinding.close();
+			} catch (RuntimeException | Error cleanup) {
+				failure = cleanup;
+			}
 			if (installed != null && activeReadView.get() == installed) {
 				if (previous == null) {
 					activeReadView.remove();
@@ -4540,12 +4695,15 @@ class LmdbSailStore implements SailStore {
 					activeReadView.set(previous);
 				}
 			}
-			Throwable failure = null;
 			for (int i = retained.size() - 1; i >= 0; i--) {
 				try {
 					retained.get(i).close();
 				} catch (RuntimeException | Error cleanup) {
-					failure = retainRollbackFailure(failure, cleanup);
+					if (failure == null) {
+						failure = cleanup;
+					} else if (cleanup != failure) {
+						failure.addSuppressed(cleanup);
+					}
 				}
 			}
 			if (failure instanceof RuntimeException runtime) {
@@ -6274,35 +6432,114 @@ class LmdbSailStore implements SailStore {
 	 * two environments' commits) or the value may have been re-added.
 	 */
 
-	private final class GuardedEstimatorStatementSource implements SketchStatementSource {
+	final class GuardedEstimatorStatementSource implements SketchStatementSource {
 
-		private final SketchStatementSource delegate = new SailStoreStatementSource(LmdbSailStore.this);
+		private final SketchStatementSource delegate;
+
+		GuardedEstimatorStatementSource() {
+			this(new SailStoreStatementSource(LmdbSailStore.this));
+		}
+
+		GuardedEstimatorStatementSource(SketchStatementSource delegate) {
+			this.delegate = Objects.requireNonNull(delegate, "delegate");
+		}
 
 		@Override
 		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
 				Resource... contexts) {
 			boolean refreshThread = SketchBasedJoinEstimator.REFRESH_THREAD_NAME
 					.equals(Thread.currentThread().getName());
-			boolean locked = refreshThread ? sinkStoreAccessLock.tryLock() : lockEstimatorStatementSource();
-			if (!locked) {
+			boolean borrowedReadView = activeReadView.get() != null;
+			ReadResourceContext resourceContext = activeReadResourceContext.get();
+			List<ReadViewLease> resourceViews = resourceContext == null ? List.of() : resourceContext.readViews();
+			ReadViewLease borrowedResourceView = !borrowedReadView && resourceViews.size() == 1
+					? resourceViews.get(0)
+					: null;
+			boolean ownsReadResources = resourceContext != null || currentWriterOwner() != null
+					|| preparedWriteContexts.containsKey(Thread.currentThread())
+					|| mapGrowthCoordinator.callbackAdmission.get() != null
+					|| replayRetirementOwner.get() != null || noneMutationReadOwner.get() != null;
+			if (publicationContext.get() != null || sinkStoreAccessLock.isHeldByCurrentThread()) {
 				throw deferredEstimatorStatementSource();
 			}
-			if (storeTxnStarted.get()) {
-				sinkStoreAccessLock.unlock();
+			if (!borrowedReadView && ownsReadResources && borrowedResourceView == null) {
 				throw deferredEstimatorStatementSource();
 			}
-			try {
-				return new GuardedEstimatorStatementIteration(delegate.getStatements(subject, predicate, object,
-						contexts));
-			} catch (RuntimeException e) {
-				sinkStoreAccessLock.unlock();
-				throw e;
-			}
-		}
+			boolean mayWaitForGuard = !refreshThread && !borrowedReadView && !ownsReadResources;
+			while (true) {
+				if (mayWaitForGuard) {
+					// A synchronous fresh read may wait for the native guard only before it owns a paired read view.
+					sinkStoreAccessLock.lock();
+					try {
+						if (storeTxnStarted.get()) {
+							throw deferredEstimatorStatementSource();
+						}
+					} finally {
+						sinkStoreAccessLock.unlock();
+					}
+				}
 
-		private boolean lockEstimatorStatementSource() {
-			sinkStoreAccessLock.lock();
-			return true;
+				DatasetAdmission admission;
+				try {
+					admission = borrowedResourceView == null
+							? beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)
+							: beginDatasetAdmissionForEstimator(borrowedResourceView);
+				} catch (SailException e) {
+					throw new SketchStatementSourceException(e);
+				}
+				boolean locked = false;
+				CloseableIteration<? extends Statement> statements = null;
+				try {
+					// Once a paired view is active, never wait for the writer guard while retaining that view.
+					locked = sinkStoreAccessLock.tryLock();
+					if (!locked) {
+						DatasetAdmission closingAdmission = admission;
+						admission = null;
+						closingAdmission.close();
+						if (mayWaitForGuard) {
+							continue;
+						}
+						throw deferredEstimatorStatementSource();
+					}
+					if (storeTxnStarted.get()) {
+						throw deferredEstimatorStatementSource();
+					}
+					statements = delegate.getStatements(subject, predicate, object, contexts);
+					DatasetAdmission closingAdmission = admission;
+					admission = null;
+					closingAdmission.close();
+					return new GuardedEstimatorStatementIteration(statements);
+				} catch (RuntimeException | Error failure) {
+					if (statements != null) {
+						try {
+							statements.close();
+						} catch (RuntimeException | Error cleanupFailure) {
+							if (cleanupFailure != failure) {
+								failure.addSuppressed(cleanupFailure);
+							}
+						}
+					}
+					if (admission != null) {
+						try {
+							admission.close();
+						} catch (RuntimeException | Error cleanupFailure) {
+							if (cleanupFailure != failure) {
+								failure.addSuppressed(cleanupFailure);
+							}
+						}
+					}
+					if (locked) {
+						try {
+							sinkStoreAccessLock.unlock();
+						} catch (RuntimeException | Error cleanupFailure) {
+							if (cleanupFailure != failure) {
+								failure.addSuppressed(cleanupFailure);
+							}
+						}
+					}
+					throw failure;
+				}
+			}
 		}
 
 		@Override
@@ -6315,6 +6552,11 @@ class LmdbSailStore implements SailStore {
 		return new SketchStatementSourceException(new SailException("LMDB store transaction active"));
 	}
 
+	/**
+	 * Holds the native sink-access guard for one estimator scan. The estimator's four source call sites acquire, use,
+	 * and close the iteration in same-thread try-with-resources scopes. Closing is idempotent on that thread; this
+	 * wrapper does not support cross-thread use or close because the reentrant guard must be unlocked by its owner.
+	 */
 	private final class GuardedEstimatorStatementIteration implements CloseableIteration<Statement> {
 
 		private final CloseableIteration<? extends Statement> delegate;
@@ -6341,13 +6583,30 @@ class LmdbSailStore implements SailStore {
 
 		@Override
 		public void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			Throwable failure = null;
 			try {
 				delegate.close();
-			} finally {
-				if (!closed) {
-					closed = true;
-					sinkStoreAccessLock.unlock();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = closeFailure;
+			}
+			try {
+				sinkStoreAccessLock.unlock();
+			} catch (RuntimeException | Error unlockFailure) {
+				if (failure == null) {
+					failure = unlockFailure;
+				} else if (unlockFailure != failure) {
+					failure.addSuppressed(unlockFailure);
 				}
+			}
+			if (failure instanceof RuntimeException runtimeFailure) {
+				throw runtimeFailure;
+			}
+			if (failure instanceof Error errorFailure) {
+				throw errorFailure;
 			}
 		}
 	}
