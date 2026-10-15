@@ -33,15 +33,26 @@ final class DatasetQueryEvaluationContext implements QueryEvaluationContext {
 
 	private final QueryEvaluationContext delegate;
 	private final Dataset dataset;
+	private final boolean enclosingProjection;
 
 	DatasetQueryEvaluationContext(QueryEvaluationContext delegate, Dataset dataset) {
+		this(delegate, dataset, delegate.hasEnclosingProjection());
+	}
+
+	DatasetQueryEvaluationContext(QueryEvaluationContext delegate, Dataset dataset, boolean enclosingProjection) {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
 		this.dataset = dataset;
+		this.enclosingProjection = enclosingProjection;
 	}
 
 	@Override
 	public ActiveGraph getActiveGraph() {
 		return delegate.getActiveGraph();
+	}
+
+	@Override
+	public boolean hasEnclosingProjection() {
+		return enclosingProjection;
 	}
 
 	@Override

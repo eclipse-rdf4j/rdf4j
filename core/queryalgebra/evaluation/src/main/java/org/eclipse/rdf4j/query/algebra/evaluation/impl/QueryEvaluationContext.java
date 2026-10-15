@@ -57,6 +57,14 @@ public interface QueryEvaluationContext {
 		return null;
 	}
 
+	/**
+	 * Whether the evaluated subtree was detached from an enclosing projection. Projections in that subtree must retain
+	 * parent bindings just as they did before detachment; their own live algebra ancestry still applies as well.
+	 */
+	default boolean hasEnclosingProjection() {
+		return false;
+	}
+
 	@Experimental
 	default Comparator<Value> getComparator() {
 		return null;

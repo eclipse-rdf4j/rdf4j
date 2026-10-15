@@ -18,6 +18,7 @@ import static org.eclipse.rdf4j.model.util.Values.literal;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.assertj.core.groups.Tuple;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.SingleSourceQuery;
@@ -28,11 +29,13 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -47,6 +50,8 @@ import org.eclipse.rdf4j.query.impl.FallbackDataset;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
@@ -113,6 +118,175 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 							assertThat(row.getValue("left")).isEqualTo(literal("left"));
 							assertThat(row.getValue("right")).isEqualTo(literal("right"));
 						});
+	}
+
+	@Test
+	public void fixedGraphComposedPathPreservesProjectedEndpoints() {
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.clear();
+			second.clear();
+			first.add(A, P, B, G1);
+		}
+
+		List<BindingSet> rows = query("SELECT ?s ?o WHERE { GRAPH <urn:g1> { ?s (<urn:p>?/<urn:q>?) ?o } }");
+		assertThat(rows).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(A, A), tuple(B, B), tuple(A, B));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("s", "o"));
+	}
+
+	@Test
+	public void apiBindingOnUnprojectedSubjectConstrainsFixedGraphPath() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(
+					"SELECT ?o WHERE { GRAPH <urn:g1> { ?s (<urn:p>?/<urn:q>?) ?o } }");
+			query.setBinding("s", VF.createIRI("urn:missing"));
+			try (TupleQueryResult result = query.evaluate()) {
+				assertThat(QueryResults.asList(result)).isEmpty();
+			}
+		}
+	}
+
+	@Test
+	public void nestedGraphSubqueryKeepsPathBindingsInOuterProjection() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+
+		String text = "SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s (<urn:p>?/<urn:q>?) ?o . "
+				+ "{ SELECT ?s WHERE { GRAPH <urn:g1> { ?s <urn:p> ?edge } } } } }";
+		List<BindingSet> rows = query(text);
+		assertThat(rows).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(G1, A, A), tuple(G1, A, B));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s", "o"));
+	}
+
+	@Test
+	public void constructGraphPathRetainsEndpointsAcrossMultiProjection() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+		IRI resultPredicate = VF.createIRI("urn:result");
+		IRI sourcePredicate = VF.createIRI("urn:source");
+		IRI inputGraph = VF.createIRI("urn:input");
+		String text = "CONSTRUCT { ?s <urn:result> ?o . ?s <urn:source> <urn:input> } WHERE { "
+				+ "GRAPH <urn:g1> { ?s (<urn:p>?/<urn:q>?) ?o } }";
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection();
+				GraphQueryResult result = connection.prepareGraphQuery(text).evaluate()) {
+			assertThat(QueryResults.asModel(result)).containsExactlyInAnyOrder(
+					VF.createStatement(A, resultPredicate, A), VF.createStatement(B, resultPredicate, B),
+					VF.createStatement(A, resultPredicate, B), VF.createStatement(A, sourcePredicate, inputGraph),
+					VF.createStatement(B, sourcePredicate, inputGraph));
+		}
+	}
+
+	@Test
+	public void graphScopedProjectionIgnoresUnrelatedApiBinding() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery(
+					"SELECT ?o WHERE { GRAPH <urn:g1> { ?s (<urn:p>?/<urn:q>?) ?o } }");
+			query.setBinding("unrelated", VF.createIRI("urn:incoming"));
+			try (TupleQueryResult result = query.evaluate()) {
+				List<BindingSet> rows = QueryResults.asList(result);
+				assertThat(rows).extracting(row -> row.getValue("o")).containsExactlyInAnyOrder(A, B, B);
+				rows.forEach(row -> assertThat(row.getBindingNames()).containsExactly("o"));
+			}
+		}
+	}
+
+	@Test
+	public void optionalPathStepIsReusableAcrossValuesRows() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+
+		List<BindingSet> rows = query("SELECT ?v ?s ?o WHERE { GRAPH <urn:g1> { VALUES ?v { 1 2 } "
+				+ "OPTIONAL { ?s <urn:p>? ?o } } }");
+		assertThat(rows).extracting(row -> tuple(row.getValue("v"), row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(
+						tuple(VF.createLiteral("1", XSD.INTEGER), A, A),
+						tuple(VF.createLiteral("1", XSD.INTEGER), A, B),
+						tuple(VF.createLiteral("1", XSD.INTEGER), B, B),
+						tuple(VF.createLiteral("2", XSD.INTEGER), A, A),
+						tuple(VF.createLiteral("2", XSD.INTEGER), A, B),
+						tuple(VF.createLiteral("2", XSD.INTEGER), B, B));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("v", "s", "o"));
+	}
+
+	@Test
+	public void askPathUsesSelectedGraphWithoutOuterProjection() {
+		replaceMemberData(VF.createStatement(A, P, B, G1));
+		String filteredAsk = "ASK { GRAPH <urn:g1> { ?s (<urn:p>?/<urn:q>?) ?o "
+				+ "FILTER(?s = <urn:a> && ?o = <urn:b>) } }";
+		assertThat(memoryBooleanQueryWithPathData(filteredAsk)).isTrue();
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			assertThat(connection.prepareBooleanQuery(
+					"ASK { GRAPH <urn:g1> { <urn:a> (<urn:p>?/<urn:q>?) <urn:b> } }").evaluate())
+							.isTrue();
+			assertThat(connection.prepareBooleanQuery(
+					"ASK { GRAPH <urn:g1> { <urn:b> (<urn:p>?/<urn:q>?) <urn:a> } }").evaluate())
+							.isFalse();
+			assertThat(connection.prepareBooleanQuery("ASK { GRAPH <urn:g1> { "
+					+ "<urn:a> (<urn:p>?/<urn:q>?) <urn:b> . OPTIONAL { <urn:a> <urn:q> ?optional } } }")
+					.evaluate()).isTrue();
+			assertThat(connection.prepareBooleanQuery(filteredAsk).evaluate()).isTrue();
+		}
+	}
+
+	@Test
+	public void nonGraphProjectionIgnoresUnrelatedApiBinding() {
+		replaceMemberData(VF.createStatement(A, P, B));
+
+		try (RepositoryConnection connection = fedxRule.getRepository().getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("SELECT ?o WHERE { ?s (<urn:p>?/<urn:q>?) ?o }");
+			query.setBinding("unrelated", VF.createIRI("urn:incoming"));
+			try (TupleQueryResult result = query.evaluate()) {
+				List<BindingSet> rows = QueryResults.asList(result);
+				assertThat(rows).extracting(row -> row.getValue("o")).containsExactlyInAnyOrder(A, B, B);
+				rows.forEach(row -> assertThat(row.getBindingNames()).containsExactly("o"));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "<urn:p>+", "<urn:p>*", "(<urn:p>+/<urn:p>*)", "(<urn:p>?/<urn:p>*)",
+			"(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" })
+	public void graphScopedPathRepetitionsMatchMemoryStore(String path) {
+		replaceMemberData(VF.createStatement(A, P, B, G1), VF.createStatement(B, P, C, G1));
+
+		String queryText = "SELECT ?s ?o WHERE { GRAPH <urn:g1> { ?s " + path + " ?o } }";
+		List<BindingSet> actual = query(queryText);
+		List<BindingSet> expected = memoryQueryWithPathData(queryText);
+		assertThat(actual).as("path expression %s", path)
+				.extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrderElementsOf(
+						expected.stream().map(row -> tuple(row.getValue("s"), row.getValue("o"))).toList());
+		// SPARQL 1.1 §18.4 defines sequence as join followed by projection, preserving intermediate bag multiplicity.
+		List<Tuple> exactExpected = switch (path) {
+		case "<urn:p>+" -> List.of(tuple(A, B), tuple(B, C), tuple(A, C));
+		case "(<urn:p>+/<urn:p>*)" -> List.of(tuple(A, B), tuple(B, C), tuple(A, C), tuple(A, C));
+		case "<urn:p>*" -> List.of(tuple(A, A), tuple(B, B), tuple(C, C), tuple(A, B), tuple(B, C), tuple(A, C));
+		case "(<urn:p>?/<urn:p>*)" -> List.of(tuple(A, A), tuple(B, B), tuple(C, C), tuple(A, B), tuple(B, C),
+				tuple(A, C), tuple(A, B), tuple(B, C), tuple(A, C));
+		case "(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" -> List.of(tuple(A, A), tuple(B, B), tuple(C, C),
+				tuple(A, B), tuple(B, C), tuple(A, C));
+		default -> throw new IllegalArgumentException("Unexpected path expression: " + path);
+		};
+		assertThat(actual).as("exact expected paths for %s", path)
+				.extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrderElementsOf(exactExpected);
+		actual.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("s", "o"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" })
+	public void defaultGraphRepeatedOptionalSequenceRetainsEndpointsAcrossMembers(String path) {
+		replaceMemberDataAcrossMembers(VF.createStatement(A, P, B), VF.createStatement(B, P, C));
+		List<BindingSet> rows = query("SELECT ?s ?o WHERE { ?s " + path + " ?o }");
+		assertThat(rows).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(A, A), tuple(B, B), tuple(C, C), tuple(A, B), tuple(B, C),
+						tuple(A, C));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("s", "o"));
 	}
 
 	@ParameterizedTest
@@ -1180,6 +1354,57 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 		try (RepositoryConnection connection = fedxRule.getRepository().getConnection();
 				TupleQueryResult results = connection.prepareTupleQuery(text).evaluate()) {
 			return QueryResults.asList(results);
+		}
+	}
+
+	private void replaceMemberData(Statement... statements) {
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.clear();
+			second.clear();
+			for (Statement statement : statements) {
+				first.add(statement);
+			}
+		}
+	}
+
+	private void replaceMemberDataAcrossMembers(Statement firstStatement, Statement secondStatement) {
+		try (RepositoryConnection first = getRepository(1).getConnection();
+				RepositoryConnection second = getRepository(2).getConnection()) {
+			first.clear();
+			second.clear();
+			first.add(firstStatement);
+			second.add(secondStatement);
+		}
+	}
+
+	private List<BindingSet> memoryQueryWithPathData(String text) {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(A, P, B, G1);
+				connection.add(B, P, C, G1);
+				try (TupleQueryResult results = connection.prepareTupleQuery(text).evaluate()) {
+					return QueryResults.asList(results);
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private boolean memoryBooleanQueryWithPathData(String text) {
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		try {
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.add(A, P, B, G1);
+				connection.add(B, P, C, G1);
+				return connection.prepareBooleanQuery(text).evaluate();
+			}
+		} finally {
+			repository.shutDown();
 		}
 	}
 }

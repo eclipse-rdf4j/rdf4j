@@ -116,6 +116,11 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			public ActiveGraph getActiveGraph() {
 				return context.getActiveGraph();
 			}
+
+			@Override
+			public boolean hasEnclosingProjection() {
+				return context.hasEnclosingProjection();
+			}
 		};
 		subjectVarName = subjectVar.getName();
 		objectVarName = objVar.getName();

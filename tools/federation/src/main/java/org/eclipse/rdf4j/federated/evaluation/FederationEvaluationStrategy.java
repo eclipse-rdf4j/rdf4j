@@ -139,6 +139,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQuer
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
@@ -589,7 +590,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		if (expr instanceof FedXGraph graph) {
 			return prepareGraph(graph, context);
 		}
-		if (expr instanceof Join) {
+		if (expr instanceof Join && !hasScopedContext(context)) {
 			return QueryEvaluationStep.minimal(this, expr);
 		}
 		if (expr instanceof StatementTupleExpr) {
@@ -697,7 +698,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	private QueryEvaluationStep prepareGraph(FedXGraph graph, QueryEvaluationContext context) {
 		QueryInfo query = graph.getQueryInfo();
 		DatasetQueryEvaluationContext graphContext = new DatasetQueryEvaluationContext(context,
-				FedXUtil.toRdfDataset(query.getDataset()));
+				FedXUtil.toRdfDataset(query.getDataset()), ProjectionIterator.hasEnclosingProjection(graph, context));
 		List<Endpoint> members = getMembersFromContext(new FederationEvaluationStatistics(query, query.getDataset()));
 		return GraphQueryEvaluationStep.supply(graph, new FederationGraphSource(this, query, members), graphContext,
 				(body, selectedContext) -> {
@@ -714,6 +715,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 									selectedContext.getDataset()));
 					return precompile(selected.getArg(), bodyContext);
 				});
+	}
+
+	private static boolean hasScopedContext(QueryEvaluationContext context) {
+		return context.getActiveGraph() != null || context.hasEnclosingProjection();
 	}
 
 	/**
@@ -887,7 +892,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 					if (independent[i] == null) {
 						result = executeJoin(joinScheduler, result, join.getArg(i), join.getJoinVariables(i), bindings,
-								join.getQueryInfo());
+								join.getQueryInfo(), context);
 					} else {
 						CloseableIteration<BindingSet> left = result;
 						result = new HashJoinIteration(ignored -> left, independent[i], bindings, false, keys[i],
@@ -914,7 +919,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	protected QueryEvaluationStep prepare(FedXArbitraryLengthPath alp, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationContext pathContext = executionDatasetContext(alp, context);
+		QueryEvaluationContext selectedContext = executionDatasetContext(alp, context);
+		QueryEvaluationContext pathContext = ProjectionIterator.hasEnclosingProjection(alp, selectedContext)
+				&& !selectedContext.hasEnclosingProjection()
+						? new DatasetQueryEvaluationContext(selectedContext, selectedContext.getDataset(), true)
+						: selectedContext;
 		return (bindings) -> new FedXPathIteration(FederationEvaluationStrategy.this, alp.getScope(),
 				alp.getSubjectVar(),
 				alp.getPathExpression(), alp.getObjectVar(), alp.getContextVar(), alp.getMinLength(), bindings,
@@ -1002,7 +1011,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 				if (problemVars.containsAll(bindings.getBindingNames())) {
 					var leftIter = leftPrepared.evaluate(bindings);
-					return executeLeftJoin(scheduler, leftIter, leftJoin, bindings, leftJoin.getQueryInfo());
+					return executeLeftJoin(scheduler, leftIter, leftJoin, bindings, leftJoin.getQueryInfo(), context);
 				} else {
 					Set<String> problemVarsClone = new HashSet<>(problemVars);
 					problemVarsClone.retainAll(bindings.getBindingNames());
@@ -1058,8 +1067,6 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			throws QueryEvaluationException {
 
 		ControlledWorkerScheduler<BindingSet> unionScheduler = federationContext.getManager().getUnionScheduler();
-		ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(unionScheduler,
-				union.getQueryInfo());
 
 		int numberOfArguments = union.getNumberOfArguments();
 		QueryEvaluationStep[] args = new QueryEvaluationStep[numberOfArguments];
@@ -1067,6 +1074,8 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			args[i] = precompile(union.getArg(i), context);
 		}
 		return bindings -> {
+			ControlledWorkerUnion<BindingSet> unionRunnable = new ControlledWorkerUnion<>(unionScheduler,
+					union.getQueryInfo());
 			for (int i = 0; i < numberOfArguments; i++) {
 				unionRunnable.addTask(new ParallelUnionOperatorTask(unionRunnable, args[i], bindings));
 			}
@@ -1104,6 +1113,26 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			CloseableIteration<BindingSet> leftIter,
 			TupleExpr rightArg, Set<String> joinVars, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
+		return executeJoinWithContext(joinScheduler, leftIter, rightArg, joinVars, bindings, queryInfo, null);
+	}
+
+	/**
+	 * Executes a join inside a detached graph or arbitrary-path body with its compilation context. Ordinary calls
+	 * retain dispatch through the legacy overload. Custom strategies intercepting these scoped executions must override
+	 * this overload as well.
+	 */
+	public CloseableIteration<BindingSet> executeJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, TupleExpr rightArg, Set<String> joinVars, BindingSet bindings,
+			QueryInfo queryInfo, QueryEvaluationContext context) throws QueryEvaluationException {
+		if (!hasScopedContext(context)) {
+			return executeJoin(joinScheduler, leftIter, rightArg, joinVars, bindings, queryInfo);
+		}
+		return executeJoinWithContext(joinScheduler, leftIter, rightArg, joinVars, bindings, queryInfo, context);
+	}
+
+	private CloseableIteration<BindingSet> executeJoinWithContext(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, TupleExpr rightArg, Set<String> joinVars, BindingSet bindings,
+			QueryInfo queryInfo, QueryEvaluationContext context) throws QueryEvaluationException {
 
 		// determine if we can execute the expr as bind join
 		boolean executeAsBindJoin = false;
@@ -1115,18 +1144,25 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 		}
 
-		JoinExecutorBase<BindingSet> join;
-		if (executeAsBindJoin) {
-			join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
-					bindings, queryInfo);
-		} else {
-			join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
-					queryInfo);
-		}
+		JoinExecutorBase<BindingSet> join = null;
+		try {
+			if (executeAsBindJoin) {
+				join = new ControlledWorkerBindJoin(joinScheduler, this, leftIter, rightArg,
+						bindings, queryInfo);
+			} else {
+				join = new ControlledWorkerJoin(joinScheduler, this, leftIter, rightArg, bindings,
+						queryInfo, context == null ? null : precompile(rightArg, context));
+			}
 
-		join.setJoinVars(joinVars);
-		executor.execute(join);
-		return join;
+			join.setJoinVars(joinVars);
+			executor.execute(join);
+			return join;
+		} catch (RuntimeException | Error failure) {
+			if (context != null) {
+				closeAfterSetupFailure(join == null ? leftIter : join, failure);
+			}
+			throw failure;
+		}
 	}
 
 	/**
@@ -1142,6 +1178,25 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
 			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo)
 			throws QueryEvaluationException {
+		return executeLeftJoinWithContext(joinScheduler, leftIter, leftJoin, bindings, queryInfo, null);
+	}
+
+	/**
+	 * Context-aware counterpart for detached graph and arbitrary-path bodies. Ordinary calls still dispatch to the
+	 * legacy overload. Custom strategies intercepting these scoped executions must override this overload as well.
+	 */
+	protected CloseableIteration<BindingSet> executeLeftJoin(ControlledWorkerScheduler<BindingSet> joinScheduler,
+			CloseableIteration<BindingSet> leftIter, LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo,
+			QueryEvaluationContext context) throws QueryEvaluationException {
+		if (!hasScopedContext(context)) {
+			return executeLeftJoin(joinScheduler, leftIter, leftJoin, bindings, queryInfo);
+		}
+		return executeLeftJoinWithContext(joinScheduler, leftIter, leftJoin, bindings, queryInfo, context);
+	}
+
+	private CloseableIteration<BindingSet> executeLeftJoinWithContext(
+			ControlledWorkerScheduler<BindingSet> joinScheduler, CloseableIteration<BindingSet> leftIter,
+			LeftJoin leftJoin, BindingSet bindings, QueryInfo queryInfo, QueryEvaluationContext context) {
 
 		var rightArg = leftJoin.getRightArg();
 		var fedxConfig = queryInfo.getFederationContext().getConfig();
@@ -1156,17 +1211,37 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 			}
 		}
 
-		JoinExecutorBase<BindingSet> join;
-		if (executeAsBindJoin) {
-			join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
-					bindings, queryInfo);
-		} else {
-			join = new ControlledWorkerLeftJoin(joinScheduler, this,
-					leftIter, leftJoin, bindings, queryInfo);
-		}
+		JoinExecutorBase<BindingSet> join = null;
+		try {
+			if (executeAsBindJoin) {
+				join = new ControlledWorkerBindLeftJoin(joinScheduler, this, leftIter, rightArg,
+						bindings, queryInfo);
+			} else {
+				join = new ControlledWorkerLeftJoin(joinScheduler, this,
+						leftIter, leftJoin, bindings, queryInfo,
+						context == null ? null : precompile(rightArg, context),
+						context == null || !leftJoin.hasCondition() ? null
+								: precompile(leftJoin.getCondition(), context));
+			}
 
-		executor.execute(join);
-		return join;
+			executor.execute(join);
+			return join;
+		} catch (RuntimeException | Error failure) {
+			if (context != null) {
+				closeAfterSetupFailure(join == null ? leftIter : join, failure);
+			}
+			throw failure;
+		}
+	}
+
+	private static void closeAfterSetupFailure(CloseableIteration<BindingSet> owned, Throwable failure) {
+		try {
+			owned.close();
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
 	}
 
 	public CloseableIteration<BindingSet> evaluateExclusiveGroup(
@@ -1231,7 +1306,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		if (!(expr instanceof ExclusiveTupleExprRenderer)) {
-			return super.precompile(expr);
+			return super.precompile(expr, context);
 		}
 
 		Endpoint ownedEndpoint = federationContext

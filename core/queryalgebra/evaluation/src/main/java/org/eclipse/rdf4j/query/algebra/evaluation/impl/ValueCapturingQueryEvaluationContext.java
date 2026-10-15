@@ -85,6 +85,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	}
 
 	@Override
+	public boolean hasEnclosingProjection() {
+		return delegate.hasEnclosingProjection();
+	}
+
+	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
 	}

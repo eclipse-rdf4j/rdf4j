@@ -139,6 +139,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public boolean hasEnclosingProjection() {
+		return context.hasEnclosingProjection();
+	}
+
+	@Override
 	public BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
 		return context.getOrCreateBNode(nodeLabel, bindings, valueFactory);
 	}

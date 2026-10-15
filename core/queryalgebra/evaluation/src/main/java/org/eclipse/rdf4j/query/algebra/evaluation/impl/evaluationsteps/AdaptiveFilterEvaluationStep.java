@@ -1321,6 +1321,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 
 		@Override
+		public boolean hasEnclosingProjection() {
+			return delegate.hasEnclosingProjection();
+		}
+
+		@Override
 		public Comparator<Value> getComparator() {
 			return delegate.getComparator();
 		}

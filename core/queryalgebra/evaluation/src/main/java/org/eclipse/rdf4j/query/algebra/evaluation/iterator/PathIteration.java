@@ -113,6 +113,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			QueryEvaluationContext context) throws QueryEvaluationException {
 		this.strategy = strategy;
+		boolean enclosingProjection = ProjectionIterator.hasEnclosingProjection(pathExpression, context);
 		this.context = context == null ? null : new QueryEvaluationContext() {
 			// Expansion introduces private variables absent from the original array layout.
 			// Share query state and ownership while retaining flexible bindings for cloned path expressions.
@@ -129,6 +130,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			@Override
 			public ActiveGraph getActiveGraph() {
 				return context.getActiveGraph();
+			}
+
+			@Override
+			public boolean hasEnclosingProjection() {
+				return enclosingProjection;
 			}
 
 			@Override

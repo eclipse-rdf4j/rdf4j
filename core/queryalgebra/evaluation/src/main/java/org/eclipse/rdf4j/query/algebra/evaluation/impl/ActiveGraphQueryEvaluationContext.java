@@ -44,6 +44,11 @@ public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationC
 	}
 
 	@Override
+	public boolean hasEnclosingProjection() {
+		return delegate.hasEnclosingProjection();
+	}
+
+	@Override
 	public Literal getNow() {
 		return delegate.getNow();
 	}

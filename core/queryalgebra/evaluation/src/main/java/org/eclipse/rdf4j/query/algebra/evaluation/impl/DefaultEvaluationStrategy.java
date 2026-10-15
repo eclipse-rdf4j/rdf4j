@@ -25,6 +25,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -926,20 +927,104 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
-		final CollectionFactory cf = this.getCollectionFactory().get();
 		return bindings -> {
-			final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<>(evaluate, cf.createSetOfBindingSets()) {
+			final CollectionFactory cf = this.getCollectionFactory().get();
+			CloseableIteration<BindingSet> evaluate = null;
+			try {
+				evaluate = child.evaluate(bindings);
+				DistinctIteration<BindingSet> distinct = new DistinctIteration<>(evaluate, cf.createSetOfBindingSets());
+				return new AbstractCloseableIteration<>() {
+					@Override
+					public boolean hasNext() {
+						if (isClosed()) {
+							return false;
+						}
+						try {
+							boolean hasNext = distinct.hasNext();
+							if (!hasNext) {
+								close();
+							}
+							return hasNext;
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
 
-				@Override
-				protected void handleClose() throws QueryEvaluationException {
+					@Override
+					public BindingSet next() {
+						try {
+							return distinct.next();
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
+
+					@Override
+					public void remove() {
+						try {
+							distinct.remove();
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
+
+					@Override
+					protected void handleClose() {
+						Throwable failure = null;
+						try {
+							distinct.close();
+						} catch (RuntimeException | Error closeFailure) {
+							failure = closeFailure;
+						}
+						try {
+							cf.close();
+						} catch (RuntimeException | Error closeFailure) {
+							if (failure == null) {
+								failure = closeFailure;
+							} else if (failure != closeFailure) {
+								failure.addSuppressed(closeFailure);
+							}
+						}
+						if (failure instanceof RuntimeException runtimeFailure) {
+							throw runtimeFailure;
+						}
+						if (failure instanceof Error errorFailure) {
+							throw errorFailure;
+						}
+					}
+
+					private void closeOnFailure(Throwable failure) {
+						try {
+							close();
+						} catch (RuntimeException | Error closeFailure) {
+							if (failure != closeFailure) {
+								failure.addSuppressed(closeFailure);
+							}
+						}
+					}
+				};
+			} catch (RuntimeException | Error failure) {
+				if (evaluate != null) {
 					try {
-						cf.close();
-					} finally {
-						super.handleClose();
+						evaluate.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
 					}
 				}
-			};
+				try {
+					cf.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure != closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				throw failure;
+			}
 		};
 	}
 
