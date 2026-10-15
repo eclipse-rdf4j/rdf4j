@@ -16,15 +16,65 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.impl.TreeModel;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
+import org.eclipse.rdf4j.queryrender.sparql.experimental.SparqlQueryRenderer;
 import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestFactory;
 
 public class GraphRenderRoundTripTest {
+	@Test
+	public void experimentalRendererPreservesGraphBindings() throws Exception {
+		ParsedQuery parsed = parse("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+		String rendered = new SparqlQueryRenderer().render(parsed);
+		List<BindingSet> expected = evaluate(parsed);
+		assertThat(expected).hasSize(2).allSatisfy(row -> assertThat(row.hasBinding("g")).isTrue());
+		assertThat(evaluate(parse(rendered))).containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@TestFactory
+	public Stream<DynamicTest> experimentalRendererPreservesGraphBoundaries() {
+		return List.of("SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } }",
+				"SELECT ?g WHERE { GRAPH ?g {} }",
+				"SELECT ?g WHERE { GRAPH ?g { {} } }",
+				"SELECT ?g ?v WHERE { GRAPH ?g { VALUES ?v { 1 } } }",
+				"SELECT ?g ?h WHERE { GRAPH ?g { GRAPH ?h {} } }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o OPTIONAL { ?s <urn:q> ?v } } }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { { ?s <urn:p> ?o } UNION { ?s <urn:q> ?o } } }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o } FILTER(BOUND(?g)) }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o FILTER EXISTS { ?s <urn:q> ?v } } }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o MINUS { ?s <urn:q> ?v } } }",
+				"SELECT ?g ?s WHERE { GRAPH ?g { { SELECT ?s WHERE { ?s <urn:p> ?o } } } }",
+				"SELECT ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } GRAPH <urn:h> { ?s <urn:q> ?v } }",
+				"ASK WHERE { GRAPH <urn:g> {} }",
+				"CONSTRUCT { ?s <urn:p> ?o } WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }",
+				"DESCRIBE ?s WHERE { GRAPH <urn:g> { ?s <urn:p> ?o } }")
+				.stream()
+				.map(query -> DynamicTest.dynamicTest(query, () -> {
+					ParsedQuery parsed = parse(query);
+					String rendered = new SparqlQueryRenderer().render(parsed);
+					assertSameAlgebra(parsed, rendered);
+				}));
+	}
+
 	@TestFactory
 	public Stream<DynamicTest> legacyRendererPreservesGraphBoundaries() {
 		return queries().stream().map(query -> DynamicTest.dynamicTest(query, () -> {
@@ -57,6 +107,31 @@ public class GraphRenderRoundTripTest {
 
 	private static ParsedQuery parse(String query) {
 		return QueryParserUtil.parseQuery(QueryLanguage.SPARQL, query, null);
+	}
+
+	private static List<BindingSet> evaluate(ParsedQuery query) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		TreeModel model = new TreeModel();
+		model.add(vf.createIRI("urn:first"), vf.createIRI("urn:p"), vf.createLiteral(1), vf.createIRI("urn:g1"));
+		model.add(vf.createIRI("urn:second"), vf.createIRI("urn:p"), vf.createLiteral(2), vf.createIRI("urn:g2"));
+		model.add(vf.createIRI("urn:default"), vf.createIRI("urn:p"), vf.createLiteral(3));
+		TripleSource source = new TripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(
+						model.getStatements(subject, predicate, object, contexts).iterator());
+			}
+
+			@Override
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+		};
+		try (var rows = new DefaultEvaluationStrategy(source, query.getDataset(), null).precompile(query.getTupleExpr())
+				.evaluate(EmptyBindingSet.getInstance())) {
+			return QueryResults.asList(rows);
+		}
 	}
 
 	private static void assertSameAlgebra(ParsedQuery original, String rendered) {

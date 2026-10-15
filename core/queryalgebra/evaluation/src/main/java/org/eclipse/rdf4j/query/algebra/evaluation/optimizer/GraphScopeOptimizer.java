@@ -23,8 +23,10 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
 /**
  * Exposes a positive basic graph pattern in one known named graph to ordinary statement and join optimization.
@@ -35,6 +37,7 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
 		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Service service) {
@@ -43,13 +46,20 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 
 			@Override
 			public void meet(Graph graph) {
+				QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(graph);
 				super.meet(graph);
 				Value name = graph.getGraphName().getValue();
 				if (graph.getParentNode() != null && name instanceof Resource && !isDefaultAlias(name)
+						&& hasCompatibleInput(graph.getGraphName(), input)
 						&& (dataset == null || !dataset.getNamedGraphs().isEmpty()
 								&& dataset.getNamedGraphs().stream().noneMatch(GraphScopeOptimizer::isDefaultAlias))
-						&& isPositiveBasicGraphPattern(graph.getArg())) {
-					graph.replaceWith(lowerBasicGraphPattern(graph.getArg(), graph.getGraphName()));
+						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
+					TupleExpr lowered = lowerBasicGraphPattern(graph.getArg(), graph.getGraphName());
+					// GRAPH receives invocation input, not bindings produced by an ordinary join sibling. Keep that
+					// boundary when the physical context lookup replaces its active-graph evaluator.
+					((VariableScopeChange) lowered).setVariableScopeChange(true);
+					graph.replaceWith(lowered);
+					analysis.invalidate();
 				}
 			}
 		});
@@ -59,15 +69,36 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
 	}
 
-	private static boolean isPositiveBasicGraphPattern(TupleExpr expression) {
+	private static boolean hasCompatibleInput(Var graphName, QueryAlgebraBindingAnalysis.ReadOnlyContext input) {
+		// A fixed public graph name still rejects conflicting invocation bindings. Its physical context alone cannot
+		// implement that check, so only lower when the existing input-domain proof guarantees the selected value.
+		return graphName.isConstant() || input.bindingDomainKnown()
+				&& input.guaranteedNames().contains(graphName.getName())
+				&& graphName.getValue().equals(input.fixedValues().get(graphName.getName()));
+	}
+
+	private static boolean isPositiveBasicGraphPattern(TupleExpr expression, Var graphName) {
 		// Statement subclasses may carry backend annotations that an ordinary statement cannot reproduce.
 		if (expression.getClass() == StatementPattern.class) {
 			StatementPattern statement = (StatementPattern) expression;
-			return statement.getScope() == StatementPattern.Scope.DEFAULT_CONTEXTS && statement.getContextVar() == null;
+			if (statement.getScope() != StatementPattern.Scope.DEFAULT_CONTEXTS || statement.getContextVar() != null) {
+				return false;
+			}
+			if (!graphName.isConstant()) {
+				// GRAPH joins its public name with the body's result after evaluation. A context Var alone does not
+				// enforce that equality when the body independently binds the same name.
+				for (Var variable : statement.getVarList()) {
+					if (!variable.isConstant() && graphName.getName().equals(variable.getName())
+							&& !graphName.getValue().equals(variable.getValue())) {
+						return false;
+					}
+				}
+			}
+			return true;
 		}
 		return expression.getClass() == Join.class
-				&& isPositiveBasicGraphPattern(((Join) expression).getLeftArg())
-				&& isPositiveBasicGraphPattern(((Join) expression).getRightArg());
+				&& isPositiveBasicGraphPattern(((Join) expression).getLeftArg(), graphName)
+				&& isPositiveBasicGraphPattern(((Join) expression).getRightArg(), graphName);
 	}
 
 	private static TupleExpr lowerBasicGraphPattern(TupleExpr expression, Var graphName) {

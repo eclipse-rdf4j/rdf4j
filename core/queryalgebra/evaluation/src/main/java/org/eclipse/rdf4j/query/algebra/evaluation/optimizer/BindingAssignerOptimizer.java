@@ -18,6 +18,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -51,6 +52,13 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
 			super(true);
 			this.analysis = analysis;
+		}
+
+		@Override
+		public void meet(Graph graph) {
+			// Graph is a known tuple operator whose variables use the current query scope. The shared input-frame
+			// analysis proves each API substitution, while genuinely unknown tuple operators remain opaque.
+			super.meetOther(graph);
 		}
 
 		@Override

@@ -14,7 +14,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -25,17 +28,26 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
@@ -43,6 +55,10 @@ import org.junit.jupiter.api.Test;
 class GraphScopeOptimizerTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+	private static final IRI P = VF.createIRI("urn:p");
+	private static final IRI TARGET_GRAPH = VF.createIRI("urn:target");
+	private static final IRI OTHER_GRAPH = VF.createIRI("urn:other");
+	private static final IRI ABSENT_GRAPH = VF.createIRI("urn:absent");
 
 	@Test
 	void positiveGraphIsLoweredBeforeJoinSelection() {
@@ -53,7 +69,211 @@ class GraphScopeOptimizerTest {
 		assertThat(statements(plan)).singleElement().satisfies(statement -> {
 			assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
 			assertThat(statement.getContextVar().getValue()).isEqualTo(VF.createIRI("urn:g"));
-			assertThat(statement.getSubjectVar().getValue()).isEqualTo(VF.createIRI("urn:s"));
+			assertThat(statement.getSubjectVar().getName()).isEqualTo("s");
+			assertThat(statement.isVariableScopeChange()).isTrue();
+		});
+	}
+
+	@Test
+	void apiBoundPresentGraphAvoidsContextEnumeration() {
+		assertApiBoundGraphSelection(TARGET_GRAPH, 1);
+	}
+
+	@Test
+	void apiBoundMissingGraphAvoidsContextEnumeration() {
+		assertApiBoundGraphSelection(ABSENT_GRAPH, 0);
+	}
+
+	@Test
+	void nestedApiBoundGraphsKeepTheirIndependentSelections() {
+		CountingTripleSource source = new CountingTripleSource();
+		MapBindingSet bindings = bindings("g", TARGET_GRAPH);
+		bindings.addBinding("h", OTHER_GRAPH);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		TupleExpr plan = parse("SELECT ?s ?o WHERE { GRAPH ?g { GRAPH ?h { ?s <urn:p> ?o } } }");
+
+		strategy.optimize(plan, new EvaluationStatistics(), bindings);
+
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(TARGET_GRAPH);
+			assertThat(graph.getArg()).isInstanceOf(StatementPattern.class);
+		});
+		assertThat(statements(plan)).singleElement().satisfies(statement -> {
+			assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
+			assertThat(statement.getContextVar().getValue()).isEqualTo(OTHER_GRAPH);
+		});
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).singleElement().satisfies(row -> {
+			assertThat(row.getValue("s")).isEqualTo(VF.createIRI("urn:s998"));
+			assertThat(row.getValue("o")).isEqualTo(VF.createIRI("urn:o998"));
+		});
+	}
+
+	@Test
+	void precedingAssignmentCannotRetargetAnApiBoundGraph() {
+		// Exact-HEAD pipeline evidence establishes that the API-selected graph and a conflicting BIND are
+		// incompatible. Lowering must preserve that result rather than lookup TARGET using the BIND's public name.
+		String query = "SELECT ?g ?s ?o WHERE { BIND(<urn:other> AS ?g) GRAPH ?g { ?s <urn:p> ?o } }";
+		MapBindingSet bindings = bindings("g", TARGET_GRAPH);
+		assertThat(evaluateGraphQuery(query, bindings, false)).isEmpty();
+		assertThat(evaluateGraphQuery(query, bindings, true)).isEmpty();
+	}
+
+	@Test
+	void loweringPreservesPublicBindingsAcrossJoinsAndOptionals() {
+		List<String> bodies = List.of(
+				"BIND(<urn:other> AS ?g) GRAPH ?g { ?s <urn:p> ?o }",
+				"BIND(<urn:target> AS ?g) GRAPH ?g { ?s <urn:p> ?o }",
+				"VALUES ?g { <urn:other> } GRAPH ?g { ?s <urn:p> ?o }",
+				"VALUES ?g { <urn:target> <urn:target> } GRAPH ?g { ?s <urn:p> ?o }",
+				"BIND(<urn:other> AS ?g) OPTIONAL { GRAPH ?g { ?s <urn:p> ?o } }",
+				"BIND(<urn:other> AS ?g) GRAPH ?g { ?s <urn:p> ?o . ?s <urn:p> ?copy }",
+				"BIND(<urn:s998> AS ?s) GRAPH ?g { ?s <urn:p> ?o }",
+				"BIND(<urn:s998> AS ?s) GRAPH <urn:target> { ?s <urn:p> ?o }");
+		List<Integer> expectedSizes = List.of(0, 1, 0, 2, 1, 0, 0, 0);
+		MapBindingSet bindings = bindings("g", TARGET_GRAPH);
+		bindings.addBinding("s", VF.createIRI("urn:s999"));
+		for (int index = 0; index < bodies.size(); index++) {
+			String query = "SELECT ?g ?s ?o WHERE { " + bodies.get(index) + " }";
+			List<BindingSet> expected = evaluateGraphQuery(query, bindings, false);
+			assertThat(expected).as(query + " retained GRAPH").hasSize(expectedSizes.get(index));
+			assertThat(evaluateGraphQuery(query, bindings, true)).as(query)
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	void prevaluedGraphNameReuseKeepsItsCompatibilityCheck() {
+		CountingTripleSource source = new CountingTripleSource();
+		source.data.add(VF.createStatement(TARGET_GRAPH, P, VF.createIRI("urn:graph-subject-object"), TARGET_GRAPH));
+		TupleExpr original = new QueryRoot(new Graph(Var.of("g", TARGET_GRAPH, false, false),
+				new StatementPattern(Var.of("g"), Var.of("p", P, true, true), Var.of("o"))));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		List<BindingSet> expected = evaluate(strategy, original, EmptyBindingSet.getInstance());
+		assertThat(expected).singleElement().satisfies(row -> assertThat(row.getValue("g")).isEqualTo(TARGET_GRAPH));
+		TupleExpr lowered = original.clone();
+		new GraphScopeOptimizer().optimize(lowered, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(strategy, lowered, EmptyBindingSet.getInstance()))
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void prevaluedPublicGraphKeepsInvocationCompatibility() {
+		CountingTripleSource source = new CountingTripleSource();
+		source.data.add(VF.createStatement(TARGET_GRAPH, P, VF.createIRI("urn:graph-subject-object"), TARGET_GRAPH));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		for (String subjectName : List.of("s", "g")) {
+			Var subject = subjectName.equals("g") ? Var.of("g", TARGET_GRAPH, false, false) : Var.of("s");
+			TupleExpr original = new QueryRoot(new Graph(Var.of("g", TARGET_GRAPH, false, false),
+					new StatementPattern(subject, Var.of("p", P, true, true), Var.of("o"))));
+			TupleExpr lowered = original.clone();
+			new GraphScopeOptimizer().optimize(lowered, null, EmptyBindingSet.getInstance());
+			MapBindingSet conflicting = bindings("g", OTHER_GRAPH);
+			assertThat(evaluate(strategy, original, conflicting)).isEmpty();
+			assertThat(evaluate(strategy, lowered, conflicting)).as(subjectName).isEmpty();
+		}
+	}
+
+	@Test
+	void apiBoundGraphRespectsExplicitDefaultOnlyDataset() {
+		CountingTripleSource source = new CountingTripleSource();
+		MapBindingSet bindings = bindings("g", TARGET_GRAPH);
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addDefaultGraph(VF.createIRI("urn:default"));
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, null);
+		TupleExpr plan = parse("SELECT ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+
+		strategy.optimize(plan, new EvaluationStatistics(), bindings);
+
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(TARGET_GRAPH);
+		});
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).isEmpty();
+		assertThat(source.contextEnumerations).isZero();
+	}
+
+	@Test
+	void apiBoundDefaultAliasesRetainGraphScope() {
+		for (IRI alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			CountingTripleSource source = new CountingTripleSource();
+			MapBindingSet bindings = bindings("g", alias);
+			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+			TupleExpr plan = parse("SELECT ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+
+			strategy.optimize(plan, new EvaluationStatistics(), bindings);
+
+			assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+				assertThat(graph.getGraphName().getValue()).isEqualTo(alias);
+			});
+			assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).singleElement().satisfies(row -> {
+				assertThat(row.getValue("s")).isEqualTo(VF.createIRI("urn:default-s"));
+				assertThat(row.getValue("o")).isEqualTo(VF.createIRI("urn:default-o"));
+			});
+			assertThat(source.contextEnumerations).isZero();
+		}
+	}
+
+	@Test
+	void apiBoundEmptyGraphBodyRetainsGraphIteration() {
+		CountingTripleSource source = new CountingTripleSource();
+		MapBindingSet bindings = bindings("g", TARGET_GRAPH);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		TupleExpr plan = parse("SELECT ?g WHERE { GRAPH ?g { } }");
+
+		strategy.optimize(plan, new EvaluationStatistics(), bindings);
+
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(TARGET_GRAPH);
+			assertThat(graph.getArg()).isNotInstanceOf(StatementPattern.class);
+		});
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).singleElement().satisfies(row -> {
+			assertThat(row.getValue("g")).isEqualTo(TARGET_GRAPH);
+		});
+	}
+
+	@Test
+	void apiServiceEndpointAndPatternBindingsReachRemoteService() {
+		IRI endpoint = VF.createIRI("urn:remote");
+		MapBindingSet bindings = bindings("endpoint", endpoint);
+		bindings.addBinding("g", TARGET_GRAPH);
+		IRI subject = VF.createIRI("urn:api-subject");
+		bindings.addBinding("s", subject);
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+		TupleExpr plan = parse("SELECT * WHERE { SERVICE ?endpoint { GRAPH ?g { ?s <urn:p> ?o } } }");
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, resolver);
+
+		strategy.optimize(plan, new EvaluationStatistics(), bindings);
+		List<BindingSet> rows = evaluate(strategy, plan, EmptyBindingSet.getInstance());
+
+		assertThat(resolver.serviceUrl).isEqualTo(endpoint.stringValue());
+		assertThat(resolver.service.receivedBindings.getValue("g")).isEqualTo(TARGET_GRAPH);
+		assertThat(resolver.service.receivedBindings.getValue("s")).isEqualTo(subject);
+		assertThat(graphs(plan)).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(TARGET_GRAPH);
+		});
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.getValue("s")).isEqualTo(subject);
+			assertThat(row.getValue("o")).isEqualTo(VF.createIRI("urn:remote-object"));
+		});
+	}
+
+	@Test
+	void apiBindingIsForwardedToOrdinaryServicePattern() {
+		IRI endpoint = VF.createIRI("urn:remote");
+		IRI subject = VF.createIRI("urn:api-subject");
+		MapBindingSet bindings = bindings("endpoint", endpoint);
+		bindings.addBinding("s", subject);
+		RecordingServiceResolver resolver = new RecordingServiceResolver();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null, resolver);
+		TupleExpr plan = parse("SELECT ?s ?o WHERE { SERVICE ?endpoint { ?s <urn:p> ?o } }");
+
+		strategy.optimize(plan, new EvaluationStatistics(), bindings);
+		List<BindingSet> rows = evaluate(strategy, plan, EmptyBindingSet.getInstance());
+
+		assertThat(resolver.serviceUrl).isEqualTo(endpoint.stringValue());
+		assertThat(resolver.service.receivedBindings.getValue("s")).isEqualTo(subject);
+		assertThat(rows).singleElement().satisfies(row -> {
+			assertThat(row.getValue("s")).isEqualTo(subject);
+			assertThat(row.getValue("o")).isEqualTo(VF.createIRI("urn:remote-object"));
 		});
 	}
 
@@ -135,11 +355,187 @@ class GraphScopeOptimizerTest {
 		return new QueryRoot(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr());
 	}
 
+	private static List<BindingSet> evaluateGraphQuery(String query, BindingSet bindings, boolean lowerGraph) {
+		CountingTripleSource source = new CountingTripleSource();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		EvaluationStatistics statistics = new EvaluationStatistics();
+		if (!lowerGraph) {
+			StandardQueryOptimizerPipeline pipeline = new StandardQueryOptimizerPipeline(strategy, source, statistics);
+			strategy.setOptimizerPipeline(() -> {
+				List<QueryOptimizer> optimizers = new ArrayList<>();
+				for (var optimizer : pipeline.getOptimizers()) {
+					if (!(optimizer instanceof GraphScopeOptimizer)) {
+						optimizers.add(optimizer);
+					}
+				}
+				return optimizers;
+			});
+		}
+		TupleExpr plan = parse(query);
+		strategy.optimize(plan, statistics, bindings);
+		return evaluate(strategy, plan, EmptyBindingSet.getInstance());
+	}
+
+	private static void assertApiBoundGraphSelection(IRI selectedGraph, int expectedRows) {
+		CountingTripleSource apiSource = new CountingTripleSource();
+		MapBindingSet bindings = bindings("g", selectedGraph);
+		DefaultEvaluationStrategy apiStrategy = new DefaultEvaluationStrategy(apiSource, null);
+		TupleExpr apiPlan = parse("SELECT ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }");
+		apiStrategy.optimize(apiPlan, new EvaluationStatistics(), bindings);
+
+		CountingTripleSource constantSource = new CountingTripleSource();
+		DefaultEvaluationStrategy constantStrategy = new DefaultEvaluationStrategy(constantSource, null);
+		TupleExpr constantPlan = parse("SELECT ?s ?o WHERE { GRAPH <" + selectedGraph.stringValue()
+				+ "> { ?s <urn:p> ?o } }");
+		constantStrategy.optimize(constantPlan, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+
+		List<BindingSet> actual = evaluate(apiStrategy, apiPlan, EmptyBindingSet.getInstance());
+		List<BindingSet> expected = evaluate(constantStrategy, constantPlan, EmptyBindingSet.getInstance());
+		assertThat(actual).containsExactlyInAnyOrderElementsOf(expected).hasSize(expectedRows);
+		assertThat(apiSource.contextEnumerations).as(selectedGraph.stringValue()).isZero();
+		assertThat(apiSource.contextAdvances).as(selectedGraph.stringValue()).isZero();
+		assertThat(graphs(apiPlan)).as(selectedGraph.stringValue()).isEmpty();
+		assertThat(statements(apiPlan)).singleElement().satisfies(statement -> {
+			assertThat(statement.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
+			assertThat(statement.getContextVar().getValue()).isEqualTo(selectedGraph);
+		});
+		assertThat(constantSource.contextEnumerations).isZero();
+	}
+
+	private static MapBindingSet bindings(String name, Value value) {
+		MapBindingSet bindings = new MapBindingSet();
+		bindings.addBinding(name, value);
+		return bindings;
+	}
+
+	private static List<BindingSet> evaluate(DefaultEvaluationStrategy strategy, TupleExpr plan, BindingSet bindings) {
+		List<BindingSet> rows = new ArrayList<>();
+		try (CloseableIteration<BindingSet> result = strategy.precompile(plan).evaluate(bindings)) {
+			while (result.hasNext()) {
+				rows.add(result.next());
+			}
+		}
+		return rows;
+	}
+
 	private static final class AnnotatedStatement extends StatementPattern {
 		private static final long serialVersionUID = 1L;
 
 		private AnnotatedStatement() {
 			super(new Var("s"), new Var("p"), new Var("o"));
+		}
+	}
+
+	private static final class CountingTripleSource implements TripleSource {
+		private final List<Resource> contextIDs = new ArrayList<>();
+		private final List<Statement> data = new ArrayList<>();
+		private int contextEnumerations;
+		private int contextAdvances;
+
+		private CountingTripleSource() {
+			data.add(VF.createStatement(VF.createIRI("urn:default-s"), P, VF.createIRI("urn:default-o")));
+			for (int index = 0; index < 1_000; index++) {
+				Resource context = index == 999 ? TARGET_GRAPH
+						: index == 998 ? OTHER_GRAPH : VF.createIRI("urn:g" + index);
+				contextIDs.add(context);
+				data.add(VF.createStatement(VF.createIRI("urn:s" + index), P, VF.createIRI("urn:o" + index),
+						context));
+			}
+		}
+
+		@Override
+		public CloseableIteration<? extends Resource> getContextIDs() {
+			contextEnumerations++;
+			Iterator<Resource> iterator = contextIDs.iterator();
+			return new CloseableIteration<>() {
+				@Override
+				public boolean hasNext() {
+					return iterator.hasNext();
+				}
+
+				@Override
+				public Resource next() {
+					contextAdvances++;
+					return iterator.next();
+				}
+
+				@Override
+				public void remove() {
+					iterator.remove();
+				}
+
+				@Override
+				public void close() {
+				}
+			};
+		}
+
+		@Override
+		public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+				Resource... contexts) {
+			List<Statement> matching = data.stream()
+					.filter(statement -> (subject == null || subject.equals(statement.getSubject()))
+							&& (predicate == null || predicate.equals(statement.getPredicate()))
+							&& (object == null || object.equals(statement.getObject()))
+							&& (contexts.length == 0 || Arrays.asList(contexts).contains(statement.getContext())))
+					.toList();
+			return new CloseableIteratorIteration<>(matching.iterator());
+		}
+
+		@Override
+		public SimpleValueFactory getValueFactory() {
+			return VF;
+		}
+	}
+
+	private static final class RecordingServiceResolver implements FederatedServiceResolver {
+		private final RecordingFederatedService service = new RecordingFederatedService();
+		private String serviceUrl;
+
+		@Override
+		public FederatedService getService(String serviceUrl) {
+			this.serviceUrl = serviceUrl;
+			return service;
+		}
+	}
+
+	private static final class RecordingFederatedService implements FederatedService {
+		private BindingSet receivedBindings;
+
+		@Override
+		public boolean ask(Service service, BindingSet bindings, String baseUri) {
+			return true;
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> select(Service service, Set<String> projectionVars,
+				BindingSet bindings, String baseUri) {
+			receivedBindings = bindings;
+			MapBindingSet row = new MapBindingSet();
+			for (Binding binding : bindings) {
+				row.addBinding(binding);
+			}
+			row.addBinding("o", VF.createIRI("urn:remote-object"));
+			return new CloseableIteratorIteration<>(List.of(row).iterator());
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(Service service, CloseableIteration<BindingSet> bindings,
+				String baseUri) {
+			return bindings;
+		}
+
+		@Override
+		public boolean isInitialized() {
+			return true;
+		}
+
+		@Override
+		public void initialize() {
+		}
+
+		@Override
+		public void shutdown() {
 		}
 	}
 
@@ -150,6 +546,18 @@ class GraphScopeOptimizerTest {
 			public void meet(Graph graph) {
 				result.add(graph);
 				super.meet(graph);
+			}
+		});
+		return result;
+	}
+
+	private static List<Service> services(TupleExpr plan) {
+		List<Service> result = new ArrayList<>();
+		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				result.add(service);
+				super.meet(service);
 			}
 		});
 		return result;

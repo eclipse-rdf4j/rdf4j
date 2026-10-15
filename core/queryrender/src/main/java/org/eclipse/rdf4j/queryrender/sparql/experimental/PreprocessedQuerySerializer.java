@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -112,6 +113,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -595,11 +597,17 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	@Override
 	public void meet(Difference node) throws RuntimeException {
-		builder.append("{\n");
+		boolean scopedLeft = TupleExprs.isVariableScopeChange(node.getLeftArg());
+		if (scopedLeft) {
+			builder.append("{\n");
+		}
 
 		node.getLeftArg().visit(this);
 
-		builder.append("}\n MINUS\n{\n");
+		if (scopedLeft) {
+			builder.append("}\n");
+		}
+		builder.append(" MINUS\n{\n");
 
 		node.getRightArg().visit(this);
 
@@ -1130,6 +1138,17 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	@Override
 	public void meet(Sample node) throws RuntimeException {
 		writeAsAggregationFunction("SAMPLE", node.getArg(), node.isDistinct());
+	}
+
+	@Override
+	public void meet(Graph node) throws RuntimeException {
+		builder.append("GRAPH ");
+		node.getGraphName().visit(this);
+		builder.append(" { \n");
+		if (!(node.getArg()instanceof SingletonSet singleton) || singleton.isVariableScopeChange()) {
+			node.getArg().visit(this);
+		}
+		builder.append("} \n");
 	}
 
 	@Override

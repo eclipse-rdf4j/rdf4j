@@ -151,46 +151,67 @@ public abstract class TripleSourceBase implements TripleSource {
 		return withConnection((conn, resultHolder) -> {
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
-			applyMaxExecutionTimeUpperBound(query);
-			configureInference(query, queryInfo);
+			evaluatePreparedQuery(query, conn, bindings, filterExpr, queryInfo, resultHolder);
+		});
+	}
 
-			// evaluate the query
-			monitorRemoteRequest();
-			CloseableIteration<BindingSet> res = null;
-			try {
-				res = query.evaluate();
-
-				resultHolder.set(res);
-
-				// apply filter and/or insert original bindings
-				if (filterExpr != null) {
-					if (!bindings.isEmpty()) {
-						res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
-								queryInfo.getStrategy());
-					} else {
-						res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
-					}
-					if (!res.hasNext()) {
-						res.close();
-						conn.close();
-						resultHolder.set(new EmptyIteration<>());
-						return;
-					}
-				} else if (!bindings.isEmpty()) {
-					res = new InsertBindingsIteration(res, bindings);
+	/** Preserve the selected graph's RDF value through the connection's ordinary query binding contract. */
+	CloseableIteration<BindingSet> getStatements(NativeGraphQuery.Prepared preparedQuery, QueryInfo queryInfo) {
+		return withConnection((conn, resultHolder) -> {
+			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery.queryString(), null);
+			applyBindings(query, preparedQuery.graphBindings());
+			evaluatePreparedQuery(query, conn, preparedQuery.resultBindings(), preparedQuery.filter(), queryInfo,
+					resultHolder);
+			if (preparedQuery.existenceCheck()) {
+				try (CloseableIteration<BindingSet> rows = resultHolder.get()) {
+					resultHolder.set(rows.hasNext() ? new SingleBindingSetIteration(preparedQuery.resultBindings())
+							: new EmptyIteration<>());
 				}
+			}
+		});
+	}
 
-				res = new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax());
+	private void evaluatePreparedQuery(TupleQuery query, RepositoryConnection conn, BindingSet bindings,
+			FilterValueExpr filterExpr, QueryInfo queryInfo, ResultHolder<BindingSet> resultHolder) {
+		applyMaxExecutionTimeUpperBound(query);
+		configureInference(query, queryInfo);
 
-				resultHolder.set(res);
-			} catch (Throwable t) {
-				if (res != null) {
+		// evaluate the query
+		monitorRemoteRequest();
+		CloseableIteration<BindingSet> res = null;
+		try {
+			res = query.evaluate();
+
+			resultHolder.set(res);
+
+			// apply filter and/or insert original bindings
+			if (filterExpr != null) {
+				if (!bindings.isEmpty()) {
+					res = new FilteringInsertBindingsIteration(filterExpr, bindings, res,
+							queryInfo.getStrategy());
+				} else {
+					res = new FilteringIteration(filterExpr, res, queryInfo.getStrategy());
+				}
+				if (!res.hasNext()) {
 					res.close();
+					conn.close();
+					resultHolder.set(new EmptyIteration<>());
+					return;
 				}
-				throw t;
+			} else if (!bindings.isEmpty()) {
+				res = new InsertBindingsIteration(res, bindings);
 			}
 
-		});
+			res = new ConsumingIteration(res, federationContext.getConfig().getConsumingIterationMax());
+
+			resultHolder.set(res);
+		} catch (Throwable t) {
+			if (res != null) {
+				res.close();
+			}
+			throw t;
+		}
+
 	}
 
 	@Override
@@ -205,6 +226,12 @@ public abstract class TripleSourceBase implements TripleSource {
 	public boolean hasStatements(ExclusiveTupleExpr group, BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
+		if (NativeGraphQuery.isRequired(group, bindings)) {
+			try (CloseableIteration<BindingSet> rows = getStatements(NativeGraphQuery.select(group, bindings),
+					group.getQueryInfo())) {
+				return rows.hasNext();
+			}
+		}
 
 		monitorRemoteRequest();
 		String preparedAskQuery = QueryStringUtil.askQueryString(group, bindings, group.getExecutionDataset());

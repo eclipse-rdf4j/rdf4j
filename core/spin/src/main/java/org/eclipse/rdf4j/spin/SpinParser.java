@@ -133,6 +133,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry
 import org.eclipse.rdf4j.query.algebra.evaluation.util.TripleSources;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
@@ -623,6 +624,9 @@ public class SpinParser {
 			visitor.visitModify(queryResource);
 			ParsedUpdate parsedUpdate = new ParsedUpdate();
 			parsedUpdate.addUpdateExpr(visitor.getUpdateExpr());
+			if (visitor.updateDataset != null) {
+				parsedUpdate.map(visitor.getUpdateExpr(), visitor.updateDataset);
+			}
 			return parsedUpdate;
 		} else if (SP.DELETE_WHERE_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store);
@@ -740,6 +744,10 @@ public class SpinParser {
 		UpdateExpr updateRoot;
 
 		Var namedGraph;
+
+		boolean updateTemplate;
+
+		SimpleDataset updateDataset;
 
 		Map<String, ProjectionElem> projElems;
 
@@ -1066,7 +1074,13 @@ public class SpinParser {
 		public void visitModify(Resource query) throws RDF4JException {
 			Value with = TripleSources.singleValue(query, SP.WITH_PROPERTY, store);
 			if (with != null) {
-				namedGraph = TupleExprs.createConstVar(with);
+				if (!(with instanceof IRI graph)) {
+					throw new MalformedSpinException(String.format("Value of %s is not an IRI", SP.WITH_PROPERTY));
+				}
+				updateDataset = new SimpleDataset();
+				updateDataset.addDefaultGraph(graph);
+				updateDataset.setDefaultInsertGraph(graph);
+				updateDataset.addDefaultRemoveGraph(graph);
 			}
 
 			SingletonSet stub = new SingletonSet();
@@ -1075,7 +1089,7 @@ public class SpinParser {
 			TupleExpr deleteExpr;
 			Value delete = TripleSources.singleValue(query, SP.DELETE_PATTERN_PROPERTY, store);
 			if (delete != null) {
-				visitDelete((Resource) delete);
+				visitUpdateTemplate((Resource) delete);
 				deleteExpr = tupleNode;
 				deleteExpr.setParentNode(null);
 			} else {
@@ -1087,7 +1101,7 @@ public class SpinParser {
 			TupleExpr insertExpr;
 			Value insert = TripleSources.singleValue(query, SP.INSERT_PATTERN_PROPERTY, store);
 			if (insert != null) {
-				visitInsert((Resource) insert);
+				visitUpdateTemplate((Resource) insert);
 				insertExpr = tupleNode;
 				insertExpr.setParentNode(null);
 			} else {
@@ -1107,7 +1121,13 @@ public class SpinParser {
 
 		public void visitDeleteWhere(Resource query) throws RDF4JException {
 			TupleExpr whereExpr = visitWhere(query);
-			updateRoot = new Modify(whereExpr, null, whereExpr.clone());
+			boolean oldTemplate = updateTemplate;
+			try {
+				updateTemplate = true;
+				updateRoot = new Modify(visitWhere(query), null, whereExpr);
+			} finally {
+				updateTemplate = oldTemplate;
+			}
 		}
 
 		public void visitInsertData(Resource query) throws RDF4JException {
@@ -1119,7 +1139,7 @@ public class SpinParser {
 			if (!(insert instanceof Resource)) {
 				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
 			}
-			visitInsert((Resource) insert);
+			visitUpdateTemplate((Resource) insert);
 			insertExpr = tupleNode;
 			insertExpr.setParentNode(null);
 
@@ -1137,7 +1157,7 @@ public class SpinParser {
 			if (!(delete instanceof Resource)) {
 				throw new MalformedSpinException(String.format("Value of %s is not a resource", SP.DATA_PROPERTY));
 			}
-			visitDelete((Resource) delete);
+			visitUpdateTemplate((Resource) delete);
 			deleteExpr = tupleNode;
 			deleteExpr.setParentNode(null);
 
@@ -1231,23 +1251,17 @@ public class SpinParser {
 			return groupExpr;
 		}
 
-		private void visitInsert(Resource insert) throws RDF4JException {
-			CloseableIteration<Resource> groupIter = TripleSources.listResources(insert,
-					store);
-			while (groupIter.hasNext()) {
-				Resource r = groupIter.next();
-				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
-				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(), null);
-			}
-		}
-
-		private void visitDelete(Resource delete) throws RDF4JException {
-			CloseableIteration<Resource> groupIter = TripleSources.listResources(delete,
-					store);
-			while (groupIter.hasNext()) {
-				Resource r = groupIter.next();
-				Value type = TripleSources.singleValue(r, RDF.TYPE, store);
-				visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.<IRI>emptySet(), null);
+		private void visitUpdateTemplate(Resource template) throws RDF4JException {
+			boolean oldTemplate = updateTemplate;
+			try (CloseableIteration<Resource> groupIter = TripleSources.listResources(template, store)) {
+				updateTemplate = true;
+				while (groupIter.hasNext()) {
+					Resource r = groupIter.next();
+					Value type = TripleSources.singleValue(r, RDF.TYPE, store);
+					visitPattern(r, (type != null) ? Collections.singleton((IRI) type) : Collections.emptySet(), null);
+				}
+			} finally {
+				updateTemplate = oldTemplate;
 			}
 		}
 
@@ -1259,20 +1273,26 @@ public class SpinParser {
 				Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);
 				Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);
 				Scope stmtScope = (namedGraph != null) ? Scope.NAMED_CONTEXTS : Scope.DEFAULT_CONTEXTS;
-				tupleNode = new StatementPattern(stmtScope, getVar(subj), getVar(pred), getVar(obj), namedGraph);
+				tupleNode = new StatementPattern(stmtScope, getVar(subj), getVar(pred), getVar(obj),
+						namedGraph == null ? null : namedGraph.clone());
 			} else {
 				if (types.contains(SP.NAMED_GRAPH_CLASS)) {
 					Var oldGraph = namedGraph;
-					Value graphValue = TripleSources.singleValue(r, SP.GRAPH_NAME_NODE_PROPERTY, store);
-					Var graphName = getVar(graphValue);
-					namedGraph = null;
-					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
-					if (!(elements instanceof Resource)) {
-						throw new MalformedSpinException(
-								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+					try {
+						Value graphValue = TripleSources.singleValue(r, SP.GRAPH_NAME_NODE_PROPERTY, store);
+						Var graphName = getVar(graphValue);
+						namedGraph = updateTemplate ? graphName : null;
+						Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
+						if (!(elements instanceof Resource)) {
+							throw new MalformedSpinException(
+									String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
+						}
+						TupleExpr body = visitGroupGraphPattern((Resource) elements);
+						// Query evaluation needs the GRAPH boundary; update execution reads statement contexts.
+						tupleNode = updateTemplate ? body : new Graph(graphName, body);
+					} finally {
+						namedGraph = oldGraph;
 					}
-					tupleNode = new Graph(graphName, visitGroupGraphPattern((Resource) elements));
-					namedGraph = oldGraph;
 				} else if (types.contains(SP.UNION_CLASS)) {
 					Value elements = TripleSources.singleValue(r, SP.ELEMENTS_PROPERTY, store);
 					if (!(elements instanceof Resource)) {
