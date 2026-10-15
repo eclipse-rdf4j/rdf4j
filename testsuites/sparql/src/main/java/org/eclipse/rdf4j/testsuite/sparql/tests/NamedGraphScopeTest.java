@@ -13,7 +13,11 @@ package org.eclipse.rdf4j.testsuite.sparql.tests;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 
@@ -26,6 +30,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -53,6 +58,38 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 
 	private List<BindingSet> rows(RepositoryConnection conn, String query) {
 		return QueryResults.asList(conn.prepareTupleQuery(PREFIX + query).evaluate());
+	}
+
+	private void assertExactRows(RepositoryConnection conn, String query, Set<String> bindingNames,
+			List<Map<String, Value>> expected, String description) {
+		assertExactRows(conn.prepareTupleQuery(PREFIX + query), bindingNames, expected, description);
+	}
+
+	private void assertExactRows(TupleQuery query, Set<String> bindingNames, List<Map<String, Value>> expected,
+			String description) {
+		try (TupleQueryResult result = query.evaluate()) {
+			assertThat(result.getBindingNames()).as(description + " result domain")
+					.containsExactlyInAnyOrderElementsOf(bindingNames);
+			List<Map<String, Value>> actual = new ArrayList<>();
+			while (result.hasNext()) {
+				BindingSet bindings = result.next();
+				Map<String, Value> row = new LinkedHashMap<>();
+				for (String name : bindings.getBindingNames()) {
+					row.put(name, bindings.getValue(name));
+				}
+				actual.add(row);
+			}
+			assertThat(actual).as(description + " RDF-term bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	private Map<String, Value> bindingRow(Object... entries) {
+		Map<String, Value> row = new LinkedHashMap<>();
+		for (int i = 0; i < entries.length; i += 2) {
+			row.put((String) entries[i], (Value) entries[i + 1]);
+		}
+		return row;
 	}
 
 	private void assertGraphNames(List<BindingSet> matches, List<IRI> expected, String description) {
@@ -411,6 +448,221 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				.containsExactly(iri(conn, "g1"));
 	}
 
+	private void variableGraphAliasesAndDatasets(RepositoryConnection conn) {
+		IRI predicate = iri(conn, "p");
+		IRI qPredicate = iri(conn, "q");
+		IRI defaultSubject = iri(conn, "default-subject");
+		IRI defaultObject = iri(conn, "default-object");
+		IRI decoySubject = iri(conn, "alias-decoy-subject");
+		IRI decoyObject = iri(conn, "alias-decoy-object");
+		IRI qOnlySubject = iri(conn, "alias-q-subject");
+		Map<IRI, IRI> aliasSubjects = Map.of(RDF4J.NIL, iri(conn, "rdf4j-alias-subject"),
+				SESAME.NIL, iri(conn, "sesame-alias-subject"));
+		Map<IRI, IRI> aliasObjects = Map.of(RDF4J.NIL, iri(conn, "rdf4j-alias-object"),
+				SESAME.NIL, iri(conn, "sesame-alias-object"));
+		conn.add(defaultSubject, predicate, defaultObject);
+		conn.add(qOnlySubject, qPredicate, iri(conn, "alias-q-object"), RDF4J.NIL);
+		conn.add(decoySubject, predicate, decoyObject, SESAME.NIL);
+		for (IRI alias : aliasSubjects.keySet()) {
+			conn.add(aliasSubjects.get(alias), predicate, aliasObjects.get(alias), alias);
+		}
+
+		for (IRI alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			String query = "SELECT ?g ?s ?o { VALUES ?g { <" + alias + "> } GRAPH ?g { ?s :p ?o } }";
+			List<Map<String, Value>> physicalRows = new ArrayList<>();
+			physicalRows.add(bindingRow("g", alias, "s", aliasSubjects.get(alias), "o", aliasObjects.get(alias)));
+			if (alias.equals(SESAME.NIL)) {
+				physicalRows.add(bindingRow("g", alias, "s", decoySubject, "o", decoyObject));
+			}
+			assertExactRows(conn, query, Set.of("g", "s", "o"), physicalRows,
+					"VALUES-joined variable GRAPH enumerates physical alias " + alias);
+		}
+
+		assertExactRows(conn, "SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } }", Set.of("g", "s", "o"),
+				List.of(bindingRow("g", RDF4J.NIL, "s", aliasSubjects.get(RDF4J.NIL), "o", aliasObjects.get(RDF4J.NIL)),
+						bindingRow("g", SESAME.NIL, "s", aliasSubjects.get(SESAME.NIL), "o",
+								aliasObjects.get(SESAME.NIL)),
+						bindingRow("g", SESAME.NIL, "s", decoySubject, "o", decoyObject)),
+				"aliases discovered from actual context membership");
+
+		TupleQuery defaultBehavior = conn.prepareTupleQuery(PREFIX + "SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } }");
+		defaultBehavior.setDataset(new SimpleDataset());
+		assertExactRows(defaultBehavior, Set.of("g", "s", "o"), List.of(
+				bindingRow("g", RDF4J.NIL, "s", aliasSubjects.get(RDF4J.NIL), "o", aliasObjects.get(RDF4J.NIL)),
+				bindingRow("g", SESAME.NIL, "s", aliasSubjects.get(SESAME.NIL), "o", aliasObjects.get(SESAME.NIL)),
+				bindingRow("g", SESAME.NIL, "s", decoySubject, "o", decoyObject)),
+				"both-empty dataset uses store default physical alias enumeration");
+
+		SimpleDataset defaultOnly = new SimpleDataset();
+		defaultOnly.addDefaultGraph(RDF4J.NIL);
+		TupleQuery empty = conn.prepareTupleQuery(PREFIX + "SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } }");
+		empty.setDataset(defaultOnly);
+		assertExactRows(empty, Set.of("g", "s", "o"), List.of(), "default-only dataset has no named graphs");
+
+		SimpleDataset ordinaryOnly = new SimpleDataset();
+		IRI ordinaryGraph = iri(conn, "ordinary-graph");
+		IRI ordinarySubject = iri(conn, "ordinary-subject");
+		IRI ordinaryObject = iri(conn, "ordinary-object");
+		conn.add(ordinarySubject, predicate, ordinaryObject, ordinaryGraph);
+		ordinaryOnly.addNamedGraph(ordinaryGraph);
+		TupleQuery ordinary = conn.prepareTupleQuery(PREFIX + "SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } }");
+		ordinary.setDataset(ordinaryOnly);
+		assertExactRows(ordinary, Set.of("g", "s", "o"), List.of(
+				bindingRow("g", ordinaryGraph, "s", ordinarySubject, "o", ordinaryObject)),
+				"explicit ordinary named graph set");
+
+		for (IRI alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+			SimpleDataset aliasOnly = new SimpleDataset();
+			aliasOnly.addNamedGraph(alias);
+			String graph = "<" + alias + ">";
+			List<Map<String, Value>> physicalRows = new ArrayList<>();
+			physicalRows.add(bindingRow("s", aliasSubjects.get(alias), "o", aliasObjects.get(alias)));
+			if (alias.equals(SESAME.NIL)) {
+				physicalRows.add(bindingRow("s", decoySubject, "o", decoyObject));
+			}
+			TupleQuery selectedAlias = conn.prepareTupleQuery(PREFIX + "SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } }");
+			selectedAlias.setDataset(aliasOnly);
+			assertExactRows(selectedAlias, Set.of("g", "s", "o"), List.of(
+					bindingRow("g", alias, "s", defaultSubject, "o", defaultObject)),
+					"explicit dataset selecting default alias " + alias);
+
+			TupleQuery valuesSelectedAlias = conn.prepareTupleQuery(PREFIX + "SELECT ?s ?o { VALUES ?g { " + graph
+					+ " } GRAPH ?g { ?s :p ?o } }");
+			valuesSelectedAlias.setDataset(aliasOnly);
+			assertExactRows(valuesSelectedAlias, Set.of("s", "o"),
+					List.of(bindingRow("s", defaultSubject, "o", defaultObject)),
+					"explicit dataset with VALUES-selected default alias " + alias);
+
+			TupleQuery apiBoundImplicit = conn.prepareTupleQuery(PREFIX + "SELECT ?s ?o { GRAPH ?g { ?s :p ?o } }");
+			apiBoundImplicit.setBinding("g", alias);
+			assertExactRows(apiBoundImplicit, Set.of("s", "o"),
+					List.of(bindingRow("s", defaultSubject, "o", defaultObject)),
+					"API-bound alias extends the implicit default graph " + alias);
+			apiBoundImplicit.setDataset(new SimpleDataset());
+			assertExactRows(apiBoundImplicit, Set.of("s", "o"),
+					List.of(bindingRow("s", defaultSubject, "o", defaultObject)),
+					"both-empty dataset preserves API-bound default alias selection " + alias);
+
+			TupleQuery literalAlias = conn.prepareTupleQuery(PREFIX + "SELECT ?s ?o { GRAPH " + graph
+					+ " { ?s :p ?o } }");
+			literalAlias.setDataset(aliasOnly);
+			assertExactRows(literalAlias, Set.of("s", "o"), physicalRows,
+					"fixed default alias selects its physical named graph " + alias);
+
+			TupleQuery boundAlias = conn.prepareTupleQuery(PREFIX + "SELECT ?s ?o { GRAPH ?g { ?s :p ?o } }");
+			boundAlias.setDataset(aliasOnly);
+			boundAlias.setBinding("g", alias);
+			assertExactRows(boundAlias, Set.of("s", "o"), physicalRows,
+					"API-bound default alias selects its physical named graph " + alias);
+		}
+	}
+
+	private void variableGraphBodyBindingsAndJoinBags(RepositoryConnection conn) {
+		IRI graph = iri(conn, "shared-graph");
+		IRI predicate = iri(conn, "p");
+		IRI subjectValue = iri(conn, "subject-value");
+		IRI predicateSubject = iri(conn, "predicate-subject");
+		IRI predicateObject = iri(conn, "predicate-object");
+		IRI objectSubject = iri(conn, "object-subject");
+		IRI objectPredicate = iri(conn, "object-predicate");
+		IRI joinSubject = iri(conn, "join-subject");
+		IRI joinObject = iri(conn, "join-object");
+		IRI joinValueOne = iri(conn, "join-value-one");
+		IRI joinValueTwo = iri(conn, "join-value-two");
+		IRI aliasValueSubject = iri(conn, "alias-value-subject");
+		Resource blankGraph = conn.getValueFactory().createBNode("positive-pattern-graph");
+		IRI blankSubject = iri(conn, "blank-subject");
+		IRI blankObject = iri(conn, "blank-object");
+
+		conn.add(graph, predicate, subjectValue, graph);
+		conn.add(predicateSubject, graph, predicateObject, graph);
+		conn.add(objectSubject, objectPredicate, graph, graph);
+		conn.add(joinSubject, iri(conn, "left"), joinObject, graph);
+		conn.add(joinSubject, iri(conn, "right"), joinValueOne, graph);
+		conn.add(joinSubject, iri(conn, "right"), joinValueTwo, graph);
+		conn.add(aliasValueSubject, iri(conn, "alias-value-predicate"), RDF4J.NIL, graph);
+		conn.add(blankSubject, iri(conn, "blank-predicate"), blankObject, blankGraph);
+
+		assertExactRows(conn, "SELECT ?g ?o { GRAPH ?g { ?g :p ?o } }", Set.of("g", "o"), List.of(
+				bindingRow("g", graph, "o", subjectValue)), "graph variable reused as subject");
+		assertExactRows(conn, "SELECT ?g ?s ?o { GRAPH ?g { ?s ?g ?o } }", Set.of("g", "s", "o"), List.of(
+				bindingRow("g", graph, "s", predicateSubject, "o", predicateObject)),
+				"graph variable reused as predicate");
+		assertExactRows(conn, "SELECT ?g ?s { GRAPH ?g { ?s :object-predicate ?g } }", Set.of("g", "s"),
+				List.of(bindingRow("g", graph, "s", objectSubject)), "graph variable reused as object");
+		assertExactRows(conn, "SELECT ?g ?s ?o { GRAPH ?g { ?s :blank-predicate ?o } }", Set.of("g", "s", "o"),
+				List.of(bindingRow("g", blankGraph, "s", blankSubject, "o", blankObject)),
+				"variable graph with blank-node graph name");
+		assertExactRows(conn, "SELECT ?g ?s ?o { GRAPH ?g { ?s :left ?o . ?s :right ?x } }",
+				Set.of("g", "s", "o"),
+				List.of(bindingRow("g", graph, "s", joinSubject, "o", joinObject),
+						bindingRow("g", graph, "s", joinSubject, "o", joinObject)),
+				"positive join preserves duplicate projected rows");
+		assertExactRows(conn, "SELECT ?g ?s ?o { GRAPH ?g { ?s :alias-value-predicate ?o } }",
+				Set.of("g", "s", "o"),
+				List.of(bindingRow("g", graph, "s", aliasValueSubject, "o", RDF4J.NIL)),
+				"default-alias IRI used only as ordinary data");
+
+		TupleQuery apiBound = conn.prepareTupleQuery(PREFIX + "SELECT ?o { GRAPH ?g { ?g :p ?o } }");
+		apiBound.setBinding("g", graph);
+		assertExactRows(apiBound, Set.of("o"), List.of(bindingRow("o", subjectValue)),
+				"API binding collides with graph/body variable");
+		assertExactRows(conn, "SELECT ?g ?o { VALUES ?g { :shared-graph } GRAPH ?g { ?g :p ?o } }",
+				Set.of("g", "o"), List.of(bindingRow("g", graph, "o", subjectValue)),
+				"sibling VALUES binding collides with graph/body variable");
+	}
+
+	private void variableGraphPositivePatternComposition(RepositoryConnection conn) {
+		IRI graphOne = iri(conn, "composition-graph-one");
+		IRI graphTwo = iri(conn, "composition-graph-two");
+		IRI subjectOne = iri(conn, "composition-subject-one");
+		IRI subjectTwo = iri(conn, "composition-subject-two");
+		IRI objectOne = iri(conn, "composition-object-one");
+		IRI objectTwo = iri(conn, "composition-object-two");
+		conn.add(subjectOne, iri(conn, "p"), objectOne, graphOne);
+		conn.add(subjectTwo, iri(conn, "p"), objectTwo, graphTwo);
+		conn.add(subjectOne, iri(conn, "q"), iri(conn, "q-one"), graphOne);
+		conn.add(subjectOne, iri(conn, "q"), iri(conn, "q-two"), graphOne);
+
+		assertExactRows(conn,
+				"SELECT ?s ?g ?o { VALUES ?s { :composition-subject-one :not-present } "
+						+ "OPTIONAL { GRAPH ?g { ?s :p ?o } } }",
+				Set.of("s", "g", "o"),
+				List.of(bindingRow("s", subjectOne, "g", graphOne, "o", objectOne),
+						bindingRow("s", iri(conn, "not-present"))),
+				"positive graph BGP under outer OPTIONAL");
+		assertExactRows(conn,
+				"SELECT ?s { VALUES ?s { :composition-subject-one :not-present } "
+						+ "MINUS { GRAPH ?g { ?s :p ?o } } }",
+				Set.of("s"), List.of(bindingRow("s", iri(conn, "not-present"))),
+				"positive graph BGP under outer MINUS");
+		assertExactRows(conn,
+				"SELECT ?g ?s ?o { { GRAPH ?g { ?s :p ?o } } UNION "
+						+ "{ VALUES (?g ?s ?o) { (:union-graph :union-subject :union-object) } } }",
+				Set.of("g", "s", "o"),
+				List.of(bindingRow("g", graphOne, "s", subjectOne, "o", objectOne),
+						bindingRow("g", graphTwo, "s", subjectTwo, "o", objectTwo),
+						bindingRow("g", iri(conn, "union-graph"), "s", iri(conn, "union-subject"),
+								"o", iri(conn, "union-object"))),
+				"positive graph BGP under outer UNION");
+		assertExactRows(conn,
+				"SELECT ?s { VALUES ?s { :composition-subject-one :not-present } "
+						+ "FILTER EXISTS { GRAPH ?g { ?s :p ?o } } }",
+				Set.of("s"), List.of(bindingRow("s", subjectOne)),
+				"positive graph BGP under EXISTS");
+		assertExactRows(conn,
+				"SELECT ?s { VALUES ?s { :composition-subject-one :not-present } "
+						+ "FILTER NOT EXISTS { GRAPH ?g { ?s :p ?o } } }",
+				Set.of("s"), List.of(bindingRow("s", iri(conn, "not-present"))),
+				"positive graph BGP under NOT EXISTS");
+		assertExactRows(conn,
+				"SELECT ?g ?s ?o { { SELECT ?g ?s ?o { GRAPH ?g { ?s :p ?o } } } }",
+				Set.of("g", "s", "o"),
+				List.of(bindingRow("g", graphOne, "s", subjectOne, "o", objectOne),
+						bindingRow("g", graphTwo, "s", subjectTwo, "o", objectTwo)),
+				"positive graph BGP inside a subquery");
+	}
+
 	public Stream<DynamicTest> tests() {
 		Stream<DynamicTest> graphTests = Stream.of(makeTest("emptyBody", this::emptyBody),
 				makeTest("absentGraph", this::absentGraph),
@@ -425,7 +677,10 @@ public class NamedGraphScopeTest extends AbstractComplianceTest {
 				makeTest("activeGraphInExistsAndSubselect", this::activeGraphInExistsAndSubselect),
 				makeTest("explicitEmptyDataset", this::explicitEmptyDataset),
 				makeTest("blankNodeGraph", this::blankNodeGraph),
-				makeTest("defaultAliases", this::defaultAliases), makeTest("duplicates", this::duplicates));
+				makeTest("defaultAliases", this::defaultAliases), makeTest("duplicates", this::duplicates),
+				makeTest("variableGraphAliasesAndDatasets", this::variableGraphAliasesAndDatasets),
+				makeTest("variableGraphBodyBindingsAndJoinBags", this::variableGraphBodyBindingsAndJoinBags),
+				makeTest("variableGraphPositivePatternComposition", this::variableGraphPositivePatternComposition));
 		Stream<DynamicTest> membershipTests = Stream.of(":p?", ":p*", "^:p?", "(:p?/:p?)")
 				.map(path -> makeTest("zeroLengthMembership " + path, conn -> zeroLengthMembership(conn, path)));
 		Stream<DynamicTest> isolationTests = Stream.of(":p?", ":p*", "^:p*")

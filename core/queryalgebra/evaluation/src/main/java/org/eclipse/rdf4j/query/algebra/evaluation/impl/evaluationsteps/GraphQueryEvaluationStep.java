@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -62,7 +63,11 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 		this.childPreparer = childPreparer;
 		this.source = source;
 		this.context = context;
-		this.namedGraphs = context.getDataset() == null ? null : Set.copyOf(context.getDataset().getNamedGraphs());
+		Dataset dataset = context.getDataset();
+		// Dataset's both-empty read sets mean store defaults; only a nonempty opposite set excludes named graphs.
+		this.namedGraphs = dataset == null || dataset.getNamedGraphs().isEmpty() && dataset.getDefaultGraphs().isEmpty()
+				? null
+				: Set.copyOf(dataset.getNamedGraphs());
 		this.capturer = source.getValueCapturer();
 	}
 
@@ -70,8 +75,14 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 		return capturer == null ? resource : (Resource) capturer.apply(resource);
 	}
 
-	private QueryEvaluationStep prepare(Resource name) {
-		Resource physical = isDefaultAlias(name) ? null : name;
+	private QueryEvaluationStep prepare(Resource name, boolean fixedSelection) {
+		// With no dataset, variable selection enumerates physical contexts, while fixed aliases extend the default
+		// graph.
+		// An explicit named-graph dataset reverses that only for fixed selections: enumerated aliases extend default.
+		boolean aliasUsesPhysicalContext = namedGraphs == null
+				? !fixedSelection
+				: fixedSelection && namedGraphs.contains(name);
+		Resource physical = isDefaultAlias(name) && !aliasUsesPhysicalContext ? null : name;
 		return childPreparer.apply(graph.getArg(),
 				new ActiveGraphQueryEvaluationContext(context, new ActiveGraph(name, physical)));
 	}
@@ -120,7 +131,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 								return null;
 							}
 							selected = capture(resource);
-							openChild();
+							openChild(true);
 						} else if (bindings.hasBinding(graphName.getName())) {
 							return null;
 						} else {
@@ -154,7 +165,7 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 						Resource candidate = candidates.next();
 						if (candidate != null) {
 							selected = capture(candidate);
-							openChild();
+							openChild(false);
 						}
 					}
 				} catch (RuntimeException | Error failure) {
@@ -169,8 +180,8 @@ public final class GraphQueryEvaluationStep implements QueryEvaluationStep {
 				}
 			}
 
-			private void openChild() {
-				child = prepare(selected).evaluate(bindings);
+			private void openChild(boolean fixedSelection) {
+				child = prepare(selected, fixedSelection).evaluate(bindings);
 				childOwnsBindings = StatementPatternQueryEvaluationStep.ownsBindingSets(child);
 			}
 

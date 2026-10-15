@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.groups.Tuple.tuple;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -31,8 +32,11 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -112,6 +116,44 @@ public class GraphQueryEvaluationStepTest {
 	}
 
 	@Test
+	public void bothEmptyDatasetUsesDefaultGraphMembershipAndAliasSelection() {
+		for (SimpleDataset dataset : Arrays.asList(null, new SimpleDataset())) {
+			Fixture ordinary = new Fixture();
+			try (var rows = ordinary.step(dataset).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("g"))
+						.containsExactly(G1, G2);
+			}
+			assertThat(ordinary.contextRequests).isEqualTo(1);
+
+			StatementFixture aliases = new StatementFixture();
+			IRI defaultSubject = VF.createIRI("urn:dataset:default");
+			aliases.contextIDs = List.of(G1, RDF4J.NIL, SESAME.NIL);
+			aliases.statements = List.of(
+					VF.createStatement(G1, aliases.predicate, VF.createLiteral("ordinary"), G1),
+					VF.createStatement(defaultSubject, aliases.predicate, VF.createLiteral("default")),
+					VF.createStatement(RDF4J.NIL, aliases.predicate, VF.createLiteral("rdf4j"), RDF4J.NIL),
+					VF.createStatement(SESAME.NIL, aliases.predicate, VF.createLiteral("sesame"), SESAME.NIL));
+			try (var rows = aliases.step(aliases.pattern(), dataset).evaluate(EmptyBindingSet.getInstance())) {
+				List<BindingSet> actual = QueryResults.asList(rows);
+				actual.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s", "o"));
+				assertThat(actual).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+						.containsExactlyInAnyOrder(tuple(G1, G1, VF.createLiteral("ordinary")),
+								tuple(RDF4J.NIL, RDF4J.NIL, VF.createLiteral("rdf4j")),
+								tuple(SESAME.NIL, SESAME.NIL, VF.createLiteral("sesame")));
+			}
+			for (IRI alias : List.of(RDF4J.NIL, SESAME.NIL)) {
+				QueryBindingSet input = new QueryBindingSet();
+				input.addBinding("g", alias);
+				try (var rows = aliases.step(aliases.pattern(), dataset).evaluate(input)) {
+					assertThat(QueryResults.asList(rows))
+							.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+							.containsExactly(tuple(alias, defaultSubject, VF.createLiteral("default")));
+				}
+			}
+		}
+	}
+
+	@Test
 	public void explicitDatasetEnumeratesDeclaredEmptyGraphWithoutStorageScan() {
 		Fixture fixture = new Fixture();
 		SimpleDataset dataset = new SimpleDataset();
@@ -120,9 +162,49 @@ public class GraphQueryEvaluationStepTest {
 			assertThat(result.next().getValue("g")).isEqualTo(G1);
 			assertThat(result.hasNext()).isFalse();
 		}
+		assertThat(fixture.prepared.getFirst().getActiveGraph().physicalGraph()).isEqualTo(G1);
 		assertThat(fixture.contextRequests).isZero();
 		assertThat(fixture.children).hasSize(1);
 		assertThat(fixture.children.getFirst().closes).isEqualTo(1);
+	}
+
+	@Test
+	public void boundDefaultAliasUsesPhysicalNamedGraphInExplicitDataset() {
+		Fixture fixture = new Fixture();
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(RDF4J.NIL);
+		QueryBindingSet bindings = new QueryBindingSet();
+		bindings.addBinding("g", RDF4J.NIL);
+		try (CloseableIteration<BindingSet> result = fixture.step(dataset).evaluate(bindings)) {
+			assertThat(result.next().getValue("g")).isEqualTo(RDF4J.NIL);
+			assertThat(result.hasNext()).isFalse();
+		}
+		assertThat(fixture.prepared.getFirst().getActiveGraph().logicalGraph()).isEqualTo(RDF4J.NIL);
+		assertThat(fixture.prepared.getFirst().getActiveGraph().physicalGraph()).isEqualTo(RDF4J.NIL);
+	}
+
+	@Test
+	public void unboundGraphVariableUsesPhysicalReservedAliasContextsWithoutDataset() {
+		StatementFixture fixture = new StatementFixture();
+		IRI alias = RDF4J.NIL;
+		IRI secondAlias = SESAME.NIL;
+		IRI defaultSubject = VF.createIRI("urn:defaultSubject");
+		IRI aliasSubject = VF.createIRI("urn:rdf4jAliasSubject");
+		IRI secondAliasSubject = VF.createIRI("urn:sesameAliasSubject");
+		fixture.contextIDs = List.of(alias, secondAlias);
+		fixture.statements = List.of(
+				VF.createStatement(defaultSubject, fixture.predicate, VF.createLiteral("default")),
+				VF.createStatement(aliasSubject, fixture.predicate, VF.createLiteral("rdf4j-alias"), alias),
+				VF.createStatement(secondAliasSubject, fixture.predicate, VF.createLiteral("sesame-alias"),
+						secondAlias));
+		try (CloseableIteration<BindingSet> result = fixture.step(fixture.pattern())
+				.evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(QueryResults.asList(result))
+					.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
+					.containsExactlyInAnyOrder(
+							tuple(alias, aliasSubject, VF.createLiteral("rdf4j-alias")),
+							tuple(secondAlias, secondAliasSubject, VF.createLiteral("sesame-alias")));
+		}
 	}
 
 	@Test
@@ -269,6 +351,7 @@ public class GraphQueryEvaluationStepTest {
 
 	private static final class StatementFixture implements TripleSource {
 		private final IRI predicate = VF.createIRI("urn:p");
+		private List<Resource> contextIDs = List.of(G1, G2);
 		private List<Statement> statements = List.of(VF.createStatement(G1, predicate, VF.createLiteral("one"), G1),
 				VF.createStatement(G2, predicate, VF.createLiteral("two"), G2));
 		private final List<Value> captured = new ArrayList<>();
@@ -281,15 +364,20 @@ public class GraphQueryEvaluationStepTest {
 		}
 
 		private QueryEvaluationStep step(StatementPattern pattern) {
+			return step(pattern, null);
+		}
+
+		private QueryEvaluationStep step(StatementPattern pattern, SimpleDataset dataset) {
 			DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(this, null);
 			strategy.setTrackResultSize(track);
 			strategy.setTrackTime(track);
-			return strategy.precompile(new Graph(Var.of("g"), pattern), context);
+			return strategy.precompile(new Graph(Var.of("g"), pattern),
+					dataset == null ? context : new QueryEvaluationContext.Minimal(dataset));
 		}
 
 		@Override
 		public CloseableIteration<? extends Resource> getContextIDs() {
-			return new CloseableIteratorIteration<>(List.of(G1, G2).iterator());
+			return new CloseableIteratorIteration<>(contextIDs.iterator());
 		}
 
 		@Override
