@@ -104,7 +104,8 @@ public class QueryInfo {
 
 	public QueryInfo(Resource subj, IRI pred, Value obj, int maxExecutionTime, boolean includeInferred,
 			FederationContext federationContext, FederationEvaluationStrategy strategy, Dataset dataset) {
-		this(QueryStringUtil.toString(subj, pred, obj), null, QueryType.GET_STATEMENTS, maxExecutionTime,
+		// This is diagnostic text, not SPARQL transport: typed blank-node operands must not be serialized here.
+		this("{" + subj + "; " + pred + "; " + obj + "}", null, QueryType.GET_STATEMENTS, maxExecutionTime,
 				includeInferred,
 				federationContext, strategy, dataset);
 	}

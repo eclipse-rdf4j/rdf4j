@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -125,7 +126,7 @@ public class SailConnectionWrapper
 
 	@Override
 	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
-		return wrappedCon.prepareQuery(ql, type, query, baseURI);
+		return wrappedCon.prepareQuery(ql, type, query, baseURI, QueryParseOptions.DEFAULT);
 	}
 
 	@Override
@@ -299,6 +300,9 @@ public class SailConnectionWrapper
 	@Override
 	public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type,
 			String query, String baseURI, QueryParseOptions options) {
-		return getWrappedConnection().prepareQuery(language, type, query, baseURI, options);
+		Objects.requireNonNull(options);
+		return options.equals(QueryParseOptions.DEFAULT)
+				? prepareQuery(language, type, query, baseURI)
+				: wrappedCon.prepareQuery(language, type, query, baseURI, options);
 	}
 }

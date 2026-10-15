@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.parser.sparql;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -37,9 +39,11 @@ import org.eclipse.rdf4j.model.impl.SimpleIRI;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.InsertData;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.parser.ParsedUpdate;
 import org.eclipse.rdf4j.rio.ParserConfig;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -307,6 +311,299 @@ public class SPARQLUpdateDataBlockParserTest {
 	}
 
 	@Test
+	public void standaloneParserHonorsPreservedBNodeIDsAcrossDataBlockConstructs() throws Exception {
+		class CheckingFactory extends SimpleValueFactory implements BNodeIdResolver {
+			@Override
+			public boolean hasBNodeId(String id) {
+				return false;
+			}
+		}
+
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		String dataBlock = "_:label <urn:ordinary> _:label . "
+				+ "<_:fixed> <urn:fixed-reference> _:label . "
+				+ "<urn:root> <urn:anonymous> [] . "
+				+ "<urn:root> <urn:list> (_:label []) . "
+				+ "<urn:root> <urn:property-list> [ <urn:nested> _:label ] . "
+				+ "<urn:root> <urn:nested-triple> <<(<urn:inner-subject> <urn:inner-predicate> _:label)>> . "
+				+ "<< <urn:quoted-subject> <urn:quoted-predicate> _:label ~ _:reifier >> <urn:reified> _:label .";
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		BNode label = vf.createBNode("label");
+		BNode reifier = vf.createBNode("reifier");
+
+		for (SPARQLUpdateDataBlockParser parser : new SPARQLUpdateDataBlockParser[] {
+				new SPARQLUpdateDataBlockParser(), new SPARQLUpdateDataBlockParser(new CheckingFactory()) }) {
+			parser.setParserConfig(config);
+			LinkedHashModel actual = parseDataBlock(parser, dataBlock);
+
+			assertTrue(actual.contains(label, vf.createIRI("urn:ordinary"), label),
+					"ordinary labels must keep their configured identifiers and share repeated references");
+			assertTrue(actual.contains(vf.createBNode("fixed"), vf.createIRI("urn:fixed-reference"), label),
+					"fixed references remain exact and distinct from differently labeled allocations");
+			assertNotEquals(vf.createBNode("fixed"), label);
+			Resource anonymous = (Resource) actual.filter(vf.createIRI("urn:root"), vf.createIRI("urn:anonymous"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertInstanceOf(BNode.class, anonymous, "anonymous terms remain blank nodes in preserve mode");
+
+			Resource listHead = (Resource) actual.filter(vf.createIRI("urn:root"), vf.createIRI("urn:list"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertInstanceOf(BNode.class, listHead, "collection cells use the configured blank-node policy");
+			assertTrue(actual.contains(listHead, RDF.FIRST, label));
+			Resource secondCell = (Resource) actual.filter(listHead, RDF.REST, null).objects().iterator().next();
+			assertInstanceOf(BNode.class, secondCell);
+			assertInstanceOf(BNode.class, actual.filter(secondCell, RDF.FIRST, null).objects().iterator().next());
+
+			Resource propertyList = (Resource) actual
+					.filter(vf.createIRI("urn:root"), vf.createIRI("urn:property-list"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertInstanceOf(BNode.class, propertyList);
+			assertTrue(actual.contains(propertyList, vf.createIRI("urn:nested"), label));
+			TripleTerm nestedTerm = (TripleTerm) actual
+					.filter(vf.createIRI("urn:root"), vf.createIRI("urn:nested-triple"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertEquals(label, nestedTerm.getObject());
+			assertTrue(actual.contains(reifier, RDF.REIFIES,
+					vf.createTripleTerm(vf.createIRI("urn:quoted-subject"), vf.createIRI("urn:quoted-predicate"),
+							label)));
+			assertTrue(actual.contains(reifier, vf.createIRI("urn:reified"), label));
+
+			LinkedHashModel secondParse = parseDataBlock(parser,
+					"_:label <urn:ordinary> <urn:after-reset> ; <urn:anonymous> [] .");
+			assertTrue(secondParse.contains(label, vf.createIRI("urn:ordinary"), vf.createIRI("urn:after-reset")),
+					"reusing a parser must reapply the configured identifier after parse state resets");
+			Resource secondAnonymous = (Resource) secondParse
+					.filter(label, vf.createIRI("urn:anonymous"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertNotEquals(anonymous, secondAnonymous, "anonymous nodes remain fresh across parser runs");
+		}
+	}
+
+	@Test
+	public void standaloneParserHonorsSkolemOriginForEveryAllocatedDataBlockNode() throws Exception {
+		String origin = "http://example.org";
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.SKOLEMIZE_ORIGIN, origin);
+		String dataBlock = "_:label <urn:ordinary> _:label . "
+				+ "<urn:root> <urn:anonymous> [] . "
+				+ "<urn:root> <urn:list> (_:label []) . "
+				+ "<urn:root> <urn:property-list> [ <urn:nested> _:label ] . "
+				+ "<urn:root> <urn:nested-triple> <<(<urn:inner-subject> <urn:inner-predicate> _:label)>> . "
+				+ "<< <urn:quoted-subject> <urn:quoted-predicate> _:label ~ _:reifier >> <urn:reified> _:label .";
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+
+		for (SPARQLUpdateDataBlockParser parser : new SPARQLUpdateDataBlockParser[] {
+				new SPARQLUpdateDataBlockParser(), new SPARQLUpdateDataBlockParser(vf) }) {
+			parser.setParserConfig(config);
+			LinkedHashModel actual = parseDataBlock(parser, dataBlock);
+			actual.forEach(statement -> {
+				assertNoBlankNodes(statement.getSubject());
+				assertNoBlankNodes(statement.getObject());
+				if (statement.getContext() != null) {
+					assertNoBlankNodes(statement.getContext());
+				}
+			});
+
+			Resource label = actual.filter(null, vf.createIRI("urn:ordinary"), null).iterator().next().getSubject();
+			assertSkolemIRI(label, origin);
+			Resource anonymous = (Resource) actual.filter(vf.createIRI("urn:root"), vf.createIRI("urn:anonymous"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertSkolemIRI(anonymous, origin);
+			Resource listHead = (Resource) actual.filter(vf.createIRI("urn:root"), vf.createIRI("urn:list"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertSkolemIRI(listHead, origin);
+			assertSkolemIRI((Resource) actual.filter(listHead, RDF.FIRST, null).objects().iterator().next(), origin);
+			Resource secondCell = (Resource) actual.filter(listHead, RDF.REST, null).objects().iterator().next();
+			assertSkolemIRI(secondCell, origin);
+			assertSkolemIRI((Resource) actual.filter(secondCell, RDF.FIRST, null).objects().iterator().next(), origin);
+			Resource propertyList = (Resource) actual
+					.filter(vf.createIRI("urn:root"), vf.createIRI("urn:property-list"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertSkolemIRI(propertyList, origin);
+			assertTrue(actual.contains(propertyList, vf.createIRI("urn:nested"), label));
+			TripleTerm nestedTerm = (TripleTerm) actual
+					.filter(vf.createIRI("urn:root"), vf.createIRI("urn:nested-triple"), null)
+					.objects()
+					.iterator()
+					.next();
+			assertSkolemIRI((Resource) nestedTerm.getObject(), origin);
+			Resource reifier = actual.filter(null, RDF.REIFIES, null).iterator().next().getSubject();
+			assertSkolemIRI(reifier, origin);
+			TripleTerm reifiedTerm = (TripleTerm) actual.filter(reifier, RDF.REIFIES, null)
+					.objects()
+					.iterator()
+					.next();
+			assertSkolemIRI((Resource) reifiedTerm.getObject(), origin);
+		}
+	}
+
+	@Test
+	public void standaloneParserRejectsPreservedLabelsThatCollideWithFixedReferences() throws Exception {
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		String[] conflictingDataBlocks = {
+				"_:shared <urn:allocated> <urn:o> . <urn:s> <urn:reference> <_:shared> .",
+				"_:shared <urn:allocated> [ <urn:nested-reference> <_:shared> ] .",
+				"_:shared <urn:allocated> <<(<urn:inner> <urn:p> <_:shared>)>> ."
+		};
+
+		for (String dataBlock : conflictingDataBlocks) {
+			SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
+			parser.setParserConfig(config);
+			LinkedHashModel emitted = new LinkedHashModel();
+			parser.setRDFHandler(new StatementCollector(emitted));
+
+			assertThrows(RDFParseException.class,
+					() -> parser.parse(new StringReader(dataBlock), "urn:base:"), dataBlock);
+			assertTrue(emitted.isEmpty(), "ambiguous preserved identities must be rejected before emitting statements");
+		}
+	}
+
+	@Test
+	public void standaloneParserKeepsAnonymousPreservedNodesDistinctFromFixedReferences() throws Exception {
+		class CollidingFactory extends SimpleValueFactory implements BNodeIdResolver {
+			@Override
+			public boolean hasBNodeId(String id) {
+				return false;
+			}
+
+			@Override
+			public BNode createBNode() {
+				return createBNode("fixed");
+			}
+		}
+
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(new CollidingFactory());
+		parser.setParserConfig(config);
+		LinkedHashModel actual = parseDataBlock(parser,
+				"[] <urn:allocated> <urn:o> . <urn:s> <urn:reference> <_:fixed> .");
+
+		BNode anonymous = (BNode) actual.filter(null, vf().createIRI("urn:allocated"), vf().createIRI("urn:o"))
+				.iterator()
+				.next()
+				.getSubject();
+		BNode fixed = (BNode) actual.filter(vf().createIRI("urn:s"), vf().createIRI("urn:reference"), null)
+				.objects()
+				.iterator()
+				.next();
+		assertNotEquals(fixed, anonymous, "anonymous allocation must not merge with an exact fixed reference");
+	}
+
+	@Test
+	public void standaloneParserKeepsAnonymousPreservedNodesDistinctFromLabels() throws Exception {
+		class CollidingFactory extends SimpleValueFactory implements BNodeIdResolver {
+			@Override
+			public boolean hasBNodeId(String id) {
+				return false;
+			}
+
+			@Override
+			public BNode createBNode() {
+				return createBNode("label");
+			}
+		}
+
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(new CollidingFactory());
+		parser.setParserConfig(config);
+		LinkedHashModel actual = parseDataBlock(parser,
+				"_:label <urn:ordinary> <urn:o> . [] <urn:anonymous> <urn:o> .");
+
+		BNode preserved = (BNode) actual.filter(null, vf().createIRI("urn:ordinary"), vf().createIRI("urn:o"))
+				.iterator()
+				.next()
+				.getSubject();
+		BNode anonymous = (BNode) actual.filter(null, vf().createIRI("urn:anonymous"), vf().createIRI("urn:o"))
+				.iterator()
+				.next()
+				.getSubject();
+		assertEquals("label", preserved.getID(), "ordinary labels must keep their exact configured identifier");
+		assertNotEquals(preserved, anonymous, "anonymous allocation must not merge with a preserved ordinary label");
+	}
+
+	@Test
+	public void standaloneParserRejectsFactoriesThatRewritePreservedLabels() throws Exception {
+		class RewritingFactory extends SimpleValueFactory {
+			@Override
+			public BNode createBNode(String id) {
+				return super.createBNode("rewritten-" + id);
+			}
+		}
+
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(new RewritingFactory());
+		parser.setParserConfig(config);
+		LinkedHashModel emitted = new LinkedHashModel();
+		parser.setRDFHandler(new StatementCollector(emitted));
+
+		assertThrows(RDFParseException.class,
+				() -> parser.parse(new StringReader("_:label <urn:p> <urn:o> ."), "urn:base:"));
+		assertTrue(emitted.isEmpty(), "a factory must not silently rewrite an explicitly preserved label");
+	}
+
+	@Test
+	public void executionAllocationScopeKeepsRequestBlankNodesFreshDespiteRioOptions() throws Exception {
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+		config.set(BasicParserSettings.SKOLEMIZE_ORIGIN, "http://example.org");
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
+		parser.setParserConfig(config);
+		parser.setAllocationValueFactory(vf);
+		parser.setBlankNodeAllocationScope(new BlankNodeAllocationScope("request-", ignored -> false));
+
+		LinkedHashModel actual = parseDataBlock(parser, "_:label <urn:p> <urn:o> .");
+		Resource allocated = ((Statement) actual.iterator().next()).getSubject();
+		assertInstanceOf(BNode.class, allocated);
+		assertTrue(((BNode) allocated).getID().startsWith("request-"));
+		assertFalse(allocated.equals(vf.createBNode("label")));
+	}
+
+	@Test
+	public void standaloneParserConstructorsAllocateBlankNodesWithTheirValueFactory() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		for (SPARQLUpdateDataBlockParser parser : new SPARQLUpdateDataBlockParser[] {
+				new SPARQLUpdateDataBlockParser(), new SPARQLUpdateDataBlockParser(vf) }) {
+			LinkedHashModel actual = parseDataBlock(parser, "_:label <urn:p> <urn:o> .");
+			Statement statement = actual.filter(null, vf.createIRI("urn:p"), vf.createIRI("urn:o")).iterator().next();
+
+			assertInstanceOf(BNode.class, statement.getSubject());
+			assertNotEquals(vf.createBNode("label"), statement.getSubject(),
+					"default policy scopes labels instead of preserving their source IDs");
+		}
+	}
+
+	@Test
+	public void updatePreflightUsesExecutionAllocationPolicyWithPreservedRioIDs() {
+		ParsedUpdate update = new SPARQLParser().parseUpdate(
+				"INSERT DATA { _:shared <urn:allocated> <urn:o> . <urn:s> <urn:reference> <_:shared> }", null);
+		ParserConfig config = new ParserConfig();
+		config.set(BasicParserSettings.PRESERVE_BNODE_IDS, true);
+
+		assertEquals(Set.of("shared"), UpdateRequestPreflight.validate(update, config));
+	}
+
+	@Test
 	public void testParserConfigNormalizesDataBlockDatatypeValues() throws IOException, RDFHandlerException {
 		ParserConfig config = new ParserConfig();
 		config.set(BasicParserSettings.NORMALIZE_DATATYPE_VALUES, true);
@@ -411,10 +708,29 @@ public class SPARQLUpdateDataBlockParserTest {
 	private LinkedHashModel parseDataBlock(String dataBlock)
 			throws IOException, RDFParseException, RDFHandlerException {
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser();
+		return parseDataBlock(parser, dataBlock);
+	}
+
+	private LinkedHashModel parseDataBlock(SPARQLUpdateDataBlockParser parser, String dataBlock)
+			throws IOException, RDFParseException, RDFHandlerException {
 		LinkedHashModel statements = new LinkedHashModel();
 		parser.setRDFHandler(new StatementCollector(statements));
 		parser.parse(new StringReader(dataBlock), "http://example.org/original/");
 		return statements;
+	}
+
+	private static void assertNoBlankNodes(Value value) {
+		assertFalse(value instanceof BNode, "configured skolem origin must replace every allocated blank node");
+		if (value instanceof TripleTerm tripleTerm) {
+			assertNoBlankNodes(tripleTerm.getSubject());
+			assertNoBlankNodes(tripleTerm.getPredicate());
+			assertNoBlankNodes(tripleTerm.getObject());
+		}
+	}
+
+	private static void assertSkolemIRI(Resource resource, String origin) {
+		IRI iri = assertInstanceOf(IRI.class, resource);
+		assertTrue(iri.stringValue().startsWith(origin + "/.well-known/genid/"), iri.stringValue());
 	}
 
 	private static SimpleValueFactory vf() {

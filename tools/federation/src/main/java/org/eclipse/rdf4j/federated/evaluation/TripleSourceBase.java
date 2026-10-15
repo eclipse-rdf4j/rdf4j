@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.QueryResult;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.slf4j.Logger;
@@ -88,7 +90,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					applyBindings(tQuery, outgoing);
 					applyMaxExecutionTimeUpperBound(tQuery);
 					configureInference(tQuery, queryInfo);
-					tQuery.setDataset(queryInfo.getDataset());
+					tQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
 					if (queryInfo.getResultHandler().isPresent()) {
 						// pass through result to configured handler, and return an empty iteration as marker result
 						tQuery.evaluate(identity.handler(queryInfo.getResultHandler().get(), queryBindings));
@@ -102,7 +104,7 @@ public abstract class TripleSourceBase implements TripleSource {
 				case DESCRIBE:
 					monitorRemoteRequest();
 					GraphQuery gQuery = conn.prepareGraphQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
-					gQuery.setDataset(queryInfo.getDataset());
+					gQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
 					applyBindings(gQuery, outgoing);
 					applyMaxExecutionTimeUpperBound(gQuery);
 					configureInference(gQuery, queryInfo);
@@ -115,7 +117,7 @@ public abstract class TripleSourceBase implements TripleSource {
 					boolean hasResults;
 					try (conn) {
 						BooleanQuery bQuery = conn.prepareBooleanQuery(QueryLanguage.SPARQL, preparedQuery, baseURI);
-						bQuery.setDataset(queryInfo.getDataset());
+						bQuery.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
 						applyBindings(bQuery, outgoing);
 						applyMaxExecutionTimeUpperBound(bQuery);
 						configureInference(bQuery, queryInfo);
@@ -151,18 +153,32 @@ public abstract class TripleSourceBase implements TripleSource {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
+		return getStatements(preparedQuery, bindings, EmptyBindingSet.getInstance(), filterExpr, queryInfo);
+	}
+
+	protected CloseableIteration<BindingSet> getStatements(String preparedQuery, BindingSet bindings,
+			BindingSet queryBindings, FilterValueExpr filterExpr, QueryInfo queryInfo) {
 		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		if (identity.hasForeignLocalValue(queryBindings)) {
+			return new EmptyIteration<>();
+		}
+		BindingSet outgoing = identity.outgoing(queryBindings);
 		return withConnection((conn, resultHolder) -> {
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
 			applyMaxExecutionTimeUpperBound(query);
 			configureInference(query, queryInfo);
+			query.setDataset(identity.outgoingDataset(queryInfo.getDataset()));
+			applyBindings(query, outgoing);
 
 			// evaluate the query
 			monitorRemoteRequest();
 			CloseableIteration<BindingSet> res = null;
 			try {
 				res = identity.incoming(query.evaluate(), bindings);
+				if (!queryBindings.isEmpty()) {
+					res = withoutParameters(res, queryBindings);
+				}
 
 				resultHolder.set(res);
 
@@ -197,13 +213,41 @@ public abstract class TripleSourceBase implements TripleSource {
 		});
 	}
 
+	private static CloseableIteration<BindingSet> withoutParameters(CloseableIteration<BindingSet> rows,
+			BindingSet parameters) {
+		return new ConvertingIteration<BindingSet, BindingSet>(rows) {
+			@Override
+			protected BindingSet convert(BindingSet row) {
+				for (String name : parameters.getBindingNames()) {
+					if (row.hasBinding(name)) {
+						MapBindingSet result = new MapBindingSet(row.size());
+						for (Binding binding : row) {
+							if (!parameters.hasBinding(binding.getName())) {
+								result.addBinding(binding);
+							}
+						}
+						return result;
+					}
+				}
+				return row;
+			}
+		};
+	}
+
 	@Override
 	public boolean hasStatements(Resource subj,
 			IRI pred, Value obj, QueryInfo queryInfo, Resource... contexts) throws RepositoryException {
 		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		if (identity.isForeignLocalValue(subj) || identity.isForeignLocalValue(obj)) {
+			return false;
+		}
+		Resource[] mappedContexts = identity.outgoing(contexts);
+		if (contexts.length != 0 && mappedContexts.length == 0) {
+			return false;
+		}
 		try (RepositoryConnection conn = endpoint.getConnection()) {
 			return conn.hasStatement((Resource) identity.outgoing(subj), pred, identity.outgoing(obj),
-					queryInfo.getIncludeInferred(), identity.outgoing(contexts));
+					queryInfo.getIncludeInferred(), mappedContexts);
 		}
 	}
 

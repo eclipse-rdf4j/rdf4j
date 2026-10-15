@@ -74,6 +74,35 @@ class SailConnectionParseOptionsCompatibilityTest {
 		assertEquals(List.of(QueryParseOptions.STRICT, QueryParseOptions.DEFAULT), forwarded);
 	}
 
+	@Test
+	void sailConnectionWrapperDispatchesDefaultPolicyThroughLegacySubclassOverrides() {
+		AtomicInteger legacyCalls = new AtomicInteger();
+		SailConnection delegate = legacyConnection(new AtomicInteger());
+
+		class LegacyWrapper extends SailConnectionWrapper {
+			LegacyWrapper(SailConnection wrapped) {
+				super(wrapped);
+			}
+
+			@Override
+			public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
+					String baseURI) {
+				legacyCalls.incrementAndGet();
+				return super.prepareQuery(ql, type, query, baseURI);
+			}
+		}
+
+		SailConnection nested = new SailConnectionWrapper(new LegacyWrapper(delegate));
+		assertSame(LEGACY_RESULT.get(), nested.prepareQuery(LANGUAGE, TYPE, QUERY, null, QueryParseOptions.DEFAULT)
+				.orElseThrow());
+		assertEquals(1, legacyCalls.get(), "default policy must dispatch through the legacy wrapper override");
+		assertSame(LEGACY_RESULT.get(), nested.prepareQuery(LANGUAGE, TYPE, QUERY, null).orElseThrow());
+		assertEquals(2, legacyCalls.get(), "direct legacy calls must reach the override without recursing");
+
+		assertFalse(nested.prepareQuery(LANGUAGE, TYPE, QUERY, null, QueryParseOptions.STRICT).isPresent());
+		assertEquals(2, legacyCalls.get(), "strict policy must not invoke a legacy-only override");
+	}
+
 	private static SailConnection legacyConnection(AtomicInteger legacyCalls) {
 		InvocationHandler handler = (proxy, method, args) -> {
 			if (method.getName().equals("prepareQuery") && method.getParameterCount() == 4) {

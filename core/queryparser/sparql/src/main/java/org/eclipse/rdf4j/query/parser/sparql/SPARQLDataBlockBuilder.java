@@ -65,7 +65,7 @@ final class SPARQLDataBlockBuilder extends AbstractASTVisitor {
 	}
 
 	private Resource fresh() {
-		return allocation.createBNode(allocatingFactory);
+		return parser.createDataNode(allocation, allocatingFactory);
 	}
 
 	private Value value(Node node) throws VisitorException {
@@ -108,7 +108,9 @@ final class SPARQLDataBlockBuilder extends AbstractASTVisitor {
 
 	@Override
 	public Object visit(ASTBlankNode node, Object data) {
-		return node.getID() == null ? fresh() : labels.computeIfAbsent(node.getID(), ignored -> fresh());
+		return node.getID() == null ? fresh()
+				: labels.computeIfAbsent(node.getID(),
+						label -> parser.createDataNode(label, allocation, allocatingFactory));
 	}
 
 	@Override

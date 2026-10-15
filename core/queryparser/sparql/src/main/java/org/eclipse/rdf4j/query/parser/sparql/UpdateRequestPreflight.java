@@ -78,6 +78,7 @@ public final class UpdateRequestPreflight {
 		SPARQLUpdateDataBlockParser parser = new SPARQLUpdateDataBlockParser(SimpleValueFactory.getInstance());
 		parser.setParserConfig(snapshot);
 		parser.setAllowBlankNodes(!deleting);
+		parser.setAllocationValueFactory(SimpleValueFactory.getInstance());
 		return parser;
 	}
 }

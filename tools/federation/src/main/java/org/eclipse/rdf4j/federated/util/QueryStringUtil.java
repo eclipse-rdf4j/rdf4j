@@ -17,8 +17,10 @@ import java.io.FileReader;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -43,11 +45,14 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -57,6 +62,48 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class QueryStringUtil {
+
+	/** Typed operands for an in-process prepared query, kept out of the SPARQL text and projection. */
+	public static final class TypedBindings extends MapBindingSet {
+		private static final long serialVersionUID = 1L;
+		private final Set<String> names;
+		private final Map<Value, String> parameters = new IdentityHashMap<>();
+		private final MapBindingSet queryBindings = new MapBindingSet();
+		private int next;
+
+		public TypedBindings(QueryModelNode expression, BindingSet originals) {
+			super(originals.size());
+			originals.forEach(this::addBinding);
+			names = new HashSet<>(originals.getBindingNames());
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Var variable) {
+					names.add(variable.getName());
+				}
+			});
+		}
+
+		public BindingSet getQueryBindings() {
+			return queryBindings;
+		}
+
+		private StringBuilder append(StringBuilder target, Value value) {
+			String name = parameters.get(value);
+			if (name == null) {
+				do {
+					name = "__fedx_identity_" + next++;
+				} while (!names.add(name));
+				parameters.put(value, name);
+				queryBindings.addBinding(name, value);
+			}
+			return target.append('?').append(name);
+		}
+	}
+
+	public static boolean containsBlankNode(Value value) {
+		return value instanceof BNode || value instanceof TripleTerm triple
+				&& (containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject()));
+	}
 
 	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
 
@@ -490,6 +537,9 @@ public class QueryStringUtil {
 		StringBuilder res = new StringBuilder();
 
 		res.append("SELECT ");
+		if (varNames.isEmpty()) {
+			res.append('*');
+		}
 
 		for (String var : varNames) {
 			res.append(" ?").append(var);
@@ -502,6 +552,18 @@ public class QueryStringUtil {
 		res.append(body).append(" }");
 
 		return res.toString();
+	}
+
+	public static String askQueryString(TripleRefJoinGroup group, BindingSet bindings, Dataset dataset) {
+		Set<String> names = new HashSet<>();
+		StringBuilder result = new StringBuilder("ASK ");
+		appendDatasetClause(result, dataset);
+		result.append("WHERE { ")
+				.append(constructStatement(group.getTripleRefStatementPattern(), names, bindings));
+		for (StatementPattern statement : group.getStatementPatterns()) {
+			result.append(constructStatement(statement, names, bindings));
+		}
+		return result.append(" }").toString();
 	}
 
 	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
@@ -779,6 +841,10 @@ public class QueryStringUtil {
 	 * @return the stringbuilder
 	 */
 	protected static StringBuilder appendVar(StringBuilder sb, Var var, Set<String> varNames, BindingSet bindings) {
+		Value value = var.hasValue() ? var.getValue() : bindings.getValue(var.getName());
+		if (bindings instanceof TypedBindings typed && containsBlankNode(value)) {
+			return typed.append(sb, value);
+		}
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {
 				return appendValue(sb, bindings.getValue(var.getName()));

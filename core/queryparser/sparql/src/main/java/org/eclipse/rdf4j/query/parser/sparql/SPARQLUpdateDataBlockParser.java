@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.query.parser.sparql.ast.VisitorException;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFParseException;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.rio.helpers.TurtleParserSettings;
 import org.eclipse.rdf4j.rio.trig.TriGParser;
 import org.eclipse.rdf4j.rio.turtle.TurtleUtil;
@@ -66,6 +68,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	private Set<String> referenceIDs = Set.of();
 	private Set<String> usedBNodeIDs = Set.of();
 	private boolean independentDocument = true;
+	private boolean executionAllocationPolicy;
 	private ValueFactory allocationFactory;
 
 	public void setQueryParseOptions(QueryParseOptions options) {
@@ -74,6 +77,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 
 	public void setBlankNodeAllocationScope(BlankNodeAllocationScope scope) {
 		allocationScope = scope;
+		executionAllocationPolicy |= scope != null;
 	}
 
 	/**
@@ -84,6 +88,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 	public void setAllocationValueFactory(ValueFactory factory) {
 		allocationFactory = Objects.requireNonNull(factory);
 		independentDocument = false;
+		executionAllocationPolicy = true;
 	}
 
 	public Set<String> getReferencedBNodeIDs() {
@@ -130,6 +135,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 			collectBlankLabels(block, labels);
 			usedBNodeIDs = Set.copyOf(labels);
 			referenceIDs = Set.copyOf(BNodeReferenceProcessor.process(block, parseOptions));
+			validatePreservedBNodeReferences();
 			DataBlockRestrictions.validate(block, true, !allowBlankNodes);
 			StringEscapesProcessor.process(block);
 			// Preparation validates expansion without registering any identities in an executing store.
@@ -147,6 +153,7 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 				scope.bindLocalValueFactory(allocating);
 			}
 			referenceIDs.forEach(scope::reserve);
+			usedBNodeIDs.forEach(scope::reserveKnownID);
 			if (rdfHandler != null) {
 				rdfHandler.startRDF();
 			}
@@ -174,6 +181,41 @@ public class SPARQLUpdateDataBlockParser extends TriGParser {
 
 	Literal createDataLiteral(String label, String language, IRI datatype) {
 		return createLiteral(label, language, datatype);
+	}
+
+	Resource createDataNode(BlankNodeAllocationScope scope, ValueFactory factory) {
+		return honorsConfiguredBNodePolicy() && !preserveBNodeIDs() ? createNode() : scope.createBNode(factory);
+	}
+
+	Resource createDataNode(String label, BlankNodeAllocationScope scope, ValueFactory factory) {
+		if (!honorsConfiguredBNodePolicy()) {
+			return scope.createBNode(factory);
+		}
+		Resource node = createNode(label);
+		if (preserveBNodeIDs() && (!(node instanceof BNode bnode) || !label.equals(bnode.getID()))) {
+			throw new MalformedQueryException("ValueFactory changed a preserved blank-node identifier: " + label);
+		}
+		return node;
+	}
+
+	private boolean honorsConfiguredBNodePolicy() {
+		if (executionAllocationPolicy) {
+			return false;
+		}
+		String skolemOrigin = getParserConfig().get(BasicParserSettings.SKOLEMIZE_ORIGIN);
+		return preserveBNodeIDs() || skolemOrigin != null && !skolemOrigin.isEmpty();
+	}
+
+	private void validatePreservedBNodeReferences() {
+		if (executionAllocationPolicy || !preserveBNodeIDs()) {
+			return;
+		}
+		Set<String> conflicts = new HashSet<>(usedBNodeIDs);
+		conflicts.retainAll(referenceIDs);
+		if (!conflicts.isEmpty()) {
+			throw new MalformedQueryException(
+					"Preserved blank-node labels cannot share identifiers with fixed blank-node references");
+		}
 	}
 
 	void defineDataPrefix(String prefix, IRI namespace) {
