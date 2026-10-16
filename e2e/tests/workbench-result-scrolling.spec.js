@@ -39,11 +39,15 @@ async function runQuery(page, query) {
 	await page.locator('#exec').click();
 	await expect(page.locator('#query-results')).toHaveAttribute('aria-busy', 'false', { timeout: 15000 });
 	await expect(page.locator('#query-results .query-result-status')).toHaveText(/complete/);
-	// Let the smooth scroll that brings new results into view finish before measuring or scrolling.
-	await page.waitForFunction(() => new Promise(resolve => {
-		const start = window.scrollY;
-		setTimeout(() => resolve(window.scrollY === start), 250);
-	}));
+	// Let the smooth scroll that brings new results into view finish before measuring or scrolling: the page has not
+	// moved between two looks 250 ms apart. (waitForFunction would take a returned Promise as truthy at once.)
+	let previous = null;
+	await expect.poll(async () => {
+		const current = await page.evaluate(() => window.scrollY);
+		const settled = current === previous;
+		previous = current;
+		return settled;
+	}, { intervals: [250] }).toBe(true);
 }
 
 test('results scroll with the page under a pinned header', async ({ page }) => {
@@ -76,6 +80,19 @@ test('results scroll with the page under a pinned header', async ({ page }) => {
 
 	await page.keyboard.press('End');
 	await expect(page.locator('#query-results tbody tr[data-query-row-index="399"]')).toBeInViewport();
+});
+
+test('scrolling while the first result comes into view wins over the reveal', async ({ page }) => {
+	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1440, height: 900 } });
+	await setQueryEditor(page, 'SELECT * WHERE { ?s ?p ?o } LIMIT 400');
+	await page.locator('#exec').click();
+	await page.mouse.move(720, 700);
+	// The page starts moving the result into view: turn the wheel before that scroll has finished.
+	const started = await page.waitForFunction(() => window.scrollY > 0 && window.scrollY, null,
+		{ polling: 'raf', timeout: 15000 });
+	const atWheel = await started.jsonValue();
+	await page.mouse.wheel(0, 1000);
+	await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(atWheel + 600);
 });
 
 test('full screen fills the screen and scrolls the table', async ({ page }) => {

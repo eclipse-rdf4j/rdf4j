@@ -6930,17 +6930,72 @@ namespace workbench {
                 return;
             }
             var reveal = function() {
-                if (card.getBoundingClientRect().top <= view.innerHeight * 0.4) {
+                var top = card.getBoundingClientRect().top;
+                if (top <= view.innerHeight * 0.4) {
                     return;
                 }
                 var reducedMotion = !!(view.matchMedia && view.matchMedia('(prefers-reduced-motion: reduce)').matches);
-                card.scrollIntoView({ block: 'start', behavior: reducedMotion ? 'auto' : 'smooth' });
+                var document = card.ownerDocument;
+                var scroller = document.scrollingElement || document.documentElement;
+                var animatable = !!scroller
+                    && ['scrollTo', 'getComputedStyle', 'requestAnimationFrame', 'addEventListener']
+                        .every(name => typeof view[name] === 'function');
+                if (reducedMotion || !animatable) {
+                    card.scrollIntoView({ block: 'start', behavior: 'auto' });
+                    return;
+                }
+                // Where scrollIntoView would stop: the page's scroll padding clears the context bar, the card's
+                // scroll-margin adds the gap above it.
+                var offset = (parseFloat(view.getComputedStyle(document.documentElement).scrollPaddingTop) || 0)
+                    + (parseFloat(view.getComputedStyle(card).scrollMarginTop) || 0);
+                var from = view.scrollY;
+                var to = Math.min(from + top - offset, scroller.scrollHeight - view.innerHeight);
+                if (to > from) {
+                    scrollPageGently(view, from, to);
+                }
             };
             if (typeof view.requestAnimationFrame === 'function') {
                 view.requestAnimationFrame(reveal);
             } else {
                 reveal();
             }
+        }
+
+        /**
+         * Scroll the page from `from` down to `to`, easing in and out. Chromium and WebKit drop the wheel turns that
+         * arrive during a smooth scrollIntoView, so the page animates itself, and stops for good as soon as the user
+         * turns the wheel, touches, presses a key or clicks, or anything else moves the page: it never fights them.
+         */
+        function scrollPageGently(view: any, from: number, to: number): void {
+            var clock = view.performance && typeof view.performance.now === 'function' ? view.performance : Date;
+            var started = clock.now();
+            var duration = Math.min(500, 200 + (to - from) / 4);
+            var expected = from;
+            var stopped = false;
+            var interruptions = ['wheel', 'touchstart', 'keydown', 'pointerdown'];
+            var stop = function() {
+                stopped = true;
+                interruptions.forEach(type => view.removeEventListener(type, stop, true));
+            };
+            interruptions.forEach(type => view.addEventListener(type, stop, { capture: true, passive: true }));
+            var step = function() {
+                if (stopped) {
+                    return;
+                }
+                if (Math.abs(view.scrollY - expected) > 1) {
+                    stop();
+                    return;
+                }
+                var progress = Math.max(0, Math.min(1, (clock.now() - started) / duration));
+                expected = Math.round(from + (to - from) * (1 - Math.cos(Math.PI * progress)) / 2);
+                view.scrollTo(view.scrollX, expected);
+                if (progress < 1) {
+                    view.requestAnimationFrame(step);
+                } else {
+                    stop();
+                }
+            };
+            view.requestAnimationFrame(step);
         }
 
         /**
