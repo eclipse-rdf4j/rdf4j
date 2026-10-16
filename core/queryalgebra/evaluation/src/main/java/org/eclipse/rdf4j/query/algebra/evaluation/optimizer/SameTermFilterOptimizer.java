@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
@@ -234,7 +235,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		private void bindVar(Var var, Value value, Filter filter) {
 			// Set the value on all occurences of the variable
-			filter.getArg().visit(new VarBinder(var.getName(), value));
+			filter.getArg().visit(new VarBinder(var, value));
 			bindingAnalysis.invalidate();
 		}
 	}
@@ -246,6 +247,17 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		public StopAtScopeChange(boolean meetStatementPatternChildren) {
 			super(meetStatementPatternChildren);
+		}
+
+		@Override
+		public void meet(Projection projection) {
+			if (projection.getProjectionContext() != null) {
+				// This selector belongs to the caller, even when traversal stops at the SELECT's local scope.
+				projection.getProjectionContext().visit(this);
+			}
+			if (!projection.isSubquery()) {
+				super.meet(projection);
+			}
 		}
 
 		@Override
@@ -338,20 +350,24 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	private static class VarBinder extends StopAtScopeChange {
 
-		private final String varName;
+		private final Var variable;
 
 		private final Value value;
 
-		public VarBinder(String varName, Value value) {
+		public VarBinder(Var variable, Value value) {
 			super(true);
-			this.varName = varName;
+			this.variable = variable;
 			this.value = value;
 		}
 
 		@Override
 		public void meet(Var var) {
-			if (var.getName().equals(varName)) {
-				var.replaceWith(Var.of(varName, value, var.isAnonymous(), var.isConstant()));
+			if (var.getName().equals(variable.getName())
+					&& var.getGraphContextDepth() == variable.getGraphContextDepth()) {
+				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode());
+				replacement.setGraphContextDepth(var.getGraphContextDepth());
+				replacement.setVariableScopeChange(var.isVariableScopeChange());
+				var.replaceWith(replacement);
 			}
 		}
 	}

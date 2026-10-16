@@ -23,9 +23,19 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility.QueryModelPreparation;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -44,7 +54,245 @@ final class PreparedValuesSnapshot {
 	}
 
 	static QueryModelPreparation newPreparation() {
-		return new CaptureSession();
+		return new InheritedGraphContextLowering(new CaptureSession());
+	}
+
+	/** Composes graph-scope lowering with VALUES capture before safety analysis or variable layouts. */
+	private static final class InheritedGraphContextLowering implements QueryModelPreparation {
+		private final QueryModelPreparation values;
+		private final Set<QueryModelNode> lowered = Collections.newSetFromMap(new IdentityHashMap<>());
+		private final Map<QueryModelNode, List<Projection>> subqueriesByNode = new IdentityHashMap<>();
+		private final Set<String> names = new LinkedHashSet<>();
+		private int nextParameter;
+		private boolean closed;
+
+		private InheritedGraphContextLowering(QueryModelPreparation values) {
+			this.values = values;
+		}
+
+		@Override
+		public QueryModelNode prepare(QueryModelNode expression) {
+			if (closed) {
+				return expression;
+			}
+			QueryModelNode prepared = values.prepare(expression);
+			if (lowered.contains(prepared)) {
+				return prepared;
+			}
+			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment assignment) {
+					names.addAll(assignment.getBindingNames());
+				}
+
+				@Override
+				public void meet(ProjectionElem element) {
+					names.add(element.getName());
+					element.getProjectionAlias().ifPresent(names::add);
+					super.meet(element);
+				}
+
+				@Override
+				public void meet(ExtensionElem element) {
+					names.add(element.getName());
+					super.meet(element);
+				}
+
+				@Override
+				public void meet(GroupElem element) {
+					names.add(element.getName());
+					super.meet(element);
+				}
+
+				@Override
+				public void meet(Var var) {
+					names.add(var.getName());
+				}
+
+				@Override
+				public void meet(Projection projection) {
+					if (projection.getProjectionContext() != null) {
+						names.add(projection.getProjectionContext().getName());
+					}
+					if (projection.getInheritedGraphParameter() != null) {
+						names.add(projection.getInheritedGraphParameter());
+					}
+					super.meet(projection);
+				}
+			});
+			prepared.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Join join) {
+					lowerFrom(join.getRightArg(), join.getLeftArg());
+					lowerFrom(join.getLeftArg(), join.getRightArg());
+					super.meet(join);
+				}
+
+				@Override
+				public void meet(LeftJoin join) {
+					lowerFrom(join.getRightArg(), join.getLeftArg());
+					super.meet(join);
+				}
+
+				private void lowerFrom(TupleExpr dependent, TupleExpr carrier) {
+					Set<String> callerNames = null;
+					for (Projection projection : firstSubqueryProjections(dependent)) {
+						Var caller = projection.getProjectionContext();
+						if (caller != null && !caller.hasValue()
+								&& projection.getInheritedGraphParameter() == null) {
+							if (callerNames == null) {
+								callerNames = carrier.getBindingNames();
+							}
+							if (callerNames.contains(caller.getName())) {
+								lower(projection);
+							}
+						}
+					}
+				}
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					super.meetNode(node);
+					lowered.add(node);
+				}
+			});
+			return prepared;
+		}
+
+		@Override
+		public List<Projection> firstSubqueryProjections(TupleExpr expression) {
+			List<Projection> known = subqueriesByNode.get(expression);
+			if (known != null) {
+				return known;
+			}
+			List<Projection> found = new ArrayList<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Projection projection) {
+					if (projection.isSubquery()) {
+						found.add(projection);
+						subqueriesByNode.put(projection, List.of(projection));
+					} else {
+						super.meet(projection);
+					}
+					// Nested SELECTs own their frames; local descendants are not dependencies across this boundary.
+				}
+
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					List<Projection> cached = subqueriesByNode.get(node);
+					if (cached != null) {
+						found.addAll(cached);
+						return;
+					}
+					int before = found.size();
+					super.meetNode(node);
+					subqueriesByNode.put(node, List.copyOf(found.subList(before, found.size())));
+				}
+			});
+			return subqueriesByNode.getOrDefault(expression, List.copyOf(found));
+		}
+
+		private void lower(Projection projection) {
+			String parameter;
+			do {
+				parameter = "_rdf4j_graph_context_" + nextParameter++;
+			} while (!names.add(parameter));
+			String target = parameter;
+			int callerDepth = projection.getProjectionContext().getGraphContextDepth();
+			int[] changed = { 0 };
+			projection.getArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				private int nestedSelects;
+
+				@Override
+				public void meet(Projection nested) {
+					if (!nested.isSubquery()) {
+						super.meet(nested);
+						return;
+					}
+					int before = changed[0];
+					nestedSelects++;
+					super.meet(nested);
+					Var caller = nested.getProjectionContext();
+					if (changed[0] > before && caller != null
+							&& caller.getGraphContextDepth() == callerDepth + nestedSelects) {
+						nested.setProjectionContext(parameter(caller));
+						nested.setInheritedGraphParameter(target);
+					}
+					nestedSelects--;
+				}
+
+				@Override
+				public void meet(StatementPattern pattern) {
+					Var context = inherited(pattern.getContextVar());
+					if (context != null) {
+						pattern.getContextVar().replaceWith(context);
+					}
+				}
+
+				@Override
+				public void meet(ArbitraryLengthPath path) {
+					Var context = inherited(path.getContextVar());
+					if (context != null) {
+						path.setContextVar(context);
+					}
+					super.meet(path);
+				}
+
+				@Override
+				public void meet(ZeroLengthPath path) {
+					Var context = inherited(path.getContextVar());
+					if (context != null) {
+						path.setContextVar(context);
+					}
+				}
+
+				private Var inherited(Var context) {
+					if (context != null && !context.hasValue()
+							&& context.getGraphContextDepth() == callerDepth + 1 + nestedSelects) {
+						changed[0]++;
+						return parameter(context);
+					}
+					return null;
+				}
+
+				private Var parameter(Var original) {
+					Var replacement = Var.of(target, original.getValue(), true, original.isConstant(),
+							original.isBNode());
+					replacement.setGraphContextDepth(original.getGraphContextDepth());
+					replacement.setVariableScopeChange(original.isVariableScopeChange());
+					return replacement;
+				}
+			});
+			if (changed[0] > 0) {
+				projection.setInheritedGraphParameter(target);
+			}
+		}
+
+		@Override
+		public void invalidate(QueryModelNode changedNode) {
+			values.invalidate(changedNode);
+			for (QueryModelNode node = changedNode; node != null; node = node.getParentNode()) {
+				lowered.remove(node);
+				subqueriesByNode.remove(node);
+			}
+		}
+
+		@Override
+		public void resetTraversal() {
+			values.resetTraversal();
+			lowered.clear();
+			subqueriesByNode.clear();
+		}
+
+		@Override
+		public void close() {
+			closed = true;
+			values.close();
+			lowered.clear();
+			subqueriesByNode.clear();
+			names.clear();
+		}
 	}
 
 	/** One preparation phase owns node aliases and captures a producer only once, including optimizer additions. */

@@ -29,6 +29,7 @@ import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -1039,13 +1040,27 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			return super.addStatementsInternal(statements, contexts);
 		}
 		synchronized (datasets) {
-			if (!explicitSinks.containsKey(null)) {
-				// Like scalar insertion, an insertion without listeners needs no read view. Any later mutation
-				// probe acquires its dataset through connection admission, preserving the transaction's paired epoch.
-				SailSource source = branch(IncludeInferred.explicitOnly);
-				explicitSinks.put(null, source.sink(getIsolationLevel()));
+			if (bulkApprovalOwner() != getClass()) {
+				long count = 0;
+				for (Statement statement : statements) {
+					// A row hook may flush and close the current sink. Approve first, then reacquire for the next row.
+					SailSink sink = explicitInsertionSink();
+					if (contexts.length == 0) {
+						sink.approve(statement);
+						count++;
+					} else {
+						for (Resource context : contexts) {
+							sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
+									context);
+							count++;
+						}
+					}
+					setStatementsAdded();
+					bulkStatementAdded(statement, contexts);
+				}
+				return count;
 			}
-			SailSink sink = explicitSinks.get(null);
+			SailSink sink = explicitInsertionSink();
 			Supplier<Iterator<Statement>> trackedIterator = () -> new Iterator<>() {
 				private final Iterator<? extends Statement> delegate = statements.iterator();
 
@@ -1079,6 +1094,26 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			}
 			return sink.approveAll(trackedStatements, contexts);
 		}
+	}
+
+	private SailSink explicitInsertionSink() {
+		if (!explicitSinks.containsKey(null)) {
+			// Insertion without listeners needs no read view. Later probes retain connection admission.
+			SailSource source = branch(IncludeInferred.explicitOnly);
+			explicitSinks.put(null, source.sink(getIsolationLevel()));
+		}
+		return explicitSinks.get(null);
+	}
+
+	/**
+	 * Opts this exact connection implementation into sink-owned bulk approval. Return the implementing class only if
+	 * all per-row hooks are nonthrowing bookkeeping and cannot flush, close, replace or otherwise invalidate a sink.
+	 * Eligibility requires equality with {@link #getClass()}, so subclasses must explicitly audit and opt in again; an
+	 * inherited token never authorizes an overriding hook. The default preserves row-before-hook ownership.
+	 */
+	@InternalUseOnly
+	protected Class<? extends SailSourceConnection> bulkApprovalOwner() {
+		return null;
 	}
 
 	@Experimental

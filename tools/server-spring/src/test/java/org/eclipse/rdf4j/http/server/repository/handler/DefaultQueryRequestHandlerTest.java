@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.http.server.repository.handler;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -38,6 +40,7 @@ import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -47,6 +50,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -625,6 +629,32 @@ class DefaultQueryRequestHandlerTest {
 			});
 		} finally {
 			executor.shutdownNow();
+		}
+	}
+
+	@Test
+	void ordinaryQueryParametersUseSharedForcedStrategyNormalization() throws Exception {
+		DefaultQueryRequestHandler handler = new DefaultQueryRequestHandler(mock(RepositoryResolver.class));
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getValueFactory()).thenReturn(SimpleValueFactory.getInstance());
+		SailQuery query = mock(SailQuery.class);
+		MockHttpServletRequest forcedRequest = new MockHttpServletRequest();
+		forcedRequest.setParameter(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME, "nestedLoop");
+
+		handler.setQueryParameters(forcedRequest, connection, query);
+
+		verify(query).setForcedLmdbExecutionStrategy("nestedLoop");
+		for (String unsetValue : new String[] {
+				null, "", " \t", Protocol.LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED }) {
+			clearInvocations(query);
+			MockHttpServletRequest unsetRequest = new MockHttpServletRequest();
+			if (unsetValue != null) {
+				unsetRequest.setParameter(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME, unsetValue);
+			}
+
+			handler.setQueryParameters(unsetRequest, connection, query);
+
+			verify(query, never()).setForcedLmdbExecutionStrategy(any());
 		}
 	}
 

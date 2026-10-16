@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
@@ -22,6 +23,9 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.Arm;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBinding;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.CanonicalIri;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.EvaluationResult;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.IndependentSparqlOracle.ResultOrder;
 import org.junit.jupiter.api.AfterEach;
@@ -140,6 +144,27 @@ public class LmdbNativeLateralDifferentialTest {
 	public void nestedLaterals() {
 		assertSameRowsNonEmpty(PREFIX + "SELECT * WHERE { ?a ex:knows ?b . "
 				+ "LATERAL { ?b ex:knows ?c . LATERAL { ?c ex:name ?cn } } }");
+	}
+
+	@Test
+	public void nestedSubselectsKeepRowVaryingLateralInputsAndDuplicateOccurrences() {
+		String query = PREFIX + "SELECT ?s ?label ?r WHERE { VALUES ?s { ex:s1 ex:s2 ex:s1 } "
+				+ "LATERAL { SELECT ?s ?label ?r WHERE { ?s ex:q ?label "
+				+ "LATERAL { SELECT ?label ?r WHERE { ?label ex:r ?r } } } } }";
+		Map<CanonicalBindingSet, Long> expected = Map.of(
+				lateralRow("s1", "left1", "r1"), 2L,
+				lateralRow("s1", "left1", "r1b"), 2L,
+				lateralRow("s2", "left2", "r2"), 1L);
+		for (EvaluationResult result : oracle.assertEquivalent(query, ResultOrder.UNORDERED).values()) {
+			assertThat(result.multiset()).as("arm=%s", result.arm()).isEqualTo(expected);
+		}
+	}
+
+	private static CanonicalBindingSet lateralRow(String subject, String label, String result) {
+		return new CanonicalBindingSet(List.of(
+				new CanonicalBinding("label", new CanonicalIri(EX + label)),
+				new CanonicalBinding("r", new CanonicalIri(EX + result)),
+				new CanonicalBinding("s", new CanonicalIri(EX + subject))));
 	}
 
 	@Test

@@ -89,6 +89,97 @@ public class LmdbNativeScopeAndValuesRegressionTest {
 		repository.shutDown();
 	}
 
+	@Test
+	public void optionalSubqueriesKeepInheritedGraphsSeparateFromSameNamedLocalGraphs() {
+		for (boolean experimental : new boolean[] { false, true }) {
+			repository.shutDown();
+			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
+					.setNativeEvaluationEnabled(true)
+					.setSketchEstimatorEnabled(false));
+			store.setExperimentalQueryOptimizations(experimental);
+			repository = new SailRepository(store);
+			repository.init();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory vf = connection.getValueFactory();
+				connection.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+						vf.createIRI("urn:g1"));
+				connection.add(vf.createIRI("urn:b"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+						vf.createIRI("urn:g2"));
+			}
+			for (boolean nativeEnabled : new boolean[] { false, true }) {
+				String local = "SELECT ?g ?x { VALUES ?g { <urn:g1> } OPTIONAL { SELECT ?x { "
+						+ "GRAPH ?g { ?x <urn:p> <urn:o> } } } }";
+				assertThat(rows(local, nativeEnabled, null, null))
+						.as("local GRAPH: experimental=%s, native=%s", experimental, nativeEnabled)
+						.containsExactly("[g=urn:g1;x=urn:a]", "[g=urn:g1;x=urn:b]");
+				for (String inherited : List.of("?x <urn:p> <urn:o>", "{ SELECT ?x { ?x <urn:p> <urn:o> } }")) {
+					String mixed = "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { "
+							+ "SELECT ?x ?y { " + inherited + " GRAPH ?g { ?y <urn:p> <urn:o> } } } } }";
+					for (String input : new String[] { null, "_rdf4j_graph_context_0" }) {
+						assertThat(rows(mixed, nativeEnabled, input, repository.getValueFactory().createIRI("urn:g2")))
+								.as("experimental=%s, native=%s, input=%s", experimental, nativeEnabled, input)
+								.containsExactly("[g=urn:g1;x=urn:a;y=urn:a]", "[g=urn:g1;x=urn:a;y=urn:b]",
+										"[g=urn:g2;x=urn:b;y=urn:a]", "[g=urn:g2;x=urn:b;y=urn:b]");
+					}
+					assertThat(rows(mixed, nativeEnabled, "g", repository.getValueFactory().createIRI("urn:g1")))
+							.as("API caller binding: experimental=%s, native=%s", experimental, nativeEnabled)
+							.containsExactly("[g=urn:g1;x=urn:a;y=urn:a]");
+				}
+			}
+		}
+	}
+
+	@Test
+	public void ordinaryJoinSubqueriesKeepTheirInheritedGraphAcrossOperandOrders() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:o"), vf.createIRI("urn:g1"));
+			connection.add(vf.createIRI("urn:b"), vf.createIRI("urn:p"), vf.createIRI("urn:o"), vf.createIRI("urn:g2"));
+		}
+		for (boolean nativeEnabled : new boolean[] { false, true }) {
+			for (String body : List.of("?x <urn:p> <urn:o>", "{ SELECT ?x { ?x <urn:p> <urn:o> } }")) {
+				for (boolean subqueryFirst : new boolean[] { false, true }) {
+					String subquery = "{ SELECT ?x { " + body + " } }";
+					String seed = "?seed <urn:p> <urn:o>";
+					String group = subqueryFirst ? subquery + " " + seed : seed + " " + subquery;
+					assertThat(rows("SELECT ?g ?x { GRAPH ?g { " + group + " } }", nativeEnabled, null, null))
+							.as("native=%s, subqueryFirst=%s, body=%s", nativeEnabled, subqueryFirst, body)
+							.containsExactly("[g=urn:g1;x=urn:a]", "[g=urn:g2;x=urn:b]");
+					String mixed = "{ SELECT ?x ?y { " + body + " GRAPH ?g { ?y <urn:p> <urn:o> } } }";
+					group = subqueryFirst ? mixed + " " + seed : seed + " " + mixed;
+					assertThat(rows("SELECT ?g ?x ?y { GRAPH ?g { " + group + " } }", nativeEnabled, null, null))
+							.as("shadow: native=%s, subqueryFirst=%s", nativeEnabled, subqueryFirst)
+							.containsExactly("[g=urn:g1;x=urn:a;y=urn:a]", "[g=urn:g1;x=urn:a;y=urn:b]",
+									"[g=urn:g2;x=urn:b;y=urn:a]", "[g=urn:g2;x=urn:b;y=urn:b]");
+				}
+			}
+		}
+	}
+
+	@Test
+	public void siblingSelectsKeepTheirCallerGraphWhenBothProjectItsName() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			connection.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:o"), vf.createIRI("urn:g1"));
+			connection.add(vf.createIRI("urn:b"), vf.createIRI("urn:p"), vf.createIRI("urn:o"), vf.createIRI("urn:g2"));
+		}
+		for (boolean nativeEnabled : new boolean[] { false, true }) {
+			for (boolean shadow : new boolean[] { false, true }) {
+				String first = "{ SELECT ?g ?x { ?x <urn:p> <urn:o> "
+						+ (shadow ? "GRAPH ?g { ?localX <urn:p> <urn:o> }" : "") + " } }";
+				String second = "{ SELECT ?g ?y { ?y <urn:p> <urn:o> "
+						+ (shadow ? "GRAPH ?g { ?localY <urn:p> <urn:o> }" : "") + " } }";
+				for (boolean reverse : new boolean[] { false, true }) {
+					String siblings = reverse ? second + " " + first : first + " " + second;
+					assertThat(rows("SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> { " + siblings
+							+ " } } }", nativeEnabled, null, null))
+									.as("native=%s, shadow=%s, reverse=%s", nativeEnabled, shadow, reverse)
+									.containsExactly("[g=urn:g1;x=urn:a;y=urn:a]", "[g=urn:g2;x=urn:b;y=urn:b]");
+				}
+			}
+		}
+	}
+
 	/**
 	 * SPARQL Extend leaves {@code ?biri} absent when {@code IRI(?blank)} errors, so the following pattern is joined
 	 * with {@code ?biri} unbound and matches every statement (the error must not turn into an empty result, nor into an

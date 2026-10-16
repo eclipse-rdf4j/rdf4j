@@ -18,6 +18,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -85,12 +86,24 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 			}
 		}
 
+		@Override
+		public void meet(Projection projection) {
+			if (projection.getProjectionContext() != null) {
+				projection.getProjectionContext().visit(this);
+			}
+			super.meet(projection);
+		}
+
 		private void apply() {
 			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
 			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
 			for (Replacement replacement : replacements) {
 				Var var = replacement.variable();
-				var.replaceWith(Var.of(var.getName(), replacement.value(), var.isAnonymous(), var.isConstant()));
+				Var assigned = Var.of(var.getName(), replacement.value(), var.isAnonymous(), var.isConstant(),
+						var.isBNode());
+				assigned.setGraphContextDepth(var.getGraphContextDepth());
+				assigned.setVariableScopeChange(var.isVariableScopeChange());
+				var.replaceWith(assigned);
 			}
 		}
 

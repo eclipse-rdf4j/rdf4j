@@ -109,6 +109,22 @@ public final class SparqlTupleExprRenderer extends BaseTupleExprRenderer {
 		return aBuilder.toString();
 	}
 
+	@Override
+	public void meet(Projection projection) throws Exception {
+		Var context = projection.getVisibleProjectionContext();
+		if (projection.isSubquery() && context != null) {
+			mJoinBuffer.append(indent()).append("GRAPH ");
+			mJoinBuffer.append(context.hasValue() ? RenderUtils.toSPARQL(context.getValue()) : "?" + context.getName());
+			mJoinBuffer.append(" { { ").append(System.lineSeparator());
+			mIndent += 2;
+			appendIndented(new TupleExprIRRenderer().render(projection));
+			mIndent -= 2;
+			mJoinBuffer.append(indent()).append("} }").append(System.lineSeparator());
+		} else {
+			super.meet(projection);
+		}
+	}
+
 	/**
 	 * {@inheritDoc}
 	 */

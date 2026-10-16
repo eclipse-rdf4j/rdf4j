@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -292,6 +293,11 @@ public class QueryEvaluationUtility {
 	public interface QueryModelPreparation extends AutoCloseable {
 		QueryModelNode prepare(QueryModelNode root);
 
+		/** Derived SELECT membership facts share the invocation lifetime and invalidation of preparation. */
+		default List<Projection> firstSubqueryProjections(TupleExpr expression) {
+			return findFirstSubqueryProjections(expression);
+		}
+
 		/** Drops graph-membership proofs between optimizer passes without recapturing shared row producers. */
 		void resetTraversal();
 
@@ -301,6 +307,30 @@ public class QueryEvaluationUtility {
 		/** Releases invocation-owned aliases and row-producer memoization without changing captured execution rows. */
 		@Override
 		void close();
+	}
+
+	/** Reuses the preparation-owned SELECT summary during recursive generic and native compilation. */
+	@InternalUseOnly
+	public static List<Projection> firstSubqueryProjections(TupleExpr expression) {
+		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		return active != null && active.valuesPreparation != null
+				? active.valuesPreparation.firstSubqueryProjections(expression)
+				: findFirstSubqueryProjections(expression);
+	}
+
+	private static List<Projection> findFirstSubqueryProjections(TupleExpr expression) {
+		List<Projection> projections = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Projection projection) {
+				if (projection.isSubquery()) {
+					projections.add(projection);
+				} else {
+					super.meet(projection);
+				}
+			}
+		});
+		return projections;
 	}
 
 	/** Refreshes changed query-model facts in the active phase, if there is one. */

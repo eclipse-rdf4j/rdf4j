@@ -11,10 +11,9 @@
 @echo off
 
 set "LIB_DIR=%~dp0\..\lib"
+set "JAVA=java"
 if defined JAVA_HOME if exist "%JAVA_HOME%\bin\java.exe" (
 	set "JAVA=%JAVA_HOME%\bin\java.exe"
-) else (
-	set "JAVA=java"
 )
 
 if "%~1"=="" (

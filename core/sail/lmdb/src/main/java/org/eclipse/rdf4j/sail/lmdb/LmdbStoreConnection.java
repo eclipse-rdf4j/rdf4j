@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.concurrent.locks.Lock;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -908,6 +909,12 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected void bulkStatementAdded(Statement statement, Resource... contexts) {
 		// Bulk additions only need one transaction event; the sink consumes the statement fields.
 		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
+	@InternalUseOnly
+	protected Class<? extends SailSourceConnection> bulkApprovalOwner() {
+		return LmdbStoreConnection.class;
 	}
 
 	@Override

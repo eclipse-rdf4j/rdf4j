@@ -546,6 +546,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		// Start with building the graph pattern
 		graphPattern = new GraphPattern(parentGP);
+		if (node.getSelect().isSubSelect()) {
+			graphPattern.enterSubquery();
+		}
 		try {
 			node.getWhereClause().jjtAccept(this, null);
 			TupleExpr tupleExpr = graphPattern.buildTupleExpr();
@@ -855,7 +858,8 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// set context var at the level of the projection. This allows us
 			// to distinguish named graphs selected in the
 			// outer query from named graphs selected as part of the sub-select.
-			((Projection) result).setProjectionContext(graphPattern.getContextVar());
+			Var callerContext = graphPattern.getProjectionContext();
+			((Projection) result).setProjectionContext(callerContext == null ? null : callerContext.clone());
 		}
 
 		if (node.isDistinct()) {
@@ -1520,7 +1524,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 		ValueExpr newContext = (ValueExpr) node.jjtGetChild(0).jjtAccept(this, null);
 
-		graphPattern.setContextVar(mapValueExprToVar(newContext));
+		Var localContext = mapValueExprToVar(newContext).clone();
+		localContext.setGraphContextDepth(0);
+		graphPattern.setContextVar(localContext);
 		graphPattern.setStatementPatternScope(Scope.NAMED_CONTEXTS);
 
 		node.jjtGetChild(1).jjtAccept(this, null);

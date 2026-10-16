@@ -169,6 +169,13 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		@Override
 		public void meet(Projection node) {
+			if (node.getProjectionContext() != null) {
+				node.getProjectionContext().visit(this);
+			}
+			String parameter = replacementName(node.getInheritedGraphParameter());
+			if (parameter != null) {
+				node.setInheritedGraphParameter(parameter);
+			}
 			Map<String, String> replacements = hiddenProjectionSourceBindings(node.getProjectionElemList());
 			visitProjectionArgument(node.getArg(), replacements);
 		}
@@ -196,6 +203,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 					Var replacement = Var.of(replacementName, var.getValue(), var.isAnonymous(), var.isConstant(),
 							var.isBNode());
 					replacement.setVariableScopeChange(var.isVariableScopeChange());
+					replacement.setGraphContextDepth(var.getGraphContextDepth());
 					var.replaceWith(replacement);
 				}
 			}

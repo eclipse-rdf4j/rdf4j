@@ -49,7 +49,9 @@ final class FastNTriplesParser {
 
 	private byte[] overflowLine = new byte[INITIAL_LINE_BYTES];
 	private int overflowLength;
-	private byte[] decoded = new byte[INITIAL_LINE_BYTES];
+	// A literal label remains live while its datatype IRI is parsed.
+	private byte[] decodedLiteral = new byte[INITIAL_LINE_BYTES];
+	private byte[] decodedIri = new byte[INITIAL_LINE_BYTES];
 	private byte[] activeLine;
 	private int lineStart;
 	private int lineEnd;
@@ -297,7 +299,7 @@ final class FastNTriplesParser {
 					return CanonicalTermCodec.encodeIri(activeLine, start, i - start);
 				}
 				int decodedLength = decodeIri(start, i);
-				return CanonicalTermCodec.encodeIri(decoded, 0, decodedLength);
+				return CanonicalTermCodec.encodeIri(decodedIri, 0, decodedLength);
 			}
 			if (value == '\\') {
 				escaped = true;
@@ -313,16 +315,35 @@ final class FastNTriplesParser {
 	private byte[] parseBNode(int cursor) {
 		int start = cursor + 2;
 		cursor = start;
-		while (cursor < lineEnd && isBNodeLabelByte(activeLine[cursor])) {
-			cursor++;
+		int labelEnd = start;
+		while (cursor < lineEnd) {
+			int codePoint = activeLine[cursor] & 0xff;
+			int width = 1;
+			if (codePoint >= 0x80) {
+				long decoded = utf8CodePoint(activeLine, cursor, lineEnd, cursor);
+				codePoint = (int) (decoded >>> 3);
+				width = (int) (decoded & 7);
+			}
+			boolean first = cursor == start;
+			if (!(isPnCharsBase(codePoint) || codePoint == '_' || codePoint == ':'
+					|| codePoint >= '0' && codePoint <= '9'
+					|| !first && (codePoint == '.' || codePoint == '-' || codePoint == 0x00b7
+							|| codePoint >= 0x0300 && codePoint <= 0x036f
+							|| codePoint >= 0x203f && codePoint <= 0x2040))) {
+				break;
+			}
+			cursor += width;
+			if (codePoint != '.') {
+				labelEnd = cursor;
+			}
 		}
-		if (cursor == start) {
-			throw error("Expected blank node label", cursor);
+		if (labelEnd == start) {
+			throw error("Expected blank node label", start);
 		}
-		validateUtf8(activeLine, start, cursor - start, cursor);
-		termEnd = cursor;
-		return blankNodeScope == null ? CanonicalTermCodec.encodeBNode(activeLine, start, cursor - start)
-				: CanonicalTermCodec.encodeBNode(blankNodeScope, activeLine, start, cursor - start);
+		// Periods are legal internally, but trailing periods belong to the enclosing statement grammar.
+		termEnd = labelEnd;
+		return blankNodeScope == null ? CanonicalTermCodec.encodeBNode(activeLine, start, labelEnd - start)
+				: CanonicalTermCodec.encodeBNode(blankNodeScope, activeLine, start, labelEnd - start);
 	}
 
 	private byte[] parseLiteral(int tokenStart) {
@@ -343,9 +364,9 @@ final class FastNTriplesParser {
 	}
 
 	private byte[] parseEscapedLiteral(int tokenStart, int start, int firstEscape) {
-		decoded = ensureCapacity(decoded, lineEnd - start);
+		decodedLiteral = ensureCapacity(decodedLiteral, lineEnd - start);
 		int decodedLength = firstEscape - start;
-		System.arraycopy(activeLine, start, decoded, 0, decodedLength);
+		System.arraycopy(activeLine, start, decodedLiteral, 0, decodedLength);
 		int cursor = firstEscape;
 		while (cursor < lineEnd) {
 			if (cursor + 1 >= lineEnd) {
@@ -373,14 +394,14 @@ final class FastNTriplesParser {
 				} else if (isLowSurrogate(codePoint)) {
 					codePoint = '?';
 				}
-				decodedLength = appendUtf8(decoded, decodedLength, codePoint);
+				decodedLength = appendUtf8(decodedLiteral, decodedLength, codePoint);
 				cursor = next;
 			} else {
 				int decodedByte = stringEscape(escaped);
 				if (decodedByte < 0) {
 					throw error("Invalid escape sequence", cursor);
 				}
-				decoded[decodedLength++] = (byte) decodedByte;
+				decodedLiteral[decodedLength++] = (byte) decodedByte;
 				cursor += 2;
 			}
 			int runStart = cursor;
@@ -388,11 +409,11 @@ final class FastNTriplesParser {
 				cursor++;
 			}
 			int runLength = cursor - runStart;
-			System.arraycopy(activeLine, runStart, decoded, decodedLength, runLength);
+			System.arraycopy(activeLine, runStart, decodedLiteral, decodedLength, runLength);
 			decodedLength += runLength;
 			if (cursor < lineEnd && activeLine[cursor] == '"') {
-				validateUtf8(decoded, 0, decodedLength, cursor);
-				return finishLiteral(start, cursor, decoded, 0, decodedLength);
+				validateUtf8(decodedLiteral, 0, decodedLength, cursor);
+				return finishLiteral(start, cursor, decodedLiteral, 0, decodedLength);
 			}
 		}
 		throw error("Unterminated literal", tokenStart);
@@ -456,7 +477,7 @@ final class FastNTriplesParser {
 	}
 
 	private int decodeIri(int start, int end) {
-		decoded = ensureCapacity(decoded, end - start);
+		decodedIri = ensureCapacity(decodedIri, end - start);
 		int output = 0;
 		int cursor = start;
 		while (cursor < end) {
@@ -465,7 +486,7 @@ final class FastNTriplesParser {
 				cursor++;
 			}
 			int runLength = cursor - runStart;
-			System.arraycopy(activeLine, runStart, decoded, output, runLength);
+			System.arraycopy(activeLine, runStart, decodedIri, output, runLength);
 			output += runLength;
 			if (cursor < end) {
 				int digits = activeLine[cursor + 1] == 'u' ? 4 : 8;
@@ -473,11 +494,11 @@ final class FastNTriplesParser {
 				if (isSurrogate(codePoint)) {
 					throw error("Invalid Unicode escape sequence", cursor);
 				}
-				output = appendUtf8(decoded, output, codePoint);
+				output = appendUtf8(decodedIri, output, codePoint);
 				cursor += digits + 2;
 			}
 		}
-		validateUtf8(decoded, 0, output, end);
+		validateUtf8(decodedIri, 0, output, end);
 		return output;
 	}
 
@@ -581,10 +602,15 @@ final class FastNTriplesParser {
 		return cursor;
 	}
 
-	private static boolean isBNodeLabelByte(byte value) {
-		int c = value & 0xff;
-		return c >= 0x80 || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
-				|| c == '_' || c == '-' || c == '.';
+	private static boolean isPnCharsBase(int c) {
+		if (c < 0x00c0) {
+			return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z';
+		}
+		return c <= 0x00d6
+				|| c >= 0x00d8 && c <= 0x00f6 || c >= 0x00f8 && c <= 0x02ff || c >= 0x0370 && c <= 0x037d
+				|| c >= 0x037f && c <= 0x1fff || c >= 0x200c && c <= 0x200d || c >= 0x2070 && c <= 0x218f
+				|| c >= 0x2c00 && c <= 0x2fef || c >= 0x3001 && c <= 0xd7ff || c >= 0xf900 && c <= 0xfdcf
+				|| c >= 0xfdf0 && c <= 0xfffd || c >= 0x10000 && c <= 0xeffff;
 	}
 
 	private static boolean isLanguageByte(byte value) {
@@ -664,40 +690,46 @@ final class FastNTriplesParser {
 	private void validateUtf8(byte[] bytes, int offset, int length, int errorColumn) {
 		int end = offset + length;
 		while (offset < end) {
-			int first = bytes[offset++] & 0xff;
-			if (first < 0x80) {
+			if (bytes[offset] >= 0) {
+				offset++;
 				continue;
 			}
-			int continuationCount;
-			int codePoint;
-			if (first >= 0xc2 && first <= 0xdf) {
-				continuationCount = 1;
-				codePoint = first & 0x1f;
-			} else if (first >= 0xe0 && first <= 0xef) {
-				continuationCount = 2;
-				codePoint = first & 0x0f;
-			} else if (first >= 0xf0 && first <= 0xf4) {
-				continuationCount = 3;
-				codePoint = first & 0x07;
-			} else {
-				throw error("Invalid UTF-8", errorColumn);
-			}
-			if (offset + continuationCount > end) {
-				throw error("Truncated UTF-8", errorColumn);
-			}
-			for (int i = 0; i < continuationCount; i++) {
-				int continuation = bytes[offset++] & 0xff;
-				if ((continuation & 0xc0) != 0x80) {
-					throw error("Invalid UTF-8", errorColumn);
-				}
-				codePoint = codePoint << 6 | continuation & 0x3f;
-			}
-			if (codePoint >= 0xd800 && codePoint <= 0xdfff || codePoint > Character.MAX_CODE_POINT
-					|| continuationCount == 2 && codePoint < 0x800
-					|| continuationCount == 3 && codePoint < 0x10000) {
-				throw error("Invalid UTF-8", errorColumn);
-			}
+			offset += (int) (utf8CodePoint(bytes, offset, end, errorColumn) & 7);
 		}
+	}
+
+	/** Returns the Unicode scalar value and byte width in one primitive, without allocating a decoded carrier. */
+	private long utf8CodePoint(byte[] bytes, int offset, int end, int errorColumn) {
+		int first = bytes[offset++] & 0xff;
+		int continuationCount;
+		int codePoint;
+		if (first >= 0xc2 && first <= 0xdf) {
+			continuationCount = 1;
+			codePoint = first & 0x1f;
+		} else if (first >= 0xe0 && first <= 0xef) {
+			continuationCount = 2;
+			codePoint = first & 0x0f;
+		} else if (first >= 0xf0 && first <= 0xf4) {
+			continuationCount = 3;
+			codePoint = first & 0x07;
+		} else {
+			throw error("Invalid UTF-8", errorColumn);
+		}
+		if (offset + continuationCount > end) {
+			throw error("Truncated UTF-8", errorColumn);
+		}
+		for (int i = 0; i < continuationCount; i++) {
+			int continuation = bytes[offset++] & 0xff;
+			if ((continuation & 0xc0) != 0x80) {
+				throw error("Invalid UTF-8", errorColumn);
+			}
+			codePoint = codePoint << 6 | continuation & 0x3f;
+		}
+		if (isSurrogate(codePoint) || codePoint > Character.MAX_CODE_POINT
+				|| continuationCount == 2 && codePoint < 0x800 || continuationCount == 3 && codePoint < 0x10000) {
+			throw error("Invalid UTF-8", errorColumn);
+		}
+		return (long) codePoint << 3 | continuationCount + 1;
 	}
 
 	/** Wraps {@code input} in a gzip decoder when it starts with the gzip magic bytes. */

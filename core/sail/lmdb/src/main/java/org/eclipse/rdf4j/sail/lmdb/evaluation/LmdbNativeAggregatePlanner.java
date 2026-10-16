@@ -79,6 +79,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -1752,28 +1753,38 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		if (expr instanceof Join) {
 			Join join = (Join) expr;
-			SlotPlan optimizerExactValues = compileJoinWithOptimizerExactValues(join, duplicateInsensitive);
-			if (optimizerExactValues != null) {
-				return optimizerExactValues;
+			TupleExpr leftArg = join.getLeftArg();
+			TupleExpr rightArg = join.getRightArg();
+			boolean rightUsesGraph = GraphFrameMapping.forSubqueries(rightArg, leftArg).length > 0;
+			boolean leftUsesGraph = GraphFrameMapping.forSubqueries(leftArg, rightArg).length > 0;
+			if (!rightUsesGraph && !leftUsesGraph) {
+				SlotPlan optimizerExactValues = compileJoinWithOptimizerExactValues(join, duplicateInsensitive);
+				if (optimizerExactValues != null) {
+					return optimizerExactValues;
+				}
+				SlotPlan foldedValuesFilter = compileJoinWithValuesFilter(join, duplicateInsensitive);
+				if (foldedValuesFilter != null) {
+					return foldedValuesFilter;
+				}
+				SlotPlan observedBelow = compileJoinWithValuesObservedBelow(join, duplicateInsensitive);
+				if (observedBelow != null) {
+					return observedBelow;
+				}
+			} else if (leftUsesGraph && !rightUsesGraph) {
+				// Compile the graph carrier before its lexical dependent, independent of textual operand order.
+				leftArg = join.getRightArg();
+				rightArg = join.getLeftArg();
 			}
-			SlotPlan foldedValuesFilter = compileJoinWithValuesFilter(join, duplicateInsensitive);
-			if (foldedValuesFilter != null) {
-				return foldedValuesFilter;
-			}
-			SlotPlan observedBelow = compileJoinWithValuesObservedBelow(join, duplicateInsensitive);
-			if (observedBelow != null) {
-				return observedBelow;
-			}
-			Set<String> shared = observedAcrossNames(join.getLeftArg(), join.getRightArg());
+			Set<String> shared = observedAcrossNames(leftArg, rightArg);
 			Set<String> previousRequired = requiredAggregateNames;
 			SlotPlan left;
 			SlotPlan right;
 			try {
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				left = compileTupleOrIsland(join.getLeftArg(), duplicateInsensitive);
+				left = compileTupleOrIsland(leftArg, duplicateInsensitive);
 				requiredAggregateNames = withRequired(previousRequired, shared);
-				right = forceInteriorIslands ? islandPreferred(join.getRightArg(), duplicateInsensitive)
-						: compileTupleOrIsland(join.getRightArg(), duplicateInsensitive);
+				right = forceInteriorIslands ? islandPreferred(rightArg, duplicateInsensitive)
+						: compileTupleOrIsland(rightArg, duplicateInsensitive);
 			} finally {
 				requiredAggregateNames = previousRequired;
 			}
@@ -1781,7 +1792,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return null;
 			}
 			if (islandsEnabled && right == EmptyPlan.INSTANCE && left != EmptyPlan.INSTANCE
-					&& !canDiscardWithoutEvaluation(join.getLeftArg())) {
+					&& !canDiscardWithoutEvaluation(leftArg)) {
 				// Empty-join elimination would discard an operand the generic engine evaluates before probing the
 				// empty side; its query-fatal effects (e.g. a non-silent SERVICE) must still surface.
 				return new DrainGuardPlan(SlotPlan.empty(), left, true);
@@ -2103,7 +2114,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr) {
-		LinkedHashSet<String> frameInputNames = new LinkedHashSet<>(Arrays.asList(subqueryFrameInputNames(expr)));
+		LinkedHashSet<String> frameInputNames = new LinkedHashSet<>();
 		if (!lateralFrameInputNames.isEmpty()) {
 			frameInputNames.addAll(Arrays.asList(lateralSubqueryFrameInputNames(expr, lateralFrameInputNames)));
 		}
@@ -2115,11 +2126,27 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames) {
+		LinkedHashSet<GraphFrameMapping> mappings = new LinkedHashSet<>(Arrays.asList(subqueryGraphFrames(expr)));
+		LinkedHashSet<String> privateParameters = new LinkedHashSet<>();
+		for (GraphFrameMapping frame : mappings) {
+			privateParameters.add(frame.parameterName());
+		}
+		Projection boundary = boundaryProjection(expr);
+		if (boundary != null && boundary.getInheritedGraphParameter() != null) {
+			privateParameters.add(boundary.getInheritedGraphParameter());
+		}
+		for (String name : frameInputNames) {
+			mappings.add(new GraphFrameMapping(name, name));
+		}
+		GraphFrameMapping[] frames = mappings.toArray(GraphFrameMapping[]::new);
 		Set<String> nestedFrameInputNames = inheritedFrameInputNames;
 		Set<String> nestedLateralFrameInputNames = inheritedLateralFrameInputNames;
-		if (frameInputNames.length > 0) {
+		if (frames.length > 0 || !privateParameters.isEmpty()) {
 			nestedFrameInputNames = new LinkedHashSet<>(inheritedFrameInputNames);
-			Collections.addAll(nestedFrameInputNames, frameInputNames);
+			nestedFrameInputNames.addAll(privateParameters);
+			for (GraphFrameMapping frame : frames) {
+				nestedFrameInputNames.add(frame.parameterName());
+			}
 			nestedFrameInputNames = Collections.unmodifiableSet(nestedFrameInputNames);
 			// the LATERAL inputs this boundary receives stay visible to the boundaries nested inside it
 			LinkedHashSet<String> lateralInputs = new LinkedHashSet<>(inheritedLateralFrameInputNames);
@@ -2140,49 +2167,35 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		for (int i = 0; i < outNames.length; i++) {
 			outSlots[i] = slot(outNames[i]);
 		}
+		int[] frameInputSlots = new int[frames.length];
+		String[] sourceNames = new String[frames.length];
+		String[] parameterNames = new String[frames.length];
+		for (int i = 0; i < frames.length; i++) {
+			sourceNames[i] = frames[i].sourceName();
+			parameterNames[i] = frames[i].parameterName();
+			frameInputSlots[i] = slot(sourceNames[i]);
+		}
 		if (slotNames.size() > MAX_NATIVE_SLOTS) {
 			slotBudgetExceeded = true;
 			return null;
 		}
-		int[] frameInputSlots = new int[frameInputNames.length];
-		for (int i = 0; i < frameInputNames.length; i++) {
-			frameInputSlots[i] = slot(frameInputNames[i]);
-		}
 		requiresExecutionContext = true;
-		return new NativeSubqueryPlan(step, outSlots, outNames, frameInputSlots, frameInputNames);
+		return new NativeSubqueryPlan(step, outSlots, outNames, frameInputSlots, sourceNames, parameterNames,
+				privateParameters.toArray(String[]::new), boundary, context);
 	}
 
-	private String[] subqueryFrameInputNames(TupleExpr expr) {
-		LinkedHashSet<String> names = new LinkedHashSet<>();
-		expr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(StatementPattern node) {
-				addContext(node.getContextVar());
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath node) {
-				addContext(node.getContextVar());
-				super.meet(node);
-			}
-
-			@Override
-			public void meet(ZeroLengthPath node) {
-				addContext(node.getContextVar());
-				super.meet(node);
-			}
-
-			private void addContext(Var contextVar) {
-				if (contextVar != null && !contextVar.hasValue() && (slots.containsKey(contextVar.getName())
-						|| inheritedFrameInputNames.contains(contextVar.getName()))) {
-					names.add(contextVar.getName());
-				}
-			}
-		});
-		return names.toArray(String[]::new);
+	private GraphFrameMapping[] subqueryGraphFrames(TupleExpr expr) {
+		Set<String> callerNames = new LinkedHashSet<>(slots.keySet());
+		callerNames.addAll(inheritedFrameInputNames);
+		return GraphFrameMapping.forSubqueries(expr, callerNames);
 	}
 
 	private static boolean isSubqueryBoundary(TupleExpr expr) {
+		Projection projection = boundaryProjection(expr);
+		return projection != null && projection.isSubquery();
+	}
+
+	private static Projection boundaryProjection(TupleExpr expr) {
 		TupleExpr node = expr;
 		if (node instanceof QueryRoot) {
 			node = ((QueryRoot) node).getArg();
@@ -2190,14 +2203,11 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		while (node instanceof Slice || node instanceof Order || node instanceof Distinct || node instanceof Reduced) {
 			node = ((org.eclipse.rdf4j.query.algebra.UnaryTupleOperator) node).getArg();
 		}
-		if (!(node instanceof Projection) || !((Projection) node).isSubquery()) {
-			return false;
-		}
 		// Compile one lexical boundary at a time. tryCompileSemanticSubquery guards recursive re-entry into the
 		// identical Projection, while nested subqueries are discovered and compiled by the child planner. Rejecting an
 		// otherwise legal boundary merely because it contains another one creates a generic island that can observe the
 		// mutable outer row and changes projected multiplicity.
-		return true;
+		return node instanceof Projection projection ? projection : null;
 	}
 
 	private SlotPlan compileTupleFunction(TupleFunctionCall call) {

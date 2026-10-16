@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 
@@ -24,8 +25,13 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CooperativeCancellation;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
 
 /**
@@ -42,15 +48,35 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private final String[] outNames;
 	private final int[] frameInputSlots;
 	private final String[] frameInputNames;
+	private final String[] frameParameterNames;
+	private final String[] privateGraphParameters;
+	private final boolean[] graphFrameInputs;
+	private final Projection projection;
+	private final QueryEvaluationContext context;
 	private final long producedMask;
 
 	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
 			String[] frameInputNames) {
+		this(step, outSlots, outNames, frameInputSlots, frameInputNames, frameInputNames, new String[0], null, null);
+	}
+
+	NativeSubqueryPlan(QueryEvaluationStep step, int[] outSlots, String[] outNames, int[] frameInputSlots,
+			String[] frameInputNames, String[] frameParameterNames, String[] privateGraphParameters,
+			Projection projection, QueryEvaluationContext context) {
 		this.step = step;
 		this.outSlots = outSlots;
 		this.outNames = outNames;
 		this.frameInputSlots = frameInputSlots;
 		this.frameInputNames = frameInputNames;
+		this.frameParameterNames = frameParameterNames;
+		this.privateGraphParameters = privateGraphParameters;
+		this.graphFrameInputs = new boolean[frameParameterNames.length];
+		List<String> graphParameters = Arrays.asList(privateGraphParameters);
+		for (int i = 0; i < frameParameterNames.length; i++) {
+			graphFrameInputs[i] = graphParameters.contains(frameParameterNames[i]);
+		}
+		this.projection = projection;
+		this.context = context;
 		long mask = 0L;
 		for (int slot : outSlots) {
 			mask |= 1L << slot;
@@ -75,7 +101,7 @@ final class NativeSubqueryPlan implements SlotPlan {
 	String describe() {
 		String nested = step instanceof LmdbNativePhysicalPlan physical ? physical.nativePhysicalPlan()
 				: step.getClass().getSimpleName();
-		return "NativeSubquery(frameInputs=" + java.util.Arrays.toString(frameInputNames) + ", step=" + nested + ")";
+		return "NativeSubquery(frameInputs=" + Arrays.toString(frameInputNames) + ", step=" + nested + ")";
 	}
 
 	void explainStrategies() {
@@ -92,20 +118,28 @@ final class NativeSubqueryPlan implements SlotPlan {
 		NativeSubqueryState state;
 		if (frameInputSlots.length == 0) {
 			NativeExecutionContext execution = executionContext(row);
-			state = execution.nativeState(this, () -> evaluateOnce(row, execution.queryBase()));
+			state = execution.nativeState(this, () -> evaluateOnce(row, frameBindings(row, execution.queryBase())));
 		} else {
 			// The boundary's solutions depend on the entry base and the frame values only, so one evaluation per
 			// distinct frame serves every outer row that carries it (a per-row open with a repeating GRAPH frame).
 			NativeExecutionContext execution = executionContextOrNull(row);
 			if (execution == null) {
-				state = evaluateOnce(row, frameBindings(row));
+				state = evaluateOnce(row, frameBindings(row, row.base));
 			} else {
 				long[] frameIds = new long[frameInputSlots.length];
+				Value[] suppliedGraphs = null;
 				for (int i = 0; i < frameInputSlots.length; i++) {
-					frameIds[i] = row.slots[frameInputSlots[i]];
+					if (graphFrameInputs[i] && GraphFrameBindings.isSupplied(row.base, frameParameterNames[i])) {
+						if (suppliedGraphs == null) {
+							suppliedGraphs = new Value[frameInputSlots.length];
+						}
+						suppliedGraphs[i] = row.base.getValue(frameParameterNames[i]);
+					} else {
+						frameIds[i] = row.slots[frameInputSlots[i]];
+					}
 				}
-				state = execution.nativeState(new FrameKey(this, frameIds),
-						() -> evaluateOnce(row, frameBindings(row)));
+				state = execution.nativeState(new FrameKey(this, frameIds, suppliedGraphs),
+						() -> evaluateOnce(row, frameBindings(row, row.base)));
 			}
 		}
 		return new NativeSubqueryCursor(this, row, state.rows.iterator());
@@ -115,31 +149,51 @@ final class NativeSubqueryPlan implements SlotPlan {
 	private static final class FrameKey {
 		private final NativeSubqueryPlan plan;
 		private final long[] frameIds;
+		private final Value[] suppliedGraphs;
 
-		FrameKey(NativeSubqueryPlan plan, long[] frameIds) {
+		FrameKey(NativeSubqueryPlan plan, long[] frameIds, Value[] suppliedGraphs) {
 			this.plan = plan;
 			this.frameIds = frameIds;
+			this.suppliedGraphs = suppliedGraphs;
 		}
 
 		@Override
 		public boolean equals(Object other) {
-			return other instanceof FrameKey key && key.plan == plan && java.util.Arrays.equals(key.frameIds, frameIds);
+			return other instanceof FrameKey key && key.plan == plan && Arrays.equals(key.frameIds, frameIds)
+					&& Arrays.equals(key.suppliedGraphs, suppliedGraphs);
 		}
 
 		@Override
 		public int hashCode() {
-			return 31 * System.identityHashCode(plan) + java.util.Arrays.hashCode(frameIds);
+			return 31 * (31 * System.identityHashCode(plan) + Arrays.hashCode(frameIds))
+					+ Arrays.hashCode(suppliedGraphs);
 		}
 	}
 
-	private BindingSet frameBindings(RowState row) {
-		QueryBindingSet bindings = new QueryBindingSet(row.base);
+	private BindingSet frameBindings(RowState row, BindingSet base) {
+		if (frameInputSlots.length == 0 && privateGraphParameters.length == 0) {
+			return base;
+		}
+		MutableBindingSet bindings = new QueryBindingSet(base);
+		for (String parameter : privateGraphParameters) {
+			if (!GraphFrameBindings.isSupplied(base, parameter)) {
+				bindings.removeBinding(parameter);
+			}
+		}
 		for (int i = 0; i < frameInputSlots.length; i++) {
+			if (graphFrameInputs[i] && GraphFrameBindings.isSupplied(base, frameParameterNames[i])) {
+				continue;
+			}
 			Value value = row.view.getValue(frameInputNames[i]);
 			if (value == null) {
-				bindings.removeBinding(frameInputNames[i]);
+				bindings.removeBinding(frameParameterNames[i]);
 			} else {
-				bindings.setBinding(frameInputNames[i], value);
+				if (graphFrameInputs[i]) {
+					bindings = GraphFrameBindings.supply(bindings, frameParameterNames[i], value);
+				} else {
+					// Identity LATERAL inputs follow the current row, without acquiring private graph provenance.
+					bindings.setBinding(frameParameterNames[i], value);
+				}
 			}
 		}
 		return bindings;
@@ -147,8 +201,10 @@ final class NativeSubqueryPlan implements SlotPlan {
 
 	private NativeSubqueryState evaluateOnce(RowState row, BindingSet input) {
 		List<BindingSet> rows = new ArrayList<>();
+		BindingSet bodyInput = projection == null ? input
+				: ProjectionQueryEvaluationStep.withInheritedGraphInput(projection, input, context);
 		try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource.attachEvaluation(row.source);
-				CloseableIteration<BindingSet> iteration = step.evaluate(input)) {
+				CloseableIteration<BindingSet> iteration = step.evaluate(bodyInput)) {
 			while (!row.cancellation.isCancellationRequested() && iteration.hasNext()) {
 				// Native projected rows may be lazy and may refer to a child-owned execution context. Resolve every
 				// authoritative Value before the child closes so replay never observes a dead id authority.

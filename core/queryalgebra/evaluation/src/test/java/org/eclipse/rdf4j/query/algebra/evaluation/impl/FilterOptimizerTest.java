@@ -517,7 +517,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		Filter spo2 = new Filter(new StatementPattern(s.clone(), p.clone(), o2.clone()), o2SmallerThanFour);
 		TupleExpr expected = new QueryRoot(
 				new Projection(new Join(spo, spo2), new ProjectionElemList(new ProjectionElem("s"),
-						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2"))));
+						new ProjectionElem("p"), new ProjectionElem("o"), new ProjectionElem("o2")), false));
 		String query = "SELECT * WHERE {?s ?p ?o . ?s ?p ?o2  . FILTER(?o > '2'^^xsd:int)  . FILTER(?o2 < '4'^^xsd:int) }";
 
 		testOptimizer(expected, query);

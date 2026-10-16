@@ -65,7 +65,6 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultWriterRegistry;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterRegistry;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
-import org.eclipse.rdf4j.repository.sail.SailQuery;
 import org.eclipse.rdf4j.rio.RDFWriterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -257,13 +256,7 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 	 */
 	@Experimental
 	protected void applyForcedLmdbExecutionStrategy(HttpServletRequest request, Query query) {
-		String strategy = request.getParameter(Protocol.LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME);
-		if (Protocol.isLmdbForcedExecutionStrategyUnset(strategy)) {
-			return;
-		}
-		if (query instanceof SailQuery sailQuery) {
-			sailQuery.setForcedLmdbExecutionStrategy(strategy);
-		}
+		ProtocolUtil.applyForcedLmdbExecutionStrategy(request, query);
 	}
 
 	protected int getMaxExecutionTime(HttpServletRequest request) throws ClientHTTPException {

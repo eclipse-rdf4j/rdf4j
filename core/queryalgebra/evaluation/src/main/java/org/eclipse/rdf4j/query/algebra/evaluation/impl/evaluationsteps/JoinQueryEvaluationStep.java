@@ -37,6 +37,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.InnerMergeJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -80,7 +82,29 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		// fatal-capable, the specialized fast paths below are skipped and the hash/nested-loop paths guarantee
 		// that the right operand is evaluated even when the left operand turns out to be empty.
 		boolean rightDiscardable = QueryEvaluationUtility.canDiscardWithoutEvaluation(join.getRightArg());
-		if (join.getRightArg() instanceof Service) {
+		GraphFrameMapping[] rightFrames = GraphFrameMapping.forSubqueries(join.getRightArg(),
+				join.getLeftArg());
+		GraphFrameMapping[] leftFrames = GraphFrameMapping.forSubqueries(join.getLeftArg(),
+				join.getRightArg());
+		if (rightFrames.length > 0 || leftFrames.length > 0) {
+			// An inherited active graph is a lexical parameter, while every ordinary subquery variable remains
+			// independent. Evaluate the graph carrier first, including when source order puts it on the right.
+			boolean carrierOnLeft = rightFrames.length > 0;
+			QueryEvaluationStep carrier = carrierOnLeft ? leftPrepared : rightPrepared;
+			QueryEvaluationStep dependent = carrierOnLeft ? rightPrepared : leftPrepared;
+			TupleExpr dependentExpression = carrierOnLeft ? join.getRightArg() : join.getLeftArg();
+			GraphFrameMapping[] frames = carrierOnLeft ? rightFrames : leftFrames;
+			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(join);
+			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(dependentExpression)) {
+				eval = bindings -> ScopedLeftJoinIterator.innerWithGraphFrames(carrier, dependent, bindings, context,
+						joinAttributes, frames);
+			} else {
+				eval = bindings -> withGuaranteedRightEvaluation(dependent, bindings,
+						tracked -> ScopedLeftJoinIterator.innerWithGraphFrames(carrier, tracked, bindings, context,
+								joinAttributes, frames));
+			}
+			join.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
+		} else if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
 					strategy);
@@ -320,6 +344,10 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 	 */
 	static String adaptiveBoundaryReason(Join join, QueryEvaluationContext context,
 			QueryAlgebraBindingAnalysis analysis) {
+		if (GraphFrameMapping.forSubqueries(join.getRightArg(), join.getLeftArg()).length > 0
+				|| GraphFrameMapping.forSubqueries(join.getLeftArg(), join.getRightArg()).length > 0) {
+			return "inherited GRAPH frame";
+		}
 		if (join.getRightArg() instanceof Service) {
 			return "SERVICE join";
 		}

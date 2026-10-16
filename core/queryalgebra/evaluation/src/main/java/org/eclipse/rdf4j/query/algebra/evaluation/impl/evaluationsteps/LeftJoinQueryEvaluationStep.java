@@ -13,7 +13,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -22,14 +21,9 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
-import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Projection;
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
@@ -40,8 +34,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MaterializedReplayJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -75,19 +69,20 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			// The right side is evaluated once with the query input (once per active GRAPH frame the left side
 			// binds for its sub-selects) and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
-			String[] frameNames = subqueryFrameNames(leftJoin);
+			GraphFrameMapping[] graphFrames = GraphFrameMapping.forSubqueries(leftJoin.getRightArg(),
+					leftJoin.getLeftArg());
 			QueryValueEvaluationStep isolatedCondition = leftJoin.hasCondition()
 					? precompileScopedCondition(strategy, leftJoin, context)
 					: null;
 			leftJoin.setAlgorithm(ScopedLeftJoinIterator.class.getSimpleName());
 			if (QueryEvaluationUtility.canDiscardWithoutEvaluation(leftJoin.getRightArg())) {
-				return bs -> new ScopedLeftJoinIterator(left, right, isolatedCondition, bs, context, joinAttributes,
-						frameNames);
+				return bs -> ScopedLeftJoinIterator.withGraphFrames(left, right, isolatedCondition, bs, context,
+						joinAttributes, graphFrames);
 			}
 			// A never-opened right operand may not suppress an observable query-fatal error.
 			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
-					trackedRight -> new ScopedLeftJoinIterator(left, trackedRight, isolatedCondition, bs, context,
-							joinAttributes, frameNames));
+					trackedRight -> ScopedLeftJoinIterator.withGraphFrames(left, trackedRight, isolatedCondition, bs,
+							context, joinAttributes, graphFrames));
 		}
 
 		// The usual evaluation below re-evaluates the right operand once per left solution with the left
@@ -165,62 +160,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		leftJoin.setAlgorithm(LeftJoinIterator.class.getSimpleName());
 		return defaultStep;
-	}
-
-	/**
-	 * Left-bound variables that a sub-select inside the right operand uses as the active graph of its statement
-	 * patterns. A sub-select is evaluated against the active graph of the GRAPH clause enclosing it, and the parser
-	 * expresses that graph as the shared context variable; the scoped evaluation must therefore carry exactly these
-	 * left-row values into the right operand, one materialization per distinct frame.
-	 */
-	private static String[] subqueryFrameNames(LeftJoin leftJoin) {
-		Set<String> leftNames = leftJoin.getLeftArg().getBindingNames();
-		if (leftNames.isEmpty()) {
-			return new String[0];
-		}
-		Set<String> frameNames = new LinkedHashSet<>();
-		leftJoin.getRightArg().visit(new AbstractQueryModelVisitor<RuntimeException>() {
-			private int subqueryDepth;
-
-			@Override
-			public void meet(Projection projection) {
-				if (!projection.isSubquery()) {
-					super.meet(projection);
-					return;
-				}
-				subqueryDepth++;
-				try {
-					super.meet(projection);
-				} finally {
-					subqueryDepth--;
-				}
-			}
-
-			@Override
-			public void meet(StatementPattern pattern) {
-				addContext(pattern.getContextVar());
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath path) {
-				addContext(path.getContextVar());
-				super.meet(path);
-			}
-
-			@Override
-			public void meet(ZeroLengthPath path) {
-				addContext(path.getContextVar());
-				super.meet(path);
-			}
-
-			private void addContext(Var contextVar) {
-				if (subqueryDepth > 0 && contextVar != null && !contextVar.hasValue()
-						&& leftNames.contains(contextVar.getName())) {
-					frameNames.add(contextVar.getName());
-				}
-			}
-		});
-		return frameNames.toArray(String[]::new);
 	}
 
 	/**
