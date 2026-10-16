@@ -69,6 +69,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
@@ -242,6 +243,97 @@ class FedXRemoteBlankNodeGraphTest {
 					assertThat(actual.getSubject()).isEqualTo(row.getValue("g"));
 					assertThat(((TripleTerm) actual.getObject()).getObject()).isEqualTo(row.getValue("g"));
 				});
+	}
+
+	@Test
+	void tripleReferenceUsesNativeSnapshotWhenUnrelatedBlankGraphExists() throws Exception {
+		initialize("sparql");
+		federation.getFederationContext().getConfig().withEnableTripleRefSupport(true);
+		try (RepositoryConnection left = first.getConnection(); RepositoryConnection right = second.getConnection()) {
+			TripleTerm leftTerm = VF.createTripleTerm(A, Q, VF.createIRI("urn:o"));
+			TripleTerm rightTerm = VF.createTripleTerm(B, Q, VF.createIRI("urn:o"));
+			left.add(A, P, leftTerm, SHARED);
+			left.add(A, Q, leftTerm, SHARED);
+			left.add(A, Q, leftTerm);
+			right.add(B, P, rightTerm, SHARED);
+			right.add(B, Q, rightTerm);
+		}
+
+		List<BindingSet> results = query(
+				"SELECT ?g ?s ?x WHERE { VALUES ?copy { 1 1 } GRAPH ?g { ?s <urn:p> <<(?x <urn:q> <urn:o>)>> } }");
+		assertThat(requests).contains(RemoteGraphSnapshot.queryString());
+		assertThat(results)
+				.allSatisfy(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("g", "s", "x"));
+		assertThat(results)
+				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("x")))
+				.containsExactlyInAnyOrder(tuple(SHARED, A, A), tuple(SHARED, A, A),
+						tuple(SHARED, B, B), tuple(SHARED, B, B));
+		assertThat(query("SELECT ?g ?s WHERE { VALUES ?x { <urn:a> } GRAPH ?g { "
+				+ "?s <urn:p> <<(?x <urn:q> <urn:o>)>> } }"))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactly(tuple(SHARED, A));
+		assertThat(query("SELECT ?g ?s WHERE { VALUES ?x { <urn:missing> } GRAPH ?g { "
+				+ "?s <urn:p> <<(?x <urn:q> <urn:o>)>> } }"))
+						.isEmpty();
+		assertThat(query("SELECT ?g ?s WHERE { VALUES (?x ?innerPredicate ?y) "
+				+ "{ (<urn:a> <urn:q> <urn:o>) } GRAPH ?g { "
+				+ "?s <urn:p> <<(?x ?innerPredicate ?y)>> } }"))
+						.extracting(row -> tuple(row.getValue("g"), row.getValue("s")))
+						.containsExactly(tuple(SHARED, A));
+		assertThat(query("SELECT ?g ?s WHERE { VALUES (?x ?innerPredicate ?y) "
+				+ "{ (<urn:a> <urn:q> <urn:missing>) } GRAPH ?g { "
+				+ "?s <urn:p> <<(?x ?innerPredicate ?y)>> } }"))
+						.isEmpty();
+	}
+
+	@Test
+	void nativeSnapshotCatalogIncludesNestedTermsOnceAcrossContexts() throws Exception {
+		initialize("local");
+		IRI nestedObject = VF.createIRI("urn:nested-object");
+		IRI outerPredicate = VF.createIRI("urn:outer");
+		TripleTerm remoteInner = VF.createTripleTerm(GRAPH, Q, nestedObject);
+		TripleTerm remoteOuter = VF.createTripleTerm(A, outerPredicate, remoteInner);
+		try (RepositoryConnection connection = first.getConnection()) {
+			connection.add(A, VF.createIRI("urn:nested-value"), remoteOuter);
+			connection.add(A, VF.createIRI("urn:nested-value"), remoteOuter, SHARED);
+		}
+
+		var federationContext = federation.getFederationContext();
+		var strategy = federationContext.createStrategy(null);
+		QueryInfo queryInfo = new QueryInfo(RemoteGraphSnapshot.queryString(), null, QueryType.SELECT, 0, false,
+				federationContext, strategy, null);
+		RemoteGraphSnapshot snapshot;
+		try (RemoteGraphSnapshot.Load load = new RemoteGraphSnapshot.Load(queryInfo)) {
+			RepositoryConnection connection = load.retain(first.getConnection());
+			TupleQuery query = connection.prepareTupleQuery(RemoteGraphSnapshot.queryString());
+			snapshot = RemoteGraphSnapshot.capture(query, "local", load);
+		} finally {
+			queryInfo.close();
+		}
+
+		NativeTripleTermSource source = snapshot;
+		Resource scopedGraph = snapshot.graphNames()
+				.stream()
+				.filter(BNode.class::isInstance)
+				.findFirst()
+				.orElseThrow();
+		assertThat(scopedGraph).isNotEqualTo(GRAPH);
+		TripleTerm inner = VF.createTripleTerm(scopedGraph, Q, nestedObject);
+		TripleTerm outer = VF.createTripleTerm(A, outerPredicate, inner);
+		try {
+			assertThat(snapshotTripleTerms(source, null, null, null)).containsExactlyInAnyOrder(outer, inner);
+			assertThat(snapshotTripleTerms(source, scopedGraph, null, null)).containsExactly(inner);
+			assertThat(snapshotTripleTerms(source, null, Q, null)).containsExactly(inner);
+			assertThat(snapshotTripleTerms(source, null, null, nestedObject)).containsExactly(inner);
+			assertThat(snapshotTripleTerms(source, A, outerPredicate, inner)).containsExactly(outer);
+			assertThat(snapshotTripleTerms(source, GRAPH, null, null)).isEmpty();
+			assertThat(snapshotTripleTerms(source, null, VF.createIRI("urn:missing-predicate"), null)).isEmpty();
+			assertThat(snapshotTripleTerms(source, null, null, VF.createIRI("urn:missing-object"))).isEmpty();
+			assertThat(snapshotTripleTerms(source, null, null, null)).doesNotContain(remoteOuter, remoteInner);
+		} finally {
+			snapshot.release();
+		}
+		assertThat(snapshotTripleTerms(source, null, null, null)).isEmpty();
 	}
 
 	@Test
@@ -674,6 +766,17 @@ class FedXRemoteBlankNodeGraphTest {
 				var rows = connection.prepareTupleQuery(text).evaluate()) {
 			return QueryResults.asList(rows);
 		}
+	}
+
+	private static List<TripleTerm> snapshotTripleTerms(NativeTripleTermSource source, Resource subject, IRI predicate,
+			Value object) {
+		List<TripleTerm> result = new ArrayList<>();
+		try (var terms = source.getTripleTerms(subject, predicate, object)) {
+			while (terms.hasNext()) {
+				result.add(terms.next());
+			}
+		}
+		return result;
 	}
 
 	private static void assertBlankGraphRows(List<BindingSet> rows, int copies) {

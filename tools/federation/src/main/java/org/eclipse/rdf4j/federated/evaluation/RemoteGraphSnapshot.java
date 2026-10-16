@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -38,8 +40,8 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -51,12 +53,13 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
  * another request, so a selected blank-node graph requires this view, including other graphs sharing its RDF terms.
  * Loading costs one dataset-sized response; no connection or remote blank-node label survives the response.
  */
-final class RemoteGraphSnapshot implements TripleSource {
+final class RemoteGraphSnapshot implements NativeTripleTermSource {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final String QUERY = "SELECT ?g ?s ?p ?o WHERE { { ?s ?p ?o } UNION { GRAPH ?g { ?s ?p ?o } } }";
 	private final Model defaultGraph = new LinkedHashModel();
 	private final Model namedGraphs = new LinkedHashModel();
+	private final Set<TripleTerm> tripleTerms = new LinkedHashSet<>();
 	private final String endpoint;
 
 	private RemoteGraphSnapshot(String endpoint) {
@@ -82,6 +85,8 @@ final class RemoteGraphSnapshot implements TripleSource {
 				IRI predicate = (IRI) row.getValue("p");
 				Value object = snapshot.scope(row.getValue("o"), identities, scope);
 				Resource graph = (Resource) snapshot.scope(row.getValue("g"), identities, scope);
+				snapshot.collectTripleTerms(subject);
+				snapshot.collectTripleTerms(object);
 				if (graph == null) {
 					snapshot.defaultGraph.add(subject, predicate, object);
 				} else {
@@ -112,6 +117,13 @@ final class RemoteGraphSnapshot implements TripleSource {
 					scope(triple.getObject(), identities, scope));
 		}
 		return value;
+	}
+
+	private void collectTripleTerms(Value value) {
+		if (value instanceof TripleTerm triple && tripleTerms.add(triple)) {
+			collectTripleTerms(triple.getSubject());
+			collectTripleTerms(triple.getObject());
+		}
 	}
 
 	static boolean isScoped(Value value) {
@@ -159,6 +171,19 @@ final class RemoteGraphSnapshot implements TripleSource {
 	}
 
 	@Override
+	public CloseableIteration<? extends TripleTerm> getTripleTerms(Resource subject, IRI predicate, Value object) {
+		List<TripleTerm> matches = new ArrayList<>();
+		for (TripleTerm triple : tripleTerms) {
+			if ((subject == null || subject.equals(triple.getSubject()))
+					&& (predicate == null || predicate.equals(triple.getPredicate()))
+					&& (object == null || object.equals(triple.getObject()))) {
+				matches.add(triple);
+			}
+		}
+		return new CloseableIteratorIteration<>(matches.iterator());
+	}
+
+	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() {
 		return new CloseableIteratorIteration<>(new ArrayList<>(namedGraphs.contexts()).iterator());
 	}
@@ -166,6 +191,7 @@ final class RemoteGraphSnapshot implements TripleSource {
 	void release() {
 		defaultGraph.clear();
 		namedGraphs.clear();
+		tripleTerms.clear();
 	}
 
 	/** Owns in-flight IO independently of the strategy's short metadata locks. */
