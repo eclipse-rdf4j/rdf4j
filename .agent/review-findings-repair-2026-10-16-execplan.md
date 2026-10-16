@@ -16,11 +16,12 @@ Each issue will have a saved failing Surefire or Failsafe report from this check
 - [done] reproduce R1 through R6 with regressions
 - [done] implement R1 through R6 candidate repairs
 - [done] review concrete Windows test workflow patch
-- [in_progress] verify repaired launcher on Windows
+- [done] verify repaired launcher on Windows
 - [done] verify R1 through R6 relevant suites
+- [done] publish reviewed repair and final evidence
 - [done] format sources and audit final scope
 
-Revision note, 2026-10-16 19:35 CEST: the user authorized committing all necessary repair changes and pushing `optimize-lmdb`. The final source manifest contains 58 reviewed repair source/test/launcher paths whose working-tree hashes match the tested snapshot. This plan is included as a publication record; generated reports, logs, evidence directories and other pre-existing untracked work remain outside the commit. R7 remains the sole in-progress acceptance item: the pushed launcher repair must pass the six-case Windows Surefire selection on the exact published SHA.
+Revision note, 2026-10-16 19:35 CEST: the user authorized committing all necessary repair changes and pushing `optimize-lmdb`. The final source manifest contains 58 reviewed repair source/test/launcher paths whose working-tree hashes match the tested snapshot. This plan is included as a publication record; generated reports, logs, evidence directories and other pre-existing untracked work remain outside the commit. At this publication checkpoint R7 was the sole remaining acceptance item; the final revision below records its exact-SHA Windows result and closes the plan.
 
 Revision note, 2026-10-16: final formatting/audit is complete. The required global Spotless invocation was interrupted after it touched five unrelated untracked XML reports under `output/release-review-73dd1d20/`; their original bytes had not been snapshotted, and the exact pre-format contents cannot be recovered from the saved evidence. Current post-format copies, hashes, bounded comparison results and thread dumps are retained under `operational/37-final-audit/01-formatter/`; no unchanged-content claim is made. A verified `-DspotlessFiles` selection then formatted exactly 43 tracked changed Java files and 14 active untracked Java sources; the pass exited 0 with zero source-byte changes and left all five XML hashes unchanged. Copyright/SPDX check passed. The final offline root `-Pquick clean install` completed with `BUILD SUCCESS` (tests skipped by quick profile). Final `git diff --check` and cached diff check passed; the tracked patch SHA and 44 tracked paths match the preformat snapshot, the staging index is empty, every pre-existing Git-visible status path remains present, and local/origin `optimize-lmdb` both remain at `7318f35f7f1daa49927c2e13162b56d4fa037eef`. R7 still awaits the separately gated launcher publication/actual Windows green; no additional commit or push occurred.
 
@@ -28,7 +29,7 @@ Revision note, 2026-10-16: the replacement operations worker completed the five-
 
 ## Surprises & Discoveries
 
-Subsequent user acceptance, 2026-10-16: “It’s ok. Those files are ok to format.” This explicitly accepts the five preexisting untracked XML report formatting changes recorded below. No restoration is required, and the unavailable original bytes remain a historical evidence limitation rather than an unresolved preservation objection. The separate launcher-only commit/push question remains pending; Windows verification is still the sole `in_progress` step.
+Subsequent user acceptance, 2026-10-16: “It’s ok. Those files are ok to format.” This explicitly accepts the five preexisting untracked XML report formatting changes recorded below. No restoration is required, and the unavailable original bytes remain a historical evidence limitation rather than an unresolved preservation objection. The prior launcher publication and Windows verification gates are closed in the final revision below.
 
 
 At implementation start the literal checkout is `/Users/havardottestad/Documents/Programming/rdf4j7`, branch `optimize-lmdb`, HEAD `03fef311962230732951ccbd592c2977b0661b04`, with no tracked diff. Numerous preexisting untracked artifacts must be retained. The supplied report describes earlier executed witnesses, not current-head in-repository failing tests.
@@ -45,6 +46,8 @@ Revision note, 2026-10-16: parent-requested sibling SELECT controls reproduce a 
 
 
 Decision: keep this checkout and branch, make no commits or pushes, and preserve all old work and evidence. Rationale: only implementation and verification are authorized; the parent performs milestone reviews and handles any external publication authorization. Date/author: 2026-10-16, Codex.
+
+Superseding decision, 2026-10-16: the user explicitly authorized committing all necessary repair changes and pushing. Source commit `678762dc2cdada2184e42a40f035edde12d8b87c` contains the 58 manifest-listed source/test paths plus this plan; no generated reports or unrelated untracked work were committed. Its exact-SHA Windows workflow passed. Any follow-up commit is documentation-only and is not itself a Windows-tested source SHA.
 
 Decision: serialize all root builds, tests and formatting against all source writers. The coordinator owns the source/build lock; the active Luna operations worker owns routine execution, logs and evidence capture. Source editing requires an explicit edit grant, and all writers acknowledge a freeze before any build. Rationale: a shared checkout and workspace-local Maven repository must not combine mixed source states. Date/author: 2026-10-16, Codex.
 
@@ -177,3 +180,6 @@ Revision note, 2026-10-16: a queued `send_message` phase grant again failed to r
 
 
 Revision note, 2026-10-16 19:35 CEST: publication scope was rechecked against `operational/37-final-audit/05-final-audit/owned-source-sha256.tsv`; all 58 listed source hashes match. The only planned commit contents are those 58 paths plus this living ExecPlan. User-authorized push and exact-SHA Windows CI verification are now active; do not close R7 until the genuine passing Windows report is retained.
+
+
+Revision note, 2026-10-16 19:45 CEST: R7 is complete. The unchanged launcher test failed on Windows source SHA `7318f35f7f1daa49927c2e13162b56d4fa037eef` (run 38916691569, six tests/two failures), then passed on repair source SHA `678762dc2cdada2184e42a40f035edde12d8b87c` in push run 38941276630. The artifact contains the genuine Surefire TXT/XML report at `.agent/evidence/review-findings-repair-2026-10-16/operational/38-windows-final/run-38941276630/uploaded-artifact-files/core/sail/lmdb/target/surefire-reports/`; its summary is six tests, zero failures/errors/skips. The offline dependency-resolution attempt was followed by successful online dependency retry and offline confirmation. Full Windows logs, raw artifact ZIP, metadata, hashes, and the appended root evidence are preserved. All findings and plan acceptance criteria are complete; the source commit was already pushed and the evidence index remains local.
