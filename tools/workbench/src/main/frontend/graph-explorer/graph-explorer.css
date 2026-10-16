@@ -1311,6 +1311,12 @@ html[data-theme="dark"] .graph-explorer {
   animation: summary-enter var(--motion-medium) var(--ease-out) both;
 }
 
+/* Opened by a click that may still become a double click: the second press reaches the node the card opened over. */
+.graph-explorer #graph-explorer-app .node-details.is-arriving,
+.graph-explorer #graph-explorer-app .node-details.is-arriving * {
+  pointer-events: none;
+}
+
 .graph-explorer #graph-explorer-app .node-details-header {
   display: flex;
   align-items: flex-start;

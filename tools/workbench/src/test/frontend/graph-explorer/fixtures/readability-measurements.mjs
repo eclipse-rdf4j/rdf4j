@@ -17,7 +17,7 @@ import {SpatialGrid} from '../../../../main/frontend/graph-explorer/spatial-grid
  * the historical metric's samples that omitted the first/last 8% of an edge.
  * Edge-edge crossings remain a 24-segment approximation, explicitly named.
  */
-export function routeReadability(graph, positions, bends) {
+export function routeReadability(graph, positions, bends, routes = new Map()) {
   const placed = graph.nodes.map(n => ({...n, ...positions.get(n.id)}));
   const byId = new Map(placed.map(n => [n.id, n])), ports = computeEdgePorts(placed, graph.edges);
   const nodeIndex = new SpatialGrid(256), curveIndex = new SpatialGrid(256);
@@ -28,13 +28,17 @@ export function routeReadability(graph, positions, bends) {
   const orientation = (a, b, c) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
   const intersects = (a, b, c, d) => orientation(a, b, c) * orientation(a, b, d) < -1e-6 && orientation(c, d, a) * orientation(c, d, b) < -1e-6;
   for (const e of graph.edges) {
-    const c = edgeGeometry(byId.get(e.source), byId.get(e.target), bends.get(e.id) ?? 0, ports.get(edgePortKey(e.id, e.source)), ports.get(edgePortKey(e.id, e.target)));
-    const b = quadraticBounds(c), points = Array.from({length: 25}, (_, i) => quadraticPoint(c.start, c.control, c.end, i / 24));
+    const c = edgeGeometry(byId.get(e.source), byId.get(e.target), bends.get(e.id) ?? 0, ports.get(edgePortKey(e.id, e.source)), ports.get(edgePortKey(e.id, e.target)), routes.get(e.id));
+    // A routed arrow (moved ends or a detour) is a polyline: measure the drawn segments exactly.
+    const routed = Boolean(c.points);
+    const b = routed ? polylineBounds(c.points) : quadraticBounds(c);
+    const points = routed ? c.points : Array.from({length: 25}, (_, i) => quadraticPoint(c.start, c.control, c.end, i / 24));
     let length = 0;
     for (let i = 1; i < points.length; i++) length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
     detours.push(length / Math.max(1, Math.hypot(c.start.x - c.end.x, c.start.y - c.end.y)));
     for (const i of nodeIndex.search(b.minX, b.minY, b.maxX, b.maxY)) {
-      if (placed[i].id !== e.source && placed[i].id !== e.target && quadraticIntersectsBounds(c, boxes[i])) {
+      const hit = routed ? points.some((p, k) => k && segmentHitsBounds(points[k - 1], p, boxes[i])) : quadraticIntersectsBounds(c, boxes[i]);
+      if (placed[i].id !== e.source && placed[i].id !== e.target && hit) {
         exactRoutedObstructions++;
         obstructionsByEdge[e.id] = (obstructionsByEdge[e.id] ?? 0) + 1;
       }
@@ -52,4 +56,21 @@ export function routeReadability(graph, positions, bends) {
   }
   detours.sort((a, b) => a - b);
   return {exactRoutedObstructions, sampledRoutedCrossings, p95RouteDetour: detours[Math.floor(detours.length * .95)] ?? 1, obstructionsByEdge};
+}
+
+function polylineBounds(points) {
+  return {minX: Math.min(...points.map(p => p.x)), minY: Math.min(...points.map(p => p.y)), maxX: Math.max(...points.map(p => p.x)), maxY: Math.max(...points.map(p => p.y))};
+}
+
+/** Whether segment a–b meets the bounds (Liang–Barsky). */
+function segmentHitsBounds(a, b, box) {
+  let lo = 0, hi = 1;
+  for (const [axis, min, max] of [['x', box.minX, box.maxX], ['y', box.minY, box.maxY]]) {
+    const delta = b[axis] - a[axis];
+    if (Math.abs(delta) < 1e-12) { if (a[axis] < min || a[axis] > max) return false; continue; }
+    const t0 = (min - a[axis]) / delta, t1 = (max - a[axis]) / delta;
+    lo = Math.max(lo, Math.min(t0, t1)); hi = Math.min(hi, Math.max(t0, t1));
+    if (hi < lo) return false;
+  }
+  return true;
 }

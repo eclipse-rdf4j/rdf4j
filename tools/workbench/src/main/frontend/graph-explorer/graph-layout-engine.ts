@@ -14,18 +14,18 @@ import { componentGraphs, packLayoutComponents, layoutNodeFixed } from './graph-
 import { computeMultilevelLayout } from './graph-layout-multilevel.ts';
 import { computeGroupedLayout, layoutNeighborhoods } from './graph-layout-groups.ts';
 import { computeSparseLayout } from './graph-layout-sparse.ts';
-import { optimizeEdgeBends } from './graph-geometry.ts';
 import { refineLayoutGeometry } from './graph-layout.ts';
 import {layoutScoreGeometry, layoutCandidateScore} from './graph-layout-score.ts';
 import {improveLayoutReadability} from './graph-layout-readability.ts';
 import {computeHubNeighborhoodLayout} from './graph-layout-hub.ts';
 import {computeSquareLayout} from './graph-layout-square.ts';
-import {repairRoutedObstructions, routedEdgesOf, routingPasses} from './graph-layout-routed-repair.ts';
+import {repairRoutedObstructions, routedEdgesOf} from './graph-layout-routed-repair.ts';
 import {compactFans, peelSatellites, placeSatellites, similaritySprings} from './graph-layout-satellites.ts';
 import {keepPreviousOrientation, orientToViewport} from './graph-layout-orientation.ts';
 import {layoutSubset} from './graph-layout-selection.ts';
 import type { EdgeRoute, Graph, PointerPosition } from './graph-types.ts';
-import {steppedRoutes} from './graph-stepped-routing.ts';
+import {computeOrganicLayout, refineOrganicLayout} from './graph-layout-organic.ts';
+import {routeEdges as routeArrows} from './graph-edge-router.ts';
 
 export type LayoutOptions = {
   incremental?: boolean;
@@ -42,17 +42,20 @@ export type LayoutOptions = {
   halos?: Map<string, number>;
   /** Extra force-layout springs that are not statements (similarity); never drawn, scored or routed. */
   springs?: readonly {source: string; target: string; ideal: number; elasticity: number}[];
+  /** With `incremental`: the cards this change added (they have only seeded positions). */
+  newNodeIds?: Set<string>;
 };
+/** Graphs up to this many cards are laid out by the organic engine (`graph-layout-organic.ts`). */
+export const ORGANIC_LIMIT = 1500;
 export type LayoutResult = {positions: Map<string, PointerPosition>; bends: Map<string, number>; routes?: Map<string, EdgeRoute>; grouped?: boolean; fanned?: boolean; fixedOverlaps?: number; protectedNodeIds?: Set<string>};
 
 /**
- * Bends for the drawn edges: statement-link springs shape the layout but are never drawn, laned or ported, and links
- * to class hubs are collapsed on the canvas.
+ * Lanes and routes for the drawn edges (`graph-edge-router.ts`): statement-link springs shape the layout but are never
+ * drawn, laned or ported, and links to class hubs are collapsed on the canvas.
  */
-function routeEdges(graph: Graph, positions: Map<string, PointerPosition>, preferredPasses: number) {
+function routeEdges(graph: Graph, positions: Map<string, PointerPosition>) {
   const edges = routedEdgesOf(graph), placed = graph.nodes.map(n => ({...n, ...positions.get(n.id)}));
-  const bends = optimizeEdgeBends(placed, edges, routingPasses(edges.length, preferredPasses));
-  return {bends, routes: steppedRoutes(placed, edges, bends)};
+  return routeArrows(placed, edges);
 }
 
 /**
@@ -142,7 +145,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     // because its abstract group bounding boxes interleave.
     if (moved) repair = computeGroupedLayout(graph, options) ?? repair;
     checked(repair);
-    if (graph.nodes.length <= 1500) Object.assign(repair, routeEdges(graph, repair.positions, 1));
+    if (graph.nodes.length <= 1500) Object.assign(repair, routeEdges(graph, repair.positions));
     return repair;
   }
   // Square, and Hierarchy of a selection, shape a block of nodes (the selection, or every unpinned node) and leave the
@@ -154,7 +157,32 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
       const {computeGraphvizLayout} = await import('./graph-layout-graphviz.ts');
       return (await computeGraphvizLayout(part, 'dot')).positions;
     });
-    return {positions, ...(graph.nodes.length <= 1500 ? routeEdges(graph, positions, 1) : {bends: new Map<string, number>()})};
+    return {positions, ...(graph.nodes.length <= 1500 ? routeEdges(graph, positions) : {bends: new Map<string, number>()})};
+  }
+  const organic = (options.mode ?? 'network') === 'network' && !options.groups?.length && graph.nodes.length <= ORGANIC_LIMIT;
+  if (organic && options.localNodeIds?.size && !options.refine) {
+    if (options.mode) {
+      // Organize asked for on a selection: the selection becomes a block of its own, centred where it was and moved
+      // clear of the other cards.
+      const positions = await layoutSubset(graph, options.localNodeIds, part => computeOrganicLayout(part, {...options, localNodeIds: null, incremental: false}).positions);
+      return {positions, ...routeEdges(graph, positions)};
+    }
+    // Cards to place among the others (values shown, results added): placed anew beside the cards they link to, the
+    // others staying where they are.
+    const result = computeOrganicLayout(graph, {...options, incremental: true, movableNodeIds: options.localNodeIds, newNodeIds: options.localNodeIds});
+    checked(result);
+    return Object.assign(result, routeEdges(graph, result.positions));
+  }
+  if (organic && options.refine) {
+    const result = refineOrganicLayout(graph, options);
+    checked(result);
+    return Object.assign(result, routeEdges(graph, result.positions));
+  }
+  if (organic) {
+    const result = computeOrganicLayout(graph, options);
+    if (!options.incremental && !options.refine && !graph.nodes.some(node => node.pinned)) keepPreviousOrientation(graph, result.positions);
+    checked(result);
+    return Object.assign(result, routeEdges(graph, result.positions));
   }
   const constrained = graph.nodes.some(node => layoutNodeFixed(node, options));
   if (options.refine && graph.nodes.length <= 1500) {
@@ -163,7 +191,7 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     const result = checked(computeSparseLayout(graph, {...options, repairOnly: true}));
     improveLayoutReadability(graph, result.positions, options, layoutNeighborhoods(graph, options).groups);
     repairRoutedObstructions(graph, result.positions, options);
-    Object.assign(result, routeEdges(graph, result.positions, 1));
+    Object.assign(result, routeEdges(graph, result.positions));
     return result;
   }
   if (graph.nodes.length > 1500) {
@@ -206,6 +234,6 @@ export async function computeGraphLayout(graph: Graph, options: LayoutOptions = 
     repairRoutedObstructions(cleanupGraph, result.positions, options);
   }
   // Routing is worker-only and bounded. Medium graphs used to skip this pass.
-  Object.assign(result, routeEdges(graph, result.positions, 2));
+  Object.assign(result, routeEdges(graph, result.positions));
   return result;
 }

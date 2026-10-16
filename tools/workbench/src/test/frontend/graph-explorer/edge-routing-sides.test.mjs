@@ -36,16 +36,39 @@ test('hidden values and classes never bend the drawn arrows', () => {
   const graph = badExportGraph(hidden);
   const drawn = canvasGraph(graph, false);
   assert.equal(drawn.nodes.length, 10);
-  const bends = routeDrawnEdges(graph, false, 3);
-  assert.deepEqual([...bends].sort(), [...routeDrawnEdges(drawn, false, 3)].sort(), 'hidden cards changed the routing');
+  const routed = routeDrawnGraph(graph, false), alone = routeDrawnGraph(drawn, false);
+  assert.deepEqual([...routed.bends].sort(), [...alone.bends].sort(), 'hidden cards changed the lanes');
+  assert.deepEqual([...routed.routes].sort(), [...alone.routes].sort(), 'hidden cards changed the routes');
+  // Acme→Oslo runs along a row with Gizmo between them: the arrow detours, through the empty row below rather than the
+  // narrow gap under Carol, and is barely longer than the straight line.
   const acmeOslo = `${iri('Acme')}|${iri('locatedIn')}|${iri('Oslo')}`;
-  const curve = curveOf(drawn, bends, acmeOslo);
   const byId = new Map(drawn.nodes.map((node) => [node.id, node]));
-  const length = Math.hypot(byId.get(iri('Oslo')).x - byId.get(iri('Acme')).x, byId.get(iri('Oslo')).y - byId.get(iri('Acme')).y);
-  assert.ok(Math.abs(bends.get(acmeOslo)) <= length * 0.5, `Acme→Oslo bend ${bends.get(acmeOslo)} for length ${length}`);
-  assert.ok(curve.control.y > Math.max(curve.start.y, curve.end.y), 'the detour must use the empty row below, not arc over Carol');
-  assert.equal(routeDrawnEdges(graph, true, 3).size, 27, 'with Values on every edge is routed');
+  const acme = byId.get(iri('Acme')), oslo = byId.get(iri('Oslo'));
+  const route = routed.routes.get(acmeOslo);
+  assert.ok(route && route.points.length > 2, 'Acme→Oslo is routed round Gizmo');
+  assert.ok(route.points.slice(1, -1).every((p) => p.y > Math.max(acme.y, oslo.y)), 'the detour must use the empty row below, not pass under Carol');
+  const length = route.points.reduce((sum, p, i) => (i ? sum + Math.hypot(p.x - route.points[i - 1].x, p.y - route.points[i - 1].y) : 0), 0);
+  assert.ok(length <= Math.hypot(oslo.x - acme.x, oslo.y - acme.y) * 1.3, `Acme→Oslo detour ${length.toFixed(0)} px`);
+  for (const node of drawn.nodes) {
+    if (node.id === acme.id || node.id === oslo.id) continue;
+    const size = graphNodeSize(node);
+    assert.ok(!route.points.some((p, i) => i && segmentMeetsCard(route.points[i - 1], p, node, size)), `the detour crosses ${node.label}`);
+  }
+  assert.equal(routeDrawnEdges(graph, true).size, 27, 'with Values on every edge is routed');
 });
+
+/** Whether segment a–b meets a card (Liang–Barsky). */
+function segmentMeetsCard(a, b, node, size) {
+  let lo = 0, hi = 1;
+  for (const [axis, half] of [['x', size.width / 2], ['y', size.height / 2]]) {
+    const delta = b[axis] - a[axis], min = node[axis] - half, max = node[axis] + half;
+    if (Math.abs(delta) < 1e-12) { if (a[axis] < min || a[axis] > max) return false; continue; }
+    const t0 = (min - a[axis]) / delta, t1 = (max - a[axis]) / delta;
+    lo = Math.max(lo, Math.min(t0, t1)); hi = Math.min(hi, Math.max(t0, t1));
+    if (hi < lo) return false;
+  }
+  return true;
+}
 
 test('layout routing ignores the statement-link springs the app adds for reifiers', async () => {
   const node = (id, x, y) => ({ id, label: id, kind: 'iri', x, y });

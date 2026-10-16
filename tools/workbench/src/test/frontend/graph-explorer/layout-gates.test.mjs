@@ -18,20 +18,26 @@ import { computeGraphLayout } from '../../../main/frontend/graph-explorer/graph-
 import { demoGraph } from './fixtures/layout-demo-graph.mjs';
 import { sharedHubNetwork } from './fixtures/layout-networks.mjs';
 import { conferenceHub, geoTree, productCatalog, socialCommunities, studentCourses } from './fixtures/layout-shapes.mjs';
+import { hashHub } from './fixtures/layout-hash-hub.mjs';
 import { layoutMetrics } from './support/benchmark-layout.mjs';
 
-// crossings and edgeNode: straight-line conflicts; routed: routed arrows through cards; area in px².
+// crossings and edgeNode: straight-line conflicts; routed: arrows as drawn (ports, lanes, routes) through cards; area
+// in px². The stress-and-fans engine (2026-10-15, `.agent/execplans/workbench-graph-layout-engine-v2-execplan.md`) took
+// area down by 37–66 % and routed arrows through cards to 0–1 on every shape but the shared hubs, for 4–15 % more
+// straight-line crossings on the dense random graphs (conference, students, products, social) and 136 % more on the
+// shared-hub graph; a straight line through a card no longer means an arrow through a card, as the router moves the
+// arrow's ends to the sides that face each other (a hub's column of leaves) or detours it.
 const BUDGETS = [
-  ['demo graph, values on', () => canvasGraph(demoGraph(), true), { crossings: 0, edgeNode: 0, routed: 0, area: 0.95e6 }],
-  ['demo graph, values off', () => canvasGraph(demoGraph(), false), { crossings: 0, edgeNode: 0, routed: 0, area: 0.45e6 }],
-  ['three-level tree', () => geoTree(), { crossings: 0, edgeNode: 0, routed: 0, area: 11.5e6 }],
-  ['three-level tree, values on', () => canvasGraph(geoTree(5, 4, 3, { values: true }), true), { crossings: 1, edgeNode: 0, routed: 0, area: 12.5e6 }],
-  // Moving cards off routed arrows (routed 49 → 21) spreads the drawing (area 2.4M → 3.2M px²): a deliberate trade.
-  ['conference hub', () => conferenceHub(), { crossings: 300, edgeNode: 95, routed: 23, area: 3.5e6 }],
-  ['students and courses', () => studentCourses(), { crossings: 310, edgeNode: 26, routed: 2, area: 2.8e6 }],
-  ['product catalog', () => productCatalog(), { crossings: 100, edgeNode: 8, routed: 1, area: 2.3e6 }],
-  ['social communities', () => socialCommunities(), { crossings: 82, edgeNode: 24, routed: 2, area: 3.3e6 }],
-  ['shared hubs (237 nodes)', () => sharedHubNetwork(), { crossings: 100, edgeNode: 90, routed: 15, area: 31e6 }],
+  ['expanded hub with long labels', () => hashHub(), { crossings: 0, edgeNode: 12, routed: 0, area: 2.1e6 }],
+  ['demo graph, values on', () => canvasGraph(demoGraph(), true), { crossings: 0, edgeNode: 0, routed: 0, area: 1.03e6 }],
+  ['demo graph, values off', () => canvasGraph(demoGraph(), false), { crossings: 0, edgeNode: 0, routed: 0, area: 0.37e6 }],
+  ['three-level tree', () => geoTree(), { crossings: 0, edgeNode: 0, routed: 0, area: 4.0e6 }],
+  ['three-level tree, values on', () => canvasGraph(geoTree(5, 4, 3, { values: true }), true), { crossings: 0, edgeNode: 0, routed: 0, area: 11.4e6 }],
+  ['conference hub', () => conferenceHub(), { crossings: 313, edgeNode: 73, routed: 0, area: 2.23e6 }],
+  ['students and courses', () => studentCourses(), { crossings: 355, edgeNode: 41, routed: 0, area: 1.29e6 }],
+  ['product catalog', () => productCatalog(), { crossings: 112, edgeNode: 17, routed: 0, area: 1.2e6 }],
+  ['social communities', () => socialCommunities(), { crossings: 93, edgeNode: 8, routed: 1, area: 2.83e6 }],
+  ['shared hubs (237 nodes)', () => sharedHubNetwork(), { crossings: 236, edgeNode: 188, routed: 31, area: 23e6 }],
 ];
 
 for (const [name, build, budget] of BUDGETS) {

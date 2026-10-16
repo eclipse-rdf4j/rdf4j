@@ -107,6 +107,56 @@ test('a double-click loads the neighbours of a node', async ({ page }) => {
     await expect(explorer.locator('.status-text')).toHaveText('Added 1 linked node.');
 });
 
+/** Alice and Bob only, Bob dragged to where the details card's Explore link appears. */
+async function openWithBobUnderTheCard(page) {
+    const explorer = await openGraphPage(page);
+    await explorer.getByRole('button', { name: 'Query editor' }).click();
+    await explorer.locator('#sparql').fill(
+        'SELECT ?source ?predicate ?target WHERE { BIND(<http://example.org/gestures/alice> AS ?source) ?source ?predicate ?target }');
+    await explorer.getByRole('button', { name: 'Run query' }).click();
+    await expect(explorer.locator('.graph-node')).toHaveCount(2);
+    await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+    await page.waitForTimeout(800);
+    await node(explorer, 'Alice').click();
+    const explore = await centre(explorer.locator('.node-details').getByRole('link', { name: 'Explore' }));
+    await explorer.getByRole('button', { name: 'Close details' }).click();
+    await page.waitForTimeout(600);
+    const bob = await centre(node(explorer, 'Bob'));
+    const empty = await emptyCanvasPoint(explorer);
+    expect(empty).not.toBeNull();
+    await page.mouse.move(empty.x, empty.y);
+    await page.mouse.down();
+    await page.mouse.move(empty.x + explore.x - bob.x, empty.y + explore.y - bob.y, { steps: 8 });
+    await page.mouse.up();
+    const under = await centre(node(explorer, 'Bob'));
+    expect(Math.hypot(under.x - explore.x, under.y - explore.y)).toBeLessThan(4);
+    return explorer;
+}
+
+test('a double-click loads the neighbours of a node the details card opens over', async ({ page }) => {
+    const explorer = await openWithBobUnderTheCard(page);
+    // The first click opens the card over Bob; the second still belongs to Bob.
+    await node(explorer, 'Bob').dblclick();
+    await expect(node(explorer, 'Acme')).toBeAttached();
+    await expect(explorer.locator('.status-text')).toHaveText('Added 1 linked node.');
+    expect(page.url()).not.toContain('/explore');
+});
+
+test('a click on a node the details card opens over slides the node out from under it', async ({ page }) => {
+    const explorer = await openWithBobUnderTheCard(page);
+    await node(explorer, 'Bob').click();
+    const card = explorer.locator('.node-details');
+    await expect(card.locator('h3')).toHaveText('Bob');
+    // Once a double click can no longer follow, the card takes clicks again and Bob is beside it.
+    await expect(card).not.toHaveClass(/is-arriving/);
+    await expect.poll(async () => {
+        const box = await card.boundingBox();
+        const bob = await centre(node(explorer, 'Bob'));
+        return bob.x < box.x || bob.y > box.y + box.height;
+    }).toBe(true);
+    await expect(explorer.locator('.graph-node')).toHaveCount(2);
+});
+
 test('the legend selects the nodes of a type', async ({ page }) => {
     const explorer = await openGraphPage(page);
     const person = explorer.locator('.legend button', { hasText: 'Person' });

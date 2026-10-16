@@ -13,9 +13,8 @@
 import { LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { canvasGraph } from "./graph-canvas-scope.ts";
 import { withCollapsedClassLinks } from "./graph-class-links.ts";
-import { edgeRoutingPasses, optimizeEdgeBends } from "./graph-geometry.ts";
+import { routeEdges } from "./graph-edge-router.ts";
 import type { EdgeRoute, Graph } from "./graph-types.ts";
-import { steppedRoutes } from "./graph-stepped-routing.ts";
 
 /**
  * Routes the drawn edges around the drawn cards only. Hidden values and classes (Values off) are not obstacles: a
@@ -23,18 +22,14 @@ import { steppedRoutes } from "./graph-stepped-routing.ts";
  * straight edges, so routing its hundreds of thousands of edges would only cost seconds. Links to class hubs are
  * collapsed (`withCollapsedClassLinks`) and are not routed either.
  */
-export function routeDrawnEdges(graph: Graph, showValues: boolean, preferredPasses: number) {
-  const drawn = canvasGraph(graph, showValues);
-  if (drawn.nodes.length >= LARGE_GRAPH_NODES) return new Map<string, number>();
-  const shown = withCollapsedClassLinks(drawn).graph;
-  return optimizeEdgeBends(shown.nodes, shown.edges, edgeRoutingPasses(shown.edges.length, preferredPasses));
+export function routeDrawnEdges(graph: Graph, showValues: boolean) {
+  return routeDrawnGraph(graph, showValues).bends;
 }
 
-/** Bends for the drawn edges, plus stepped routes for the arrows no single bend draws well. */
-export function routeDrawnGraph(graph: Graph, showValues: boolean, preferredPasses: number): { bends: Map<string, number>; routes: Map<string, EdgeRoute> } {
+/** Bends (lanes of parallel arrows) and routes (moved ends or detours) for the arrows the canvas draws. */
+export function routeDrawnGraph(graph: Graph, showValues: boolean): { bends: Map<string, number>; routes: Map<string, EdgeRoute> } {
   const drawn = canvasGraph(graph, showValues);
   if (drawn.nodes.length >= LARGE_GRAPH_NODES) return { bends: new Map(), routes: new Map() };
   const shown = withCollapsedClassLinks(drawn).graph;
-  const bends = optimizeEdgeBends(shown.nodes, shown.edges, edgeRoutingPasses(shown.edges.length, preferredPasses));
-  return { bends, routes: steppedRoutes(shown.nodes, shown.edges, bends) };
+  return routeEdges(shown.nodes, shown.edges);
 }

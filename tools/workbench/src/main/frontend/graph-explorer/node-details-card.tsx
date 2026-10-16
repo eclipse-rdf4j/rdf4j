@@ -25,6 +25,8 @@ export type NodeDetailsCardProps = {
   expanding: boolean;
   /** Whether the node is on the canvas (only drawn nodes can be pinned). */
   drawn: boolean;
+  /** Just opened by a click that may still become a double click: presses go through to the canvas below. */
+  arriving?: boolean;
   cardRef: Ref<HTMLElement>;
   onClose: () => void;
   onCopy: (text: string) => void;
@@ -61,6 +63,7 @@ export function NodeDetailsCard({
   exploreHref,
   expanding,
   drawn,
+  arriving,
   cardRef,
   onClose,
   onCopy,
@@ -75,7 +78,7 @@ export function NodeDetailsCard({
   return (
     <aside
       ref={cardRef}
-      className="node-details"
+      className={`node-details${arriving ? " is-arriving" : ""}`}
       aria-label={`Details of ${node.label}`}
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}

@@ -41,6 +41,7 @@ import { DataViews, recommendedViewOf, type DataViewMode } from "./data-views.ts
 import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
 import { startGraphLayout } from "./graph-layout-client.ts";
+import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { loadedLinkCounts, loadedLinksOf, moreLinks } from "./link-counts.ts";
 import { cssColorResolver, downloadFile, graphSvg, graphTurtle, svgToPng } from "./graph-export.ts";
@@ -171,6 +172,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   >(new Set());
   const [viewMode, setViewMode] = useState<ViewMode>("graph");
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  /** The details card just opened under a click that may still become a double click (see `selectNode`). */
+  const [detailsArriving, setDetailsArriving] = useState(false);
   const [navigatorOpen, setNavigatorOpen] = useState(false);
   const [provenanceOpen, setProvenanceOpen] = useState(false);
   const [provenanceBatches, setProvenanceBatches] = useState<LoadBatch[]>([]);
@@ -286,6 +289,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   const suppressNodeClickUntilRef = useRef(0);
   /** After a double-click drag, the browser's dblclick must not expand the node. */
   const suppressNodeDoubleClickUntilRef = useRef(0);
+  /** Ends the double-click window of a node click: the card takes clicks again and the node slides out from under it. */
+  const detailsArrivalTimerRef = useRef(0);
   /** A Shift-, ⌘- or Ctrl-drag's selection box (client coordinates), drawn into `marqueeRectRef` without re-rendering. */
   const marqueeRef = useRef<{
     pointerId: number;
@@ -582,8 +587,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   }, []);
 
   /** Curved-edge routing for a graph shown again (undo, restore); only the drawn cards are obstacles. */
-  const applyRouting = (target: Graph, passes: number) => {
-    const routed = routeDrawnGraph(target, showValuesRef.current, passes);
+  const applyRouting = (target: Graph) => {
+    const routed = routeDrawnGraph(target, showValuesRef.current);
     setEdgeBends(routed.bends);
     setEdgeRoutes(routed.routes);
   };
@@ -625,7 +630,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     setHoveredNodeId(null);
     setPathHighlight(null);
     dismissContextMenu(true);
-    applyRouting(snapshot.graph, 2);
+    applyRouting(snapshot.graph);
   }, [animateProgrammaticGraph, dismissContextMenu, invalidateAsyncRequests]);
 
   const history = useUndoHistory(makeHistorySnapshot, applyHistorySnapshot, HISTORY_LIMIT);
@@ -642,7 +647,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   const showStored = (saved: WorkspacePayload) => {
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
-    applyRouting(saved.graph, 2);
+    applyRouting(saved.graph);
     const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + saved.graph.revision + 1 };
     animateProgrammaticGraph(restoredGraph, saved.transform, { skipLayout: true, duration: 0 });
     setQuery(saved.query);
@@ -699,6 +704,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     return new RdfExplorer(endpoint,languages,(queryToRun,signal)=>queryRepository(endpoint,queryToRun,signal),graphScope,wikidataEndpoint,true,workspaceScope,extraLabelProperties);
   }, [endpoint,languages,graphScope,wikidataEndpoint,workspaceScope,extraLabelProperties,metadataEpoch]);
   useEffect(() => () => explorer.dispose(), [explorer]);
+  useEffect(() => () => window.clearTimeout(detailsArrivalTimerRef.current), []);
   useEffect(() => {
     const controller=new AbortController();
     const current=graphRef.current;
@@ -978,6 +984,17 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
           }),
     [drawnGraph.statementLinks, edgeCurves, largeGraph, nodeById],
   );
+  /** What a click or hover near a line finds: the edges, and each statement's connector standing for the statement. */
+  const edgeHitCurves = useMemo(() => {
+    const curves = new Map(edgeCurves);
+    const statementOf = new Map<string, string>();
+    for (const { link, curve } of statementConnectors) {
+      const key = `${STATEMENT_LINK_EDGE_PREFIX}${link.id}`;
+      curves.set(key, curve);
+      statementOf.set(key, link.statementEdgeId);
+    }
+    return { curves, statementOf };
+  }, [edgeCurves, statementConnectors]);
   const statementText = (link: StatementLink) =>
     `${metadataNodeById.get(link.subject)?.label ?? compactTerm(link.subject)} ${
       graph.edges.find((edge) => edge.id === link.statementEdgeId)?.label ?? predicateLabel(link.statementPredicate)
@@ -1125,7 +1142,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
         },
       ]),
     );
-    const movableEntityIds = new Set<string>();
+    let movableEntityIds = new Set<string>();
     const newEntityIds = new Set<string>();
     if (isIncremental) {
       graphSnapshot.nodes.forEach((node) => {
@@ -1133,82 +1150,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
           newEntityIds.add(node.id);
         }
       });
-      const neighborsByEntityId = new Map<string, Set<string>>();
-      graphSnapshot.edges.forEach((edge) => {
-        const sourceNeighbors = neighborsByEntityId.get(edge.source);
-        if (sourceNeighbors) sourceNeighbors.add(edge.target);
-        else neighborsByEntityId.set(edge.source, new Set([edge.target]));
-        const targetNeighbors = neighborsByEntityId.get(edge.target);
-        if (targetNeighbors) targetNeighbors.add(edge.source);
-        else neighborsByEntityId.set(edge.target, new Set([edge.source]));
-      });
-
-      // Keep expansion local, but give the affected cluster enough freedom to
-      // untangle itself. Immediate neighbours are mandatory; a bounded second
-      // or third hop and nearby spatial blockers are admitted by priority.
-      const mandatoryEntityIds = new Set([
-        intent.anchorId,
-        ...newEntityIds,
-        ...(neighborsByEntityId.get(intent.anchorId) ?? []),
-      ]);
-      const depthByEntityId = new Map<string, number>();
-      const frontier = [intent.anchorId, ...newEntityIds];
-      frontier.forEach((entityId) => depthByEntityId.set(entityId, 0));
-      const hopLimit = newEntityIds.size >= 10 ? 3 : 2;
-      for (let cursor = 0; cursor < frontier.length; cursor += 1) {
-        const entityId = frontier[cursor];
-        const depth = depthByEntityId.get(entityId) ?? 0;
-        if (depth >= hopLimit) continue;
-        (neighborsByEntityId.get(entityId) ?? []).forEach((neighborId) => {
-          if (depthByEntityId.has(neighborId)) return;
-          depthByEntityId.set(neighborId, depth + 1);
-          frontier.push(neighborId);
-        });
-      }
-
-      const anchor = graphSnapshot.nodes.find(
-        (node) => node.id === intent.anchorId,
-      );
-      const spatialRadius = 420 + Math.min(180, newEntityIds.size * 12);
-      const candidates = graphSnapshot.nodes
-        .filter((node) => !mandatoryEntityIds.has(node.id))
-        .map((node) => ({
-          id: node.id,
-          depth: depthByEntityId.get(node.id) ?? Number.POSITIVE_INFINITY,
-          distance:
-            anchor?.x === undefined ||
-            anchor.y === undefined ||
-            node.x === undefined ||
-            node.y === undefined
-              ? Number.POSITIVE_INFINITY
-              : Math.hypot(node.x - anchor.x, node.y - anchor.y),
-        }))
-        .filter(
-          (candidate) =>
-            candidate.depth <= hopLimit ||
-            candidate.distance <= spatialRadius,
-        )
-        .sort(
-          (left, right) =>
-            left.depth - right.depth ||
-            left.distance - right.distance ||
-            left.id.localeCompare(right.id),
-        );
-      const movableLimit = Math.max(
-        mandatoryEntityIds.size,
-        Math.min(
-          graphSnapshot.nodes.length,
-          Math.max(32, Math.ceil(graphSnapshot.nodes.length * 0.55)),
-        ),
-      );
-      mandatoryEntityIds.forEach((entityId) =>
-        movableEntityIds.add(entityId),
-      );
-      candidates.forEach((candidate) => {
-        if (movableEntityIds.size < movableLimit) {
-          movableEntityIds.add(candidate.id);
-        }
-      });
+      movableEntityIds = expansionMovableIds(graphSnapshot.nodes, graphSnapshot.edges, intent.anchorId, newEntityIds);
     }
 
     // A node that says something about a statement (a reifier) is placed near the statement's subject and object.
@@ -1228,6 +1170,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
       incremental: isIncremental,
       localNodeIds: localLayoutNodeIds,
       movableNodeIds: movableEntityIds,
+      newNodeIds: newEntityIds,
     });
     layoutJobRef.current?.cancel();
     layoutJobRef.current = job;
@@ -2558,19 +2501,36 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (isNarrowGraphPanel()) setInspectorOpen(false);
   };
 
-  /** A plain click or tap: focus the node and show its details. */
-  const selectNode = (nodeId: string | null) => {
+  /**
+   * A plain click or tap: focus the node and show its details. A click or tap (`byPointer`) may be the first half of a
+   * double click: until that window has passed, the card lets presses through, so the second one reaches the node even
+   * where the card opened over it, and the node stays where it is.
+   */
+  const selectNode = (nodeId: string | null, byPointer = false) => {
     setFocusedNodeId(nodeId);
     setFocusedEdgeId(null);
+    endDetailsArrival();
     if (!nodeId) return;
     setInspectorOpen(true);
     // The card appears on the next frame; a node it would cover slides out from under it.
-    window.requestAnimationFrame(() => revealNode(nodeId, true));
+    if (byPointer) {
+      setDetailsArriving(true);
+      detailsArrivalTimerRef.current = window.setTimeout(() => {
+        setDetailsArriving(false);
+        revealNode(nodeId, true);
+      }, DOUBLE_TAP_DELAY);
+    } else window.requestAnimationFrame(() => revealNode(nodeId, true));
     if (isNarrowGraphPanel()) {
       setFilterSidebarOpen(false);
       setNavigatorOpen(false);
       setProvenanceOpen(false);
     }
+  };
+
+  /** A double click came (or another selection): the card takes clicks again and the node stays put. */
+  const endDetailsArrival = () => {
+    window.clearTimeout(detailsArrivalTimerRef.current);
+    setDetailsArriving(false);
   };
 
   const toggleNodeInSelection = (nodeId: string) =>
@@ -2596,7 +2556,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       setProvenanceOpen(false);
     }
   };
-  /** The edge whose curve passes within a few pixels of a point on the canvas (client coordinates). */
+  /**
+   * The edge whose curve passes within a few pixels of a point on the canvas (client coordinates); near a statement's
+   * connector, that statement's edge.
+   */
   const edgeAt = (clientX: number, clientY: number) => {
     const svg = canvasRef.current;
     if (!svg || largeGraph) return null;
@@ -2605,11 +2568,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const point = clientPointToViewport(clientX, clientY, rect, viewport);
     const current = transformRef.current;
     const cssScale = Math.min(rect.width / GRAPH_WIDTH, rect.height / GRAPH_HEIGHT) || 1;
-    return nearestEdge(
+    const hit = nearestEdge(
       { x: (point.x - current.x) / current.k, y: (point.y - current.y) / current.k },
-      edgeCurves,
+      edgeHitCurves.curves,
       EDGE_HIT_PIXELS / cssScale / current.k,
     );
+    return hit === null ? null : edgeHitCurves.statementOf.get(hit) ?? hit;
   };
   const addStatementCard = (card: StatementCard) => {
     if (card.about.type === "uri") {
@@ -2723,7 +2687,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         toggleNodeInSelection(nodeId);
         return;
       }
-      selectNode(nodeId);
+      selectNode(nodeId, true);
     },
     doubleClick(nodeId, event) {
       event.stopPropagation();
@@ -2733,6 +2697,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         suppressNodeDoubleClickUntilRef.current = 0;
         return;
       }
+      endDetailsArrival();
       void expandNodes([nodeId], nodeId);
     },
     more(nodeId) {
@@ -2862,11 +2827,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       // A double tap that did not drag expands the node, as a double click does.
       suppressNodeClickUntilRef.current = performance.now() + 800;
       lastNodeTapRef.current = null;
+      endDetailsArrival();
       void expandNodes([drag.nodeId], drag.nodeId);
     } else if (!cancelled && !drag.leafGroupDrag) {
       if (drag.pointerType === "touch" && !drag.groupDrag) {
         suppressNodeClickUntilRef.current = performance.now() + 800;
-        selectNode(drag.nodeId);
+        selectNode(drag.nodeId, true);
       }
       // A press that did not move, on a selected node too, may be the first half of a double click.
       lastNodeTapRef.current = {
@@ -2880,7 +2846,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     }
     nodeDragRef.current = null;
     setDraggingNodeId(null);
-    if (drag.moved) applyRouting(graphRef.current, 3);
+    if (drag.moved) applyRouting(graphRef.current);
   };
 
   /** Repository-wide counts of a filter's values for the loaded IRIs, or null when the graph changed meanwhile. */
@@ -3612,6 +3578,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 exploreHref={explorePageUrl(basePath, repositoryId, `<${inspectorNode.id}>`)}
                 expanding={expandingNodeIds.has(inspectorNode.id)}
                 drawn={drawnNodeById.has(inspectorNode.id)}
+                arriving={detailsArriving}
                 cardRef={detailsCardRef}
                 onClose={() => setInspectorOpen(false)}
                 onCopy={(text) => void copyText(text)}
@@ -3661,10 +3628,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 largeGraphTapRef.current = id ? { id, at: now } : null;
                 if (id && previous?.id === id && now - previous.at <= DOUBLE_TAP_DELAY) {
                   largeGraphTapRef.current = null;
+                  endDetailsArrival();
                   void expandNodes([id], id);
                   return;
                 }
-                selectNode(id);
+                selectNode(id, true);
               }}
               onMenu={(node, x, y) => { void openContextMenu(node, x, y); }}
             /> : <>

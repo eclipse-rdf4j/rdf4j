@@ -121,6 +121,11 @@ test('geometry-only repair does not drop obstacle routing above the old 500-edge
     edges.push(edge(`s${i}`, `t${i}`));
   }
   const result = await computeGraphLayout({revision: 1, nodes, edges}, {repairOnly: true});
-  assert.ok(Math.abs(result.bends.get('a-z')) > 100);
+  // The router draws a-z round the blocker (a route with corners); the cards stay where they are.
+  const route = result.routes.get('a-z');
+  assert.ok(route && route.points.length > 2, 'a-z is routed round the blocker');
+  const blocker = graphNodeSize(nodes[2]);
+  assert.ok(route.points.every(p => Math.abs(p.x) > blocker.width / 2 || Math.abs(p.y - 1000) > blocker.height / 2));
+  assert.ok(route.points.some(p => Math.abs(p.x) > blocker.width / 2), 'the route leaves the straight line');
   assert.deepEqual(result.positions, new Map(nodes.map(n => [n.id, {x: n.x, y: n.y}])));
 });

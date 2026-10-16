@@ -174,9 +174,10 @@ test('a ring of resources with eight values each keeps the fans apart', async ()
   }
   const graph = { nodes, edges, revision: 1 };
   const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
-  const metrics = layoutMetrics(graph, result.positions, result.bends);
+  // Arrows as drawn: a leaf's arrow may end on the side of its card that faces the person instead of its centre.
+  const metrics = layoutMetrics(graph, result.positions, result.bends, result.routes);
   assert.equal(metrics.nodeOverlaps, 0);
-  assert.equal(metrics.edgeNodeOverlaps, 0, `edges through cards: ${metrics.edgeNodeOverlaps}`);
+  assert.equal(metrics.routedEdgeNodeOverlaps, 0, `arrows through cards: ${metrics.routedEdgeNodeOverlaps}`);
   assert.ok(metrics.edgeCrossings <= 2, `crossings: ${metrics.edgeCrossings}`);
 });
 
