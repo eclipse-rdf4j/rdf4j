@@ -806,10 +806,10 @@ module workbench {
             const state = contextBarState(context);
             return h`<header id="workbench-contextbar" class="workbench-contextbar">
                 <a id="logo" class="workbench-brand" href=${urlFor(context, 'repositories')} aria-label="RDF4J Workbench home">
-                    <img class="workbench-brand__light" src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
-                    <img class="product workbench-brand__light" src=${context.basePath + '/images/product.png'} alt="workbench" />
-                    <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.png'} alt="rdf4j" />
-                    <img class="product workbench-brand__dark" src=${context.basePath + '/images/product-dark.png'} alt="workbench" />
+                    <img class="workbench-brand__light" src=${context.basePath + '/images/logo.svg'} alt="rdf4j" />
+                    <img class="product workbench-brand__light" src=${context.basePath + '/images/product.svg'} alt="workbench" />
+                    <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.svg'} alt="rdf4j" />
+                    <img class="product workbench-brand__dark" src=${context.basePath + '/images/product-dark.svg'} alt="workbench" />
                 </a>
                 <div class="workbench-switcher" data-workbench-switcher="repository">
                     <button id="workbench-repository-switcher" class="workbench-switcher__button" type="button"
@@ -856,8 +856,8 @@ module workbench {
             return h`<dialog id="workbench-menu-sheet" class="workbench-menu-sheet" aria-label="Menu">
                 <div class="workbench-menu-sheet__header">
                     <span class="workbench-menu-sheet__brand workbench-brand">
-                        <img class="workbench-brand__light" src=${context.basePath + '/images/logo.png'} alt="rdf4j" />
-                        <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.png'} alt="rdf4j" />
+                        <img class="workbench-brand__light" src=${context.basePath + '/images/logo.svg'} alt="rdf4j" />
+                        <img class="workbench-brand__dark" src=${context.basePath + '/images/logo-dark.svg'} alt="rdf4j" />
                     </span>
                     <span class="workbench-menu-sheet__repository">${state.repositoryId || 'No repository'}</span>
                     <button id="workbench-menu-close" class="workbench-action workbench-action--secondary workbench-action--icon"
