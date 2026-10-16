@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.tools.serverboot;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -36,6 +37,8 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -200,29 +203,39 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private QueryResponse executeQuery(String repositoryId, String query, int timeoutSeconds, int readTimeoutMillis)
 			throws IOException, InterruptedException {
+		return executeQuery(repositoryUri(repositoryId), query, timeoutSeconds, readTimeoutMillis);
+	}
+
+	static QueryResponse executeQuery(URI repositoryUri, String query, int timeoutSeconds, int readTimeoutMillis)
+			throws IOException {
 		String form = formValue(Protocol.QUERY_PARAM_NAME, query);
 		if (timeoutSeconds > 0) {
 			form += "&" + formValue(Protocol.TIMEOUT_PARAM_NAME, Integer.toString(timeoutSeconds));
 		}
 
-		HttpURLConnection connection = (HttpURLConnection) repositoryUri(repositoryId).toURL()
+		// The read-only health probe can reconnect safely if an aborted load response left a stale pooled socket.
+		// Fixed-length streaming POST deliberately disables HttpURLConnection's automatic reconnect.
+		boolean timedLoad = timeoutSeconds > 0;
+		URI requestUri = timedLoad ? repositoryUri : URI.create(repositoryUri + "?" + form);
+		HttpURLConnection connection = (HttpURLConnection) requestUri.toURL()
 				.openConnection();
 		connection.setRequestProperty("User-Agent",
 				timeoutSeconds > 0 ? TIMEOUT_QUERY_USER_AGENT : HEALTH_QUERY_USER_AGENT);
 		connection.setConnectTimeout(50000);
 		connection.setReadTimeout(readTimeoutMillis);
-		connection.setRequestMethod("POST");
-		connection.setRequestProperty("Content-Type", Protocol.FORM_MIME_TYPE);
+		connection.setRequestMethod(timedLoad ? "POST" : "GET");
 		connection.setRequestProperty("Accept", "application/sparql-results+json");
-		connection.setDoOutput(true);
-
-		byte[] body = form.getBytes(StandardCharsets.UTF_8);
-		connection.setFixedLengthStreamingMode(body.length);
-		try (OutputStream output = connection.getOutputStream()) {
-			output.write(body);
-		}
 
 		try {
+			if (timedLoad) {
+				connection.setRequestProperty("Content-Type", Protocol.FORM_MIME_TYPE);
+				connection.setDoOutput(true);
+				byte[] body = form.getBytes(StandardCharsets.UTF_8);
+				connection.setFixedLengthStreamingMode(body.length);
+				try (OutputStream output = connection.getOutputStream()) {
+					output.write(body);
+				}
+			}
 			int status = connection.getResponseCode();
 			return new QueryResponse(status, readResponseBody(connection, status));
 		} catch (SocketTimeoutException e) {
@@ -237,7 +250,7 @@ class LmdbTimedOutQueryReadHandleTest {
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
 		while (System.nanoTime() < deadline) {
 			response = executeQuery(repositoryId, HEALTH_QUERY, 0, 1000);
-			if (response.status == HttpStatus.OK.value()) {
+			if (isHealthyQueryResponse(response.status, response.body)) {
 				return;
 			}
 			Thread.sleep(250);
@@ -249,9 +262,21 @@ class LmdbTimedOutQueryReadHandleTest {
 		assertThat(response.status)
 				.as("health query response body: %s", response.body)
 				.isEqualTo(HttpStatus.OK.value());
+		assertThat(isHealthyQueryResponse(response.status, response.body))
+				.as("health query must return the loaded statements: %s", response.body)
+				.isTrue();
 	}
 
-	private String readResponseBody(HttpURLConnection connection, int status) throws IOException {
+	static boolean isHealthyQueryResponse(int status, String body) throws IOException {
+		if (status != HttpStatus.OK.value()) {
+			return false;
+		}
+		try (InputStream input = new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8))) {
+			return QueryResultIO.parseBoolean(input, BooleanQueryResultFormat.JSON);
+		}
+	}
+
+	private static String readResponseBody(HttpURLConnection connection, int status) throws IOException {
 		InputStream stream = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
 		if (stream == null) {
 			return "";
@@ -278,12 +303,12 @@ class LmdbTimedOutQueryReadHandleTest {
 		return response.toString();
 	}
 
-	private String formValue(String name, String value) {
+	private static String formValue(String name, String value) {
 		return URLEncoder.encode(name, StandardCharsets.UTF_8) + "="
 				+ URLEncoder.encode(value, StandardCharsets.UTF_8);
 	}
 
-	private String exceptionMessage(Throwable throwable) {
+	private static String exceptionMessage(Throwable throwable) {
 		StringBuilder message = new StringBuilder();
 		Throwable cursor = throwable;
 		while (cursor != null) {
@@ -407,9 +432,9 @@ class LmdbTimedOutQueryReadHandleTest {
 		}
 	}
 
-	private static final class QueryResponse {
-		private final int status;
-		private final String body;
+	static final class QueryResponse {
+		final int status;
+		final String body;
 
 		private QueryResponse(int status, String body) {
 			this.status = status;
