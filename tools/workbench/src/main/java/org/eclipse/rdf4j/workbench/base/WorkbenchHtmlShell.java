@@ -41,7 +41,7 @@ public final class WorkbenchHtmlShell {
 			Map.entry("summary", "Summary"), Map.entry("information", "Information"),
 			Map.entry("repositories", "Repositories"), Map.entry("create", "Create repository"),
 			Map.entry("delete", "Delete repository"), Map.entry("namespaces", "Namespaces"),
-			Map.entry("contexts", "Graphs"), Map.entry("types", "Types"), Map.entry("explore", "Explore"),
+			Map.entry("contexts", "Named Graphs"), Map.entry("types", "Types"), Map.entry("explore", "Explore"),
 			Map.entry("graph", "Graph"),
 			Map.entry("query", "Query"), Map.entry("saved-queries", "Saved queries"), Map.entry("export", "Export"),
 			Map.entry("add", "Add RDF"), Map.entry("remove", "Remove"), Map.entry("clear", "Clear"),

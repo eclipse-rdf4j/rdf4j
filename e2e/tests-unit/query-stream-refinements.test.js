@@ -2025,7 +2025,7 @@ test('the Query page result renderer shows its rows in the shared result table',
     assert.deepEqual(renderer.root.children.map(child => child.className), [
         'query-result-toolbar workbench-action-toolbar', 'query-result-navigation', 'queryResult',
         'ERROR query-result-error workbench-callout workbench-callout--error', 'query-result-floating-head',
-        'query-result-table-wrap', 'query-result-empty', 'query-result-records',
+        'query-result-table-wrap', 'query-result-skeleton', 'query-result-empty', 'query-result-records',
         'workbench-actions query-result-load-more-actions'
     ]);
     assert.match(renderer.tableWrap.getAttribute('id'), /^query-result-table-wrap-\d+/);
@@ -2038,6 +2038,48 @@ test('the Query page result renderer shows its rows in the shared result table',
     assert.equal(cell.getAttribute('data-label'), 's', 'Query cells keep the variable name as their label');
     assert.equal(cell.querySelector('a').querySelectorAll('wbr').length, 5, 'a break after each : and /');
     renderer.dispose();
+});
+
+// A query run again keeps its results area as tall as the previous result and shows grey rows where the results will
+// be, until the first row, answer or error arrives; then the area takes the height it needs.
+test('a result waiting for its first rows shows placeholder rows and keeps the area\'s height', async () => {
+    const queryStream = loadQueryStreamApi();
+    const document = new FakeDocument();
+    const target = document.createElement('section');
+    document.body.appendChild(target);
+    const renderer = new queryStream.QueryResultRenderer(target,
+        { initialLayout: 'table', rowStore: inMemoryRowStore(), reservedHeight: 300 });
+    const skeleton = renderer.root.children.find(child => child.className === 'query-result-skeleton');
+    assert.equal(skeleton.getAttribute('aria-hidden'), 'true');
+    assert.equal(skeleton.hidden, false, 'grey rows before the request starts');
+    assert.ok(skeleton.children.length > 3);
+    assert.equal(target.style.minHeight, '300px');
+    renderer.setBusy(true);
+    await renderer.accept({ type: 'view', id: 'tuple' });
+    await renderer.accept({ type: 'vars', values: ['s'] });
+    assert.equal(skeleton.hidden, false, 'the column names alone are nothing to show yet');
+    assert.equal(renderer.tableWrap.hidden, true);
+    await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'one' }]] });
+    assert.equal(skeleton.hidden, true);
+    assert.equal(target.style.minHeight, '');
+    assert.equal(renderer.tableWrap.hidden, false);
+    renderer.dispose();
+
+    const failing = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
+    const failingSkeleton = failing.root.children.find(child => child.className === 'query-result-skeleton');
+    failing.setBusy(true);
+    failing.fail('Query failed.');
+    assert.equal(failingSkeleton.hidden, true, 'an error replaces the grey rows');
+    assert.equal(target.style.minHeight, '');
+    failing.dispose();
+
+    const stopped = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
+    const stoppedSkeleton = stopped.root.children.find(child => child.className === 'query-result-skeleton');
+    stopped.setBusy(true);
+    stopped.setBusy(false);
+    assert.equal(stoppedSkeleton.hidden, true, 'a request that ended with nothing leaves no grey rows');
+    assert.equal(target.style.minHeight, '');
+    stopped.dispose();
 });
 
 // Plan task M11.3: a renderer that is hidden in #workbench-kept-alive keeps its layout until it is shown again.

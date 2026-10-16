@@ -2999,9 +2999,16 @@ namespace workbench {
             now?: () => number;
             /** The repository whose Graph page "Add to graph" feeds; absent where that page is unavailable. */
             graphContext?: { basePath: string; repositoryId: string };
+            /**
+             * The height of the results area before this result (the previous result's), kept until this one has
+             * something to show, so running a query again does not shorten the page and move it.
+             */
+            reservedHeight?: number;
         }
 
         var queryResultRendererSequence = 0;
+        /** Placeholder rows a result shows while it waits for its first rows, unless the area it keeps needs more. */
+        var SKELETON_ROWS = 6;
 
         function normalizeDownloadChoices(values: any): { value: string; label: string }[] {
             if (!Array.isArray(values)) {
@@ -3374,6 +3381,14 @@ namespace workbench {
             readonly timer: any;
             readonly countLabel: any;
             private emptyResult: any;
+            /** Grey placeholder rows where the results will be, while the query has not shown anything yet. */
+            private skeleton: any;
+            /** True while this result holds its results area at reservedHeight, until it shows something. */
+            private holding = false;
+            /** Where the area's content ends at the held height, measured from the area's top edge. */
+            private heldContentBottom = 0;
+            /** Set once the first request starts: before it, the result waits for it too. */
+            private started = false;
             private reportedErrorLocation = '';
             readonly cancelButton: any;
             readonly loadMoreButton: any;
@@ -3449,6 +3464,7 @@ namespace workbench {
                 if (!target || !this.document || typeof this.document.createElement !== 'function') {
                     throw new Error('A query result mount is required.');
                 }
+                this.holdHeight(this.options.reservedHeight);
                 var query = (workbench as any).query;
                 var presentation = query && typeof query.getResultPresentationState === 'function'
                     ? query.getResultPresentationState() : {};
@@ -3679,6 +3695,8 @@ namespace workbench {
                 });
                 this.emptyResult = this.createEmptyState();
                 this.root.insertBefore(this.emptyResult, this.resultTable.records);
+                this.skeleton = this.createSkeleton();
+                this.root.insertBefore(this.skeleton, this.emptyResult);
                 var continuation = createElement(this.document, 'div',
                     'workbench-actions query-result-load-more-actions');
                 this.loadMoreButton = this.createButton('Load more', () => {
@@ -4030,12 +4048,20 @@ namespace workbench {
             setBusy(busy: boolean) {
                 this.busy = busy;
                 if (busy) {
+                    this.started = true;
                     this.startTimer();
                 } else {
                     this.stopTimer();
+                    // A request that ended with nothing to show (stopped without a message) leaves no placeholder.
+                    if (!this.skeleton.hidden && !this.awaitingFirstResult()) {
+                        this.renderAndReport();
+                    }
                 }
                 this.syncTargetBusy();
                 this.cancelButton.hidden = !busy;
+                if (busy && !this.skeleton.hidden) {
+                    this.showSkeleton(true);
+                }
                 this.loadMoreButton.disabled = busy;
                 this.loadMoreButton.setAttribute('aria-busy', busy ? 'true' : 'false');
                 this.loadMoreButton.textContent = busy && this.batchStart > 0 ? 'Loading more…' : 'Load more';
@@ -4108,6 +4134,7 @@ namespace workbench {
                 this.fullscreenButton.hidden = this.fullscreenButton.hidden || !rowsRemain;
                 this.optionsToggle.hidden = this.optionsToggle.hidden || !rowsRemain;
                 this.emptyResult.hidden = true;
+                this.showSkeleton(false);
                 this.publishSummary(this.state, this.state.view === 'tuple' || this.state.view === 'graph');
                 var downloadButton = this.root.querySelector
                     ? this.root.querySelector('.query-result-download-button') : null;
@@ -4412,6 +4439,7 @@ namespace workbench {
                 this.presentationDisposer();
                 this.presentationDisposer = () => {};
                 this.releaseTargetBusy();
+                this.releaseHeight();
                 if (this.legacyHeader) {
                     this.legacyHeader.hidden = this.legacyHeaderHidden;
                 }
@@ -4858,8 +4886,10 @@ namespace workbench {
                 ++this.renderGeneration;
                 var state = this.state;
                 var isRows = state.view === 'tuple' || state.view === 'graph';
+                // Until the first row, answer or error, grey rows stand where the results will be.
+                var awaiting = this.awaitingFirstResult();
                 // The rows first: header, table or records layout, column widths and the visible row window.
-                var rendered = this.resultTable.render(isRows);
+                var rendered = this.resultTable.render(isRows && !awaiting);
                 if (state.view && state.view !== 'error' && state.view !== this.activeDownloadFormatView) {
                     var formats = this.downloadFormatsForView(state.view);
                     var info = this.options.workbench || {};
@@ -4964,7 +4994,78 @@ namespace workbench {
                     : Number.isSafeInteger(total) ? formatCount(state.rowCount) + ' of ' + formatCount(total) + ' loaded'
                         : formatCount(state.rowCount) + ' loaded';
                 this.publishSummary(state, isRows);
+                this.showSkeleton(awaiting);
                 return rendered;
+            }
+
+            /** Nothing to show yet: the first request has not brought a row, an answer, an error or its end. */
+            private awaitingFirstResult(): boolean {
+                var state = this.state;
+                return (this.busy || !this.started) && this.batchStart === 0 && state.rowCount === 0 && !state.error
+                    && !state.complete && !(state.view === 'boolean' && typeof state.booleanValue === 'boolean');
+            }
+
+            private createSkeleton(): any {
+                var skeleton = createElement(this.document, 'div', 'query-result-skeleton');
+                skeleton.setAttribute('aria-hidden', 'true');
+                skeleton.hidden = true;
+                this.addSkeletonRows(skeleton, SKELETON_ROWS);
+                return skeleton;
+            }
+
+            private addSkeletonRows(skeleton: any, count: number): void {
+                for (var index = skeleton.children.length; index < count; index++) {
+                    var row = createElement(this.document, 'div', index === 0
+                        ? 'query-result-skeleton__row query-result-skeleton__row--head' : 'query-result-skeleton__row');
+                    for (var cell = 0; cell < 3; cell++) {
+                        row.appendChild(createElement(this.document, 'span', 'query-result-skeleton__cell'));
+                    }
+                    skeleton.appendChild(row);
+                }
+            }
+
+            /**
+             * Show the placeholder while the result waits; it reaches down to where the results area ended before, so
+             * the area keeps its height. Once there is something to show, the area takes the height it needs.
+             */
+            private showSkeleton(show: boolean): void {
+                this.skeleton.hidden = !show;
+                if (this.skeleton.style) {
+                    this.skeleton.style.height = '';
+                }
+                if (!show) {
+                    this.releaseHeight();
+                    return;
+                }
+                // Measured anew each time (the toolbar grows a Cancel button once the request starts); the held
+                // min-height keeps the page from shortening meanwhile.
+                if (!this.holding || !this.skeleton.style || typeof this.root.getBoundingClientRect !== 'function') {
+                    return;
+                }
+                // The rows take what the area has to spare, or give up what it lacks (the running query's toolbar is
+                // taller than a finished result's), down to two rows.
+                var spare = this.target.getBoundingClientRect().top + this.heldContentBottom
+                    - this.root.getBoundingClientRect().bottom;
+                var firstRow = this.skeleton.firstChild;
+                var rowHeight = firstRow && firstRow.getBoundingClientRect().height || 40;
+                var height = Math.max(2 * rowHeight, this.skeleton.getBoundingClientRect().height + spare);
+                this.addSkeletonRows(this.skeleton, Math.ceil(height / rowHeight));
+                this.skeleton.style.height = Math.floor(height) + 'px';
+            }
+
+            /** Keep the results area at least as tall as it was (reservedHeight) while this result waits. */
+            private holdHeight(height: number): void {
+                if (height > 0 && this.target.style) {
+                    this.heldContentBottom = holdResultArea(this.target, height, this.instanceSuffix);
+                    this.holding = true;
+                }
+            }
+
+            private releaseHeight(): void {
+                if (this.holding) {
+                    releaseResultArea(this.target, this.instanceSuffix);
+                    this.holding = false;
+                }
             }
         }
 
@@ -6817,6 +6918,40 @@ namespace workbench {
             }
         }
 
+        /**
+         * Keep a results area at least `height` tall (its border box) for `holder`, until that holder lets it go: a
+         * result replacing another holds it before the old one leaves, so the page never shortens in between. Returns
+         * where the area's content ends at that height, measured from its top edge.
+         */
+        function holdResultArea(target: any, height: number, holder: string): number {
+            var view = target.ownerDocument && target.ownerDocument.defaultView;
+            var style = view && typeof view.getComputedStyle === 'function' ? view.getComputedStyle(target) : null;
+            var edge = (names: string[]) => names.reduce((sum, name) => sum + (style && parseFloat(style[name]) || 0), 0);
+            var bottom = edge(['paddingBottom', 'borderBottomWidth']);
+            var borderBox = !style || style.boxSizing === 'border-box';
+            target.style.minHeight = Math.max(0, borderBox ? height
+                : height - bottom - edge(['paddingTop', 'borderTopWidth'])) + 'px';
+            target.setAttribute('data-query-height-holder', holder);
+            return height - bottom;
+        }
+
+        /** Let a results area take its own height again, unless another holder has taken it over since. */
+        function releaseResultArea(target: any, holder: string): void {
+            if (target.getAttribute('data-query-height-holder') === holder) {
+                target.style.minHeight = '';
+                target.removeAttribute('data-query-height-holder');
+            }
+        }
+
+        /** The height of a results area on the page now; 0 when it is hidden, in another tab or full screen. */
+        function resultAreaHeight(target: any): number {
+            if (!target || target.hidden || target.getAttribute('data-fullscreen') === 'true'
+                    || typeof target.getBoundingClientRect !== 'function') {
+                return 0;
+            }
+            return target.getBoundingClientRect().height || 0;
+        }
+
         /** Show the output card around a result target and select the tab whose panel holds it. */
         function showResultTab(target: any): void {
             if (!target || typeof target.closest !== 'function') {
@@ -7046,6 +7181,12 @@ namespace workbench {
                 cancel(false);
                 recovering = false;
                 knownTotal = null;
+                // The new result keeps the area as tall as the old one until it has something to show. The area is held
+                // before the old result leaves: taking it out must not shorten the page and move it, even for a moment.
+                var reservedHeight = renderer ? resultAreaHeight(target) : 0;
+                if (reservedHeight > 0 && target.style) {
+                    holdResultArea(target, reservedHeight, 'next');
+                }
                 if (renderer) {
                     renderer.dispose();
                 }
@@ -7078,6 +7219,7 @@ namespace workbench {
                     downloadFormatsByView: config.downloadFormatsByView,
                     downloadLimits: config.downloadLimits,
                     graphContext: config.graphContext,
+                    reservedHeight: reservedHeight,
                     onLoadMore: () => loadMore(),
                     onCancel: () => cancel(true),
                     onRetry: () => { submit(); }

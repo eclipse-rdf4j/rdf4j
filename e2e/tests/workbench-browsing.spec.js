@@ -130,9 +130,9 @@ test('A long windowed list scrolls by the distance the wheel moves', async ({ pa
 test('Graphs list statements per graph, the default graph last, and Explore and Clear actions', async ({ page }) => {
 	await page.setViewportSize({ width: 1440, height: 900 });
 	await page.goto(repositoryPageUrl(REPOSITORY_ID, 'contexts'), { waitUntil: 'domcontentloaded' });
-	await expect(page.locator('#title_heading')).toHaveText('Graphs');
+	await expect(page.locator('#title_heading')).toHaveText('Named Graphs');
 	const card = page.locator('#contexts-results');
-	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Graphs');
+	await expect(card.locator('.workbench-browse-card__header h2')).toHaveText('Named Graphs');
 	await expect(card.locator('.workbench-browse-card__count')).toHaveText('2');
 	await expect(card.locator('thead th')).toHaveText(['Graph', 'Statements', 'Actions']);
 	const rows = card.locator('tbody tr:not(.workbench-virtual-spacer)');

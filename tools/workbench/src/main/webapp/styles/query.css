@@ -1379,6 +1379,69 @@ body.workbench-body #content .query-output .query-results:not([data-fullscreen="
     display: none;
 }
 
+/* While a query has shown nothing yet, grey rows stand where its results will be. The renderer sizes the block to
+ * fill the height the previous result had, so running a query again does not move the page. */
+.query-result-skeleton {
+    overflow: hidden;
+    box-sizing: border-box;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+}
+
+.query-result-skeleton[hidden] {
+    display: none;
+}
+
+.query-result-skeleton__row {
+    display: grid;
+    grid-template-columns: 3fr 4fr 2fr;
+    gap: 24px;
+    align-items: center;
+    box-sizing: border-box;
+    height: 40px;
+    padding: 0 12px;
+    border-top: 1px solid var(--workbench-soft-rule);
+}
+
+.query-result-skeleton__row--head {
+    border-top: 0;
+    background: var(--workbench-inset);
+}
+
+.query-result-skeleton__cell {
+    display: block;
+    width: 72%;
+    height: 10px;
+    border-radius: 5px;
+    background: color-mix(in srgb, var(--workbench-muted) 18%, transparent);
+}
+
+.query-result-skeleton__row--head .query-result-skeleton__cell {
+    width: 34%;
+    background: color-mix(in srgb, var(--workbench-muted) 26%, transparent);
+}
+
+.query-result-skeleton__row:nth-child(3n) .query-result-skeleton__cell:nth-child(2),
+.query-result-skeleton__row:nth-child(4n + 1) .query-result-skeleton__cell:first-child {
+    width: 52%;
+}
+
+.query-result-skeleton__row:nth-child(3n + 2) .query-result-skeleton__cell:nth-child(3) {
+    width: 90%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+    .query-result-skeleton__cell {
+        animation: query-result-skeleton-pulse 1.4s ease-in-out infinite;
+    }
+}
+
+@keyframes query-result-skeleton-pulse {
+    50% {
+        opacity: .45;
+    }
+}
+
 .query-result-empty__icon {
     width: 28px;
     height: 28px;

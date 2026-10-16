@@ -89,7 +89,7 @@ class WorkbenchPagePolicyTest {
 				.containsExactly("query", "saved-queries", "explore", "graph", "summary", "namespaces", "contexts",
 						"types");
 		assertThat(policy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getLabel)
-				.containsExactly("Query", "Saved queries", "Explore", "Graph", "Summary", "Namespaces", "Graphs",
+				.containsExactly("Query", "Saved queries", "Explore", "Graph", "Summary", "Namespaces", "Named Graphs",
 						"Types");
 		assertThat(policy.getVisibleMenuGroups().get(1).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
 				.containsExactly("add", "export", "update", "remove", "clear");

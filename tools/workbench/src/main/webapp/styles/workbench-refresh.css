@@ -2050,10 +2050,27 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		--workbench-sidebar-context-height: 96px;
 	}
 
-	/* Opening the repository switcher widens the whole sidebar so its panel (search, list, links) fits inside it,
-	   with room to spare on either side of the panel. */
+	/* Opening the repository switcher widens the sidebar so its panel (search, list, links) fits inside it, with
+	   room to spare on either side of the panel. The sidebar's grid column keeps its width: the sidebar grows over
+	   the page, and the page slides right by as much at its own width (it neither narrows nor lays out again); what
+	   passes the viewport's right edge is cut off, not scrolled to. */
 	body.workbench-body:has(#workbench-contextbar .workbench-switcher__button[aria-expanded="true"]) {
-		--workbench-sidebar-width: 440px;
+		--workbench-sidebar-shift: calc(440px - var(--workbench-sidebar-width));
+	}
+
+	/* The body clips what slides past the right edge. A root that is not overflow: visible keeps the body's clip on the
+	   body: given to the viewport it would become hidden, which still lets focus or scrollIntoView scroll sideways. */
+	html:has(> body.workbench-body) {
+		overflow-y: auto;
+	}
+
+	body.workbench-body {
+		overflow-x: clip;
+	}
+
+	body.workbench-body:has(#workbench-contextbar .workbench-switcher__button[aria-expanded="true"])
+			:is(#content.workbench-main, #footer.workbench-footer) {
+		transform: translateX(var(--workbench-sidebar-shift));
 	}
 
 	body.workbench-body {
@@ -2076,7 +2093,7 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		flex-direction: column;
 		align-items: stretch;
 		gap: 2px;
-		width: var(--workbench-sidebar-width);
+		width: calc(var(--workbench-sidebar-width) + var(--workbench-sidebar-shift, 0px));
 		height: var(--workbench-sidebar-context-height);
 		margin: 0;
 		padding: 12px 12px 6px;
@@ -2089,7 +2106,7 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 	/* The menu fills the rest of the viewport's height, so the panel reaches the bottom on short pages too. */
 	body.workbench-body .workbench-navigation-disclosure {
 		top: var(--workbench-sidebar-context-height);
-		width: var(--workbench-sidebar-width);
+		width: calc(var(--workbench-sidebar-width) + var(--workbench-sidebar-shift, 0px));
 		height: calc(100vh - var(--workbench-sidebar-context-height));
 		max-height: none;
 		margin: 0;
@@ -2203,8 +2220,8 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		opacity: .55;
 	}
 
-	/* The widening animates on the grid and on the rail's parts themselves (a transition on the custom property would
-	   need @property, which crashed Chromium's renderer on viewport changes). */
+	/* The widening animates on the grid, on the rail's parts themselves and on the page sliding aside (a transition on
+	   the custom property would need @property, which crashed Chromium's renderer on viewport changes). */
 	@media (prefers-reduced-motion: no-preference) {
 		body.workbench-body {
 			transition: grid-template-columns var(--workbench-motion-layout) var(--workbench-motion-ease);
@@ -2213,6 +2230,10 @@ body.workbench-body #navigation.workbench-nav .workbench-nav-group__summary .wor
 		body.workbench-body #workbench-contextbar.workbench-contextbar,
 		body.workbench-body .workbench-navigation-disclosure {
 			transition: width var(--workbench-motion-layout) var(--workbench-motion-ease);
+		}
+
+		body.workbench-body :is(#content.workbench-main, #footer.workbench-footer) {
+			transition: transform var(--workbench-motion-layout) var(--workbench-motion-ease);
 		}
 
 		body.workbench-body #navigation.workbench-nav {

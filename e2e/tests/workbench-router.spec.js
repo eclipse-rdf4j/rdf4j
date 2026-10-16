@@ -72,7 +72,7 @@ test('menu links change the page without loading a document, and Back returns', 
 	});
 
 	for (const [name, view, heading] of [['Namespaces', 'namespaces', 'Namespaces In Repository'],
-		['Types', 'types', 'Types In Repository'], ['Graphs', 'contexts', 'Graphs']]) {
+		['Types', 'types', 'Types In Repository'], ['Named Graphs', 'contexts', 'Named Graphs']]) {
 		await menuLink(page, name).click();
 		await expectRoute(page, view);
 		await expect(page.locator('#workbench-outlet h1')).toHaveText(heading);
@@ -104,12 +104,12 @@ test('a slow page keeps the old one visible, and a newer click wins', async ({ p
 	await expect(page.locator('#workbench-outlet')).toHaveAttribute('aria-busy', 'true');
 	await expect(page.locator('#workbench-outlet h1')).toHaveText('Namespaces In Repository');
 	await expect(page).toHaveURL(new RegExp('/namespaces$'));
-	await menuLink(page, 'Graphs').click();
+	await menuLink(page, 'Named Graphs').click();
 
 	await expectRoute(page, 'contexts');
 	await page.waitForTimeout(1700);
 	await expectRoute(page, 'contexts');
-	await expect(page.locator('#workbench-outlet h1')).toHaveText('Graphs');
+	await expect(page.locator('#workbench-outlet h1')).toHaveText('Named Graphs');
 	await expect(page.locator('#workbench-outlet')).not.toHaveAttribute('aria-busy', 'true');
 	expect(documents).toEqual([]);
 });

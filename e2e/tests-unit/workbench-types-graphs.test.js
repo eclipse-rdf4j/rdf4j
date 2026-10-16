@@ -197,7 +197,8 @@ test('Graphs fill in statements, end with the default graph and offer Explore an
     await settle();
     await settle();
     const page = markup(workbench, mount);
-    assert.match(page, /<h2>Graphs<\/h2>/);
+    assert.match(page, /<h2>Named Graphs<\/h2>/);
+    assert.match(page, /placeholder="?Filter named graphs/);
     assert.match(page, /workbench-browse-card__count[^>]*>2</);
     assert.deepEqual(countCells(page), ['40331', '3354', '0']);
     assert.ok(page.lastIndexOf('Default graph') > page.lastIndexOf('urn:ex:g2'), 'the default graph is last');

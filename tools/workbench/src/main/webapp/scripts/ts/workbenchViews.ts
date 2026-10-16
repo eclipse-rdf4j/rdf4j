@@ -185,7 +185,8 @@ module workbench {
         /** Short page names for the document title; keep in sync with SHORT_TITLES in WorkbenchHtmlShell.java. */
         const shortTitles: { [key: string]: string } = {
             summary: 'Summary', information: 'Information', repositories: 'Repositories',
-            create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces', contexts: 'Graphs',
+            create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces',
+            contexts: 'Named Graphs',
             types: 'Types', explore: 'Explore', graph: 'Graph', query: 'Query', 'saved-queries': 'Saved queries',
             export: 'Export',
             add: 'Add RDF', remove: 'Remove', clear: 'Clear', update: 'SPARQL Update', server: 'Connection'
@@ -208,7 +209,7 @@ module workbench {
             create: 'New Repository',
             delete: 'Delete Repository',
             namespaces: 'Namespaces In Repository',
-            contexts: 'Graphs',
+            contexts: 'Named Graphs',
             types: 'Types In Repository',
             explore: 'Explore',
             graph: 'Graph Explorer',
@@ -2010,7 +2011,7 @@ module workbench {
         const browseLists: { [viewId: string]: any } = {
             types: { title: 'Types', noun: 'types', column: 'type', label: 'Type',
                 count: 'instances', countLabel: 'Instances', resort: true },
-            contexts: { title: 'Graphs', noun: 'graphs', column: 'context', label: 'Graph',
+            contexts: { title: 'Named Graphs', noun: 'named graphs', column: 'context', label: 'Graph',
                 count: 'statements', countLabel: 'Statements', actions: true }
         };
 

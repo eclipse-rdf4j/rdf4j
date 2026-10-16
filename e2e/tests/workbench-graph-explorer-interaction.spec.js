@@ -231,6 +231,36 @@ test('Shift-drag selects with a box; dragging a selected node moves the whole se
     await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(0);
 });
 
+test('dragging the background pans and keeps the clicked node; a click on the background lets it go', async ({ page }) => {
+    const explorer = await openGraphPage(page);
+    await page.waitForTimeout(800);
+    await node(explorer, 'Alice').click();
+    const details = explorer.locator('.node-details');
+    await expect(details.locator('h3')).toHaveText('Alice');
+    await expect(node(explorer, 'Alice')).toHaveClass(/is-focused/);
+    await expect(details).not.toHaveClass(/is-arriving/);
+
+    const before = await centre(node(explorer, 'Alice'));
+    const empty = await emptyCanvasPoint(explorer);
+    expect(empty).not.toBeNull();
+    await page.mouse.move(empty.x, empty.y);
+    await page.mouse.down();
+    // The press itself does not let the node go, before the pointer has moved.
+    await expect(node(explorer, 'Alice')).toHaveClass(/is-focused/);
+    await page.mouse.move(empty.x + 60, empty.y + 30, { steps: 8 });
+    await page.mouse.up();
+    const after = await centre(node(explorer, 'Alice'));
+    expect(after.x - before.x, 'the drag panned the view').toBeGreaterThan(30);
+    await expect(details.locator('h3')).toHaveText('Alice');
+    await expect(node(explorer, 'Alice')).toHaveClass(/is-focused/);
+
+    const stillEmpty = await emptyCanvasPoint(explorer);
+    expect(stillEmpty).not.toBeNull();
+    await page.mouse.click(stillEmpty.x, stillEmpty.y);
+    await expect(details).toHaveCount(0);
+    await expect(node(explorer, 'Alice')).not.toHaveClass(/is-focused/);
+});
+
 test('a double-click drag moves a node with its leaf neighbours and loads nothing', async ({ page }) => {
     const explorer = await openGraphPage(page);
     await page.waitForTimeout(800);

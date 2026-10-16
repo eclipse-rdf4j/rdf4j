@@ -3694,10 +3694,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   return;
                 }
                 const isBackground = event.target === event.currentTarget;
-                if (isBackground) {
-                  setFocusedNodeId(null);
-                  setHoveredNodeId(null);
-                }
+                // The shown node stays through a drag that pans; only a click on the background lets it go (below).
+                if (isBackground) setHoveredNodeId(null);
                 const pressedEdge = event.target instanceof Element ? event.target.closest("[data-edge-id]") : null;
                 backgroundPressRef.current =
                   isBackground || pressedEdge
@@ -3856,7 +3854,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 }
                 const completedAt = performance.now();
                 // A click on the background opens the statement card of the edge under it; on empty canvas it closes
-                // the card and clears the selection.
+                // the card and clears the selection. A press that moved the pointer panned, and changes neither.
                 const press = backgroundPressRef.current;
                 backgroundPressRef.current = null;
                 if (
@@ -3865,7 +3863,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 ) {
                   const edgeId = press.edgeId ?? edgeAt(event.clientX, event.clientY);
                   selectEdge(edgeId);
-                  if (!edgeId) clearManualSelection();
+                  if (!edgeId) {
+                    setFocusedNodeId(null);
+                    clearManualSelection();
+                  }
                 }
                 const doubleTapZoom = doubleTapZoomRef.current;
                 if (doubleTapZoom?.pointerId === event.pointerId) {

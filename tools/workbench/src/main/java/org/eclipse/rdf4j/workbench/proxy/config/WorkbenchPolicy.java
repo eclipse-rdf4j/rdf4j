@@ -495,7 +495,7 @@ public final class WorkbenchPolicy {
 		addPage(pages, "graph", "explore", "graph", "graph", "Graph", "graph");
 		addPage(pages, "summary", "explore", "summary", "summary", "Summary", "summary");
 		addPage(pages, "namespaces", "explore", "namespaces", "namespaces", "Namespaces", "namespaces");
-		addPage(pages, "contexts", "explore", "contexts", "contexts", "Graphs", "contexts");
+		addPage(pages, "contexts", "explore", "contexts", "contexts", "Named Graphs", "contexts");
 		addPage(pages, "types", "explore", "types", "types", "Types", "types");
 		addPage(pages, "add", "modify", "add", "add", "Add RDF", "add");
 		addPage(pages, "export", "modify", "export", "export", "Export", "export");
