@@ -955,11 +955,6 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
     display: none;
 }
 
-/* While the query runs, its Cancel stands alone above the rows that keep arriving; keep it clear of the table. */
-.query-result-navigation:has(> .workbench-action--warning:not([hidden])) {
-    margin-bottom: var(--workbench-space-subgroup, 16px);
-}
-
 .query-result-navigation__label {
     color: var(--query-muted);
     font-size: var(--workbench-control-font-size);

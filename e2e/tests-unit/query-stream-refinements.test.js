@@ -2061,8 +2061,13 @@ test('a result waiting for its first rows shows placeholder rows and keeps the a
     assert.equal(renderer.tableWrap.hidden, true);
     await renderer.accept({ type: 'rows', values: [[{ kind: 'literal', value: 'one' }]] });
     assert.equal(skeleton.hidden, true);
-    assert.equal(target.style.minHeight, '');
     assert.equal(renderer.tableWrap.hidden, false);
+    assert.equal(target.style.minHeight, '300px', 'held while rows may still arrive');
+    await renderer.accept({ type: 'end', metadata: {} });
+    renderer.setBusy(false);
+    assert.equal(target.style.minHeight, '', 'the area takes its own height once the request has ended');
+    assert.ok(renderer.root.querySelector('.query-result-toolbar__actions').children.includes(renderer.cancelButton),
+        'Cancel stands in the toolbar row, not in a row of its own');
     renderer.dispose();
 
     const failing = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
@@ -2070,13 +2075,16 @@ test('a result waiting for its first rows shows placeholder rows and keeps the a
     failing.setBusy(true);
     failing.fail('Query failed.');
     assert.equal(failingSkeleton.hidden, true, 'an error replaces the grey rows');
-    assert.equal(target.style.minHeight, '');
+    failing.setBusy(false);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(target.style.minHeight, '', 'released once the layout in flight is done');
     failing.dispose();
 
     const stopped = new queryStream.QueryResultRenderer(target, { rowStore: inMemoryRowStore(), reservedHeight: 200 });
     const stoppedSkeleton = stopped.root.children.find(child => child.className === 'query-result-skeleton');
     stopped.setBusy(true);
     stopped.setBusy(false);
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(stoppedSkeleton.hidden, true, 'a request that ended with nothing leaves no grey rows');
     assert.equal(target.style.minHeight, '');
     stopped.dispose();

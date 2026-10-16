@@ -3389,6 +3389,8 @@ namespace workbench {
             private heldContentBottom = 0;
             /** Set once the first request starts: before it, the result waits for it too. */
             private started = false;
+            /** Layouts started and not finished yet (their rows are drawn asynchronously). */
+            private rendersInFlight = 0;
             private reportedErrorLocation = '';
             readonly cancelButton: any;
             readonly loadMoreButton: any;
@@ -3657,7 +3659,9 @@ namespace workbench {
                 this.cancelButton.className = 'workbench-action workbench-action--warning';
                 decorateWithWorkbenchIcon(this.cancelButton, 'stop', 'Cancel query');
                 this.cancelButton.hidden = true;
-                controls.appendChild(this.cancelButton);
+                // In the toolbar row, where Full screen, Download and Display stand once the query is done: a row of its
+                // own would make the result taller while it runs than when it is done.
+                actions.insertBefore(this.cancelButton, actions.firstChild);
                 this.root.appendChild(controls);
 
                 this.booleanResult = createElement(this.document, 'div', 'queryResult');
@@ -4056,6 +4060,7 @@ namespace workbench {
                     if (!this.skeleton.hidden && !this.awaitingFirstResult()) {
                         this.renderAndReport();
                     }
+                    this.settleHeight();
                 }
                 this.syncTargetBusy();
                 this.cancelButton.hidden = !busy;
@@ -4135,6 +4140,7 @@ namespace workbench {
                 this.optionsToggle.hidden = this.optionsToggle.hidden || !rowsRemain;
                 this.emptyResult.hidden = true;
                 this.showSkeleton(false);
+                this.settleHeight();
                 this.publishSummary(this.state, this.state.view === 'tuple' || this.state.view === 'graph');
                 var downloadButton = this.root.querySelector
                     ? this.root.querySelector('.query-result-download-button') : null;
@@ -4995,7 +5001,16 @@ namespace workbench {
                         : formatCount(state.rowCount) + ' loaded';
                 this.publishSummary(state, isRows);
                 this.showSkeleton(awaiting);
-                return rendered;
+                // The area keeps the previous result's height until these rows are drawn and the request has ended.
+                this.rendersInFlight++;
+                var settled = () => {
+                    this.rendersInFlight--;
+                    this.settleHeight();
+                };
+                return rendered.then(settled, (error: any) => {
+                    settled();
+                    throw error;
+                });
             }
 
             /** Nothing to show yet: the first request has not brought a row, an answer, an error or its end. */
@@ -5026,7 +5041,7 @@ namespace workbench {
 
             /**
              * Show the placeholder while the result waits; it reaches down to where the results area ended before, so
-             * the area keeps its height. Once there is something to show, the area takes the height it needs.
+             * the area keeps its height.
              */
             private showSkeleton(show: boolean): void {
                 this.skeleton.hidden = !show;
@@ -5034,7 +5049,6 @@ namespace workbench {
                     this.skeleton.style.height = '';
                 }
                 if (!show) {
-                    this.releaseHeight();
                     return;
                 }
                 // Measured anew each time (the toolbar grows a Cancel button once the request starts); the held
@@ -5058,6 +5072,17 @@ namespace workbench {
                 if (height > 0 && this.target.style) {
                     this.heldContentBottom = holdResultArea(this.target, height, this.instanceSuffix);
                     this.holding = true;
+                }
+            }
+
+            /**
+             * The area takes the height this result needs once the result shows what it has, its rows are drawn and its
+             * request has ended: rows that keep arriving, a Cancel that goes away or rows drawn a moment after the
+             * placeholder leaves never make it shorter in between.
+             */
+            private settleHeight(): void {
+                if (!this.busy && this.rendersInFlight === 0 && !this.awaitingFirstResult()) {
+                    this.releaseHeight();
                 }
             }
 
@@ -6894,9 +6919,9 @@ namespace workbench {
         }
 
         /**
-         * Once per execution, after its first status renders: scroll the result card into view when its top
-         * edge sits below 40% of the viewport (M3.2; see the plan's Decision Log for why not 60%). The card's
-         * scroll-margin keeps it under the context bar.
+         * The page's first result, once its first rows, answer or error are shown: scroll the result card into view when
+         * its top edge sits below 40% of the viewport (M3.2; see the plan's Decision Log for why not 60%). The card's
+         * scroll-margin keeps it under the context bar. Later runs leave the page where it is (see resultShown).
          */
         function revealResults(target: any): void {
             var view = target && target.ownerDocument && target.ownerDocument.defaultView;
@@ -6983,6 +7008,9 @@ namespace workbench {
             // The execution endpoint made absolute when the query starts: cancellations go there from any page.
             var frozenCancelUrl = '';
             var batchSize = 1000000;
+            // Only the first result shown here is scrolled into view: later runs, whatever they show (an empty result
+            // too), leave the page where it is. A run that shows nothing (cancelled, or no query) keeps the reveal.
+            var resultShown = false;
             var revealPending = false;
             // The exact total the first batch reported: continuations send it, so the server can stop after the
             // batch (and one look-ahead row) instead of counting the whole result again.
@@ -6998,10 +7026,11 @@ namespace workbench {
                 }
             }
 
-            /** Reveal the results once per execution, after its first rendered rows, answer or error. */
+            /** The first rows, answer or error of the page's first result: bring them into view, once. */
             function revealOnce() {
                 if (revealPending && !disposed && !shelvedOut) {
                     revealPending = false;
+                    resultShown = true;
                     revealResults(target);
                 }
             }
@@ -7226,10 +7255,13 @@ namespace workbench {
                 });
                 target.hidden = false;
                 showResultTab(target);
-                revealPending = true;
+                revealPending = !resultShown;
                 if (!controlValue(form, 'query').trim()) {
                     renderer.fail('Enter a query to see results.', 'empty-query');
-                    revealOnce();
+                    // Shown, but not a result: the first query that runs still brings its results into view.
+                    if (revealPending) {
+                        revealResults(target);
+                    }
                     return false;
                 }
                 if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 1000000) {

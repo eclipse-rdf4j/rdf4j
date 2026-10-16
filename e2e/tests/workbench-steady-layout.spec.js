@@ -20,7 +20,8 @@ const {
 } = require('./workbench-test-helpers.js');
 
 // The page holds still while it works: a running query keeps the results area as tall as it was and shows grey
-// placeholder rows where the results will be, and the repository switcher slides the page aside instead of narrowing it.
+// placeholder rows where the results will be, only the page's first result is scrolled into view, and the repository
+// switcher slides the page aside instead of narrowing it.
 const REPOSITORY_ID = uniqueRepositoryId('steady-layout');
 const VIEWPORT = { width: 1399, height: 652 };
 const QUERY = 'SELECT ?s WHERE { VALUES ?s { ' + Array.from({ length: 8 }, (_, i) => `"value ${i}"`).join(' ') + ' } }';
@@ -33,8 +34,8 @@ test.afterAll(async ({ request }) => {
     await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
 });
 
-async function openQueryPage(page) {
-    await page.setViewportSize(VIEWPORT);
+async function openQueryPage(page, viewport = VIEWPORT) {
+    await page.setViewportSize(viewport);
     await page.goto(repositoryPageUrl(REPOSITORY_ID, 'query'), { waitUntil: 'domcontentloaded' });
     await page.locator('.CodeMirror').waitFor({ state: 'visible' });
     await page.evaluate((query) => document.querySelector('.CodeMirror').CodeMirror.setValue(query), QUERY);
@@ -50,7 +51,8 @@ async function holdNextExecution(page) {
             held = true;
             await released;
         }
-        await route.continue();
+        // A request the page cancelled meanwhile is gone.
+        await route.continue().catch(() => {});
     });
     return () => release();
 }
@@ -69,13 +71,20 @@ test('running a query again keeps the results area\'s height and the scroll posi
     await execute(page);
     await resultsComplete(page);
     await expect(page.locator('#query-results tbody tr')).toHaveCount(8);
-    await page.waitForTimeout(600);
+    // Scrolled down to the results, where Execute is still in view.
+    await page.evaluate(() => window.scrollTo(0, document.scrollingElement.scrollHeight));
+    await page.waitForTimeout(300);
     const scrollTop = await page.evaluate(() => document.scrollingElement.scrollTop);
     expect(scrollTop).toBeGreaterThan(0);
     const height = await page.locator('#query-results').evaluate((results) => results.getBoundingClientRect().height);
     await page.evaluate(() => {
         window.__scrollPositions = [];
         window.addEventListener('scroll', () => window.__scrollPositions.push(document.scrollingElement.scrollTop));
+        // The area's height at every change inside it, also a state that lasts less than a frame.
+        const results = document.getElementById('query-results');
+        window.__heights = [];
+        new MutationObserver(() => window.__heights.push(results.getBoundingClientRect().height))
+            .observe(results, { subtree: true, childList: true, attributes: true, characterData: true });
     });
 
     const release = await holdNextExecution(page);
@@ -100,6 +109,10 @@ test('running a query again keeps the results area\'s height and the scroll posi
     await page.waitForTimeout(600);
     expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(scrollTop);
     expect(await page.evaluate(() => window.__scrollPositions.filter((top) => top !== window.scrollY))).toEqual([]);
+    // Neither taller nor shorter at any moment: the running query's Cancel takes no row of its own.
+    const heights = await page.evaluate(() => window.__heights);
+    expect(heights.length).toBeGreaterThan(0);
+    expect(heights.filter((value) => Math.abs(value - height) >= 1)).toEqual([]);
 });
 
 test('the first run shows placeholder rows where the results will be', async ({ page }) => {
@@ -117,6 +130,91 @@ test('the first run shows placeholder rows where the results will be', async ({ 
     await resultsComplete(page);
     await expect(skeleton).toBeHidden();
     await expect(page.locator('#query-results tbody tr')).toHaveCount(8);
+});
+
+/** Records every scroll position the page takes from now on. */
+async function recordScrolling(page) {
+    await page.evaluate(() => {
+        window.__scrollPositions = [];
+        window.addEventListener('scroll', () => window.__scrollPositions.push(document.scrollingElement.scrollTop));
+    });
+}
+
+/** How much of the result card is on screen: from its top edge to the bottom of the window. */
+async function cardShown(page) {
+    return page.evaluate(() => window.innerHeight - document.getElementById('query-output').getBoundingClientRect().top);
+}
+
+/** True once the result card is up under the top of the window, or the page has scrolled as far as it goes. */
+async function cardRevealed(page) {
+    return page.evaluate(() => {
+        const se = document.scrollingElement;
+        return document.getElementById('query-output').getBoundingClientRect().top <= 18
+            || se.scrollHeight - window.innerHeight - se.scrollTop <= 1;
+    });
+}
+
+test('the first query on the page brings its results into view; later runs leave the page where it is', async ({ page }) => {
+    await openQueryPage(page);
+    // The card is hidden until the first run; where it will start, it shows less than half of itself.
+    const before = await page.locator('#query-output').evaluate((element) => {
+        element.hidden = false;
+        const top = element.getBoundingClientRect().top;
+        element.hidden = true;
+        return top;
+    });
+    expect(before).toBeGreaterThan(VIEWPORT.height * 0.4);
+    await execute(page);
+    await resultsComplete(page);
+    await expect.poll(() => cardRevealed(page)).toBe(true);
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBeGreaterThan(0);
+
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await recordScrolling(page);
+    await execute(page);
+    await resultsComplete(page);
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => window.__scrollPositions)).toEqual([]);
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
+});
+
+test('an empty result counts as the first run: the next query does not scroll, even below the window', async ({ page }) => {
+    await openQueryPage(page, { width: VIEWPORT.width, height: 480 });
+    await page.evaluate(() => document.querySelector('.CodeMirror').CodeMirror.setValue('SELECT ?s WHERE { VALUES ?s { } }'));
+    await execute(page);
+    await expect(page.locator('#query-results .query-result-empty')).toBeVisible();
+    await page.waitForTimeout(600);
+
+    await page.evaluate((query) => document.querySelector('.CodeMirror').CodeMirror.setValue(query), QUERY);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.waitForTimeout(300);
+    await recordScrolling(page);
+    const release = await holdNextExecution(page);
+    await execute(page);
+    await expect(page.locator('#query-results .query-result-skeleton')).toBeVisible();
+    await page.waitForTimeout(400);
+    release();
+    await resultsComplete(page);
+    await expect(page.locator('#query-results tbody tr')).toHaveCount(8);
+    await page.waitForTimeout(800);
+    expect(await page.evaluate(() => window.__scrollPositions)).toEqual([]);
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
+});
+
+test('a first run that is cancelled leaves the reveal for the next query', async ({ page }) => {
+    await openQueryPage(page);
+    const release = await holdNextExecution(page);
+    await execute(page);
+    await page.locator('#query-results').getByRole('button', { name: 'Cancel query' }).click();
+    await expect(page.locator('#query-results .query-result-status')).toContainText('cancelled');
+    release();
+    await page.waitForTimeout(600);
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0);
+
+    await execute(page);
+    await resultsComplete(page);
+    await expect.poll(() => cardRevealed(page)).toBe(true);
 });
 
 test('the repository switcher slides the page aside instead of narrowing it', async ({ page }) => {
