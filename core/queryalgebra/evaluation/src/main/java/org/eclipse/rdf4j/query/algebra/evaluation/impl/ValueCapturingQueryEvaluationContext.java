@@ -16,6 +16,7 @@ import java.util.Arrays;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -82,6 +83,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public ActiveGraph getActiveGraph() {
 		return delegate.getActiveGraph();
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return delegate.getSubstitutionBindingNames();
 	}
 
 	@Override

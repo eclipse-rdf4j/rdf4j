@@ -1321,6 +1321,11 @@ public final class AdaptiveFilterEvaluationStep implements QueryEvaluationStep {
 		}
 
 		@Override
+		public Set<String> getSubstitutionBindingNames() {
+			return delegate.getSubstitutionBindingNames();
+		}
+
+		@Override
 		public boolean hasEnclosingProjection() {
 			return delegate.hasEnclosingProjection();
 		}

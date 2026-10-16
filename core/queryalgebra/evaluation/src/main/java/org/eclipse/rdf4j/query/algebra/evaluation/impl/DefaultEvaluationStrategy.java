@@ -14,9 +14,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -1842,8 +1844,62 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
-		QueryEvaluationStep subquery = precompile(subQuery, context);
-		return new ExistsQueryValueEvaluationStep(subquery);
+		Set<String> pathVariables = new HashSet<>();
+		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists nested) {
+				// A nested invocation captures its own binding domain, including bindings produced by this body.
+			}
+
+			@Override
+			public void meet(ZeroLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+				super.meet(path);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				if (node instanceof ZeroLengthPath path) {
+					meet(path);
+				} else if (node instanceof ArbitraryLengthPath path) {
+					meet(path);
+				} else {
+					super.meetOther(node);
+				}
+			}
+
+			private void addEndpoint(Var endpoint) {
+				if (!endpoint.isConstant()) {
+					pathVariables.add(endpoint.getName());
+				}
+			}
+		});
+		if (pathVariables.isEmpty()) {
+			return new ExistsQueryValueEvaluationStep(precompile(subQuery, context));
+		}
+
+		Set<String> referencedNames = Set.copyOf(pathVariables);
+		var variants = new ConcurrentHashMap<Set<String>, QueryEvaluationStep>();
+		return new ExistsQueryValueEvaluationStep(bindings -> {
+			Set<String> domain = new HashSet<>();
+			for (String name : referencedNames) {
+				if (bindings.getValue(name) != null) {
+					domain.add(name);
+				}
+			}
+			// Cache prepared code by domain, never values. Each variant has immutable substitution provenance, so
+			// concurrent/lazy invocations cannot change another invocation's interpretation of its path endpoints.
+			QueryEvaluationStep variant = variants.computeIfAbsent(Set.copyOf(domain),
+					names -> precompile(subQuery, new BindingSubstitutionQueryEvaluationContext(context, names)));
+			return variant.evaluate(bindings);
+		});
 	}
 
 	@Override

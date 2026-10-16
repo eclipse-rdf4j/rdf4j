@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -41,6 +42,11 @@ public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationC
 	@Override
 	public ActiveGraph getActiveGraph() {
 		return activeGraph;
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return delegate.getSubstitutionBindingNames();
 	}
 
 	@Override

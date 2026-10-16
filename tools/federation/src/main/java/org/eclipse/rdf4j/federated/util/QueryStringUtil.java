@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -75,7 +76,7 @@ public class QueryStringUtil {
 		private final Set<String> projected;
 		private final Set<String> reserved = new HashSet<>();
 		private final QueryBindingSet graphBindings;
-		private final Set<BNode> graphIdentities = new HashSet<>();
+		private final Set<Value> graphIdentities = new HashSet<>();
 		private int nextGraphName;
 
 		ProjectionVariables(QueryModelNode expression, Iterable<? extends BindingSet> bindings,
@@ -108,6 +109,14 @@ public class QueryStringUtil {
 				@Override
 				public void meet(Var var) {
 					reserved.add(var.getName());
+					if (graphBindings != null) {
+						for (BindingSet input : bindings) {
+							Value value = QueryAlgebraUtil.getVarValue(var, input);
+							if (value instanceof BNode || value instanceof TripleTerm) {
+								graphIdentities.add(value);
+							}
+						}
+					}
 				}
 			};
 			expression.visit(collector);
@@ -135,7 +144,7 @@ public class QueryStringUtil {
 			return name;
 		}
 
-		String nativeValue(BNode value) {
+		String nativeValue(Value value) {
 			String helper = privateName("__fedx_value_");
 			graphBindings.addBinding(helper, value);
 			return helper;
@@ -172,15 +181,15 @@ public class QueryStringUtil {
 		copy.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			public void meet(Var variable) {
-				if (variable.getValue()instanceof BNode value && variables.graphIdentities.contains(value)) {
-					variable.replaceWith(Var.of(variables.nativeValue(value)));
+				if (variables.graphIdentities.contains(variable.getValue())) {
+					variable.replaceWith(Var.of(variables.nativeValue(variable.getValue())));
 				}
 			}
 
 			@Override
 			public void meet(ValueConstant constant) {
-				if (constant.getValue()instanceof BNode value && variables.graphIdentities.contains(value)) {
-					constant.replaceWith(Var.of(variables.nativeValue(value)));
+				if (variables.graphIdentities.contains(constant.getValue())) {
+					constant.replaceWith(Var.of(variables.nativeValue(constant.getValue())));
 				}
 			}
 		});
@@ -994,9 +1003,9 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendVar(StringBuilder sb, Var var, Set<String> varNames, BindingSet bindings) {
 		Value value = QueryAlgebraUtil.getVarValue(var, bindings);
-		if (value instanceof BNode blank && varNames instanceof ProjectionVariables variables
-				&& variables.graphBindings != null && variables.graphIdentities.contains(blank)) {
-			return sb.append("?").append(variables.nativeValue(blank));
+		if (varNames instanceof ProjectionVariables variables
+				&& variables.graphBindings != null && variables.graphIdentities.contains(value)) {
+			return sb.append("?").append(variables.nativeValue(value));
 		}
 		if (!var.hasValue()) {
 			if (bindings.hasBinding(var.getName())) {

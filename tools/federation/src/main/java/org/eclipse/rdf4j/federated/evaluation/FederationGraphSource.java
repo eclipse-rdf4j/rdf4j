@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -34,11 +35,18 @@ final class FederationGraphSource implements TripleSource {
 	private final FederationEvaluationStrategy strategy;
 	private final QueryInfo queryInfo;
 	private final List<Endpoint> members;
+	private final boolean snapshotUnboundSelection;
 
 	FederationGraphSource(FederationEvaluationStrategy strategy, QueryInfo queryInfo, List<Endpoint> members) {
+		this(strategy, queryInfo, members, true);
+	}
+
+	FederationGraphSource(FederationEvaluationStrategy strategy, QueryInfo queryInfo, List<Endpoint> members,
+			boolean snapshotUnboundSelection) {
 		this.strategy = strategy;
 		this.queryInfo = queryInfo;
 		this.members = members;
+		this.snapshotUnboundSelection = snapshotUnboundSelection;
 	}
 
 	@Override
@@ -54,6 +62,9 @@ final class FederationGraphSource implements TripleSource {
 
 	@Override
 	public CloseableIteration<? extends Resource> getContextIDs() {
+		if (snapshotUnboundSelection) {
+			strategy.prepareGraphSnapshots(members, queryInfo);
+		}
 		return new LookAheadIteration<>() {
 			private final Iterator<Endpoint> endpoints = members.iterator();
 			private final Set<Resource> seen = new HashSet<>();
@@ -76,8 +87,14 @@ final class FederationGraphSource implements TripleSource {
 						if (!endpoints.hasNext()) {
 							return null;
 						}
-						connection = endpoints.next().getConnection();
-						contexts = connection.getContextIDs();
+						Endpoint endpoint = endpoints.next();
+						List<Resource> cached = strategy.getRemoteGraphNames(endpoint);
+						if (cached != null) {
+							contexts = new CloseableIteratorIteration<>(cached.iterator());
+						} else {
+							connection = endpoint.getConnection();
+							contexts = connection.getContextIDs();
+						}
 					}
 				} catch (RuntimeException | Error failure) {
 					try {

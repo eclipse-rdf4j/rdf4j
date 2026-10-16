@@ -12,13 +12,18 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BiFunction;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -103,6 +108,7 @@ import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -110,10 +116,12 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -143,11 +151,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.FallbackDataset;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.base.RepositoryConnectionWrapper;
+import org.eclipse.rdf4j.repository.sparql.SPARQLConnection;
 import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
 import org.eclipse.rdf4j.repository.sparql.federation.RepositoryFederatedService;
 import org.slf4j.Logger;
@@ -175,6 +187,181 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	protected SourceSelectionCache cache;
 
 	protected FederationContext federationContext;
+	private final Map<String, RemoteGraphSnapshot> graphSnapshots = new HashMap<>();
+	private final Map<String, List<Resource>> remoteGraphNames = new HashMap<>();
+	private final Set<String> inspectedGraphSources = new HashSet<>();
+	private boolean graphSnapshotsReleased;
+	private TupleExpr snapshotQueryRoot;
+	private QueryInfo snapshotQueryInfo;
+	private List<Endpoint> snapshotCandidates = List.of();
+	private RemoteGraphSnapshot.Load graphLoad;
+	private CompletableFuture<Void> graphPreparation;
+
+	/** Discover unsupported graph references before any member produces graph-body bindings. */
+	void prepareGraphSnapshots(List<Endpoint> members, QueryInfo queryInfo) {
+		CompletableFuture<Void> preparation;
+		RemoteGraphSnapshot.Load load;
+		boolean owner;
+		synchronized (this) {
+			if (graphSnapshotsReleased) {
+				throw new QueryEvaluationException("Query is aborted or closed");
+			}
+			if (members.stream().allMatch(endpoint -> inspectedGraphSources.contains(endpoint.getId()))) {
+				return;
+			}
+			owner = graphPreparation == null;
+			if (owner) {
+				graphPreparation = new CompletableFuture<>();
+				graphLoad = new RemoteGraphSnapshot.Load(queryInfo);
+			}
+			preparation = graphPreparation;
+			load = graphLoad;
+		}
+		if (!owner) {
+			try {
+				preparation.join();
+			} catch (CompletionException failure) {
+				if (failure.getCause()instanceof RuntimeException cause) {
+					throw cause;
+				}
+				throw new QueryEvaluationException(failure.getCause());
+			}
+			prepareGraphSnapshots(members, queryInfo);
+			return;
+		}
+		try {
+			for (Endpoint endpoint : members) {
+				load.checkOpen();
+				synchronized (this) {
+					if (inspectedGraphSources.contains(endpoint.getId())) {
+						continue;
+					}
+				}
+				RepositoryConnection connection = load.retain(endpoint.getConnection());
+				Throwable endpointFailure = null;
+				try {
+					RepositoryConnection delegate = connection;
+					while (delegate instanceof RepositoryConnectionWrapper wrapper && wrapper.getDelegate() != null) {
+						delegate = wrapper.getDelegate();
+					}
+					if (delegate instanceof SPARQLConnection) {
+						List<Resource> names = new ArrayList<>();
+						var contexts = load.retain(connection.getContextIDs());
+						Throwable contextFailure = null;
+						try {
+							while (true) {
+								load.checkOpen();
+								if (!contexts.hasNext()) {
+									break;
+								}
+								load.checkOpen();
+								names.add(contexts.next());
+							}
+						} catch (RuntimeException | Error failure) {
+							contextFailure = failure;
+							throw failure;
+						} finally {
+							load.closeIteration(contextFailure);
+						}
+						if (names.stream().anyMatch(BNode.class::isInstance)) {
+							var query = connection.prepareTupleQuery(QueryLanguage.SPARQL,
+									RemoteGraphSnapshot.queryString(), queryInfo.getBaseURI());
+							query.setIncludeInferred(queryInfo.getIncludeInferred());
+							FedXUtil.applyMaxQueryExecutionTime(query, federationContext);
+							long remaining = queryInfo.getMaxRemainingTimeMS();
+							if (remaining <= 0) {
+								throw new QueryEvaluationException("Query timed out while selecting named graphs");
+							}
+							if (remaining != Long.MAX_VALUE) {
+								int remainingSeconds = (int) Math.min(Integer.MAX_VALUE, 1 + (remaining - 1) / 1000);
+								int configuredSeconds = query.getMaxExecutionTime();
+								query.setMaxExecutionTime(configuredSeconds > 0
+										? Math.min(configuredSeconds, remainingSeconds)
+										: remainingSeconds);
+							}
+							federationContext.getMonitoringService().monitorRemoteRequest(endpoint);
+							RemoteGraphSnapshot snapshot = RemoteGraphSnapshot.capture(query, endpoint.getId(), load);
+							synchronized (this) {
+								load.checkOpen();
+								graphSnapshots.put(endpoint.getId(), snapshot);
+							}
+							names = snapshot.graphNames();
+						}
+						synchronized (this) {
+							load.checkOpen();
+							remoteGraphNames.put(endpoint.getId(), List.copyOf(names));
+						}
+					}
+				} catch (RuntimeException | Error failure) {
+					endpointFailure = failure;
+					throw failure;
+				} finally {
+					load.finishCurrent(endpointFailure);
+				}
+				synchronized (this) {
+					load.checkOpen();
+					inspectedGraphSources.add(endpoint.getId());
+				}
+			}
+			load.checkOpen();
+			preparation.complete(null);
+		} catch (RuntimeException | Error failure) {
+			try {
+				releaseGraphSnapshots();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			preparation.completeExceptionally(failure);
+			throw failure;
+		} finally {
+			synchronized (this) {
+				if (graphLoad == load) {
+					graphLoad = null;
+					graphPreparation = null;
+				}
+			}
+		}
+	}
+
+	synchronized List<Resource> getRemoteGraphNames(Endpoint endpoint) {
+		return remoteGraphNames.get(endpoint.getId());
+	}
+
+	synchronized RemoteGraphSnapshot getGraphSnapshot(Endpoint endpoint) {
+		return graphSnapshots.get(endpoint.getId());
+	}
+
+	/** Release response-local RDF data when the owning query is closed or aborted. */
+	public void releaseGraphSnapshots() {
+		RemoteGraphSnapshot.Load load;
+		List<RemoteGraphSnapshot> snapshots;
+		synchronized (this) {
+			graphSnapshotsReleased = true;
+			load = graphLoad;
+			if (load != null) {
+				load.cancel();
+			}
+			if (graphPreparation != null) {
+				graphPreparation.completeExceptionally(new QueryEvaluationException("Query is aborted or closed"));
+			}
+			snapshots = List.copyOf(graphSnapshots.values());
+			graphSnapshots.clear();
+			remoteGraphNames.clear();
+			inspectedGraphSources.clear();
+			snapshotQueryRoot = null;
+			snapshotQueryInfo = null;
+			snapshotCandidates = List.of();
+		}
+		try {
+			if (load != null) {
+				load.close();
+			}
+		} finally {
+			snapshots.forEach(RemoteGraphSnapshot::release);
+		}
+	}
 
 	/**
 	 * List of standard {@link QueryOptimizer}s applicable to federation
@@ -308,6 +495,23 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		if (log.isTraceEnabled()) {
 			log.trace("Query after Optimization: " + query);
+		}
+		boolean[] unboundGraph = { false };
+		query.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Graph graph) {
+				unboundGraph[0] |= !graph.getGraphName().hasValue();
+				super.meet(graph);
+			}
+
+			@Override
+			public void meet(Service service) {
+			}
+		});
+		if (unboundGraph[0] && !FedXUtil.hasDatasetGraphSelection(queryDataset)) {
+			snapshotQueryRoot = query;
+			snapshotQueryInfo = queryInfo;
+			snapshotCandidates = List.copyOf(members);
 		}
 
 		return query;
@@ -524,6 +728,9 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	public CloseableIteration<BindingSet> evaluate(
 			TupleExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
+		if (expr == snapshotQueryRoot) {
+			prepareGraphSnapshots(snapshotCandidates, snapshotQueryInfo);
+		}
 
 		if (expr instanceof QueryRef && NativeGraphQuery.isRequired(expr, bindings)) {
 			return prepareNativeGraphQuery(expr).evaluate(bindings);
@@ -584,6 +791,13 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	public QueryEvaluationStep precompile(
 			TupleExpr expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		if (expr == snapshotQueryRoot) {
+			QueryEvaluationStep prepared = super.precompile(expr, context);
+			return bindings -> {
+				prepareGraphSnapshots(snapshotCandidates, snapshotQueryInfo);
+				return prepared.evaluate(bindings);
+			};
+		}
 		if (expr instanceof QueryRef && NativeGraphQuery.isRequired(expr)) {
 			return prepareNativeGraphQuery(expr);
 		}
@@ -688,6 +902,11 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private CloseableIteration<BindingSet> evaluateNativeAtSource(NativeGraphQuery.Prepared prepared, Endpoint endpoint,
 			QueryInfo queryInfo) {
+		for (Binding binding : prepared.graphBindings()) {
+			if (!RemoteGraphSnapshot.belongsTo(binding.getValue(), endpoint.getId())) {
+				return new EmptyIteration<>();
+			}
+		}
 		if (endpoint.getTripleSource()instanceof TripleSourceBase source) {
 			return source.getStatements(prepared, queryInfo);
 		}
@@ -700,25 +919,34 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		DatasetQueryEvaluationContext graphContext = new DatasetQueryEvaluationContext(context,
 				FedXUtil.toRdfDataset(query.getDataset()), ProjectionIterator.hasEnclosingProjection(graph, context));
 		List<Endpoint> members = getMembersFromContext(new FederationEvaluationStatistics(query, query.getDataset()));
-		return GraphQueryEvaluationStep.supply(graph, new FederationGraphSource(this, query, members), graphContext,
-				(body, selectedContext) -> {
-					var activeGraph = selectedContext.getActiveGraph();
-					Dataset executionDataset = activeGraph.physicalGraph() == null
-							&& FedXUtil.hasDatasetGraphSelection(selectedContext.getDataset())
-									? new GraphExecutionDataset(selectedContext.getDataset())
-									: null;
-					QueryEvaluationContext bodyContext = executionDataset == null ? selectedContext
-							: new DatasetQueryEvaluationContext(selectedContext, executionDataset);
-					QueryRoot selected = new QueryRoot(body.clone());
-					selected.getArg()
-							.visit(new GraphScopeSpecializer(activeGraph, executionDataset,
-									selectedContext.getDataset()));
-					return precompile(selected.getArg(), bodyContext);
-				});
+		BiFunction<TupleExpr, QueryEvaluationContext, QueryEvaluationStep> preparer = (body, selectedContext) -> {
+			var activeGraph = selectedContext.getActiveGraph();
+			Dataset executionDataset = activeGraph.physicalGraph() == null
+					&& FedXUtil.hasDatasetGraphSelection(selectedContext.getDataset())
+							? new GraphExecutionDataset(selectedContext.getDataset())
+							: null;
+			QueryEvaluationContext bodyContext = executionDataset == null ? selectedContext
+					: new DatasetQueryEvaluationContext(selectedContext, executionDataset);
+			QueryRoot selected = new QueryRoot(body.clone());
+			selected.getArg()
+					.visit(new GraphScopeSpecializer(activeGraph, executionDataset,
+							selectedContext.getDataset()));
+			return precompile(selected.getArg(), bodyContext);
+		};
+		QueryEvaluationStep enumerated = GraphQueryEvaluationStep.supply(graph,
+				new FederationGraphSource(this, query, members, true), graphContext, preparer);
+		QueryEvaluationStep fixed = GraphQueryEvaluationStep.supply(graph,
+				new FederationGraphSource(this, query, members, false), graphContext, preparer);
+		return bindings -> {
+			Var name = graph.getGraphName();
+			Value selection = name.hasValue() ? name.getValue() : bindings.getValue(name.getName());
+			return (selection == null ? enumerated : fixed).evaluate(bindings);
+		};
 	}
 
 	private static boolean hasScopedContext(QueryEvaluationContext context) {
-		return context.getActiveGraph() != null || context.hasEnclosingProjection();
+		return context.getActiveGraph() != null || context.hasEnclosingProjection()
+				|| !context.getSubstitutionBindingNames().isEmpty();
 	}
 
 	/**

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -59,6 +60,16 @@ final class NativeGraphQuery {
 		if (!(expression instanceof StatementPattern || expression instanceof ExclusiveGroup
 				|| expression instanceof ExclusiveTupleExprRenderer || expression instanceof TripleRefJoinGroup)) {
 			return false;
+		}
+		boolean[] scoped = { false };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var variable) {
+				scoped[0] |= RemoteGraphSnapshot.isScoped(QueryAlgebraUtil.getVarValue(variable, bindings));
+			}
+		});
+		if (scoped[0]) {
+			return true;
 		}
 		if (expression instanceof GraphSelectionAware aware && aware.getResolvedGraphSelection() != null) {
 			return aware.getResolvedGraphSelection().logicalGraph() instanceof BNode;
@@ -158,6 +169,11 @@ final class NativeGraphQuery {
 	static boolean requiresScalarBindings(StatementPattern statement, List<BindingSet> bindings) {
 		var variables = QueryAlgebraUtil.getFreeVars(statement);
 		for (BindingSet row : bindings) {
+			for (Binding binding : row) {
+				if (RemoteGraphSnapshot.isScoped(binding.getValue())) {
+					return true;
+				}
+			}
 			Value graph = statement instanceof GraphSelectionAware aware && aware.getResolvedGraphSelection() != null
 					? aware.getResolvedGraphSelection().logicalGraph()
 					: QueryAlgebraUtil.getVarValue(statement.getContextVar(), row);

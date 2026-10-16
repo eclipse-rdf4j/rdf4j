@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -55,6 +56,14 @@ public interface QueryEvaluationContext {
 	/** Returns null when no GRAPH operator overrides the active default graph. */
 	default ActiveGraph getActiveGraph() {
 		return null;
+	}
+
+	/**
+	 * Variables substituted by the current EXISTS invocation. The immutable domain is captured at invocation entry;
+	 * bindings subsequently produced inside the body are ordinary variables rather than substituted query terms.
+	 */
+	default Set<String> getSubstitutionBindingNames() {
+		return Set.of();
 	}
 
 	/**

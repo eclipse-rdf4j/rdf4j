@@ -96,7 +96,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
-		this.requiresNodeMembership = !subjectVar.isConstant() && !objVar.isConstant();
+		this.requiresNodeMembership = !subjectVar.isConstant() && !objVar.isConstant()
+				&& !(subj != null && context.getSubstitutionBindingNames().contains(subjectVar.getName()))
+				&& !(obj != null && context.getSubstitutionBindingNames().contains(objVar.getName()));
 		this.subjectConstant = subjectVar.isConstant();
 		this.objectConstant = objVar.isConstant();
 		this.graphContextVar = contextVar;

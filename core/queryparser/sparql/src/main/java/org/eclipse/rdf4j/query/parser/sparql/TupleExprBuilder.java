@@ -96,6 +96,7 @@ import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.ReifiedTripleRef;
@@ -1668,37 +1669,42 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 
 					for (ValueExpr objectItem : objectList) {
 						Var objectVar = mapValueExprToVar(objectItem);
-						Var replacement = objectVar;
-						if (objectVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-							replacement = createAnonPathVar(false);
-						}
-						TupleExpr copy = elementExpresion.clone();
-						copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
-						if (!replacement.equals(objectVar)) {
-							SameTerm condition = new SameTerm(objectVar, replacement);
-							pathSequencePattern.addConstraint(condition);
-						}
-						pathSequencePattern.addRequiredTE(copy);
+						pathSequencePattern.addRequiredTE(
+								replacePathEndpoint(elementExpresion, pathSequenceContext.endVar, objectVar));
 					}
 				} else {
 					// nested sequence, replace endVar with parent endVar
-					Var replacement = parentEndVar;
-					if (parentEndVar.equals(subjVar)) { // corner case for cyclic expressions, see SES-1685
-						replacement = createAnonPathVar(false);
-					}
-					TupleExpr copy = elementExpresion.clone();
-					copy.visit(new VarReplacer(pathSequenceContext.endVar, replacement));
-					if (!replacement.equals(parentEndVar)) {
-						SameTerm condition = new SameTerm(parentEndVar, replacement);
-						pathSequencePattern.addConstraint(condition);
-					}
-					pathSequencePattern.addRequiredTE(copy);
+					pathSequencePattern.addRequiredTE(
+							replacePathEndpoint(elementExpresion, pathSequenceContext.endVar, parentEndVar));
 				}
 			} else {
 				pathSequencePattern.addRequiredTE(elementExpresion);
 			}
 		}
 		return pathSequencePattern.buildTupleExpr();
+	}
+
+	private TupleExpr replacePathEndpoint(TupleExpr expression, Var endpoint, Var replacement) throws VisitorException {
+		QueryRoot root = new QueryRoot(expression.clone());
+		root.visit(new AbstractQueryModelVisitor<VisitorException>() {
+			@Override
+			public void meet(ArbitraryLengthPath path) throws VisitorException {
+				// Arbitrary-length evaluation needs distinct input/output variables for cyclic paths (SES-1685).
+				// Keep that alias local to the path that requires it: other sequence/alternative branches must
+				// retain their lexical endpoint so EXISTS substitution still produces query terms there.
+				if (path.getSubjectVar().equals(endpoint) && path.getObjectVar().equals(replacement)
+						|| path.getObjectVar().equals(endpoint) && path.getSubjectVar().equals(replacement)) {
+					Var alias = createAnonPathVar(false);
+					ArbitraryLengthPath renamed = path.clone();
+					renamed.visit(new VarReplacer(endpoint, alias));
+					path.replaceWith(new Filter(renamed, new SameTerm(replacement.clone(), alias.clone())));
+				} else {
+					super.meet(path);
+				}
+			}
+		});
+		root.getArg().visit(new VarReplacer(endpoint, replacement));
+		return root.getArg();
 	}
 
 	@Override

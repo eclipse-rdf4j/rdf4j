@@ -151,7 +151,8 @@ public abstract class TripleSourceBase implements TripleSource {
 		return withConnection((conn, resultHolder) -> {
 
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery, null);
-			evaluatePreparedQuery(query, conn, bindings, filterExpr, queryInfo, resultHolder);
+			evaluatePreparedQuery(query, preparedQuery, EmptyBindingSet.getInstance(), conn, bindings, filterExpr,
+					queryInfo, resultHolder);
 		});
 	}
 
@@ -159,8 +160,8 @@ public abstract class TripleSourceBase implements TripleSource {
 	CloseableIteration<BindingSet> getStatements(NativeGraphQuery.Prepared preparedQuery, QueryInfo queryInfo) {
 		return withConnection((conn, resultHolder) -> {
 			TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, preparedQuery.queryString(), null);
-			applyBindings(query, preparedQuery.graphBindings());
-			evaluatePreparedQuery(query, conn, preparedQuery.resultBindings(), preparedQuery.filter(), queryInfo,
+			evaluatePreparedQuery(query, preparedQuery.queryString(), preparedQuery.graphBindings(), conn,
+					preparedQuery.resultBindings(), preparedQuery.filter(), queryInfo,
 					resultHolder);
 			if (preparedQuery.existenceCheck()) {
 				try (CloseableIteration<BindingSet> rows = resultHolder.get()) {
@@ -171,16 +172,24 @@ public abstract class TripleSourceBase implements TripleSource {
 		});
 	}
 
-	private void evaluatePreparedQuery(TupleQuery query, RepositoryConnection conn, BindingSet bindings,
+	private void evaluatePreparedQuery(TupleQuery query, String text, BindingSet nativeBindings,
+			RepositoryConnection conn, BindingSet bindings,
 			FilterValueExpr filterExpr, QueryInfo queryInfo, ResultHolder<BindingSet> resultHolder) {
 		applyMaxExecutionTimeUpperBound(query);
 		configureInference(query, queryInfo);
 
 		// evaluate the query
-		monitorRemoteRequest();
 		CloseableIteration<BindingSet> res = null;
 		try {
-			res = query.evaluate();
+			FederationEvaluationStrategy strategy = queryInfo.getStrategy();
+			RemoteGraphSnapshot snapshot = strategy == null ? null : strategy.getGraphSnapshot(endpoint);
+			if (snapshot == null) {
+				applyBindings(query, nativeBindings);
+				monitorRemoteRequest();
+				res = query.evaluate();
+			} else {
+				res = snapshot.evaluate(text, query, nativeBindings, federationContext.getFederatedServiceResolver());
+			}
 
 			resultHolder.set(res);
 

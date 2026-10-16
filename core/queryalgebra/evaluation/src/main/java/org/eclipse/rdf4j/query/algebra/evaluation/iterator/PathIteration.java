@@ -133,6 +133,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			}
 
 			@Override
+			public Set<String> getSubstitutionBindingNames() {
+				return context.getSubstitutionBindingNames();
+			}
+
+			@Override
 			public boolean hasEnclosingProjection() {
 				return enclosingProjection;
 			}

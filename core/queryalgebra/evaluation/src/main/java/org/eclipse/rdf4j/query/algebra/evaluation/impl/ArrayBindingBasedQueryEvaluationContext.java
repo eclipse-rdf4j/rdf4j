@@ -139,6 +139,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return context.getSubstitutionBindingNames();
+	}
+
+	@Override
 	public boolean hasEnclosingProjection() {
 		return context.hasEnclosingProjection();
 	}

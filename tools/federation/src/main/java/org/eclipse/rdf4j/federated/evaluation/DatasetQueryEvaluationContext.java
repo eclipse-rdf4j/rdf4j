@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import java.util.Comparator;
 import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -43,6 +44,11 @@ final class DatasetQueryEvaluationContext implements QueryEvaluationContext {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
 		this.dataset = dataset;
 		this.enclosingProjection = enclosingProjection;
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return delegate.getSubstitutionBindingNames();
 	}
 
 	@Override
