@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -92,6 +93,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -101,6 +103,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraphScope;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTripleTerm;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrLateral;
@@ -150,6 +153,7 @@ public class TupleExprToIrConverter {
 
 	static {
 		Map<String, String> m = new LinkedHashMap<>();
+		m.put("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement", "TRIPLE");
 		m.put(FN_NS + "string-length", "STRLEN");
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
@@ -600,6 +604,10 @@ public class TupleExprToIrConverter {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExpr(triple.getSubjectVar()) + ", " + renderExpr(triple.getPredicateVar())
+					+ ", " + renderExpr(triple.getObjectVar()) + ")";
+		}
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
@@ -2283,6 +2291,12 @@ public class TupleExprToIrConverter {
 			}
 			final String cond = ExprTextUtils.stripRedundantOuterParens(renderExpr(condExpr));
 			return new IrFilter(cond, false);
+		}
+
+		@Override
+		public void meet(final Graph graph) {
+			where.add(new IrGraphScope(graph.getGraphName(), childBuilder().build(graph.getArg()),
+					graph.isVariableScopeChange()));
 		}
 
 		public void meet(final StatementPattern sp) {

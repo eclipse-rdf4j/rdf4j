@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -240,7 +241,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		if (or.getLeftArg().equals(or.getRightArg())
 				&& AlgebraEvaluationSafety.isRepeatable(or.getLeftArg())
 				&& AlgebraEvaluationSafety.isRepeatable(or.getRightArg())) {
-			or.replaceWith(or.getLeftArg());
+			// Evaluate a repeatable operand once while retaining the logical operator's boolean result.
+			or.replaceWith(new Not(new Not(or.getLeftArg().clone())));
 			invalidateAnalysis();
 		}
 	}
@@ -252,7 +254,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		if (and.getLeftArg().equals(and.getRightArg())
 				&& AlgebraEvaluationSafety.isRepeatable(and.getLeftArg())
 				&& AlgebraEvaluationSafety.isRepeatable(and.getRightArg())) {
-			and.replaceWith(and.getLeftArg());
+			and.replaceWith(new Not(new Not(and.getLeftArg().clone())));
 			invalidateAnalysis();
 		}
 	}

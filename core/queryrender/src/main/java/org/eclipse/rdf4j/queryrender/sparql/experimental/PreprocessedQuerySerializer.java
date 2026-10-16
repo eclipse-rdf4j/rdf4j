@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -91,6 +92,7 @@ import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
@@ -107,9 +109,11 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
 import org.eclipse.rdf4j.rio.RDFFormat;
@@ -593,11 +597,17 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	@Override
 	public void meet(Difference node) throws RuntimeException {
-		builder.append("{\n");
+		boolean scopedLeft = TupleExprs.isVariableScopeChange(node.getLeftArg());
+		if (scopedLeft) {
+			builder.append("{\n");
+		}
 
 		node.getLeftArg().visit(this);
 
-		builder.append("}\n MINUS\n{\n");
+		if (scopedLeft) {
+			builder.append("}\n");
+		}
+		builder.append(" MINUS\n{\n");
 
 		node.getRightArg().visit(this);
 
@@ -1131,6 +1141,17 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	@Override
+	public void meet(Graph node) throws RuntimeException {
+		builder.append("GRAPH ");
+		node.getGraphName().visit(this);
+		builder.append(" { \n");
+		if (!(node.getArg()instanceof SingletonSet singleton) || singleton.isVariableScopeChange()) {
+			node.getArg().visit(this);
+		}
+		builder.append("} \n");
+	}
+
+	@Override
 	public void meet(Service node) throws RuntimeException {
 		builder.append("SERVICE ");
 		node.getServiceRef().visit(this);
@@ -1234,6 +1255,15 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		writeAsFunction("isTriple", node.getArg());
 	}
 
+	@Override
+	public void meetOther(QueryModelNode node) throws RuntimeException {
+		if (node instanceof ValueExprTripleRef triple) {
+			writeAsFunction("TRIPLE", List.of(triple.getSubjectVar(), triple.getPredicateVar(), triple.getObjectVar()));
+		} else {
+			super.meetOther(node);
+		}
+	}
+
 //    @Override
 //    public void meetOther(QueryModelNode node) throws RuntimeException {
 //        if (node instanceof NaryJoin) {
@@ -1319,6 +1349,9 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	protected String getFunctionNameAsString(FunctionCall expr) {
 		String uri = expr.getURI();
+		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement".equals(uri)) {
+			return "TRIPLE";
+		}
 		if (StringUtils.isEmpty(uri)) {
 			return uri;
 		}

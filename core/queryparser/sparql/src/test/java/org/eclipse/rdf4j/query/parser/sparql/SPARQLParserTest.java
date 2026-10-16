@@ -94,6 +94,35 @@ import org.junit.jupiter.api.Test;
  */
 public class SPARQLParserTest {
 
+	@Test
+	public void acceptsZeroArgumentConcat() {
+		assertDoesNotThrow(() -> new SPARQLParser().parseQuery("SELECT (CONCAT() AS ?result) WHERE {}", null));
+	}
+
+	@Test
+	public void acceptsEmptyVariadicExpressionsInNestedContexts() {
+		for (String expression : List.of("COALESCE()", "CONCAT()", "IF(true, COALESCE(), CONCAT())",
+				"COALESCE(COALESCE(), CONCAT())", "COALESCE(1 / 0, TRIPLE(<urn:s>, <urn:p>, CONCAT()))")) {
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT (" + expression + " AS ?result) WHERE {}", null), expression);
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT ?result WHERE { BIND(" + expression + " AS ?result) }", null), expression);
+		}
+	}
+
+	@Test
+	public void acceptsMultipleHavingConstraintsInAllQueryForms() {
+		for (String query : List.of(
+				"SELECT ?s WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(*) > 1) (COUNT(*) < 3)",
+				"SELECT (COUNT(*) AS ?n) WHERE {} HAVING (COUNT(*) > 0) (SUM(1) = 1) (true)",
+				"SELECT ?n WHERE { { SELECT (COUNT(*) AS ?n) WHERE {} HAVING (COUNT(*) > 0) (true) } }",
+				"ASK WHERE {} HAVING (COUNT(*) > 0) (true)",
+				"CONSTRUCT { <urn:s> <urn:p> ?n } WHERE { BIND(1 AS ?n) } GROUP BY ?n HAVING (true) (true)",
+				"DESCRIBE ?s WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(*) > 0) (true)")) {
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(query, null), query);
+		}
+	}
+
 	private SPARQLParser parser;
 
 	@BeforeEach
