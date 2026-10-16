@@ -139,6 +139,49 @@ test("workspace restore rejects impossible literal metadata combinations", () =>
   assert.equal(restored, null);
 });
 
+test("workspace restore preserves a directional language literal and rejects invalid direction metadata", () => {
+  const term = { type: "literal", value: "مرحبا", "xml:lang": "ar", "its:dir": "rtl" };
+  const restored = parseWorkspacePayload(
+    JSON.stringify({
+      graph: {
+        nodes: [
+          {
+            id: sparqlNodeId(term),
+            label: term.value,
+            kind: "literal",
+            termValue: term.value,
+            language: "ar",
+            direction: "rtl",
+          },
+        ],
+        edges: [],
+        revision: 1,
+      },
+    }),
+  );
+  assert.equal(restored?.graph.nodes[0].direction, "rtl");
+  assert.equal(restored?.graph.nodes[0].id, sparqlNodeId(term));
+
+  for (const invalid of [
+    { language: "ar", direction: "auto" },
+    { direction: "rtl" },
+    { kind: "iri", direction: "rtl" },
+  ]) {
+    const node = {
+      id: "urn:literal",
+      label: "bad",
+      kind: "literal",
+      termValue: "bad",
+      ...invalid,
+    };
+    assert.equal(
+      parseWorkspacePayload(JSON.stringify({ graph: { nodes: [node], edges: [], revision: 1 } })),
+      null,
+      JSON.stringify(invalid),
+    );
+  }
+});
+
 test("workspace restore keeps IRI term values used by saved graph nodes", () => {
   const restored = parseWorkspacePayload(
     JSON.stringify({

@@ -50,6 +50,7 @@ function iriEscape(iri: string) {
  */
 export function graphTurtle(graph: Graph) {
   const used = new Set<string>();
+  const blankNodeLabels = new Map<string, string>();
   const iri = (value: string) => {
     for (const [prefix, namespace] of PREFIXES) {
       const local = value.slice(namespace.length);
@@ -60,13 +61,21 @@ export function graphTurtle(graph: Graph) {
     }
     return `<${iriEscape(value)}>`;
   };
+  const blankNodeLabel = (value: string) => {
+    let label = blankNodeLabels.get(value);
+    if (label === undefined) {
+      label = `b${blankNodeLabels.size}`;
+      blankNodeLabels.set(value, label);
+    }
+    return label;
+  };
   const term = (nodeId: string): string | null => {
     const value = sparqlTermFromNodeId(nodeId);
     if (!value) return null;
     if (value.type === "uri") return iri(value.value);
-    if (value.type === "bnode") return `_:${value.value.replace(/[^A-Za-z0-9_-]/g, "_") || "b"}`;
+    if (value.type === "bnode") return `_:${blankNodeLabel(value.value)}`;
     const text = turtleString(value.value);
-    if (value["xml:lang"]) return `${text}@${value["xml:lang"]}`;
+    if (value["xml:lang"]) return `${text}@${value["xml:lang"]}${value["its:dir"] ? `--${value["its:dir"]}` : ""}`;
     return value.datatype && value.datatype !== XSD_STRING ? `${text}^^${iri(value.datatype)}` : text;
   };
 

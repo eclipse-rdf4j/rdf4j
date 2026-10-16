@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
+import org.eclipse.rdf4j.workbench.util.ServerIdentity;
 import org.eclipse.rdf4j.workbench.util.ShaclValidationSummary;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -82,6 +83,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	public static final String SERVER_PARAM = "server";
 
 	private RepositoryManager manager;
+	private String serverIdentity;
 
 	private WorkbenchPolicy policy;
 
@@ -99,6 +101,7 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 		this.policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), null);
 		try {
+			serverIdentity = ServerIdentity.of(param);
 			manager = createRepositoryManager(param);
 		} catch (IOException | RepositoryException e) {
 			throw new ServletException(e);
@@ -123,6 +126,9 @@ public class WorkbenchServlet extends AbstractServlet {
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		// This servlet is selected after the gateway resolves the cookie, relative default, or local manager.
+		req.setAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE, serverIdentity);
+		resp.setHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER, serverIdentity);
 		final String pathInfo = req.getPathInfo();
 		boolean landingRequest = pathInfo == null || "/".equals(pathInfo);
 		String landingPath = landingRequest

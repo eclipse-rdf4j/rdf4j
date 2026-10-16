@@ -142,6 +142,7 @@ module workbench {
         interface ViewContext {
             basePath: string;
             repositoryId: string;
+            serverIdentity?: string | null;
             workbench: any;
             linked?: any;
             pageModel?: PageModel;
@@ -539,11 +540,11 @@ module workbench {
          * The repository whose Graph page "Add to graph" feeds (workbench.graphAdditions), or undefined when this
          * page has no repository or the Graph page is hidden by the Workbench policy.
          */
-        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string } {
-            if (!context || !context.repositoryId || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
+        export function graphContext(context: ViewContext): { basePath: string; repositoryId: string; serverIdentity: string } {
+            if (!context || !context.repositoryId || !context.serverIdentity || !(workbench as any).graphAdditions || !pageEnabled(context, 'graph')) {
                 return undefined;
             }
-            return { basePath: context.basePath || '', repositoryId: context.repositoryId };
+            return { basePath: context.basePath || '', repositoryId: context.repositoryId, serverIdentity: context.serverIdentity };
         }
 
         /**
@@ -665,7 +666,8 @@ module workbench {
         /** A query of this repository running or finished while its Query page is not shown (M13.5). */
         function queryActivity(context: ViewContext): string {
             const page: any = (workbench as any).queryPage;
-            return page && typeof page.activity === 'function' ? page.activity(context.repositoryId || '') : '';
+            return page && typeof page.activity === 'function'
+                ? page.activity(context.repositoryId || '', context.serverIdentity, context.basePath) : '';
         }
 
         function navigationItem(runtime: LitRuntime, context: ViewContext, info: any, item: any,

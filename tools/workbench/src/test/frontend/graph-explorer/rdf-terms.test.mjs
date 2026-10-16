@@ -142,3 +142,40 @@ test("language literals have one canonical identity even when endpoints include 
     "xml:lang": "nb",
   });
 });
+
+test("directional language literals retain direction in validation, identity and query tokens", () => {
+  const rtl = { type: "literal", value: "مرحبا", "xml:lang": "AR", "its:dir": "rtl" };
+  const ltr = { ...rtl, "its:dir": "ltr" };
+  const plain = { type: "literal", value: rtl.value, "xml:lang": "ar" };
+  assert.equal(isSparqlTerm(rtl), true);
+  assert.equal(isSparqlTerm(ltr), true);
+
+  const rtlId = sparqlNodeId(rtl);
+  assert.notEqual(rtlId, sparqlNodeId(ltr));
+  assert.notEqual(rtlId, sparqlNodeId(plain));
+  assert.deepEqual(sparqlTermFromNodeId(rtlId), {
+    type: "literal",
+    value: rtl.value,
+    "xml:lang": "ar",
+    "its:dir": "rtl",
+  });
+  assert.equal(sparqlFacetValueToken(rtlId), '"مرحبا"@ar--rtl');
+});
+
+test("direction is rejected without a language literal or outside the supported values", () => {
+  for (const invalid of [
+    { type: "literal", value: "x", "its:dir": "rtl" },
+    { type: "literal", value: "x", "xml:lang": "en", "its:dir": "auto" },
+    { type: "uri", value: "urn:x", "its:dir": "ltr" },
+    { type: "bnode", value: "b", "xml:lang": "en", "its:dir": "rtl" },
+    { type: "typed-literal", value: "x", datatype: "urn:type", "xml:lang": "en", "its:dir": "rtl" },
+  ]) {
+    assert.equal(isSparqlTerm(invalid), false, JSON.stringify(invalid));
+  }
+
+  const prefix = "__rdf_literal__:";
+  assert.equal(
+    sparqlTermFromNodeId(prefix + JSON.stringify({ type: "literal", value: "x", datatype: "", language: "", direction: "rtl" })),
+    undefined,
+  );
+});

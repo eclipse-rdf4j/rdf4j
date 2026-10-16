@@ -41,7 +41,20 @@ const STATUS_MESSAGES: Record<number, string> = {
   503: "The Workbench policy is invalid; the administrator must fix workbench.properties.",
 };
 
-export async function queryRepository(endpoint: string, query: string, signal?: AbortSignal): Promise<SparqlResponse> {
+/** Direct/standalone mounts obtain the same authoritative identity as the normal page-model route. */
+export async function resolveServerIdentity(endpoint: string, signal?: AbortSignal): Promise<string> {
+  const response = await fetch(endpoint, {
+    headers: { accept: "application/vnd.rdf4j.workbench+ndjson" },
+    credentials: "same-origin",
+    cache: "no-store",
+    signal,
+  });
+  const identity = response.headers.get("X-Workbench-Server-Identity");
+  if (!response.ok || !identity) throw new Error("The repository server could not be identified. Reload this page to reconnect.");
+  return identity;
+}
+
+export async function queryRepository(endpoint: string, query: string, signal?: AbortSignal, serverIdentity?: string): Promise<SparqlResponse> {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -61,6 +74,11 @@ export async function queryRepository(endpoint: string, query: string, signal?: 
       response.status,
       Number(response.headers.get("retry-after") ?? 0) * 1000,
     );
+  }
+  // Another tab can change the server cookie while this graph remains open. Never mix its new results with this
+  // graph's saved data or shared metadata; a fresh page model must establish the new server before queries resume.
+  if (serverIdentity && response.headers.get("X-Workbench-Server-Identity") !== serverIdentity) {
+    throw new QueryFailure("The RDF4J server connection changed. Reload this page to reconnect.", 409);
   }
   try {
     return parseSparqlResponse(body);

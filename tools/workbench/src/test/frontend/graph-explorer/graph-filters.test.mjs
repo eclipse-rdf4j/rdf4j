@@ -60,6 +60,13 @@ test("literal datatypes use RDF 1.1 defaults when endpoint metadata is absent", 
   assert.equal(normalizedLiteralDatatype(iri), null);
 });
 
+test("directional language literals use the RDF 1.2 directional datatype", () => {
+  assert.equal(
+    normalizedLiteralDatatype({ kind: "literal", language: "ar", direction: "rtl" }),
+    "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString",
+  );
+});
+
 test("language filtering is case-insensitive and represents untagged literals", () => {
   assert.equal(normalizedLiteralLanguage(english), "en-gb");
   assert.equal(normalizedLiteralLanguage(plain), NO_LANGUAGE_VALUE_ID);

@@ -31,6 +31,12 @@ public final class WorkbenchPageProtocol {
 
 	public static final String REPOSITORY_ID_ATTRIBUTE = "org.eclipse.rdf4j.workbench.repositoryId";
 
+	public static final String SERVER_IDENTITY_ATTRIBUTE = "org.eclipse.rdf4j.workbench.serverIdentity";
+
+	public static final String SERVER_IDENTITY_HEADER = "X-Workbench-Server-Identity";
+
+	public static final String SERVER_IDENTITY_METADATA = "server-identity";
+
 	public static final String PAGE_RESULT_WRITER_ATTRIBUTE = "org.eclipse.rdf4j.workbench.pageResultWriter";
 
 	public static final String PAGE_VIEW_ID_ATTRIBUTE = "org.eclipse.rdf4j.workbench.pageViewId";

@@ -755,11 +755,11 @@ module workbench {
          * its outlet taken out of the shell, to be parked once the next page is rendered; any other route, and a
          * keep-alive route followed by another page of its own kind, is disposed (one Query page at a time).
          */
-        function leaveCurrent(nextViewId: string): any {
+        function leaveCurrent(nextViewId: string, serverIdentity?: string | null): any {
             const definition = routes.get(currentRoute.viewId);
             const instance = currentRoute.instance;
             if (!definition || !definition.keepAlive || typeof instance.suspend !== 'function'
-                    || nextViewId === currentRoute.viewId) {
+                    || nextViewId === currentRoute.viewId || currentRoute.context?.serverIdentity !== serverIdentity) {
                 instance.dispose('navigate');
                 return null;
             }
@@ -908,7 +908,8 @@ module workbench {
                 windowObject.location.assign(target.href);
                 return Promise.resolve<Outcome>('fallback');
             }
-            if (kept && !options.body && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
+            if (kept && !options.body && !kept.route.context?.serverIdentity
+                    && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
                 return Promise.resolve(restoreKept(target, options));
             }
             const mine = ++generation;
@@ -1002,6 +1003,15 @@ module workbench {
                         throw abandoned();
                     }
                     if (!options.body) {
+                        // The cookie is shared with other tabs. A kept Query may resume only after a fresh page
+                        // model confirms its manager; retain its live rows/editor only for that same server.
+                        const identity = model.metadata && model.metadata['server-identity'];
+                        if (kept && identity && identity === kept.route.context?.serverIdentity
+                                && target.href.split('#')[0] === kept.route.url.split('#')[0]) {
+                            model.rowStore.dispose();
+                            model = null;
+                            return restoreKept(target, options);
+                        }
                         return show();
                     }
                     if (writeAcknowledged(answerResponse, model)) {
@@ -1072,7 +1082,11 @@ module workbench {
                 history.replaceState(Object.assign({}, history.state, { scrollY: windowObject.scrollY }), '');
             }
             pendingRoute = null;
-            const parked = leaveCurrent(viewIdOf(url));
+            const context = app().viewContext(session.mount, model, url.href, session.runtime);
+            if (kept && kept.route.context?.serverIdentity !== context.serverIdentity) {
+                disposeKept('navigate');
+            }
+            const parked = leaveCurrent(viewIdOf(url), context.serverIdentity);
             if (kept && kept.route.viewId === viewIdOf(url)) {
                 // Another page of the kept kind (a different Query URL) starts afresh.
                 disposeKept('navigate');
@@ -1086,7 +1100,11 @@ module workbench {
             // The application element describes the page that is shown, as the server's shell does.
             session.mount.setAttribute('data-workbench-view', viewIdOf(url));
             session.mount.setAttribute('data-workbench-repository-id', repositoryIdOf(url));
-            const context = app().viewContext(session.mount, model, url.href, session.runtime);
+            if (context.serverIdentity) {
+                session.mount.setAttribute('data-workbench-server-identity', context.serverIdentity);
+            } else {
+                session.mount.removeAttribute('data-workbench-server-identity');
+            }
             views().render(session.mount, model, context, session.runtime);
             adoptBusy();
             if (parked) {

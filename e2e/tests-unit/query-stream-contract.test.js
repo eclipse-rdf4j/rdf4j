@@ -1214,3 +1214,57 @@ test('a suspended result renderer stops listening to the window and keeps its qu
     workbench.queryPage.resume();
     assert.equal(count(), running, 'resuming twice adds nothing');
 });
+
+
+test('query execution refuses a changed server before consuming rows or enabling graph additions', async () => {
+    const queryStream = loadQueryStreamApi();
+    let read = false;
+    await assert.rejects(queryStream.executeQueryStream('/repositories/same/query', [], {
+        serverIdentity:'sha256:server-a',
+        fetcher: async () => ({ok:true,status:200,headers:{get:name => name === 'X-Workbench-Server-Identity'
+            ? 'sha256:server-b' : 'application/vnd.rdf4j.workbench+ndjson'},
+            body:{getReader(){read = true; throw new Error('rows must not be read');}}})
+    }), /server connection changed/i);
+    assert.equal(read, false);
+});
+
+
+test('shelved Query results and background activity belong to the resolved server and repository', async () => {
+    const api = loadQueryStreamApi();
+    const workbench = api.__testWorkbench;
+    const window = api.__testWindow;
+    const document = new FakeDocument();
+    const wire = [{type:'head',version:1},{type:'view',id:'tuple'},{type:'vars',values:['item']},
+        {type:'rows',values:[[{kind:'literal',value:'server A row'}]]},
+        {type:'end',metadata:{'result-offset':0,'result-limit':1000000,'result-batch-count':1,'result-has-more':false,'result-next-offset':1}}]
+        .map(record=>JSON.stringify(record)+'\n').join('');
+    let executions=0;
+    window.fetch=async()=>{
+        executions++;
+        let delivered=false;
+        return {ok:true,headers:{get:name=>name==='X-Workbench-Server-Identity'?'sha256:a':''},
+            body:{getReader:()=>({read:async()=>delivered?{done:true}:(delivered=true,{done:false,value:new TextEncoder().encode(wire)}),cancel:async()=>{}})}};
+    };
+    function page(serverIdentity) {
+        document.body.children.slice().forEach(node=>document.body.removeChild(node));
+        const form=document.createElement('form');form.setAttribute('id','query-form');form.setAttribute('action','query');
+        const query=document.createElement('textarea');query.name='query';query.value='SELECT ?item {}';form.appendChild(query);
+        const target=document.createElement('section');target.setAttribute('id','query-results');
+        document.body.appendChild(form);document.body.appendChild(target);
+        const dispose=workbench.queryPage.renderInto(document.body,{}, {repositoryId:'same',serverIdentity,
+            executionFormId:'query-form',resultsMountId:'query-results',rowStoreOptions:{spillRowLimit:0,workerFactory:()=>new InMemoryWorker()}});
+        return {form,target,dispose};
+    }
+    const a=page('sha256:a');a.form.trigger('submit');
+    for(let n=0;n<30&&!/1 row · complete/.test(a.target.textContent);n++)await new Promise(resolve=>setImmediate(resolve));
+    assert.match(a.target.textContent,/1 row · complete/);
+    a.dispose('navigate');
+    const b=page('sha256:b');
+    assert.equal(b.target.querySelectorAll('.query-result-layout').length,0,'server B must not adopt server A rows');
+    assert.equal(workbench.queryPage.activity('same','sha256:b'),'');
+    b.dispose('navigate');
+    const again=page('sha256:a');
+    assert.equal(again.target.querySelectorAll('.query-result-layout').length,1,'same server restores its preserved result');
+    assert.equal(executions,1);
+    again.dispose();
+});

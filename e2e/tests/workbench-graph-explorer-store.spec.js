@@ -65,25 +65,41 @@ async function openGraphPage(page) {
 /** The graph the Graph page keeps for the repository in the browser's database (see workspace-storage.ts). */
 function storedGraph(page) {
     return page.evaluate((repositoryId) => new Promise((resolve) => {
+        const app = document.getElementById('workbench-app');
+        const basePath = app?.getAttribute('data-workbench-base-path');
+        const serverIdentity = app?.getAttribute('data-workbench-server-identity');
+        if (!basePath || !serverIdentity) {
+            resolve('');
+            return;
+        }
+        const scope = JSON.stringify(['repository-v2', basePath.replace(/\/+$/, ''), serverIdentity, repositoryId]);
+        const key = `workspace:${scope}`;
         const request = indexedDB.open('graph-field-workspaces', 1);
-        request.onupgradeneeded = () => request.result.createObjectStore('workspaces');
+        request.onupgradeneeded = () => {
+            if (!request.result.objectStoreNames.contains('workspaces')) request.result.createObjectStore('workspaces');
+        };
         request.onerror = () => resolve('');
         request.onsuccess = () => {
             const db = request.result;
+            if (!db.objectStoreNames.contains('workspaces')) {
+                db.close();
+                resolve('');
+                return;
+            }
             const store = db.transaction('workspaces').objectStore('workspaces');
-            const keys = store.getAllKeys();
-            keys.onsuccess = () => {
-                const key = keys.result.find((candidate) => String(candidate).endsWith('|' + repositoryId));
-                const read = key === undefined ? null : store.get(key);
-                if (!read) {
+            const read = store.get(key);
+            read.onsuccess = () => {
+                if (typeof read.result !== 'string') {
                     db.close();
                     resolve('');
                     return;
                 }
-                read.onsuccess = () => {
-                    db.close();
-                    resolve(String(read.result || ''));
-                };
+                db.close();
+                resolve(read.result);
+            };
+            read.onerror = () => {
+                db.close();
+                resolve('');
             };
         };
     }), REPOSITORY_ID);

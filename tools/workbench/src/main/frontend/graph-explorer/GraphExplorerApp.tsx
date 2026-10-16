@@ -21,7 +21,7 @@ import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, binding
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds } from "./graph-operations.ts";
 import { addToSelection, toggleInSelection } from "./graph-selection.ts";
 import { createBatch, createStarStressBatch } from "./load-batches.ts";
-import { facetCountQuery, formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
+import { countFacetValues, formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
 import { nodeDetails } from "./node-details.ts";
 import { useStoredWorkspace } from "./use-stored-workspace.ts";
@@ -57,7 +57,7 @@ import type { Binding } from "./explorer-types.ts";
 import { LabelPreferences } from "./label-preferences.tsx";
 import { Icon } from "./icons.tsx";
 import { parseLanguagePreferences, entitySearchQuery, expandQuery, neighborsQuery, seedQuery, type GraphScope } from "./rdf-vocabulary.ts";
-import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository } from "./transport.ts";
+import { explorePageUrl, graphEndpoint, queryPageUrl, queryRepository as executeRepositoryQuery } from "./transport.ts";
 import {
   useCallback,
   useEffect,
@@ -92,16 +92,21 @@ import {
   type SparqlTerm,
 } from "./rdf-terms";
 import type { WorkspacePayload } from "./workspace";
+import { repositoryScope } from "./repository-identity.ts";
 
 export type GraphExplorerProps = {
   /** The Workbench context path, e.g. /rdf4j-workbench. */
   basePath: string;
   /** The repository whose data is explored; queries go through the Workbench's Graph page servlet. */
   repositoryId: string;
+  /** Credential-free identity of the RDF4J server selected by the backend. */
+  serverIdentity: string;
 };
 
-export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps) {
-  const workspaceScope = `${basePath}|${repositoryId}`;
+export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: GraphExplorerProps) {
+  const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
+  const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
+    executeRepositoryQuery(endpoint, query, signal, serverIdentity), [serverIdentity]);
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [graph, setGraph] = useState<Graph>(() => ({ nodes: [], edges: [], revision: 0 }));
   const [showValues, setShowValues] = useState(() => {
@@ -200,6 +205,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   const queryRunRef = useRef(0);
   const entitySearchRef = useRef(0);
   const facetRequestRef = useRef(0);
+  const facetRequestAbortRef = useRef<AbortController | null>(null);
+  useEffect(() => () => facetRequestAbortRef.current?.abort(), []);
   const predicateRequestRef = useRef(0);
 
   const menuStateRef = useRef<ContextMenu | null>(menu);
@@ -584,6 +591,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     entitySearchRef.current += 1;
     predicateRequestRef.current += 1;
     facetRequestRef.current += 1;
+    facetRequestAbortRef.current?.abort();
+    facetRequestAbortRef.current = null;
     setIsQuerying(false);
     setExpandingNodeIds((current) => (current.size ? new Set() : current));
     setIsDiscoveringEdges(false);
@@ -848,7 +857,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     () => (focusedEdgeId ? (graph.edges.find((edge) => edge.id === focusedEdgeId) ?? null) : null),
     [focusedEdgeId, graph.edges],
   );
-  const statementDetails = useStatementDetails(focusedEdge, endpoint, graphScope as GraphScope, explorer);
+  const statementDetails = useStatementDetails(focusedEdge, endpoint, graphScope as GraphScope, explorer, serverIdentity);
   const contextSelectionBaseIds = menu
     ? menu.selectedNodeIds.length
       ? menu.selectedNodeIds
@@ -1022,7 +1031,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     dismissContextMenu(true);
     facetRequestRef.current += 1;
     filters.forgetRepositoryCounts();
-  }, [dismissContextMenu, endpoint, invalidateAsyncRequests]);
+  }, [dismissContextMenu, endpoint, graphScope, languages, workspaceScope, invalidateAsyncRequests]);
 
   useEffect(() => {
     if (!endpoint || !pendingIriTypeKey) return;
@@ -2250,11 +2259,11 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
     let applying = false;
     const take = () => {
       if (stopped || applying || !additionsIdleRef.current || document.visibilityState === "hidden") return;
-      const additions = takeAdditions(basePath, repositoryId);
+      const additions = takeAdditions(basePath, repositoryId, undefined, serverIdentity);
       if (!additions.length) return;
       applying = true;
       void addFromWorkbenchRef.current(additions)
-        .then((left) => returnAdditions(basePath, repositoryId, left))
+        .then((left) => returnAdditions(basePath, repositoryId, left, undefined, serverIdentity))
         .catch(() => {})
         .finally(() => {
           applying = false;
@@ -2262,7 +2271,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
         });
     };
     takeAdditionsRef.current = take;
-    const key = additionsKey(basePath, repositoryId);
+    const key = additionsKey(basePath, repositoryId, serverIdentity);
     const onStorage = (event: StorageEvent) => {
       if (event.key === key && event.newValue) take();
     };
@@ -2281,7 +2290,7 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [workspaceRestored, basePath, repositoryId, checkForNewer, invalidateAsyncRequests]);
+  }, [workspaceRestored, basePath, repositoryId, serverIdentity, checkForNewer, invalidateAsyncRequests]);
   useEffect(() => {
     if (additionsIdle) takeAdditionsRef.current();
   }, [additionsIdle]);
@@ -2861,37 +2870,32 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (!facet.endpointQueryable) return null;
     const facetGraphRevision = graphRef.current.revision;
     const facetQueryRun = queryRunRef.current;
-    const sourceIds = graphRef.current.nodes
+    const sourceIds = [...new Set(graphRef.current.nodes
       .filter((node) => node.kind === "iri" && isSafeSparqlIri(node.id))
-      .map((node) => node.id);
+      .map((node) => node.id))];
     if (!sourceIds.length) return null;
     const requestId = facetRequestRef.current + 1;
     facetRequestRef.current = requestId;
+    facetRequestAbortRef.current?.abort();
+    const controller = new AbortController();
+    facetRequestAbortRef.current = controller;
     const stale = () =>
+      controller.signal.aborted ||
       facetRequestRef.current !== requestId ||
       queryRunRef.current !== facetQueryRun ||
       graphRef.current.revision !== facetGraphRevision;
     try {
-      const result = await queryRepository(endpoint, facetCountQuery(sourceIds, facet.id, graphScope as GraphScope, languages));
-      if (stale()) return null;
-      const values = (result.results?.bindings ?? []).flatMap((binding) => {
-        const value = findBindingValue(binding, ["value"]);
-        const count = findBindingValue(binding, ["count"]);
-        if (!value || !count) return [];
-        const parsedCount = Number(count.value);
-        return [
-          {
-            id: sparqlNodeId(value as SparqlTerm),
-            label: findBindingValue(binding, ["valueLabel"])?.value || compactTerm(value.value, 38),
-            count: Number.isFinite(parsedCount) ? Math.max(0, parsedCount) : 0,
-          },
-        ];
-      });
+      const values = await countFacetValues(sourceIds, facet.id, graphScope as GraphScope, languages,
+        (query, signal) => queryRepository(endpoint, query, signal),
+        { signal: controller.signal, isCurrent: () => !stale() });
+      if (!values || stale()) return null;
       setStatus(`Counted ${facet.label} in the repository for ${sourceIds.length} loaded resources.`);
       return values;
     } catch (error) {
       if (!stale()) setStatus(error instanceof Error ? `Counting failed: ${error.message}` : "Counting failed.");
       return null;
+    } finally {
+      if (facetRequestAbortRef.current === controller) facetRequestAbortRef.current = null;
     }
   };
 

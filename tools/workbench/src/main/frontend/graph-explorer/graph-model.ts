@@ -33,7 +33,8 @@ export function createNodeMetadataSelector() {
       const old = previous[index];
       return node === old || (node.id === old.id && node.label === old.label &&
         node.kind === old.kind && node.types === old.types && node.datatype === old.datatype &&
-        node.language === old.language && node.termValue === old.termValue && node.pinned === old.pinned);
+        node.language === old.language && node.direction === old.direction && node.termValue === old.termValue &&
+        node.pinned === old.pinned);
     })) return previous;
     previous = nodes;
     return nodes;

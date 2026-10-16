@@ -137,6 +137,7 @@ export function bindingsToTriples(bindings: Binding[]) {
         sourceKind: termKind(source),
         sourceDatatype: source.datatype,
         sourceLanguage: source["xml:lang"],
+        sourceDirection: source["its:dir"],
         predicate: predicate.value,
         predicateLabel: predicateLabel(predicate.value, findLabel(binding, "predicate")),
         target: targetId,
@@ -145,6 +146,7 @@ export function bindingsToTriples(bindings: Binding[]) {
         targetKind: termKind(target),
         targetDatatype: target.datatype,
         targetLanguage: target["xml:lang"],
+        targetDirection: target["its:dir"],
       },
     ];
   });
@@ -158,9 +160,9 @@ export function tripleEdgeId(source: string, predicate: string, target: string) 
 }
 
 /** The line under a term in tables: the IRI (compact), a literal's language or datatype, or "blank node". */
-export function termCode(node: Pick<GraphNode, "id" | "kind" | "datatype" | "language"> | undefined, id = node?.id ?? "") {
+export function termCode(node: Pick<GraphNode, "id" | "kind" | "datatype" | "language" | "direction"> | undefined, id = node?.id ?? "") {
   if (!node || node.kind === "iri") return compactTerm(id, 42);
   if (node.kind === "blank") return "blank node";
-  if (node.language) return `@${node.language}`;
+  if (node.language) return `@${node.language}${node.direction ? `--${node.direction}` : ""}`;
   return compactTerm(node.datatype || "http://www.w3.org/2001/XMLSchema#string", 42);
 }

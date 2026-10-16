@@ -14,6 +14,7 @@ export type SparqlTerm = {
   value: string;
   datatype?: string;
   "xml:lang"?: string;
+  "its:dir"?: "ltr" | "rtl";
 };
 
 const SAFE_LANGUAGE = /^[A-Za-z]+(?:-[A-Za-z0-9]+)*$/;
@@ -44,6 +45,13 @@ export function isSparqlTerm(value: unknown): value is SparqlTerm {
     return false;
   }
   if (
+    record["its:dir"] !== undefined &&
+    record["its:dir"] !== "ltr" &&
+    record["its:dir"] !== "rtl"
+  ) {
+    return false;
+  }
+  if (
     record.type === "uri" ||
     record.type === "bnode"
   ) {
@@ -52,6 +60,12 @@ export function isSparqlTerm(value: unknown): value is SparqlTerm {
     }
   }
   if (record.datatype !== undefined && record["xml:lang"] !== undefined) {
+    return false;
+  }
+  if (
+    record["its:dir"] !== undefined &&
+    (record.type !== "literal" || !record["xml:lang"] || record.datatype !== undefined)
+  ) {
     return false;
   }
   if (
@@ -89,12 +103,14 @@ export function sparqlNodeId(term: SparqlTerm) {
   const language = term["xml:lang"]?.trim().toLocaleLowerCase() ?? "";
   const datatype =
     language && term.datatype === RDF_LANG_STRING ? "" : term.datatype ?? "";
-  return `${INTERNAL_LITERAL_NODE_PREFIX}${JSON.stringify({
+  const identity = {
     type: term.type,
     value: term.value,
     datatype,
     language,
-  })}`;
+    ...(term["its:dir"] !== undefined ? { direction: term["its:dir"] } : {}),
+  };
+  return `${INTERNAL_LITERAL_NODE_PREFIX}${JSON.stringify(identity)}`;
 }
 
 export function sparqlTermFromNodeId(nodeId: string): SparqlTerm | undefined {
@@ -115,7 +131,8 @@ export function sparqlTermFromNodeId(nodeId: string): SparqlTerm | undefined {
         (record.type !== "literal" && record.type !== "typed-literal") ||
         typeof record.value !== "string" ||
         (record.datatype !== "" && typeof record.datatype !== "string") ||
-        (record.language !== "" && typeof record.language !== "string")
+        (record.language !== "" && typeof record.language !== "string") ||
+        (record.direction !== undefined && record.direction !== "ltr" && record.direction !== "rtl")
       ) {
         return undefined;
       }
@@ -125,6 +142,7 @@ export function sparqlTermFromNodeId(nodeId: string): SparqlTerm | undefined {
       };
       if (record.datatype) term.datatype = record.datatype;
       if (record.language) term["xml:lang"] = record.language;
+      if (record.direction === "ltr" || record.direction === "rtl") term["its:dir"] = record.direction;
       return isSparqlTerm(term) ? term : undefined;
     } catch {
       return undefined;
@@ -137,8 +155,10 @@ export function sparqlTermFromNodeId(nodeId: string): SparqlTerm | undefined {
 
 /**
  * Convert a canonical graph node ID back into a safe SPARQL VALUES token.
- * Blank-node labels cannot be relied on across endpoint requests, so they are
- * intentionally omitted instead of generating a query with incorrect scope.
+ * Ordinary `_:` blank-node labels are query-local and cannot name an existing endpoint node. RDF4J support for fixed
+ * references such as Jena's `<_:id>` syntax is in progress; after it merges, switch this to fixed references while
+ * preserving server and repository identity before enabling blank-node lookups. Until then, omit them instead of
+ * generating a query with incorrect scope.
  */
 export function sparqlFacetValueToken(nodeId: string): string | null {
   const term = sparqlTermFromNodeId(nodeId);
@@ -147,7 +167,7 @@ export function sparqlFacetValueToken(nodeId: string): string | null {
   if (term.type === "bnode") return null;
   const value = `"${escapedSparqlString(term.value)}"`;
   if (term["xml:lang"] && SAFE_LANGUAGE.test(term["xml:lang"])) {
-    return `${value}@${term["xml:lang"]}`;
+    return `${value}@${term["xml:lang"]}${term["its:dir"] ? `--${term["its:dir"]}` : ""}`;
   }
   if (term.datatype && isSafeSparqlIri(term.datatype)) {
     return `${value}^^<${term.datatype}>`;

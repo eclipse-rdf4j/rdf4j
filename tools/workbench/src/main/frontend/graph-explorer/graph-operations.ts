@@ -203,6 +203,7 @@ export function mergeTriples(
         kind: triple.sourceKind,
         datatype: triple.sourceDatatype,
         language: triple.sourceLanguage,
+        direction: triple.sourceDirection,
         x: 180 + (nodes.length % 4) * 180,
         y: 170 + Math.floor(nodes.length / 4) * 120,
       } satisfies GraphNode;
@@ -224,6 +225,7 @@ export function mergeTriples(
         kind: triple.targetKind,
         datatype: triple.targetDatatype,
         language: triple.targetLanguage,
+        direction: triple.targetDirection,
         x: 180 + (nodes.length % 4) * 180,
         y: 170 + Math.floor(nodes.length / 4) * 120,
       } satisfies GraphNode;

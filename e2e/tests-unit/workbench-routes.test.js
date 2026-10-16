@@ -1047,3 +1047,17 @@ test('routes whose parts cannot be suspended suspend and resume without effect',
     instance.dispose('navigate');
     summary.dispose('navigate');
 });
+
+
+test('viewContext takes authoritative server identity from each fresh model', () => {
+    const workbench = loadWorkbench();
+    const mount = { getAttribute: name => ({'data-workbench-base-path':'/workbench',
+        'data-workbench-server-identity':'sha256:old-shell'})[name] || null };
+    const model = { viewId:'graph', metadata:{'server-identity':'sha256:server-b'}, workbench:{} };
+    const context = workbench.app.viewContext(mount, model,
+        'https://example.test/workbench/repositories/repo/graph', 'runtime');
+    assert.equal(context.serverIdentity, 'sha256:server-b', 'fresh page data outranks the initial shell');
+    const unknown = workbench.app.viewContext(mount, { viewId:'graph', metadata:{}, workbench:{} },
+        'https://example.test/workbench/repositories/repo/graph', 'runtime');
+    assert.equal(unknown.serverIdentity, null, 'a model without server identity cannot borrow stale shell identity');
+});

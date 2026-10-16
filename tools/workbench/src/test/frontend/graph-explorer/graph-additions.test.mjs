@@ -30,11 +30,14 @@ function memoryStorage(initial = {}) {
 }
 
 test("the queue key matches the Workbench pages' (scripts/ts/graphAdditions.ts)", () => {
-  assert.equal(additionsKey("/wb/", "my repo"), "rdf4j-workbench-graph-additions:/wb|my repo");
+  assert.equal(
+    additionsKey("/wb/", "my repo", "server"),
+    'rdf4j-workbench-graph-additions:["repository-v2","/wb","server","my repo"]',
+  );
 });
 
 test("the Graph page takes the queued additions once and drops malformed ones", () => {
-  const key = additionsKey("/wb", "repo");
+  const key = additionsKey("/wb", "repo", "server");
   const storage = memoryStorage({
     [key]: JSON.stringify([
       { kind: "resource", term: "<urn:a>" },
@@ -44,10 +47,10 @@ test("the Graph page takes the queued additions once and drops malformed ones", 
       { kind: "other" },
     ]),
   });
-  assert.deepEqual(takeAdditions("/wb", "repo", storage).map((entry) => entry.kind), ["resource", "statement", "query"]);
+  assert.deepEqual(takeAdditions("/wb", "repo", storage, "server").map((entry) => entry.kind), ["resource", "statement", "query"]);
   assert.equal(storage.getItem(key), null);
-  assert.deepEqual(takeAdditions("/wb", "repo", storage), []);
-  assert.deepEqual(takeAdditions("/wb", "repo", memoryStorage({ [key]: "{broken" })), []);
+  assert.deepEqual(takeAdditions("/wb", "repo", storage, "server"), []);
+  assert.deepEqual(takeAdditions("/wb", "repo", memoryStorage({ [key]: "{broken" }), "server"), []);
 });
 
 test("N-Triples terms become SPARQL JSON terms", () => {
@@ -55,6 +58,12 @@ test("N-Triples terms become SPARQL JSON terms", () => {
   assert.deepEqual(parseNTriplesTerm("_:b12"), { type: "bnode", value: "b12" });
   assert.deepEqual(parseNTriplesTerm('"line\\nbreak \\"quoted\\""'), { type: "literal", value: 'line\nbreak "quoted"' });
   assert.deepEqual(parseNTriplesTerm('"Hallo"@de'), { type: "literal", value: "Hallo", "xml:lang": "de" });
+  assert.deepEqual(parseNTriplesTerm('"مرحبا"@ar--rtl'), {
+    type: "literal",
+    value: "مرحبا",
+    "xml:lang": "ar",
+    "its:dir": "rtl",
+  });
   assert.deepEqual(parseNTriplesTerm('"39"^^<http://www.w3.org/2001/XMLSchema#integer>'), {
     type: "literal",
     value: "39",
@@ -88,13 +97,13 @@ test("queued statements are recorded as a query that answers them again", () => 
 import { returnAdditions } from "../../../main/frontend/graph-explorer/graph-additions.ts";
 
 test("additions that could not be applied go back to the front of the queue", () => {
-  const key = additionsKey("/wb", "repo");
+  const key = additionsKey("/wb", "repo", "server");
   const storage = memoryStorage({ [key]: JSON.stringify([{ kind: "resource", term: "<urn:later>" }]) });
-  returnAdditions("/wb", "repo", [{ kind: "resource", term: "<urn:first>" }, { kind: "query", query: "CONSTRUCT WHERE { ?s ?p ?o }" }], storage);
+  returnAdditions("/wb", "repo", [{ kind: "resource", term: "<urn:first>" }, { kind: "query", query: "CONSTRUCT WHERE { ?s ?p ?o }" }], storage, "server");
   assert.deepEqual(
-    takeAdditions("/wb", "repo", storage).map((entry) => entry.term ?? entry.query),
+    takeAdditions("/wb", "repo", storage, "server").map((entry) => entry.term ?? entry.query),
     ["<urn:first>", "CONSTRUCT WHERE { ?s ?p ?o }", "<urn:later>"],
   );
-  returnAdditions("/wb", "repo", [], storage);
+  returnAdditions("/wb", "repo", [], storage, "server");
   assert.equal(storage.getItem(key), null, "nothing to return writes nothing");
 });

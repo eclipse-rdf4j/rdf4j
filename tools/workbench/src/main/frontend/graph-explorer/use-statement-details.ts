@@ -46,13 +46,13 @@ const predicateCache = new Map<string, Promise<Pick<StatementDetails, "info" | "
 /** Endpoints that rejected a triple term `<<( … )>>` in a query; they are asked for classic reifications only. */
 const withoutTripleTerms = new Set<string>();
 
-function predicateDetails(endpoint: string, scope: GraphScope, predicate: string) {
-  const key = JSON.stringify([endpoint, scope, predicate]);
+function predicateDetails(endpoint: string, scope: GraphScope, predicate: string, serverIdentity: string) {
+  const key = JSON.stringify([endpoint, serverIdentity, scope, predicate]);
   let cached = predicateCache.get(key);
   if (!cached) {
     cached = Promise.all([
-      queryRepository(endpoint, predicateInfoQuery(predicate, scope)),
-      queryRepository(endpoint, predicateUsageQuery(predicate, PREDICATE_USAGE_CAP, scope)),
+      queryRepository(endpoint, predicateInfoQuery(predicate, scope), undefined, serverIdentity),
+      queryRepository(endpoint, predicateUsageQuery(predicate, PREDICATE_USAGE_CAP, scope), undefined, serverIdentity),
     ]).then(([info, usage]) => {
       const count = Number.parseInt(usage.results?.bindings?.[0]?.uses?.value ?? "", 10);
       return {
@@ -68,20 +68,21 @@ function predicateDetails(endpoint: string, scope: GraphScope, predicate: string
   return cached;
 }
 
-async function annotations(endpoint: string, scope: GraphScope, edge: GraphEdge, signal: AbortSignal) {
+async function annotations(endpoint: string, scope: GraphScope, edge: GraphEdge, signal: AbortSignal, serverIdentity: string) {
   const tokens = statementTokens(edge);
   if (!tokens) return null;
-  if (!withoutTripleTerms.has(endpoint)) {
+  const server = JSON.stringify([endpoint, serverIdentity]);
+  if (!withoutTripleTerms.has(server)) {
     try {
-      const result = await queryRepository(endpoint, statementAnnotationsQuery(tokens, scope, true), signal);
+      const result = await queryRepository(endpoint, statementAnnotationsQuery(tokens, scope, true), signal, serverIdentity);
       return statementCards((result.results?.bindings ?? []) as Binding[]);
     } catch (error) {
       // Only a rejected query means the store does not read triple terms; a timeout or an outage is just an error.
       if (signal.aborted || !(error instanceof QueryFailure) || error.status !== 400) throw error;
-      withoutTripleTerms.add(endpoint);
+      withoutTripleTerms.add(server);
     }
   }
-  const result = await queryRepository(endpoint, statementAnnotationsQuery(tokens, scope, false), signal);
+  const result = await queryRepository(endpoint, statementAnnotationsQuery(tokens, scope, false), signal, serverIdentity);
   return statementCards((result.results?.bindings ?? []) as Binding[]);
 }
 
@@ -101,7 +102,7 @@ function namedIris(details: StatementDetails) {
 }
 
 /** What the statement card shows for the focused edge, and the labels of the resources it names. */
-export function useStatementDetails(edge: GraphEdge | null, endpoint: string, scope: GraphScope, explorer: RdfExplorer) {
+export function useStatementDetails(edge: GraphEdge | null, endpoint: string, scope: GraphScope, explorer: RdfExplorer, serverIdentity: string) {
   const [details, setDetails] = useState<StatementDetails>(EMPTY);
   const [, setLabelEpoch] = useState(0);
   const edgeKey = edge ? JSON.stringify([edge.source, edge.predicate, edge.target]) : "";
@@ -113,8 +114,8 @@ export function useStatementDetails(edge: GraphEdge | null, endpoint: string, sc
     void (async () => {
       try {
         const [predicate, cards] = await Promise.all([
-          predicateDetails(endpoint, scope, edge.predicate),
-          annotations(endpoint, scope, edge, controller.signal),
+          predicateDetails(endpoint, scope, edge.predicate, serverIdentity),
+          annotations(endpoint, scope, edge, controller.signal, serverIdentity),
         ]);
         if (controller.signal.aborted) return;
         const next: StatementDetails = { status: "ready", ...predicate, cards: cards ?? [], unnamed: cards === null };
@@ -131,7 +132,7 @@ export function useStatementDetails(edge: GraphEdge | null, endpoint: string, sc
     })();
     return () => controller.abort();
     // The edge object changes with every layout frame; its statement is what matters.
-  }, [edgeKey, endpoint, scope, explorer]);
+  }, [edgeKey, endpoint, scope, explorer, serverIdentity]);
 
   const labelOf = useCallback((iri: string) => explorer.label(iri), [explorer]);
   return { details, labelOf };

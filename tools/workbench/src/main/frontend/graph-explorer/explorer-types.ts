@@ -19,6 +19,7 @@ export type SparqlValue = {
   type: "uri" | "literal" | "bnode" | "typed-literal";
   value: string;
   "xml:lang"?: string;
+  "its:dir"?: "ltr" | "rtl";
   datatype?: string;
 };
 

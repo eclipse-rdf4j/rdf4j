@@ -24,12 +24,13 @@ export const WORKSPACE_FORMAT = 2;
 const KIND = ["iri", "literal", "blank"] as const;
 
 /** The id a node would get from its value; nodes whose id is exactly that store none. */
-function derivedId(node: Pick<WorkspaceGraphNode, "kind" | "termValue" | "datatype" | "language">) {
+function derivedId(node: Pick<WorkspaceGraphNode, "kind" | "termValue" | "datatype" | "language" | "direction">) {
   if (node.kind === "blank") return node.termValue === undefined ? null : `${INTERNAL_BNODE_NODE_PREFIX}${node.termValue}`;
   if (node.kind !== "literal" || node.termValue === undefined) return null;
   const term: SparqlTerm = { type: "literal", value: node.termValue };
   if (node.datatype) term.datatype = node.datatype;
   if (node.language) term["xml:lang"] = node.language;
+  if (node.direction) term["its:dir"] = node.direction;
   return sparqlNodeId(term);
 }
 
@@ -80,6 +81,7 @@ function encodeGraphMembers(graph: WorkspacePayload["graph"]) {
             }
             return at;
           }),
+      node.direction ?? null,
     ];
     while (tuple.length > 3 && tuple[tuple.length - 1] === null) tuple.pop();
     return tuple;
@@ -148,12 +150,16 @@ export function decodeWorkspace(parsed: unknown): Record<string, unknown> | null
   const plainNodes: WorkspaceGraphNode[] = [];
   for (const tuple of nodeTuples) {
     if (!Array.isArray(tuple) || tuple.length < 3 || !isIndex(tuple[2], KIND.length)) return null;
-    const [id, label, kind, x, y, pinned, termValue, datatype, language, nodeTypes] = tuple;
+    const [id, label, kind, x, y, pinned, termValue, datatype, language, nodeTypes, direction] = tuple;
     const node: WorkspaceGraphNode = { id: "", label: label as string, kind: KIND[kind as number] };
     if (typeof termValue === "string") node.termValue = termValue;
     else if (termValue === 0 && typeof id === "string") node.termValue = id;
     if (typeof datatype === "string") node.datatype = datatype;
     if (typeof language === "string") node.language = language;
+    if (direction !== undefined && direction !== null) {
+      if (direction !== "ltr" && direction !== "rtl") return null;
+      node.direction = direction;
+    }
     const resolvedId = id === 0 ? derivedId(node) : id;
     if (typeof resolvedId !== "string") return null;
     node.id = resolvedId;

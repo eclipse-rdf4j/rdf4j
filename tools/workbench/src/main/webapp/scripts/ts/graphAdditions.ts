@@ -13,7 +13,7 @@ module workbench {
 
     /**
      * "Add to graph": the Workbench pages queue resources, statements and queries for the Graph page of the same
-     * repository. The queue is a JSON array in localStorage under rdf4j-workbench-graph-additions:<basePath>|<id>;
+     * server and repository. The queue key contains a versioned JSON tuple of Workbench path, resolved server identity and ID;
      * the Graph page (src/main/frontend/graph-explorer/graph-additions.ts) takes it when it opens or when another tab
      * changes it. Terms are N-Triples terms (workbench.queryStream.ntriplesTerm).
      */
@@ -22,6 +22,7 @@ module workbench {
         export interface GraphContext {
             basePath?: string;
             repositoryId?: string | null;
+            serverIdentity?: string | null;
         }
 
         export interface GraphAddition {
@@ -43,7 +44,8 @@ module workbench {
         var TERM = /^(<[^<>"{}|^`\\\s]*>|_:\S+|".*"(@[A-Za-z0-9-]+|\^\^<[^<>\s]*>)?|<<\(.*\)>>)$/;
 
         function scopeOf(context: GraphContext): string {
-            return String(context.basePath || '').replace(/\/+$/, '') + '|' + String(context.repositoryId || '');
+            return JSON.stringify(['repository-v2', String(context.basePath || '').replace(/\/+$/, ''),
+                context.serverIdentity, String(context.repositoryId || '')]);
         }
 
         /** The localStorage key of a repository's queue. */
@@ -93,7 +95,7 @@ module workbench {
         /** The additions queued for the repository's Graph page, oldest first. */
         export function pending(context: GraphContext, storage?: QueueStorage | null): GraphAddition[] {
             var store = storage === undefined ? defaultStorage() : storage;
-            if (!store || !context || !context.repositoryId) {
+            if (!store || !context || !context.repositoryId || !context.serverIdentity) {
                 return [];
             }
             try {
@@ -112,7 +114,7 @@ module workbench {
                             storage?: QueueStorage | null): number {
             var store = storage === undefined ? defaultStorage() : storage;
             var adding = (Array.isArray(entries) ? entries : [entries]).filter(valid).map(only);
-            if (!store || !context || !context.repositoryId || !adding.length) {
+            if (!store || !context || !context.repositoryId || !context.serverIdentity || !adding.length) {
                 return 0;
             }
             try {

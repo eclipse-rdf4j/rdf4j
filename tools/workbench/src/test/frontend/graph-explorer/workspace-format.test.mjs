@@ -104,3 +104,59 @@ test("saving again after only the view changed does not encode the graph again",
   assert.equal(second, encodeWorkspace({ ...moved, graph: { ...payload.graph } }), "same text as a fresh encoding");
   assert.notEqual(first, second);
 });
+
+test("old compact workspaces restore the same language literal ID and merge without a duplicate", () => {
+  const oldId = '__rdf_literal__:{"type":"literal","value":"Hello","datatype":"","language":"en"}';
+  const oldWorkspace = {
+    version: 2,
+    query: "",
+    endpointId: "rdf4j:repo",
+    customUrl: "",
+    provenanceBatches: [],
+    namedGroups: [],
+    selectedNodeIds: [oldId],
+    focusedNodeId: oldId,
+    scope: "all",
+    savedAt: null,
+    revision: 1,
+    types: [],
+    nodes: [["urn:alice", "Alice", 0], [0, "Hello", 1, null, null, null, "Hello", null, "en"]],
+    predicates: [["urn:name", "name"]],
+    batchIds: [],
+    edges: [0, 0, 1, -1],
+    edgeIds: {},
+    edgeLabels: {},
+    transform: { x: 0, y: 0, k: 1 },
+  };
+  const restored = parseWorkspacePayload(JSON.stringify(oldWorkspace));
+  assert.equal(restored.graph.nodes[1].id, oldId);
+  assert.equal(restored.graph.nodes[1].direction, undefined);
+
+  const merged = mergeTriples(
+    restored.graph,
+    bindingsToTriples([
+      row(uri("urn:alice"), "urn:name", { type: "literal", value: "Hello", "xml:lang": "EN" }),
+    ]),
+  );
+  assert.equal(merged.nodes.length, 2);
+  assert.equal(merged.edges.length, 1);
+  assert.equal(merged.nodes[1].id, oldId);
+
+  const reencoded = JSON.parse(encodeWorkspace({ ...restored, graph: merged }));
+  assert.equal(reencoded.nodes[1].length, 9, "legacy nodes keep the version-2 language tuple columns");
+  assert.equal(reencoded.nodes[1][8], "en");
+});
+
+test("directional terms pass from SPARQL bindings through graph nodes and compact persistence", () => {
+  const term = { type: "literal", value: "مرحبا", "xml:lang": "ar", "its:dir": "rtl" };
+  const graph = mergeTriples(
+    { nodes: [], edges: [], revision: 0 },
+    bindingsToTriples([row(uri("urn:alice"), "urn:name", term)]),
+  );
+  const literal = graph.nodes.find((node) => node.kind === "literal");
+  assert.equal(literal.direction, "rtl");
+  const restored = parseWorkspacePayload(encodeWorkspace({ ...sampleGraph(0), graph }));
+  const restoredLiteral = restored.graph.nodes.find((node) => node.kind === "literal");
+  assert.equal(restoredLiteral.id, literal.id);
+  assert.equal(restoredLiteral.direction, "rtl");
+});

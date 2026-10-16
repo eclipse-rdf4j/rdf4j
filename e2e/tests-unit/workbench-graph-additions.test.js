@@ -27,12 +27,12 @@ function memoryStorage() {
     };
 }
 
-const context = { basePath: '/wb/', repositoryId: 'my repo' };
+const context = { basePath: '/wb/', repositoryId: 'my repo', serverIdentity: 'server' };
 
 test('a resource is queued under the repository of the page', () => {
     const storage = memoryStorage();
     assert.equal(graphAdditions.add(context, { kind: 'resource', term: '<urn:a>' }, storage), 1);
-    assert.deepEqual([...storage.values.keys()], ['rdf4j-workbench-graph-additions:/wb|my repo']);
+    assert.deepEqual([...storage.values.keys()], ['rdf4j-workbench-graph-additions:["repository-v2","/wb","server","my repo"]']);
     assert.deepEqual(graphAdditions.pending(context, storage), [{ kind: 'resource', term: '<urn:a>' }]);
 });
 
@@ -51,7 +51,7 @@ test('malformed entries and unreadable storage are ignored', () => {
     const storage = memoryStorage();
     assert.equal(graphAdditions.add(context, { kind: 'resource', term: 'not a term' }, storage), 0);
     assert.equal(graphAdditions.add(context, { kind: 'nonsense' }, storage), 0);
-    storage.setItem('rdf4j-workbench-graph-additions:/wb|my repo', '{broken');
+    storage.setItem(graphAdditions.storageKey(context), '{broken');
     assert.deepEqual(graphAdditions.pending(context, storage), []);
     const failing = { getItem() { throw new Error('denied'); }, setItem() { throw new Error('denied'); } };
     assert.equal(graphAdditions.add(context, { kind: 'resource', term: '<urn:a>' }, failing), 0);
@@ -68,4 +68,18 @@ test('the queue keeps the newest 500 additions', () => {
 
 test('the Graph page of the repository', () => {
     assert.equal(graphAdditions.graphUrl(context), '/wb/repositories/my%20repo/graph');
+});
+
+
+test('queue producers isolate identical repository IDs by resolved server identity', () => {
+    const storage = memoryStorage();
+    const a = { ...context, serverIdentity:'sha256:a' };
+    const b = { ...context, serverIdentity:'sha256:b' };
+    graphAdditions.add(a, {kind:'resource',term:'<urn:a>'}, storage);
+    graphAdditions.add(b, {kind:'resource',term:'<urn:b>'}, storage);
+    assert.notEqual(graphAdditions.storageKey(a), graphAdditions.storageKey(b));
+    assert.deepEqual(graphAdditions.pending(a, storage), [{kind:'resource',term:'<urn:a>'}]);
+    assert.deepEqual(graphAdditions.pending(b, storage), [{kind:'resource',term:'<urn:b>'}]);
+    assert.equal(graphAdditions.add({ ...context, serverIdentity:undefined }, {kind:'resource',term:'<urn:unknown>'}, storage), 0);
+    assert.deepEqual(graphAdditions.pending({ ...context, serverIdentity:undefined }, storage), []);
 });

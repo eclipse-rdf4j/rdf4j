@@ -31,6 +31,8 @@ const DATA = `
 ex:alice rdfs:label "Alice" ; ex:knows ex:bob .
 ex:bob rdfs:label "Bob" .
 ex:knows rdfs:label "knows" ; rdfs:comment "A person knows another person."@en ; rdfs:domain ex:Person .
+ex:alice ex:describes ex:bob .
+ex:describes rdfs:label "describes" ; rdfs:comment "وصف العلاقة."@ar--rtl .
 << ex:alice ex:knows ex:bob ~ ex:claim >> rdfs:label "Claim" ; ex:source ex:wiki .
 ex:alice ex:knows ex:bob {| ex:since 2001 |} .
 ex:stmt a rdf:Statement ; rdf:subject ex:alice ; rdf:predicate ex:knows ; rdf:object ex:bob ; ex:by ex:dave .
@@ -142,4 +144,15 @@ test('a click on the line of a link, or on its label, opens its statement', asyn
     const label = explorer.locator('.edge.show-label', { has: page.locator('title', { hasText: 'Alice — knows → Bob' }) }).locator('text');
     await label.click();
     await expect(card.locator('h3')).toHaveText('knows');
+});
+
+test('directional predicate descriptions keep their language and base direction', async ({ page }) => {
+    const explorer = await openAliceGraph(page);
+    const point = await besideEdge(page, 'Alice — describes → Bob');
+    await page.mouse.click(point.x, point.y);
+
+    const description = explorer.locator('.statement-details-description');
+    await expect(description).toHaveText('وصف العلاقة.@ar--rtl');
+    await expect(description).toHaveAttribute('dir', 'rtl');
+    await expect(description.locator('small')).toHaveText('@ar--rtl');
 });

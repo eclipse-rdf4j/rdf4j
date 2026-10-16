@@ -96,6 +96,9 @@ export function clearMetadataCache() {
 }
 
 /** One endpoint, authentication generation, graph scope and language policy per session. */
+// Existing blank-node lookup remains IRI-only until the in-progress fixed-reference support (Jena-style <_:id>)
+// merges. Ordinary _:label is query-local, so it cannot identify a stored blank node. Switch the shared lookup
+// tokens then, retaining this explorer's server/repository namespace for metadata and expansion.
 export class RdfExplorer {
   readonly properties = new Set<string>(LABEL_PROPERTIES);
   private labels: AdaptiveBatchLoader<LabelCandidate[]>;

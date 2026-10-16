@@ -13,6 +13,7 @@ export type FilterableGraphNode = {
   kind: "iri" | "literal" | "blank";
   datatype?: string;
   language?: string;
+  direction?: "ltr" | "rtl";
 };
 
 export const NODE_KIND_FACET_ID = "__node_kind__";
@@ -24,6 +25,8 @@ export const XSD_STRING =
   "http://www.w3.org/2001/XMLSchema#string";
 export const RDF_LANG_STRING =
   "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString";
+export const RDF_DIR_LANG_STRING =
+  "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString";
 
 export const NODE_KIND_LABELS = {
   iri: "IRI",
@@ -36,6 +39,7 @@ export function normalizedLiteralDatatype(
 ): string | null {
   if (node.kind !== "literal") return null;
   if (node.datatype) return node.datatype;
+  if (node.direction) return RDF_DIR_LANG_STRING;
   return node.language ? RDF_LANG_STRING : XSD_STRING;
 }
 

@@ -1089,6 +1089,8 @@ module workbench {
             return {
                 basePath: basePathFor(mount),
                 repositoryId: notFound ? '' : (repositoryId === undefined ? repositoryIdFromUrl(url) : repositoryId),
+                serverIdentity: typeof model.metadata?.['server-identity'] === 'string'
+                    ? model.metadata['server-identity'] : null,
                 missingRepositoryId: notFound ? repositoryIdFromUrl(url) : undefined,
                 workbench: model.workbench || {},
                 // A Workbench whose server is fixed by configuration has no Connection page.

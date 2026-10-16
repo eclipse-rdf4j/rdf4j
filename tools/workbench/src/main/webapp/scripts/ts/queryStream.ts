@@ -207,6 +207,8 @@ namespace workbench {
 
         export interface QueryStreamCallbacks {
             fetcher?: (url: string, init: any) => Promise<any>;
+            /** The manager owning the mounted Query page, before a shared cookie changes in another tab. */
+            serverIdentity?: string;
             signal?: any;
             isCurrent?: () => boolean;
             onRecord?: (record: QueryResultRecord) => void | Promise<void>;
@@ -1149,6 +1151,10 @@ namespace workbench {
             }
 
             return fetcher(url, init).then(function(response: any): Promise<QueryStreamOutcome> {
+                if (callbacks.serverIdentity && response.ok !== false
+                        && response.headers?.get('X-Workbench-Server-Identity') !== callbacks.serverIdentity) {
+                    throw new Error('The RDF4J server connection changed. Reload this page to reconnect.');
+                }
                 var contentType = responseContentType(response);
                 if (contentType && !/ndjson/i.test(contentType)) {
                     return unexpectedResponse(response, contentType);
@@ -2998,7 +3004,7 @@ namespace workbench {
             /** The clock for the running time, in milliseconds; Date.now when absent. */
             now?: () => number;
             /** The repository whose Graph page "Add to graph" feeds; absent where that page is unavailable. */
-            graphContext?: { basePath: string; repositoryId: string };
+            graphContext?: { basePath: string; repositoryId: string; serverIdentity?: string };
             /**
              * The height of the results area before this result (the previous result's), kept until this one has
              * something to show, so running a query again does not shorten the page and move it.
@@ -7190,6 +7196,7 @@ namespace workbench {
                 renderer.setBusy(true);
                 var stream = executeQueryStream(frozenUrl, body, {
                     fetcher: config.fetcher,
+                    serverIdentity: config.serverIdentity || config.graphContext?.serverIdentity,
                     signal: abortController && abortController.signal,
                     isCurrent: () => !disposed && generation === requestGeneration,
                     onRecord: (record: QueryResultRecord) => {
@@ -7517,6 +7524,7 @@ namespace workbench {
              */
             interface ShelvedResult {
                 repositoryId: string;
+                scope: string;
                 controller: BoundExecutionController;
             }
             var shelved: ShelvedResult[] = [];
@@ -7524,15 +7532,20 @@ namespace workbench {
             var shelfPageHide: (event: any) => void = null;
             /** The repository of the mounted Query page, and whether that page is kept alive out of sight (M11.3). */
             var mountedRepositoryId = '';
+            var mountedScope = '';
             var mountedSuspended = false;
             /** Repositories whose query finished while no Query page showed it, until it is shown (M13.5). */
-            var ready: { [repositoryId: string]: boolean } = {};
+            var ready: { [scope: string]: boolean } = {};
+
+            function repositoryScope(repositoryId: string, serverIdentity?: string, basePath?: string): string {
+                return JSON.stringify([String(basePath || '').replace(/\/+$/, ''), serverIdentity || null, repositoryId]);
+            }
 
             /** Results nobody sees: the waiting ones and a kept-alive Query page's own. */
             function backgroundResults(): ShelvedResult[] {
                 var results = shelved.slice();
                 if (mountedController && mountedSuspended) {
-                    results.push({ repositoryId: mountedRepositoryId, controller: mountedController });
+                    results.push({ repositoryId: mountedRepositoryId, scope: mountedScope, controller: mountedController });
                 }
                 return results;
             }
@@ -7543,7 +7556,7 @@ namespace workbench {
                     var holder: any = entry.controller;
                     var active = entry.controller.hasActiveRequest();
                     if (holder.ranInBackground && !active) {
-                        ready[entry.repositoryId] = true;
+                        ready[entry.scope] = true;
                     }
                     holder.ranInBackground = active;
                 });
@@ -7554,22 +7567,23 @@ namespace workbench {
             }
 
             /** The result of a repository is shown again: nothing is running or ready out of sight any more. */
-            function seen(repositoryId: string, controller: BoundExecutionController): void {
+            function seen(scope: string, controller: BoundExecutionController): void {
                 (controller as any).ranInBackground = false;
-                delete ready[repositoryId];
+                delete ready[scope];
             }
 
             /** What the menu's Query item says about a repository's query: 'running', 'ready' or ''. */
-            export function activity(repositoryId: string): string {
-                var results = backgroundResults().filter(entry => entry.repositoryId === repositoryId);
+            export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
+                var scope = repositoryScope(repositoryId, serverIdentity, basePath);
+                var results = backgroundResults().filter(entry => entry.scope === scope);
                 if (results.some(entry => entry.controller.hasActiveRequest())) {
                     return 'running';
                 }
-                return ready[repositoryId] ? 'ready' : '';
+                return ready[scope] ? 'ready' : '';
             }
 
-            function takeShelved(repositoryId: string): BoundExecutionController {
-                var match = shelved.filter(entry => entry.repositoryId === repositoryId)[0];
+            function takeShelved(scope: string): BoundExecutionController {
+                var match = shelved.filter(entry => entry.scope === scope)[0];
                 if (!match) {
                     return null;
                 }
@@ -7577,16 +7591,16 @@ namespace workbench {
                 return match.controller;
             }
 
-            function shelve(repositoryId: string, controller: BoundExecutionController): void {
-                var replaced = takeShelved(repositoryId);
+            function shelve(repositoryId: string, scope: string, controller: BoundExecutionController): void {
+                var replaced = takeShelved(scope);
                 if (replaced) {
                     replaced.dispose();
                 }
                 controller.shelve();
-                shelved.push({ repositoryId: repositoryId, controller: controller });
+                shelved.push({ repositoryId: repositoryId, scope: scope, controller: controller });
                 if (shelved.length > maxShelvedResults) {
                     var evicted = shelved.shift();
-                    delete ready[evicted.repositoryId];
+                    delete ready[evicted.scope];
                     evicted.controller.dispose();
                 }
                 activityChanged();
@@ -7665,10 +7679,13 @@ namespace workbench {
 
                 mountedForm = form;
                 var repositoryId = shellContext && shellContext.repositoryId || '';
+                var scope = repositoryScope(repositoryId, shellContext && shellContext.serverIdentity,
+                    shellContext && shellContext.basePath);
                 mountedRepositoryId = repositoryId;
+                mountedScope = scope;
                 mountedSuspended = false;
-                delete ready[repositoryId];
-                var waiting = takeShelved(repositoryId);
+                delete ready[scope];
+                var waiting = takeShelved(scope);
                 if (waiting && pageModelQuery(model).trim()) {
                     // A page that opens with its own query (Edit on Saved queries) starts afresh.
                     waiting.dispose();
@@ -7677,7 +7694,7 @@ namespace workbench {
                 if (waiting) {
                     restoreExecutedRequest(form, waiting.executedRequest());
                     waiting.adopt(form, target);
-                    seen(repositoryId, waiting);
+                    seen(scope, waiting);
                     mountedController = waiting;
                 } else {
                     mountedController = bindMainQueryForm(form, target, {
@@ -7688,7 +7705,8 @@ namespace workbench {
                         downloadFormatsByView: shellContext && shellContext.downloadFormatsByView,
                         downloadLimits: shellContext && shellContext.downloadLimits,
                         maxDomRows: shellContext && shellContext.maxDomRows,
-                        graphContext: graphContextOf(shellContext)
+                        graphContext: graphContextOf(shellContext),
+                        serverIdentity: shellContext && shellContext.serverIdentity
                     });
                 }
                 mountedSubmitHandler = (event: any) => {
@@ -7727,7 +7745,7 @@ namespace workbench {
                     mountedController = null;
                     mountedSuspended = false;
                     if (reason === 'navigate' && repositoryId && leaving.hasResult()) {
-                        shelve(repositoryId, leaving);
+                        shelve(repositoryId, scope, leaving);
                     } else {
                         leaving.dispose();
                     }
@@ -7777,7 +7795,7 @@ namespace workbench {
                 if (mountedController) {
                     mountedController.resume();
                     mountedSuspended = false;
-                    seen(mountedRepositoryId, mountedController);
+                    seen(mountedScope, mountedController);
                 }
             }
 

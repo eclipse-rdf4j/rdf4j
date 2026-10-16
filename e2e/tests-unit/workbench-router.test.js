@@ -2182,3 +2182,38 @@ test('A8: a write sent through the router as a navigation and acknowledged opens
     await harness.answer('summary', harness.model('summary'));
     assert.equal(harness.router.current().url, base + 'summary');
 });
+
+
+test('a resolved server change disposes a kept Query context before it can queue old-server data', async () => {
+    const harness = loadKeepAliveRouter();
+    harness.workbench.app.viewContext = (mount, model, url) => ({repositoryId:'repo-1', url,
+        serverIdentity:model.metadata && model.metadata['server-identity']});
+    harness.start();
+    await visit(harness, 'query', harness.model('query', {metadata:{'server-identity':'sha256:a'}}));
+    await visit(harness, 'contexts', harness.model('contexts', {metadata:{'server-identity':'sha256:b'}}));
+    assert.equal(harness.kept.children.length, 0, 'server A query cannot remain cached under server B');
+    assert.ok(harness.log.includes('dispose query navigate'));
+    assert.equal(harness.mount.getAttribute('data-workbench-server-identity'), 'sha256:b');
+});
+
+
+for (const sameServer of [true, false]) {
+    test(`kept Query revalidates the authoritative server before resuming (same=${sameServer})`, async () => {
+        const harness = loadKeepAliveRouter();
+        harness.workbench.app.viewContext = (mount, model, url) => ({repositoryId:'repo-1', url,
+            serverIdentity:model.metadata && model.metadata['server-identity']});
+        harness.start();
+        await visit(harness, 'query', harness.model('query', {metadata:{'server-identity':'sha256:a'}}));
+        await visit(harness, 'contexts', harness.model('contexts', {metadata:{'server-identity':'sha256:a'}}));
+        const parked = harness.kept.children[0];
+        let revalidated = false;
+        harness.workbench.app.loadModel = async () => {
+            revalidated = true;
+            return harness.model('query', {metadata:{'server-identity':sameServer ? 'sha256:a' : 'sha256:b'}});
+        };
+        assert.equal(await harness.router.navigate(base+'query', {history:'push'}), 'committed');
+        assert.equal(revalidated, true, 'cookie changes in another tab require a fresh manager identity');
+        assert.equal(harness.currentOutlet() === parked, sameServer, 'same server preserves its live Query; changed server remounts');
+        assert.equal(harness.log.includes('resume query'), sameServer);
+    });
+}

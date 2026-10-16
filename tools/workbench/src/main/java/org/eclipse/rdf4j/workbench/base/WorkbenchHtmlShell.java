@@ -119,6 +119,11 @@ public final class WorkbenchHtmlShell {
 			writer.write(escape(repositoryId));
 			writer.write('"');
 		}
+		if (request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE)instanceof String serverIdentity) {
+			writer.write(" data-workbench-server-identity=\"");
+			writer.write(escape(serverIdentity));
+			writer.write('"');
+		}
 		if (Boolean.TRUE.equals(request.getAttribute(WorkbenchPageProtocol.SERVER_FIXED_ATTRIBUTE))) {
 			writer.write(" data-workbench-server-fixed=\"true\"");
 		}

@@ -22,7 +22,7 @@ async function database() {
       reject(new Error("Workspace storage is blocked by another tab."));
   });
 }
-/** One record per repository: the Workbench shows many repositories, each with its own saved graph. */
+/** One record per resolved server/repository scope; unknown-server legacy keys remain unclaimed for recovery. */
 function recordKey(scope?: string) {
   return scope ? `workspace:${scope}` : "current";
 }

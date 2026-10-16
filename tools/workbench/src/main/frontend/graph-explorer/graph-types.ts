@@ -21,6 +21,7 @@ export type GraphNode = {
   types?: GraphNodeType[];
   datatype?: string;
   language?: string;
+  direction?: "ltr" | "rtl";
   termValue?: string;
   pinned?: boolean;
   x?: number;

@@ -226,6 +226,12 @@ public abstract class AbstractServlet implements Servlet {
 			WorkbenchPageResultWriter pageWriter = new WorkbenchPageResultWriter(outputStream,
 					WorkbenchQueryProtocol.version(req) == 2);
 			req.setAttribute(WorkbenchPageProtocol.PAGE_RESULT_WRITER_ATTRIBUTE, pageWriter);
+			try {
+				pageWriter.metadata(WorkbenchPageProtocol.SERVER_IDENTITY_METADATA,
+						req.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE));
+			} catch (QueryResultHandlerException e) {
+				throw new IOException("Unable to write Workbench server identity", e);
+			}
 			var viewId = WorkbenchViewRegistry.pageRequestViewId(getClass(), req);
 			if (viewId.isPresent()) {
 				try {

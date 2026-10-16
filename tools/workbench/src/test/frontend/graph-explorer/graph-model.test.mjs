@@ -26,6 +26,14 @@ test("position-only frames reuse semantic metadata without hiding label or type 
   assert.equal(select([]).length, 0);
 });
 
+test("direction changes invalidate literal metadata", () => {
+  const select = createNodeMetadataSelector();
+  const literal = [{ id: "literal", kind: "literal", label: "مرحبا", language: "ar" }];
+  select(literal);
+  const directed = [{ ...literal[0], direction: "rtl" }];
+  assert.equal(select(directed), directed);
+});
+
 test("late layout positions preserve current label/type hydration and edge metadata", () => {
   const graph = {revision: 4, nodes: [{id: "urn:n", kind: "iri", label: "Hydrated", types: [{id: "urn:type", label: "Type"}]}], edges: []};
   const result = applyGraphPositions(graph, new Map([["urn:n", {x: 12, y: 34}]]));

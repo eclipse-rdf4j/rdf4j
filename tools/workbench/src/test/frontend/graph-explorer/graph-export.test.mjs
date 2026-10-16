@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { graphSvg, graphTurtle } from "../../../main/frontend/graph-explorer/graph-export.ts";
+import { sparqlNodeId } from "../../../main/frontend/graph-explorer/rdf-terms.ts";
 import { exportFixtureGraph } from "../../../../scripts/export-query-fixtures.mjs";
 
 test("the loaded statements export as Turtle, grouped by subject, with the usual prefixes and RDF 1.2 triple terms", () => {
@@ -25,20 +26,75 @@ test("the loaded statements export as Turtle, grouped by subject, with the usual
 <http://example.org/alice> a schema:Person ;
     rdfs:label "Alice \\"Al\\" Smith"@en, "line\\nbreak" ;
     schema:age "39"^^xsd:integer ;
-    schema:knows <http://example.org/bob>, _:b1 ;
+    schema:knows <http://example.org/bob>, _:b0 ;
     <http://example.org/odd#name.> "x" .
 
 <http://example.org/bob> schema:worksFor <http://example.org/acme%20corp> .
 
 <http://example.org/claim> rdf:reifies <<( <http://example.org/alice> schema:knows <http://example.org/bob> )>> .
 
-_:b1 rdfs:label "Somebody" .
+_:b0 rdfs:label "Somebody" .
 `,
   );
 });
 
 test("an empty graph exports as an empty document", () => {
   assert.equal(graphTurtle({ nodes: [], edges: [], revision: 0 }), "");
+});
+
+test("Turtle export assigns distinct valid labels to every blank node across edges and triple terms", () => {
+  const labels = ["a.b", "a_b", "", "!/?", "é", "1start", "-start"];
+  const ids = labels.map((value) => sparqlNodeId({ type: "bnode", value }));
+  const edges = ids.map((source, index) => ({
+    id: "e" + index,
+    source,
+    predicate: "urn:p" + index,
+    label: "p" + index,
+    target: ids[(index + 1) % ids.length],
+  }));
+  const turtle = graphTurtle({
+    nodes: [],
+    edges,
+    revision: 1,
+    statementLinks: [
+      {
+        id: "reifies",
+        source: "urn:claim",
+        predicate: "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies",
+        label: "reifies",
+        subject: ids[0],
+        statementPredicate: "urn:p0",
+        object: ids[1],
+        statementEdgeId: "e0",
+      },
+      {
+        id: "mentions",
+        source: "urn:other-claim",
+        predicate: "urn:mentions",
+        label: "mentions",
+        subject: ids[1],
+        statementPredicate: "urn:p1",
+        object: ids[0],
+        statementEdgeId: "e1",
+      },
+    ],
+  });
+
+  const exportedLabels = [...turtle.matchAll(/_:([A-Za-z0-9_-]+)/g)].map((match) => match[1]);
+  const uniqueLabels = new Set(exportedLabels);
+  assert.equal(uniqueLabels.size, labels.length, turtle);
+  assert.ok(exportedLabels.every((label) => /^[A-Za-z_0-9][A-Za-z0-9_-]*$/.test(label)), turtle);
+  assert.ok((turtle.match(/_:b0\b/g) ?? []).length >= 3, "edge and statement triple term reuse the same blank node");
+});
+
+test("Turtle export preserves directional language literal terms", () => {
+  const target = sparqlNodeId({ type: "literal", value: "مرحبا", "xml:lang": "ar", "its:dir": "rtl" });
+  const turtle = graphTurtle({
+    nodes: [],
+    edges: [{ id: "label", source: "urn:node", predicate: "urn:label", label: "label", target }],
+    revision: 1,
+  });
+  assert.match(turtle, /"مرحبا"@ar--rtl/);
 });
 
 test("the drawn graph exports as a standalone SVG framed around its nodes", () => {
