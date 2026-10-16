@@ -265,3 +265,25 @@ export function revealPoint(
     k: current.k,
   };
 }
+
+/**
+ * The smallest pan (at the current zoom) that brings a box (graph units, centred on x and y) at least `margin` inside
+ * the visible area, or null when it already is there. On an axis where the box does not fit, it is centred.
+ */
+export function revealBox(
+  box: GraphBox,
+  current: ViewportTransform,
+  area: { left: number; top: number; right: number; bottom: number },
+  margin = 24,
+): ViewportTransform | null {
+  const shift = (centre: number, size: number, start: number, end: number) => {
+    const half = (size * current.k) / 2;
+    if (end - start < half * 2 + margin * 2) return (start + end) / 2 - centre;
+    if (centre - half < start + margin) return start + margin - (centre - half);
+    if (centre + half > end - margin) return end - margin - (centre + half);
+    return 0;
+  };
+  const dx = shift(current.x + box.x * current.k, box.width, area.left, area.right);
+  const dy = shift(current.y + box.y * current.k, box.height, area.top, area.bottom);
+  return dx || dy ? { x: current.x + dx, y: current.y + dy, k: current.k } : null;
+}

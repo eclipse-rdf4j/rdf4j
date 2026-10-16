@@ -68,3 +68,23 @@ test("revealing a point centres it in the visible area, unless it is already wel
   assert.equal(revealPoint({ x: 640, y: 50 }, { x: 0, y: 0, k: 1 }, area), null);
   assert.deepEqual(revealPoint({ x: 100, y: 150 }, { x: 0, y: 0, k: 2 }, area), { x: 640 - 200, y: 50 - 300, k: 2 });
 });
+
+import { revealBox } from "../../../main/frontend/graph-explorer/graph-viewport.ts";
+
+test("revealing a node on the canvas moves it only as far as it takes to clear the card", () => {
+  // The card covers the right of a 1280 x 780 canvas from 916; a 200 x 46 node sits at x 1100, half under it.
+  const area = { left: 0, top: 0, right: 916, bottom: 780 };
+  const node = { x: 1100, y: 300, width: 200, height: 46 };
+  // Its right edge stops 24 units short of the card (892), so its centre lands at 792; the height stays put.
+  assert.deepEqual(revealBox(node, { x: 0, y: 0, k: 1 }, area, 24), { x: 792 - 1100, y: 0, k: 1 });
+  // At twice the zoom the node is 400 units wide on screen.
+  assert.deepEqual(revealBox({ x: 500, y: 150, width: 200, height: 46 }, { x: 0, y: 0, k: 2 }, area, 24), { x: 692 - 1000, y: 0, k: 2 });
+  // Half above the top, it comes down just far enough.
+  assert.deepEqual(revealBox({ x: 400, y: 10, width: 200, height: 46 }, { x: 0, y: 0, k: 1 }, area, 24), { x: 0, y: 24 + 23 - 10, k: 1 });
+  assert.equal(revealBox({ x: 400, y: 300, width: 200, height: 46 }, { x: 0, y: 0, k: 1 }, area, 24), null);
+});
+
+test("a node wider than the visible area is centred in it", () => {
+  const area = { left: 0, top: 0, right: 300, bottom: 780 };
+  assert.deepEqual(revealBox({ x: 900, y: 300, width: 400, height: 46 }, { x: 0, y: 0, k: 1 }, area, 24), { x: 150 - 900, y: 0, k: 1 });
+});

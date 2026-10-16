@@ -19,6 +19,7 @@ import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_
 import { UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
 import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds } from "./graph-operations.ts";
+import { addToSelection, toggleInSelection } from "./graph-selection.ts";
 import { createBatch, createStarStressBatch } from "./load-batches.ts";
 import { facetCountQuery, formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
@@ -77,6 +78,7 @@ import {
   centerTransformOn,
   panTransformBy,
   pinchPanTransform,
+  revealBox,
   revealBoxesIncrementally,
   revealPoint,
   visibleArea,
@@ -291,6 +293,8 @@ export function GraphExplorerApp({ basePath, repositoryId }: GraphExplorerProps)
   const suppressNodeDoubleClickUntilRef = useRef(0);
   /** Ends the double-click window of a node click: the card takes clicks again and the node slides out from under it. */
   const detailsArrivalTimerRef = useRef(0);
+  /** The node a plain click (or a link) last showed; the next Shift-, ⌘- or Ctrl-gesture selects it too. */
+  const selectionAnchorRef = useRef<string | null>(null);
   /** A Shift-, ⌘- or Ctrl-drag's selection box (client coordinates), drawn into `marqueeRectRef` without re-rendering. */
   const marqueeRef = useRef<{
     pointerId: number;
@@ -2510,6 +2514,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setFocusedNodeId(nodeId);
     setFocusedEdgeId(null);
     endDetailsArrival();
+    selectionAnchorRef.current = nodeId;
     if (!nodeId) return;
     setInspectorOpen(true);
     // The card appears on the next frame; a node it would cover slides out from under it.
@@ -2533,13 +2538,17 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setDetailsArriving(false);
   };
 
-  const toggleNodeInSelection = (nodeId: string) =>
-    setManualSelectedNodeIds((current) => {
-      const next = new Set(current);
-      if (next.has(nodeId)) next.delete(nodeId);
-      else next.add(nodeId);
-      return next;
-    });
+  /** The node a plain click showed, if it still shows; taken once, by the first Shift-, ⌘- or Ctrl-gesture after it. */
+  const takeSelectionAnchor = () => {
+    const anchor = selectionAnchorRef.current;
+    selectionAnchorRef.current = null;
+    return anchor !== null && anchor === focusedNodeRef.current && drawnNodeById.has(anchor) ? anchor : null;
+  };
+
+  const toggleNodeInSelection = (nodeId: string) => {
+    const anchor = takeSelectionAnchor();
+    setManualSelectedNodeIds((current) => toggleInSelection(current, nodeId, anchor));
+  };
 
   const nodeOf = (nodeId: string) => graphRef.current.nodes.find((candidate) => candidate.id === nodeId);
 
@@ -2615,12 +2624,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     }
   };
 
-  const addToManualSelection = (nodeIds: Iterable<string>) =>
-    setManualSelectedNodeIds((current) => {
-      const next = new Set(current);
-      for (const nodeId of nodeIds) next.add(nodeId);
-      return next.size === current.size ? current : next;
-    });
+  const addToManualSelection = (nodeIds: string[]) => {
+    const anchor = takeSelectionAnchor();
+    setManualSelectedNodeIds((current) => addToSelection(current, nodeIds, anchor));
+  };
 
   /** Shift, ⌘ or Ctrl held: a drag from here draws a selection box (a click on a node still toggles it). */
   const startMarquee = (pointerId: number, clientX: number, clientY: number, fromNode: boolean) => {
@@ -3018,7 +3025,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   /**
    * Pans (at the current zoom) so the node is in view and not under the details card, a card on the right or a sheet
-   * along the bottom on phones. With `onlyIfCovered`, a node in view moves only when the card covers it.
+   * along the bottom on phones: a node on the canvas moves only as far as that takes, one off it comes to the middle.
+   * With `onlyIfCovered`, a node in view moves only when the card covers it.
    */
   const revealNode = (nodeId: string, onlyIfCovered = false) => {
     const node = drawnGraphRef.current.nodes.find((candidate) => candidate.id === nodeId);
@@ -3027,13 +3035,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const viewport = { width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
     const current = transformRef.current;
     const point = { x: node.x, y: node.y };
+    const box = { ...point, ...graphNodeSize(node) };
     const area = visibleArea(svg, detailsCardRef.current?.getBoundingClientRect() ?? null, viewport);
-    if (onlyIfCovered) {
-      const inView = revealPoint(point, current, visibleArea(svg, null, viewport), 0) === null;
-      const uncovered = revealPoint(point, current, area, 0) === null;
-      if (!inView || uncovered) return;
-    }
-    const next = revealPoint(point, current, area);
+    const inView = revealPoint(point, current, visibleArea(svg, null, viewport), 0) === null;
+    if (onlyIfCovered && (!inView || revealBox(box, current, area, 0) === null)) return;
+    const next = inView ? revealBox(box, current, area) : revealPoint(point, current, area);
     if (next) animateProgrammaticGraph(graphRef.current, next);
   };
 
@@ -3616,7 +3622,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               onBoxSelect={addToManualSelection}
               onSelect={(id, multiple) => {
                 if (id && multiple) {
-                  setManualSelectedNodeIds(current => {const next = new Set(current); if(next.has(id))next.delete(id);else next.add(id);return next;});
+                  toggleNodeInSelection(id);
                   return;
                 }
                 // A Shift-click on the background keeps the selection; a plain one clears it.
