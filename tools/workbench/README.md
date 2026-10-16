@@ -47,6 +47,53 @@ that serves the Workbench.
 
 TypeScript is pinned to `5.9.3` in both `tools/workbench/package.json` and `e2e/package.json`.
 
+## Regenerate npm lockfiles
+
+When dependency specifications change, regenerate each lockfile from its `package.json` in a fresh temporary
+directory with no `node_modules` or existing lockfile. Use the Maven-managed Node `22.23.3` with npm `11.12.1` for
+generation; npm `10.9.9` remains the configured clean-install/build runtime. Generating from a clean directory lets
+npm record the full registry-declared platform-optional closure and `libc` constraints instead of tailoring the lock
+to the host machine. Copy the generated lockfile back, then run `npm ci` in the project with the configured npm
+`10.9.9` and confirm the lockfile hash is unchanged.
+
+From the repository root, repeat this for `tools/workbench` and `e2e` as needed:
+
+```bash
+repo="$PWD"
+project=tools/workbench # or e2e
+scratch="$(mktemp -d)"
+cp "$repo/$project/package.json" "$scratch/package.json"
+(
+  cd "$scratch"
+  export PATH="$repo/tools/workbench/target/node:$PATH"
+  test "$(node --version)" = v22.23.3
+  generator_npm="$("$repo/tools/workbench/target/node/node" \
+    "$repo/tools/workbench/target/node/node_modules/npm/bin/npx-cli.js" \
+    --yes --package=npm@11.12.1 npm --version)"
+  test "$generator_npm" = 11.12.1
+  printf 'Lock generator npm: %s\n' "$generator_npm"
+  "$repo/tools/workbench/target/node/node" \
+    "$repo/tools/workbench/target/node/node_modules/npm/bin/npx-cli.js" \
+    --yes --package=npm@11.12.1 npm install --package-lock-only --ignore-scripts --no-audit --no-fund \
+    --registry=https://registry.npmjs.org
+)
+cp "$scratch/package-lock.json" "$repo/$project/package-lock.json"
+lock_before="$(shasum -a 256 "$repo/$project/package-lock.json" | awk '{print $1}')"
+(
+  cd "$repo/$project"
+  export PATH="$repo/tools/workbench/target/node:$PATH"
+  "$repo/tools/workbench/target/node/node" \
+    "$repo/tools/workbench/target/node/node_modules/npm/bin/npm-cli.js" ci
+)
+lock_after="$(shasum -a 256 "$repo/$project/package-lock.json" | awk '{print $1}')"
+test "$lock_before" = "$lock_after"
+printf 'npm ci left %s/package-lock.json unchanged (%s)\n' "$project" "$lock_after"
+```
+
+The lockfile follows the current package metadata: for example, Rolldown `1.0.1` declared a WASI binding, while
+`1.2.14` declares an Android ARM EABI binding instead. Fresh generation removes only the old WASI fallback closure
+that the upgraded package no longer declares; do not restore those stale entries by hand.
+
 The repository convention is to use a workspace-local Maven repository (`-Dmaven.repo.local=.m2_repo`) and to run
 Maven offline (`-o`). The first build on a fresh checkout must download dependencies, so drop `-o` once.
 

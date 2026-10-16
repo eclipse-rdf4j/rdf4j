@@ -243,6 +243,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-war-plugin</artifactId>
+				<version>3.5.1</version>
 				<configuration>
 					<warName>rdf4j-workbench</warName>
 					<archiveClasses>true</archiveClasses>

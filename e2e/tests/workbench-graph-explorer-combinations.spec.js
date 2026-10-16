@@ -87,17 +87,18 @@ async function runQuery(explorer, query) {
 /** The stored graph of this repository, as text, from the browser's database. */
 function storedGraph(page, suffix = '') {
     return page.evaluate(([repositoryId, suffix]) => new Promise((resolve) => {
+        const app = document.querySelector('#workbench-app');
+        const serverIdentity = app?.getAttribute('data-workbench-server-identity');
+        const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
+        if (!app || !serverIdentity || appRepositoryId !== repositoryId) return resolve('');
+        const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
+        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
         const request = indexedDB.open('graph-field-workspaces', 1);
         request.onupgradeneeded = () => request.result.createObjectStore('workspaces');
         request.onsuccess = () => {
             const store = request.result.transaction('workspaces').objectStore('workspaces');
-            const keys = store.getAllKeys();
-            keys.onsuccess = () => {
-                const key = keys.result.find((candidate) => String(candidate).endsWith(`|${repositoryId}${suffix}`));
-                if (key === undefined) return resolve('');
-                const read = store.get(key);
-                read.onsuccess = () => resolve(String(read.result ?? ''));
-            };
+            const read = store.get(`workspace:${scope}${suffix}`);
+            read.onsuccess = () => resolve(String(read.result ?? ''));
         };
     }), [REPOSITORY_ID, suffix]);
 }
@@ -121,11 +122,17 @@ test('a stored graph this version cannot read is kept, not saved over when the p
     await openGraph(page);
     const unreadable = JSON.stringify({ graph: { nodes: [{ id: 'urn:x', label: 'X', kind: 'nonsense' }], edges: [], revision: 1 } });
     await page.evaluate(([repositoryId, raw]) => new Promise((resolve) => {
+        const app = document.querySelector('#workbench-app');
+        const serverIdentity = app?.getAttribute('data-workbench-server-identity');
+        const appRepositoryId = app?.getAttribute('data-workbench-repository-id');
+        if (!app || !serverIdentity || appRepositoryId !== repositoryId) throw new Error('Workbench server identity is unavailable');
+        const basePath = (app.getAttribute('data-workbench-base-path') || '').replace(/\/+$/, '');
+        const scope = JSON.stringify(['repository-v2', basePath, serverIdentity, repositoryId]);
         const request = indexedDB.open('graph-field-workspaces', 1);
         request.onupgradeneeded = () => request.result.createObjectStore('workspaces');
         request.onsuccess = () => {
             const transaction = request.result.transaction('workspaces', 'readwrite');
-            transaction.objectStore('workspaces').put(raw, `workspace:/rdf4j-workbench|${repositoryId}`);
+            transaction.objectStore('workspaces').put(raw, `workspace:${scope}`);
             transaction.oncomplete = resolve;
         };
     }), [REPOSITORY_ID, unreadable]);
@@ -321,6 +328,7 @@ test('with the keyboard alone: find a node, then open the card of one of its sta
     const explorer = await loadAll(page);
     await page.keyboard.press('/');
     await page.keyboard.type('Alice');
+    await expect(explorer.getByRole('option', { name: 'Alice Person' })).toBeVisible();
     await page.keyboard.press('Enter');
     await expect(explorer.locator('.node-details h3')).toHaveText('Alice');
 
