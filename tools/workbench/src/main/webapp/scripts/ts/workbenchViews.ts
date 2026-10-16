@@ -651,7 +651,7 @@ module workbench {
             const readable = info.readable !== false && String(info.readable) !== 'false';
             const writeable = info.writeable !== false && String(info.writeable) !== 'false';
             const readRoutes: { [key: string]: boolean } = {
-                summary: true, namespaces: true, contexts: true, types: true, explore: true,
+                summary: true, namespaces: true, contexts: true, types: true, explore: true, graph: true,
                 query: true, 'saved-queries': true, export: true
             };
             const writeRoutes: { [key: string]: boolean } = {

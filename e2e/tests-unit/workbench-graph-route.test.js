@@ -169,3 +169,24 @@ test('the repositories table offers a Graph link only when the policy shows the 
     assert.match(row(['query', 'explore', 'graph', 'summary']), /repositories\/r\/graph/);
     assert.doesNotMatch(row(['query', 'explore', 'summary']), /repositories\/r\/graph/);
 });
+
+test('the Graph menu item is unavailable, like Explore, until a readable repository is selected', () => {
+    const { workbench } = loadWorkbench();
+    const navigationLinks = (repositoryId, readable) => {
+        const menuItems = ['query', 'explore', 'graph', 'repositories']
+            .map((id) => ({ id, label: id, 'menu-group-id': id === 'repositories' ? 'repositories' : 'explore' }));
+        // The Info model of /repositories/NONE/info says readable=false and writeable=false.
+        const info = { menuItems, readable: String(readable), writeable: String(readable) };
+        const template = workbench.views.pageTemplate(emptyModel('repositories'),
+            { basePath: '/wb', repositoryId, workbench: info }, fakeRuntime());
+        return templateText(template).match(/data-workbench-nav-href=[^\s>]+/g) || [];
+    };
+
+    const none = navigationLinks('NONE', false);
+    assert.ok(!none.some((link) => link.endsWith('/explore')), 'Explore is disabled: ' + none.join(', '));
+    assert.ok(!none.some((link) => link.endsWith('/graph')), 'Graph is disabled: ' + none.join(', '));
+    assert.ok(none.some((link) => link.endsWith('/NONE/repositories')), 'Repositories stays available');
+
+    const selected = navigationLinks('r', true);
+    assert.ok(selected.some((link) => link === 'data-workbench-nav-href=/wb/repositories/r/graph'), selected.join(', '));
+});

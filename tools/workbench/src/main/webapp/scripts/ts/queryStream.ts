@@ -3013,6 +3013,8 @@ namespace workbench {
         }
 
         var queryResultRendererSequence = 0;
+        /** A query that answers within this many milliseconds never shows its Cancel buttons. */
+        var CANCEL_DELAY_MS = 1200;
         /** Placeholder rows a result shows while it waits for its first rows, unless the area it keeps needs more. */
         var SKELETON_ROWS = 6;
 
@@ -3397,6 +3399,8 @@ namespace workbench {
             private started = false;
             /** Layouts started and not finished yet (their rows are drawn asynchronously). */
             private rendersInFlight = 0;
+            /** Shows Cancel once the request has run for CANCEL_DELAY_MS. */
+            private cancelRevealTimer: any = null;
             private reportedErrorLocation = '';
             readonly cancelButton: any;
             readonly loadMoreButton: any;
@@ -3662,7 +3666,7 @@ namespace workbench {
                         this.options.onCancel();
                     }
                 });
-                this.cancelButton.className = 'workbench-action workbench-action--warning';
+                this.cancelButton.className = 'query-result-cancel workbench-action workbench-action--warning';
                 decorateWithWorkbenchIcon(this.cancelButton, 'stop', 'Cancel query');
                 this.cancelButton.hidden = true;
                 // In the toolbar row, where Full screen, Download and Display stand once the query is done: a row of its
@@ -4070,6 +4074,7 @@ namespace workbench {
                 }
                 this.syncTargetBusy();
                 this.cancelButton.hidden = !busy;
+                this.waitToShowCancel(busy);
                 if (busy && !this.skeleton.hidden) {
                     this.showSkeleton(true);
                 }
@@ -4080,6 +4085,35 @@ namespace workbench {
                     this.status.textContent = this.batchStart > 0 ? 'Loading more results…' : 'Receiving query results…';
                     this.announce(this.status.textContent);
                 }
+            }
+
+            /**
+             * Cancel shows once the request has run for CANCEL_DELAY_MS, so a quick query never flashes it. Until then
+             * it keeps its place in the toolbar unseen (data-waiting), so the toolbar does not grow when it appears.
+             */
+            private waitToShowCancel(busy: boolean): void {
+                this.clearCancelReveal();
+                var view = this.document.defaultView;
+                var wait = busy ? CANCEL_DELAY_MS - (this.now() - this.timerStartedAt) : 0;
+                if (!(wait > 0) || !view || typeof view.setTimeout !== 'function') {
+                    this.cancelButton.removeAttribute('data-waiting');
+                    return;
+                }
+                this.cancelButton.setAttribute('data-waiting', 'true');
+                this.cancelRevealTimer = view.setTimeout(() => {
+                    this.cancelRevealTimer = null;
+                    if (this.busy && !this.disposed) {
+                        this.cancelButton.removeAttribute('data-waiting');
+                    }
+                }, wait);
+            }
+
+            private clearCancelReveal(): void {
+                var view = this.document.defaultView;
+                if (this.cancelRevealTimer !== null && view && typeof view.clearTimeout === 'function') {
+                    view.clearTimeout(this.cancelRevealTimer);
+                }
+                this.cancelRevealTimer = null;
             }
 
             /** Say a milestone (start, completion, failure) once to assistive technology. */
@@ -4537,6 +4571,7 @@ namespace workbench {
                 }
                 this.timerRunning = false;
                 this.clearTimerTick();
+                this.clearCancelReveal();
                 this.disposed = true;
                 this.resultTable.dispose();
                 this.leaveTarget();
@@ -7069,6 +7104,9 @@ namespace workbench {
             // The execution endpoint made absolute when the query starts: cancellations go there from any page.
             var frozenCancelUrl = '';
             var batchSize = 1000000;
+            var cancelRevealTimer: any = null;
+            /** When the running request started, for the delay before its Cancel shows. */
+            var requestStartedAt = 0;
             // Only the first result shown here is scrolled into view: later runs, whatever they show (an empty result
             // too), leave the page where it is. A run that shows nothing (cancelled, or no query) keeps the reveal.
             var resultShown = false;
@@ -7103,7 +7141,31 @@ namespace workbench {
                 setControlValue(form, 'query-request-id', value);
             }
 
+            /**
+             * Offer the Cancel beside Execute while a request runs, once it has run for CANCEL_DELAY_MS: a query that
+             * answers sooner never shows it.
+             */
             function setQueryCancelVisible(visible: boolean) {
+                var view = target && target.ownerDocument && target.ownerDocument.defaultView;
+                if (cancelRevealTimer !== null && view && typeof view.clearTimeout === 'function') {
+                    view.clearTimeout(cancelRevealTimer);
+                }
+                cancelRevealTimer = null;
+                var wait = visible ? CANCEL_DELAY_MS - (Date.now() - requestStartedAt) : 0;
+                if (wait > 0 && view && typeof view.setTimeout === 'function') {
+                    cancelRevealTimer = view.setTimeout(() => {
+                        cancelRevealTimer = null;
+                        if (activeId && !disposed) {
+                            showQueryCancel(true);
+                        }
+                    }, wait);
+                    showQueryCancel(false);
+                    return;
+                }
+                showQueryCancel(visible);
+            }
+
+            function showQueryCancel(visible: boolean) {
                 if (shelvedOut) {
                     return;
                 }
@@ -7182,6 +7244,7 @@ namespace workbench {
                 activeId = id;
                 var requestGeneration = ++generation;
                 setQueryRequestId(id);
+                requestStartedAt = Date.now();
                 setQueryCancelVisible(true);
                 notifyActivity();
                 var body = new URLSearchParams(frozenBody.toString());

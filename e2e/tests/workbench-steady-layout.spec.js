@@ -217,6 +217,73 @@ test('a first run that is cancelled leaves the reveal for the next query', async
     await expect.poll(() => cardRevealed(page)).toBe(true);
 });
 
+/** Whether each Cancel is on screen: the one beside Execute and the one in the result toolbar. */
+async function cancelsShown(page) {
+    return page.evaluate(() => {
+        const shown = (element) => !!element && element.getClientRects().length > 0
+            && getComputedStyle(element).visibility !== 'hidden';
+        const result = [...document.querySelectorAll('#query-results button')]
+            .find((button) => button.textContent.trim() === 'Cancel query');
+        return { execute: shown(document.getElementById('query-cancel')), result: shown(result) };
+    });
+}
+
+test('Cancel shows only once a query has run for 1.2 seconds', async ({ page }) => {
+    await openQueryPage(page);
+    const executions = [];
+    page.on('request', (request) => {
+        if (request.method() === 'POST' && (request.postData() || '').includes('action=exec')) {
+            executions.push(request);
+        }
+    });
+    const release = await holdNextExecution(page);
+    const started = Date.now();
+    await execute(page);
+    await expect(page.locator('#query-results .query-result-skeleton')).toBeVisible();
+    const toolbarHeight = () => page.locator('#query-results .query-result-toolbar')
+        .evaluate((toolbar) => toolbar.getBoundingClientRect().height);
+    const before = await toolbarHeight();
+    // ⌘/Ctrl+Enter still knows the query runs while its Cancel waits: it does not start the query again.
+    await page.locator('.CodeMirror').click();
+    await page.keyboard.press('Control+Enter');
+    await page.waitForTimeout(Math.max(0, 900 - (Date.now() - started)));
+    expect(await cancelsShown(page)).toEqual({ execute: false, result: false });
+    expect(executions).toHaveLength(1);
+
+    await expect.poll(() => cancelsShown(page)).toEqual({ execute: true, result: true });
+    expect(Date.now() - started).toBeGreaterThanOrEqual(1150);
+    expect(await toolbarHeight(), 'the toolbar keeps its height when Cancel appears').toBe(before);
+
+    release();
+    await resultsComplete(page);
+    expect(await cancelsShown(page)).toEqual({ execute: false, result: false });
+});
+
+test('a query that answers within 1.2 seconds never shows Cancel', async ({ page }) => {
+    await openQueryPage(page);
+    await page.evaluate(() => {
+        window.__cancelSeen = false;
+        const watch = () => {
+            const shown = (element) => !!element && element.getClientRects().length > 0
+                && getComputedStyle(element).visibility !== 'hidden';
+            const result = [...document.querySelectorAll('#query-results button')]
+                .find((button) => button.textContent.trim() === 'Cancel query');
+            if (shown(document.getElementById('query-cancel')) || shown(result)) {
+                window.__cancelSeen = true;
+            }
+            requestAnimationFrame(watch);
+        };
+        requestAnimationFrame(watch);
+    });
+    const release = await holdNextExecution(page);
+    await execute(page);
+    await page.waitForTimeout(500);
+    release();
+    await resultsComplete(page);
+    await page.waitForTimeout(1200);
+    expect(await page.evaluate(() => window.__cancelSeen)).toBe(false);
+});
+
 test('the repository switcher slides the page aside instead of narrowing it', async ({ page }) => {
     await openQueryPage(page);
     const geometry = () => page.evaluate(() => {

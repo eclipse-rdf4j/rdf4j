@@ -4434,8 +4434,16 @@ module workbench {
             updateCompareActionState();
         }
 
-        /** True while an execution is running: Execute is disabled or Cancel is offered. */
+        /**
+         * True while an execution is running: the streamed query page has a request out, Execute is disabled or Cancel
+         * is offered (Cancel waits a moment before it shows, so it is not the only sign).
+         */
         function isQueryExecutionRunning(): boolean {
+            var streamedQueryPage: any = (<any>workbench).queryPage;
+            if (streamedQueryPage && typeof streamedQueryPage.hasActiveRequest === 'function'
+                    && streamedQueryPage.hasActiveRequest()) {
+                return true;
+            }
             var exec = <HTMLButtonElement>document.getElementById('exec');
             var cancel = <HTMLInputElement>document.getElementById('query-cancel');
             return !!(exec && exec.disabled) || !!(cancel && !cancel.disabled && cancel.getAttribute('aria-hidden') !== 'true');

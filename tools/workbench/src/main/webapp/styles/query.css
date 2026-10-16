@@ -955,6 +955,12 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
     display: none;
 }
 
+/* A query that answers within 1.2 s never shows its Cancel. Until then the button keeps its place in the toolbar,
+ * unseen and out of the tab order, so the toolbar does not grow when it appears. */
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-cancel[data-waiting="true"] {
+    visibility: hidden;
+}
+
 .query-result-navigation__label {
     color: var(--query-muted);
     font-size: var(--workbench-control-font-size);
