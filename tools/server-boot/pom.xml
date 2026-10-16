@@ -10,7 +10,7 @@
 	<packaging>jar</packaging>
 	<name>RDF4J: Server + Workbench Spring Boot runner</name>
 	<properties>
-		<spring.boot.version>4.1.0</spring.boot.version>
+		<spring.boot.version>4.1.1</spring.boot.version>
 		<spring-framework.version>${spring.version}</spring-framework.version>
 		<maven.compiler.release>${java.version}</maven.compiler.release>
 		<enforce-javaee-provided.fail>false</enforce-javaee-provided.fail>
@@ -25,9 +25,37 @@
 				<scope>import</scope>
 			</dependency>
 			<dependency>
-				<groupId>org.springframework.boot</groupId>
-				<artifactId>spring-boot-dependencies</artifactId>
-				<version>${spring.boot.version}</version>
+				<groupId>org.junit</groupId>
+				<artifactId>junit-bom</artifactId>
+				<version>${junit.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.jetty</groupId>
+				<artifactId>jetty-bom</artifactId>
+				<version>${jetty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.eclipse.jetty.ee11</groupId>
+				<artifactId>jetty-ee11-bom</artifactId>
+				<version>${jetty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>io.netty</groupId>
+				<artifactId>netty-bom</artifactId>
+				<version>${netty.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>io.opentelemetry</groupId>
+				<artifactId>opentelemetry-bom</artifactId>
+				<version>${opentelemetry.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -35,6 +63,20 @@
 				<groupId>com.fasterxml.jackson</groupId>
 				<artifactId>jackson-bom</artifactId>
 				<version>${jackson.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>tools.jackson</groupId>
+				<artifactId>jackson-bom</artifactId>
+				<version>${jackson3.version}</version>
+				<type>pom</type>
+				<scope>import</scope>
+			</dependency>
+			<dependency>
+				<groupId>org.springframework.boot</groupId>
+				<artifactId>spring-boot-dependencies</artifactId>
+				<version>${spring.boot.version}</version>
 				<type>pom</type>
 				<scope>import</scope>
 			</dependency>
@@ -238,7 +280,7 @@
 			</plugin>
 			<plugin>
 				<artifactId>maven-assembly-plugin</artifactId>
-				<version>3.7.1</version>
+				<version>3.8.0</version>
 				<executions>
 					<execution>
 						<id>server-boot-distribution</id>

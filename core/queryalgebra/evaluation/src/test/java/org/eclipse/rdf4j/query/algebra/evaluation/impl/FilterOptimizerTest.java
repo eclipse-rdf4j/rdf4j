@@ -505,7 +505,7 @@ public class FilterOptimizerTest extends QueryOptimizerTest {
 		}
 
 		private boolean isNameFilter(Filter filter) {
-			if (!(filter.getArg()instanceof StatementPattern statementPattern)) {
+			if (!(filter.getArg() instanceof StatementPattern statementPattern)) {
 				return false;
 			}
 			return statementPattern.getPredicateVar() != null
