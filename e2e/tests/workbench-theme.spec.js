@@ -159,8 +159,8 @@ test('uses the calculated blue palette and preserves the original RDF4J logo', a
             hover: style.getPropertyValue('--workbench-primary-hover').trim(),
             selected: style.getPropertyValue('--workbench-selected').trim(),
             logoPath: new URL(logo.src).pathname,
-            logoWidth: logo.naturalWidth,
-            logoHeight: logo.naturalHeight
+            // The logo is an SVG, whose natural size engines report as its layout size: check the artwork's shape.
+            logoAspect: logo.getBoundingClientRect().width / logo.getBoundingClientRect().height
         };
     });
 
@@ -174,9 +174,8 @@ test('uses the calculated blue palette and preserves the original RDF4J logo', a
         primary: '#20576a',
         hover: '#16495a',
         selected: '#def3fb',
-        logoPath: expect.stringMatching(/\/images\/logo\.png$/),
-        logoWidth: 132,
-        logoHeight: 80
+        logoPath: expect.stringMatching(/\/images\/logo\.svg$/),
+        logoAspect: expect.closeTo(132 / 80, 2)
     });
 });
 
