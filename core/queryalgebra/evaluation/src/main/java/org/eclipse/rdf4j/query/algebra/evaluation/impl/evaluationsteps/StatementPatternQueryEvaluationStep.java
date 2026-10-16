@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -209,53 +210,49 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		} else if (!var.hasValue()) {
 			return var.clone();
 		} else {
-			Var ret = valuePreparer == null ? getVarWithNewValue(var, valueFactory)
-					: Var.of(var.getName(), valuePreparer.apply(var.getValue()), var.isAnonymous(), var.isConstant());
+			Value original = var.getValue();
+			Value prepared = valuePreparer == null ? copyValue(original, valueFactory) : valuePreparer.apply(original);
+			// Normalized lookup operands also restore inlined bindings to result rows. Their semantic copy must retain
+			// the original's transport authority, including when a backend recursively copies a triple term.
+			Var ret = Var.of(var.getName(), RemoteBNode.preserveProvenance(original, prepared), var.isAnonymous(),
+					var.isConstant());
 			ret.setVariableScopeChange(var.isVariableScopeChange());
 			return ret;
 		}
 	}
 
-	private static Var getVarWithNewValue(Var var, ValueFactory valueFactory) {
-		boolean constant = var.isConstant();
-		boolean anonymous = var.isAnonymous();
-
-		Value value = var.getValue();
+	private static Value copyValue(Value value, ValueFactory valueFactory) {
 		if (value.isIRI()) {
-			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()), anonymous, constant);
+			return valueFactory.createIRI(value.stringValue());
 		} else if (value.isBNode()) {
-			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()), anonymous, constant);
+			return valueFactory.createBNode(value.stringValue());
 		} else if (value.isLiteral()) {
 			// preserve label + (language | datatype)
 			Literal lit = (Literal) value;
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return Var.of(var.getName(),
-						valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get(), lit.getBaseDirection()),
-						anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get(), lit.getBaseDirection());
 			}
 
 			CoreDatatype coreDatatype = lit.getCoreDatatype();
 			if (coreDatatype != CoreDatatype.NONE) {
 				// If the literal has a core datatype, recreate it with the same core datatype
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype), anonymous,
-						constant);
+				return valueFactory.createLiteral(lit.getLabel(), coreDatatype);
 			}
 
 			// Otherwise, preserve the datatype (falls back to xsd:string if none)
 			IRI dt = lit.getDatatype();
 			if (dt != null) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt), anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel(), dt);
 			} else {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()), anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel());
 			}
 		}
 		if (value instanceof TripleTerm triple) {
-			return Var.of(var.getName(), valueFactory.createTripleTerm(triple.getSubject(), triple.getPredicate(),
-					triple.getObject()), anonymous, constant);
+			return valueFactory.createTripleTerm(triple.getSubject(), triple.getPredicate(), triple.getObject());
 		}
-		return Var.of(var.getName(), value, anonymous, constant);
+		return value;
 	}
 
 	private record PreparedBindingAccess(Function<BindingSet, Value> getter,
@@ -271,7 +268,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		for (PreparedBindingAccess access : preparedBindingAccess) {
 			Value value = access.getter().apply(bindings);
 			if (value != null) {
-				Value replacement = valuePreparer.apply(value);
+				Value replacement = RemoteBNode.preserveProvenance(value, valuePreparer.apply(value));
 				if (replacement != value) {
 					if (prepared == null) {
 						prepared = context.createBindingSet(bindings);

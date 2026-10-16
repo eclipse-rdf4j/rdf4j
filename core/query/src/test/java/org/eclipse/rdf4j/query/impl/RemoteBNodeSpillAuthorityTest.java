@@ -24,6 +24,47 @@ class RemoteBNodeSpillAuthorityTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 
 	@Test
+	void alreadyAuthoritativeCopiesAreReusedDirectlyAndRecursively() {
+		Object epoch = new Object();
+		var response = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true);
+		BNode first = (BNode) response.map(VF.createBNode("first"));
+		BNode second = (BNode) response.map(VF.createBNode("second"));
+		Value firstCopy = RemoteBNode.preserveProvenance(first, VF.createBNode(first.getID()));
+		Value secondCopy = RemoteBNode.preserveProvenance(second, VF.createBNode(second.getID()));
+		assertThat(RemoteBNode.preserveProvenance(first, firstCopy)).isSameAs(firstCopy);
+
+		var predicate = VF.createIRI("urn:p");
+		Value original = VF.createTripleTerm(first, predicate,
+				VF.createTripleTerm(VF.createIRI("urn:inner"), predicate, second));
+		Value copy = VF.createTripleTerm((BNode) firstCopy, predicate,
+				VF.createTripleTerm(VF.createIRI("urn:inner"), predicate, secondCopy));
+		assertThat(RemoteBNode.preserveProvenance(original, copy)).isSameAs(copy);
+		assertThat(RemoteBNode.toRemoteValue(copy, epoch, true, true))
+				.isEqualTo(VF.createTripleTerm(VF.createBNode("first"), predicate,
+						VF.createTripleTerm(VF.createIRI("urn:inner"), predicate, VF.createBNode("second"))));
+	}
+
+	@Test
+	void copiesWithAnotherAuthorityAreReplacedFromTheOriginal() {
+		Object originalEpoch = new Object();
+		for (Object copiedEpoch : new Object[] { originalEpoch, new Object() }) {
+			BNode original = (BNode) RemoteBNode.newResponseScope(
+					new BlankNodeAllocationScope("alias-", ignored -> false), VF, originalEpoch, true)
+					.map(VF.createBNode("canonical"));
+			BNode conflicting = (BNode) RemoteBNode.newResponseScope(
+					new BlankNodeAllocationScope("alias-", ignored -> false), VF, copiedEpoch, true)
+					.map(VF.createBNode("canonical"));
+			Value preserved = RemoteBNode.preserveProvenance(original, conflicting);
+			assertThat(preserved).isNotSameAs(conflicting);
+			assertThat(RemoteBNode.toRemoteValue(preserved, originalEpoch, true, true))
+					.isEqualTo(VF.createBNode("canonical"));
+			try (var spill = new RemoteBNode.SpillScope()) {
+				assertThat(spill.replace(preserved)).isEqualTo(spill.replace(original));
+			}
+		}
+	}
+
+	@Test
 	void repeatedWrappersWithSameAuthorityReuseSpillReference() {
 		Object epoch = new Object();
 		var allocation = new BlankNodeAllocationScope("alias-", ignored -> false);

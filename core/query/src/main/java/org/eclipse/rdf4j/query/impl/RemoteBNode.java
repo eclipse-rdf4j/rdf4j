@@ -389,9 +389,11 @@ public final class RemoteBNode extends SimpleBNode {
 				throw new QueryEvaluationException(
 						"Unsupported blank-node identity: remote provenance is no longer available");
 			}
-			return captured == original ? original
-					: new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner,
-							provenance);
+			if (captured == original || captured instanceof RemoteBNode copy && copy.registry == remote.registry
+					&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
+				return captured;
+			}
+			return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
 		}
 		if (original instanceof TripleTerm originalTriple && captured instanceof TripleTerm capturedTriple) {
 			Value subject = preserveProvenance(originalTriple.getSubject(), capturedTriple.getSubject());
