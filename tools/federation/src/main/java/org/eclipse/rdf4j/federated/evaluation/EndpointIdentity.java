@@ -73,7 +73,10 @@ public final class EndpointIdentity {
 	}
 
 	public static Sail localStore(Endpoint endpoint) {
-		Repository repository = endpoint.getRepository();
+		return localStore(endpoint.getRepository());
+	}
+
+	public static Sail localStore(Repository repository) {
 		if (repository instanceof SailRepository sail) {
 			return sail.getSail();
 		}
