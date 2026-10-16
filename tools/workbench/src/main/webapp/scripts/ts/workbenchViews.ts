@@ -2019,7 +2019,7 @@ module workbench {
             if (!term || typeof term !== 'object' || !term.kind) {
                 return h`<td class="workbench-row-actions" data-label="Actions"></td>`;
             }
-            const key = encodeURIComponent(ntriples(term));
+            const key = encodeURIComponent(resourceTerm(term));
             const name = termText(term);
             return h`<td class="workbench-row-actions" data-label="Actions">${pageEnabled(context, 'explore')
                 ? h`<a class="workbench-action workbench-action--ghost workbench-action--icon"
@@ -2051,7 +2051,7 @@ module workbench {
             const nameColumn = model.vars && model.vars.length ? model.vars[0] : list.column;
             const cells = (record: any) => {
                 const term = record[nameColumn];
-                const value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
+                const value = list.resort ? record[list.count] : counts.values[term ? resourceTerm(term) : ''];
                 return h`${browseNameCell(runtime, model, list, term)}${browseCountCell(runtime, list, counts, value, context)}${
                     list.actions ? browseActionsCell(runtime, term, context) : ''}`;
             };
@@ -2092,20 +2092,17 @@ module workbench {
             { key: 'graph', title: 'Graph contents', columns: ['subject', 'predicate', 'object'] }
         ];
 
-        function ntriples(term: any): string {
+        function resourceTerm(term: any): string {
             const stream = workbench.queryStream as any;
-            return stream && typeof stream.ntriplesTerm === 'function' ? stream.ntriplesTerm(term) : text(term);
+            return stream && typeof stream.exploreResource === 'function' ? stream.exploreResource(term) : text(term);
         }
 
-        /** The explored resource in N-Triples form: the server's resolved value, or the typed text when it already
-         *  is N-Triples. */
+        /** The server's resolved resource operand, retaining legacy _: form inputs as exact references. */
         function exploreResourceKey(model: PageModel): string {
             const resolved = text(pageValue(model, 'explore-resource'));
-            if (resolved) {
-                return resolved;
-            }
             const typed = text(pageValue(model, 'resource')).trim();
-            return /^(?:<|_:|"|<<)/.test(typed) ? typed : '';
+            const value = resolved || (/^(?:<|_:|"|<<)/.test(typed) ? typed : '');
+            return value.indexOf('_:') === 0 ? resourceTerm({ kind: 'bnode', value: value.slice(2) }) : value;
         }
 
         function exploreNamespaces(model: PageModel): { prefix: string; name: string }[] {
@@ -2146,7 +2143,7 @@ module workbench {
                 const entries: any[] = roles[role.key];
                 const rows: any[][] = entries.map((entry: any) => entry.values);
                 const graphs = rows.map(row => index('context') >= 0 ? row[index('context')] : null);
-                const graphKeys = graphs.map(graph => graph ? ntriples(graph) : '');
+                const graphKeys = graphs.map(graph => graph ? resourceTerm(graph) : '');
                 const oneGraph = role.key === 'graph' || graphKeys.every(key => key === graphKeys[0]);
                 const columns = role.columns.concat(oneGraph ? [] : ['context']);
                 const headingId = 'explore-group-' + role.key;
@@ -2175,7 +2172,8 @@ module workbench {
             const h = runtime.html;
             const namespaces = exploreNamespaces(model);
             const key = exploreResourceKey(model) || resource;
-            const isIri = /^<[^<]/.test(key);
+            const isIri = /^<(?!_:)[^<]/.test(key);
+            const isQueryable = isIri || key.indexOf('<_:') === 0;
             const comment = summary.comment ? text(summary.comment) : '';
             const types = distinctExploreValues(model, summary.types || []);
             const copy = () => {
@@ -2200,11 +2198,11 @@ module workbench {
                     <button class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
                         aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
                 ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => h`<li>
-                    <a class="explore-chip" href=${'explore?resource=' + encodeURIComponent(ntriples(type))}>${exploreGraphLabel(type, namespaces)}</a></li>`)}</ul>` : ''}
+                    <a class="explore-chip" href=${'explore?resource=' + encodeURIComponent(resourceTerm(type))}>${exploreGraphLabel(type, namespaces)}</a></li>`)}</ul>` : ''}
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
-                ${isIri && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
+                ${isQueryable && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
                     href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
             </section>`;
         }
@@ -2294,7 +2292,7 @@ module workbench {
             const objectIndex = model.vars.indexOf('object');
             const contextIndex = model.vars.indexOf('context');
             const key = accumulator.resourceKey;
-            const matches = (term: any) => !!key && !!term && ntriples(term) === key;
+            const matches = (term: any) => !!key && !!term && resourceTerm(term) === key;
             rows.forEach((row: any[], offset: number) => {
                 const subject = subjectIndex >= 0 ? row[subjectIndex] : null;
                 const predicate = predicateIndex >= 0 ? text(row[predicateIndex]) : '';
@@ -2434,7 +2432,7 @@ module workbench {
             const explored = exploreResourceKey(model);
             const seen: { [key: string]: boolean } = Object.create(null);
             return values.filter((value: any) => {
-                const key = ntriples(value);
+                const key = resourceTerm(value);
                 if (key === explored || seen[key]) {
                     return false;
                 }
@@ -3438,7 +3436,7 @@ module workbench {
             const rejected = (model.vars || []).indexOf('error-message') >= 0;
             const selectedGraph = rejected ? text(pageValue(model, 'context')) : locationParameter('context');
             const listedGraph = selectedGraph === '' || selectedGraph === 'null'
-                || graphs.some((record: any) => ntriples(record.context) === selectedGraph);
+                || graphs.some((record: any) => resourceTerm(record.context) === selectedGraph);
             const previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
                 || preview.state === 'loading';
             const namespaces = exploreNamespaces(model);
@@ -3475,8 +3473,8 @@ module workbench {
                             <option value="null" ?selected=${selectedGraph === 'null'}>Default graph</option>
                             ${listedGraph ? '' : h`<option value=${selectedGraph} ?selected=${true}>${
                                 removeGraphPhrase(selectedGraph).replace(/^in graph /, '')}</option>`}
-                            ${graphs.map((record: any) => h`<option value=${ntriples(record.context)}
-                                ?selected=${ntriples(record.context) === selectedGraph}>${termText(record.context)}</option>`)}
+                            ${graphs.map((record: any) => h`<option value=${resourceTerm(record.context)}
+                                ?selected=${resourceTerm(record.context) === selectedGraph}>${termText(record.context)}</option>`)}
                         </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
                     </div>
                 </div>
@@ -3530,7 +3528,7 @@ module workbench {
                     // Replace choices only after the server has returned a complete graph snapshot (M14.2).
                     counts.listing = recordsFromRows(answer, rows);
                     rows.forEach((row: any[]) => {
-                        if (text(row[1])) { values[row[0] ? ntriples(row[0]) : ''] = row[1]; }
+                        if (text(row[1])) { values[row[0] ? resourceTerm(row[0]) : ''] = row[1]; }
                     });
                     const size = meta(answer, 'repository-size');
                     if (text(size)) { values['*'] = size; }
@@ -3642,8 +3640,8 @@ module workbench {
                 .concat(listing.filter((record: any) => !record.context)
                     .map((record: any) => ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) })))
                 .concat(listing.filter((record: any) => !!record.context)
-                    .map((record: any) => ({ value: ntriples(record.context), label: termText(record.context),
-                        count: countOf(ntriples(record.context), record.statements) })));
+                    .map((record: any) => ({ value: resourceTerm(record.context), label: termText(record.context),
+                        count: countOf(resourceTerm(record.context), record.statements) })));
             if (discoveryIncomplete && !targets.length) {
                 targets.push({ value: '__unavailable__', label: 'Graph choices unavailable', count: '', unavailable: true });
             }
@@ -5072,7 +5070,7 @@ module workbench {
                     return answer.rowStore.read(0, answer.rowCount).then((rows: any[][]) => {
                         answer.rowStore.dispose();
                         rows.forEach((row: any[]) => {
-                            counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                            counts.values[row[0] ? resourceTerm(row[0]) : ''] = row[1];
                         });
                         counts.state = 'done';
                         if (!disposed) { renderCurrent(); }

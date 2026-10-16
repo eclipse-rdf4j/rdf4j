@@ -23,11 +23,11 @@ import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.eclipse.rdf4j.workbench.base.TupleServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchValueEncoder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -89,7 +89,7 @@ public class ExploreServlet extends TupleServlet {
 		builder.metadata("total-result-count", count);
 		if (value != null) {
 			// The resolved resource, so the page can group rows by the role it plays even for a prefixed name.
-			builder.metadata("explore-resource", NTriplesUtil.toNTriplesString(value, true));
+			builder.metadata("explore-resource", WorkbenchValueEncoder.encode(value));
 		}
 		this.processResource(con, builder, value, offset, limit, true);
 	}
