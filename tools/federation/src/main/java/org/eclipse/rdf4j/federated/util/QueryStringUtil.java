@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.slf4j.Logger;
@@ -1020,6 +1021,7 @@ public class QueryStringUtil {
 	}
 
 	private static StringBuilder appendDatasetClause(StringBuilder sb, Dataset dataset) {
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 		if (dataset == null) {
 			return sb;
 		}

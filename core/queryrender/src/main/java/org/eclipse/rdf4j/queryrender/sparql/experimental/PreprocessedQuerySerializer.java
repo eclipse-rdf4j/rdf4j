@@ -112,6 +112,7 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
@@ -223,6 +224,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	public String serialize(SerializableParsedUpdate update) {
+		DatasetUtils.requireRepresentableReadDataset(update.dataset);
 		this.builder = new StringBuilder();
 		this.queriesByProjection.putAll(update.subQueriesByProjection);
 
@@ -232,6 +234,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 	}
 
 	private void processDatasetClause(Dataset dataset) {
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 		if (dataset != null) {
 			for (IRI defaultGraph : dataset.getDefaultGraphs()) {
 				builder.append("FROM ");

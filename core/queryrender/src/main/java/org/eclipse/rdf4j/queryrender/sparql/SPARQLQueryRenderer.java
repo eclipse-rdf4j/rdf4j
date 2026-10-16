@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
@@ -86,6 +87,7 @@ public class SPARQLQueryRenderer implements QueryRenderer {
 	 */
 	@Override
 	public String render(final ParsedQuery theQuery) throws Exception {
+		DatasetUtils.requireRepresentableReadDataset(theQuery.getDataset());
 		mRenderer.reset();
 
 		TupleExpr tupleExpr = theQuery.getTupleExpr();
