@@ -1414,7 +1414,7 @@ public class TupleExprToIrConverter {
 			Method m = StatementPattern.class.getMethod("getContextVar");
 			Object ctx = m.invoke(sp);
 			if (ctx instanceof Var) {
-				return (Var) ctx;
+				return surfaceContext(sp, (Var) ctx);
 			}
 		} catch (ReflectiveOperationException ignore) {
 		}
@@ -1429,11 +1429,21 @@ public class TupleExprToIrConverter {
 			Method m = node.getClass().getMethod("getContextVar");
 			Object ctx = m.invoke(node);
 			if (ctx instanceof Var) {
-				return (Var) ctx;
+				return surfaceContext((QueryModelNode) node, (Var) ctx);
 			}
 		} catch (ReflectiveOperationException ignore) {
 		}
 		return null;
+	}
+
+	private static Var surfaceContext(QueryModelNode owner, Var context) {
+		for (QueryModelNode node = owner.getParentNode(); node != null; node = node.getParentNode()) {
+			if (node instanceof Projection projection && projection.isInheritedGraphContext(owner, context)) {
+				// The GRAPH belongs outside SELECT. Repeating it inside would create a local variable.
+				return null;
+			}
+		}
+		return context;
 	}
 
 	private static String quantifier(final long min, final long max) {
@@ -2640,22 +2650,44 @@ public class TupleExprToIrConverter {
 
 		@Override
 		public void meet(final Projection p) {
-			IrSelect sub = toIRSelectRaw(p, r);
 			boolean wrap = false;
 			wrap |= !where.getLines().isEmpty();
 			if (p.isVariableScopeChange()) {
 				wrap = true;
 			}
-			IrSubSelect node = new IrSubSelect(sub, wrap);
-			where.add(node);
+			addSubSelect(p, wrap);
+		}
+
+		private void addSubSelect(TupleExpr expression, boolean wrap) {
+			IrSubSelect node = new IrSubSelect(toIRSelectRaw(expression, r), wrap);
+			Projection projection = normalize(expression, false).projection;
+			Var context = projection == null ? null : projection.getVisibleProjectionContext();
+			if (projection != null && inheritsEnclosingGraph(projection)) {
+				context = null;
+			}
+			if (context == null) {
+				where.add(node);
+			} else {
+				IrBGP body = new IrBGP(false);
+				body.add(node);
+				where.add(new IrGraph(context, body, false));
+			}
+		}
+
+		private boolean inheritsEnclosingGraph(Projection projection) {
+			for (QueryModelNode node = projection.getParentNode(); node != null; node = node.getParentNode()) {
+				if (node instanceof Projection enclosing && enclosing.isInheritedGraphContext(
+						projection.getParentNode(), projection.getProjectionContext())) {
+					return true;
+				}
+			}
+			return false;
 		}
 
 		@Override
 		public void meet(final Slice s) {
 			if (s.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(s, r);
-				IrSubSelect node = new IrSubSelect(sub, true);
-				where.add(node);
+				addSubSelect(s, true);
 				return;
 			}
 			s.getArg().visit(this);
@@ -2664,9 +2696,7 @@ public class TupleExprToIrConverter {
 		@Override
 		public void meet(final Distinct d) {
 			if (d.isVariableScopeChange()) {
-				IrSelect sub = toIRSelectRaw(d, r);
-				IrSubSelect node = new IrSubSelect(sub, true);
-				where.add(node);
+				addSubSelect(d, true);
 				return;
 			}
 			d.getArg().visit(this);

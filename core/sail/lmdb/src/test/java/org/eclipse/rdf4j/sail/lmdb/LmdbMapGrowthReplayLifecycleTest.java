@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.SailConflictException;
@@ -56,6 +57,8 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbMapGrowthReplayLifecycleTest {
 
@@ -70,10 +73,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 	private static final int PARALLEL_SORT_INPUT_ROWS = 10_000;
 
-	@Test
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
-	void unconsumedSnapshotResultsShareOneReplacementGeneration(@TempDir Path dataDirectory) throws Exception {
-		LmdbStore store = newStore(dataDirectory);
+	void unconsumedSnapshotResultsShareOneReplacementGeneration(boolean nativeEvaluation,
+			@TempDir Path dataDirectory) throws Exception {
+		LmdbStore store = newStore(dataDirectory, nativeEvaluation);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try {
@@ -82,6 +87,13 @@ class LmdbMapGrowthReplayLifecycleTest {
 				seed.addStatement(FIRST_SUBJECT, FIRST_PREDICATE, VF.createLiteral("before-first"));
 				seed.addStatement(SECOND_SUBJECT, SECOND_PREDICATE, VF.createLiteral("before-second"));
 				seed.commit();
+			}
+			if (nativeEvaluation) {
+				try (RepositoryConnection planner = repository.getConnection()) {
+					assertThat(planner.prepareTupleQuery(selectValues(FIRST_SUBJECT, FIRST_PREDICATE))
+							.explain(Explanation.Level.Optimized)
+							.toString()).contains("NativeRows");
+				}
 			}
 
 			TripleStore tripleStore = tripleStoreOf(store);
@@ -485,7 +497,12 @@ class LmdbMapGrowthReplayLifecycleTest {
 	}
 
 	private static LmdbStore newStore(Path dataDirectory) {
+		return newStore(dataDirectory, false);
+	}
+
+	private static LmdbStore newStore(Path dataDirectory, boolean nativeEvaluation) {
 		return new LmdbStore(dataDirectory.toFile(), new LmdbStoreConfig("spoc,posc")
+				.setNativeEvaluationEnabled(nativeEvaluation)
 				.setForceSync(true)
 				.setTripleDBSize(INITIAL_MAP_SIZE)
 				.setValueDBSize(32L * 1024L * 1024L)

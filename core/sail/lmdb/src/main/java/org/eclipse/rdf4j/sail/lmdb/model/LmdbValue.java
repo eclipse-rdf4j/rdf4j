@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb.model;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.InternedIRI;
@@ -26,6 +27,12 @@ import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
 public interface LmdbValue extends Value {
 
 	long UNKNOWN_ID = -1;
+
+	@Experimental
+	@FunctionalInterface
+	interface Resolver {
+		boolean resolve(long id, LmdbValue value);
+	}
 
 	/** One immutable association between a native dictionary ID and the revision that owns it. */
 	record InternalIdentity(long id, ValueStoreRevision revision) {
@@ -109,7 +116,10 @@ public interface LmdbValue extends Value {
 		InternalIdentity own = getInternalIdentity();
 		InternalIdentity theirs = nativeValue.getInternalIdentity();
 		return own.id() != UNKNOWN_ID && theirs.id() != UNKNOWN_ID
-				&& own.revision().equals(theirs.revision()) ? own.id() == theirs.id() : null;
+				&& own.revision() != null && own.revision().equals(theirs.revision())
+						? own.id() == theirs.id() ? Boolean.TRUE
+								: own.revision().hasCanonicalIds() ? Boolean.FALSE : null
+						: null;
 	}
 
 	/**
@@ -128,6 +138,19 @@ public interface LmdbValue extends Value {
 	 * Initializes this value if it was a lazy value (ID-only value) before.
 	 */
 	void init();
+
+	/** Initializes through a resolver sharing the caller's native read transaction. */
+	@Experimental
+	default void init(Resolver resolver) {
+		init();
+	}
+
+	/** Lexical size without initializing a cold payload; negative means unresolved. */
+	@Experimental
+	@InternalUseOnly
+	default long retainedLexicalLength() {
+		return -1L;
+	}
 
 	/** Internal cold-export provenance; ordinary query models never acquire this ownership. */
 	@InternalUseOnly

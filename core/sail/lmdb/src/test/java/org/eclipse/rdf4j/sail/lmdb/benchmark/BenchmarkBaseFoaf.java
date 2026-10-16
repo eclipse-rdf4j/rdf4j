@@ -46,7 +46,7 @@ public class BenchmarkBaseFoaf {
 		}
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig());
+		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setSketchEstimatorEnabled(false));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 

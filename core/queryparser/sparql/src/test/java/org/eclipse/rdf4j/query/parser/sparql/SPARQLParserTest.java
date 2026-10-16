@@ -53,9 +53,11 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.Modify;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -63,6 +65,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Sum;
@@ -351,6 +354,267 @@ public class SPARQLParserTest {
 		te = ((Order) te).getArg();
 		assertThat(te).isInstanceOf(Extension.class);
 
+	}
+
+	@Test
+	public void testOrderByStableIndexParses() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX(?a)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedFunctionWithEuroLocalNameIsNotRewritten() {
+		String query = "PREFIX ex: <urn:example:> "
+				+ "SELECT (ex:\u20ACSTABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }";
+
+		assertFunctionURI(query, "urn:example:\u20ACSTABLE_INDEX");
+	}
+
+	@Test
+	public void testPrefixedFunctionWithEuroHyphenLocalNameIsNotRewritten() {
+		String query = "PREFIX ex: <urn:example:> "
+				+ "SELECT (ex:\u20AC-STABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }";
+
+		assertFunctionURI(query, "urn:example:\u20AC-STABLE_INDEX");
+	}
+
+	@Test
+	public void testPrefixedFunctionWithEuroHyphenPrefixIsNotRewritten() {
+		String query = "PREFIX \u20AC-: <urn:example:> "
+				+ "SELECT (\u20AC-:STABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }";
+
+		assertFunctionURI(query, "urn:example:STABLE_INDEX");
+	}
+
+	@Test
+	public void testPrefixedFunctionUsesGrammarBmpNameCharacters() {
+		String[] validFirstCharacters = {
+				"\u00C0", "\u00D6", "\u00D8", "\u00F6", "\u00F8", "\u02FF", "\u0370", "\u037D",
+				"\u037F", "\u1FFF", "\u200C", "\u200D", "\u2070", "\u218F", "\u2C00", "\u2FEF",
+				"\u3001", "\uD7FF", "\uF900", "\uFDCF", "\uFDF0", "\uFFFD"
+		};
+
+		for (String firstCharacter : validFirstCharacters) {
+			String localName = firstCharacter + "STABLE_INDEX";
+			String query = "PREFIX ex: <urn:example:> SELECT (ex:" + localName
+					+ "(?x) AS ?v) WHERE { VALUES ?x {1} }";
+
+			assertFunctionURI(query, "urn:example:" + localName);
+		}
+	}
+
+	@Test
+	public void testPrefixedFunctionRejectsCharactersOutsideGrammarBmpRanges() {
+		String[] invalidFirstCharacters = { "\u00D7", "\u037E", "\u3000" };
+
+		for (String firstCharacter : invalidFirstCharacters) {
+			String query = "PREFIX ex: <urn:example:> SELECT (ex:" + firstCharacter
+					+ "STABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }";
+
+			assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+		}
+	}
+
+	@Test
+	public void testPrefixedFunctionWithPercentAndEscapedLocalCharactersIsNotRewritten() {
+		assertFunctionURI(
+				"PREFIX ex: <urn:example:> SELECT (ex:foo%2FSTABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }",
+				"urn:example:foo%2FSTABLE_INDEX");
+		assertFunctionURI(
+				"PREFIX ex: <urn:example:> SELECT (ex:foo\\-STABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }",
+				"urn:example:foo-STABLE_INDEX");
+		assertFunctionURI(
+				"PREFIX ex: <urn:example:> SELECT (ex:foo\\#STABLE_INDEX(?x) AS ?v) WHERE { VALUES ?x {1} }",
+				"urn:example:foo#STABLE_INDEX");
+	}
+
+	@Test
+	public void testPrefixedFunctionWithRawUnicodeEscapeIsRejected() {
+		// Codepoint escapes are only recognized inside string and IRI literals (GH-6064), so a raw escape in a
+		// prefixed local name is a lexical error rather than an input for the STABLE_INDEX rewrite.
+		String query = "PREFIX ex: <urn:example:> SELECT (ex:\\u20ACSTABLE_INDEX(?x) AS ?v) "
+				+ "WHERE { VALUES ?x {1} }";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedFunctionWithSupplementaryRawUnicodeEscapeRemainsUnsupported() {
+		String query = "PREFIX ex: <urn:example:> SELECT (ex:\\U00010000STABLE_INDEX(?x) AS ?v) "
+				+ "WHERE { VALUES ?x {1} }";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testStableIndexKeywordIsCaseInsensitiveAcrossWhitespace() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY sTaBlE_InDeX\n(?a)";
+
+		assertFunctionURI(query, LmdbIndexOrder.FUNCTION_URI);
+	}
+
+	@Test
+	public void testStableIndexKeywordAllowsCommentBeforeOpeningParenthesis() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX # comment\n (?a)";
+
+		assertFunctionURI(query, LmdbIndexOrder.FUNCTION_URI);
+	}
+
+	@Test
+	public void testStableIndexTextInStringsIrisAndCommentsIsNotParsedAsKeyword() {
+		String query = "SELECT * WHERE {\n"
+				+ " ?s ?p \"STABLE_INDEX(?x)\" .\n"
+				+ " ?s ?p 'STABLE_INDEX(?x)' .\n"
+				+ " ?s ?p \"\"\"STABLE_INDEX(?x)\"\"\" .\n"
+				+ " ?s ?p '''STABLE_INDEX(?x)''' .\n"
+				+ " ?s <urn:STABLE_INDEX(?x)> ?o .\n"
+				+ " # STABLE_INDEX(?x)\n"
+				+ "} ORDER BY STABLE_INDEX(?s)";
+
+		assertFunctionURI(query, LmdbIndexOrder.FUNCTION_URI);
+	}
+
+	@Test
+	public void testStableIndexKeywordWorksInQuerySubselect() {
+		String query = "SELECT * WHERE { { SELECT * WHERE { ?s ?p ?o } ORDER BY STABLE_INDEX(?s) } }";
+
+		assertFunctionURI(query, LmdbIndexOrder.FUNCTION_URI);
+	}
+
+	@Test
+	public void testStableIndexKeywordRemainsRejectedInUpdateSubselect() {
+		String update = "INSERT { ?s ?p ?o } WHERE { { SELECT * WHERE { ?s ?p ?o } "
+				+ "ORDER BY STABLE_INDEX(?s) } }";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseUpdate(update, null));
+	}
+
+	@Test
+	public void testStableIndexKeywordRejectsNestedAndMultipleArguments() {
+		String nested = "SELECT * WHERE { ?a a ?type. } ORDER BY COALESCE(STABLE_INDEX(?a), 1)";
+		String multiple = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX(?a, ?b)";
+		String zero = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX()";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(nested, null));
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(multiple, null));
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(zero, null));
+	}
+
+	@Test
+	public void testStableIndexRewriteDoesNotChangeServiceExpressionSource() {
+		String query = "SELECT * WHERE { SERVICE <urn:service> { { SELECT * WHERE { ?s <urn:p> ?o } "
+				+ "ORDER BY STABLE_INDEX(?s) } } }";
+
+		ParsedQuery parsed = parser.parseQuery(query, null);
+		List<Service> services = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service node) {
+				services.add(node);
+				super.meet(node);
+			}
+		});
+
+		assertThat(services).hasSize(1);
+		assertThat(services.get(0).getServiceExpressionString())
+				.isEqualTo("{ SELECT * WHERE { ?s <urn:p> ?o } ORDER BY STABLE_INDEX(?s) }");
+		assertThat(parsed.getSourceString()).isEqualTo(query);
+	}
+
+	private void assertFunctionURI(String query, String expectedURI) {
+		ParsedQuery parsed = parser.parseQuery(query, null);
+		List<FunctionCall> calls = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(FunctionCall node) {
+				calls.add(node);
+				super.meet(node);
+			}
+		});
+
+		assertThat(calls).hasSize(1);
+		assertThat(calls.get(0).getURI()).isEqualTo(expectedURI);
+	}
+
+	@Test
+	public void testOrderByAscLmdbIndexParses() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY ASC(STABLE_INDEX(?a))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testOrderByDescLmdbIndexStillParsesForLaterValidation() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY DESC(STABLE_INDEX(?a))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testOrderByDescLmdbIndexParsesAfterHashIri() {
+		String query = "SELECT ?s ?o WHERE { ?s <http://www.w3.org/2000/01/rdf-schema#label> ?o. } ORDER BY DESC(STABLE_INDEX(?s))";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void escapedHashInPrefixedNameDoesNotHideStableIndex() {
+		String query = "PREFIX ex: <urn:>\n"
+				+ "SELECT ?s WHERE { ex:foo\\#bar ?p ?s . } ORDER BY STABLE_INDEX(?s)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testLmdbIndexOutsideOrderByIsRejected() {
+		String query = "SELECT * WHERE { ?a a ?type. FILTER(STABLE_INDEX(?a) = 1) }";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testLmdbIndexRequiresVariableArgument() {
+		String query = "SELECT * WHERE { ?a a ?type. } ORDER BY STABLE_INDEX(1)";
+
+		assertThrows(MalformedQueryException.class, () -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedFunctionNamedLmdbIndexIsNotRewritten() {
+		String query = "PREFIX ex: <urn:>\nSELECT * WHERE { ?a a ?type. BIND(ex:STABLE_INDEX(?a) AS ?x) }";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testPrefixedStableIndexNameRemainsQName() {
+		String query = "PREFIX ex: <urn:example:> SELECT (ex:STABLE_INDEX(?x) AS ?v) "
+				+ "WHERE { VALUES ?x {1} }";
+
+		assertFunctionURI(query, "urn:example:STABLE_INDEX");
+	}
+
+	@Test
+	public void testStableIndexPrefixLocalNameRemainsQName() {
+		String query = "PREFIX STABLE_INDEX: <urn:example:> SELECT (STABLE_INDEX:local(?x) AS ?v) "
+				+ "WHERE { VALUES ?x {1} }";
+
+		assertFunctionURI(query, "urn:example:local");
+	}
+
+	@Test
+	public void testPrefixedFunctionWithHyphenContainingLmdbIndexNameIsNotRewritten() {
+		String query = "PREFIX ex: <urn:>\nSELECT * WHERE { ?a a ?type. BIND(ex:foo-STABLE_INDEX(?a) AS ?x) }";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
+	}
+
+	@Test
+	public void testStringContainingLmdbIndexDoesNotAffectOrderRewrite() {
+		String query = "SELECT * WHERE { ?a a \"STABLE_INDEX(?a)\". } ORDER BY STABLE_INDEX(?a)";
+
+		assertDoesNotThrow(() -> parser.parseQuery(query, null));
 	}
 
 	@Test

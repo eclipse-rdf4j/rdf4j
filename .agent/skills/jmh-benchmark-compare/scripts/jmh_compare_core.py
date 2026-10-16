@@ -178,7 +178,15 @@ def parse_row_with_optional_metrics(parts: Sequence[str], columns: Sequence[str]
 
 
 def parse_row_tokens(line: str, columns: Sequence[str]) -> Optional[Dict[str, str]]:
-    parts = [part for part in line.strip().split() if part != "±"]
+    raw_parts = line.strip().split()
+    parts = [part for part in raw_parts if part != "±"]
+    if "Error" in columns and "±" not in raw_parts:
+        columns_without_error = [col for col in columns if col != "Error"]
+        row = parse_row_with_optional_metrics(parts, columns_without_error)
+        if row is not None:
+            full_row = {col: "" for col in columns}
+            full_row.update(row)
+            return full_row
     return parse_row_with_optional_metrics(parts, columns)
 
 

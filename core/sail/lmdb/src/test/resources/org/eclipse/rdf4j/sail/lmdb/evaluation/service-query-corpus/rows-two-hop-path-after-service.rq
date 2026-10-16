@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:>
+SELECT ?s ?v ?t WHERE { ?s :p ?k . SERVICE :remote { ?k :q ?v } ?s :edge* ?t }

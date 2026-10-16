@@ -30,12 +30,9 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -200,32 +197,14 @@ class LmdbStatementPatternIdNormalizationTest {
 		}
 	}
 
-	private record PatternInputs(Resource subject, IRI predicate, Value object, Resource[] contexts) {
-		List<Value> values() {
-			List<Value> values = new ArrayList<>();
-			if (subject != null) {
-				values.add(subject);
-			}
-			if (predicate != null) {
-				values.add(predicate);
-			}
-			if (object != null) {
-				values.add(object);
-			}
-			for (Resource context : contexts) {
-				if (context != null) {
-					values.add(context);
-				}
-			}
-			return values;
-		}
+	private record PatternInput(Value value, int positions, long entryId, long resolvedId) {
 	}
 
 	private static final class Fixture implements AutoCloseable {
 		private final ProbeStore store;
 		private final SailRepository repository;
 		private final RepositoryConnection connection;
-		private final List<PatternInputs> inputs = new ArrayList<>();
+		private final List<PatternInput> inputs = new ArrayList<>();
 
 		private Fixture(File directory, Value object) {
 			store = new ProbeStore(directory, inputs);
@@ -264,13 +243,17 @@ class LmdbStatementPatternIdNormalizationTest {
 		}
 
 		private void assertBoundNativeInputs() {
-			assertFalse(inputs.isEmpty(), "The query must exercise real LMDB statement iterators");
-			for (PatternInputs pattern : inputs) {
-				for (Value input : pattern.values()) {
-					LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, input,
-							"Statement-pattern inputs and graph restrictions must be normalized to LMDB values");
-					assertNotEquals(LmdbValue.UNKNOWN_ID, nativeValue.getInternalIdentity().id(),
-							"A present statement-pattern input must retain its resolved dictionary ID");
+			assertFalse(inputs.isEmpty(), "The query must exercise real role-aware LMDB statement lookups");
+			for (PatternInput input : inputs) {
+				LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, input.value(),
+						"Statement-pattern inputs and graph restrictions must enter lookup as LMDB values, positions="
+								+ input.positions());
+				assertNotEquals(LmdbValue.UNKNOWN_ID, input.resolvedId(),
+						"A present statement-pattern input must resolve in its paired dictionary");
+				assertEquals(input.resolvedId(), nativeValue.getInternalIdentity().id(),
+						"A present statement-pattern input must retain its resolved dictionary ID");
+				if (input.entryId() != LmdbValue.UNKNOWN_ID) {
+					assertEquals(input.entryId(), input.resolvedId(), "An already proven native ID must be retained");
 				}
 			}
 		}
@@ -317,12 +300,25 @@ class LmdbStatementPatternIdNormalizationTest {
 	}
 
 	private static final class ProbeValueStore extends ValueStore {
+		private final List<PatternInput> inputs;
 		private final Map<Value, AtomicInteger> payloadCalls = new IdentityHashMap<>();
 		private final Map<Value, Integer> payloadLookups = new IdentityHashMap<>();
 		private final List<Value> unknownLookups = new ArrayList<>();
 
-		private ProbeValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+		private ProbeValueStore(File directory, StoreProperties properties, LmdbStoreConfig config,
+				List<PatternInput> inputs) throws IOException {
 			super(directory, properties, config);
+			this.inputs = inputs;
+		}
+
+		@Override
+		long getStatementId(ReadSnapshot snapshot, Value value, int positions) throws IOException {
+			// Observe the real role-aware boundary. Do not normalize the caller or manufacture an ID in this probe.
+			long entryId = value instanceof LmdbValue nativeValue ? nativeValue.getInternalIdentity().id()
+					: LmdbValue.UNKNOWN_ID;
+			long resolvedId = super.getStatementId(snapshot, value, positions);
+			inputs.add(new PatternInput(value, positions, entryId, resolvedId));
+			return resolvedId;
 		}
 
 		@Override
@@ -496,10 +492,10 @@ class LmdbStatementPatternIdNormalizationTest {
 	}
 
 	private static final class ProbeStore extends LmdbStore {
-		private final List<PatternInputs> inputs;
+		private final List<PatternInput> inputs;
 		private ProbeValueStore values;
 
-		private ProbeStore(File directory, List<PatternInputs> inputs) {
+		private ProbeStore(File directory, List<PatternInput> inputs) {
 			super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true).setInlineLiterals(false));
 			this.inputs = inputs;
 		}
@@ -509,16 +505,9 @@ class LmdbStatementPatternIdNormalizationTest {
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
 					(valueDirectory, valueProperties, valueConfig) -> {
-						values = new ProbeValueStore(valueDirectory, valueProperties, valueConfig);
+						values = new ProbeValueStore(valueDirectory, valueProperties, valueConfig, inputs);
 						return values;
-					}, TripleStore::new) {
-				@Override
-				CloseableIteration<? extends Statement> createStatementIterator(ReadView readView, Resource subject,
-						IRI predicate, Value object, boolean explicit, Resource... contexts) throws IOException {
-					inputs.add(new PatternInputs(subject, predicate, object, contexts.clone()));
-					return super.createStatementIterator(readView, subject, predicate, object, explicit, contexts);
-				}
-			};
+					}, TripleStore::new);
 		}
 	}
 

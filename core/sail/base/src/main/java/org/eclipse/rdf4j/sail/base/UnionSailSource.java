@@ -486,6 +486,7 @@ class UnionSailSource implements SailSource, FrozenFlush {
 			if (released || stagingStarted && context != requested) {
 				throw new IllegalStateException("The retained union has been released");
 			}
+			context.transferAttemptCleanup(this, requested);
 			context = requested;
 			requested.register(this);
 			// Own the complete frozen subtree before the first reservation or staging callback can fail.
@@ -554,34 +555,36 @@ class UnionSailSource implements SailSource, FrozenFlush {
 	public SailDataset dataset(IsolationLevel level) throws SailException {
 		int retries = 0;
 		while (true) {
-			SailClosable admission = beginDatasetAcquisition(level);
-			boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
-			SailDataset primaryDataset = null;
-			SailDataset additionalDataset = null;
-			SailDataset result = null;
-			Throwable failure = null;
-			try {
-				primaryDataset = primary.dataset(level);
-				additionalDataset = additional.dataset(level);
-				result = UnionSailDataset.getInstance(primaryDataset, additionalDataset);
-				primaryDataset = null;
-				additionalDataset = null;
-			} catch (Throwable datasetFailure) {
-				failure = datasetFailure;
-			}
-			failure = closeResource(failure, primaryDataset);
-			failure = closeResource(failure, additionalDataset);
-			failure = closeResource(failure, admission);
-			if (failure != null) {
-				failure = closeResource(failure, result);
-				if (failure instanceof RetryableDatasetAcquisitionException && outermost
-						&& failure.getSuppressed().length == 0) {
-					SailSourceBranch.awaitDatasetAcquisitionRetry(retries++, failure);
-					continue;
+			try (SailDatasetSnapshot.Scope ignored = SailDatasetSnapshot.open()) {
+				SailClosable admission = beginDatasetAcquisition(level);
+				boolean outermost = SailSource.isOutermostDatasetAcquisition(admission);
+				SailDataset primaryDataset = null;
+				SailDataset additionalDataset = null;
+				SailDataset result = null;
+				Throwable failure = null;
+				try {
+					primaryDataset = primary.dataset(level);
+					additionalDataset = additional.dataset(level);
+					result = UnionSailDataset.getInstance(primaryDataset, additionalDataset);
+					primaryDataset = null;
+					additionalDataset = null;
+				} catch (Throwable datasetFailure) {
+					failure = datasetFailure;
 				}
-				rethrow(failure);
+				failure = closeResource(failure, primaryDataset);
+				failure = closeResource(failure, additionalDataset);
+				failure = closeResource(failure, admission);
+				if (failure != null) {
+					failure = closeResource(failure, result);
+					if (failure instanceof RetryableDatasetAcquisitionException && outermost
+							&& failure.getSuppressed().length == 0) {
+						SailSourceBranch.awaitDatasetAcquisitionRetry(retries++, failure);
+						continue;
+					}
+					rethrow(failure);
+				}
+				return result;
 			}
-			return result;
 		}
 	}
 

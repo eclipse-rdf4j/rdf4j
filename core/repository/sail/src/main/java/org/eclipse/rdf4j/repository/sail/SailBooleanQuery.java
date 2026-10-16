@@ -56,7 +56,8 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
-					.set(getParsedQuery().getSourceString(), Query.QueryType.BOOLEAN);
+					.set(getParsedQuery().getSourceString(), Query.QueryType.BOOLEAN,
+							getForcedLmdbExecutionStrategy());
 			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
 				try {
 					bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());

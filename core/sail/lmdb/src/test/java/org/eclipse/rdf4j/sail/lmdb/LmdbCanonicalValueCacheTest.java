@@ -132,7 +132,9 @@ class LmdbCanonicalValueCacheTest {
 	@EnumSource(Shape.class)
 	void consecutiveSameTypeIdsUseConfiguredCacheCapacity(Shape shape) throws Exception {
 		store.close();
-		store = new CountingValueStore(directory.resolve("capacity-values"), 128);
+		store = new CountingValueStore(directory.resolve("capacity-values"), 128 * ValuePosition.CACHE_BANKS);
+		assertTrue(store.valueCacheCapacity(ValuePosition.NONE) >= 128,
+				"the historical capacity budget belongs to this bank; allocation rounds whole sets upward");
 		store.startTransaction(true);
 		long[] ids = new long[16];
 		for (int i = 0; i < ids.length; i++) {
@@ -170,7 +172,12 @@ class LmdbCanonicalValueCacheTest {
 		LmdbValue[] escaped = new LmdbValue[ids.length];
 		for (int i = 0; i < ids.length; i++) {
 			escaped[i] = store.getLazyValue(ids[i]);
-			assertSame(escaped[i], store.getLazyValue(ids[i]));
+			if (!ValueIds.isInlined(ids[i]) && store.valueCacheCapacity(ValuePosition.NONE) > 0) {
+				assertSame(escaped[i], store.getLazyValue(ids[i]));
+			} else {
+				assertNull(store.cachedValue(ids[i]), "inline IDs and empty position banks bypass the cache");
+				assertEquals(expected[i], store.getLazyValue(ids[i]));
+			}
 		}
 		for (int i = 0; i < ids.length; i++) {
 			assertEquals(expected[i], store.getValue(ids[i]), "Completed reads preserve every colliding association");
@@ -198,6 +205,36 @@ class LmdbCanonicalValueCacheTest {
 		assertEquals(1, store.resolutions.get());
 		assertEquals(expected, unresolved);
 		assertSame(unresolved, store.getLazyValue(id));
+	}
+
+	@Test
+	void fourCanonicalWaysRetainEveryOccupantUntilFifthCollision() throws Exception {
+		store.close();
+		store = new CountingValueStore(directory.resolve("four-way-values"), 20);
+		assertEquals(4, store.valueCacheCapacity(ValuePosition.NONE));
+		Value[] expected = new Value[5];
+		long[] ids = new long[5];
+		store.startTransaction(true);
+		for (int i = 0; i < ids.length; i++) {
+			expected[i] = VF.createIRI("urn:canonical:four-way:" + i);
+			ids[i] = store.storeValue(expected[i]);
+		}
+		store.commit();
+		LmdbValue[] held = new LmdbValue[5];
+		for (int i = 0; i < 4; i++) {
+			held[i] = store.getLazyValue(ids[i]);
+		}
+		for (int i = 0; i < 4; i++) {
+			assertSame(held[i], store.getLazyValue(ids[i]), "all four occupants share the one actual set");
+		}
+		held[4] = store.getLazyValue(ids[4]);
+		assertSame(held[4], store.getLazyValue(ids[4]));
+		assertEquals(4, store.valueCacheCapacity(ValuePosition.NONE),
+				"the fifth collision cannot expand the actual four-way bank");
+		store.close();
+		for (int i = 0; i < held.length; i++) {
+			assertEquals(expected[i], held[i]);
+		}
 	}
 
 	@Test

@@ -1569,6 +1569,7 @@ class LmdbStoreFlushReproductionTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void valueMapGrowthCheckpointDoesNotPublishUnflushedQuotedTerms(@TempDir Path dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setBulkOperationSize(0)
 				.setValueDBSize(1024L * 1024L)
 				.setAutoGrow(true);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
@@ -1700,6 +1701,7 @@ class LmdbStoreFlushReproductionTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void competingReaderResumesAfterValueMapCheckpointRollback(@TempDir Path dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(true)
+				.setBulkOperationSize(0)
 				.setValueDBSize(1024L * 1024L)
 				.setAutoGrow(true);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
@@ -2607,30 +2609,39 @@ class LmdbStoreFlushReproductionTest {
 		}
 
 		@Override
-		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
-				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-			return new DatasetAdmissionRetrySailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
-					gate);
-		}
-	}
+		SailStore getConnectionSailStore() {
+			SailStore delegate = super.getConnectionSailStore();
+			return new SailStore() {
+				@Override
+				public ValueFactory getValueFactory() {
+					return delegate.getValueFactory();
+				}
 
-	private static final class DatasetAdmissionRetrySailStore extends LmdbSailStore {
-		private final DatasetAdmissionGate gate;
+				@Override
+				public EvaluationStatistics getEvaluationStatistics() {
+					return delegate.getEvaluationStatistics();
+				}
 
-		private DatasetAdmissionRetrySailStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
-				boolean sketchBasedJoinEstimatorEnabled, DatasetAdmissionGate gate) throws IOException, SailException {
-			super(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
-			this.gate = gate;
-		}
+				@Override
+				public void prepareDataset(IsolationLevel level) {
+					delegate.prepareDataset(level);
+				}
 
-		@Override
-		public SailSource getExplicitSailSource() {
-			return new DatasetAdmissionRetrySource(super.getExplicitSailSource(), gate);
-		}
+				@Override
+				public SailSource getExplicitSailSource() {
+					return new DatasetAdmissionRetrySource(delegate.getExplicitSailSource(), gate);
+				}
 
-		@Override
-		public SailSource getInferredSailSource() {
-			return new DatasetAdmissionRetrySource(super.getInferredSailSource(), gate);
+				@Override
+				public SailSource getInferredSailSource() {
+					return new DatasetAdmissionRetrySource(delegate.getInferredSailSource(), gate);
+				}
+
+				@Override
+				public void close() {
+					delegate.close();
+				}
+			};
 		}
 	}
 
@@ -2668,6 +2679,21 @@ class LmdbStoreFlushReproductionTest {
 		@Override
 		public SailSource fork() {
 			return new DatasetAdmissionRetrySource(delegate.fork(), gate);
+		}
+
+		@Override
+		public SailSource fork(Object writeOwner) {
+			return new DatasetAdmissionRetrySource(delegate.fork(writeOwner), gate);
+		}
+
+		@Override
+		public FlushBatch freezeForFlush() {
+			return delegate.freezeForFlush();
+		}
+
+		@Override
+		public void retireSnapshotsPreservingBorrowers() {
+			delegate.retireSnapshotsPreservingBorrowers();
 		}
 
 		@Override

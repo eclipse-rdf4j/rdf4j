@@ -14,8 +14,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.vocabulary.FN;
@@ -157,39 +155,41 @@ public class PrefixDeclProcessor {
 			assert colonIdx >= 0 : "colonIdx should be >= 0: " + colonIdx;
 
 			String prefix = qname.substring(0, colonIdx);
-			String localName = qname.substring(colonIdx + 1);
+			int localNameStart = colonIdx + 1;
 
 			String namespace = prefixMap.get(prefix);
 			if (namespace == null) {
 				throw new VisitorException("QName '" + qname + "' uses an undefined prefix");
 			}
 
-			localName = processEscapes(localName);
-
 			// Replace the qname node with a new IRI node in the parent node
 			ASTIRI iriNode = new ASTIRI(SyntaxTreeBuilderTreeConstants.JJTIRI);
-			iriNode.setValue(namespace + localName);
+			iriNode.setValue(expandQName(namespace, qname, localNameStart));
 			qnameNode.jjtReplaceWith(iriNode);
 
 			return null;
 		}
 
-		private String processEscapes(String localName) {
-
-			// process escaped special chars.
-			StringBuilder unescaped = new StringBuilder();
-			Pattern escapedCharPattern = Pattern
-					.compile("\\\\[_~.\\-!$&'()*+,;=:/?#@%]");
-			Matcher m = escapedCharPattern.matcher(localName);
-			boolean result = m.find();
-			while (result) {
-				String escaped = m.group();
-				m.appendReplacement(unescaped, escaped.substring(1));
-				result = m.find();
+		private static String expandQName(String namespace, String qname, int localNameStart) {
+			int escape = qname.indexOf('\\', localNameStart);
+			if (escape < 0) {
+				return namespace + qname.substring(localNameStart);
 			}
-			m.appendTail(unescaped);
 
-			return unescaped.toString();
+			// The PNAME_LN lexer rule guarantees that every backslash in PN_LOCAL starts PN_LOCAL_ESC.
+			final int length = qname.length();
+			StringBuilder iri = new StringBuilder(namespace.length() + length - localNameStart - 1);
+			iri.append(namespace);
+
+			int copyFrom = localNameStart;
+			do {
+				iri.append(qname, copyFrom, escape);
+				iri.append(qname.charAt(escape + 1));
+				copyFrom = escape + 2;
+				escape = qname.indexOf('\\', copyFrom);
+			} while (escape >= 0);
+
+			return iri.append(qname, copyFrom, length).toString();
 		}
 
 		@Override

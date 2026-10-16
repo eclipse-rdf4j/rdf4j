@@ -66,7 +66,7 @@ class LmdbReplayExposureContractTest {
 	private static final double SOFT_GROWTH_DEMAND_RATIO = GROWTH_THRESHOLD * 1.5d;
 
 	@Test
-	void completedSnapshotPinRetiresWithCachedGeneration(@TempDir File dataDir) throws Exception {
+	void completedSnapshotPinRetiresAfterLastBorrower(@TempDir File dataDir) throws Exception {
 		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(GROWTH_MAP_SIZE)
 				.setValueDBSize(GROWTH_MAP_SIZE));
@@ -78,17 +78,25 @@ class LmdbReplayExposureContractTest {
 			}
 			try (RepositoryConnection reader = repository.getConnection()) {
 				reader.begin(IsolationLevels.SNAPSHOT);
-				try (TupleQueryResult result = reader.prepareTupleQuery(
-						"SELECT ?value WHERE { ?subject <" + PREDICATE + "> ?value } ORDER BY ?value").evaluate()) {
-					assertTrue(result.hasNext());
-					result.next();
-					assertFalse(result.hasNext());
+				try (var statements = reader.getStatements(null, VF.createIRI(PREDICATE), null, false)) {
+					assertTrue(statements.hasNext());
+					assertEquals(tripleStoreOf(store).getDataRevision(),
+							tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+							"the active paired borrower pins its exact statement revision");
+					try (TupleQueryResult result = reader.prepareTupleQuery(
+							"SELECT ?value WHERE { ?subject <" + PREDICATE + "> ?value } ORDER BY ?value").evaluate()) {
+						assertTrue(result.hasNext());
+						assertEquals(VF.createLiteral(1), result.next().getValue("value"));
+						assertFalse(result.hasNext());
+					}
+					assertEquals(tripleStoreOf(store).getDataRevision(),
+							tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+							"query exhaustion cannot retire the independent live statement borrower");
 				}
 				reader.rollback();
 			}
-			assertEquals(tripleStoreOf(store).getDataRevision(),
-					tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
-					"the store's idle shared SNAPSHOT cache keeps its generation after connection closure");
+			assertEquals(Long.MAX_VALUE, tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
+					"closing every borrower and the transaction retires the idle auto-flushing root");
 			retireCachedGeneration(repository);
 			assertEquals(Long.MAX_VALUE, tripleStoreOf(store).getTxnManager().minPinnedSnapshotRevision(),
 					"normal publication must retire the unborrowed cached generation");
@@ -868,6 +876,11 @@ class LmdbReplayExposureContractTest {
 
 		private OrderCloseBarrierFunction(String functionIri) {
 			this.functionIri = functionIri;
+		}
+
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.DETERMINISTIC;
 		}
 
 		@Override

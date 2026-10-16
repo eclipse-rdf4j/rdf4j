@@ -44,6 +44,16 @@ public class AbstractMemoryOverflowModelTest {
 	}
 
 	@Test
+	void publicMinimumMemoryReserveSpillsAndKeepsAdoptedModelStable() throws Exception {
+		runInConstrainedHeap("minimum-memory-reserve");
+	}
+
+	@Test
+	void failedMinimumMemoryReserveMigrationRetainsModelAndCanBeRetriedWithoutGc() throws Exception {
+		runInConstrainedHeap("minimum-memory-reserve-retry");
+	}
+
+	@Test
 	void failedDiskMigrationRetainsOriginalModelAndCanBeRetried() throws Exception {
 		runInConstrainedHeap("migration-retry");
 	}
@@ -57,6 +67,12 @@ public class AbstractMemoryOverflowModelTest {
 		switch (args[0]) {
 		case "pressure-hook":
 			test.pressureHookProbe();
+			break;
+		case "minimum-memory-reserve":
+			test.minimumMemoryReserveProbe();
+			break;
+		case "minimum-memory-reserve-retry":
+			test.minimumMemoryReserveRetryProbe();
 			break;
 		case "migration-retry":
 			test.migrationRetryProbe();
@@ -88,6 +104,106 @@ public class AbstractMemoryOverflowModelTest {
 				.orElseThrow(() -> new AssertionError(output));
 		long maxMemory = Long.parseLong(maxMemoryLine.substring("RUNTIME_MAX_MEMORY_BYTES=".length()));
 		assertThat(maxMemory).isLessThanOrEqualTo(128L * 1024 * 1024);
+	}
+
+	private void minimumMemoryReserveProbe() throws Exception {
+		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
+		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
+		int oldLow = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		RecordingOverflowModel model = null;
+		try {
+			setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, -1);
+			model = new RecordingOverflowModel();
+			ValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Statement statement = valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject"),
+					valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("value"));
+			model.setNamespace("ex", "urn:overflow:");
+			model.add(statement);
+
+			assertThat(model.spillCount).isZero();
+			long heapUsedBytes = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory();
+			long allocatableBytes = Runtime.getRuntime().maxMemory() - heapUsedBytes;
+			assertThat(allocatableBytes).as("the child must have more than the 1 MiB reserve available")
+					.isGreaterThan(1024L * 1024L);
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = 1;
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).isZero();
+
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+			model.spillToDiskIfNeeded();
+
+			assertThat(model.spillCount).isEqualTo(1);
+			assertThat(model.spilledStatements).containsExactly(statement);
+			assertThat(model.spilledStatements.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+			assertThat(model).containsExactly(statement);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+
+			model.spillToDiskIfNeeded();
+			assertThat(model.spillCount).isEqualTo(1);
+		} finally {
+			setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
+			if (model != null) {
+				model.close();
+			}
+		}
+	}
+
+	private void minimumMemoryReserveRetryProbe() throws Exception {
+		int oldHigh = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH;
+		int oldMedium = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM;
+		int oldLow = AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW;
+		int oldMinimum = AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING;
+		RetryableOverflowModel model = null;
+		try {
+			setPressureThresholds(Integer.MAX_VALUE, Integer.MAX_VALUE, -1, -1);
+			model = new RetryableOverflowModel();
+			ValueFactory valueFactory = SimpleValueFactory.getInstance();
+			Statement first = valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject:1"),
+					valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("first"));
+			Statement second = valueFactory.createStatement(valueFactory.createIRI("urn:overflow:subject:2"),
+					valueFactory.createIRI("urn:overflow:predicate"), valueFactory.createLiteral("second"));
+			model.setNamespace("ex", "urn:overflow:");
+			model.add(first);
+			model.add(second);
+			AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimumAboveMaxHeapMiB();
+
+			assertThatThrownBy(model::spillToDiskIfNeeded)
+					.isInstanceOf(IllegalStateException.class)
+					.hasMessage("simulated spill import failure");
+			assertThat(model.spillAttempts).isEqualTo(1);
+			assertThat(model).containsExactly(first, second);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+
+			model.spillToDiskIfNeeded();
+
+			assertThat(model.spillAttempts).isEqualTo(2);
+			assertThat(model).containsExactly(first, second);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:overflow:"));
+		} finally {
+			setPressureThresholds(oldHigh, oldMedium, oldLow, oldMinimum);
+			if (model != null) {
+				model.close();
+			}
+		}
+	}
+
+	private static int minimumAboveMaxHeapMiB() {
+		long maxHeapBytes = Runtime.getRuntime().maxMemory();
+		long bytesPerMiB = 1024L * 1024L;
+		long maxHeapMiB = (maxHeapBytes + bytesPerMiB - 1) / bytesPerMiB;
+		return Math.toIntExact(maxHeapMiB + 1);
+	}
+
+	private static void setPressureThresholds(int high, int medium, int low, int minimum) {
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_HIGH = high;
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_MEDIUM = medium;
+		AbstractMemoryOverflowModel.MEMORY_THRESHOLD_LOW = low;
+		AbstractMemoryOverflowModel.MIN_AVAILABLE_MEM_BEFORE_OVERFLOWING = minimum;
 	}
 
 	private void pressureHookProbe() throws Exception {
@@ -424,6 +540,7 @@ public class AbstractMemoryOverflowModelTest {
 		protected void overflowToDiskInner(Model memory) {
 			spillCount++;
 			spilledStatements = new LinkedHashModel(memory);
+			memory.getNamespaces().forEach(spilledStatements::setNamespace);
 			disk = spilledStatements;
 		}
 
@@ -444,6 +561,7 @@ public class AbstractMemoryOverflowModelTest {
 				throw new IllegalStateException("simulated spill import failure");
 			}
 			disk = new LinkedHashModel(memory);
+			memory.getNamespaces().forEach(disk::setNamespace);
 		}
 
 		@Override

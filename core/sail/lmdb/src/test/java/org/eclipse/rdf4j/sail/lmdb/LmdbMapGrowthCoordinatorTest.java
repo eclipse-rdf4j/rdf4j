@@ -148,9 +148,9 @@ class LmdbMapGrowthCoordinatorTest {
 	@Timeout(value = 15, unit = TimeUnit.SECONDS)
 	void growthReservesReplayEpochBeforeAdmittingAnotherWriter(@TempDir Path dataDir) throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc")
-				.setTripleDBSize(32L * 1024L * 1024L)
+				.setTripleDBSize(512L * 1024L)
 				.setValueDBSize(256L * 1024L * 1024L)
-				.setMapGrowthThreshold(0.01d)
+				.setMapGrowthThreshold(0.90d)
 				.setMapGrowthReadDrainTimeoutMillis(0L);
 		LmdbStore store = new LmdbStore(dataDir.toFile(), config);
 		SailRepository repository = new SailRepository(store);

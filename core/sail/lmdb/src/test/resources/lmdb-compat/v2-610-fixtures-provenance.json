@@ -1,0 +1,34 @@
+{
+  "sourceRevision": "46a2d41ab16fead609884ee655e26e6baa1ce325",
+  "sourceVersion": "6.1.0",
+  "runtimeManifest": "logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/runtimes.json",
+  "producerSha256": "7f8d07250c462648cdf11bb766e4b560ceab84a93e151ad14dc64eb26f609cee",
+  "fixtures": [
+    {
+      "name": "v2-610-custom.zip",
+      "sha256": "a74c9a8698d40d6547fa13c3ab279bdc3cf21f5ca21d78f28945541431aaeb76",
+      "properties": null
+    },
+    {
+      "name": "v2-610-default.zip",
+      "sha256": "200f2160eaa15b2f399d0532f27fb6d080df906ef7b849322b6cc27bca065a2a",
+      "properties": "#LmdbStore meta-data\n#Sun Oct 04 15:09:25 CEST 2026\ntriple-indexes=spoc,posc\nversion=2\n"
+    },
+    {
+      "name": "v2-610-explicit-statements.zip",
+      "sha256": "33ddbe25a7b5bbc9a1dafcd4ad44863c26dcbc6340913899b2c81ed1754b5e50",
+      "properties": null
+    },
+    {
+      "name": "v2-610-explicit-terms.zip",
+      "sha256": "a73c3e7d53299be58476bb4589a720d8a8898156dd5b619734996ef67636a9f1",
+      "properties": "#LmdbStore meta-data\n#Sun Oct 04 15:09:25 CEST 2026\ntriple-indexes=spoc,posc\ntriple-term-indexes=spoc,cspo\nversion=2\n"
+    },
+    {
+      "name": "v2-610-language-aliases.zip",
+      "sha256": "b0df7a432a8aa04cf555f54fdd77c7c6594cbc699787853bae15f05bf1968ca6",
+      "properties": null
+    }
+  ],
+  "producerSourceSnapshot": "Lmdb610FixtureProducer-original.java.txt"
+}

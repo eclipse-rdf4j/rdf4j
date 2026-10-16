@@ -347,9 +347,13 @@ class LmdbCrashRecoveryTest {
 	void legacyNamespaceMigrationKeepsEmptyAuthorityOverStaleFile(@TempDir Path workDir) throws Exception {
 		Path fixtureRoot = workDir.resolve("legacy-fixture");
 		extractLegacyStoreFixture(fixtureRoot);
-		Path storeDir = fixtureRoot.resolve("store");
+		byte[] legacyNamespaces = Files.readAllBytes(fixtureRoot.resolve("store/namespaces.dat"));
+		// Use an authenticated supported format-2 generation. The pre-repair crash image supplies only the
+		// historical namespace-file bytes; its retirement database schema is not a supported writer format.
+		Path storeDir = workDir.resolve("legacy-store");
+		LmdbCompatibilityFixtures.extract("v2-empty-inline-true.zip", storeDir);
 		Path namespacesFile = storeDir.resolve("namespaces.dat");
-		byte[] legacyNamespaces = Files.readAllBytes(namespacesFile);
+		Files.write(namespacesFile, legacyNamespaces);
 
 		LmdbStore store = new LmdbStore(storeDir.toFile(), durableConfig());
 		store.init();
@@ -505,7 +509,9 @@ class LmdbCrashRecoveryTest {
 			repository.shutDown();
 		}
 		// Ensure this cut targets a persisted, pre-existing store even while the separate dirty-flag regression is red.
-		new StoreProperties(storeDir.toFile()).setVersion(String.valueOf(LmdbStore.VERSION))
+		StoreProperties properties = new StoreProperties(storeDir.toFile());
+		assertTrue(properties.load(), "the initialized format-6 properties must remain the crash baseline");
+		properties.setVersion(String.valueOf(LmdbStore.VERSION))
 				.setTripleIndexes("spoc")
 				.setTripleTermIndexes("spoc,cspo")
 				.save();
@@ -788,6 +794,10 @@ class LmdbCrashRecoveryTest {
 	@Test
 	@Timeout(value = 45, unit = TimeUnit.SECONDS)
 	void startupJournalCleanupPreservesNonJournalArtifacts(@TempDir Path storeDir) throws Exception {
+		LmdbStore seed = new LmdbStore(storeDir.toFile(), durableConfig());
+		seed.init();
+		seed.shutDown();
+
 		Path tripleDir = storeDir.resolve("triples");
 		Files.createDirectories(tripleDir);
 		Path ownedJournal = tripleDir.resolve("txn-replay-" + UUID.randomUUID() + ".bin");

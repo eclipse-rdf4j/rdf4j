@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
@@ -30,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -41,6 +44,23 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
 
 public class OrderLimitOptimizerTest extends QueryOptimizerTest {
+
+	@Test
+	public void doesNotMoveOrderByRandAcrossDistinctProjectionBoundary() {
+		StatementPattern source = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Order order = new Order(source, new OrderElem(new FunctionCall("RAND")));
+		Projection projection = new Projection(order,
+				new ProjectionElemList(new ProjectionElem("s")));
+		Distinct distinct = new Distinct(projection);
+		QueryRoot root = new QueryRoot(distinct);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertSame(distinct, root.getArg());
+		assertSame(projection, distinct.getArg());
+		assertSame(order, projection.getArg());
+		assertSame(source, order.getArg());
+	}
 
 	@Test
 	public void orderingProjectedAliasSurvivesNestedProjection() throws Exception {

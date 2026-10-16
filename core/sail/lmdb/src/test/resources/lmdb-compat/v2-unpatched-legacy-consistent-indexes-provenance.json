@@ -1,0 +1,103 @@
+{
+  "fixture": "v2-unpatched-legacy-consistent-indexes.zip",
+  "sha256": "9a167a51201a4d63e71b60d3a41ed1d5d0172fb5699947c9b6a20259cfa75030",
+  "purpose": "Positive metadata-less legacy admission fixture; same logical statements and count-underflow assertion as the preserved original, with a complete three-index set.",
+  "format": "authentic unpatched RDF4J 6.1.1 LMDB v2; no metadata sidecars",
+  "members": [
+    {
+      "path": "namespaces.dat",
+      "size": 17,
+      "sha256": "85ef1a9e222e7f9430cdaf44a0ac9079a79122e0084da91560f14d2b0347a28b"
+    },
+    {
+      "path": "triples/data.mdb",
+      "size": 262144,
+      "sha256": "16837d5a6eed6c140da532134d2d5e22f923a79be808ef3b76dba321861cc143"
+    },
+    {
+      "path": "values/data.mdb",
+      "size": 196608,
+      "sha256": "bf044451139eb2de898c2ea46f98bb92eccb3c8ed8c0b2213b9c9068d72a4817"
+    }
+  ],
+  "producer": {
+    "source_revision": "e43622a7007cfb109a3c0e6d11fa16bae9584b10",
+    "source_branch": "GH-0000-lmdb-v6-compat-6.1.1",
+    "oracle_directory": "/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI",
+    "oracle_provenance_file": "/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/provenance.txt",
+    "oracle_lmdb_jar": "/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/rdf4j-sail-lmdb-6.1.1-SNAPSHOT.jar",
+    "oracle_lmdb_jar_sha256": "4817d2b0a3b36333ceac99e0b1911359511a232b1d34d7ab09767b40e62b1dc5",
+    "oracle_target_classes_tree_sha256": "83a5ccab0188a9797eba900de931518ee40ad4b62c86d652ea279131448aac04",
+    "runtime_classpath_file": "/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-classpath-frozen.txt",
+    "runtime_classpath_file_sha256": "35cb834f8d4bbbaf63919ed5ac71df6b036668da58d0364886c5f1f7fd7fe47d",
+    "runtime_jar_manifest": "/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-jars-sha256.tsv",
+    "runtime_jar_manifest_sha256": "7f443585b8449c99f84473c352334d0420f502bc5afd4a3c53000d1bf4311905",
+    "repository_sail_helper_jar": "/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v2-maintenance-helper-9gzul3qm/rdf4j-repository-sail-6.1.1-SNAPSHOT.jar",
+    "repository_sail_helper_jar_sha256": "386698b4d1f0ae0f93066cdf9bca8e25ba30e23ac73f551bb905ff3d163d80b0",
+    "value_ids_source_at_frozen_revision_sha256": "68fdab3c516c611a391f903eedff2a48747d50f4b54aeda5aa980108a93f0315",
+    "helper_source": "LmdbV2CompleteLegacyFixtureProducer.java",
+    "helper_source_repository_path": "core/sail/lmdb/src/test/resources/lmdb-compat/LmdbV2CompleteLegacyFixtureProducer.java",
+    "helper_source_sha256": "f09e0b4e41e2356639dcdb6088dd63398056b2dfcaaa6c5dce51f1e14da13264",
+    "helper_compiled_class_sha256": "110e5a0afcc22277b02d22a0e683e5603c138570fa947f1212e28bf7dc3c3a5e",
+    "javac_release": 25,
+    "java_runtime": "openjdk 26 2026-03-17 Temurin 26+35",
+    "commands": [
+      "javac --release 25 -cp \"/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-classpath-frozen.txt:/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v2-maintenance-helper-9gzul3qm/rdf4j-repository-sail-6.1.1-SNAPSHOT.jar\" -d <classes> LmdbV2CompleteLegacyFixtureProducer.java",
+      "java --enable-native-access=ALL-UNNAMED -ea -cp \"<classes>:/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v2-maintenance-helper-9gzul3qm/rdf4j-repository-sail-6.1.1-SNAPSHOT.jar:/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-classpath-frozen.txt\" org.eclipse.rdf4j.sail.lmdb.LmdbV2CompleteLegacyFixtureProducer initial <store>",
+      "java --enable-native-access=ALL-UNNAMED -ea -cp \"<classes>:/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v2-maintenance-helper-9gzul3qm/rdf4j-repository-sail-6.1.1-SNAPSHOT.jar:/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-classpath-frozen.txt\" org.eclipse.rdf4j.sail.lmdb.LmdbV2CompleteLegacyFixtureProducer append <store>",
+      "java --enable-native-access=ALL-UNNAMED -ea -cp \"<classes>:/var/folders/0m/x3jzy4t15djd88znchzzx1_h0000gn/T/rdf4j-v2-maintenance-helper-9gzul3qm/rdf4j-repository-sail-6.1.1-SNAPSHOT.jar:/tmp/rdf4j-v6-unpatched-oracle-6.1.1.bTtUtI/runtime-classpath-frozen.txt\" org.eclipse.rdf4j.sail.lmdb.LmdbV2CompleteLegacyFixtureProducer verify <store>"
+    ],
+    "generation_logs": {
+      "initial.log": "c5fbfb090cd5e53dba5b1b3b9fce97cf3459436b1dd12f155442220ed0552537",
+      "append.log": "c5fbfb090cd5e53dba5b1b3b9fce97cf3459436b1dd12f155442220ed0552537",
+      "verify.log": "41be658a21afcecabbb8aac7fadef3cb35ce6deca52ac9ecdd3921a828ddf158"
+    },
+    "scratch_bundle": "/private/tmp/rdf4j-v2-consistent-index-fixture-final-20261004T163010Z"
+  },
+  "writer_config": {
+    "triple_indexes": "spoc,posc,ospc",
+    "inline_literals": false,
+    "force_sync": true,
+    "sketch_estimator_enabled": false,
+    "writer_processes": "initial and append phases ran in separate JVMs with identical configured indexes"
+  },
+  "logical_fixture": {
+    "public_statement_count": 4,
+    "contexts_database_entry_count": 2,
+    "statement_index_entries": {
+      "spocspoc": 4,
+      "poscposc": 4,
+      "ospcospc": 4
+    },
+    "initial_transaction": [
+      "urn:v2:first urn:v2:predicate <<urn:v2:outer urn:v2:predicate <<_:shared-v2-bnode urn:v2:predicate \"shared custom value\"^^<urn:v2:shared-custom-datatype>>>>",
+      "urn:v2:second urn:v2:predicate <<_:shared-v2-bnode urn:v2:predicate \"shared custom value\"^^<urn:v2:shared-custom-datatype>>> urn:v2:graph",
+      "_:shared-v2-bnode urn:v2:predicate \"shared custom value\"^^<urn:v2:shared-custom-datatype>"
+    ],
+    "second_transaction": [
+      "urn:v2:legacy-writer urn:v2:predicate \"legacy writer value\"^^<urn:v2:shared-custom-datatype> urn:v2:graph"
+    ],
+    "reference_provenance": {
+      "family": "URI",
+      "lexical_suffix": "shared-custom-datatype",
+      "id": 770,
+      "raw_ref_count": 1,
+      "meaning": "authentic undercount written by the frozen unpatched writer and asserted by LmdbCountRecoveryCompatibilityTest"
+    },
+    "metadata_files_absent": [
+      "store.properties",
+      "lmdbrdf.ver",
+      "producer.properties"
+    ]
+  },
+  "related_original_fixture": {
+    "name": "v2-unpatched-legacy.zip",
+    "sha256": "b2c6cc07d1abc03294c84115680159177ff9f59438d8c9468b94059a6d8183b0",
+    "observed_statement_index_entries": {
+      "spocspoc": 4,
+      "poscposc": 4,
+      "ospcospc": 1
+    },
+    "classification": "authentic legacy baseline with a partial recognized OSPC index; used as a fail-closed no-preflight-write input"
+  }
+}

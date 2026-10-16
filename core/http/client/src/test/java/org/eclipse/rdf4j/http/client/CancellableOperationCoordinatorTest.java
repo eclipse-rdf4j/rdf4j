@@ -510,11 +510,13 @@ class CancellableOperationCoordinatorTest {
 				remoteFinished.countDown();
 			}
 		});
-
 		assertThat(coordinator.cancelAsync(handle)).isTrue();
 		coordinator.complete(handle);
 		assertThat(remoteStarted.await(5, TimeUnit.SECONDS)).isTrue();
 		assertThat(coordinator.cancelAsync(handle)).isFalse();
+		assertThatThrownBy(() -> coordinator.register("request-async"))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("Request already active: request-async");
 
 		releaseRemote.countDown();
 		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
@@ -524,6 +526,9 @@ class CancellableOperationCoordinatorTest {
 		assertThat(callbackWorker.isAlive()).isFalse();
 		assertThat(forwarded).hasValue(1);
 		assertThat(coordinator.cancel("request-async")).isFalse();
+		CancellableOperationCoordinator.Handle replacement = coordinator.register("request-async");
+		assertThat(replacement).isNotSameAs(handle);
+		coordinator.complete(replacement);
 	}
 
 	@Test

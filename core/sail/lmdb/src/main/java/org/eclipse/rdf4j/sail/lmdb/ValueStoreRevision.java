@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.sail.SailException;
@@ -58,11 +59,11 @@ public interface ValueStoreRevision {
 	class Default extends Base implements Serializable {
 		private static final long serialVersionUID = -2434063125560285009L;
 
-		private static volatile long revisionIdCounter = 0;
+		private static final AtomicLong revisionIdCounter = new AtomicLong();
 
 		transient private final ValueStore valueStore;
 
-		private final long revisionId = ++revisionIdCounter;
+		private final long revisionId = revisionIdCounter.incrementAndGet();
 
 		public Default(ValueStore valueStore) {
 			this.valueStore = valueStore;
@@ -78,6 +79,16 @@ public interface ValueStoreRevision {
 
 		public boolean resolveValue(long id, LmdbValue value) {
 			return valueStore != null && valueStore.resolveValue(id, value);
+		}
+
+		@Experimental
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(this, null, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
 		}
 
 		@Override
@@ -98,6 +109,7 @@ public interface ValueStoreRevision {
 		private final long revisionId;
 		private final ValueStore valueStore;
 		private final transient ValueStore.NativeValueAssociation association;
+		private final int positionMask;
 		private final transient Lazy retainedEpoch;
 		private final transient ValueResolutionScope resolutionScope;
 		private transient volatile boolean tracked;
@@ -117,15 +129,41 @@ public interface ValueStoreRevision {
 			this.association = association;
 			this.retainedEpoch = null;
 			this.resolutionScope = null;
+			this.positionMask = ValuePosition.NONE;
 		}
 
 		Lazy(Lazy epoch, ValueResolutionScope resolutionScope) {
+			this(epoch, resolutionScope, epoch.positionMask);
+		}
+
+		public Lazy(ValueStoreRevision revision, int positionMask) {
+			this(revision instanceof Lazy lazy ? lazy : new Lazy(revision),
+					revision instanceof Lazy lazy ? lazy.resolutionScope : null, positionMask);
+		}
+
+		private Lazy(Lazy epoch, ValueResolutionScope resolutionScope, int positionMask) {
 			this.revision = epoch.unwrapped();
 			this.revisionId = epoch.revisionId;
 			this.valueStore = epoch.valueStore;
 			this.association = epoch.association;
 			this.retainedEpoch = epoch.epoch();
 			this.resolutionScope = resolutionScope;
+			this.positionMask = ValuePosition.validateMask(positionMask);
+		}
+
+		@Override
+		public int getPositionMask() {
+			return positionMask;
+		}
+
+		@Experimental
+		@Override
+		public void resolveValues(LmdbValue[] values, int[] order, int count) {
+			if (valueStore != null) {
+				valueStore.resolveValues(revision, this, values, order, count);
+			} else {
+				resolveValuesOneByOne(values, order, count);
+			}
 		}
 
 		Lazy epoch() {
@@ -198,6 +236,56 @@ public interface ValueStoreRevision {
 				return true;
 			}
 			return false;
+		}
+
+		@Override
+		public void valueInitialized(long id, LmdbValue value) {
+			if (valueStore != null) {
+				valueStore.cacheValue(id, value, this);
+				if (value.isExternallyOwned()) {
+					valueStore.protectExternalValue(value);
+				}
+			}
+		}
+	}
+
+	/** Position-only wrapper for snapshot-bound revisions; it retains the same dictionary capability. */
+	final class Position extends Base {
+		private final ValueStoreRevision revision;
+		private final int positionMask;
+
+		Position(ValueStoreRevision revision, int positionMask) {
+			this.revision = revision;
+			this.positionMask = ValuePosition.validateMask(positionMask);
+		}
+
+		ValueStoreRevision revision() {
+			return revision;
+		}
+
+		@Override
+		public int hashCode() {
+			return revision.hashCode();
+		}
+
+		@Override
+		public long getRevisionId() {
+			return revision.getRevisionId();
+		}
+
+		@Override
+		public ValueStore getValueStore() {
+			return revision.getValueStore();
+		}
+
+		@Override
+		public int getPositionMask() {
+			return positionMask;
+		}
+
+		@Override
+		public boolean resolveValue(long id, LmdbValue value) {
+			return revision.resolveValue(id, value);
 		}
 
 		@Override
@@ -294,7 +382,7 @@ public interface ValueStoreRevision {
 
 		@Override
 		public boolean equals(Object other) {
-			return this == other;
+			return this == other || other instanceof Position positioned && positioned.revision == this;
 		}
 
 		@Override
@@ -390,6 +478,32 @@ public interface ValueStoreRevision {
 
 	boolean resolveValue(long id, LmdbValue value);
 
+	/** Deferred cache routing hint; it does not participate in dictionary revision identity. */
+	default int getPositionMask() {
+		return ValuePosition.NONE;
+	}
+
+	/** Unequal physical IDs imply unequal RDF terms only for a canonical dictionary generation. */
+	default boolean hasCanonicalIds() {
+		ValueStore store = getValueStore();
+		return store != null && store.getFormat().usesCanonicalLanguageTags();
+	}
+
+	/** Resolves a same-revision batch in the caller-supplied order. */
+	@Experimental
+	default void resolveValues(LmdbValue[] values, int[] order, int count) {
+		resolveValuesOneByOne(values, order, count);
+	}
+
+	private static void resolveValuesOneByOne(LmdbValue[] values, int[] order, int count) {
+		for (int i = 0; i < count; i++) {
+			LmdbValue value = values[order[i]];
+			if (!value.isInitialized()) {
+				value.init();
+			}
+		}
+	}
+
 	/** Transfers exact cold child ownership without exposing the package-private ValueStore to model classes. */
 	@InternalUseOnly
 	default <T extends Value> T protectExternalValue(T value) {
@@ -403,8 +517,7 @@ public interface ValueStoreRevision {
 
 	default int getStoredHash(long id) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore == null || !valueStore.valueHashCacheEnabled
-				|| valueStore.getRevision().getRevisionId() != getRevisionId()) {
+		if (valueStore == null || !valueStore.valueHashCacheEnabled) {
 			return 0;
 		}
 		return valueStore.getStoredHash(id, getRevisionId());
@@ -412,8 +525,7 @@ public interface ValueStoreRevision {
 
 	default void storeHash(long id, int hash) {
 		ValueStore valueStore = getValueStore();
-		if (valueStore != null && valueStore.valueHashCacheEnabled
-				&& valueStore.getRevision().getRevisionId() == getRevisionId()) {
+		if (valueStore != null && valueStore.valueHashCacheEnabled) {
 			valueStore.storeHash(id, hash, getRevisionId());
 		}
 	}

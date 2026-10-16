@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.BiFunction;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
@@ -62,9 +63,10 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	/**
 	 * Used to prevent changes to this object's field from multiple threads.
 	 */
-	private final ReentrantLock semaphore = new SailModelCleanup.Lock();
+	private final ReentrantLock semaphore;
+	private final BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition;
 	/** Signalled under {@code semaphore} when a suspended write continuation resumes. */
-	private final Condition writesResumed = semaphore.newCondition();
+	private final Condition writesResumed;
 	private final Map<Changeset, SailWriteContinuation.Scope> preparedContinuations = new IdentityHashMap<>();
 	private int suspendedWrites;
 
@@ -92,6 +94,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	 * The underly {@link SailSource} this {@link SailSource} is derived from.
 	 */
 	private final SailSource backingSource;
+	private final BackingSailSource statementBufferSource;
 	private final Object writePreflightOwner;
 
 	/**
@@ -149,6 +152,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 	private static final class SnapshotLease {
 		private final SailDataset dataset;
+		private final SailDatasetSnapshot acquisition;
 		private int borrowers;
 		private boolean retired;
 		private boolean closed;
@@ -156,6 +160,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 		private SnapshotLease(SailDataset dataset) {
 			this.dataset = dataset;
+			this.acquisition = SailDatasetSnapshot.current();
 		}
 	}
 
@@ -197,15 +202,27 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	 * @param autoFlush
 	 */
 	public SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush) {
-		this(backingSource, modelFactory, autoFlush, null);
+		this(backingSource, modelFactory, autoFlush, null,
+				backingSource instanceof BackingSailSource source ? source : null, new SailModelCleanup.Lock(), null);
+	}
+
+	SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, ReentrantLock semaphore,
+			BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition) {
+		this(backingSource, modelFactory, true, null,
+				backingSource instanceof BackingSailSource source ? source : null, semaphore, snapshotAcquisition);
 	}
 
 	private SailSourceBranch(SailSource backingSource, ModelFactory modelFactory, boolean autoFlush,
-			Object writePreflightOwner) {
+			Object writePreflightOwner, BackingSailSource statementBufferSource, ReentrantLock semaphore,
+			BiFunction<IsolationLevel, Boolean, SailDataset> snapshotAcquisition) {
 		this.backingSource = backingSource;
+		this.statementBufferSource = statementBufferSource;
 		this.modelFactory = modelFactory;
 		this.autoFlush = autoFlush;
 		this.writePreflightOwner = writePreflightOwner;
+		this.semaphore = semaphore;
+		this.writesResumed = semaphore.newCondition();
+		this.snapshotAcquisition = snapshotAcquisition;
 	}
 
 	@Override
@@ -397,6 +414,13 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	public SailSink sink(IsolationLevel level) throws SailException {
 		checkWriteContinuationAdmission();
 		Changeset changeset = new Changeset() {
+
+			@Override
+			protected List<Statement> bufferStatements(Iterable<? extends Statement> statements,
+					int expectedSize, Consumer<Resource> contextConsumer) {
+				return statementBufferSource == null ? super.bufferStatements(statements, expectedSize, contextConsumer)
+						: statementBufferSource.bufferStatementsForBranch(statements, expectedSize, contextConsumer);
+			}
 
 			private boolean prepared;
 			private SailClosable preparedWrite;
@@ -705,6 +729,12 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 	}
 
 	private SailDataset dataset(IsolationLevel level, boolean observe) throws SailException {
+		return snapshotAcquisition != null && SailDatasetSnapshot.current() != null
+				? snapshotAcquisition.apply(level, observe)
+				: datasetDirect(level, observe);
+	}
+
+	SailDataset datasetDirect(IsolationLevel level, boolean observe) throws SailException {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
 			if (closed) {
 				throw new SailException("SailSourceBranch is closed");
@@ -750,7 +780,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 					if (closed) {
 						throw new SailException("SailSourceBranch is closed");
 					}
-					if (snapshot != null && !isSnapshotUsable(snapshot.dataset, level)) {
+					if (snapshot != null && !isSnapshotUsable(snapshot, level)) {
 						// A writer outside this long-lived branch advanced the backing source. Existing borrowers keep
 						// their pinned generation while new readers derive from a compatible snapshot.
 						retireSnapshot();
@@ -830,7 +860,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 										candidateCached = false;
 										closeAdmitted = true;
 									}
-								} else if (snapshot != null && isSnapshotUsable(snapshot.dataset, level)) {
+								} else if (snapshot != null && isSnapshotUsable(snapshot, level)) {
 									try {
 										observer = observeDataset(level, snapshot.dataset, snapshot, observe);
 									} catch (RuntimeException | Error failure) {
@@ -908,7 +938,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 							branchClosed = closed;
 							if (branchClosed) {
 								closeAdmitted = true;
-							} else if (snapshot != null && !isSnapshotUsable(snapshot.dataset, level)) {
+							} else if (snapshot != null && !isSnapshotUsable(snapshot, level)) {
 								retireSnapshot();
 							}
 							if (!branchClosed && snapshot != null) {
@@ -1148,6 +1178,11 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		return visible;
 	}
 
+	private boolean isSnapshotUsable(SnapshotLease snapshot, IsolationLevel level) {
+		return (!autoFlush || snapshot.acquisition == SailDatasetSnapshot.current()
+				&& snapshot.dataset.isSnapshotCurrent()) && isSnapshotUsable(snapshot.dataset, level);
+	}
+
 	private boolean isSnapshotUsable(SailDataset dataset, IsolationLevel level) {
 		if (!dataset.isSnapshotCompatibleWithCurrentAdmission()) {
 			return false;
@@ -1252,7 +1287,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 	@Override
 	public SailSource fork() {
-		return new SailSourceBranch(this, modelFactory);
+		return new SailSourceBranch(this, modelFactory, false, null, statementBufferSource,
+				new SailModelCleanup.Lock(), null);
 	}
 
 	/**
@@ -1265,7 +1301,8 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 
 	@Override
 	public SailSource fork(Object writeOwner) {
-		return new SailSourceBranch(this, modelFactory, false, writeOwner);
+		return new SailSourceBranch(this, modelFactory, false, writeOwner, statementBufferSource,
+				new SailModelCleanup.Lock(), null);
 	}
 
 	@Override
@@ -2395,6 +2432,9 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 				if (released || stagedOnce && context != requested) {
 					throw new IllegalStateException("The retained batch is closed or belongs to another publication");
 				}
+				if (context != null) {
+					context.transferAttemptCleanup(this, requested);
+				}
 				context = requested;
 				context.register(this);
 			} finally {
@@ -2672,6 +2712,12 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 			throw new IllegalStateException("Snapshot lease has no borrowers to release");
 		}
 		lease.borrowers--;
+		if (lease.borrowers == 0 && !lease.retired && autoFlush) {
+			if (snapshot == lease) {
+				snapshot = null;
+			}
+			lease.retired = true;
+		}
 		if (lease.retired && lease.borrowers == 0 && !lease.closed) {
 			lease.closed = true;
 			return lease;

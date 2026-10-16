@@ -137,19 +137,21 @@ class PersistentSetClearTest {
 	}
 
 	@Test
-	void clearPreservesSharedWriterAbortContract(@TempDir Path directory) throws Exception {
+	void clearPreservesPendingSiblingAdditionsAndRemovals(@TempDir Path directory) throws Exception {
 		PersistentSetFactory<Long> factory = new PersistentSetFactory<>(directory.toFile());
 		try {
 			PersistentSet<Long> first = createSet(factory, "first");
 			PersistentSet<Long> second = createSet(factory, "second");
 			first.add(1L);
 			second.add(2L);
+			second.add(4L);
 			factory.commit();
 			first.remove(1L);
 			second.add(3L);
+			second.remove(4L);
 			first.clear();
 			assertTrue(contents(first).isEmpty());
-			assertEquals(Set.of(2L), contents(second), "clear must still discard the shared staged writer");
+			assertEquals(Set.of(2L, 3L), contents(second), "clear preserves every sibling's staged updates");
 			second.clear();
 			assertTrue(contents(second).isEmpty());
 			assertEquals(0, factory.writeTxn);

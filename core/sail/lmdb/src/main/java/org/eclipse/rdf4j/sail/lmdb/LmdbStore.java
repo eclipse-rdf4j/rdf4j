@@ -13,12 +13,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.channels.FileChannel;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.ReentrantLock;
@@ -57,6 +63,7 @@ import org.eclipse.rdf4j.sail.base.SnapshotSailStore;
 import org.eclipse.rdf4j.sail.helpers.AbstractNotifyingSail;
 import org.eclipse.rdf4j.sail.helpers.DirectoryLockManager;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.lwjgl.util.lmdb.MDBStat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -78,7 +85,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	/**
 	 * The current version of the LMDB store.
 	 */
-	static final int VERSION = 2;
+	static final int VERSION = LmdbStoreFormat.CURRENT_VERSION;
+	static final String CORE_LITERAL_REFERENCE_MARKER_FILE = "lmdbrdf.ver";
+	static final String CORE_LITERAL_REFERENCE_MARKER = "rdf4j-lmdb-core-literal-reference-v1\n";
 
 	/**
 	 * A detached snapshot of the native LMDB statistics for the databases in the value and triple environments.
@@ -120,6 +129,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * Specifies which triple indexes this lmdb store must use.
 	 */
 	private final LmdbStoreConfig config;
+	private LmdbStoreFormat format;
 
 	int getReadOnlyReplayMaxRetries() {
 		return config.getReadOnlyReplayMaxRetries();
@@ -142,13 +152,15 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 	private EvaluationStrategyFactory explicitEvalStratFactory;
 
-	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
+	private LmdbNativeEvaluationStrategyFactory nativeEvalStratFactory;
 
-	private LmdbEvaluationStrategyFactory lmdbEvalStratFactory;
+	private DefaultEvaluationStrategyFactory defaultEvalStratFactory;
 
 	private EvaluationStrategyFactory connectionEvalStratFactory;
 
 	private QueryOptimizerPipeline automaticOptimizerPipeline;
+
+	private final boolean nativeEvaluationEnabled;
 
 	/**
 	 * independent life cycle
@@ -159,6 +171,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	 * dependent life cycle
 	 */
 	private SPARQLServiceResolver dependentServiceResolver;
+	private final boolean allowIncompleteBulkLoad;
+	private final boolean validationOnlyOpen;
 
 	/**
 	 * Lock manager used to prevent concurrent {@link #getTransactionLock(IsolationLevel)} calls.
@@ -192,6 +206,10 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	public LmdbStore(LmdbStoreConfig config) {
 		super();
 		this.config = config;
+		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
+		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
+		allowIncompleteBulkLoad = false;
+		validationOnlyOpen = false;
 		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
 				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
 		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
@@ -220,6 +238,30 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		setDataDir(dataDir);
 	}
 
+	LmdbStore(File dataDir, LmdbStoreConfig config, boolean allowIncompleteBulkLoad) {
+		super();
+		this.config = config;
+		setExperimentalQueryOptimizations(config.isExperimentalQueryOptimizations());
+		nativeEvaluationEnabled = config.getNativeEvaluationEnabled();
+		this.allowIncompleteBulkLoad = allowIncompleteBulkLoad;
+		validationOnlyOpen = true;
+		setSupportedIsolationLevels(IsolationLevels.NONE, IsolationLevels.READ_COMMITTED, IsolationLevels.SNAPSHOT_READ,
+				IsolationLevels.SNAPSHOT, IsolationLevels.SERIALIZABLE);
+		setDefaultIsolationLevel(IsolationLevels.SNAPSHOT_READ);
+		config.getDefaultQueryEvaluationMode().ifPresent(this::setDefaultQueryEvaluationMode);
+		setSlowQueryLogThresholdSeconds(config.getSlowQueryLogThresholdSeconds());
+		setSlowQueryLogFirstResultThresholdSeconds(config.getSlowQueryLogFirstResultThresholdSeconds());
+		setSlowQueryLogFile(config.getSlowQueryLogFile());
+		if (config.getIterationCacheSyncThreshold() > 0) {
+			setIterationCacheSyncThreshold(config.getIterationCacheSyncThreshold());
+		}
+		EvaluationStrategyFactory evalStrategyFactory = config.getEvaluationStrategyFactory();
+		if (evalStrategyFactory != null) {
+			setEvaluationStrategyFactory(evalStrategyFactory);
+		}
+		setDataDir(dataDir);
+	}
+
 	/*---------*
 	 * Methods *
 	 *---------*/
@@ -237,10 +279,8 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		EvaluationStrategyFactory factory;
 		if (explicitEvalStratFactory != null) {
 			factory = explicitEvalStratFactory;
-		} else if (isSketchEstimatorReadyNonBlocking()) {
-			factory = getAutomaticLmdbEvaluationStrategyFactory();
 		} else {
-			factory = getAutomaticDefaultEvaluationStrategyFactory();
+			factory = getAutomaticEvaluationStrategyFactory();
 		}
 		configureEvaluationStrategyFactory(factory);
 		return factory;
@@ -301,11 +341,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		if (resolver != null && explicitEvalStratFactory instanceof FederatedServiceResolverClient) {
 			((FederatedServiceResolverClient) explicitEvalStratFactory).setFederatedServiceResolver(resolver);
 		}
-		if (resolver != null && defaultEvalStratFactory != null) {
-			defaultEvalStratFactory.setFederatedServiceResolver(resolver);
+		if (resolver != null && nativeEvalStratFactory != null) {
+			nativeEvalStratFactory.setFederatedServiceResolver(resolver);
 		}
-		if (resolver != null && lmdbEvalStratFactory != null) {
-			lmdbEvalStratFactory.setFederatedServiceResolver(resolver);
+		if (resolver != null && defaultEvalStratFactory instanceof FederatedServiceResolverClient resolverClient) {
+			resolverClient.setFederatedServiceResolver(resolver);
 		}
 	}
 
@@ -340,6 +380,9 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		} else if (!dataDir.canRead()) {
 			throw new SailException("Not allowed to read from the specified directory: " + dataDir);
 		}
+		if (!allowIncompleteBulkLoad && new File(dataDir, ".lmdb-bulk-load.incomplete").exists()) {
+			throw new SailException("LMDB bulk-load publication is incomplete for directory: " + dataDir);
+		}
 
 		// try to lock the directory or fail
 		dirLock = new DirectoryLockManager(dataDir).lockOrFail();
@@ -348,36 +391,24 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
-			// ensure that it is an error if an unsupported version of LmdbStore already exists
-			if (new File(dataDir, "lmdbrdf.ver").exists()) {
-				throw new SailException("Directory contains data from an older unsupported version of LmdbStore");
-			}
-			boolean updateVersion = false;
-			if (properties.load()) {
-				if (!String.valueOf(VERSION).equals(properties.getVersion())) {
-					updateVersion = upgradeStore(dataDir, properties.getVersion());
-				}
-			} else {
-				properties.setVersion(String.valueOf(VERSION));
+			properties.load();
+			LegacyStoreDiscovery.discover(dataDir, properties);
+			format = LmdbStoreFormat.resolve(dataDir, properties, config);
+			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
+				format.initializeProperties(properties);
+				writeCoreLiteralReferenceMarker(dataDir.toPath());
+			} else if (properties.getVersion() == null) {
+				properties.setVersion(Integer.toString(format.getVersion()));
 			}
 
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
-
-			// update version afer loading and potential internal migration within value and triple store
-			if (updateVersion) {
-				properties.setVersion(String.valueOf(VERSION));
-			}
 			properties.save();
 
 			this.store = new SnapshotSailStore(backingStore, () -> new MemoryOverflowModel() {
 				@Override
 				protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
-					// Model can't fit into memory, use another LmdbSailStore to store delta
-					LmdbSailStore lmdbSailStore = new LmdbSailStore(dataDir, new StoreProperties(), config,
-							useSketchBasedJoinEstimator);
-					lmdbSailStore.enableMultiThreading = false;
-					return lmdbSailStore;
+					return createOverflowStore(dataDir, useSketchBasedJoinEstimator);
 				}
 			}) {
 
@@ -463,6 +494,27 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 	@Override
 	protected NotifyingSailConnection getConnectionInternal() throws SailException {
 		return new LmdbStoreConnection(this);
+	}
+
+	@InternalUseOnly
+	public LmdbStoreFormat getFormat() {
+		return Objects.requireNonNull(format, "LmdbStore is not initialized");
+	}
+
+	/** Creates the disk-backed transaction delta when its in-memory model reaches the overflow threshold. */
+	LmdbSailStore createOverflowStore(File directory, boolean useSketchBasedJoinEstimator) throws IOException {
+		StoreProperties overflowProperties = new StoreProperties();
+		LmdbStoreFormat overflowFormat = getFormat();
+		if (overflowFormat.isLegacy()) {
+			// The transient delta must preserve the authoritative repository's literal identity too.
+			overflowProperties.setVersion(Integer.toString(overflowFormat.getVersion()));
+		} else {
+			overflowFormat.initializeProperties(overflowProperties);
+		}
+		LmdbSailStore overflowStore = new LmdbSailStore(directory, overflowProperties, config,
+				useSketchBasedJoinEstimator, overflowFormat, getQueryExecutionPolicy());
+		overflowStore.enableMultiThreading = false;
+		return overflowStore;
 	}
 
 	@Override
@@ -558,13 +610,32 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return store;
 	}
 
+	SailStore getConnectionSailStore() {
+		// Connection-owned NONE sources and borrowed read scopes are selected by LmdbStoreConnection.
+		// Keep this decoration boundary without introducing a second, unrelated transaction owner.
+		return getSailStore();
+	}
+
 	LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 			boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
-		return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled);
+		return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled, format,
+				getQueryExecutionPolicy());
 	}
 
 	LmdbSailStore getBackingStore() {
 		return backingStore;
+	}
+
+	/**
+	 * Returns the number of LMDB environment map-size increases since this store was initialized.
+	 */
+	@InternalUseOnly
+	public long getMapGrowthCount() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current.getMapGrowthCount();
 	}
 
 	EvaluationStrategyFactory getConnectionEvaluationStrategyFactory() {
@@ -586,11 +657,94 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return estimator != null && estimator.awaitReady(timeout, unit);
 	}
 
+	/**
+	 * Waits for the configured direct-adjacency maintenance work to publish an exact view of the current LMDB data
+	 * revision. Returns {@code false} when direct adjacency is disabled, refused, failed, has no scheduled build, or
+	 * the timeout expires.
+	 */
+	@InternalUseOnly
+	public boolean awaitDirectAdjacencyReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		return adjacency != null && adjacency.awaitCurrentRevisionReady(timeout, unit);
+	}
+
+	/**
+	 * Waits for an automatically scheduled startup value-overlay warm-up to finish. Returns {@code false} when the
+	 * overlay feature is disabled, refused for capacity, cancelled, or the timeout expires.
+	 */
+	@InternalUseOnly
+	public boolean awaitValueOverlayReady(long timeout, TimeUnit unit) throws InterruptedException {
+		Objects.requireNonNull(unit, "unit");
+		if (timeout < 0L) {
+			throw new IllegalArgumentException("timeout must be non-negative");
+		}
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		return current.valueStore().awaitValueOverlayReady(timeout, unit);
+	}
+
+	/**
+	 * Returns the number of owning query datasets that engaged exact direct-adjacency fan-out statistics since this
+	 * store was initialized. Multiple estimates within one dataset count as one coarse diagnostic event.
+	 */
+	@InternalUseOnly
+	public long getDirectAdjacencyPlannerStatsHitCount() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			throw new IllegalStateException("LMDB store is not initialized");
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		return adjacency == null ? 0L : adjacency.snapshotMetrics().plannerStatsHits;
+	}
+
+	/**
+	 * Returns a compact diagnostic description of direct-adjacency readiness.
+	 */
+	@InternalUseOnly
+	public String getDirectAdjacencyReadinessDescription() {
+		LmdbSailStore current = backingStore;
+		if (current == null) {
+			return "uninitialized";
+		}
+		LmdbDirectAdjacencyStore adjacency = current.directAdjacencyStore();
+		if (adjacency == null) {
+			return "disabled";
+		}
+		LmdbAdjacencyMetrics.Snapshot snapshot = adjacency.snapshotMetrics();
+		return "state=" + snapshot.state + ", baseRevision=" + snapshot.baseRevision + ", appliedRevision="
+				+ snapshot.appliedRevision + ", currentDataRevision=" + snapshot.currentDataRevision
+				+ ", synchronousUpdatesActivated=" + adjacency.synchronousUpdatesActivated()
+				+ ", queuedCommits=" + adjacency.queuedCommitCount()
+				+ ", lastCutoverRevisions=" + adjacency.lastCutoverRevisions()
+				+ ", lastCutoverQueuedCommits=" + adjacency.lastCutoverQueuedCommits()
+				+ ", lastCutoverMillis=" + TimeUnit.NANOSECONDS.toMillis(adjacency.lastCutoverNanos())
+				+ ", gapFromRevision=" + snapshot.gapFromRevision + ", emergencyGapFromRevision="
+				+ snapshot.emergencyGapFromRevision + ", buildsStarted=" + snapshot.buildsStarted
+				+ ", buildsCompleted=" + snapshot.buildsCompleted + ", buildsAborted=" + snapshot.buildsAborted
+				+ ", lastBuildFailure=" + adjacency.lastBuildFailureDescription() + adjacency.publicationDiagnostics();
+	}
+
 	private boolean shouldUseSketchBasedJoinEstimator() {
+		if (validationOnlyOpen) {
+			return false;
+		}
 		return shouldUseSketchBasedJoinEstimator(Runtime.getRuntime().maxMemory());
 	}
 
 	boolean shouldUseSketchBasedJoinEstimator(long ignoredMaxMemoryBytes) {
+		if (!getQueryExecutionPolicy().experimentalQueryOptimizations()) {
+			return false;
+		}
 		if (explicitEvalStratFactory != null) {
 			return false;
 		}
@@ -603,51 +757,40 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return false;
 	}
 
-	private boolean isSketchEstimatorReadyNonBlocking() {
-		SketchBasedJoinEstimator estimator = getSketchBasedJoinEstimator();
-		return estimator != null && estimator.isReadyNonBlocking();
-	}
-
 	private SketchBasedJoinEstimator getSketchBasedJoinEstimator() {
 		LmdbSailStore backingStore = this.backingStore;
 		return backingStore == null ? null : backingStore.getSketchBasedJoinEstimator();
 	}
 
-	private DefaultEvaluationStrategyFactory getAutomaticDefaultEvaluationStrategyFactory() {
+	private EvaluationStrategyFactory getAutomaticEvaluationStrategyFactory() {
 		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
-		if (defaultEvalStratFactory == null) {
-			defaultEvalStratFactory = new DefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+		EvaluationStrategyFactory factory;
+		if (nativeEvaluationEnabled) {
+			if (nativeEvalStratFactory == null) {
+				nativeEvalStratFactory = new LmdbNativeEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
+			factory = nativeEvalStratFactory;
+		} else {
+			if (defaultEvalStratFactory == null) {
+				defaultEvalStratFactory = new LmdbDefaultEvaluationStrategyFactory(getFederatedServiceResolver());
+			}
+			factory = defaultEvalStratFactory;
 		}
 		if (optimizerPipeline != null) {
-			defaultEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
+			factory.setOptimizerPipeline(optimizerPipeline);
 		}
-		return defaultEvalStratFactory;
-	}
-
-	private LmdbEvaluationStrategyFactory getAutomaticLmdbEvaluationStrategyFactory() {
-		QueryOptimizerPipeline optimizerPipeline = getAutomaticOptimizerPipeline();
-		if (lmdbEvalStratFactory == null) {
-			lmdbEvalStratFactory = new LmdbEvaluationStrategyFactory(getFederatedServiceResolver());
-		}
-		if (optimizerPipeline != null) {
-			lmdbEvalStratFactory.setOptimizerPipeline(optimizerPipeline);
-		}
-		return lmdbEvalStratFactory;
+		return factory;
 	}
 
 	private QueryOptimizerPipeline getAutomaticOptimizerPipeline() {
 		if (automaticOptimizerPipeline != null) {
 			return automaticOptimizerPipeline;
 		}
-		if (defaultEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = defaultEvalStratFactory.getOptimizerPipeline();
-			if (optimizerPipeline.isPresent()) {
-				automaticOptimizerPipeline = optimizerPipeline.get();
-				return automaticOptimizerPipeline;
-			}
-		}
-		if (lmdbEvalStratFactory != null) {
-			Optional<QueryOptimizerPipeline> optimizerPipeline = lmdbEvalStratFactory.getOptimizerPipeline();
+		EvaluationStrategyFactory automaticFactory = nativeEvaluationEnabled
+				? nativeEvalStratFactory
+				: defaultEvalStratFactory;
+		if (automaticFactory != null) {
+			Optional<QueryOptimizerPipeline> optimizerPipeline = automaticFactory.getOptimizerPipeline();
 			if (optimizerPipeline.isPresent()) {
 				automaticOptimizerPipeline = optimizerPipeline.get();
 				return automaticOptimizerPipeline;
@@ -684,11 +827,11 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 			if (explicitEvalStratFactory != null) {
 				explicitEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
+			if (nativeEvalStratFactory != null) {
+				nativeEvalStratFactory.setOptimizerPipeline(pipeline);
+			}
 			if (defaultEvalStratFactory != null) {
 				defaultEvalStratFactory.setOptimizerPipeline(pipeline);
-			}
-			if (lmdbEvalStratFactory != null) {
-				lmdbEvalStratFactory.setOptimizerPipeline(pipeline);
 			}
 		}
 
@@ -700,9 +843,12 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		@Override
 		public EvaluationStrategy createEvaluationStrategy(Dataset dataset, TripleSource tripleSource,
 				EvaluationStatistics evaluationStatistics) {
-			TripleSource exposed = explicitEvalStratFactory == null ? tripleSource
-					: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
-			return getEvaluationStrategyFactory().createEvaluationStrategy(dataset, exposed, evaluationStatistics);
+			EvaluationStrategyFactory selected = getEvaluationStrategyFactory();
+			// The final built-in native factory owns its internal value boundary and needs the paired dataset source.
+			TripleSource exposed = selected == defaultEvalStratFactory
+					|| selected instanceof LmdbNativeEvaluationStrategyFactory ? tripleSource
+							: ExternalValueTripleSource.wrap(tripleSource, LmdbStoreConnection::protectValueTree);
+			return selected.createEvaluationStrategy(dataset, exposed, evaluationStatistics);
 		}
 
 		@Override
@@ -731,9 +877,36 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		}
 	}
 
-	private boolean upgradeStore(File dataDir, String version) throws SailException {
-		// nothing to do, just update version number
-		return true;
+	/**
+	 * Writes and forces the core literal-reference marker before native store initialization. On platforms and
+	 * providers that support forcing the parent directory, the marker's directory entry is forced as well. Windows and
+	 * providers without directory-force support retain file-force semantics, but cannot provide a portable guarantee
+	 * that a newly created directory entry survives power loss.
+	 */
+	static void writeCoreLiteralReferenceMarker(Path directory) throws IOException {
+		Path marker = directory.resolve(CORE_LITERAL_REFERENCE_MARKER_FILE);
+		FileChannel channel;
+		try {
+			channel = FileChannel.open(marker, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE);
+		} catch (FileAlreadyExistsException e) {
+			String existing = Files.readString(marker, StandardCharsets.UTF_8);
+			if (!CORE_LITERAL_REFERENCE_MARKER.equals(existing)) {
+				throw new IOException("Refusing to overwrite an incompatible LmdbStore marker at " + marker, e);
+			}
+			try (FileChannel existingChannel = FileChannel.open(marker, StandardOpenOption.WRITE)) {
+				existingChannel.force(true);
+			}
+			StoreProperties.forceParentDirectory(directory);
+			return;
+		}
+		try (channel) {
+			ByteBuffer contents = StandardCharsets.UTF_8.encode(CORE_LITERAL_REFERENCE_MARKER);
+			while (contents.hasRemaining()) {
+				channel.write(contents);
+			}
+			channel.force(true);
+		}
+		StoreProperties.forceParentDirectory(directory);
 	}
 
 	@Override

@@ -99,7 +99,8 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private static final Set<String> INPUT_ONLY_JOIN_ALGORITHMS = Set.of(
 			"HashJoinIteration",
-			"InnerMergeJoinIterator");
+			"InnerMergeJoinIterator",
+			"ScopedLeftJoinIterator");
 	private static final Set<String> LEFT_ROW_JOIN_ALGORITHMS = Set.of(
 			"JoinIterator",
 			"ServiceJoinIterator",
@@ -129,7 +130,7 @@ public final class QueryAlgebraBindingAnalysis {
 		if (initialBindings != null) {
 			for (String name : initialBindings.getBindingNames()) {
 				Value value = initialBindings.getValue(name);
-				if (value != null) {
+				if (value != null && externalNames.contains(name)) {
 					values.put(name, value);
 				}
 			}
@@ -170,6 +171,16 @@ public final class QueryAlgebraBindingAnalysis {
 			if (values.getValue(name) != null) {
 				names.add(name);
 			}
+		}
+		if (!names.isEmpty() && root != null) {
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Projection projection) {
+					// Private GRAPH inputs come from evaluator frames, never from same-spelled API parameters.
+					names.remove(projection.getInheritedGraphParameter());
+					super.meet(projection);
+				}
+			});
 		}
 		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment);
 	}
@@ -643,6 +654,9 @@ public final class QueryAlgebraBindingAnalysis {
 				scopeNames.addAll(join.getLeftArg().getBindingNames());
 			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
 				scopeNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				// FilterIterator exposes the input bindings a LATERAL deliberately passes to its right operand.
+				scopeNames.addAll(lateral.getRightInputBindingNames());
 			}
 			child = parent;
 			parent = parent.getParentNode();

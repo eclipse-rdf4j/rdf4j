@@ -15,6 +15,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Optional;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -414,6 +415,19 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 			throws RepositoryException {
 		try {
 			sailConnection.addStatement(subject, predicate, object, contexts);
+		} catch (SailReadOnlyException e) {
+			throw new RepositoryReadOnlyException(e.getMessage(), e);
+		} catch (SailException e) {
+			throw new RepositoryException(e);
+		}
+	}
+
+	@Experimental
+	@Override
+	protected void addWithoutCommit(Iterable<? extends Statement> statements, Resource... contexts)
+			throws RepositoryException {
+		try {
+			sailConnection.addStatements(statements, contexts);
 		} catch (SailReadOnlyException e) {
 			throw new RepositoryReadOnlyException(e.getMessage(), e);
 		} catch (SailException e) {

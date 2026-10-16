@@ -1,0 +1,551 @@
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/csf/CompactCsfPageEncoder.java b/java/org/eclipse/rdf4j/sail/lmdb/csf/CompactCsfPageEncoder.java
+index 80b0309..b0c918a 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/csf/CompactCsfPageEncoder.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/csf/CompactCsfPageEncoder.java
+@@ -61,11 +61,13 @@ final class CompactCsfPageEncoder {
+ 		boolean rowQuadEqualsNeighbor = true;
+ 		int rowTraitFlags = columnTraitFlags(data, true);
+ 		for (int row = 0; row < data.rowCount; row++) {
+-			rowNeighborOne &= data.rowFiberCount(row) == 1;
+-			rowQuadEqualsNeighbor &= data.rowQuadCount(row) == data.rowFiberCount(row);
++			int fibers = data.rowFiberCount(row);
++			int quads = data.rowQuadCount(row);
++			rowNeighborOne &= fibers == 1;
++			rowQuadEqualsNeighbor &= quads == fibers;
+ 			fingerprint = mix(fingerprint, data.row(row));
+-			fingerprint = mix(fingerprint, data.rowFiberCount(row));
+-			fingerprint = mix(fingerprint, data.rowQuadCount(row));
++			fingerprint = mix(fingerprint, fibers);
++			fingerprint = mix(fingerprint, quads);
+ 		}
+ 		boolean contextCountOne = true;
+ 		boolean allOrderedIntegers = true;
+@@ -73,10 +75,12 @@ final class CompactCsfPageEncoder {
+ 		long commonContext = data.context(0);
+ 		boolean oneCommonContext = true;
+ 		for (int fiber = 0; fiber < data.fiberCount; fiber++) {
+-			contextCountOne &= data.fiberContextCount(fiber) == 1;
+-			allOrderedIntegers &= isOrderedInteger(data.neighbor(fiber));
+-			fingerprint = mix(fingerprint, data.neighbor(fiber));
+-			fingerprint = mix(fingerprint, data.fiberContextCount(fiber));
++			int contexts = data.fiberContextCount(fiber);
++			long neighbor = data.neighbor(fiber);
++			contextCountOne &= contexts == 1;
++			allOrderedIntegers &= isOrderedInteger(neighbor);
++			fingerprint = mix(fingerprint, neighbor);
++			fingerprint = mix(fingerprint, contexts);
+ 		}
+ 		for (int i = 0; i < data.quadCount; i++) {
+ 			oneCommonContext &= data.context(i) == commonContext;
+@@ -646,72 +650,59 @@ final class CompactCsfPageEncoder {
+ 		int size = rows ? data.rowCount : data.fiberCount;
+ 		int firstKind = ValueIds.termKind(rows ? data.row(0) : data.neighbor(0));
+ 		boolean uniformKind = true;
+-		int literalCount = 0;
++		int firstTag = -1;
++		boolean uniformDatatype = true;
+ 		int legacyCount = 0;
+ 		for (int i = 0; i < size; i++) {
+ 			long id = rows ? data.row(i) : data.neighbor(i);
+ 			int kind = ValueIds.termKind(id);
+ 			uniformKind &= kind == firstKind;
+-			if (kind != ValueIds.TERM_KIND_LITERAL) {
++			if (kind != ValueIds.TERM_KIND_LITERAL || !uniformDatatype) {
+ 				continue;
+ 			}
+-			literalCount++;
+-			if (ValueIds.encodedCoreDatatypeTag(id) == 0) {
++			int tag = ValueIds.encodedCoreDatatypeTag(id);
++			if (firstTag < 0) {
++				firstTag = tag;
++			} else if (tag != firstTag) {
++				// Different encoded tags, or mixed legacy/encoded representations, cannot establish
++				// the existing uniform-datatype flag. Do not query LMDB for a disproved candidate.
++				uniformDatatype = false;
++				continue;
++			}
++			if (tag == 0) {
+ 				ensureLegacyCapacity(legacyCount + 1);
+ 				legacyLiteralIds[legacyCount++] = id;
+ 			}
+ 		}
+-		boolean uniformLiteralDatatype = literalCount > 0 && resolveUniformLiteralDatatype(data, rows, legacyCount);
++		uniformDatatype &= firstTag >= 0;
++		if (uniformDatatype && firstTag == 0) {
++			uniformDatatype = resolveUniformLegacyDatatype(legacyCount);
++		}
+ 		int uniformKindFlag = rows ? CompactCsfPageFormat.FLAG_UNIFORM_ROW_TERM_KIND
+ 				: CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_TERM_KIND;
+ 		int uniformDatatypeFlag = rows ? CompactCsfPageFormat.FLAG_UNIFORM_ROW_LITERAL_DATATYPE
+ 				: CompactCsfPageFormat.FLAG_UNIFORM_NEIGHBOR_LITERAL_DATATYPE;
+-		return (uniformKind ? uniformKindFlag : 0)
+-				| (uniformLiteralDatatype ? uniformDatatypeFlag : 0);
++		return (uniformKind ? uniformKindFlag : 0) | (uniformDatatype ? uniformDatatypeFlag : 0);
+ 	}
+ 
+-	private boolean resolveUniformLiteralDatatype(CsfPageData.View data, boolean rows, int legacyCount) {
+-		if (legacyCount > 0) {
+-			int populated;
+-			try {
+-				populated = literalDatatypeLookup.lookup(legacyLiteralIds, 0, legacyCount, legacyDatatypeIds, 0);
+-			} catch (IOException e) {
+-				throw new UncheckedIOException("unable to classify legacy literal datatypes while building CSF page",
+-						e);
+-			}
+-			if (populated != legacyCount) {
++	private boolean resolveUniformLegacyDatatype(int count) {
++		try {
++			if (literalDatatypeLookup.lookup(legacyLiteralIds, 0, count, legacyDatatypeIds, 0) != count) {
+ 				return false;
+ 			}
++		} catch (IOException e) {
++			throw new UncheckedIOException("unable to classify legacy literal datatypes while building CSF page", e);
+ 		}
+-		int firstEncoding = 0;
+-		long firstDatatype = 0;
+-		int legacyAt = 0;
+-		for (int i = 0, size = rows ? data.rowCount : data.fiberCount; i < size; i++) {
+-			long id = rows ? data.row(i) : data.neighbor(i);
+-			if (ValueIds.termKind(id) != ValueIds.TERM_KIND_LITERAL) {
+-				continue;
+-			}
+-			int encodedTag = ValueIds.encodedCoreDatatypeTag(id);
+-			int encoding;
+-			long datatype;
+-			if (encodedTag != 0) {
+-				encoding = 1;
+-				datatype = encodedTag;
+-			} else {
+-				encoding = 2;
+-				datatype = legacyDatatypeIds[legacyAt++];
+-				if (datatype < 0) {
+-					return false;
+-				}
+-			}
+-			if (firstEncoding == 0) {
+-				firstEncoding = encoding;
+-				firstDatatype = datatype;
+-			} else if (encoding != firstEncoding || datatype != firstDatatype) {
++		long first = legacyDatatypeIds[0];
++		if (first < 0) {
++			return false;
++		}
++		for (int i = 1; i < count; i++) {
++			if (legacyDatatypeIds[i] != first) {
+ 				return false;
+ 			}
+ 		}
+-		return firstEncoding != 0;
++		return true;
+ 	}
+ 
+ 	private void ensureLegacyCapacity(int required) {
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/csf/PackedLongVector.java b/java/org/eclipse/rdf4j/sail/lmdb/csf/PackedLongVector.java
+index 35801bb..8f9d6c3 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/csf/PackedLongVector.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/csf/PackedLongVector.java
+@@ -80,7 +80,16 @@ final class PackedLongVector {
+ 	}
+ 
+ 	static final class WriteScratch {
+-		private final long[] block = new long[BLOCK_SIZE];
++		private final long[] block;
++
++		WriteScratch() {
++			this(new long[BLOCK_SIZE]);
++		}
++
++		/** Heap encoding already owns its input array; planning it needs no staging block. */
++		private WriteScratch(long[] block) {
++			this.block = block;
++		}
+ 		private int mode;
+ 		private int type;
+ 		private int width;
+@@ -185,6 +194,7 @@ final class PackedLongVector {
+ 		}
+ 
+ 		BlockPlan[] plans = new BlockPlan[blockCount];
++		WriteScratch planScratch = new WriteScratch(null);
+ 		int directoryBytes = Math.multiplyExact(blockCount + 1, Integer.BYTES);
+ 		boolean indexed = searchIndexed(hint, blockCount);
+ 		boolean prefixIndexed = prefixIndexed(hint, blockCount);
+@@ -196,7 +206,9 @@ final class PackedLongVector {
+ 		for (int block = 0; block < blockCount; block++) {
+ 			int blockFrom = from + block * BLOCK_SIZE;
+ 			int blockLength = Math.min(BLOCK_SIZE, count - block * BLOCK_SIZE);
+-			BlockPlan plan = planBlock(values, blockFrom, blockLength, hint);
++			planBlock(values, blockFrom, blockLength, hint, planScratch);
++			BlockPlan plan = new BlockPlan(planScratch.mode, planScratch.type, planScratch.width,
++					planScratch.count, planScratch.base, planScratch.lanes, planScratch.encodedBytes);
+ 			plans[block] = plan;
+ 			total = Math.addExact(total, plan.encodedBytes());
+ 		}
+@@ -1170,25 +1182,6 @@ final class PackedLongVector {
+ 		return metadata;
+ 	}
+ 
+-	private static BlockPlan planBlock(long[] values, int from, int count, Hint hint) {
+-		Candidate best = forRaw(values, from, count);
+-		Candidate typedFor = forTypedPayload(values, from, count);
+-		if (typedFor != null && typedFor.bytes < best.bytes) {
+-			best = typedFor;
+-		}
+-		if (hint == Hint.SORTED_SEQUENTIAL_IDS) {
+-			Candidate delta = deltaRaw(values, from, count);
+-			if (delta.bytes < best.bytes) {
+-				best = delta;
+-			}
+-			Candidate typedDelta = deltaTypedPayload(values, from, count);
+-			if (typedDelta != null && typedDelta.bytes < best.bytes) {
+-				best = typedDelta;
+-			}
+-		}
+-		return new BlockPlan(best.mode, best.type, best.width, count, best.base, best.lanes, best.bytes);
+-	}
+-
+ 	private static void fillBlock(SequentialValues values, long[] block, int count) {
+ 		for (int i = 0; i < count; i++) {
+ 			block[i] = values.next();
+@@ -1196,79 +1189,55 @@ final class PackedLongVector {
+ 	}
+ 
+ 	private static void planBlock(long[] values, int count, Hint hint, WriteScratch scratch) {
+-		long base = values[0];
+-		for (int i = 1; i < count; i++) {
+-			if (Long.compareUnsigned(values[i], base) < 0) {
+-				base = values[i];
+-			}
+-		}
+-		long maxDelta = 0;
+-		for (int i = 0; i < count; i++) {
+-			long delta = values[i] - base;
+-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+-				maxDelta = delta;
+-			}
+-		}
+-		setPlan(scratch, MODE_FOR_RAW, 0, unsignedWidth(maxDelta), count, base, count);
++		planBlock(values, 0, count, hint, scratch);
++	}
+ 
+-		int type = compoundType(values[0]);
+-		if (type >= 0) {
+-			long payloadBase = values[0] >>> 7;
+-			boolean sameType = true;
+-			for (int i = 1; i < count; i++) {
+-				if (compoundType(values[i]) != type) {
+-					sameType = false;
+-					break;
+-				}
+-				payloadBase = Math.min(payloadBase, values[i] >>> 7);
+-			}
+-			if (sameType) {
+-				long maxPayloadDelta = 0;
+-				for (int i = 0; i < count; i++) {
+-					maxPayloadDelta = Math.max(maxPayloadDelta, (values[i] >>> 7) - payloadBase);
+-				}
+-				considerPlan(scratch, MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
+-						payloadBase, count);
+-			}
++	private static void planBlock(long[] values, int from, int count, Hint hint, WriteScratch scratch) {
++		long first = values[from];
++		// Bias unsigned IDs into signed order so C2 can use min/max reductions. The largest FOR
++		// residual is exactly unsignedMax - unsignedMin; a second residual scan is unnecessary.
++		long minimum = first ^ Long.MIN_VALUE;
++		long maximum = minimum;
++		long varying = 0;
++		int end = from + count;
++		for (int i = from + 1; i < end; i++) {
++			long value = values[i];
++			long ordered = value ^ Long.MIN_VALUE;
++			minimum = Math.min(minimum, ordered);
++			maximum = Math.max(maximum, ordered);
++			varying |= value ^ first;
++		}
++		long base = minimum ^ Long.MIN_VALUE;
++		long last = maximum ^ Long.MIN_VALUE;
++		setPlan(scratch, MODE_FOR_RAW, 0, unsignedWidth(last - base), count, base, count);
++
++		// Every compound ID has the same low seven bits iff this test succeeds. Payload extrema
++		// then coincide with raw unsigned extrema, including ranges crossing Long.MAX_VALUE.
++		int type = compoundType(first);
++		boolean typed = type >= 0 && (varying & 0x7fL) == 0;
++		if (typed) {
++			considerPlan(scratch, MODE_FOR_TYPED_PAYLOAD, type,
++					unsignedWidth((last >>> 7) - (base >>> 7)), count, base >>> 7, count);
+ 		}
+-
+ 		if (hint != Hint.SORTED_SEQUENTIAL_IDS) {
+ 			return;
+ 		}
+-		boolean sorted = true;
+-		maxDelta = 0;
+-		for (int i = 1; i < count; i++) {
+-			if (Long.compareUnsigned(values[i - 1], values[i]) > 0) {
+-				sorted = false;
+-				break;
+-			}
+-			long delta = values[i] - values[i - 1];
+-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+-				maxDelta = delta;
++		long previous = first;
++		long deltaBits = 0;
++		for (int i = from + 1; i < end; i++) {
++			long value = values[i];
++			if (Long.compareUnsigned(previous, value) > 0) {
++				return; // A hint is not a sorting proof: retain the measured FOR alternative.
+ 			}
++			deltaBits |= value - previous;
++			previous = value;
+ 		}
+-		if (sorted) {
+-			considerPlan(scratch, MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), count, values[0], count - 1);
+-		}
+-
+-		if (type >= 0) {
+-			long previous = values[0] >>> 7;
+-			long maxPayloadDelta = 0;
+-			boolean typedSorted = true;
+-			for (int i = 1; i < count; i++) {
+-				long value = values[i];
+-				long payload = value >>> 7;
+-				if (compoundType(value) != type || payload < previous) {
+-					typedSorted = false;
+-					break;
+-				}
+-				maxPayloadDelta = Math.max(maxPayloadDelta, payload - previous);
+-				previous = payload;
+-			}
+-			if (typedSorted) {
+-				considerPlan(scratch, MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxPayloadDelta), count,
+-						values[0] >>> 7, count - 1);
+-			}
++		// OR and unsigned maximum have identical required widths. With uniform low bits, every
++		// delta is divisible by 128, so typed delta planning requires no additional scan either.
++		considerPlan(scratch, MODE_DELTA_RAW, 0, unsignedWidth(deltaBits), count, first, count - 1);
++		if (typed) {
++			considerPlan(scratch, MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(deltaBits >>> 7), count,
++					first >>> 7, count - 1);
+ 		}
+ 	}
+ 
+@@ -1291,85 +1260,6 @@ final class PackedLongVector {
+ 		}
+ 	}
+ 
+-	private static Candidate forRaw(long[] values, int from, int count) {
+-		long base = values[from];
+-		for (int i = 1; i < count; i++) {
+-			if (Long.compareUnsigned(values[from + i], base) < 0) {
+-				base = values[from + i];
+-			}
+-		}
+-		long maxDelta = 0;
+-		for (int i = 0; i < count; i++) {
+-			long delta = values[from + i] - base;
+-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+-				maxDelta = delta;
+-			}
+-		}
+-		return candidate(MODE_FOR_RAW, 0, unsignedWidth(maxDelta), base, count);
+-	}
+-
+-	private static Candidate forTypedPayload(long[] values, int from, int count) {
+-		int type = compoundType(values[from]);
+-		if (type < 0) {
+-			return null;
+-		}
+-		long base = values[from] >>> 7;
+-		for (int i = 1; i < count; i++) {
+-			long value = values[from + i];
+-			if (compoundType(value) != type) {
+-				return null;
+-			}
+-			base = Math.min(base, value >>> 7);
+-		}
+-		long maxDelta = 0;
+-		for (int i = 0; i < count; i++) {
+-			maxDelta = Math.max(maxDelta, (values[from + i] >>> 7) - base);
+-		}
+-		return candidate(MODE_FOR_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), base, count);
+-	}
+-
+-	private static Candidate deltaRaw(long[] values, int from, int count) {
+-		long maxDelta = 0;
+-		for (int i = 1; i < count; i++) {
+-			if (Long.compareUnsigned(values[from + i - 1], values[from + i]) > 0) {
+-				return forRaw(values, from, count);
+-			}
+-			long delta = values[from + i] - values[from + i - 1];
+-			if (Long.compareUnsigned(delta, maxDelta) > 0) {
+-				maxDelta = delta;
+-			}
+-		}
+-		return candidate(MODE_DELTA_RAW, 0, unsignedWidth(maxDelta), values[from], Math.max(0, count - 1));
+-	}
+-
+-	private static Candidate deltaTypedPayload(long[] values, int from, int count) {
+-		int type = compoundType(values[from]);
+-		if (type < 0) {
+-			return null;
+-		}
+-		long previous = values[from] >>> 7;
+-		long maxDelta = 0;
+-		for (int i = 1; i < count; i++) {
+-			long value = values[from + i];
+-			if (compoundType(value) != type) {
+-				return null;
+-			}
+-			long payload = value >>> 7;
+-			if (payload < previous) {
+-				return null;
+-			}
+-			maxDelta = Math.max(maxDelta, payload - previous);
+-			previous = payload;
+-		}
+-		return candidate(MODE_DELTA_TYPED_PAYLOAD, type, unsignedWidth(maxDelta), values[from] >>> 7,
+-				Math.max(0, count - 1));
+-	}
+-
+-	private static Candidate candidate(int mode, int type, int width, long base, int lanes) {
+-		return new Candidate(mode, type, width, base, lanes,
+-				Math.addExact(BLOCK_HEADER_BYTES, packedBytes(lanes, width)));
+-	}
+-
+ 	private static void writeSearchRadix(byte[] target, int at, long[] values, int from, BlockPlan plan,
+ 			int radixBits) {
+ 		int nextBucket = 1;
+@@ -1941,9 +1831,6 @@ final class PackedLongVector {
+ 		return value;
+ 	}
+ 
+-	private record Candidate(int mode, int type, int width, long base, int lanes, int bytes) {
+-	}
+-
+ 	private record BlockPlan(int mode, int type, int width, int count, long base, int lanes, int encodedBytes) {
+ 	}
+ 
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+index 285fac0..ff7c847 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeSort.java
+@@ -173,7 +173,48 @@ final class NativeSortBuffer {
+ 		for (int i = 0; i < size; i++) {
+ 			order[i] = i;
+ 		}
+-		for (int width = 1; width < size;) {
++		if (size < 2) {
++			return order;
++		}
++		// Adjacency scans and ordered upstream operators often already supply one run. Reverse
++		// strictly descending runs only: comparator-equal rows must retain their encounter order.
++		int prefix = 2;
++		boolean descending = compareRows(0, 1, comparator) > 0;
++		while (prefix < size) {
++			int compared = compareRows(prefix - 1, prefix, comparator);
++			if (descending ? compared <= 0 : compared > 0) {
++				break;
++			}
++			prefix++;
++		}
++		if (descending) {
++			for (int left = 0, right = prefix - 1; left < right; left++, right--) {
++				int row = order[left];
++				order[left] = order[right];
++				order[right] = row;
++			}
++		}
++		if (prefix == size) {
++			return order;
++		}
++
++		// Stable insertion on small cache-local runs replaces the first four merge passes.
++		// The primitive arena and the two pre-admitted index arrays are unchanged.
++		final int runLength = 16;
++		for (int from = prefix & -runLength; from < size;) {
++			int to = (int) Math.min((long) from + runLength, size);
++			for (int i = Math.max(from + 1, prefix); i < to; i++) {
++				int row = order[i];
++				int at = i;
++				while (at > from && compareRows(order[at - 1], row, comparator) > 0) {
++					order[at] = order[at - 1];
++					at--;
++				}
++				order[at] = row;
++			}
++			from = to;
++		}
++		for (int width = runLength; width < size;) {
+ 			for (int from = 0; from < size;) {
+ 				int middle = (int) Math.min((long) from + width, size);
+ 				int to = (int) Math.min((long) from + 2L * width, size);
+@@ -200,6 +241,10 @@ final class NativeSortBuffer {
+ 	}
+ 
+ 	private void merge(int[] source, int[] target, int from, int middle, int to, PackedRowComparator comparator) {
++		if (middle == to || compareRows(source[middle - 1], source[middle], comparator) <= 0) {
++			System.arraycopy(source, from, target, from, to - from);
++			return;
++		}
+ 		int left = from;
+ 		int right = middle;
+ 		int out = from;
+@@ -210,11 +255,10 @@ final class NativeSortBuffer {
+ 				target[out++] = source[right++];
+ 			}
+ 		}
+-		while (left < middle) {
+-			target[out++] = source[left++];
+-		}
+-		while (right < to) {
+-			target[out++] = source[right++];
++		if (left < middle) {
++			System.arraycopy(source, left, target, out, middle - left);
++		} else if (right < to) {
++			System.arraycopy(source, right, target, out, to - right);
+ 		}
+ 	}
+ 
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeValueCodec.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeValueCodec.java
+index b05ad3d..7969782 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeValueCodec.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/LmdbNativeValueCodec.java
+@@ -528,10 +528,13 @@ final class LmdbNativeValueCodec {
+ 	}
+ 
+ 	private static String decodeUtf8(ByteBuffer buffer, int offset, int length) {
+-		ByteBuffer slice = buffer.duplicate();
+-		slice.position(offset);
+-		slice.limit(offset + length);
+-		return StandardCharsets.UTF_8.decode(slice).toString();
++		// Share the overlay decoder's bounded staging bytes. The String constructor specializes
++		// ASCII/Latin-1 and malformed UTF-8 without allocating a CharsetDecoder and CharBuffer.
++		// Absolute bulk get preserves the caller's position/limit/mark and checks the full range.
++		java.util.Objects.checkFromIndexSize(offset, length, buffer.limit());
++		byte[] scratch = utf8Scratch(length);
++		buffer.get(offset, scratch, 0, length);
++		return new String(scratch, 0, length, StandardCharsets.UTF_8);
+ 	}
+ 
+ 	private static int cacheIndex(long id) {
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/RowBindingSetView.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/RowBindingSetView.java
+index fbdd68a..c9f5646 100644
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/RowBindingSetView.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/RowBindingSetView.java
+@@ -276,11 +276,11 @@ final class RowBindingSetView extends AbstractBindingSet implements Serializable
+ 	}
+ 
+ 	void slotReplaced(boolean wasBound, boolean isBound) {
+-		if (!stable) {
+-			if (wasBound != isBound) {
+-				boundSlotCount += isBound ? 1 : -1;
+-				empty = baseEmpty && boundSlotCount == 0;
+-			}
++		// Names and size depend on the binding domain, not the value of an already-bound slot.
++		// Payload memoization is independently guarded by memoIds in value(int).
++		if (!stable && wasBound != isBound) {
++			boundSlotCount += isBound ? 1 : -1;
++			empty = baseEmpty && boundSlotCount == 0;
+ 			evictTransientCaches();
+ 		}
+ 	}

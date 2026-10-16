@@ -137,7 +137,12 @@ class LmdbReplayCheckpointContractTest {
 					}
 				}
 			});
-			await(function.firstComparison, "The initial ORDER comparison must hold an admitted read scope");
+			if (!function.firstComparison.await(FIXTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
+				if (query.isDone()) {
+					query.get();
+				}
+				throw new AssertionError("The initial ORDER operand must hold an admitted read scope");
+			}
 			notification.armed.set(true);
 			Future<String> growth = growthExecutor.submit(() -> {
 				growthThread.set(Thread.currentThread());
@@ -290,6 +295,12 @@ class LmdbReplayCheckpointContractTest {
 
 		private OrderBarrierFunction(String uri) {
 			this.uri = uri;
+		}
+
+		@Override
+		public Determinism getDeterminism() {
+			// The RDF result is always the input term; gates only observe the physical execution route.
+			return Determinism.DETERMINISTIC;
 		}
 
 		@Override

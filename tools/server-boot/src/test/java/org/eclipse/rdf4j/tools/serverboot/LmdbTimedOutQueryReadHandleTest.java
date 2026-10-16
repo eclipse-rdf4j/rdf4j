@@ -31,6 +31,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -57,6 +58,7 @@ import org.springframework.test.context.ContextConfiguration;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.classic.spi.IThrowableProxy;
+import ch.qos.logback.core.AppenderBase;
 import ch.qos.logback.core.read.ListAppender;
 
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_CLASS)
@@ -86,12 +88,16 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private final ValueFactory valueFactory = SimpleValueFactory.getInstance();
 	private final List<String> createdRepositories = new ArrayList<>();
+	private final AtomicReference<ILoggingEvent> outOfMemoryEvent = new AtomicReference<>();
+	private Logger rootLogger;
+	private AppenderBase<ILoggingEvent> outOfMemoryAppender;
 	private final List<Logger> capturedLoggers = new ArrayList<>();
 	private ListAppender<ILoggingEvent> logAppender;
 	private RemoteRepositoryManager repositoryManager;
 
 	@BeforeEach
 	void setUp() {
+		attachOutOfMemoryAppender();
 		attachLogAppender();
 		repositoryManager = RemoteRepositoryManager.getInstance(serverUrl());
 	}
@@ -113,7 +119,11 @@ class LmdbTimedOutQueryReadHandleTest {
 			repositoryManager.shutDown();
 			repositoryManager = null;
 		} finally {
-			detachLogAppender();
+			try {
+				detachLogAppender();
+			} finally {
+				detachOutOfMemoryAppender();
+			}
 		}
 	}
 
@@ -140,6 +150,9 @@ class LmdbTimedOutQueryReadHandleTest {
 				.isEmpty();
 
 		assertEventuallyHealthy(repositoryId);
+		assertThat(outOfMemoryLogEvent())
+				.as("first logged OutOfMemoryError")
+				.isNull();
 	}
 
 	private String registerLmdbRepository() throws RepositoryException, RepositoryConfigException {
@@ -234,20 +247,27 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private void assertEventuallyHealthy(String repositoryId) throws IOException, InterruptedException {
 		QueryResponse response = null;
+		String lastProbeFailure = "no health probe completed";
 		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(60);
 		while (System.nanoTime() < deadline) {
-			response = executeQuery(repositoryId, HEALTH_QUERY, 0, 1000);
-			if (response.status == HttpStatus.OK.value()) {
-				return;
+			try {
+				response = executeQuery(repositoryId, HEALTH_QUERY, 0, 1000);
+				if (response.status == HttpStatus.OK.value()) {
+					return;
+				}
+				lastProbeFailure = "HTTP " + response.status + ": " + response.body;
+			} catch (IOException transientFailure) {
+				response = null;
+				lastProbeFailure = exceptionMessage(transientFailure);
 			}
 			Thread.sleep(250);
 		}
 
 		assertThat(response)
-				.as("health query response")
+				.as("health query response after 60 seconds; last failure: %s", lastProbeFailure)
 				.isNotNull();
 		assertThat(response.status)
-				.as("health query response body: %s", response.body)
+				.as("health query response body: %s; last failure: %s", response.body, lastProbeFailure)
 				.isEqualTo(HttpStatus.OK.value());
 	}
 
@@ -308,6 +328,48 @@ class LmdbTimedOutQueryReadHandleTest {
 
 	private String serverUrl() {
 		return "http://localhost:" + port + "/rdf4j-server";
+	}
+
+	private void attachOutOfMemoryAppender() {
+		outOfMemoryEvent.set(null);
+		outOfMemoryAppender = new AppenderBase<>() {
+			@Override
+			protected void append(ILoggingEvent event) {
+				if (containsOutOfMemoryError(event.getThrowableProxy())) {
+					outOfMemoryEvent.compareAndSet(null, event);
+				}
+			}
+		};
+		outOfMemoryAppender.start();
+		rootLogger = (Logger) LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME);
+		rootLogger.addAppender(outOfMemoryAppender);
+	}
+
+	private void detachOutOfMemoryAppender() {
+		if (rootLogger != null && outOfMemoryAppender != null) {
+			rootLogger.detachAppender(outOfMemoryAppender);
+		}
+		rootLogger = null;
+		if (outOfMemoryAppender != null) {
+			outOfMemoryAppender.stop();
+			outOfMemoryAppender = null;
+		}
+		outOfMemoryEvent.set(null);
+	}
+
+	private String outOfMemoryLogEvent() {
+		ILoggingEvent event = outOfMemoryEvent.get();
+		return event == null ? null : event.getLoggerName() + ": " + event.getFormattedMessage();
+	}
+
+	private static boolean containsOutOfMemoryError(IThrowableProxy throwable) {
+		for (int depth = 0; throwable != null && depth < 100; depth++) {
+			if (OutOfMemoryError.class.getName().equals(throwable.getClassName())) {
+				return true;
+			}
+			throwable = throwable.getCause();
+		}
+		return false;
 	}
 
 	private void attachLogAppender() {

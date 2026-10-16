@@ -68,7 +68,7 @@ class LmdbAsyncHandoffTest {
 					await(fixture.triples.mutationEntered);
 					for (int i = 1; i < 1400; i++) {
 						fixture.approve(sink, i);
-						if (i == 1023) {
+						if (i == Fixture.QUEUE_CAPACITY) {
 							capacityReached.countDown();
 						}
 					}
@@ -97,11 +97,11 @@ class LmdbAsyncHandoffTest {
 				try (SailSink sink = fixture.sink()) {
 					fixture.approve(sink, 0);
 					await(fixture.triples.mutationEntered);
-					for (int i = 1; i < 1024; i++) {
+					for (int i = 1; i <= Fixture.QUEUE_CAPACITY; i++) {
 						fixture.approve(sink, i);
 					}
 					capacityReached.countDown();
-					fixture.approve(sink, 1024);
+					fixture.approve(sink, Fixture.QUEUE_CAPACITY + 1);
 					capacityAdmission.countDown();
 					sink.flush();
 				}
@@ -116,7 +116,7 @@ class LmdbAsyncHandoffTest {
 			assertEquals(1, fixture.triples.executedSubjects.size());
 			fixture.triples.releaseNextMutation.countDown();
 			transaction.get(8, TimeUnit.SECONDS);
-			assertEquals(1025, fixture.countStatements());
+			assertEquals(Fixture.QUEUE_CAPACITY + 2, fixture.countStatements());
 			assertEquals(fixture.submittedSubjects, fixture.triples.executedSubjects);
 			assertEquals(1, fixture.triples.commits);
 		}
@@ -132,11 +132,11 @@ class LmdbAsyncHandoffTest {
 				try (SailSink sink = fixture.sink()) {
 					fixture.approve(sink, 0);
 					await(fixture.triples.mutationEntered);
-					for (int i = 1; i < 1024; i++) {
+					for (int i = 1; i <= Fixture.QUEUE_CAPACITY; i++) {
 						fixture.approve(sink, i);
 					}
 					capacityReached.countDown();
-					fixture.approve(sink, 1024);
+					fixture.approve(sink, Fixture.QUEUE_CAPACITY + 1);
 					sink.flush();
 				} catch (RuntimeException failure) {
 					interruptRestored.set(Thread.currentThread().isInterrupted());
@@ -150,7 +150,8 @@ class LmdbAsyncHandoffTest {
 			fixture.triples.releaseMutation.countDown();
 			await(fixture.triples.rollbackEntered);
 			assertFalse(transaction.isDone(), "cleanup must await the native rollback acknowledgement");
-			assertEquals(fixture.submittedSubjects.subList(0, 1024), fixture.triples.executedSubjects,
+			assertEquals(fixture.submittedSubjects.subList(0, Fixture.QUEUE_CAPACITY + 1),
+					fixture.triples.executedSubjects,
 					"rollback admission must follow every successfully admitted mutation in FIFO order");
 			fixture.triples.releaseRollback.countDown();
 			ExecutionException failure = assertThrows(ExecutionException.class,
@@ -442,6 +443,7 @@ class LmdbAsyncHandoffTest {
 	}
 
 	private static final class Fixture implements AutoCloseable {
+		private static final int QUEUE_CAPACITY = 1024;
 		private final LmdbSailStore backing;
 		private final ControlledTripleStore triples;
 		private final ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -451,7 +453,7 @@ class LmdbAsyncHandoffTest {
 
 		private Fixture(Path directory) throws IOException {
 			AtomicReference<ControlledTripleStore> store = new AtomicReference<>();
-			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(false);
+			LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setForceSync(false).setBulkOperationSize(0);
 			backing = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()), config,
 					false, (dir, props, cfg) -> new ValueStore(dir, props, cfg) {
 						private boolean resolvingBatch;
@@ -493,7 +495,7 @@ class LmdbAsyncHandoffTest {
 						ControlledTripleStore result = new ControlledTripleStore(dir, props, cfg, values);
 						store.set(result);
 						return result;
-					});
+					}, QUEUE_CAPACITY);
 			triples = store.get();
 			// Namespace initialization uses its own writer before the transactions exercised by these tests.
 			triples.nativeOwners.clear();

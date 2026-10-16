@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?n) WHERE { VALUES ?k { :kg } SERVICE :remote { GRAPH ?g { ?k :q ?v } } }

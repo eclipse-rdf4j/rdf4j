@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -149,6 +151,16 @@ public class HashJoinIterationTest {
 	}
 
 	@Test
+	void testLeftJoinRetainsEmptyLeftBindingForEmptyRight() throws QueryEvaluationException {
+		for (BindingSet emptyLeft : List.of(EmptyBindingSet.getInstance(), new QueryBindingSet())) {
+			List<BindingSet> actual = evaluateHashJoin(List.of(emptyLeft), List.of(), true);
+
+			assertEquals(1, actual.size());
+			assertEquals(0, actual.get(0).size());
+		}
+	}
+
+	@Test
 	public void nullableSharedHashVariableMustNotSplitCompatibleRows() throws QueryEvaluationException {
 		QueryBindingSet leftRow = new QueryBindingSet();
 		leftRow.addBinding("leftOnly", vf.createLiteral("left"));
@@ -169,6 +181,68 @@ public class HashJoinIterationTest {
 			assertEquals("right", joined.getValue("rightOnly").stringValue());
 			assertFalse(iter.hasNext());
 		}
+	}
+
+	@Test
+	void testLeftJoinRetainsRepeatedEmptyLeftBindings() throws QueryEvaluationException {
+		List<BindingSet> left = List.of(
+				EmptyBindingSet.getInstance(),
+				EmptyBindingSet.getInstance(),
+				new QueryBindingSet());
+
+		List<BindingSet> actual = evaluateHashJoin(left, List.of(), true);
+
+		assertEquals(left.size(), actual.size());
+		assertEquals(List.of(0, 0, 0), actual.stream().map(BindingSet::size).toList());
+	}
+
+	@Test
+	void testLeftJoinWithEmptyLeftStreamRemainsEmpty() throws QueryEvaluationException {
+		assertEquals(List.of(), evaluateHashJoin(List.of(), List.of(), true));
+	}
+
+	@Test
+	void testInnerJoinWithEmptyLeftBindingAndEmptyRightRemainsEmpty() throws QueryEvaluationException {
+		for (BindingSet emptyLeft : List.of(EmptyBindingSet.getInstance(), new QueryBindingSet())) {
+			assertEquals(List.of(), evaluateHashJoin(List.of(emptyLeft), List.of(), false));
+		}
+	}
+
+	@Test
+	void testLeftJoinWithPopulatedRightRetainsCartesianResultsForEmptyLeft() throws QueryEvaluationException {
+		QueryBindingSet firstRight = new QueryBindingSet();
+		firstRight.addBinding("b", vf.createLiteral("2"));
+		QueryBindingSet secondRight = new QueryBindingSet();
+		secondRight.addBinding("b", vf.createLiteral("3"));
+
+		for (BindingSet emptyLeft : List.of(EmptyBindingSet.getInstance(), new QueryBindingSet())) {
+			List<BindingSet> actual = evaluateHashJoin(List.of(emptyLeft), List.of(firstRight, secondRight), true);
+
+			assertEquals(2, actual.size());
+			assertEquals(List.of("2", "3"), actual.stream()
+					.map(bindingSet -> bindingSet.getValue("b").stringValue())
+					.sorted()
+					.toList());
+		}
+	}
+
+	private List<BindingSet> evaluateHashJoin(List<BindingSet> left, List<BindingSet> right, boolean leftJoin)
+			throws QueryEvaluationException {
+		Set<String> leftBindingNames = bindingNames(left);
+		Set<String> rightBindingNames = bindingNames(right);
+		CloseableIteration<BindingSet> leftIteration = new CloseableIteratorIteration<>(left.iterator());
+		CloseableIteration<BindingSet> rightIteration = new CloseableIteratorIteration<>(right.iterator());
+		HashJoinIteration iteration = new HashJoinIteration(leftIteration, leftBindingNames, rightIteration,
+				rightBindingNames, leftJoin);
+		return Iterations.asList(iteration);
+	}
+
+	private static Set<String> bindingNames(List<BindingSet> bindingSets) {
+		Set<String> bindingNames = new HashSet<>();
+		for (BindingSet bindingSet : bindingSets) {
+			bindingNames.addAll(bindingSet.getBindingNames());
+		}
+		return bindingNames;
 	}
 
 	@Test

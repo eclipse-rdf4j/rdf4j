@@ -400,6 +400,14 @@ public final class QueryExecutionContext {
 			});
 		}
 
+		/** Installs this context inside an existing worker cleanup guard and restores its predecessor on close. */
+		public Activation activate() {
+			ReplaySafepoint previousSafepoint = replay().safepoint;
+			int previousDeferral = replay().deferralDepth;
+			return isCurrentContext(previousSafepoint, previousDeferral) ? NOOP_ACTIVATION
+					: install(previousSafepoint, previousDeferral);
+		}
+
 		private <T> T withContext(Supplier<T> action) {
 			ReplaySafepoint previousSafepoint = replay().safepoint;
 			int previousDeferral = replay().deferralDepth;

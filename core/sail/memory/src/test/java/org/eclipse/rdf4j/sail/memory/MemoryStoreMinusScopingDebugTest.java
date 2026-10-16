@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.memory;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.StringReader;
@@ -123,9 +124,10 @@ public class MemoryStoreMinusScopingDebugTest {
 	}
 
 	@Test
-	public void testEmptyUnion() {
+	public void emptyOptionalSubselectPreservesInitialSolution() {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 
+			// LeftJoin preserves its initial solution when the OPTIONAL subselect has no match.
 			String query = "PREFIX : <http://example.org/> "
 					+ "SELECT ?visibility WHERE {"
 					+ "OPTIONAL { SELECT ?var WHERE { :s a :MyType . BIND (:s as ?var ) .} } ."
@@ -194,7 +196,7 @@ public class MemoryStoreMinusScopingDebugTest {
 	}
 
 	@Test
-	public void complexOptionalSubselect_noLeftBindings_emptyOptionalYieldsNoRow() {
+	public void complexOptionalSubselect_noLeftBindings_preservesInitialSolution() {
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			String query = "SELECT ?flag WHERE { " +
 					"OPTIONAL { SELECT ?v WHERE { VALUES ?u { } } } " +
@@ -206,6 +208,33 @@ public class MemoryStoreMinusScopingDebugTest {
 				assertEquals(1, rows.size());
 				assertEquals("N", rows.getFirst().getValue("flag").stringValue());
 			}
+		}
+	}
+
+	@Test
+	public void emptyOptionalUnionPreservesLeftMultiplicityButRequiredEmptySubselectRemovesRows() {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			String optionalQuery = "SELECT ?seed ?visibility WHERE { " +
+					"VALUES ?seed { 1 1 } " +
+					"OPTIONAL { { VALUES ?left { } } UNION { VALUES ?right { } } } " +
+					"BIND(IF(BOUND(?left) || BOUND(?right), 'VISIBLE', 'HIDDEN') AS ?visibility) " +
+					"} ORDER BY ?visibility ?seed";
+			List<BindingSet> optionalRows;
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, optionalQuery).evaluate()) {
+				optionalRows = QueryResults.asList(result);
+			}
+			assertEquals(List.of("HIDDEN", "HIDDEN"),
+					optionalRows.stream().map(row -> row.getValue("visibility").stringValue()).toList());
+
+			String requiredQuery = "SELECT ?seed WHERE { " +
+					"VALUES ?seed { 1 1 } " +
+					"{ SELECT ?empty WHERE { VALUES ?empty { } } } " +
+					"}";
+			List<BindingSet> requiredRows;
+			try (TupleQueryResult result = conn.prepareTupleQuery(QueryLanguage.SPARQL, requiredQuery).evaluate()) {
+				requiredRows = QueryResults.asList(result);
+			}
+			assertEquals(List.of(), requiredRows);
 		}
 	}
 

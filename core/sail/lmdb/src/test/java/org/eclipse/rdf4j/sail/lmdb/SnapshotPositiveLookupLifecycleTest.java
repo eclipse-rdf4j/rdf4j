@@ -45,8 +45,10 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractIRI;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailDataset;
@@ -70,6 +72,72 @@ class SnapshotPositiveLookupLifecycleTest {
 	private static final Set<String> PAYLOAD_GETTERS = Set.of("getNamespace", "getLocalName", "getID", "getLabel",
 			"getDatatype", "getLanguage", "getBaseDirection", "getCoreDatatype", "getSubject", "getPredicate",
 			"getObject", "stringValue", "getType", "isTripleTerm");
+
+	@Test
+	void captureDeepSharedTreeWithoutRecursion(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
+			Value input = VF.createLiteral("leaf", "en", Literal.BaseDirection.RTL);
+			int depth = 10_000;
+			for (int level = 0; level < depth; level++) {
+				input = VF.createTripleTerm(SUBJECT, SUBJECT, input);
+			}
+			Value captured = fixture.values.valueCapturer(view.snapshot).apply(input);
+			for (int level = 0; level < depth; level++) {
+				TripleTerm triple = (TripleTerm) captured;
+				assertSame(triple.getSubject(), triple.getPredicate(), "one shared input has one captured owner");
+				captured = triple.getObject();
+			}
+			Literal leaf = (Literal) captured;
+			assertEquals("leaf", leaf.getLabel());
+			assertEquals("en", leaf.getLanguage().orElseThrow());
+			assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
+		}
+	}
+
+	@Test
+	void captureRejectsCycleBeforeCreatingPreparedPayload(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
+			TripleTerm cycle = new AbstractTripleTerm() {
+				@Override
+				public Resource getSubject() {
+					return SUBJECT;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return PREDICATE;
+				}
+
+				@Override
+				public Value getObject() {
+					return this;
+				}
+			};
+			assertThrows(IllegalArgumentException.class,
+					() -> fixture.values.valueCapturer(view.snapshot).apply(cycle));
+		}
+	}
+
+	@Test
+	void foreignPreparedChildrenAcquireCurrentPreparationOwner(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3)) {
+			Value foreign;
+			try (DirectView first = new DirectView(fixture.values)) {
+				foreign = fixture.values.valueCapturer(first.snapshot)
+						.apply(VF.createTripleTerm(SUBJECT, SUBJECT, VF.createLiteral("typed", OBJECT)));
+			}
+			try (DirectView second = new DirectView(fixture.values)) {
+				var capturer = (OwnedValueCapturer) fixture.values.valueCapturer(second.snapshot);
+				TripleTerm captured = (TripleTerm) capturer.apply(foreign);
+				assertTrue(capturer.owns(captured));
+				assertTrue(capturer.owns(captured.getSubject()));
+				assertTrue(capturer.owns(captured.getPredicate()));
+				assertTrue(capturer.owns(captured.getObject()));
+				assertTrue(capturer.owns(((Literal) captured.getObject()).getDatatype()));
+				assertSame(captured.getSubject(), captured.getPredicate());
+			}
+		}
+	}
 
 	@Test
 	void warmedPairedMemoDetachesAcrossGrowthAndPreservesRetirementHorizon(@TempDir Path directory) throws Exception {

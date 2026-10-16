@@ -1,0 +1,14 @@
+{
+  "01-repeated-ownership-probes": {
+    "final_source_sha256": "935cf4ee0b8065fdbc532b685712b5851a2ec842d619df7eb1b224c1cc99179a",
+    "historical_table_sha256": "a45f4c975e9dce74477ff6d37f859350e22d8ba27e761df415de508ba977d169"
+  },
+  "02-read-time-semantic-equality": {
+    "final_source_sha256": "935cf4ee0b8065fdbc532b685712b5851a2ec842d619df7eb1b224c1cc99179a",
+    "historical_table_sha256": "3a10ff19e6f5b0138120b9398e7069ebceb903ca1f4ca893deee38d1229f5726"
+  },
+  "03-occupied-bucket-hardening": {
+    "final_source_sha256": "935cf4ee0b8065fdbc532b685712b5851a2ec842d619df7eb1b224c1cc99179a",
+    "historical_table_sha256": "02cfe755b12dd74893d932bbac0b919e68b1c48c05ef7b0d97d41c0d9f8a5252"
+  }
+}

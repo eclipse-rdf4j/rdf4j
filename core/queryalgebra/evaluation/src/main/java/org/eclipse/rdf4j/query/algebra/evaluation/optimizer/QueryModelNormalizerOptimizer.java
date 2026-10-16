@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
@@ -82,7 +83,10 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = join.getLeftArg();
 		TupleExpr rightArg = join.getRightArg();
 
-		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
+				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
+			// an empty operand only empties the join when the other operand cannot raise an observable
+			// query-fatal error (for example a failed non-silent SERVICE) once it is discarded unevaluated
 			replacePreservingScope(join, new EmptySet());
 		} else if (leftArg instanceof SingletonSet) {
 			replacePreservingScope(join, rightArg);
@@ -135,7 +139,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr rightArg = leftJoin.getRightArg();
 		ValueExpr condition = leftJoin.getCondition();
 
-		if (leftArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
 			replacePreservingScope(leftJoin, leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			replacePreservingScope(leftJoin, leftArg);
@@ -147,8 +151,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 					.orElse(false);
 
 			if (!conditionValue) {
-				// Constraint is always false
-				replacePreservingScope(leftJoin, leftArg);
+				// Constraint is always false; the unextended left solutions remain, but the right operand may
+				// only be discarded unevaluated when it cannot raise an observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
+					replacePreservingScope(leftJoin, leftArg);
+				}
 			} else {
 				leftJoin.setCondition(null);
 				invalidateAnalysis();
@@ -177,7 +184,7 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = difference.getLeftArg();
 		TupleExpr rightArg = difference.getRightArg();
 
-		if (leftArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)) {
 			replacePreservingScope(difference, leftArg);
 		} else if (rightArg instanceof EmptySet) {
 			replacePreservingScope(difference, leftArg);
@@ -194,7 +201,8 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		TupleExpr leftArg = intersection.getLeftArg();
 		TupleExpr rightArg = intersection.getRightArg();
 
-		if (leftArg instanceof EmptySet || rightArg instanceof EmptySet) {
+		if (leftArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(rightArg)
+				|| rightArg instanceof EmptySet && QueryEvaluationUtility.canDiscardWithoutEvaluation(leftArg)) {
 			replacePreservingScope(intersection, new EmptySet());
 		}
 	}
@@ -204,6 +212,9 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 		super.meetUnaryTupleOperator(node);
 
 		if (node.getArg() instanceof EmptySet
+				// a non-silent SERVICE still denotes one remote invocation whose failure is observable, even when
+				// its locally parsed pattern is empty
+				&& !(node instanceof Service && !((Service) node).isSilent())
 				// An implicit group (no GROUP BY) yields one aggregate row even over empty input.
 				&& !(node instanceof Group group && group.getGroupBindingNames().isEmpty())) {
 			replacePreservingScope(node, node.getArg());
@@ -225,8 +236,11 @@ public class QueryModelNormalizerOptimizer extends AbstractSimpleQueryModelVisit
 					.orElse(false);
 
 			if (!conditionValue) {
-				// Constraint is always false
-				replacePreservingScope(node, new EmptySet());
+				// Constraint is always false; the filter result is empty, but the argument may only be
+				// discarded unevaluated when it cannot raise an observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(arg)) {
+					replacePreservingScope(node, new EmptySet());
+				}
 			} else {
 				replacePreservingScope(node, arg);
 			}

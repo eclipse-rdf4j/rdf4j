@@ -1805,7 +1805,7 @@ class LmdbNoneStreamingIngestionTest {
 
 	@Test
 	void failedLaterMutationPreservesPublishedPrefixEventFlagsAndPrimaryCause(@TempDir Path dataDir) throws Exception {
-		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), smallMaps());
+		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), largeMaps());
 		CopyOnWriteArrayList<SailChangedEvent> changes = new CopyOnWriteArrayList<>();
 		Statement removed = statement("event-prefix-seed", 1);
 		Statement durableAdd = statement("event-prefix-durable", 1);
@@ -1861,7 +1861,7 @@ class LmdbNoneStreamingIngestionTest {
 			sail.shutDown();
 		}
 
-		LmdbStore reopened = new LmdbStore(dataDir.toFile(), smallMaps());
+		LmdbStore reopened = new LmdbStore(dataDir.toFile(), largeMaps());
 		try {
 			reopened.init();
 			assertEquals(Set.of(durableAdd), readStatements(reopened.getBackingStore()),
@@ -2584,12 +2584,21 @@ class LmdbNoneStreamingIngestionTest {
 	@Test
 	@Timeout(value = 60, unit = TimeUnit.SECONDS)
 	void failedWildcardRemovalReportsItsCommittedPrefixAfterRollback(@TempDir Path dataDir) throws Exception {
-		LmdbStoreConfig config = smallMaps();
+		LmdbStoreConfig config = largeMaps();
 		ObservingLmdbStore sail = new ObservingLmdbStore(dataDir.toFile(), config);
 		SailRepository repository = new SailRepository(sail);
 		repository.init();
 		CopyOnWriteArrayList<SailChangedEvent> changes = new CopyOnWriteArrayList<>();
-		Set<Statement> original = statements(BULK_OPERATION_SIZE * 4);
+		Literal sharedPayload = VALUE_FACTORY.createLiteral("r".repeat(
+				Math.toIntExact(RETAINED_CHUNK_LIMIT_BYTES / (BULK_OPERATION_SIZE * 2L))));
+		Set<Statement> original = new LinkedHashSet<>();
+		for (Statement statement : statements(BULK_OPERATION_SIZE * 4)) {
+			original.add(VALUE_FACTORY.createStatement(statement.getSubject(), statement.getPredicate(), sharedPayload,
+					statement.getContext()));
+		}
+		assertTrue(
+				original.stream().mapToLong(ValueStore::estimatedRetainedBytes).sum() > RETAINED_CHUNK_LIMIT_BYTES * 2,
+				"the removal input must cross the retained chunk budget independently of native map pressure");
 		IOException primary = new IOException("injected failure after a committed NONE removal chunk");
 		IOException cleanup = new IOException("injected removal rollback cleanup failure");
 		Set<Statement> remaining;
@@ -3387,6 +3396,9 @@ class LmdbNoneStreamingIngestionTest {
 						writer.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 								statement.getContext());
 					}
+					writer.approve(VALUE_FACTORY.createIRI("urn:none-streaming:dictionary-growth"),
+							VALUE_FACTORY.createIRI("urn:none-streaming:dictionary-growth-predicate"),
+							VALUE_FACTORY.createLiteral("x".repeat(Math.toIntExact(initialValueMapSize))), null);
 					writer.flush();
 				}
 
@@ -6076,8 +6088,14 @@ class LmdbNoneStreamingIngestionTest {
 			observed.set(tripleStore);
 			return tripleStore;
 		};
-		return new LmdbSailStore(directory, new StoreProperties(directory), config, false,
-				ValueStore::new, tripleStoreFactory);
+		StoreProperties properties = new StoreProperties(directory);
+		if (!properties.load()) {
+			LmdbStore initialized = new LmdbStore(directory, config);
+			initialized.init();
+			initialized.shutDown();
+			assertTrue(properties.load(), "owning initialization publishes coherent format capabilities");
+		}
+		return new LmdbSailStore(directory, properties, config, false, ValueStore::new, tripleStoreFactory);
 	}
 
 	private static BufferReferenceProbe createBufferReferenceProbe() {

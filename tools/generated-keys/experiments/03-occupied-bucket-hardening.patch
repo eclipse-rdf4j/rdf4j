@@ -1,0 +1,115 @@
+diff --git a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeRuntimeValueTable.java b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeRuntimeValueTable.java
+--- a/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeRuntimeValueTable.java
++++ b/java/org/eclipse/rdf4j/sail/lmdb/evaluation/NativeRuntimeValueTable.java
+@@ -43,9 +43,7 @@
+ 	private static final long DENSE_LIMIT = 1L << 24;
+ 	/** A bounded local ordinal, not a narrowing conversion of a dictionary ID. */
+ 	private static final long ORDINAL_LIMIT = 0xffff_fffeL;
+-	/** Count identical full hashes, not ordinary occupied buckets (which legitimately cluster at 75% load). */
+ 	private static final int HARDEN_AFTER = 48;
+-	private static final int MAX_PROBES = 4096;
+ 	private static final Page[] NO_PAGES = new Page[0];
+ 	private static final Index EMPTY_INDEX = new Index(new long[0], false);
+ 	private static final VarHandle LONGS = MethodHandles.arrayElementVarHandle(long[].class);
+@@ -87,13 +85,12 @@
+ 		int mask = slots.length - 1;
+ 		int slot = hash & mask;
+ 		long canonical = 0L;
+-		for (int probes = 0, hashCollisions = 0;; probes++) {
++		for (int probes = 0;; probes++) {
+ 			long entry = (long) LONGS.getAcquire(slots, slot);
+ 			if (entry == 0L) {
+ 				return insert(stripe, index, value, unresolved, hash, slot, canonical);
+ 			}
+ 			if ((int) (entry >>> 32) == hash) {
+-				hashCollisions++;
+ 				long id = idOfEntry(entry);
+ 				Value candidate = publishedValue(entry);
+ 				if (sameSpelling(value, candidate)) {
+@@ -101,10 +98,7 @@
+ 				}
+ 				canonical = id; // possible semantic alias; inspect RDF equality only when inserting a spelling
+ 			}
+-			if (probes >= MAX_PROBES) {
+-				throw probeLimit();
+-			}
+-			if ((hashCollisions >= HARDEN_AFTER || probes >= 512) && !index.hardened) {
++			if (probes == HARDEN_AFTER && !index.hardened) {
+ 				return hardenAndIntern(stripe, value, unresolved);
+ 			}
+ 			slot = (slot + 1) & mask;
+@@ -131,13 +125,12 @@
+ 		}
+ 		int mask = slots.length - 1;
+ 		int slot = hash & mask;
+-		for (int probes = 0, hashCollisions = 0;; probes++) {
++		for (int probes = 0;; probes++) {
+ 			long entry = (long) LONGS.getAcquire(slots, slot);
+ 			if (entry == 0L) {
+ 				return insert(stripe, index, SimpleValueFactory.getInstance().createLiteral(label), true, hash, slot, 0L);
+ 			}
+ 			if ((int) (entry >>> 32) == hash) {
+-				hashCollisions++;
+ 				long id = idOfEntry(entry);
+ 				Value candidate = publishedValue(entry);
+ 				if (candidate instanceof Literal literal && label.equals(literal.getLabel())
+@@ -146,10 +139,7 @@
+ 					return id;
+ 				}
+ 			}
+-			if (probes >= MAX_PROBES) {
+-				throw probeLimit();
+-			}
+-			if (hashCollisions >= HARDEN_AFTER || probes >= 512) {
++			if (probes == HARDEN_AFTER) {
+ 				return hardenAndIntern(stripe, SimpleValueFactory.getInstance().createLiteral(label), true);
+ 			}
+ 			slot = (slot + 1) & mask;
+@@ -171,10 +161,9 @@
+ 				}
+ 				int mask = index.slots.length - 1;
+ 				emptySlot = hash & mask;
+-				for (int probes = 0, hashCollisions = 0; index.slots[emptySlot] != 0L; probes++) {
++				for (int probes = 0; index.slots[emptySlot] != 0L; probes++) {
+ 					long entry = index.slots[emptySlot];
+ 					if ((int) (entry >>> 32) == hash) {
+-						hashCollisions++;
+ 						long id = idOfEntry(entry);
+ 						Value candidate = publishedValue(entry);
+ 						if (sameSpelling(value, candidate)) {
+@@ -182,10 +171,7 @@
+ 						}
+ 						canonical = id;
+ 					}
+-					if (probes >= MAX_PROBES) {
+-						throw probeLimit();
+-					}
+-					if ((hashCollisions >= HARDEN_AFTER || probes >= 512) && !index.hardened) {
++					if (probes == HARDEN_AFTER && !index.hardened) {
+ 						return hardenAndIntern(stripe, value, unresolved);
+ 					}
+ 					emptySlot = (emptySlot + 1) & mask;
+@@ -261,10 +247,7 @@
+ 					entry = ((long) hash << 32) | (entry & 0xffff_ffffL);
+ 				}
+ 				int slot = hash & mask;
+-				for (int probes = 0; replacement[slot] != 0L; probes++) {
+-					if (probes >= MAX_PROBES) {
+-						throw probeLimit();
+-					}
++				while (replacement[slot] != 0L) {
+ 					slot = (slot + 1) & mask;
+ 				}
+ 				replacement[slot] = entry;
+@@ -441,11 +424,6 @@
+ 		budget.release(amount);
+ 	}
+ 
+-	private static QueryEvaluationException probeLimit() {
+-		return new QueryEvaluationException("Runtime-value hash chain exceeded " + MAX_PROBES
+-				+ " probes even after content-hash protection; refusing pathological key work without dropping rows");
+-	}
+-
+ 	private void checkOpen() {
+ 		if (closed) {
+ 			throw new IllegalStateException("runtime values belong to a closed evaluation");

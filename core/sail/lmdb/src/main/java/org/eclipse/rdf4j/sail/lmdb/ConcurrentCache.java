@@ -18,6 +18,9 @@ import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.LockSupport;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.ToLongBiFunction;
+
+import org.eclipse.rdf4j.common.annotation.Experimental;
 
 /**
  * Concurrent four-way set-associative cache with approximate FIFO replacement.
@@ -65,6 +68,7 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 	private static final int MAX_CAPACITY = 1 << 30;
 	private final Storage<K, V> storage;
 	private final LegacyStorage<K, V> legacy;
+	private final WeightedStorage<K, V> weighted;
 
 	/**
 	 * Authoritative map for subclasses and explicitly selected legacy storage. Unused (not mirrored) for ordinary
@@ -81,6 +85,7 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 	 * @param useLegacyStorage true to keep the protected map authoritative even for an exact ConcurrentCache instance
 	 */
 	public ConcurrentCache(int capacity, boolean useLegacyStorage) {
+		weighted = null;
 		if (capacity > MAX_CAPACITY) {
 			throw new IllegalArgumentException("Capacity exceeds " + MAX_CAPACITY + ": " + capacity);
 		}
@@ -95,13 +100,34 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 		}
 	}
 
+	/** Bounded weighted storage retaining the original byte-budget contract and protected hooks. */
+	@Experimental
+	public ConcurrentCache(int capacity, long maxBytes, ToLongBiFunction<? super K, ? super V> weigher) {
+		if (capacity > MAX_CAPACITY) {
+			throw new IllegalArgumentException("Capacity exceeds " + MAX_CAPACITY + ": " + capacity);
+		}
+		storage = null;
+		legacy = null;
+		weighted = new WeightedStorage<>(capacity, maxBytes, weigher, this);
+		cache = weighted.cache;
+	}
+
+	int capacity() {
+		return weighted != null ? weighted.capacity() : storage != null ? storage.setCount * 4 : legacy.keys.length;
+	}
+
+	long usedBytes() {
+		return weighted == null ? 0L : weighted.usedBytes();
+	}
+
 	@Override
 	public V get(Object key) {
-		return storage != null ? storage.get(key) : legacy.get(key);
+		return weighted != null ? weighted.get(key) : storage != null ? storage.get(key) : legacy.get(key);
 	}
 
 	public V put(K key, V value) {
-		return storage != null ? storage.put(key, value) : legacy.put(key, value);
+		return weighted != null ? weighted.put(key, value)
+				: storage != null ? storage.put(key, value) : legacy.put(key, value);
 	}
 
 	@Override
@@ -139,7 +165,9 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 
 	@Override
 	public void clear() {
-		if (storage != null) {
+		if (weighted != null) {
+			weighted.clear();
+		} else if (storage != null) {
 			storage.clear();
 		} else {
 			legacy.clear();
@@ -734,5 +762,256 @@ public class ConcurrentCache<K, V> implements LmdbCache<K, V> {
 		private static int nextPowerOfTwo(int n) {
 			return 1 << (Integer.SIZE - Integer.numberOfLeadingZeros(n - 1));
 		}
+	}
+
+	private static final class WeightedStorage<K, V> {
+
+		private final ConcurrentCache<K, V> owner;
+		private static final int WAYS = 4;
+		private static final float LOAD_FACTOR = 0.75f;
+
+		private final Entry<K, V>[] entries;
+		private final int[] nextVictim;
+		private final int setMask;
+		private final int setShift;
+		private final long maxBytes;
+		private final ToLongBiFunction<? super K, ? super V> weigher;
+
+		protected final ConcurrentHashMap<K, V> cache;
+
+		private volatile long generation = 1;
+		private long usedBytes;
+		private int byteVictim;
+
+		@Experimental
+		@SuppressWarnings("unchecked")
+		WeightedStorage(int capacity, long maxBytes, ToLongBiFunction<? super K, ? super V> weigher,
+				ConcurrentCache<K, V> owner) {
+			this.owner = owner;
+			if (maxBytes < 0) {
+				throw new IllegalArgumentException("maxBytes must not be negative");
+			}
+			this.maxBytes = maxBytes;
+			this.weigher = Objects.requireNonNull(weigher);
+			cache = new ConcurrentHashMap<>((int) (Math.max(1, capacity) / LOAD_FACTOR), LOAD_FACTOR);
+			if (capacity <= 0) {
+				entries = (Entry<K, V>[]) new Entry[0];
+				nextVictim = new int[0];
+				setMask = 0;
+				setShift = 0;
+				return;
+			}
+
+			int slotCount = nextPowerOfTwo(Math.max(WAYS, capacity));
+			int setCount = slotCount / WAYS;
+			entries = (Entry<K, V>[]) new Entry[slotCount];
+			nextVictim = new int[setCount];
+			setMask = setCount - 1;
+			setShift = Integer.numberOfTrailingZeros(setCount);
+		}
+
+		public V get(Object key) {
+			Objects.requireNonNull(key);
+			if (entries.length == 0) {
+				return cache.get(key);
+			}
+
+			int hash = spread(key.hashCode());
+			int base = setBase(hash);
+			int preferredOffset = preferredOffset(hash);
+			long currentGeneration = generation;
+
+			for (int i = 0; i < WAYS; i++) {
+				Entry<K, V> entry = entries[base + ((preferredOffset + i) & (WAYS - 1))];
+				if (entry != null && entry.hash == hash && entry.generation == currentGeneration
+						&& sameKey(key, entry.key)) {
+					return entry.value;
+				}
+			}
+			return cache.get(key);
+		}
+
+		int capacity() {
+			return entries.length;
+		}
+
+		synchronized long usedBytes() {
+			return usedBytes;
+		}
+
+		public synchronized V put(K key, V value) {
+			Objects.requireNonNull(key);
+			Objects.requireNonNull(value);
+			cleanUp();
+
+			V previous = cache.get(key);
+			long weight = weigher.applyAsLong(key, value);
+			if (weight < 0) {
+				throw new IllegalArgumentException("cache entry weight must not be negative");
+			}
+			if (entries.length == 0) {
+				if (maxBytes == Long.MAX_VALUE) {
+					return cache.put(key, value);
+				}
+				cache.remove(key);
+				return previous;
+			}
+
+			int hash = spread(key.hashCode());
+			int setIndex = hash & setMask;
+			int base = setIndex * WAYS;
+			int preferredOffset = preferredOffset(hash);
+			long currentGeneration = generation;
+			int emptySlot = -1;
+			int matchingSlot = -1;
+
+			for (int i = 0; i < WAYS; i++) {
+				int slot = base + ((preferredOffset + i) & (WAYS - 1));
+				Entry<K, V> entry = entries[slot];
+				if (entry == null) {
+					if (emptySlot < 0) {
+						emptySlot = slot;
+					}
+					continue;
+				}
+
+				if (entry.hash == hash && entry.generation == currentGeneration && sameKey(key, entry.key)) {
+					matchingSlot = slot;
+					break;
+				}
+			}
+
+			if (weight > maxBytes) {
+				if (matchingSlot >= 0) {
+					removeSlot(matchingSlot);
+				} else {
+					cache.remove(key);
+				}
+				return previous;
+			}
+
+			if (matchingSlot >= 0) {
+				Entry<K, V> entry = entries[matchingSlot];
+				long additionalBytes = Math.max(0L, weight - entry.weight);
+				if (!makeRoom(additionalBytes, matchingSlot)) {
+					return previous;
+				}
+				cache.put(key, value);
+				entries[matchingSlot] = new Entry<>(key, value, hash, currentGeneration, weight);
+				usedBytes += weight - entry.weight;
+				return previous;
+			}
+
+			if (emptySlot >= 0) {
+				if (!makeRoom(weight, -1)) {
+					return previous;
+				}
+				cache.put(key, value);
+				entries[emptySlot] = new Entry<>(key, value, hash, currentGeneration, weight);
+				usedBytes += weight;
+				return previous;
+			}
+
+			int firstVictim = nextVictim[setIndex] & (WAYS - 1);
+			for (int i = 0; i < WAYS; i++) {
+				int victimOffset = (firstVictim + i) & (WAYS - 1);
+				int slot = base + victimOffset;
+				Entry<K, V> victim = entries[slot];
+				if (victim == null || victim.generation != currentGeneration || onEntryRemoval(victim.key)) {
+					long victimWeight = victim == null || victim.generation != currentGeneration ? 0L : victim.weight;
+					if (!makeRoom(Math.max(0L, weight - victimWeight), slot)) {
+						return previous;
+					}
+					if (victim != null) {
+						removeSlot(slot);
+					}
+					cache.put(key, value);
+					entries[slot] = new Entry<>(key, value, hash, currentGeneration, weight);
+					usedBytes += weight;
+					nextVictim[setIndex] = (victimOffset + 1) & (WAYS - 1);
+					return previous;
+				}
+			}
+
+			return previous;
+		}
+
+		public synchronized void clear() {
+			long nextGeneration = generation + 1;
+			generation = nextGeneration == 0 ? 1 : nextGeneration;
+			cache.clear();
+			Arrays.fill(entries, null);
+			Arrays.fill(nextVictim, 0);
+			usedBytes = 0;
+			byteVictim = 0;
+		}
+
+		/**
+		 * @param key the key of the node to test for removal and do finalization on
+		 * @return true if removal is approved
+		 */
+		protected boolean onEntryRemoval(K key) {
+			return owner.onEntryRemoval(key);
+		}
+
+		protected void cleanUp() {
+			owner.cleanUp();
+		}
+
+		private boolean makeRoom(long additionalBytes, int excludedSlot) {
+			if (additionalBytes <= maxBytes - usedBytes) {
+				return true;
+			}
+			int scanned = 0;
+			while (additionalBytes > maxBytes - usedBytes && scanned < entries.length) {
+				int slot = byteVictim++ & (entries.length - 1);
+				if (slot == excludedSlot) {
+					scanned++;
+					continue;
+				}
+				Entry<K, V> victim = entries[slot];
+				if (victim != null && victim.generation == generation && onEntryRemoval(victim.key)) {
+					removeSlot(slot);
+					scanned = 0;
+				} else {
+					scanned++;
+				}
+			}
+			return additionalBytes <= maxBytes - usedBytes;
+		}
+
+		private void removeSlot(int slot) {
+			Entry<K, V> entry = entries[slot];
+			entries[slot] = null;
+			if (entry != null && entry.generation == generation) {
+				cache.remove(entry.key, entry.value);
+				usedBytes -= entry.weight;
+			}
+		}
+
+		private int setBase(int hash) {
+			return (hash & setMask) * WAYS;
+		}
+
+		private int preferredOffset(int hash) {
+			return (hash >>> setShift) & (WAYS - 1);
+		}
+
+		private static int spread(int hash) {
+			return hash ^ (hash >>> 16);
+		}
+
+		private static boolean sameKey(Object key, Object entryKey) {
+			return key == entryKey || key.equals(entryKey);
+		}
+
+		private static int nextPowerOfTwo(int n) {
+			return 1 << (Integer.SIZE - Integer.numberOfLeadingZeros(n - 1));
+		}
+
+		private record Entry<K, V> (K key, V value, int hash, long generation, long weight) {
+
+		}
+
 	}
 }

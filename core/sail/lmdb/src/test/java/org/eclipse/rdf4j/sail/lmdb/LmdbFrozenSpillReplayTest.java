@@ -41,6 +41,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -1420,6 +1421,36 @@ class LmdbFrozenSpillReplayTest {
 		public void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
 				boolean explicit, IntConsumer addedIndexConsumer) throws IOException {
 			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, addedIndexConsumer);
+			afterAlignedPrefix(count, explicit);
+		}
+
+		@Override
+		void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer) throws IOException {
+			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, mayHaveInferred,
+					addedIndexConsumer);
+			afterAlignedPrefix(count, explicit);
+		}
+
+		@Override
+		void storePreparedTriples(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
+				EncodedIndexKeys preparedMainIndex, PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
+				throws IOException {
+			super.storePreparedTriples(subjects, predicates, objects, contexts, count, explicit, mayHaveInferred,
+					addedIndexConsumer, preparedMainIndex, preparedSecondaryIndexesSupplier);
+			afterAlignedPrefix(count, explicit);
+		}
+
+		@Override
+		int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+				GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
+			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor);
+			afterAlignedPrefix(added, true);
+			return added;
+		}
+
+		private void afterAlignedPrefix(int count, boolean explicit) throws IOException {
 			if (spillCandidate) {
 				if (probe.failSpillAfterPrefix.compareAndSet(true, false)) {
 					probe.spillPrefixRows.addAndGet(count);

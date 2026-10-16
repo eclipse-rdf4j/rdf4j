@@ -111,6 +111,22 @@ class LmdbSketchJoinOptimizerOptionalRewriteTest {
 	}
 
 	@Test
+	void keepsNegatedBoundOptionalAsLeftJoin() {
+		StatementPattern person = statementPattern("person", "type", "personType");
+		StatementPattern follows = statementPattern("person", "follows", "friend");
+		StatementPattern optional = statementPattern("person", "name", "optName");
+		QueryRoot root = new QueryRoot(new Filter(new LeftJoin(new Join(person, follows), optional),
+				new Not(new Bound(new Var("optName")))));
+
+		new LmdbSketchJoinOptimizer(new EvaluationStatistics(), false).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(LeftJoin.class, retainedFilter.getArg(),
+				"!BOUND is true for a null-extended OPTIONAL row, so the OPTIONAL cannot become an inner join");
+		assertTrue(containsLeftJoin(root.getArg()));
+	}
+
+	@Test
 	void rewritesNullRejectingOptionalRegexOnStringifiedDirectBinding() {
 		StatementPattern person = statementPattern("person", "type", "personType");
 		StatementPattern follows = statementPattern("person", "follows", "friend");

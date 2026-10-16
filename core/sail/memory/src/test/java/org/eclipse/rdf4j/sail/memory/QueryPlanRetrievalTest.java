@@ -232,6 +232,41 @@ public class QueryPlanRetrievalTest {
 		}
 	}
 
+	private SailRepository experimentalRepository() {
+		MemoryStore store = new MemoryStore();
+		store.setExperimentalQueryOptimizations(true);
+		return new SailRepository(store);
+	}
+
+	@Test
+	public void testOptimizedNestedGroupPlanIncludesJoinAlgorithmsWithoutExecution() {
+		SailRepository sailRepository = new SailRepository(new MemoryStore());
+		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("""
+					SELECT ?s (COUNT(?optional) AS ?count) WHERE {
+					  {
+					    SELECT ?s ?second WHERE {
+					      ?s <urn:first> ?first .
+					      ?s <urn:second> ?second .
+					    }
+					    GROUP BY ?s ?second
+					  }
+					  OPTIONAL { ?s <urn:optional> ?optional }
+					}
+					GROUP BY ?s
+					""");
+
+			String optimized = query.explain(Explanation.Level.Optimized).toString();
+
+			assertThat(optimized.lines().filter(line -> line.contains("Group ")).count()).isGreaterThanOrEqualTo(2);
+			assertThat(optimized).contains("LeftJoin (LeftJoinIterator)");
+			assertThat(optimized).contains("Join (JoinIterator)");
+			assertThat(optimized).doesNotContain("resultSizeActual=");
+			assertThat(optimized).doesNotContain("outputRowsActual=");
+		}
+		sailRepository.shutDown();
+	}
+
 	@Test
 	public void testFilterDontMergeAcrossSubqueryOptimizedPlanRetrieval() throws Exception {
 		String sparql = "SELECT * WHERE {?s ?p ?o .  {?o ?p2 ?o2. FILTER(?o > ?o2) FILTER(?o2 != ?o)}  {?o ?p3 ?o3. FILTER(?o > ?o3) FILTER(?o != ?o3  || ?o = ?o3)} FILTER(?s > ?o)}";
@@ -318,7 +353,7 @@ public class QueryPlanRetrievalTest {
 					"║     ProjectionElem \"g\"\n" +
 					"╚══ LeftJoin (LeftJoinIterator)\n" +
 					"      Compare (>)\n" +
-					"      ╠══ FunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
+					"      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
 					"      ║     Str\n" +
 					"      ║        Var (name=x)\n" +
 					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
@@ -464,7 +499,7 @@ public class QueryPlanRetrievalTest {
 					+
 					"      ║  └── Filter\n" +
 					"      ║     ╠══ Compare (!=)\n" +
-					"      ║     ║  ├── FunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
+					"      ║     ║  ├── PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#lower-case)\n" +
 					"      ║     ║  │     Str\n" +
 					"      ║     ║  │        Var (name=o)\n" +
 					"      ║     ║  └── ValueConstant (value=\"bad\")\n" +
@@ -478,7 +513,7 @@ public class QueryPlanRetrievalTest {
 					"         │        s: Var (name=s)\n" +
 					"         │        p: Var (name=_const_efd45947_uri, value=http://example.com/prop, anonymous)\n" +
 					"         │        o: Var (name=o)\n" +
-					"         └── LeftJoin [right]\n" +
+					"         └── LeftJoin (LeftJoinIterator) [right]\n" +
 					"            ╠══ Join (HashJoinIteration) [left]\n" +
 					"            ║  ├── Filter (new scope) (costEstimate=2.92, resultSizeEstimate=0) [left]\n" +
 					"            ║  │  ╠══ Compare (!=)\n" +
@@ -1392,8 +1427,9 @@ public class QueryPlanRetrievalTest {
 					+
 					"            ║  │                                o: Var (name=buyerrole)\n" +
 					"            ║  └── ExtensionElem (year)\n" +
-					"            ║        FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
-					"            ║           FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
+					"            ║        PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n"
+					+
+					"            ║           PinnedFunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
 					"            ║              Var (name=ddate)\n" +
 					"            ╚══ Distinct (new scope) [right]\n" +
 					"                  Projection\n" +
@@ -1930,8 +1966,9 @@ public class QueryPlanRetrievalTest {
 				+
 				"            ║  │                                o: Var (name=buyerrole)\n" +
 				"            ║  └── ExtensionElem (year)\n" +
-				"            ║        FunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n" +
-				"            ║           FunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
+				"            ║        PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#year-from-dateTime)\n"
+				+
+				"            ║           PinnedFunctionCall (http://www.w3.org/2001/XMLSchema#dateTime)\n" +
 				"            ║              Var (name=ddate)\n" +
 				"            ╚══ Distinct (new scope) [right]\n" +
 				"                  Projection\n" +

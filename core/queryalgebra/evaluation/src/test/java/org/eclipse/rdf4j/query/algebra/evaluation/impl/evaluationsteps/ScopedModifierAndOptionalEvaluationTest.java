@@ -14,6 +14,11 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -24,9 +29,13 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -38,23 +47,31 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class ScopedModifierAndOptionalEvaluationTest {
 
@@ -63,6 +80,202 @@ class ScopedModifierAndOptionalEvaluationTest {
 	@BeforeEach
 	void setUp() {
 		strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void directAlgebraSeparatesInheritedAndSameNamedLocalGraph(boolean arrayLayout) {
+		LeftJoin join = graphShadowJoin();
+		TupleExpr expression = arrayLayout ? new QueryRoot(join) : join;
+		assertThat(evaluate(expression)).containsExactlyInAnyOrder(
+				iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+				iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"),
+				iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:a"),
+				iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:b"));
+	}
+
+	@Test
+	void directInnerJoinPreservesFramesDuplicatesAndEmptyDependentGraphsInEitherOrder() {
+		for (boolean arrayLayout : new boolean[] { false, true }) {
+			for (boolean subqueryFirst : new boolean[] { false, true }) {
+				LeftJoin fixture = graphShadowJoin();
+				TupleExpr carrier = values("g", iriRow("g", "urn:g1"), iriRow("g", "urn:g1"),
+						iriRow("g", "urn:g2"), iriRow("g", "urn:g3"));
+				TupleExpr dependent = fixture.getRightArg();
+				Join join = subqueryFirst ? new Join(dependent, carrier) : new Join(carrier, dependent);
+				Projection projected = projection(join, "g", "x", "y");
+				projected.setSubquery(false);
+				TupleExpr expression = arrayLayout ? new QueryRoot(projected) : projected;
+				assertThat(evaluate(expression, iriRow("_rdf4j_graph_context_0", "urn:g2")))
+						.as("arrayLayout=%s, subqueryFirst=%s", arrayLayout, subqueryFirst)
+						.containsExactlyInAnyOrder(
+								iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+								iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"),
+								iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+								iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"),
+								iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:a"),
+								iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:b"));
+			}
+		}
+	}
+
+	@Test
+	void siblingSelectsKeepTheirSuppliedGraphFrameWhenBothProjectTheCallerName() {
+		for (boolean arrayLayout : new boolean[] { false, true }) {
+			for (boolean reverse : new boolean[] { false, true }) {
+				LeftJoin fixture = graphShadowJoin();
+				StatementPattern original = (StatementPattern) ((Join) ((Projection) fixture.getRightArg()).getArg())
+						.getLeftArg();
+				Projection first = projection(original.clone(), "g", "x");
+				first.setProjectionContext(Var.of("g"));
+				StatementPattern secondPattern = original.clone();
+				secondPattern.getSubjectVar().replaceWith(Var.of("y"));
+				Projection second = projection(secondPattern, "g", "y");
+				second.setProjectionContext(Var.of("g"));
+				Join siblings = reverse ? new Join(second, first) : new Join(first, second);
+				Projection projected = projection(new Join(fixture.getLeftArg(), siblings), "g", "x", "y");
+				projected.setSubquery(false);
+				TupleExpr expression = arrayLayout ? new QueryRoot(projected) : projected;
+				assertThat(evaluate(expression, iriRow("_rdf4j_graph_context_0", "urn:g2",
+						"_rdf4j_graph_context_1", "urn:g2")))
+								.as("arrayLayout=%s, reverse=%s", arrayLayout, reverse)
+								.containsExactlyInAnyOrder(iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+										iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:b"));
+			}
+		}
+	}
+
+	@Test
+	void suppliedGraphProvenanceSurvivesCopiesAndSerializationButNotOrdinaryAssignments() throws Exception {
+		String parameter = "privateGraph";
+		Value graph = SimpleValueFactory.getInstance().createIRI("urn:g1");
+		MutableBindingSet supplied = GraphFrameBindings.supply(new QueryBindingSet(), parameter, graph);
+		QueryBindingSet copied = new QueryBindingSet(supplied);
+		ArrayBindingSet array = new ArrayBindingSet(copied, Set.of(parameter), new String[] { parameter });
+		ArrayBindingSet arrayCopy = new ArrayBindingSet(array, new String[] { parameter });
+		QueryBindingSet mapCopy = new QueryBindingSet(arrayCopy);
+		for (BindingSet bindings : List.of(supplied, copied, array, arrayCopy, mapCopy)) {
+			assertThat(GraphFrameBindings.isSupplied(bindings, parameter)).isTrue();
+			assertThat(bindings).isEqualTo(iriRow(parameter, "urn:g1"));
+			assertThat(bindings.hashCode()).isEqualTo(iriRow(parameter, "urn:g1").hashCode());
+		}
+		ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+		try (ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(arrayCopy);
+		}
+		try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+			assertThat(GraphFrameBindings.isSupplied((BindingSet) input.readObject(), parameter)).isTrue();
+		}
+		copied.setBinding(parameter, graph);
+		assertThat(GraphFrameBindings.isSupplied(copied, parameter)).isFalse();
+		arrayCopy.getDirectSetBinding(parameter).accept(graph, arrayCopy);
+		assertThat(GraphFrameBindings.isSupplied(arrayCopy, parameter)).isFalse();
+		mapCopy.removeBinding(parameter);
+		mapCopy.setBinding(parameter, graph);
+		assertThat(GraphFrameBindings.isSupplied(mapCopy, parameter)).isFalse();
+		MutableBindingSet custom = GraphFrameBindings.supply(new MapBindingSet(), parameter, graph);
+		assertThat(GraphFrameBindings.isSupplied(new QueryBindingSet(custom), parameter)).isTrue();
+		custom.setBinding(parameter, graph);
+		assertThat(GraphFrameBindings.isSupplied(custom, parameter)).isFalse();
+	}
+
+	@Test
+	void scopedJoinCachesTheSuppliedParameterRatherThanTheShadowingProjectedCaller() {
+		String parameter = "privateGraph";
+		MutableBindingSet input = GraphFrameBindings.supply(new QueryBindingSet(), parameter,
+				SimpleValueFactory.getInstance().createIRI("urn:g1"));
+		AtomicInteger calls = new AtomicInteger();
+		QueryEvaluationStep left = bindings -> new CloseableIteratorIteration<>(List.of(iriRow("g", "urn:g1"),
+				iriRow("g", "urn:g2"), EmptyBindingSet.getInstance()).iterator());
+		QueryEvaluationStep right = bindings -> {
+			assertThat(bindings.getValue(parameter)).isEqualTo(input.getValue(parameter));
+			assertThat(bindings.hasBinding("g")).isFalse();
+			return iteration(row("nonce", Integer.toString(calls.incrementAndGet())));
+		};
+		try (CloseableIteration<BindingSet> result = ScopedLeftJoinIterator.innerWithGraphFrames(left, right, input,
+				new QueryEvaluationContext.Minimal(null), new String[0],
+				new GraphFrameMapping[] { new GraphFrameMapping("g", parameter) })) {
+			QueryBindingSet first = new QueryBindingSet(iriRow("g", "urn:g1"));
+			first.addBinding("nonce", literal("1"));
+			QueryBindingSet second = new QueryBindingSet(iriRow("g", "urn:g2"));
+			second.addBinding("nonce", literal("1"));
+			assertThat(QueryResults.asList(result)).containsExactly(first, second, row("nonce", "1"));
+		}
+		assertThat(calls).hasValue(1);
+	}
+
+	@Test
+	void suppliedQueryBindingsStillConstrainTheirOwnLocalGraphVariable() {
+		LeftJoin join = graphShadowJoin();
+		assertThat(evaluate(join, iriRow("g", "urn:g1")))
+				.containsExactly(iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"));
+	}
+
+	@Test
+	void unrelatedApiBindingCannotSelectThePrivateGraphParameter() {
+		Projection projection = projection(graphShadowJoin(), "g", "x", "y");
+		projection.setSubquery(false);
+		assertThat(evaluate(new QueryRoot(projection), iriRow("_rdf4j_graph_context_0", "urn:g2")))
+				.containsExactlyInAnyOrder(
+						iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+						iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"),
+						iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:a"),
+						iriRow("g", "urn:g2", "x", "urn:b", "y", "urn:b"));
+	}
+
+	@Test
+	void unboundGraphFrameCannotReceiveAnUnrelatedApiParameter() {
+		LeftJoin join = graphShadowJoin();
+		join.setLeftArg(values("g", EmptyBindingSet.getInstance(), iriRow("g", "urn:g1")));
+		Projection projection = projection(join, "g", "x", "y");
+		projection.setSubquery(false);
+		assertThat(evaluate(new QueryRoot(projection), iriRow("_rdf4j_graph_context_0", "urn:g2")))
+				.containsExactlyInAnyOrder(
+						iriRow("x", "urn:a", "y", "urn:a"), iriRow("x", "urn:a", "y", "urn:b"),
+						iriRow("x", "urn:b", "y", "urn:a"), iriRow("x", "urn:b", "y", "urn:b"),
+						iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:a"),
+						iriRow("g", "urn:g1", "x", "urn:a", "y", "urn:b"));
+	}
+
+	private LeftJoin graphShadowJoin() {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		List<Statement> data = List.of(
+				vf.createStatement(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+						vf.createIRI("urn:g1")),
+				vf.createStatement(vf.createIRI("urn:b"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+						vf.createIRI("urn:g2")));
+		strategy = new StrictEvaluationStrategy(new EmptyTripleSource() {
+			@Override
+			public CloseableIteration<? extends Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(data.stream()
+						.filter(row -> subject == null || subject.equals(row.getSubject()))
+						.filter(row -> predicate == null || predicate.equals(row.getPredicate()))
+						.filter(row -> object == null || object.equals(row.getObject()))
+						.filter(row -> contexts.length == 0 || Arrays.asList(contexts).contains(row.getContext()))
+						.iterator());
+			}
+		}, null);
+		Var inheritedContext = Var.of("g");
+		inheritedContext.setGraphContextDepth(1);
+		StatementPattern inherited = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("x"),
+				Var.of("p", vf.createIRI("urn:p")), Var.of("o", vf.createIRI("urn:o")), inheritedContext);
+		StatementPattern local = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("y"),
+				Var.of("p", vf.createIRI("urn:p")), Var.of("o", vf.createIRI("urn:o")), Var.of("g"));
+		ProjectionElemList elements = new ProjectionElemList();
+		elements.addElement(new ProjectionElem("x"));
+		elements.addElement(new ProjectionElem("y"));
+		Projection subquery = new Projection(new Join(inherited, local), elements, true);
+		subquery.setProjectionContext(Var.of("g"));
+		return new LeftJoin(values("g", iriRow("g", "urn:g1"), iriRow("g", "urn:g2")), subquery);
+	}
+
+	private BindingSet iriRow(String... namesAndValues) {
+		MapBindingSet row = new MapBindingSet();
+		for (int i = 0; i < namesAndValues.length; i += 2) {
+			row.addBinding(namesAndValues[i], SimpleValueFactory.getInstance().createIRI(namesAndValues[i + 1]));
+		}
+		return row;
 	}
 
 	@Test
@@ -251,7 +464,7 @@ class ScopedModifierAndOptionalEvaluationTest {
 		}
 	}
 
-	private static Projection projection(BindingSetAssignment values, String... names) {
+	private static Projection projection(TupleExpr values, String... names) {
 		ProjectionElemList elements = new ProjectionElemList();
 		for (String name : names) {
 			elements.addElement(new ProjectionElem(name));

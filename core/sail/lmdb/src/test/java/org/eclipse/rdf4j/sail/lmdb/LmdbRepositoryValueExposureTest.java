@@ -19,14 +19,22 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.lang.ref.Cleaner;
+import java.lang.ref.ReferenceQueue;
+import java.lang.ref.WeakReference;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -36,30 +44,40 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractStatement;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.GraphQueryResult;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.rio.helpers.AbstractRDFHandler;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
@@ -304,6 +322,400 @@ class LmdbRepositoryValueExposureTest {
 		} finally {
 			FunctionRegistry.getInstance().remove(function);
 			repository.shutDown();
+		}
+	}
+
+	private enum NestedRawOwner {
+		SAME_CONNECTION,
+		OTHER_CONNECTION,
+		OTHER_STORE
+	}
+
+	@ParameterizedTest
+	@EnumSource(NestedRawOwner.class)
+	void nestedRawCallbackKeepsItsIndependentColdOwnership(NestedRawOwner owner, @TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore outerStore = newStore(directory);
+		File innerDirectory = new File(directory, "foreign");
+		if (owner == NestedRawOwner.OTHER_STORE) {
+			seed(innerDirectory, 1);
+		}
+		LmdbStore innerStore = owner == NestedRawOwner.OTHER_STORE ? newStore(innerDirectory) : outerStore;
+		SailRepository outerRepository = new SailRepository(outerStore);
+		outerRepository.init();
+		SailRepository innerRepository = owner == NestedRawOwner.OTHER_STORE ? new SailRepository(innerStore)
+				: outerRepository;
+		innerRepository.init();
+		AtomicReference<SailConnection> outerConnection = new AtomicReference<>();
+		AtomicReference<Value> escaped = new AtomicReference<>();
+		AtomicInteger callbacks = new AtomicInteger();
+		String functionIRI = "urn:repository-exposure:nested-raw:" + UUID.randomUUID();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				throw new AssertionError("The real query callback must receive its TripleSource");
+			}
+
+			@Override
+			public Value evaluate(TripleSource source, Value... args) {
+				callbacks.incrementAndGet();
+				SailConnection raw = owner == NestedRawOwner.SAME_CONNECTION ? outerConnection.get()
+						: innerStore.getConnection();
+				try {
+					try (CloseableIteration<? extends Statement> rows = raw.getStatements(SUBJECT, PREDICATE, null,
+							false, CONTEXT)) {
+						assertTrue(rows.hasNext());
+						Value parent = rows.next().getObject();
+						assertFalse(((LmdbValue) parent).isInitialized());
+						Value child = ((TripleTerm) parent).getObject();
+						assertFalse(((LmdbValue) child).isInitialized());
+						escaped.set(child);
+						assertFalse(rows.hasNext());
+					}
+				} finally {
+					if (owner != NestedRawOwner.SAME_CONNECTION) {
+						raw.close();
+					}
+				}
+				return VF.createLiteral("outer-row");
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try {
+			try (RepositoryConnection connection = outerRepository.getConnection()) {
+				outerConnection.set(((SailRepositoryConnection) connection).getSailConnection());
+				try (TupleQueryResult result = connection.prepareTupleQuery(
+						"SELECT (<" + functionIRI + ">() AS ?value) WHERE {}").evaluate()) {
+					assertTrue(result.hasNext());
+					assertEquals("outer-row", result.next().getValue("value").stringValue());
+					assertFalse(result.hasNext());
+				}
+			}
+			assertEquals(1, callbacks.get());
+			Value child = escaped.get();
+			assertFalse(((LmdbValue) child).isInitialized());
+			try (RepositoryConnection writer = innerRepository.getConnection()) {
+				for (int round = 0; round < 3; round++) {
+					writer.begin(IsolationLevels.READ_COMMITTED);
+					writer.clear();
+					writer.add(VF.createIRI("urn:nested-raw:replacement:" + round), PREDICATE,
+							VF.createLiteral("replacement " + round));
+					writer.commit();
+				}
+			}
+			assertFalse(((LmdbValue) child).isInitialized());
+			assertEquals(VF.createTripleTerm(SUBJECT, PREDICATE,
+					VF.createLiteral("nested outward value 0", DATATYPE)), child);
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			if (innerRepository != outerRepository) {
+				innerRepository.shutDown();
+			}
+			outerRepository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(60)
+	@ResourceLock(Resources.SYSTEM_PROPERTIES)
+	void abandonedRegisteredRepositoryResultDoesNotRetainItsCleanerReferent(@TempDir File directory) throws Exception {
+		String previous = System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+		seed(directory, 1);
+		LmdbStore store = newStore(directory);
+		store.init();
+		LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection();
+		CountDownLatch cleanerStarted = new CountDownLatch(1);
+		CountDownLatch releaseCleaner = new CountDownLatch(1);
+		Cleaner.Cleanable blocker = blockCleaner(new ConcurrentCleaner(), cleanerStarted, releaseCleaner);
+		try {
+			System.gc();
+			assertTrue(cleanerStarted.await(10, TimeUnit.SECONDS), "the unrelated cleaner lane must reach its barrier");
+			ReferenceQueue<CloseableIteration<? extends Statement>> queue = new ReferenceQueue<>();
+			WeakReference<CloseableIteration<? extends Statement>> abandoned = abandonRepositoryResult(connection,
+					queue);
+			System.gc();
+			assertSame(abandoned, queue.remove(TimeUnit.SECONDS.toMillis(10)),
+					"the actual registered outward result must remain collectible while its connection stays open");
+			connection.close();
+			assertFalse(connection.hasActiveIterations(),
+					"owner close must finish abandoned cleanup before the lane runs");
+			assertEquals(1L, releaseCleaner.getCount());
+		} finally {
+			releaseCleaner.countDown();
+			blocker.clean();
+			connection.close();
+			store.shutDown();
+			if (previous == null) {
+				System.clearProperty("org.eclipse.rdf4j.repository.debug");
+			} else {
+				System.setProperty("org.eclipse.rdf4j.repository.debug", previous);
+			}
+		}
+	}
+
+	private static WeakReference<CloseableIteration<? extends Statement>> abandonRepositoryResult(
+			LmdbStoreConnection connection, ReferenceQueue<CloseableIteration<? extends Statement>> queue) {
+		CloseableIteration<? extends Statement> raw = connection.getStatements(null, null, null, false);
+		CloseableIteration<? extends Statement> exposed = connection.exposeIteration(raw,
+				SailResultValueExtractor.STATEMENTS);
+		return new WeakReference<>(exposed, queue);
+	}
+
+	private static Cleaner.Cleanable blockCleaner(ConcurrentCleaner cleaner, CountDownLatch started,
+			CountDownLatch release) {
+		return cleaner.register(new Object(), () -> {
+			started.countDown();
+			try {
+				assertTrue(release.await(30, TimeUnit.SECONDS), "the unrelated cleaner lane must be released");
+			} catch (InterruptedException failure) {
+				Thread.currentThread().interrupt();
+				throw new AssertionError(failure);
+			}
+		});
+	}
+
+	@Test
+	void rawForeignNestedOutputKeepsNativeLeafColdWithoutRecursiveTraversal(@TempDir File directory) {
+		seed(directory, 1);
+		String functionIRI = "urn:repository-exposure:deep-foreign:" + UUID.randomUUID();
+		AtomicReference<Value> nativeLeaf = new AtomicReference<>();
+		int depth = 10_000;
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				throw new AssertionError("The real callback must receive its TripleSource");
+			}
+
+			@Override
+			public Value evaluate(TripleSource source, Value... args) {
+				assertFalse(((LmdbValue) args[0]).isInitialized());
+				nativeLeaf.set(args[0]);
+				Value value = args[0];
+				for (int level = 0; level < depth; level++) {
+					value = VF.createTripleTerm(SUBJECT, PREDICATE, value);
+				}
+				return value;
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		LmdbStore store = newStore(directory);
+		store.init();
+		try {
+			try (SailConnection raw = store.getConnection()) {
+				String query = "SELECT ?first ?second WHERE { ?s <" + PREDICATE + "> ?value . BIND(<"
+						+ functionIRI + ">(?value) AS ?first) BIND(?first AS ?second) }";
+				var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+				try (CloseableIteration<? extends BindingSet> rows = raw.evaluate(expression, null,
+						EmptyBindingSet.getInstance(), false)) {
+					assertTrue(rows.hasNext());
+					BindingSet row = rows.next();
+					assertSame(row.getValue("first"), row.getValue("second"),
+							"both roots share the same foreign chain");
+					Value value = row.getValue("first");
+					for (int level = 0; level < depth; level++) {
+						value = ((TripleTerm) value).getObject();
+					}
+					assertSame(nativeLeaf.get(), value);
+					assertFalse(((LmdbValue) value).isInitialized(), "raw handoff must leave the native leaf cold");
+					assertFalse(rows.hasNext());
+				}
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void rawDeepForeignInitialBindingKeepsNativeLeafCold(@TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore store = newStore(directory);
+		store.init();
+		String functionIRI = "urn:repository-exposure:deep-input:" + UUID.randomUUID();
+		AtomicReference<Value> input = new AtomicReference<>();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				return input.get();
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try (SailConnection raw = store.getConnection()) {
+			Value nativeLeaf;
+			try (CloseableIteration<? extends Statement> source = raw.getStatements(SUBJECT, PREDICATE, null, false)) {
+				assertTrue(source.hasNext());
+				nativeLeaf = source.next().getObject();
+				assertFalse(((LmdbValue) nativeLeaf).isInitialized());
+			}
+			Value foreign = nativeLeaf;
+			Value expectedLeaf = VF.createTripleTerm(SUBJECT, PREDICATE,
+					VF.createTripleTerm(SUBJECT, PREDICATE,
+							VF.createLiteral("nested outward value 0", DATATYPE)));
+			int childHash = expectedLeaf.hashCode();
+			int depth = 50_000;
+			for (int level = 0; level < depth; level++) {
+				foreign = new CachedHashTriple(SUBJECT, PREDICATE, foreign, childHash);
+				childHash = foreign.hashCode();
+			}
+			MapBindingSet bindings = new MapBindingSet();
+			bindings.addBinding("provided", foreign);
+			input.set(foreign);
+			// Return the same input graph at runtime without embedding it in optimizer serialization constants.
+			var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT (<" + functionIRI + ">() AS ?returned) WHERE {}", null).getTupleExpr();
+			try (CloseableIteration<? extends BindingSet> rows = raw.evaluate(expression, null, bindings, false)) {
+				assertTrue(rows.hasNext());
+				Value value = rows.next().getValue("returned");
+				for (int level = 0; level < depth; level++) {
+					value = ((TripleTerm) value).getObject();
+				}
+				assertSame(nativeLeaf, value, "the initial binding retains its original native leaf");
+				assertFalse(((LmdbValue) nativeLeaf).isInitialized(), "external binding capture must remain cold");
+				assertFalse(rows.hasNext());
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void rawForeignCyclicBindingFailsBeforeTraversal(@TempDir File directory) {
+		LmdbStore store = newStore(directory);
+		store.init();
+		try (SailConnection raw = store.getConnection()) {
+			TripleTerm cycle = new AbstractTripleTerm() {
+				@Override
+				public Resource getSubject() {
+					return SUBJECT;
+				}
+
+				@Override
+				public IRI getPredicate() {
+					return PREDICATE;
+				}
+
+				@Override
+				public Value getObject() {
+					return this;
+				}
+
+				@Override
+				public int hashCode() {
+					return 0;
+				} // Invalid cyclic input must reach structural validation.
+			};
+			MapBindingSet bindings = new MapBindingSet();
+			bindings.addBinding("provided", cycle);
+			var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT ?returned WHERE { BIND(?provided AS ?returned) }", null).getTupleExpr();
+			assertThrows(IllegalArgumentException.class, () -> raw.evaluate(expression, null, bindings, false));
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void exactRepositorySourceReleasesWithoutLegacyColdOwnership(@TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore store = newStore(directory);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		try (RepositoryConnection connection = repository.getConnection()) {
+			Value retained;
+			try (RepositoryResult<Statement> rows = connection.getStatements(SUBJECT, PREDICATE, null, false)) {
+				assertTrue(rows.hasNext());
+				retained = rows.next().getObject();
+				assertDeepReady(retained);
+				assertUnpromoted(retained);
+				assertFalse(rows.hasNext());
+			}
+			connection.clear();
+			assertEquals(Long.MAX_VALUE,
+					store.getBackingStore().getTripleStore().getTxnManager().minPinnedSnapshotRevision());
+			assertDeepReady(retained);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void assertUnpromoted(Value value) {
+		if (value instanceof LmdbValue nativeValue) {
+			assertFalse(nativeValue.isExternallyOwned(), "an exact repository source retains its result scope only");
+		}
+		if (value instanceof TripleTerm triple) {
+			assertUnpromoted(triple.getSubject());
+			assertUnpromoted(triple.getPredicate());
+			assertUnpromoted(triple.getObject());
+		} else if (value instanceof Literal literal) {
+			assertUnpromoted(literal.getDatatype());
+		}
+	}
+
+	/**
+	 * Ordinary immutable foreign value with the specified TripleTerm hash, computed once from known fixture meaning.
+	 */
+	private static final class CachedHashTriple extends AbstractTripleTerm {
+		private final Resource subject;
+		private final IRI predicate;
+		private final Value object;
+		private final int hash;
+
+		private CachedHashTriple(Resource subject, IRI predicate, Value object, int objectHash) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+			hash = 31 * (31 * (31 + subject.hashCode()) + predicate.hashCode()) + objectHash;
+		}
+
+		@Override
+		public Resource getSubject() {
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			return object;
+		}
+
+		@Override
+		public int hashCode() {
+			return hash;
 		}
 	}
 

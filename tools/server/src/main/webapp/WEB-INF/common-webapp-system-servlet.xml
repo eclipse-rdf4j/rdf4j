@@ -36,6 +36,8 @@
 				<prop key="/system/info/overview.view">commonWebappSystemInfoController</prop>
 				<prop key="/system/info/debug.view">filenameViewController</prop>
 				<prop key="/system/breaker/status.view">commonWebappQueryCircuitBreakerStatusController</prop>
+				<prop key="/system/lmdb/properties">commonWebappLmdbRuntimePropertiesController</prop>
+				<prop key="/system/lmdb/strategies">commonWebappLmdbForceableStrategiesController</prop>
 				<prop key="/system/logging/overview.view">commonWebappLoggingOverviewController</prop>
 			</props>
 		</property>
@@ -60,4 +62,6 @@
 		<property name="config" ref="commonAppConfig" />
 	</bean>
 	<bean id="commonWebappQueryCircuitBreakerStatusController" class="org.eclipse.rdf4j.common.webapp.system.QueryCircuitBreakerStatusController" />
+	<bean id="commonWebappLmdbRuntimePropertiesController" class="org.eclipse.rdf4j.common.webapp.system.LmdbRuntimePropertiesController" />
+	<bean id="commonWebappLmdbForceableStrategiesController" class="org.eclipse.rdf4j.common.webapp.system.LmdbForceableStrategiesController" />
 </beans>

@@ -21,6 +21,7 @@ import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -57,6 +58,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	private transient volatile InternalIdentity identity;
 	private transient volatile long semanticVersion;
+	private transient int cachedHash;
 
 	private volatile boolean initialized = false;
 	private transient volatile boolean externallyOwned;
@@ -141,6 +143,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 	private void payloadChanged() {
 		if (initialized) {
 			semanticVersion++;
+			cachedHash = 0;
 			identity = new InternalIdentity(UNKNOWN_ID, identity.revision());
 		}
 	}
@@ -159,6 +162,12 @@ public class LmdbIRI implements LmdbResource, IRI {
 		} else {
 			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
+	}
+
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		return iriString == null ? -1L : iriString.length();
 	}
 
 	@Override
@@ -224,6 +233,26 @@ public class LmdbIRI implements LmdbResource, IRI {
 		}
 	}
 
+	@Experimental
+	@Override
+	public void init(Resolver resolver) {
+		if (iriString == null && !initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					InternalIdentity resolving = getInternalIdentity();
+					boolean resolved = resolver.resolve(resolving.id(), this);
+					if (!resolved) {
+						log.warn("Could not resolve value");
+					}
+					initialized = resolved;
+					if (resolved) {
+						resolving.revision().valueInitialized(resolving.id(), this);
+					}
+				}
+			}
+		}
+	}
+
 	@Override
 	public boolean equals(Object o) {
 		if (this == o) {
@@ -275,6 +304,10 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 	@Override
 	public int hashCode() {
+		int memoized = cachedHash;
+		if (memoized != 0) {
+			return memoized;
+		}
 		InternalIdentity captured = identity;
 		if (captured.id() != UNKNOWN_ID) {
 			int cachedHash = captured.revision().getStoredHash(captured.id());
@@ -285,6 +318,7 @@ public class LmdbIRI implements LmdbResource, IRI {
 
 		init();
 		int hash = iriString.hashCode();
+		cachedHash = hash;
 
 		if (captured.id() != UNKNOWN_ID) {
 			captured.revision().storeHash(captured.id(), hash);

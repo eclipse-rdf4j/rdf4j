@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
@@ -61,6 +63,13 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 		this.evaluationStatistics = evaluationStatistics;
 	}
 
+	/** Returns the standard safe exact-filter rewrite without exposing its package-private implementation type. */
+	@Experimental
+	@InternalUseOnly
+	public static QueryOptimizer getFilterInValuesOptimizer() {
+		return FILTER_IN_VALUES_OPTIMIZER;
+	}
+
 	/*
 	 * (non-Javadoc)
 	 *
@@ -80,7 +89,8 @@ public class StandardQueryOptimizerPipeline implements QueryOptimizerPipeline {
 				UNION_SCOPE_CHANGE_OPTIMIZER,
 				QUERY_MODEL_NORMALIZER,
 				PROJECTION_REMOVAL_OPTIMIZER, // Make sure this is after the UnionScopeChangeOptimizer
-				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource),
+				new QueryJoinOptimizer(evaluationStatistics, strategy.isTrackResultSize(), tripleSource,
+						strategy.getQueryExecutionPolicy()),
 				ITERATIVE_EVALUATION_OPTIMIZER,
 				new FilterOptimizer(evaluationStatistics, false, true),
 				FILTER_IN_VALUES_OPTIMIZER,

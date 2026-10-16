@@ -76,6 +76,7 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
 
 class LmdbSynchronousIngestTest {
@@ -177,6 +178,7 @@ class LmdbSynchronousIngestTest {
 				.setForceSync(false)
 				.setSketchEstimatorEnabled(true)
 				.setBulkOperationSize(4);
+		config.setExperimentalQueryOptimizations(true);
 		try (Fixture fixture = new Fixture(directory, config)) {
 			write(fixture, statements("estimator-warmup", 2));
 			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
@@ -311,7 +313,8 @@ class LmdbSynchronousIngestTest {
 	@EnumSource(MutationRoute.class)
 	void directMutationErrorAbortsBothWritersAndReleasesLease(MutationRoute route, @TempDir Path directory)
 			throws Exception {
-		try (Fixture fixture = new Fixture(directory, route == MutationRoute.DISABLED_BULK ? 0 : 4)) {
+		try (Fixture fixture = new Fixture(directory,
+				route == MutationRoute.DISABLED_BULK || route == MutationRoute.DIRECT ? 0 : 4)) {
 			fixture.store.getBackingStore().enableMultiThreading = false;
 			AssertionError original = new AssertionError("injected after real native mutation");
 			if (route == MutationRoute.BULK) {
@@ -327,6 +330,7 @@ class LmdbSynchronousIngestTest {
 						Statement statement = abandoned.iterator().next();
 						sink.approve(statement.getSubject(), statement.getPredicate(), statement.getObject(),
 								statement.getContext());
+						sink.flush();
 					} else if (route == MutationRoute.SINGLETON) {
 						sink.approveAll(Set.of(abandoned.iterator().next()), Set.of());
 					} else {
@@ -524,6 +528,7 @@ class LmdbSynchronousIngestTest {
 				.setForceSync(false)
 				.setSketchEstimatorEnabled(true)
 				.setBulkOperationSize(4);
+		config.setExperimentalQueryOptimizations(true);
 		try (Fixture fixture = new Fixture(directory, config);
 				ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor()) {
 			SketchBasedJoinEstimator estimator = fixture.store.getBackingStore().getSketchBasedJoinEstimator();
@@ -721,7 +726,10 @@ class LmdbSynchronousIngestTest {
 	@EnumSource(Call.class)
 	void errorsAfterSyncFirstMutationAbortLaterDirectBulkAndRemoval(Call later, @TempDir Path directory)
 			throws Exception {
-		try (Fixture fixture = new Fixture(directory, 4)) {
+		try (Fixture fixture = new Fixture(directory, later == Call.DIRECT ? 0 : 4)) {
+			if (later == Call.DIRECT) {
+				fixture.store.getBackingStore().enableMultiThreading = false;
+			}
 			Set<Statement> seed = statements("error-remove", 2);
 			write(fixture, seed);
 			fixture.events.clearWrites();
@@ -729,6 +737,10 @@ class LmdbSynchronousIngestTest {
 			Set<Statement> prefix = statements("error-prefix", 2);
 			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				sink.approveAll(prefix, Set.of());
+				if (later == Call.DIRECT) {
+					assertSame(Thread.currentThread(), fixture.events.starts.getFirst(),
+							"the first scalar mutation must select the synchronous native writer");
+				}
 				sink.setNamespace("abandoned", "urn:abandoned:");
 				if (later == Call.REMOVE) {
 					fixture.events.removalFailure.set(original);
@@ -737,14 +749,48 @@ class LmdbSynchronousIngestTest {
 				} else {
 					fixture.events.mutationFailure.set(original);
 				}
-				assertSame(original, assertThrows(AssertionError.class,
-						() -> apply(sink, later, "late-error", seed, new LinkedHashSet<>())));
+				assertSame(original, assertThrows(AssertionError.class, () -> {
+					apply(sink, later, "late-error", seed, new LinkedHashSet<>());
+					if (later == Call.DIRECT) {
+						sink.flush();
+					}
+				}));
 				assertEquals(0, fixture.store.triples.writeTxn);
 				assertUnpublished(fixture, prefix);
 				try (RepositoryConnection observer = fixture.repository.getConnection()) {
 					assertVisible(observer, seed);
 				}
 				independentWrite(fixture, "after-late-error");
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void asynchronousPrefixErrorReleasesNativeOwnerBeforeSinkClose(boolean aligned, @TempDir Path directory)
+			throws Exception {
+		try (Fixture fixture = new Fixture(directory, aligned ? 4 : 0)) {
+			Set<Statement> prefix = statements("async-prefix-error", 5);
+			fixture.events.completedNativeWrites = new CountDownLatch(aligned ? 2 : prefix.size());
+			AssertionError original = new AssertionError("late asynchronous native operation Error");
+			try (SailSink sink = fixture.store.getBackingStore().getExplicitSailSource().sink(IsolationLevels.NONE)) {
+				sink.approveAll(prefix, Set.of());
+				assertTrue(fixture.events.completedNativeWrites.await(5, TimeUnit.SECONDS));
+				assertNotSame(Thread.currentThread(), fixture.events.starts.getFirst());
+				if (aligned) {
+					fixture.events.alignedFailure.set(original);
+				} else {
+					fixture.events.mutationFailure.set(original);
+				}
+				Set<Statement> late = statements("async-late-error", aligned ? 5 : 1);
+				assertSame(original, assertThrows(AssertionError.class, () -> {
+					sink.approveAll(late, Set.of());
+					sink.flush();
+				}));
+				assertEquals(0L, fixture.store.triples.writeTxn);
+				assertUnpublished(fixture, prefix);
+				assertUnpublished(fixture, late);
+				independentWrite(fixture, "after-async-prefix-error");
 			}
 		}
 	}
@@ -829,7 +875,8 @@ class LmdbSynchronousIngestTest {
 						assertPoisoned(writer, failure);
 					} else {
 						assertNotNull(cause(failure, TripleStore.MapFullException.class));
-						assertNull(cause(failure, LmdbTransactionRetryException.class));
+						assertNotNull(cause(failure, LmdbTransactionRetryException.class),
+								"disabled growth still requires retrying an untracked logical transaction");
 					}
 					independentWrite(fixture, "aligned-independent");
 					writer.rollback();
@@ -1078,7 +1125,9 @@ class LmdbSynchronousIngestTest {
 	void realDictionaryStartupCapacityErrorRetainsOwnerUntilCallerRollback(@TempDir Path directory) throws Exception {
 		try (Fixture fixture = new Fixture(directory, config(Policy.OMITTED), true)) {
 			warmIfOmitted(fixture, Policy.OMITTED);
-			Value large = VF.createLiteral("v".repeat(33 * 1024 * 1024));
+			long remainingCapacity = fixture.store.getBackingStore().valueStore().mapSizeBytes()
+					- fixture.store.getBackingStore().valueStore().occupiedBytes();
+			Value large = VF.createLiteral("v".repeat(Math.toIntExact(remainingCapacity + 1L)));
 			fixture.events.startupValue = large;
 			Set<Statement> input = statements("dictionary-start", 2);
 			try (RepositoryConnection writer = fixture.repository.getConnection()) {
@@ -1503,10 +1552,20 @@ class LmdbSynchronousIngestTest {
 	private static void assertPoisoned(RepositoryConnection writer, Throwable failure) {
 		LmdbTransactionRetryException retry = cause(failure, LmdbTransactionRetryException.class);
 		assertNotNull(retry);
-		assertSame(retry, cause(assertThrows(RepositoryException.class,
-				() -> writer.add(statements("forbidden-suffix", 1))), LmdbTransactionRetryException.class));
-		assertSame(retry, cause(assertThrows(RepositoryException.class, writer::commit),
-				LmdbTransactionRetryException.class));
+		Statement suffix = statements("forbidden-suffix", 1).iterator().next();
+		List<Runnable> actions = List.of(() -> writer.add(Set.of(suffix)), () -> writer.add(suffix),
+				() -> writer.add(suffix.getSubject(), suffix.getPredicate(), suffix.getObject()),
+				() -> writer.remove(suffix), writer::clear,
+				() -> writer.setNamespace("forbidden-suffix", "urn:forbidden:"), writer::commit);
+		for (Runnable action : actions) {
+			if (failure instanceof Error) {
+				assertSame(failure, assertThrows(Error.class, action::run),
+						"a fatal operation Error must retain its exact identity until explicit rollback");
+			} else {
+				assertSame(retry, cause(assertThrows(RepositoryException.class, action::run),
+						LmdbTransactionRetryException.class), "every suffix mutation must retain the same retry cause");
+			}
+		}
 	}
 
 	private static void retryOnAnotherThread(Fixture fixture, RepositoryConnection writer, Set<Statement> complete)
@@ -1831,6 +1890,7 @@ class LmdbSynchronousIngestTest {
 		private final List<String> successfulPublicationOrder = Collections.synchronizedList(new ArrayList<>());
 		private final List<Thread> successfulTripleCommitThreads = Collections.synchronizedList(new ArrayList<>());
 		private volatile CountDownLatch successfulTripleCommits = new CountDownLatch(0);
+		private volatile CountDownLatch completedNativeWrites = new CountDownLatch(0);
 		private final AtomicInteger valueAborts = new AtomicInteger();
 		private final AtomicInteger valueRollbacks = new AtomicInteger();
 		private final AtomicInteger rootFinalizations = new AtomicInteger();
@@ -1995,6 +2055,7 @@ class LmdbSynchronousIngestTest {
 			boolean added = super.storeTriple(subject, predicate, object, context, explicit);
 			events.scalarWrites.add(Thread.currentThread());
 			throwFailure(events.mutationFailure.getAndSet(null));
+			events.completedNativeWrites.countDown();
 			return added;
 		}
 
@@ -2018,6 +2079,7 @@ class LmdbSynchronousIngestTest {
 				await(overlap.laterValueStored);
 			}
 			throwFailure(events.alignedFailure.getAndSet(null));
+			events.completedNativeWrites.countDown();
 		}
 
 		@Override

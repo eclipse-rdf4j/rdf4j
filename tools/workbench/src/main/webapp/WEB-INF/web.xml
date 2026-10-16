@@ -2,6 +2,15 @@
 <web-app>
 	<display-name>RDF4J Workbench</display-name>
 	<description>RDF4J Workbench</description>
+	<!--
+		Map authenticated operators who may change process-wide LMDB runtime properties to rdf4j-admin in the
+		container. The mutation also requires X-RDF4J-Admin-Request: true; ordinary query POSTs keep their existing
+		access rules.
+	-->
+	<security-role>
+		<description>Role required for Workbench process-wide LMDB runtime-property mutations.</description>
+		<role-name>rdf4j-admin</role-name>
+	</security-role>
 	<filter>
 		<filter-name>redirect</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.RedirectFilter</filter-class>

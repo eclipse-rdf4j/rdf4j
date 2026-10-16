@@ -318,11 +318,19 @@ public class LmdbServiceReplayIT {
 		// For the configured ordinary spoc and posc DBIs, each unique row occupies one leaf entry per index.
 		// Each entry has the 8-byte LmdbFormat.NODE_SIZE, a 2-byte leaf slot, and four nonempty varints of at least
 		// one byte each. The derived count therefore exceeds the 10% soft watermark even at minimum key encoding.
+		// Reuse a Cartesian vocabulary so this fixture grows the TripleStore without independently exhausting the
+		// dictionary map.
 		Model statements = new LinkedHashModel();
+		int subjectCount = Math.max(1, (int) Math.ceil(Math.sqrt(count)));
+		int objectCount = Math.max(1, Math.toIntExact((count + (long) subjectCount - 1) / subjectCount));
 		for (int i = 0; i < count; i++) {
-			statements.add(Values.iri("urn:rdf4j:lmdb-service-replay:growth:" + i), GROWTH_PREDICATE,
-					Values.literal("growth"));
+			int subjectIndex = i / objectCount;
+			int objectIndex = i % objectCount;
+			statements.add(Values.iri("urn:rdf4j:lmdb-service-replay:growth:subject:" + subjectIndex),
+					GROWTH_PREDICATE,
+					Values.iri("urn:rdf4j:lmdb-service-replay:growth:object:" + objectIndex));
 		}
+		assertThat(statements).hasSize(count);
 		return statements;
 	}
 

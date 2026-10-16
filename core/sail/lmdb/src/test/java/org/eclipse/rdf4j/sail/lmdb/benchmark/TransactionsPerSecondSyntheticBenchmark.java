@@ -16,16 +16,19 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
 import org.assertj.core.util.Files;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbTestUtil;
+import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.openjdk.jmh.annotations.Benchmark;
 import org.openjdk.jmh.annotations.BenchmarkMode;
@@ -86,7 +89,8 @@ public class TransactionsPerSecondSyntheticBenchmark {
 		i = 0;
 		file = Files.newTemporaryFolder();
 
-		LmdbStore sail = new LmdbStore(file, ConfigUtil.createConfig().setForceSync(forceSync));
+		LmdbStore sail = new LmdbStore(file,
+				ConfigUtil.createConfig().setForceSync(forceSync).setSketchEstimatorEnabled(false));
 		repository = new SailRepository(sail);
 		connection = repository.getConnection();
 		random = new Random(1337);
@@ -155,6 +159,16 @@ public class TransactionsPerSecondSyntheticBenchmark {
 		connection.begin(isolationLevel);
 		for (int k = 0; k < 1000000; k++) {
 			connection.add(randomResource(), randomPredicate(), literalGenerator.createRandomLiteral());
+		}
+		connection.commit();
+	}
+
+	@Benchmark
+	public void veryLargerTransactionLevelReadCommitted() {
+		connection.begin(IsolationLevels.READ_COMMITTED);
+		for (int k = 0; k < 1000000; k++) {
+			Literal randomLiteral = literalGenerator.createRandomLiteral();
+			connection.add(randomResource(), randomPredicate(), randomLiteral);
 		}
 		connection.commit();
 	}

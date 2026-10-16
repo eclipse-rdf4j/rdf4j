@@ -23,6 +23,10 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.json.JsonMapper;
+
 class GenericPlanNodeTest {
 
 	private Locale defaultLocale;
@@ -550,5 +554,48 @@ class GenericPlanNodeTest {
 		String telemetry = parent.toString();
 		assertTrue(telemetry.contains("sampleCountActual="), telemetry);
 		assertTrue(telemetry.contains("varianceActual="), telemetry);
+	}
+
+	@Test
+	void telemetryRendersExplicitZeroMapMetricButOmitsUnsetMetric() {
+		GenericPlanNode node = new GenericPlanNode("Group");
+		node.setLongMetricActual("nativeAdjacencyNeighborIdsDecodedActual", 0L);
+		node.applyExplanationLevel(Explanation.Level.Telemetry);
+
+		String telemetry = node.toString();
+
+		assertTrue(telemetry.contains("nativeAdjacencyNeighborIdsDecodedActual=0"), telemetry);
+		assertFalse(telemetry.contains("nativeAdjacencyContextIdsDecodedActual="), telemetry);
+	}
+
+	@Test
+	void toJsonRoundTripsPhysicalPlanPreludeForWorkbenchTextReconstruction() {
+		String prelude = "LMDB native physical plan (executed)" + System.lineSeparator()
+				+ "  invocation[0]:" + System.lineSeparator()
+				+ "    status: COMPLETED";
+
+		GenericPlanNode node = new GenericPlanNode("StatementPattern");
+		node.setCostEstimate(1.0);
+		node.setPhysicalPlanPrelude(prelude);
+		node.addPlans(new GenericPlanNode("Var (name=s)"));
+
+		String originalToString = node.toString();
+		assertTrue(originalToString.startsWith(prelude), originalToString);
+		assertTrue(originalToString.contains(System.lineSeparator() + System.lineSeparator()
+				+ "Query explanation" + System.lineSeparator()), originalToString);
+
+		// The Workbench's client-side "text" explanation view rebuilds its text from the JSON payload alone
+		// (see queryExplanationHighlighter.ts#format), so physicalPlanPrelude must actually be serialized.
+		String json = new ExplanationImpl(node, false, null).toJson();
+
+		assertTrue(json.contains("\"physicalPlanPrelude\""), json);
+		assertTrue(json.contains("LMDB native physical plan (executed)"), json);
+
+		ObjectMapper objectMapper = JsonMapper.builder().build();
+		JsonNode tree = objectMapper.readTree(json);
+		GenericPlanNode roundTripped = objectMapper.treeToValue(tree, GenericPlanNode.class);
+
+		assertEquals(prelude, roundTripped.getPhysicalPlanPrelude());
+		assertEquals(originalToString, roundTripped.toString());
 	}
 }

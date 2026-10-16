@@ -18,6 +18,8 @@ import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.DataImportMetrics;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
@@ -184,6 +186,93 @@ class AbstractSailConnectionDataImportMetricsTest {
 		List<String> messages = appender.messages(Level.INFO);
 		assertThat(messages).hasSize(1);
 		assertThat(messages.get(0)).contains("statementsAdded=2");
+	}
+
+	@Test
+	void registerIterationPreservesIndexReportingForManagedWrappers() {
+		String previousDebugSetting = System.getProperty(AbstractSail.DEBUG_PROP);
+		try {
+			System.setProperty(AbstractSail.DEBUG_PROP, "false");
+			assertRegisteredIterationReportsIndex();
+			assertRegisteredIterationUsesUnknownMetadataWhenUnavailable();
+
+			System.setProperty(AbstractSail.DEBUG_PROP, "true");
+			assertRegisteredIterationReportsIndex();
+			assertRegisteredIterationUsesUnknownMetadataWhenUnavailable();
+		} finally {
+			if (previousDebugSetting == null) {
+				System.clearProperty(AbstractSail.DEBUG_PROP);
+			} else {
+				System.setProperty(AbstractSail.DEBUG_PROP, previousDebugSetting);
+			}
+		}
+	}
+
+	private static void assertRegisteredIterationReportsIndex() {
+		TestConnection connection = new TestConnection(new TestSail());
+		try (CloseableIteration<Statement> iteration = connection
+				.registerIteration(new ReportingStatementIteration())) {
+			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
+			IndexReportingIterator reporting = (IndexReportingIterator) iteration;
+			assertThat(reporting.getIndexName()).isEqualTo("spoc");
+			assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(4);
+			assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(2);
+			assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(2);
+		}
+	}
+
+	private static void assertRegisteredIterationUsesUnknownMetadataWhenUnavailable() {
+		TestConnection connection = new TestConnection(new TestSail());
+		CloseableIteration<Statement> source = new LookAheadIteration<>() {
+			@Override
+			protected Statement getNextElement() {
+				return null;
+			}
+
+			@Override
+			protected void handleClose() {
+			}
+		};
+		try (CloseableIteration<Statement> iteration = connection.registerIteration(source)) {
+			assertThat(iteration).isInstanceOf(IndexReportingIterator.class);
+			IndexReportingIterator reporting = (IndexReportingIterator) iteration;
+			assertThat(reporting.getIndexName()).isNull();
+			assertThat(reporting.getSourceRowsScannedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsMatchedActual()).isEqualTo(-1);
+			assertThat(reporting.getSourceRowsFilteredActual()).isEqualTo(-1);
+		}
+	}
+
+	private static final class ReportingStatementIteration extends LookAheadIteration<Statement>
+			implements IndexReportingIterator {
+		@Override
+		protected Statement getNextElement() {
+			return null;
+		}
+
+		@Override
+		protected void handleClose() {
+		}
+
+		@Override
+		public String getIndexName() {
+			return "spoc";
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			return 4;
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			return 2;
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			return 2;
+		}
 	}
 
 	private static TransactionSetting loadDataImportMetricsEnabled() {
