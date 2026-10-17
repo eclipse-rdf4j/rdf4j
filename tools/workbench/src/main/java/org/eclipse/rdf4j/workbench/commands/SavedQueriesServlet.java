@@ -41,6 +41,7 @@ import jakarta.servlet.http.HttpServletResponse;
 public class SavedQueriesServlet extends TransformationServlet {
 
 	private QueryStorage storage;
+	private QueryStorage.Lease storageLease;
 
 	@Override
 	public String[] getCookieNames() {
@@ -50,15 +51,37 @@ public class SavedQueriesServlet extends TransformationServlet {
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
+		boolean initialized = false;
 		try {
 			this.storage = createQueryStorage();
+			initialized = true;
 		} catch (RepositoryException e) {
 			throw new ServletException(e);
+		} finally {
+			if (!initialized) {
+				releaseQueryStorage();
+			}
 		}
 	}
 
 	protected QueryStorage createQueryStorage() throws RepositoryException {
-		return QueryStorage.getSingletonInstance(this.appConfig);
+		if (storageLease == null) {
+			storageLease = QueryStorage.acquire(this.appConfig);
+		}
+		return storageLease.storage();
+	}
+
+	@Override
+	public void destroy() {
+		releaseQueryStorage();
+		super.destroy();
+	}
+
+	private void releaseQueryStorage() {
+		if (storageLease != null) {
+			storageLease.close();
+			storageLease = null;
+		}
 	}
 
 	@Override
