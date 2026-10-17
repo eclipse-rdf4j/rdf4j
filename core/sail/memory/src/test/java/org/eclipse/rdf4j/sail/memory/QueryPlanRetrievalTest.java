@@ -342,92 +342,89 @@ public class QueryPlanRetrievalTest {
 		SailRepository sailRepository = new SailRepository(new MemoryStore());
 		addData(sailRepository);
 		try (SailRepositoryConnection connection = sailRepository.getConnection()) {
-			Query query = connection.prepareTupleQuery(sparql);
+			TupleQuery query = connection.prepareTupleQuery(sparql);
 			String actual = query.explain(Explanation.Level.Optimized).toString();
-			assertExplainTextEqualsIgnoringAnnotations(actual, "Projection\n" +
-					"╠══ ProjectionElemList\n" +
-					"║     ProjectionElem \"s\"\n" +
-					"║     ProjectionElem \"p\"\n" +
-					"║     ProjectionElem \"o\"\n" +
-					"║     ProjectionElem \"o2\"\n" +
-					"║     ProjectionElem \"g\"\n" +
-					"╚══ LeftJoin (LeftJoinIterator)\n" +
-					"      Compare (>)\n" +
-					"      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
-					"      ║     Str\n" +
-					"      ║        Var (name=x)\n" +
-					"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"      Union\n" +
-					"      ╠══ Filter\n" +
-					"      ║  ├── Not\n" +
-					"      ║  │     Bound\n" +
-					"      ║  │        Var (name=g)\n" +
-					"      ║  └── Join (JoinIterator)\n" +
-					"      ║     ╠══ Filter [left]\n" +
-					"      ║     ║  ├── And\n" +
-					"      ║     ║  │  ╠══ Compare (>)\n" +
-					"      ║     ║  │  ║     Var (name=o)\n" +
-					"      ║     ║  │  ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║     ║  │  ╚══ Bound\n" +
-					"      ║     ║  │        Var (name=s)\n" +
-					"      ║     ║  └── StatementPattern (costEstimate=2.00, resultSizeEstimate=0)\n" +
-					"      ║     ║        s: Var (name=s)\n" +
-					"      ║     ║        p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n" +
-					"      ║     ║        o: Var (name=o)\n" +
-					"      ║     ╚══ Filter [right]\n" +
-					"      ║        ├── And\n" +
-					"      ║        │  ╠══ Compare (<)\n" +
-					"      ║        │  ║     Var (name=o2)\n" +
-					"      ║        │  ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │  ╚══ ListMemberOperator\n" +
-					"      ║        │        Var (name=o2)\n" +
-					"      ║        │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
-					+
-					"      ║        └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
-					"      ║              s: Var (name=s)\n" +
-					"      ║              p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n" +
-					"      ║              o: Var (name=o2)\n" +
-					"      ╚══ Filter\n" +
-					"         ├── And\n" +
-					"         │  ╠══ And\n" +
-					"         │  ║  ├── Compare (!=)\n" +
-					"         │  ║  │     Var (name=o)\n" +
-					"         │  ║  │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         │  ║  └── Compare (!=)\n" +
-					"         │  ║        Var (name=g)\n" +
-					"         │  ║        ValueConstant (value=http://example.com/Bad)\n" +
-					"         │  ╚══ ListMemberOperator\n" +
-					"         │        Var (name=o2)\n" +
-					"         │        ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         │        ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         │        ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         │        ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         │        ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
-					"         └── StatementPattern FROM NAMED CONTEXT (resultSizeEstimate=0)\n" +
-					"               s: Var (name=s)\n" +
-					"               p: Var (name=_const_c03ab50e_uri, value=http://example.com/r, anonymous)\n" +
-					"               o: Var (name=o)\n" +
-					"               c: Var (name=g)\n" +
-					"      Filter\n" +
-					"      ╠══ Var (name=hasX)\n" +
-					"      ╚══ Extension\n" +
-					"         ├── SingletonSet\n" +
-					"         └── ExtensionElem (hasX)\n" +
-					"               Exists\n" +
-					"                  StatementPattern (resultSizeEstimate=0)\n" +
-					"                     s: Var (name=s)\n" +
-					"                     p: Var (name=_const_471beca6_uri, value=http://example.com/p2, anonymous)\n" +
-					"                     o: Var (name=x)\n");
+			assertExplainTextEqualsIgnoringAnnotations(actual,
+					"Projection\n" +
+							"╠══ ProjectionElemList\n" +
+							"║     ProjectionElem \"s\"\n" +
+							"║     ProjectionElem \"p\"\n" +
+							"║     ProjectionElem \"o\"\n" +
+							"║     ProjectionElem \"o2\"\n" +
+							"║     ProjectionElem \"g\"\n" +
+							"╚══ LeftJoin (LeftJoinIterator)\n" +
+							"      Compare (>)\n" +
+							"      ╠══ PinnedFunctionCall (http://www.w3.org/2005/xpath-functions#string-length)\n" +
+							"      ║     Str\n" +
+							"      ║        Var (name=x)\n" +
+							"      ╚══ ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      Filter\n" +
+							"      ╠══ ListMemberOperator\n" +
+							"      ║     Var (name=o2)\n" +
+							"      ║     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      ║     ValueConstant (value=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      ║     ValueConstant (value=\"3\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      ║     ValueConstant (value=\"4\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      ║     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n" +
+							"      ╚══ Union (new scope)\n" +
+							"         ├── Join (JoinIterator)\n" +
+							"         │  ╠══ Filter (new scope) [left]\n" +
+							"         │  ║  ├── Not\n" +
+							"         │  ║  │     Bound\n" +
+							"         │  ║  │        Var (name=g)\n" +
+							"         │  ║  └── Filter\n" +
+							"         │  ║     ╠══ And\n" +
+							"         │  ║     ║  ├── Compare (>)\n" +
+							"         │  ║     ║  │     Var (name=o)\n" +
+							"         │  ║     ║  │     ValueConstant (value=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+							+
+							"         │  ║     ║  └── Bound\n" +
+							"         │  ║     ║        Var (name=s)\n" +
+							"         │  ║     ╚══ StatementPattern (costEstimate=2.00, resultSizeEstimate=0)\n" +
+							"         │  ║           s: Var (name=s)\n" +
+							"         │  ║           p: Var (name=_const_c03ab50c_uri, value=http://example.com/p, anonymous)\n"
+							+
+							"         │  ║           o: Var (name=o)\n" +
+							"         │  ╚══ Filter [right]\n" +
+							"         │     ├── Compare (<)\n" +
+							"         │     │     Var (name=o2)\n" +
+							"         │     │     ValueConstant (value=\"5\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+							+
+							"         │     └── StatementPattern (costEstimate=1.79, resultSizeEstimate=0)\n" +
+							"         │           s: Var (name=s)\n" +
+							"         │           p: Var (name=_const_c03ab50d_uri, value=http://example.com/q, anonymous)\n"
+							+
+							"         │           o: Var (name=o2)\n" +
+							"         └── Filter (new scope)\n" +
+							"            ╠══ Compare (!=)\n" +
+							"            ║     Var (name=g)\n" +
+							"            ║     ValueConstant (value=http://example.com/Bad)\n" +
+							"            ╚══ Filter\n" +
+							"               ├── Compare (!=)\n" +
+							"               │     Var (name=o)\n" +
+							"               │     ValueConstant (value=\"42\"^^<http://www.w3.org/2001/XMLSchema#integer>)\n"
+							+
+							"               └── Graph\n" +
+							"                  ╠══ Var (name=g)\n" +
+							"                  ╚══ StatementPattern (resultSizeEstimate=0)\n" +
+							"                        s: Var (name=s)\n" +
+							"                        p: Var (name=_const_c03ab50e_uri, value=http://example.com/r, anonymous)\n"
+							+
+							"                        o: Var (name=o)\n" +
+							"      Filter\n" +
+							"      ╠══ Var (name=hasX)\n" +
+							"      ╚══ Extension\n" +
+							"         ├── SingletonSet\n" +
+							"         └── ExtensionElem (hasX)\n" +
+							"               Exists\n" +
+							"                  StatementPattern (resultSizeEstimate=0)\n" +
+							"                     s: Var (name=s)\n" +
+							"                     p: Var (name=_const_471beca6_uri, value=http://example.com/p2, anonymous)\n"
+							+
+							"                     o: Var (name=x)\n");
+			try (TupleQueryResult results = query.evaluate()) {
+				assertThat(results.hasNext()).isFalse();
+			}
 		}
 		sailRepository.shutDown();
 	}

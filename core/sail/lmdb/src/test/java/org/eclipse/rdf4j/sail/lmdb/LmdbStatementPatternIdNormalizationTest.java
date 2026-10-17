@@ -28,15 +28,21 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -172,18 +178,41 @@ class LmdbStatementPatternIdNormalizationTest {
 	}
 
 	@Test
-	void computedOuterValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+	void computedSiblingValueStaysOutsideGraphUnionInputs(@TempDir File directory) {
 		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
 			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
 			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
 			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
 			String query = "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
 					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
-			assertEquals(4, fixture.evaluate(query, null, null));
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
 			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(null);
+			fixture.assertPayloadLookupCount("native payload", 0);
+			fixture.assertPayloadLookupCount("unused", 0);
+		}
+	}
+
+	@Test
+	void computedGraphLocalValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
+			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
+			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
+			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
+			String query = "SELECT ?s WHERE { GRAPH <" + GRAPH + "> { " + computed + unused + "?s <"
+					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
+			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(LiteralShape.CUSTOM.value());
 			fixture.assertPayloadLookupCount("native payload", 1);
 			fixture.assertPayloadLookupCount("unused", 0);
 		}
+	}
+
+	private static void assertUnionRows(List<BindingSet> rows) {
+		assertEquals(Map.of(FIRST, 2L, SECOND, 2L), rows.stream()
+				.collect(Collectors.groupingBy(row -> row.getValue("s"), Collectors.counting())));
+		rows.forEach(row -> assertEquals(Set.of("s"), row.getBindingNames()));
 	}
 
 	@Test
@@ -200,14 +229,36 @@ class LmdbStatementPatternIdNormalizationTest {
 	private record PatternInput(Value value, int positions, long entryId, long resolvedId) {
 	}
 
+	private record PatternInputs(Resource subject, IRI predicate, Value object, Resource[] contexts) {
+		List<Value> values() {
+			List<Value> values = new ArrayList<>();
+			if (subject != null) {
+				values.add(subject);
+			}
+			if (predicate != null) {
+				values.add(predicate);
+			}
+			if (object != null) {
+				values.add(object);
+			}
+			for (Resource context : contexts) {
+				if (context != null) {
+					values.add(context);
+				}
+			}
+			return values;
+		}
+	}
+
 	private static final class Fixture implements AutoCloseable {
 		private final ProbeStore store;
 		private final SailRepository repository;
 		private final RepositoryConnection connection;
 		private final List<PatternInput> inputs = new ArrayList<>();
+		private final List<PatternInputs> statementInputs = new ArrayList<>();
 
 		private Fixture(File directory, Value object) {
-			store = new ProbeStore(directory, inputs);
+			store = new ProbeStore(directory, inputs, statementInputs);
 			repository = new SailRepository(store);
 			repository.init();
 			connection = repository.getConnection();
@@ -221,6 +272,10 @@ class LmdbStatementPatternIdNormalizationTest {
 		}
 
 		private int evaluate(String text, Value bound, SimpleDataset dataset) {
+			return evaluateBindings(text, bound, dataset).size();
+		}
+
+		private List<BindingSet> evaluateBindings(String text, Value bound, SimpleDataset dataset) {
 			TupleQuery query = connection.prepareTupleQuery(text);
 			if (bound != null) {
 				query.setBinding("bound", bound);
@@ -230,16 +285,25 @@ class LmdbStatementPatternIdNormalizationTest {
 				query.setDataset(dataset);
 			}
 			inputs.clear();
+			statementInputs.clear();
 			store.values.payloadLookups.clear();
 			store.values.unknownLookups.clear();
-			int rows = 0;
+			List<BindingSet> rows = new ArrayList<>();
 			try (TupleQueryResult result = query.evaluate()) {
 				while (result.hasNext()) {
-					result.next();
-					rows++;
+					rows.add(result.next());
 				}
 			}
 			return rows;
+		}
+
+		private void assertObjectInputs(Value expected) {
+			List<PatternInputs> patterns = statementInputs.stream()
+					.filter(pattern -> PREDICATE.equals(pattern.predicate()))
+					.toList();
+			assertFalse(patterns.isEmpty(), "Both UNION branches must reach their real statement-pattern route");
+			patterns.forEach(pattern -> assertEquals(expected, pattern.object(),
+					"Only the GRAPH-local computed binding may constrain the UNION statement pattern"));
 		}
 
 		private void assertBoundNativeInputs() {
@@ -254,6 +318,15 @@ class LmdbStatementPatternIdNormalizationTest {
 						"A present statement-pattern input must retain its resolved dictionary ID");
 				if (input.entryId() != LmdbValue.UNKNOWN_ID) {
 					assertEquals(input.entryId(), input.resolvedId(), "An already proven native ID must be retained");
+				}
+			}
+			assertFalse(statementInputs.isEmpty(), "The query must exercise real LMDB statement iterators");
+			for (PatternInputs pattern : statementInputs) {
+				for (Value input : pattern.values()) {
+					LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, input,
+							"Statement-pattern inputs and graph restrictions must be normalized to LMDB values");
+					assertNotEquals(LmdbValue.UNKNOWN_ID, nativeValue.getInternalIdentity().id(),
+							"A present statement-pattern input must retain its resolved dictionary ID");
 				}
 			}
 		}
@@ -493,11 +566,13 @@ class LmdbStatementPatternIdNormalizationTest {
 
 	private static final class ProbeStore extends LmdbStore {
 		private final List<PatternInput> inputs;
+		private final List<PatternInputs> statementInputs;
 		private ProbeValueStore values;
 
-		private ProbeStore(File directory, List<PatternInput> inputs) {
+		private ProbeStore(File directory, List<PatternInput> inputs, List<PatternInputs> statementInputs) {
 			super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true).setInlineLiterals(false));
 			this.inputs = inputs;
+			this.statementInputs = statementInputs;
 		}
 
 		@Override
@@ -507,7 +582,14 @@ class LmdbStatementPatternIdNormalizationTest {
 					(valueDirectory, valueProperties, valueConfig) -> {
 						values = new ProbeValueStore(valueDirectory, valueProperties, valueConfig, inputs);
 						return values;
-					}, TripleStore::new);
+					}, TripleStore::new) {
+				@Override
+				CloseableIteration<? extends Statement> createStatementIterator(ReadView readView, Resource subject,
+						IRI predicate, Value object, boolean explicit, Resource... contexts) throws IOException {
+					statementInputs.add(new PatternInputs(subject, predicate, object, contexts.clone()));
+					return super.createStatementIterator(readView, subject, predicate, object, explicit, contexts);
+				}
+			};
 		}
 	}
 

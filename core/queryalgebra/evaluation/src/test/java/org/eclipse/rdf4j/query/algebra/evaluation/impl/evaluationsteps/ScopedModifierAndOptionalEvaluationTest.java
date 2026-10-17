@@ -18,7 +18,9 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
@@ -26,6 +28,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -60,6 +63,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EmptyTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.GraphFrameBindings;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -313,6 +317,129 @@ class ScopedModifierAndOptionalEvaluationTest {
 	}
 
 	@Test
+	void reusedDistinctStepOwnsSeparateCollectionFactoryPerEvaluation() throws Exception {
+		List<TrackingCollectionFactory> factories = new ArrayList<>();
+		DefaultEvaluationStrategy distinctStrategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
+		distinctStrategy.setCollectionFactory(() -> {
+			TrackingCollectionFactory factory = new TrackingCollectionFactory();
+			factories.add(factory);
+			return factory;
+		});
+		QueryEvaluationStep prepared = distinctStrategy.precompile(
+				new Distinct(values("x", row("x", "a"), row("x", "a"), row("x", "b"))),
+				new QueryEvaluationContext.Minimal(null));
+
+		try (CloseableIteration<BindingSet> first = prepared.evaluate(EmptyBindingSet.getInstance());
+				CloseableIteration<BindingSet> second = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			first.close();
+			assertThat(factories).hasSize(2);
+			assertThat(factories.get(0).closed).hasValue(1);
+			assertThat(factories.get(1).closed).hasValue(0);
+			assertThat(QueryResults.asList(second)).containsExactly(row("x", "a"), row("x", "b"));
+			assertThat(factories.get(1).closed).hasValue(1);
+		}
+	}
+
+	@Test
+	void distinctSetAllocationFailureClosesChildAndFactoryAndPreservesPrimaryFailure() {
+		RuntimeException allocationFailure = new IllegalStateException("set allocation failed");
+		RuntimeException childCloseFailure = new IllegalStateException("child close failed");
+		RuntimeException factoryCloseFailure = new IllegalStateException("factory close failed");
+		AtomicInteger childCloseCount = new AtomicInteger();
+		SingletonSet childArg = new SingletonSet();
+		DefaultEvaluationStrategy distinctStrategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+				if (expr == childArg) {
+					return bindings -> new CloseableIteratorIteration<>(Collections.emptyIterator()) {
+						@Override
+						protected void handleClose() {
+							childCloseCount.incrementAndGet();
+							throw childCloseFailure;
+						}
+					};
+				}
+				return super.precompile(expr, context);
+			}
+		};
+		TrackingCollectionFactory factory = new TrackingCollectionFactory(allocationFailure, factoryCloseFailure);
+		distinctStrategy.setCollectionFactory(() -> factory);
+		QueryEvaluationStep prepared = distinctStrategy.precompile(new Distinct(childArg),
+				new QueryEvaluationContext.Minimal(null));
+
+		RuntimeException thrown = assertThrows(RuntimeException.class,
+				() -> prepared.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(thrown).isSameAs(allocationFailure);
+		assertThat(thrown.getSuppressed()).containsExactly(childCloseFailure, factoryCloseFailure);
+		assertThat(childCloseCount).hasValue(1);
+		assertThat(factory.closed).hasValue(1);
+	}
+
+	@Test
+	void distinctSetAllocationFailureKeepsIdenticalChildCloseFailureAndClosesFactory() {
+		RuntimeException allocationFailure = new IllegalStateException("set allocation failed");
+		AtomicInteger childCloseCount = new AtomicInteger();
+		SingletonSet childArg = new SingletonSet();
+		DefaultEvaluationStrategy distinctStrategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+				if (expr == childArg) {
+					return bindings -> new CloseableIteratorIteration<>(Collections.emptyIterator()) {
+						@Override
+						protected void handleClose() {
+							childCloseCount.incrementAndGet();
+							throw allocationFailure;
+						}
+					};
+				}
+				return super.precompile(expr, context);
+			}
+		};
+		TrackingCollectionFactory factory = new TrackingCollectionFactory(allocationFailure, null);
+		distinctStrategy.setCollectionFactory(() -> factory);
+		QueryEvaluationStep prepared = distinctStrategy.precompile(new Distinct(childArg),
+				new QueryEvaluationContext.Minimal(null));
+
+		RuntimeException thrown = assertThrows(RuntimeException.class,
+				() -> prepared.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(thrown).isSameAs(allocationFailure);
+		assertThat(thrown.getSuppressed()).isEmpty();
+		assertThat(childCloseCount).hasValue(1);
+		assertThat(factory.closed).hasValue(1);
+	}
+
+	@Test
+	void distinctChildEvaluationFailureClosesFactoryAndPreservesPrimaryFailure() {
+		RuntimeException evaluationFailure = new IllegalStateException("child evaluation failed");
+		RuntimeException factoryCloseFailure = new IllegalStateException("factory close failed");
+		SingletonSet childArg = new SingletonSet();
+		DefaultEvaluationStrategy distinctStrategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null) {
+			@Override
+			public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+				if (expr == childArg) {
+					return bindings -> {
+						throw evaluationFailure;
+					};
+				}
+				return super.precompile(expr, context);
+			}
+		};
+		TrackingCollectionFactory factory = new TrackingCollectionFactory(null, factoryCloseFailure);
+		distinctStrategy.setCollectionFactory(() -> factory);
+		QueryEvaluationStep prepared = distinctStrategy.precompile(new Distinct(childArg),
+				new QueryEvaluationContext.Minimal(null));
+
+		RuntimeException thrown = assertThrows(RuntimeException.class,
+				() -> prepared.evaluate(EmptyBindingSet.getInstance()));
+
+		assertThat(thrown).isSameAs(evaluationFailure);
+		assertThat(thrown.getSuppressed()).containsExactly(factoryCloseFailure);
+		assertThat(factory.closed).hasValue(1);
+	}
+
+	@Test
 	void distinctDomainClassificationIgnoresBindingsFromTheJoinSibling() {
 		BindingSetAssignment left = values("x", row("x", "1"));
 		Extension bindLeftX = new Extension(new SingletonSet(), new ExtensionElem(Var.of("x"), "y"));
@@ -535,6 +662,37 @@ class ScopedModifierAndOptionalEvaluationTest {
 		@Override
 		protected void handleClose() {
 			closed.set(true);
+		}
+	}
+
+	private static final class TrackingCollectionFactory extends DefaultCollectionFactory {
+		private final AtomicInteger closed = new AtomicInteger();
+		private final RuntimeException allocationFailure;
+		private final RuntimeException closeFailure;
+
+		private TrackingCollectionFactory() {
+			this(null, null);
+		}
+
+		private TrackingCollectionFactory(RuntimeException allocationFailure, RuntimeException closeFailure) {
+			this.allocationFailure = allocationFailure;
+			this.closeFailure = closeFailure;
+		}
+
+		@Override
+		public Set<BindingSet> createSetOfBindingSets() {
+			if (allocationFailure != null) {
+				throw allocationFailure;
+			}
+			return super.createSetOfBindingSets();
+		}
+
+		@Override
+		public void close() {
+			closed.incrementAndGet();
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
 		}
 	}
 

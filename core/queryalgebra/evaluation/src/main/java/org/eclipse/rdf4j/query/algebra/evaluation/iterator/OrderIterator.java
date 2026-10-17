@@ -32,15 +32,21 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.TreeMap;
+import java.util.function.Function;
+import java.util.function.IntFunction;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.DelayedIteration;
+import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.LimitIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator.SortKey;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -91,11 +97,13 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	private final Comparator<BindingSet> comparator;
 
+	private final OrderComparator keyComparator;
+
 	private final long limit;
 
 	private final boolean distinct;
 
-	private final List<SerializedQueue<BindingSet>> serialized = new LinkedList<>();
+	private final List<SerializedQueue<?>> serialized = new LinkedList<>();
 
 	/**
 	 * Number of items cached before internal collection is synced to disk. If set to 0, no disk-syncing is done and all
@@ -118,8 +126,16 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	public OrderIterator(CloseableIteration<BindingSet> iter, Comparator<BindingSet> comparator, long limit,
 			boolean distinct, long iterationSyncThreshold) {
+		this(iter, comparator, limit, distinct, iterationSyncThreshold,
+				comparator instanceof OrderComparator ? (OrderComparator) comparator : null);
+	}
+
+	/** Supplies key preparation separately when the comparison callback is wrapped, for example by telemetry. */
+	public OrderIterator(CloseableIteration<BindingSet> iter, Comparator<BindingSet> comparator, long limit,
+			boolean distinct, long iterationSyncThreshold, OrderComparator keyComparator) {
 		this.iter = iter;
 		this.comparator = comparator;
+		this.keyComparator = keyComparator;
 		this.limit = limit;
 		this.distinct = distinct;
 		this.iterationSyncThreshold = iterationSyncThreshold > 0 ? iterationSyncThreshold : Integer.MAX_VALUE;
@@ -131,16 +147,46 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 	@Override
 	protected CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
+		try {
+			if (keyComparator != null && keyComparator.requiresKeyCapture()) {
+				// A payload can occur with different keys. Deduplicate payloads after merging and before the final
+				// limit.
+				return createIteration(this::prepareSortKey, sortKeyComparator(keyComparator), SortKey::getBindings,
+						SortKey[]::new, distinct ? Long.MAX_VALUE : limit, false);
+			}
+			return createIteration(Function.identity(), comparator, Function.identity(), BindingSet[]::new, limit,
+					distinct);
+		} catch (RuntimeException | Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(this, failure);
+			throw failure;
+		}
+	}
+
+	protected Comparator<SortKey> sortKeyComparator(OrderComparator orderComparator) {
+		return orderComparator::compareSortKeys;
+	}
+
+	private SortKey prepareSortKey(BindingSet bindings) {
+		SortKey key = keyComparator.createSortKey(bindings);
+		QueryExecutionContext.checkpointReplaySafepoint();
+		return key;
+	}
+
+	private <E extends Serializable> CloseableIteration<BindingSet> createIteration(Function<BindingSet, E> prepare,
+			Comparator<E> comparator, Function<E, BindingSet> payload, IntFunction<E[]> arrayFactory, long sortLimit,
+			boolean sortDistinct) {
 		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.markHeavy(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_START");
-		BindingSet threshold = null;
-		List<BindingSet> list = new LinkedList<>();
+		E threshold = null;
+		List<E> list = new LinkedList<>();
+		List<SerializedQueue<E>> serialized = new ArrayList<>();
 		long inputRowsRead = 0;
 		long spillCount = 0;
 		long spillBytes = 0;
-		int limit2 = limit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) limit * 2;
+		int limit2 = sortLimit >= Integer.MAX_VALUE / 2 ? Integer.MAX_VALUE : (int) sortLimit * 2;
 		int syncThreshold = (int) Math.min(iterationSyncThreshold, Integer.MAX_VALUE);
+		Throwable inputFailure = null;
 		try {
 			while (true) {
 				QueryExecutionContext.checkpointReplaySafepoint();
@@ -150,14 +196,16 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					break;
 				}
 				QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
-				if (list.size() >= syncThreshold && list.size() < limit) {
+				if (list.size() >= syncThreshold && list.size() < sortLimit) {
 					QueryExecutionContext.checkpoint(OPERATOR_NAME + "_SPILL");
-					SerializedQueue<BindingSet> queue = new SerializedQueue<>("orderiter");
+					SerializedQueue<E> queue = new SerializedQueue<>("orderiter");
 					try {
-						sort(list).forEach(queue::add);
+						sort(list, comparator, arrayFactory, sortLimit, sortDistinct).forEach(queue::add);
+						queue.finishWriting();
 						QueryExecutionContext.checkpointReplaySafepoint();
 						serialized.add(queue);
-					} catch (RuntimeException | Error failure) {
+						this.serialized.add(queue);
+					} catch (IOException | RuntimeException | Error failure) {
 						try {
 							queue.close();
 						} catch (IOException closeFailure) {
@@ -171,17 +219,17 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					onSpillToDisk(queue.size(), bytes);
 					decrement(list.size() - queue.size());
 					list = new ArrayList<>(list.size());
-					if (threshold == null && serialized.stream().mapToLong(SerializedQueue::size).sum() >= limit) {
-						Stream<BindingSet> stream = serialized.stream().map(SerializedQueue::peekLast);
+					if (threshold == null && serialized.stream().mapToLong(SerializedQueue::size).sum() >= sortLimit) {
+						Stream<E> stream = serialized.stream().map(SerializedQueue::peekLast);
 						threshold = stream.sorted(comparator).skip(serialized.size() - 1).findFirst().orElseThrow();
 					}
-				} else if (list.size() >= limit2 || !distinct && threshold == null && list.size() >= limit) {
-					List<BindingSet> sorted = new ArrayList<>(limit2);
-					sort(list).forEach(sorted::add);
+				} else if (list.size() >= limit2 || !sortDistinct && threshold == null && list.size() >= sortLimit) {
+					List<E> sorted = new ArrayList<>(Math.min(list.size(), limit2));
+					sort(list, comparator, arrayFactory, sortLimit, sortDistinct).forEach(sorted::add);
 					QueryExecutionContext.checkpointReplaySafepoint();
 					decrement(list.size() - sorted.size());
 					list = sorted;
-					if (sorted.size() >= limit) {
+					if (sorted.size() >= sortLimit) {
 						threshold = sorted.getLast();
 					}
 				}
@@ -191,29 +239,54 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 					QueryExecutionContext.checkpoint(OPERATOR_NAME + "_INPUT");
 				}
 				onInputRowRead(next);
-				if (threshold == null || comparator.compare(next, threshold) < 0) {
-					list.add(next);
+				E entry = prepare.apply(next);
+				if (threshold == null || comparator.compare(entry, threshold) < 0) {
+					list.add(entry);
 					increment();
 				}
 			}
 		} catch (IOException e) {
-			throw new QueryEvaluationException(e);
+			QueryEvaluationException failure = new QueryEvaluationException(e);
+			inputFailure = failure;
+			throw failure;
+		} catch (RuntimeException | Error failure) {
+			inputFailure = failure;
+			throw failure;
 		} finally {
-			iter.close();
+			if (inputFailure == null) {
+				iter.close();
+			} else {
+				ExternalValuePreparation.closeWithSuppressed(iter, inputFailure);
+			}
 		}
 
-		List<Iterator<BindingSet>> iterators = new ArrayList<>(serialized.size() + 1);
+		List<Iterator<E>> iterators = new ArrayList<>(serialized.size() + 1);
 		serialized
 				.stream()
 				.map(SerializedQueue::iterator)
 				.forEach(iterators::add);
 
-		iterators.add(sort(list).iterator());
+		iterators.add(sort(list, comparator, arrayFactory, sortLimit, sortDistinct).iterator());
 
-		SortedIterators<BindingSet> iterator = new SortedIterators<>(comparator, distinct, iterators);
+		SortedIterators<E> iterator = new SortedIterators<>(comparator, sortDistinct, iterators);
 		onSortCompleted(inputRowsRead, spillCount, spillBytes);
 
-		return new LimitIteration<>(new CloseableIteratorIteration<>(iterator), limit);
+		Iterator<BindingSet> payloads = new Iterator<>() {
+			@Override
+			public boolean hasNext() {
+				return iterator.hasNext();
+			}
+
+			@Override
+			public BindingSet next() {
+				return payload.apply(iterator.next());
+			}
+		};
+		CloseableIteration<BindingSet> result = new CloseableIteratorIteration<>(payloads);
+		if (distinct && !sortDistinct) {
+			result = new DistinctIteration<>(result);
+		}
+		return new LimitIteration<>(result, limit);
 	}
 
 	protected void increment() throws QueryEvaluationException {
@@ -236,10 +309,11 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 		// let subclasses know that the expected result size is smaller
 	}
 
-	private Stream<BindingSet> sort(Collection<BindingSet> collection) {
+	private <E> Stream<E> sort(Collection<E> collection, Comparator<E> comparator, IntFunction<E[]> arrayFactory,
+			long sortLimit, boolean sortDistinct) {
 		QueryExecutionContext.throwIfHeavyOperatorExecutionDisabled(OPERATOR_NAME);
 		QueryExecutionContext.checkpoint(OPERATOR_NAME + "_SORT");
-		BindingSet[] array = collection.toArray(new BindingSet[collection.size()]);
+		E[] array = collection.toArray(arrayFactory.apply(collection.size()));
 		QueryExecutionContext.ReplayContext replayContext = QueryExecutionContext.captureReplayContext();
 		// A deadline alone needs no worker context; only replay safepoints and captured admissions do.
 		if (replayContext != null && replayContext.hasReplayScopes()) {
@@ -248,12 +322,12 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 			Arrays.parallelSort(array, comparator);
 		}
 		QueryExecutionContext.checkpointReplaySafepoint();
-		Stream<BindingSet> stream = Stream.of(array);
-		if (distinct) {
+		Stream<E> stream = Stream.of(array);
+		if (sortDistinct) {
 			stream = stream.distinct();
 		}
-		if (limit < Integer.MAX_VALUE) {
-			stream = stream.limit(limit);
+		if (sortLimit < Integer.MAX_VALUE) {
+			stream = stream.limit(sortLimit);
 		}
 		return stream;
 	}
@@ -272,7 +346,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 				iter.close();
 			} finally {
 				IOException closeFailure = null;
-				for (SerializedQueue<BindingSet> queue : serialized) {
+				for (SerializedQueue<?> queue : serialized) {
 					try {
 						queue.close();
 					} catch (IOException e) {
@@ -295,7 +369,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		private final File file;
 
-		private final ObjectOutputStream output;
+		private ObjectOutputStream output;
 
 		private ObjectInputStream input;
 
@@ -316,6 +390,17 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		public E peekLast() {
 			return last;
+		}
+
+		public void finishWriting() throws IOException {
+			if (output != null) {
+				try {
+					output.close();
+				} finally {
+					// Drop the stream and its handle table as soon as a run is complete.
+					output = null;
+				}
+			}
 		}
 
 		@Override
@@ -340,7 +425,7 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 				if (next != null) {
 					return next;
 				} else if (input == null) {
-					output.close();
+					finishWriting();
 					input = new ObjectInputStream(new FileInputStream(file));
 				}
 				size--;
@@ -390,12 +475,21 @@ public class OrderIterator extends DelayedIteration<BindingSet> {
 
 		@Override
 		public void close() throws IOException {
-			closeSpillResources(output, input, file);
+			try {
+				closeSpillResources(output, input, file);
+			} finally {
+				output = null;
+				input = null;
+				next = null;
+				last = null;
+			}
 		}
 
 		public long estimatedBytes() {
 			try {
-				output.flush();
+				if (output != null) {
+					output.flush();
+				}
 				return file.length();
 			} catch (IOException e) {
 				return 0L;

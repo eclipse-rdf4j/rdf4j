@@ -469,12 +469,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 					for (TupleExpr tupleExpr : joinArgs) {
-						if (tupleExpr instanceof Join) {
-							// we can skip calculating the cardinality for instances of Join since we will anyway "meet"
-							// these nodes
-							continue;
-						}
-
+						// A nested scoped join is one selectable operand, so it needs the same cost inputs as a leaf.
 						double cardinality = statistics.getCardinality(tupleExpr);
 
 						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
@@ -503,10 +498,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
 
 						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.addLast(tupleExpr);
 
 						// Recursively optimize join arguments
+						Join parent = (Join) tupleExpr.getParentNode();
+						boolean leftArgument = parent.getLeftArg() == tupleExpr;
 						tupleExpr.visit(this);
+						// Optimizing a nested join can replace its root. Retain the actual optimized operand.
+						tupleExpr = leftArgument ? parent.getLeftArg() : parent.getRightArg();
+						orderedJoinArgs.addLast(tupleExpr);
 
 						boundVars.addAll(getBindingInfo(tupleExpr).guaranteedOutput);
 					}
@@ -784,6 +783,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						.outputFacts(leftJoin.getRightArg(), rightInput);
 				boolean scopedOperand = TupleExprs.containsSubquery(leftJoin.getLeftArg())
 						|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getLeftArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getRightArg())
 						|| TupleExprs.containsResultSetModifier(leftJoin.getLeftArg(), optionalAnalysis)
 						|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), optionalAnalysis);
 
@@ -1412,9 +1413,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
-			if (tupleExpr instanceof Join join) {
-				getJoinArgs(join.getLeftArg(), joinArgs);
-				getJoinArgs(join.getRightArg(), joinArgs);
+			return getJoinArgs(tupleExpr, joinArgs, true);
+		}
+
+		private <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs, boolean rootJoin) {
+			if (tupleExpr instanceof Join join && (rootJoin || !join.isVariableScopeChange())) {
+				// Optimize this join's children together, while retaining a nested operand's independent input frame.
+				getJoinArgs(join.getLeftArg(), joinArgs, false);
+				getJoinArgs(join.getRightArg(), joinArgs, false);
 			} else {
 				joinArgs.add(tupleExpr);
 			}
@@ -1485,7 +1491,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> subselects = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsSubquery(expr)) {
+				if (TupleExprs.containsSubquery(expr) || TupleExprs.containsGraphBoundary(expr)) {
 					if (subselects.isEmpty()) {
 						subselects = List.of(expr);
 					} else {

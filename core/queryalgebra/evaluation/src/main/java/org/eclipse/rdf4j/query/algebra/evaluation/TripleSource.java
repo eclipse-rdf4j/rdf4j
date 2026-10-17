@@ -12,12 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -50,6 +52,46 @@ public interface TripleSource extends AvailableStatementOrder {
 	 */
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
+
+	/** Returns each non-null named storage context once, from the same read view as statement retrieval. */
+	default CloseableIteration<? extends Resource> getContextIDs() throws QueryEvaluationException {
+		Function<Value, Value> capturer = getValueCapturer();
+		CloseableIteration<? extends Statement> statements = getStatements(null, null, null);
+		return new LookAheadIteration<Resource>() {
+			private final Set<Resource> seen = new HashSet<>();
+
+			@Override
+			protected Resource getNextElement() {
+				try {
+					while (statements.hasNext()) {
+						Resource graph = statements.next().getContext();
+						if (graph != null) {
+							Resource capturedGraph = capturer == null ? graph : (Resource) capturer.apply(graph);
+							if (capturedGraph != null && seen.add(capturedGraph)) {
+								return capturedGraph;
+							}
+						}
+					}
+					return null;
+				} catch (RuntimeException | Error failure) {
+					try {
+						close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+					throw failure;
+				}
+			}
+
+			@Override
+			protected void handleClose() {
+				seen.clear();
+				statements.close();
+			}
+		};
+	}
 
 	/**
 	 * Counts statements matching the supplied pattern without requiring callers to materialize converted bindings.

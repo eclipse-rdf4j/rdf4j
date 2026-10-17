@@ -105,7 +105,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		// If the graph part is empty we do not need to check this
 		// in the conversion etc.
 		Dataset dataset = context.getDataset();
-		if (dataset != null) {
+		QueryEvaluationContext.ActiveGraph activeGraph = context.getActiveGraph();
+		boolean activeDefault = activeGraph != null && statementPattern.getScope() == Scope.DEFAULT_CONTEXTS;
+		if (activeDefault) {
+			emptyGraph = false;
+		} else if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
 				graphs = dataset.getDefaultGraphs();
 				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
@@ -137,7 +141,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			graphs = preparedGraphs;
 		}
-		contextSup = extractContextsFromDatasets(conVar, emptyGraph, graphs);
+		if (activeDefault) {
+			Resource physical = activeGraph.physicalGraph();
+			if (physical != null && valuePreparer != null) {
+				physical = (Resource) valuePreparer.apply(physical);
+			}
+			Resource[] selectedContexts = { physical };
+			contextSup = ignored -> selectedContexts;
+		} else {
+			contextSup = extractContextsFromDatasets(conVar, emptyGraph, graphs);
+		}
 
 		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
 		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
@@ -369,6 +382,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			}
 			return iteration;
 		}
+	}
+
+	/**
+	 * These final conversion iterators create a fresh mutable result for every statement. A caller may therefore extend
+	 * the returned row without copying it. In particular, the fully bound lookup iterator is excluded because it
+	 * returns the caller's input bindings, and wrappers must retain their own ownership contract.
+	 */
+	static boolean ownsBindingSets(CloseableIteration<BindingSet> iteration) {
+		return iteration instanceof ConvertStatementToBindingSetIterator
+				|| iteration instanceof JoinStatementWithBindingSetIterator;
 	}
 
 	private CloseableIteration<BindingSet> getIteration(BindingSet bindings) {

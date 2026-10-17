@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
@@ -227,6 +228,19 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				bindingAnalysis.invalidate();
 				return;
 			}
+			boolean[] graphOutput = { false };
+			filter.getArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
+				@Override
+				public void meet(Graph graph) {
+					Set<String> names = graph.getBindingNames();
+					graphOutput[0] |= names.contains(oldVar.getName()) || names.contains(newVar.getName());
+				}
+			});
+			if (graphOutput[0]) {
+				// Renaming a graph output also changes its compatibility join with body outputs. Keep the explicit
+				// constraint.
+				return;
+			}
 			TupleExpr renamedArgument = filter.getArg().clone();
 			renamedArgument.visit(new VarRenamer(oldVar, newVar));
 			if (renamedArgument.getBindingNames().contains(oldVar.getName())) {
@@ -269,6 +283,11 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (!projection.isSubquery()) {
 				super.meet(projection);
 			}
+		}
+
+		@Override
+		public void meet(Graph graph) {
+			// Graph outputs are joined after the body is evaluated in its own input scope.
 		}
 
 		@Override

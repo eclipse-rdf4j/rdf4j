@@ -62,7 +62,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 						runtimeTelemetryTrackingActive);
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
 				EmptyBindingSet.getInstance());
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())
+		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)
 				|| JoinQueryEvaluationStep.subqueryObservesInjectedBindings(leftJoin.getRightArg(),
 						leftJoin.getLeftArg().getBindingNames())) {

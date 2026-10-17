@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Modify;
@@ -56,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -147,26 +149,36 @@ public class TestSparqlTripleTermParser {
 
 		Projection projection = (Projection) ((QueryRoot) parser.parseQuery(query, null).getTupleExpr()).getArg();
 		Extension resultExtension = assertInstanceOf(Extension.class, projection.getArg());
-		ValueExprTripleRef triple = assertInstanceOf(ValueExprTripleRef.class,
+		FunctionCall triple = assertInstanceOf(FunctionCall.class,
 				resultExtension.getElements().get(0).getExpr());
-
-		Extension objectExtension = assertInstanceOf(Extension.class, resultExtension.getArg());
-		Extension predicateExtension = assertInstanceOf(Extension.class, objectExtension.getArg());
-		Extension subjectExtension = assertInstanceOf(Extension.class, predicateExtension.getArg());
-		assertInstanceOf(StatementPattern.class, subjectExtension.getArg());
-
-		assertTripleComponent(subjectExtension, TripleComponent.Role.SUBJECT, triple.getSubjectVar());
-		assertTripleComponent(predicateExtension, TripleComponent.Role.PREDICATE, triple.getPredicateVar());
-		assertTripleComponent(objectExtension, TripleComponent.Role.OBJECT, triple.getObjectVar());
+		assertEquals(RDF.STATEMENT.stringValue(), triple.getURI());
+		assertInstanceOf(StatementPattern.class, resultExtension.getArg());
+		assertEquals(3, triple.getArgs().size());
+		assertTripleComponent(triple.getArgs().get(0), TripleComponent.Role.SUBJECT);
+		assertTripleComponent(triple.getArgs().get(1), TripleComponent.Role.PREDICATE);
+		assertTripleComponent(triple.getArgs().get(2), TripleComponent.Role.OBJECT);
 	}
 
-	private static void assertTripleComponent(Extension extension, TripleComponent.Role expectedRole,
-			Var expectedTarget) {
-		assertEquals(1, extension.getElements().size());
-		ExtensionElem element = extension.getElements().get(0);
-		TripleComponent component = assertInstanceOf(TripleComponent.class, element.getExpr());
+	private static void assertTripleComponent(ValueExpr expression,
+			TripleComponent.Role expectedRole) {
+		TripleComponent component = assertInstanceOf(TripleComponent.class, expression);
 		assertEquals(expectedRole, component.getRole());
-		assertEquals(expectedTarget.getName(), element.getName());
+		assertEquals("t", component.getTripleRefVar().getName());
+	}
+
+	@Test
+	public void testNestedTripleComponentCallsRemainInsideLazyExpressions() {
+		for (String component : List.of("SUBJECT", "PREDICATE", "OBJECT")) {
+			String nested = component + "(TRIPLE(<urn:s>,<urn:p>,CONCAT()))";
+			for (String expression : List.of(nested, "IF(false," + nested + ",'safe')",
+					"COALESCE('safe'," + nested + ")", component + "(COALESCE(?t,TRIPLE(<urn:s>,<urn:p>,CONCAT())))")) {
+				Projection projection = (Projection) ((QueryRoot) parser.parseQuery(
+						"SELECT (" + expression + " AS ?result) WHERE {}", null).getTupleExpr()).getArg();
+				Extension extension = assertInstanceOf(Extension.class, projection.getArg());
+				assertInstanceOf(SingletonSet.class, extension.getArg(), expression);
+				assertEquals(1, extension.getElements().size(), expression);
+			}
+		}
 	}
 
 	@Test

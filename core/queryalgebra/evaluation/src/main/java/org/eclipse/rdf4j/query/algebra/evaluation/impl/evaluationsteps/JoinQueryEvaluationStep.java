@@ -407,7 +407,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr,
 			QueryAlgebraBindingAnalysis bindingAnalysis) {
-		return TupleExprs.isVariableScopeChange(expr) || TupleExprs.containsSubquery(expr)
+		return TupleExprs.requiresIndependentEvaluation(expr)
 				|| TupleExprs.containsResultSetModifier(expr, bindingAnalysis)
 				|| containsDifferenceInCurrentScope(expr);
 	}

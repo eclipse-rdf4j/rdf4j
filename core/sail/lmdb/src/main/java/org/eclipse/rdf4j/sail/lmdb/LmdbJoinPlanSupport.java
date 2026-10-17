@@ -42,12 +42,15 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -138,14 +141,24 @@ final class LmdbJoinPlanSupport {
 		if (tupleExpr instanceof Difference) {
 			return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
 		}
-		if (tupleExpr instanceof UnaryTupleOperator) {
+		if (tupleExpr instanceof Union union) {
+			return containsEquivalentRequiredPattern(union.getLeftArg(), expectedPattern)
+					&& containsEquivalentRequiredPattern(union.getRightArg(), expectedPattern);
+		}
+		// Only cross operators whose output rows retain the input's graph scope and binding identities.
+		// GRAPH changes the active graph of its context-free child, while projections, groups, extensions,
+		// and SERVICE may hide/replace bindings or change the data source. Finding a child pattern there
+		// is not proof that the corresponding probe is true for the enclosing output row.
+		if (tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
+				|| tupleExpr instanceof Order || tupleExpr instanceof Slice || tupleExpr instanceof QueryRoot) {
 			return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
 		}
 		return false;
 	}
 
 	private static boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
-		return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
+		return left.getScope() == right.getScope()
+				&& samePatternVar(left.getSubjectVar(), right.getSubjectVar())
 				&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
 				&& samePatternVar(left.getObjectVar(), right.getObjectVar())
 				&& samePatternVar(left.getContextVar(), right.getContextVar());

@@ -72,6 +72,11 @@ public class ExternalValueTripleSource implements TripleSource {
 	}
 
 	@Override
+	public CloseableIteration<? extends Resource> getContextIDs() {
+		return initialize(delegate.getContextIDs(), initializer);
+	}
+
+	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return delegate.getSupportedOrders(subj, pred, obj, contexts);
 	}
