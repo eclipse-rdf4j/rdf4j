@@ -959,6 +959,9 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 		graphPattern = new GraphPattern();
 		node.getWhereClause().jjtAccept(this, null);
 		TupleExpr tupleExpr = graphPattern.buildTupleExpr();
+		// Only the grammar-validated WHERE triples form a shorthand template. Solution modifiers may contain
+		// their own graph patterns, which must remain separate from the constructed statements.
+		TupleExpr templateExpr = tupleExpr;
 
 		// Apply grouping
 		ASTGroupClause groupNode = node.getGroupClause();
@@ -1018,11 +1021,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 			// SPARQL does not allow distinct or reduced right now. Leaving
 			// functionality in construct builder for
 			// possible future use.
-			try {
-				tupleExpr = cb.buildConstructor(tupleExpr, false, false, valueFactory);
-			} catch (MalformedQueryException e) {
-				throw new VisitorException(e.getMessage());
-			}
+			tupleExpr = cb.buildShorthandConstructor(tupleExpr, templateExpr, false, false, valueFactory);
 		}
 
 		return tupleExpr;

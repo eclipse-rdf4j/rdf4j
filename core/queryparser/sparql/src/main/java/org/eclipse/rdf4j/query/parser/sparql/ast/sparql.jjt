@@ -565,11 +565,12 @@ void ProjectionElem() :
 }
 
 void ConstructQuery() :
-{}
+{ boolean shorthand; }
 {
 	Construct()
+    { shorthand = ((ASTConstruct)jjtree.peekNode()).isWildcard(); }
 	( DatasetClause() )*
-	WhereClause()
+    ( LOOKAHEAD({shorthand}) ShorthandConstructWhereClause() | WhereClause() )
 	SolutionModifier()
 	[BindingsClause()]
 }
@@ -815,6 +816,30 @@ void TriplesTemplate() #void :
 	TriplesSameSubject() ( LOOKAHEAD(2) <DOT> TriplesSameSubject() )* [<DOT>]
 }
 
+// Shorthand CONSTRUCT uses template syntax, not a general graph pattern.
+// Reuse the WHERE AST shape and original-source offsets needed by binding serialization.
+void ShorthandConstructWhereClause() #WhereClause :
+{ Token closing; }
+{
+    <WHERE>
+    { jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
+    closing = ShorthandConstructGraphPattern()
+    { jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
+}
+
+Token ShorthandConstructGraphPattern() #GraphPatternGroup :
+{ Token closing; }
+{
+    <LBRACE> [ShorthandConstructTriples()] closing = <RBRACE>
+    { return closing; }
+}
+
+void ShorthandConstructTriples() #BasicGraphPattern :
+{}
+{
+    TriplesTemplate()
+}
+
 void GraphPatternNotTriples() #void :
 {}
 {
@@ -923,6 +948,10 @@ void ValueExpression() #void :
 void TriplesSameSubject() :
 {}
 {
+	LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) VarOrTerm() PropertyList()
+|
+	LOOKAHEAD(1, <TRIPLE_OPEN>) ReifiedTripleSubject() [PropertyList()]
+|
 	VarOrTerm() PropertyList()
 |
 	TriplesNode() [PropertyList()]

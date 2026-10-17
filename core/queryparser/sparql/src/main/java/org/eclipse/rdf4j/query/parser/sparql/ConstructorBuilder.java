@@ -29,18 +29,18 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
-import org.eclipse.rdf4j.query.algebra.Filter;
-import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
@@ -71,7 +71,13 @@ public class ConstructorBuilder {
 					"can not use shorthand CONSTRUCT: graph pattern in WHERE clause is not a basic pattern.");
 		}
 
-		TupleExpr template = bodyExpr.clone();
+		return buildShorthandConstructor(bodyExpr, bodyExpr, distinct, reduced, valueFactory);
+	}
+
+	/** Builds a shorthand template from its grammar-validated WHERE triples, before solution modifiers. */
+	TupleExpr buildShorthandConstructor(TupleExpr bodyExpr, TupleExpr templateExpr, boolean distinct, boolean reduced,
+			ValueFactory valueFactory) {
+		TupleExpr template = templateExpr.clone();
 		Set<String> occupiedNames = new HashSet<>();
 		bodyExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -104,39 +110,18 @@ public class ConstructorBuilder {
 
 		private boolean basicPattern = true;
 
-		/**
-		 * @param basicPattern The basicPattern to set.
-		 */
-		/**
-		 * @return Returns the basicPattern.
-		 */
 		public boolean isBasicPattern() {
 			return basicPattern;
 		}
 
 		@Override
-		public void meet(LeftJoin node) {
-			basicPattern = false;
-		}
-
-		@Override
-		public void meet(Filter node) {
-			basicPattern = false;
-		}
-
-		@Override
-		public void meet(Extension node) {
-			basicPattern = false;
-		}
-
-		@Override
-		public void meet(Projection node) {
-			basicPattern = false;
-		}
-
-		@Override
-		public void meet(Union node) {
-			basicPattern = false;
+		protected void meetNode(QueryModelNode node) {
+			if (node instanceof TupleExpr && !(node instanceof Join || node instanceof SingletonSet
+					|| node instanceof StatementPattern || node instanceof TripleRef)) {
+				basicPattern = false;
+			} else {
+				super.meetNode(node);
+			}
 		}
 
 		@Override
