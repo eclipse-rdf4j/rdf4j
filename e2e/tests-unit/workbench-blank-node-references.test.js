@@ -13,12 +13,12 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
-const path = require('node:path');
 const vm = require('node:vm');
+const { workbenchScriptPath } = require('./workbench-scripts.js');
 
 function queryStream() {
     const context = vm.createContext({ window: {}, workbench: {}, URLSearchParams });
-    const script = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts/queryStream.js');
+    const script = workbenchScriptPath('queryStream.js');
     vm.runInContext(fs.readFileSync(script, 'utf8'), context, { filename: script });
     return context.workbench.queryStream;
 }
