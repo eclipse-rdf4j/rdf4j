@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.resultio.AbstractQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 /**
  * TupleQueryResultWriter for the SPARQL TSV (Tab-Separated Values) format.
@@ -161,13 +162,11 @@ public class SPARQLResultsTSVWriter extends AbstractQueryResultWriter implements
 	}
 
 	protected void writeURI(IRI uri) throws IOException {
-		String uriString = uri.toString();
-		writer.write("<" + uriString + ">");
+		NTriplesUtil.append(uri, writer, false);
 	}
 
 	protected void writeBNode(BNode bNode) throws IOException {
-		writer.write("_:");
-		writer.write(bNode.getID());
+		NTriplesUtil.append(bNode, writer);
 	}
 
 	private void writeLiteral(Literal lit) throws IOException {

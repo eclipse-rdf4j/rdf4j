@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.resultio.text.tsv;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -19,7 +20,11 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
@@ -128,6 +133,37 @@ public class SPARQLTSVCustomTest {
 		String result = writeTupleResult(tqr);
 		assertEquals("?test\n" +
 				"<http://example.org/1>\n", result);
+	}
+
+	@Test
+	public void testIRIWithSeparatorsDoesNotAddColumnsOrRows() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		IRI iri = vf.createIRI("urn:x>\t<urn:forged>\n<urn:row2>\t<urn:row2b");
+		List<BindingSet> parsed = writeAndParse(iri);
+		assertEquals(1, parsed.size());
+		assertInstanceOf(IRI.class, parsed.get(0).getValue("a"));
+		assertEquals(vf.createIRI("urn:b"), parsed.get(0).getValue("b"));
+	}
+
+	@Test
+	public void testBNodeWithSeparatorsDoesNotAddColumnsOrRows() throws Exception {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		BNode bNode = vf.createBNode("x\t<urn:forged>\n_:row2\t<urn:row2b>");
+		List<BindingSet> parsed = writeAndParse(bNode);
+		assertEquals(1, parsed.size());
+		assertInstanceOf(BNode.class, parsed.get(0).getValue("a"));
+		assertEquals(vf.createIRI("urn:b"), parsed.get(0).getValue("b"));
+	}
+
+	private List<BindingSet> writeAndParse(Value a) throws Exception {
+		List<String> bindingNames = List.of("a", "b");
+		TupleQueryResult tqr = new IteratingTupleQueryResult(bindingNames,
+				List.of(new ListBindingSet(bindingNames, a, SimpleValueFactory.getInstance().createIRI("urn:b"))));
+		String result = writeTupleResult(tqr);
+		QueryResultCollector collector = new QueryResultCollector();
+		QueryResultIO.parseTuple(new ByteArrayInputStream(result.getBytes(StandardCharsets.UTF_8)),
+				TupleQueryResultFormat.TSV, collector, SimpleValueFactory.getInstance());
+		return collector.getBindingSets();
 	}
 
 	private String writeTupleResult(TupleQueryResult tqr)
