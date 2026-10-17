@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.OrderIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator.SortKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class OrderQueryEvaluationStep implements QueryEvaluationStep {
@@ -27,6 +28,7 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 	private final Order orderNode;
 	private final long iterationCacheSyncThreshold;
 	private final Comparator<BindingSet> cmp;
+	private final OrderComparator keyComparator;
 	private final long limit;
 	private final boolean reduced;
 	private final QueryEvaluationStep preparedArg;
@@ -36,8 +38,12 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 		super();
 		this.orderNode = orderNode;
 		this.cmp = cmp;
-		this.limit = limit;
-		this.reduced = reduced;
+		this.keyComparator = cmp instanceof OrderComparator ? (OrderComparator) cmp : null;
+		// With captured expressions equal payloads can have different keys. The parent DISTINCT/REDUCED must
+		// retain ownership of deduplication and slicing; a top-K of occurrences could omit distinct results.
+		boolean separateDistinct = reduced && keyComparator != null && keyComparator.requiresKeyCapture();
+		this.limit = separateDistinct ? Long.MAX_VALUE : limit;
+		this.reduced = reduced && !separateDistinct;
 		this.preparedArg = preparedArg;
 		this.iterationCacheSyncThreshold = iterationCacheSyncThreshold;
 	}
@@ -64,19 +70,28 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 			return cmp.compare(left, right);
 		};
 		return new OrderIterator(preparedArg.evaluate(bs), countingComparator, limit, reduced,
-				iterationCacheSyncThreshold) {
+				iterationCacheSyncThreshold, keyComparator) {
 			private long rowsSorted;
 			private long spillCount;
 			private long spillBytes;
 
 			@Override
 			protected BindingSet prepareInputRow(BindingSet row) {
-				return cmp instanceof OrderComparator order ? order.prepareRow(row) : row;
+				return keyComparator != null && !keyComparator.requiresKeyCapture() ? keyComparator.prepareRow(row)
+						: row;
 			}
 
 			@Override
 			protected BindingSet restoreResultRow(BindingSet row) {
-				return cmp instanceof OrderComparator order ? order.restoreRow(row) : row;
+				return keyComparator != null ? keyComparator.restoreRow(row) : row;
+			}
+
+			@Override
+			protected Comparator<SortKey> sortKeyComparator(OrderComparator orderComparator) {
+				return (left, right) -> {
+					sortComparisons.incrementAndGet();
+					return orderComparator.compareSortKeys(left, right);
+				};
 			}
 
 			@Override

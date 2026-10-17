@@ -145,17 +145,39 @@ public final class BlankNodeAllocationScope {
 
 	/** Stores original fixed roles only while the exact optimized local structure remains unchanged. */
 	public synchronized void rememberReferenceSnapshot(Object root, Set<String> ids, List<IdentityStamp> structure) {
+		rememberReferenceSnapshot(root, ids, ids, structure);
+	}
+
+	/** Carries occupied imported IDs separately from fixed local reference roles across context handoffs. */
+	public synchronized void rememberReferenceSnapshot(Object root, Set<String> ids, Set<String> knownIds,
+			List<IdentityStamp> structure) {
 		collectFinishedAlgebra();
 		List<WeakIdentityStamp> stamps = new ArrayList<>(structure.size());
+		Set<String> known = new HashSet<>(knownIds);
+		known.addAll(ids);
 		for (IdentityStamp stamp : structure) {
 			stamps.add(new WeakIdentityStamp(new WeakReference<>(stamp.identity()), stamp.state()));
+			if (stamp.identity() instanceof BNode) {
+				known.add(stamp.state());
+			}
 		}
 		algebraReferences.put(new OwnerReference(root, algebraQueue),
-				new ReferenceSnapshot(Set.copyOf(ids), List.copyOf(stamps)));
+				new ReferenceSnapshot(Set.copyOf(ids), Set.copyOf(known), List.copyOf(stamps)));
 	}
 
 	/** Unmarked, expired or mutated roots must be analyzed conservatively as local fixed references. */
 	public synchronized Set<String> getReferenceSnapshot(Object root, List<IdentityStamp> structure) {
+		ReferenceSnapshot snapshot = matchingReferenceSnapshot(root, structure);
+		return snapshot == null ? null : snapshot.ids();
+	}
+
+	/** Returns occupied IDs from the same exact optimized structure without upgrading their reference roles. */
+	public synchronized Set<String> getKnownIdentitySnapshot(Object root, List<IdentityStamp> structure) {
+		ReferenceSnapshot snapshot = matchingReferenceSnapshot(root, structure);
+		return snapshot == null ? null : snapshot.knownIds();
+	}
+
+	private ReferenceSnapshot matchingReferenceSnapshot(Object root, List<IdentityStamp> structure) {
 		collectFinishedAlgebra();
 		OwnerReference key = new OwnerReference(root, null);
 		ReferenceSnapshot snapshot = algebraReferences.get(key);
@@ -171,7 +193,7 @@ public final class BlankNodeAllocationScope {
 						&& Objects.equals(previous.state(), current.state());
 			}
 			if (unchanged) {
-				return snapshot.ids();
+				return snapshot;
 			}
 		}
 		algebraReferences.remove(key);
@@ -188,7 +210,7 @@ public final class BlankNodeAllocationScope {
 	private record WeakIdentityStamp(WeakReference<Object> identity, String state) {
 	}
 
-	private record ReferenceSnapshot(Set<String> ids, List<WeakIdentityStamp> structure) {
+	private record ReferenceSnapshot(Set<String> ids, Set<String> knownIds, List<WeakIdentityStamp> structure) {
 	}
 
 	/** Reserves known values recursively, without treating unrelated SERVICE references as local. */

@@ -214,7 +214,13 @@ public class QueryInfo {
 		}
 		done = true;
 
-		abortScheduledTasks();
+		try {
+			abortScheduledTasks();
+		} finally {
+			if (strategy != null) {
+				strategy.releaseGraphSnapshots();
+			}
+		}
 	}
 
 	/**
@@ -228,7 +234,13 @@ public class QueryInfo {
 		}
 		done = true;
 
-		closeScheduledTasks();
+		try {
+			closeScheduledTasks();
+		} finally {
+			if (strategy != null) {
+				strategy.releaseGraphSnapshots();
+			}
+		}
 	}
 
 	/**

@@ -154,8 +154,10 @@ class QueryJoinOptimizerFilterCostTest {
 				group("service filter does not discount an outer pattern",
 						"?s <urn:target> ?value . SERVICE <urn:endpoint> { ?other <urn:p> ?value . FILTER(?value > 1) }",
 						false),
-				group("named graph context variable",
-						"GRAPH ?g { ?s <urn:target> ?value . FILTER(?g = <urn:graph>) }", true),
+				group("selected graph name is absent from the body",
+						"GRAPH ?g { ?s <urn:target> ?value . FILTER(?g = <urn:graph>) }", false),
+				group("named graph body variable",
+						"GRAPH ?g { ?s <urn:target> ?value . FILTER(?value > 1) }", true),
 				group("union nested in optional retains internal filter",
 						"?outer <urn:outer> ?value . OPTIONAL { { ?s <urn:target> ?value . FILTER(?value > 1) } "
 								+ "UNION { ?other <urn:p> ?value } }",

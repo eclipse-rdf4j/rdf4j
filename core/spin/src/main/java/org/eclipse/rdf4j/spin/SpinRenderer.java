@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.HasLang;
@@ -89,6 +90,7 @@ import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.Regex;
 import org.eclipse.rdf4j.query.algebra.Sample;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
@@ -592,15 +594,32 @@ public class SpinRenderer {
 		}
 
 		private void visitWhere(TupleExpr where) throws RDFHandlerException {
-			Resource whereBNode = valueFactory.createBNode();
-			handler.handleStatement(valueFactory.createStatement(subject, SP.WHERE_PROPERTY, whereBNode));
-
 			isSubQuery = true; // further projection elements are for
 			// sub-queries
+			renderPatternList(SP.WHERE_PROPERTY, where);
+		}
 
-			ListContext ctx = newList(whereBNode);
-			where.visit(this);
-			endList(ctx);
+		private void renderPatternList(IRI property, TupleExpr body) throws RDFHandlerException {
+			if (body instanceof SingletonSet) {
+				handler.handleStatement(valueFactory.createStatement(subject, property, RDF.NIL));
+				return;
+			}
+			Resource head = valueFactory.createBNode();
+			handler.handleStatement(valueFactory.createStatement(subject, property, head));
+			ListContext previous = newList(head);
+			body.visit(this);
+			endList(previous);
+		}
+
+		private void renderPatternListEntry(TupleExpr body) throws RDFHandlerException {
+			if (body instanceof SingletonSet) {
+				listEntry(RDF.NIL);
+				return;
+			}
+			listEntry();
+			ListContext previous = newList(subject);
+			body.visit(this);
+			endList(previous);
 		}
 
 		@Override
@@ -688,6 +707,16 @@ public class SpinRenderer {
 			if (ctxList != null) {
 				restoreNamedGraph(ctxList);
 			}
+		}
+
+		@Override
+		public void meet(Graph node) throws RDFHandlerException {
+			listEntry();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.NAMED_GRAPH_CLASS));
+			predicate = SP.GRAPH_NAME_NODE_PROPERTY;
+			node.getGraphName().visit(this);
+			predicate = null;
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getArg());
 		}
 
 		@Override
@@ -1081,11 +1110,7 @@ public class SpinRenderer {
 			flushPendingStatement();
 			Resource op = (node.getParentNode() instanceof Not) ? SP.NOT_EXISTS : SP.EXISTS;
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, op));
-			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
-			ListContext elementsCtx = newList(elementsList);
-			node.getSubQuery().visit(this);
-			endList(elementsCtx);
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getSubQuery());
 			subject = currentSubj;
 			predicate = null;
 		}
@@ -1150,11 +1175,7 @@ public class SpinRenderer {
 			node.getLeftArg().visit(this);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.OPTIONAL_CLASS));
-			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
-			ListContext elementsCtx = newList(elementsList);
-			node.getRightArg().visit(this);
-			endList(elementsCtx);
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getRightArg());
 		}
 
 		@Override
@@ -1164,15 +1185,8 @@ public class SpinRenderer {
 			Resource elementsList = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
 			ListContext elementsCtx = newList(elementsList);
-			listEntry();
-			ListContext leftCtx = newList(subject);
-			node.getLeftArg().visit(this);
-			endList(leftCtx);
-
-			listEntry();
-			ListContext rightCtx = newList(subject);
-			node.getRightArg().visit(this);
-			endList(rightCtx);
+			renderPatternListEntry(node.getLeftArg());
+			renderPatternListEntry(node.getRightArg());
 			endList(elementsCtx);
 		}
 
@@ -1181,25 +1195,20 @@ public class SpinRenderer {
 			node.getLeftArg().visit(this);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MINUS_CLASS));
-			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
-			ListContext elementsCtx = newList(elementsList);
-			node.getRightArg().visit(this);
-			endList(elementsCtx);
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getRightArg());
 		}
 
 		@Override
 		public void meet(Service node) throws RDFHandlerException {
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.SERVICE_CLASS));
+			if (node.isSilent()) {
+				handler.handleStatement(valueFactory.createStatement(subject, SP.SILENT_PROPERTY, BooleanLiteral.TRUE));
+			}
 			predicate = SP.SERVICE_URI_PROPERTY;
 			node.getServiceRef().visit(this);
 			predicate = null;
-			Resource elementsList = valueFactory.createBNode();
-			handler.handleStatement(valueFactory.createStatement(subject, SP.ELEMENTS_PROPERTY, elementsList));
-			ListContext elementsCtx = newList(elementsList);
-			node.getArg().visit(this);
-			endList(elementsCtx);
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getArg());
 		}
 
 		@Override

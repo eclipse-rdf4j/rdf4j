@@ -18,6 +18,8 @@ import java.util.List;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -51,6 +53,13 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 		private VarVisitor(QueryAlgebraBindingAnalysis analysis) {
 			super(true);
 			this.analysis = analysis;
+		}
+
+		@Override
+		public void meet(Graph graph) {
+			// Graph is a known tuple operator whose variables use the current query scope. The shared input-frame
+			// analysis proves each API substitution, while genuinely unknown tuple operators remain opaque.
+			super.meetOther(graph);
 		}
 
 		@Override
@@ -90,7 +99,18 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
 			for (Replacement replacement : replacements) {
 				Var var = replacement.variable();
-				var.replaceWith(Var.of(var.getName(), replacement.value(), var.isAnonymous(), var.isConstant()));
+				boolean substitutedTerm = var.isConstant();
+				for (QueryModelNode ancestor = var.getParentNode(); ancestor != null; ancestor = ancestor
+						.getParentNode()) {
+					if (ancestor instanceof Exists) {
+						// The shared scope analysis already proved this external API binding reaches this read.
+						// Inside EXISTS it substitutes a query term, even when the optimizer removes runtime input.
+						substitutedTerm = true;
+						break;
+					}
+				}
+				var.replaceWith(
+						Var.of(var.getName(), replacement.value(), var.isAnonymous(), substitutedTerm, var.isBNode()));
 			}
 		}
 

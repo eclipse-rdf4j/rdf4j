@@ -52,6 +52,11 @@ public class FedXDataset implements Dataset {
 		this.delegate = delegate;
 	}
 
+	/** Returns the RDF dataset, or null when this wrapper only selects federation members. */
+	public Dataset getDelegate() {
+		return delegate;
+	}
+
 	public void addEndpoint(String endpointId) {
 		endpoints.add(endpointId);
 	}

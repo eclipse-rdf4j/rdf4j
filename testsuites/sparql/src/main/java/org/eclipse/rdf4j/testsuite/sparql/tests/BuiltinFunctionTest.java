@@ -54,6 +54,32 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 		super(repo);
 	}
 
+	private void testEmptyVariadicExpressionsAndNestedErrors(RepositoryConnection conn) {
+		for (String expression : List.of("CONCAT()", "COALESCE(COALESCE(), CONCAT())",
+				"IF(true, CONCAT(), 1 / 0)", "CONCAT(CONCAT(), CONCAT())")) {
+			for (String query : List.of("SELECT (" + expression + " AS ?x) WHERE {}",
+					"SELECT ?x WHERE { BIND(" + expression + " AS ?x) }")) {
+				try (TupleQueryResult result = conn.prepareTupleQuery(query).evaluate()) {
+					List<BindingSet> rows = QueryResults.asList(result);
+					assertEquals(1, rows.size(), query);
+					assertEquals(conn.getValueFactory().createLiteral(""), rows.getFirst().getValue("x"), query);
+				}
+			}
+		}
+		for (String expression : List.of("COALESCE()", "IF(COALESCE(), true, false)",
+				"IF(IF(?unbound, 'yes', 'no') = 'no', true, false)",
+				"IF(IF(!?unbound, 'yes', 'no') = 'no', true, false)",
+				"IF(IF(1 / 0, 'yes', 'no') = 'no', true, false)", "IF(IRI(123), true, false)",
+				"IF(IRI('relative'@en), true, false)")) {
+			try (TupleQueryResult result = conn.prepareTupleQuery("BASE <https://example.org/> SELECT ?x WHERE { BIND("
+					+ expression + " AS ?x) }").evaluate()) {
+				List<BindingSet> rows = QueryResults.asList(result);
+				assertEquals(1, rows.size(), expression);
+				assertFalse(rows.getFirst().hasBinding("x"), expression);
+			}
+		}
+	}
+
 	/**
 	 * See https://github.com/eclipse/rdf4j/issues/1267
 	 */
@@ -425,6 +451,7 @@ public class BuiltinFunctionTest extends AbstractComplianceTest {
 
 	public Stream<DynamicTest> tests() {
 		return Stream.of(makeTest("Seconds", this::testSeconds),
+				makeTest("EmptyVariadicExpressionsAndNestedErrors", this::testEmptyVariadicExpressionsAndNestedErrors),
 				makeTest("SecondsMilliseconds", this::testSecondsMilliseconds),
 				makeTest("DateCastFunction_invalidInput", this::testDateCastFunction_invalidInput),
 				makeTest("DateCastFunction_dateTime_withTimeZone_offset",

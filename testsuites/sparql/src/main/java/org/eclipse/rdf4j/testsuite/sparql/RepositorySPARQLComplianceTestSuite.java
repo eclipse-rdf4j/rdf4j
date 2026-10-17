@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.InTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.LateralScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.LateralTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.MinusTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.NamedGraphScopeTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OptionalTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.OrderByTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.PropertyPathTest;
@@ -109,6 +110,11 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> defaultGraph() throws RDF4JException, IOException {
 		return new DefaultGraphTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> namedGraphScope() {
+		return new NamedGraphScopeTest(this::getEmptyInitializedRepository).tests();
 	}
 
 	@TestFactory

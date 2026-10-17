@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope.IdentityStamp;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /** Fixed local identities before an optimizer can inline external bindings. */
 @InternalUseOnly
@@ -46,6 +47,17 @@ public final class LocalBNodeReferences {
 		public Analysis {
 			ids = Set.copyOf(ids);
 			structure = List.copyOf(structure);
+		}
+
+		/** All occupied blank-node IDs, independently of whether they denote fixed local references. */
+		public Set<String> knownIds() {
+			Set<String> known = new HashSet<>(ids);
+			for (IdentityStamp stamp : structure) {
+				if (stamp.identity() instanceof BNode) {
+					known.add(stamp.state());
+				}
+			}
+			return Set.copyOf(known);
 		}
 	}
 
@@ -156,7 +168,9 @@ public final class LocalBNodeReferences {
 				private void scalar(Value value) {
 					if (value instanceof BNode blank) {
 						String id = blank.getID();
-						ids.add(id);
+						if (!(value instanceof RemoteBNode)) {
+							ids.add(id);
+						}
 						stamp(value, id);
 					} else {
 						stamp(value, null);

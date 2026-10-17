@@ -26,16 +26,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
+import org.eclipse.rdf4j.federated.algebra.StatementSource;
+import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
+import org.eclipse.rdf4j.federated.structures.QueryInfo;
+import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -186,7 +196,7 @@ class FedXLocalBlankNodeIdentityTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { true, false })
-	void foreignLocalBlankNodeRetainsZeroLengthPathIdentity(boolean nativeStore) throws IOException {
+	void foreignLocalBlankNodeBindingsRequireZeroLengthNodeMembership(boolean nativeStore) throws IOException {
 		try (var fixture = fixture(nativeStore)) {
 			var original = rows(fixture.federation, "SELECT ?s WHERE { ?s <urn:p> ?p }").get(0).getValue("s");
 			var receiving = FedXFactory.newFederation()
@@ -198,12 +208,25 @@ class FedXLocalBlankNodeIdentityTest {
 					var query = connection.prepareTupleQuery("SELECT ?o WHERE { ?s <urn:foreign>" + modifier + " ?o }");
 					query.setBinding("s", original);
 					try (var result = query.evaluate()) {
-						assertEquals(modifier.equals("*"), result.hasNext());
-						if (result.hasNext()) {
-							assertEquals(original, result.next().getValue("o"));
-							assertFalse(result.hasNext());
-						}
+						assertFalse(result.hasNext());
 					}
+				}
+				var context = receiving.getFederationContext();
+				var strategy = context.createStrategy(null);
+				QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+				try {
+					Endpoint member = context.getFederation().getMembers().getFirst();
+					FedXZeroLengthPath fixed = new FedXZeroLengthPath(Scope.DEFAULT_CONTEXTS,
+							Var.of("s", original, true, true), Var.of("o"), null, info,
+							List.of(new StatementSource(member.getId(), StatementSourceType.LOCAL)));
+					try (var result = strategy.precompile(fixed, new QueryEvaluationContext.Minimal(null))
+							.evaluate(EmptyBindingSet.getInstance())) {
+						List<BindingSet> rows = QueryResults.asList(result);
+						assertEquals(1, rows.size());
+						assertEquals(original, rows.getFirst().getValue("o"));
+					}
+				} finally {
+					info.close();
 				}
 			} finally {
 				receiving.shutDown();

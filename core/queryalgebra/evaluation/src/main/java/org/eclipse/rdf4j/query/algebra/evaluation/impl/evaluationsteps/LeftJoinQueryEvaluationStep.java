@@ -52,7 +52,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 						runtimeTelemetryTrackingActive);
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
 				EmptyBindingSet.getInstance());
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())
+		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)) {
 			// The right side is evaluated once with the query input and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);

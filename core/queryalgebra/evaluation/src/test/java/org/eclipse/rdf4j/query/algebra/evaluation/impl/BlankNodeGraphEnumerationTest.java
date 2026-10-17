@@ -14,10 +14,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.HashMap;
+import java.util.Map;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -29,7 +31,10 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class BlankNodeGraphEnumerationTest {
 
@@ -41,17 +46,7 @@ class BlankNodeGraphEnumerationTest {
 			model.add(vf.createBNode("shared"), vf.createIRI("urn:p"), vf.createLiteral(1), graph);
 			model.add(vf.createBNode("shared"), vf.createIRI("urn:q"), vf.createLiteral(1), graph);
 		}
-		TripleSource source = new TripleSource() {
-			public ValueFactory getValueFactory() {
-				return vf;
-			}
-
-			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
-					Resource... contexts) {
-				return new CloseableIteratorIteration<>(model.getStatements(s, p, o, contexts).iterator());
-			}
-		};
-		var strategy = new DefaultEvaluationStrategy(source, null);
+		var strategy = new DefaultEvaluationStrategy(source(model, vf), null);
 		var path = new ZeroLengthPath(Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("o"), Var.of("g"));
 		var counts = new HashMap<Value, Integer>();
 		try (var rows = strategy.precompile(path).evaluate(EmptyBindingSet.getInstance())) {
@@ -63,5 +58,47 @@ class BlankNodeGraphEnumerationTest {
 		}
 		assertEquals(2, counts.get(vf.createBNode("first")));
 		assertEquals(2, counts.get(vf.createBNode("second")));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void mixedNamedGraphsKeepSeparateNodesAndHonorBoundSelection(boolean bound) {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		var model = new LinkedHashModel();
+		Resource blankGraph = vf.createBNode("blank-graph");
+		Resource iriGraph = vf.createIRI("urn:iri-graph");
+		for (Resource graph : new Resource[] { blankGraph, iriGraph }) {
+			model.add(vf.createBNode("shared"), vf.createIRI("urn:p"), vf.createLiteral(1), graph);
+			model.add(vf.createBNode("shared"), vf.createIRI("urn:q"), vf.createLiteral(1), graph);
+		}
+		model.add(vf.createIRI("urn:default-only"), vf.createIRI("urn:p"), vf.createLiteral(2));
+		var strategy = new DefaultEvaluationStrategy(source(model, vf), null);
+		var path = new ZeroLengthPath(Scope.NAMED_CONTEXTS, Var.of("s"), Var.of("o"), Var.of("g"));
+		var input = new MapBindingSet();
+		if (bound) {
+			input.addBinding("g", iriGraph);
+		}
+		var counts = new HashMap<Value, Integer>();
+		try (var rows = strategy.precompile(path).evaluate(input)) {
+			while (rows.hasNext()) {
+				var row = rows.next();
+				assertEquals(row.getValue("s"), row.getValue("o"));
+				counts.merge(row.getValue("g"), 1, Integer::sum);
+			}
+		}
+		assertEquals(bound ? Map.of(iriGraph, 2) : Map.of(blankGraph, 2, iriGraph, 2), counts);
+	}
+
+	private static TripleSource source(Model model, ValueFactory vf) {
+		return new TripleSource() {
+			public ValueFactory getValueFactory() {
+				return vf;
+			}
+
+			public CloseableIteration<? extends Statement> getStatements(Resource s, IRI p, Value o,
+					Resource... contexts) {
+				return new CloseableIteratorIteration<>(model.getStatements(s, p, o, contexts).iterator());
+			}
+		};
 	}
 }

@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Set;
@@ -51,14 +52,43 @@ class MemoryBlankNodeReadLookupTest {
 			assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, "ASK: " + ask);
 			for (String query : List.of(
 					"SELECT ?term WHERE { VALUES ?term { <<(<_:absent-read-first> <urn:inner> <_:absent-read-second>)>> } }",
-					"SELECT ?term WHERE { BIND(TRIPLE(<_:absent-read-first>,<urn:inner>,<_:absent-read-second>) AS ?term) }",
-					"SELECT ?node WHERE { BIND(<_:absent-read-first> AS ?node) ?node <urn:p>* ?node }")) {
+					"SELECT ?term WHERE { BIND(TRIPLE(<_:absent-read-first>,<urn:inner>,<_:absent-read-second>) AS ?term) }")) {
 				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(rows.hasNext(), query);
 					assertNotNull(rows.next());
 					assertFalse(rows.hasNext());
 				}
 				assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, "SELECT: " + query);
 			}
+
+			String bindPathQuery = "SELECT ?node WHERE { BIND(<_:absent-read-first> AS ?node) ?node <urn:p>* ?node }";
+			try (var rows = connection.prepareTupleQuery(bindPathQuery).evaluate()) {
+				assertFalse(rows.hasNext(), bindPathQuery);
+			}
+			assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, bindPathQuery);
+
+			String valuesPathQuery = "SELECT ?node WHERE { VALUES ?node { <_:absent-read-first> } ?node <urn:p>* ?node }";
+			try (var rows = connection.prepareTupleQuery(valuesPathQuery).evaluate()) {
+				assertFalse(rows.hasNext(), valuesPathQuery);
+			}
+			assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, valuesPathQuery);
+
+			String apiBindingPathQuery = "SELECT ?node WHERE { ?node <urn:p>* ?node }";
+			var apiBindingPath = connection.prepareTupleQuery(apiBindingPathQuery);
+			apiBindingPath.setBinding("node", first);
+			try (var rows = apiBindingPath.evaluate()) {
+				assertFalse(rows.hasNext(), apiBindingPathQuery);
+			}
+			assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, apiBindingPathQuery);
+
+			String fixedPathQuery = "SELECT ?node WHERE { <_:absent-read-first> <urn:p>* <_:absent-read-first> . "
+					+ "BIND(<_:absent-read-first> AS ?node) }";
+			try (var rows = connection.prepareTupleQuery(fixedPathQuery).evaluate()) {
+				assertTrue(rows.hasNext(), fixedPathQuery);
+				assertEquals(first, rows.next().getValue("node"));
+				assertFalse(rows.hasNext());
+			}
+			assertUnknownReferencesRemainUnmaterialized(vf, first, second, term, fixedPathQuery);
 			assertEquals(0, connection.size());
 		} finally {
 			repository.shutDown();

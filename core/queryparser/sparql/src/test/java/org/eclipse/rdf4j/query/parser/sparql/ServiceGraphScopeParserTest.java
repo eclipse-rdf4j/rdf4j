@@ -19,6 +19,7 @@ import java.util.List;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -39,9 +40,11 @@ class ServiceGraphScopeParserTest {
 			assertThat(pattern.getContextVar()).isNull();
 			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
 		});
-		assertThat(patterns(parsed.getTupleExpr()))
-				.anySatisfy(pattern -> assertThat(pattern.getContextVar().getValue())
-						.isEqualTo(VF.createIRI("urn:outer")));
+		assertThat(graphsOutsideNestedServices(service.getArg())).isEmpty();
+		assertThat(graphsOutsideNestedServices(parsed.getTupleExpr())).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(VF.createIRI("urn:outer"));
+			assertDefaultGraphBody(graph);
+		});
 	}
 
 	@Test
@@ -54,29 +57,30 @@ class ServiceGraphScopeParserTest {
 			assertThat(pattern.getContextVar()).isNull();
 			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
 		});
-		assertThat(patterns(parsed.getTupleExpr()))
-				.anySatisfy(pattern -> assertThat(pattern.getContextVar().getName()).isEqualTo("g"));
+		assertThat(graphsOutsideNestedServices(service.getArg())).isEmpty();
+		assertThat(graphsOutsideNestedServices(parsed.getTupleExpr())).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getName()).isEqualTo("g");
+			assertThat(graph.getGraphName().hasValue()).isFalse();
+			assertDefaultGraphBody(graph);
+		});
 	}
 
 	@Test
 	void serviceInsideFixedBlankNodeGraphDoesNotUseThatLocalIdentity() {
 		var parsed = parse("GRAPH <_:outer-graph> { ?outerS <urn:outerP> ?outerO . "
 				+ "SERVICE <urn:service> { ?s <urn:p> ?o } }");
-		List<StatementPattern> queryPatterns = patterns(parsed.getTupleExpr());
 		Service service = services(parsed.getTupleExpr()).get(0);
-		Value graph = queryPatterns.stream()
-				.filter(pattern -> pattern.getSubjectVar().getName().equals("outerS"))
-				.findFirst()
-				.orElseThrow()
-				.getContextVar()
-				.getValue();
-
-		assertThat(graph).isInstanceOf(BNode.class);
-		assertThat(((BNode) graph).getID()).isEqualTo("outer-graph");
+		assertThat(graphsOutsideNestedServices(parsed.getTupleExpr())).singleElement().satisfies(graph -> {
+			Value selector = graph.getGraphName().getValue();
+			assertThat(selector).isInstanceOf(BNode.class);
+			assertThat(((BNode) selector).getID()).isEqualTo("outer-graph");
+			assertDefaultGraphBody(graph);
+		});
 		assertThat(patterns(service.getArg())).singleElement().satisfies(pattern -> {
 			assertThat(pattern.getContextVar()).isNull();
 			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
 		});
+		assertThat(graphsOutsideNestedServices(service.getArg())).isEmpty();
 	}
 
 	@Test
@@ -93,9 +97,12 @@ class ServiceGraphScopeParserTest {
 		Service explicit = service(services, "urn:explicit-service");
 		assertDefaultGraphPatterns(outer);
 		assertDefaultGraphPatterns(inner);
-		assertThat(patternsOutsideNestedServices(explicit.getArg())).singleElement().satisfies(pattern -> {
-			assertThat(pattern.getContextVar().getValue()).isEqualTo(VF.createIRI("urn:inner"));
-			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
+		assertThat(graphsOutsideNestedServices(parsed.getTupleExpr())).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(VF.createIRI("urn:outer"));
+		});
+		assertThat(graphsOutsideNestedServices(explicit.getArg())).singleElement().satisfies(graph -> {
+			assertThat(graph.getGraphName().getValue()).isEqualTo(VF.createIRI("urn:inner"));
+			assertDefaultGraphBody(graph);
 		});
 	}
 
@@ -107,10 +114,35 @@ class ServiceGraphScopeParserTest {
 	}
 
 	private static void assertDefaultGraphPatterns(Service service) {
+		assertThat(graphsOutsideNestedServices(service.getArg())).isEmpty();
 		assertThat(patternsOutsideNestedServices(service.getArg())).allSatisfy(pattern -> {
 			assertThat(pattern.getContextVar()).isNull();
 			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
 		});
+	}
+
+	private static void assertDefaultGraphBody(Graph graph) {
+		assertThat(patternsOutsideNestedServices(graph.getArg())).singleElement().satisfies(pattern -> {
+			assertThat(pattern.getContextVar()).isNull();
+			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
+		});
+	}
+
+	private static List<Graph> graphsOutsideNestedServices(TupleExpr expression) {
+		List<Graph> graphs = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Service service) {
+				// Nested SERVICE requests own their graph-selection scopes.
+			}
+
+			@Override
+			public void meet(Graph graph) {
+				graphs.add(graph);
+				super.meet(graph);
+			}
+		});
+		return graphs;
 	}
 
 	private static ParsedQuery parse(String whereClause) {

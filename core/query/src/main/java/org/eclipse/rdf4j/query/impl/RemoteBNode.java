@@ -61,6 +61,24 @@ public final class RemoteBNode extends SimpleBNode {
 	}
 
 	/**
+	 * Compares trusted identity without granting authority to an equal-looking plain blank node. Canonical IDs can
+	 * identify the same term across executions in one namespace; response-only aliases require their original owner.
+	 */
+	public static boolean sameTrustedIdentity(RemoteBNode first, RemoteBNode second) {
+		Provenance firstOrigin = first.getProvenance();
+		Provenance secondOrigin = second.getProvenance();
+		if (firstOrigin == null || secondOrigin == null) {
+			return false;
+		}
+		return first.localOwner == second.localOwner && first.getID().equals(second.getID())
+				&& sameProvenance(firstOrigin, secondOrigin)
+				|| firstOrigin.canonicalResultID() && secondOrigin.canonicalResultID()
+						&& firstOrigin.identityScope() != null
+						&& firstOrigin.identityScope() == secondOrigin.identityScope()
+						&& firstOrigin.remoteID().equals(secondOrigin.remoteID());
+	}
+
+	/**
 	 * Trusted metadata for one private execution spill. Only actual wrappers can create entries; serialized labels
 	 * never carry identity authority, and an unrelated deserializer cannot reconstruct the provenance.
 	 */

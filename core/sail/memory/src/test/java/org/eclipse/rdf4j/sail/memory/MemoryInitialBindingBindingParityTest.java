@@ -27,10 +27,14 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
+import org.eclipse.rdf4j.model.vocabulary.SESAME;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -38,6 +42,9 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Compares query-level initial bindings with the SPARQL VALUES transport used when a caller must serialize them.
@@ -123,6 +130,141 @@ class MemoryInitialBindingBindingParityTest {
 	}
 
 	@Test
+	void graphOptionalInputKeepsItsFallbackOrRejectsTransportExplicitly() {
+		IRI graph = VF.createIRI("urn:optional-graph");
+		String query = "SELECT ?g ?o WHERE { GRAPH ?g { OPTIONAL { ?g <urn:p> ?o } } }";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:other-graph-subject"), P, VF.createLiteral("other"), graph);
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("g", graph);
+			List<BindingSet> nativeRows = evaluate(connection, query, input);
+			assertEquals(bag(binding("g", graph)), bag(nativeRows));
+			try {
+				String serialized = SPARQLQueries.withInitialBindings(query, input);
+				assertEquals(bag(nativeRows), bag(evaluate(connection, serialized, null)),
+						"GRAPH input must preserve OPTIONAL fallback rather than filter its independently produced rows");
+			} catch (UnsupportedOperationException unsupported) {
+				assertTrue(unsupported.getMessage().contains("GRAPH"), unsupported.getMessage());
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "rdf4j,false", "rdf4j,true", "sesame,false", "sesame,true", "ordinary,false", "ordinary,true" })
+	void boundGraphSelectorTransportPreservesPhysicalAndDefaultAliases(String kind, boolean namedDataset) {
+		IRI graph = switch (kind) {
+		case "rdf4j" -> RDF4J.NIL;
+		case "sesame" -> SESAME.NIL;
+		default -> VF.createIRI("urn:ordinary-bound-graph");
+		};
+		IRI defaultSubject = VF.createIRI("urn:transport-default");
+		IRI physicalSubject = VF.createIRI("urn:transport-physical");
+		String query = "SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }";
+		SimpleDataset dataset = new SimpleDataset();
+		if (namedDataset) {
+			dataset.addNamedGraph(graph);
+		}
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.clear();
+			connection.add(defaultSubject, P, VF.createLiteral("default"));
+			connection.add(physicalSubject, P, VF.createLiteral("physical"), graph);
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("g", graph);
+			List<BindingSet> nativeRows = evaluate(connection, query, input, dataset);
+			boolean selectsDefault = !kind.equals("ordinary") && !namedDataset;
+			assertEquals(Map.of(Map.of("g", graph, "s", selectsDefault ? defaultSubject : physicalSubject,
+					"o", VF.createLiteral(selectsDefault ? "default" : "physical")), 1), bag(nativeRows));
+			String serialized = SPARQLQueries.withInitialBindings(query, input);
+			assertEquals(bag(nativeRows), bag(evaluate(connection, serialized, null, dataset)),
+					"bound GRAPH selection must retain API invocation semantics for " + kind + "/" + namedDataset);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o } }",
+			"SELECT ?g ?o WHERE { GRAPH ?g { GRAPH ?g { ?g <urn:p> ?o } } }",
+			"SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o } GRAPH ?g { ?g <urn:p> ?o } }",
+			"SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o FILTER(?g = <urn:body-graph>) } }",
+			"SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o FILTER EXISTS { ?g <urn:p> ?x } } }",
+			"SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o MINUS { ?g <urn:q> ?x } } }",
+			"SELECT * WHERE { GRAPH ?g { ?g <urn:p> ?o } } ORDER BY ?o LIMIT 1 OFFSET 0",
+			"SELECT ?g ?o WHERE { GRAPH # héader\r\n ?g # selector\r\n { ?g <urn:p> ?o } }",
+			"SELECT ?g ?o WHERE { VALUES ?unused { <urn:unic\\u006fde> } GRAPH ?g { ?g <urn:p> ?o } }"
+	})
+	void graphBodyBindingsRetainTheirDomainsAcrossSerializedScopes(String query) {
+		IRI graph = VF.createIRI("urn:body-graph");
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(graph, P, VF.createLiteral("selected"), graph);
+			connection.add(VF.createIRI("urn:body-other"), P, VF.createLiteral("other"), graph);
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("g", graph);
+			List<BindingSet> nativeRows = evaluate(connection, query, input);
+			assertEquals(Map.of(Map.of("g", graph, "o", VF.createLiteral("selected")), 1), bag(nativeRows));
+			assertEquals(bag(nativeRows),
+					bag(evaluate(connection, SPARQLQueries.withInitialBindings(query, input), null)),
+					"bound selectors and body input must retain their independent invocation semantics");
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "EXISTS,false", "EXISTS,true", "NOT EXISTS,false", "NOT EXISTS,true", "MINUS,false", "MINUS,true" })
+	void graphBodyBindingsPreserveMatchingAndMissingNegativeOrExistenceInputs(String operator, boolean matching) {
+		IRI graph = VF.createIRI("urn:body-graph");
+		String rhs = " { ?g <urn:q> ?x }";
+		String query = "SELECT ?g ?o WHERE { GRAPH ?g { ?g <urn:p> ?o "
+				+ (operator.equals("MINUS") ? operator : "FILTER " + operator) + rhs + " } }";
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(graph, P, VF.createLiteral("selected"), graph);
+			connection.add(VF.createIRI("urn:other-rhs-subject"), Q, VF.createLiteral("unrelated"), graph);
+			if (matching) {
+				connection.add(graph, Q, VF.createLiteral("matching"), graph);
+			}
+			MapBindingSet input = new MapBindingSet();
+			input.addBinding("g", graph);
+			List<BindingSet> nativeRows = evaluate(connection, query, input);
+			boolean retained = operator.equals("EXISTS") == matching;
+			Map<Map<String, Value>, Integer> expected = retained
+					? Map.of(Map.of("g", graph, "o", VF.createLiteral("selected")), 1)
+					: Map.of();
+			assertEquals(expected, bag(nativeRows), operator + " must exercise its matching/missing RHS effect");
+			assertEquals(expected,
+					bag(evaluate(connection, SPARQLQueries.withInitialBindings(query, input), null)));
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o FILTER(?g = <urn:body-graph>) } }",
+			"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o FILTER EXISTS { ?g <urn:q> ?x } } }",
+			"SELECT ?g ?s WHERE { GRAPH ?g { ?s <urn:p> ?o MINUS { ?g <urn:q> ?x } } }"
+	})
+	void graphExpressionOnlyInputsRequireExplicitScopeRejection(String query) {
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("g", VF.createIRI("urn:body-graph"));
+		UnsupportedOperationException unsupported = assertThrows(UnsupportedOperationException.class,
+				() -> SPARQLQueries.withInitialBindings(query, input));
+		assertTrue(unsupported.getMessage().contains("GRAPH"), unsupported.getMessage());
+	}
+
+	@Test
+	void conflictingGraphBodyValuesRemainEmptyAndNonResourceSelectorsAreRejected() {
+		String query = "SELECT ?g WHERE { GRAPH ?g { VALUES ?g { <urn:other> } } }";
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("g", VF.createIRI("urn:body-graph"));
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(VF.createIRI("urn:body-graph"), P, VF.createLiteral("selected"),
+					VF.createIRI("urn:body-graph"));
+			assertTrue(evaluate(connection, query, input).isEmpty());
+			assertTrue(evaluate(connection, SPARQLQueries.withInitialBindings(query, input), null).isEmpty());
+		}
+		input.setBinding("g", VF.createLiteral("not a graph"));
+		UnsupportedOperationException unsupported = assertThrows(UnsupportedOperationException.class,
+				() -> SPARQLQueries.withInitialBindings(query, input));
+		assertTrue(unsupported.getMessage().contains("GRAPH"), unsupported.getMessage());
+	}
+
+	@Test
 	void blankNodesInsideObjectTripleTermsSurviveTheTransport() {
 		TripleTerm object = VF.createTripleTerm(VF.createIRI("urn:inner-subject"),
 				VF.createIRI("urn:inner-predicate"), VF.createBNode("nested-object-bnode"));
@@ -164,7 +306,13 @@ class MemoryInitialBindingBindingParityTest {
 	}
 
 	private static List<BindingSet> evaluate(RepositoryConnection connection, String query, BindingSet bindings) {
+		return evaluate(connection, query, bindings, null);
+	}
+
+	private static List<BindingSet> evaluate(RepositoryConnection connection, String query, BindingSet bindings,
+			Dataset dataset) {
 		TupleQuery tupleQuery = connection.prepareTupleQuery(query);
+		tupleQuery.setDataset(dataset);
 		if (bindings != null) {
 			bindings.forEach(binding -> tupleQuery.setBinding(binding.getName(), binding.getValue()));
 		}

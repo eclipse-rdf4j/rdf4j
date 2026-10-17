@@ -728,7 +728,7 @@ void GroupCondition() :
 void HavingClause() :
 {}
 {
-    <HAVING> Constraint()
+    <HAVING> (Constraint())+
 }
 
 void OrderCondition() :
@@ -844,9 +844,17 @@ void LateralGraphPattern() :
 }
 
 void GraphGraphPattern() :
-{}
+{ Token closing; }
 {
-	<GRAPH> VarOrResourceName() GroupGraphPattern()
+	<GRAPH>
+	{ jjtThis.setSelectorStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
+	VarOrResourceName()
+	{
+		jjtThis.setSelectorEndOffset(rawOffset(getToken(0).endLine, getToken(0).endColumn) + 1);
+		jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn));
+	}
+	closing = GroupGraphPattern()
+	{ jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
 }
 
 void GroupOrUnionGraphPattern() #void :
@@ -1722,7 +1730,7 @@ void NotIn() :
 void Coalesce() :
 {}
 {
-    <COALESCE> <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>
+    <COALESCE> (<NIL> | <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>)
 }
 
 void Str() :

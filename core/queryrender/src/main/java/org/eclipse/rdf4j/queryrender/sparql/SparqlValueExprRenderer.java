@@ -243,9 +243,6 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 		mBuffer.append(RenderUtils.toSPARQL(theVal.getValue()));
 	}
 
-	/**
-	 * {@inheritDoc}
-	 */
 	@Override
 	public void meet(FunctionCall theOp) throws Exception {
 		mBuffer.append(knownFunctionsUriReduction(theOp.getURI())).append("(");
@@ -533,6 +530,9 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	}
 
 	private String knownFunctionsUriReduction(String functionUri) {
+		if ("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement".equals(functionUri)) {
+			return "TRIPLE";
+		}
 		switch (functionUri.toLowerCase()) {
 		// Functional Forms
 

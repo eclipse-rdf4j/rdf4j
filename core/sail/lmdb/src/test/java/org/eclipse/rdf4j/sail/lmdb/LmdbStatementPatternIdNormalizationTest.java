@@ -28,7 +28,9 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -40,6 +42,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
@@ -175,18 +178,41 @@ class LmdbStatementPatternIdNormalizationTest {
 	}
 
 	@Test
-	void computedOuterValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+	void computedSiblingValueStaysOutsideGraphUnionInputs(@TempDir File directory) {
 		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
 			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
 			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
 			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
 			String query = "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
 					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
-			assertEquals(4, fixture.evaluate(query, null, null));
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
 			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(null);
+			fixture.assertPayloadLookupCount("native payload", 0);
+			fixture.assertPayloadLookupCount("unused", 0);
+		}
+	}
+
+	@Test
+	void computedGraphLocalValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
+			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
+			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
+			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
+			String query = "SELECT ?s WHERE { GRAPH <" + GRAPH + "> { " + computed + unused + "?s <"
+					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
+			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(LiteralShape.CUSTOM.value());
 			fixture.assertPayloadLookupCount("native payload", 1);
 			fixture.assertPayloadLookupCount("unused", 0);
 		}
+	}
+
+	private static void assertUnionRows(List<BindingSet> rows) {
+		assertEquals(Map.of(FIRST, 2L, SECOND, 2L), rows.stream()
+				.collect(Collectors.groupingBy(row -> row.getValue("s"), Collectors.counting())));
+		rows.forEach(row -> assertEquals(Set.of("s"), row.getBindingNames()));
 	}
 
 	@Test
@@ -242,6 +268,10 @@ class LmdbStatementPatternIdNormalizationTest {
 		}
 
 		private int evaluate(String text, Value bound, SimpleDataset dataset) {
+			return evaluateBindings(text, bound, dataset).size();
+		}
+
+		private List<BindingSet> evaluateBindings(String text, Value bound, SimpleDataset dataset) {
 			TupleQuery query = connection.prepareTupleQuery(text);
 			if (bound != null) {
 				query.setBinding("bound", bound);
@@ -253,14 +283,22 @@ class LmdbStatementPatternIdNormalizationTest {
 			inputs.clear();
 			store.values.payloadLookups.clear();
 			store.values.unknownLookups.clear();
-			int rows = 0;
+			List<BindingSet> rows = new ArrayList<>();
 			try (TupleQueryResult result = query.evaluate()) {
 				while (result.hasNext()) {
-					result.next();
-					rows++;
+					rows.add(result.next());
 				}
 			}
 			return rows;
+		}
+
+		private void assertObjectInputs(Value expected) {
+			List<PatternInputs> patterns = inputs.stream()
+					.filter(pattern -> PREDICATE.equals(pattern.predicate))
+					.toList();
+			assertFalse(patterns.isEmpty(), "Both UNION branches must reach their real statement-pattern route");
+			patterns.forEach(pattern -> assertEquals(expected, pattern.object,
+					"Only the GRAPH-local computed binding may constrain the UNION statement pattern"));
 		}
 
 		private void assertBoundNativeInputs() {

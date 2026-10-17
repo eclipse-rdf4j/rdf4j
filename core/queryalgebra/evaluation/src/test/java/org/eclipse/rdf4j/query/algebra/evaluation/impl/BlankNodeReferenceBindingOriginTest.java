@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -38,7 +39,9 @@ import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -51,8 +54,11 @@ import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class BlankNodeReferenceBindingOriginTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
@@ -82,6 +88,103 @@ class BlankNodeReferenceBindingOriginTest {
 				assertFalse(rows.hasNext());
 			}
 		}
+	}
+
+	@Test
+	void importedConstantsDoNotRequireLocalStoredIdentityLookup() {
+		for (boolean nested : List.of(false, true)) {
+			for (boolean optimize : List.of(false, true)) {
+				Value alias = importedAlias(nested);
+				ValueFactory valueFactory = new LegacyValueFactory("fresh-imported");
+				var expression = importedConstantAndFreshAllocation(alias);
+				var scope = new BlankNodeAllocationScope("query-imported-", null);
+				try (var activation = scope.activate()) {
+					var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(valueFactory), null);
+					TupleExpr prepared = optimize ? strategy.optimize(expression, null, EmptyBindingSet.getInstance())
+							: expression;
+					try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+						assertTrue(rows.hasNext());
+						assertEquals("fresh-imported", ((BNode) rows.next().getValue("fresh")).getID());
+						assertFalse(rows.hasNext());
+					}
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void importedAliasIdentityIsReservedEvenWhenItsFilterIsOptimizedAway(boolean nested) {
+		for (boolean optimize : List.of(false, true)) {
+			Value alias = importedAlias(nested);
+			BNode node = (BNode) (nested ? ((TripleTerm) alias).getObject() : alias);
+			ValueFactory valueFactory = new LegacyValueFactory(node.getID());
+			var scope = new BlankNodeAllocationScope("query-imported-collision-", null);
+			try (var activation = scope.activate()) {
+				var strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(valueFactory), null);
+				TupleExpr expression = importedConstantAndFreshAllocation(alias);
+				if (optimize) {
+					expression = strategy.optimize(expression, null, EmptyBindingSet.getInstance());
+				}
+				TupleExpr prepared = expression;
+				QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, () -> {
+					try (var rows = strategy.precompile(prepared).evaluate(EmptyBindingSet.getInstance())) {
+						assertTrue(rows.hasNext());
+						rows.next();
+					}
+				});
+				assertTrue(failure.getMessage().contains("Unsupported blank-node freshness"), failure.getMessage());
+				assertTrue(failure.getMessage().contains("allocation collision"), failure.getMessage());
+			}
+		}
+	}
+
+	private static Value importedAlias(boolean nested) {
+		var allocation = new BlankNodeAllocationScope("imported-", id -> false);
+		Value alias = RemoteBNode.newResponseScope(allocation, VF, new Object(), true)
+				.map(VF.createBNode("remote-identity"));
+		return nested ? VF.createTripleTerm(VF.createIRI("urn:nested-subject"), PREDICATE, alias) : alias;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void erasedImportedIdentityRemainsReservedInAReplacementContext(boolean nested) {
+		Value alias = importedAlias(nested);
+		BNode node = (BNode) (nested ? ((TripleTerm) alias).getObject() : alias);
+		ValueFactory valueFactory = new LegacyValueFactory(node.getID());
+		var scopeA = new BlankNodeAllocationScope("imported-source-", null);
+		DefaultEvaluationStrategy strategy;
+		TupleExpr optimized;
+		try (var activation = scopeA.activate()) {
+			strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(valueFactory), null);
+			optimized = strategy.optimize(importedConstantAndFreshAllocation(alias), null,
+					EmptyBindingSet.getInstance());
+		}
+		assertFalse(LocalBNodeReferences.analyze(optimized)
+				.structure()
+				.stream()
+				.anyMatch(stamp -> stamp.identity() instanceof BNode),
+				"the optimized FILTER must no longer expose the imported alias to a fresh scan");
+		var scopeB = new BlankNodeAllocationScope("imported-replacement-", null);
+		QueryEvaluationContext contextB;
+		try (var activation = scopeB.activate()) {
+			contextB = new QueryEvaluationContext.Minimal(null, valueFactory);
+		}
+		assertNotSame(scopeA, contextB.getBlankNodeAllocationScope());
+		QueryEvaluationException failure = assertThrows(QueryEvaluationException.class, () -> {
+			try (var rows = strategy.precompile(optimized, contextB).evaluate(EmptyBindingSet.getInstance())) {
+				assertTrue(rows.hasNext());
+				rows.next();
+			}
+		});
+		assertTrue(failure.getMessage().contains("Unsupported blank-node freshness"), failure.getMessage());
+		assertTrue(failure.getMessage().contains("allocation collision"), failure.getMessage());
+	}
+
+	private static QueryRoot importedConstantAndFreshAllocation(Value alias) {
+		return new QueryRoot(new Filter(
+				new Extension(new SingletonSet(), new ExtensionElem(new BNodeGenerator(), "fresh")),
+				new SameTerm(new ValueConstant(alias), new ValueConstant(alias))));
 	}
 
 	@Test

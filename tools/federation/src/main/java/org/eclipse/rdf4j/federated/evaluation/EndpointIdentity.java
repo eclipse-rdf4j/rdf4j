@@ -109,6 +109,16 @@ public final class EndpointIdentity {
 		return false;
 	}
 
+	/** Routes a selected GRAPH across members that explicitly expose canonical reference namespaces. */
+	boolean isOtherSupportedGraphNamespace(Value graph) {
+		if (scope != null && references && canonicalIDs && graph instanceof RemoteBNode remote) {
+			RemoteBNode.Provenance provenance = remote.getProvenance();
+			return provenance != null && provenance.canonicalResultID() && provenance.identityScope() != null
+					&& provenance.identityScope() != scope;
+		}
+		return false;
+	}
+
 	public Value outgoing(Value value) {
 		allocation.reserve(value);
 		return RemoteBNode.toRemoteValue(value, scope, references, canonicalIDs);

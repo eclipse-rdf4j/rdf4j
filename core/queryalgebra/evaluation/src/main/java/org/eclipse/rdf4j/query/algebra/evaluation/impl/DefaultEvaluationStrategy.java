@@ -14,9 +14,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -25,6 +27,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
@@ -69,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.HasLang;
 import org.eclipse.rdf4j.query.algebra.HasLangDir;
@@ -143,6 +147,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
@@ -390,14 +395,20 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (references == null) {
 			references = original.ids();
 		}
+		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expr, original.structure());
+		if (knownIds == null) {
+			knownIds = original.knownIds();
+		}
 		references.forEach(blankNodes::reserve);
+		knownIds.forEach(blankNodes::reserveKnownID);
 		blankNodes.reserve(dataset);
 		blankNodes.reserve(bindings);
 
 		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
 			optimizer.optimize(expr, dataset, bindings);
 		}
-		blankNodes.rememberReferenceSnapshot(expr, references, LocalBNodeReferences.analyze(expr).structure());
+		blankNodes.rememberReferenceSnapshot(expr, references, knownIds,
+				LocalBNodeReferences.analyze(expr).structure());
 		return expr;
 	}
 
@@ -412,7 +423,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (expr instanceof StatementPattern) {
 				result = precompile(expr).evaluate(bindings);
 			} else if (expr instanceof UnaryTupleOperator) {
-				if (expr instanceof Projection) {
+				if (expr instanceof Graph) {
+					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Projection) {
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof MultiProjection) {
 					result = precompile(expr).evaluate(bindings);
@@ -518,9 +531,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			if (references == null) {
 				references = before.ids();
 			}
+			Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expr, before.structure());
+			if (knownIds == null) {
+				knownIds = before.knownIds();
+			}
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
-			blankNodes.rememberReferenceSnapshot(expr, references, LocalBNodeReferences.analyze(expr).structure());
+			blankNodes.rememberReferenceSnapshot(expr, references, knownIds,
+					LocalBNodeReferences.analyze(expr).structure());
 			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 		}
 		return precompile(expr, context);
@@ -573,8 +591,12 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (originalReferences == null) {
 			originalReferences = current.ids();
 		}
+		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expression, current.structure());
 		originalReferences.forEach(scope::reserve);
-		current.ids().forEach(scope::reserveKnownID);
+		if (knownIds != null) {
+			knownIds.forEach(scope::reserveKnownID);
+		}
+		current.knownIds().forEach(scope::reserveKnownID);
 	}
 
 	private QueryEvaluationStep precompileTuple(TupleExpr expr, QueryEvaluationContext context) {
@@ -732,7 +754,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final Var contextVar = alp.getContextVar();
 		final long minLength = alp.getMinLength();
 		return bindings -> new PathIteration(DefaultEvaluationStrategy.this, scope, subjectVar, pathExpression, objVar,
-				contextVar, minLength, bindings);
+				contextVar, minLength, bindings, context);
 	}
 
 	protected QueryEvaluationStep prepare(ZeroLengthPath zlp, QueryEvaluationContext context)
@@ -992,20 +1014,104 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Distinct node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		final QueryEvaluationStep child = precompile(node.getArg(), context);
-		final CollectionFactory cf = this.getCollectionFactory().get();
 		return bindings -> {
-			final CloseableIteration<BindingSet> evaluate = child.evaluate(bindings);
-			return new DistinctIteration<>(evaluate, cf.createSetOfBindingSets()) {
+			final CollectionFactory cf = this.getCollectionFactory().get();
+			CloseableIteration<BindingSet> evaluate = null;
+			try {
+				evaluate = child.evaluate(bindings);
+				DistinctIteration<BindingSet> distinct = new DistinctIteration<>(evaluate, cf.createSetOfBindingSets());
+				return new AbstractCloseableIteration<>() {
+					@Override
+					public boolean hasNext() {
+						if (isClosed()) {
+							return false;
+						}
+						try {
+							boolean hasNext = distinct.hasNext();
+							if (!hasNext) {
+								close();
+							}
+							return hasNext;
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
 
-				@Override
-				protected void handleClose() throws QueryEvaluationException {
+					@Override
+					public BindingSet next() {
+						try {
+							return distinct.next();
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
+
+					@Override
+					public void remove() {
+						try {
+							distinct.remove();
+						} catch (RuntimeException | Error failure) {
+							closeOnFailure(failure);
+							throw failure;
+						}
+					}
+
+					@Override
+					protected void handleClose() {
+						Throwable failure = null;
+						try {
+							distinct.close();
+						} catch (RuntimeException | Error closeFailure) {
+							failure = closeFailure;
+						}
+						try {
+							cf.close();
+						} catch (RuntimeException | Error closeFailure) {
+							if (failure == null) {
+								failure = closeFailure;
+							} else if (failure != closeFailure) {
+								failure.addSuppressed(closeFailure);
+							}
+						}
+						if (failure instanceof RuntimeException runtimeFailure) {
+							throw runtimeFailure;
+						}
+						if (failure instanceof Error errorFailure) {
+							throw errorFailure;
+						}
+					}
+
+					private void closeOnFailure(Throwable failure) {
+						try {
+							close();
+						} catch (RuntimeException | Error closeFailure) {
+							if (failure != closeFailure) {
+								failure.addSuppressed(closeFailure);
+							}
+						}
+					}
+				};
+			} catch (RuntimeException | Error failure) {
+				if (evaluate != null) {
 					try {
-						cf.close();
-					} finally {
-						super.handleClose();
+						evaluate.close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
 					}
 				}
-			};
+				try {
+					cf.close();
+				} catch (RuntimeException | Error closeFailure) {
+					if (failure != closeFailure) {
+						failure.addSuppressed(closeFailure);
+					}
+				}
+				throw failure;
+			}
 		};
 	}
 
@@ -1049,7 +1155,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(UnaryTupleOperator expr, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		if (expr instanceof Projection) {
+		if (expr instanceof Graph graph) {
+			return GraphQueryEvaluationStep.supply(graph, this, tripleSource, context);
+		} else if (expr instanceof Projection) {
 			return prepare((Projection) expr, context);
 		} else if (expr instanceof MultiProjection) {
 			return prepare((MultiProjection) expr, context);
@@ -1769,14 +1877,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(If node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryValueEvaluationStep condition;
-		try {
-			condition = precompile(node.getCondition(), context);
-		} catch (ValueExprEvaluationException e) {
-			// in case of type error, if-construction should result in empty
-			// binding.
-			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> null);
-		}
+		QueryValueEvaluationStep condition = precompileOrFail(node.getCondition(), context);
 		// only the selected branch is evaluated, so an error in the other branch must not surface
 		QueryValueEvaluationStep result = precompileOrFail(node.getResult(), context);
 		QueryValueEvaluationStep alternative = precompileOrFail(node.getAlternative(), context);
@@ -1843,8 +1944,62 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
-		QueryEvaluationStep subquery = precompile(subQuery, context);
-		return new ExistsQueryValueEvaluationStep(subquery);
+		Set<String> pathVariables = new HashSet<>();
+		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists nested) {
+				// A nested invocation captures its own binding domain, including bindings produced by this body.
+			}
+
+			@Override
+			public void meet(ZeroLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+			}
+
+			@Override
+			public void meet(ArbitraryLengthPath path) {
+				addEndpoint(path.getSubjectVar());
+				addEndpoint(path.getObjectVar());
+				super.meet(path);
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				if (node instanceof ZeroLengthPath path) {
+					meet(path);
+				} else if (node instanceof ArbitraryLengthPath path) {
+					meet(path);
+				} else {
+					super.meetOther(node);
+				}
+			}
+
+			private void addEndpoint(Var endpoint) {
+				if (!endpoint.isConstant()) {
+					pathVariables.add(endpoint.getName());
+				}
+			}
+		});
+		if (pathVariables.isEmpty()) {
+			return new ExistsQueryValueEvaluationStep(precompile(subQuery, context));
+		}
+
+		Set<String> referencedNames = Set.copyOf(pathVariables);
+		var variants = new ConcurrentHashMap<Set<String>, QueryEvaluationStep>();
+		return new ExistsQueryValueEvaluationStep(bindings -> {
+			Set<String> domain = new HashSet<>();
+			for (String name : referencedNames) {
+				if (bindings.getValue(name) != null) {
+					domain.add(name);
+				}
+			}
+			// Cache prepared code by domain, never values. Each variant has immutable substitution provenance, so
+			// concurrent/lazy invocations cannot change another invocation's interpretation of its path endpoints.
+			QueryEvaluationStep variant = variants.computeIfAbsent(Set.copyOf(domain),
+					names -> precompile(subQuery, new BindingSubstitutionQueryEvaluationContext(context, names)));
+			return variant.evaluate(bindings);
+		});
 	}
 
 	@Override

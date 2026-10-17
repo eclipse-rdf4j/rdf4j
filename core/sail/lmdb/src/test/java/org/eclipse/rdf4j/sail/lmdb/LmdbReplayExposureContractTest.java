@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -41,7 +42,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -154,6 +154,7 @@ class LmdbReplayExposureContractTest {
 
 			assertTrue(function.entered.await(5, TimeUnit.SECONDS),
 					"sorting must pause inside an already-admitted application comparison");
+			assertEquals(64, function.keyEvaluations.get(), "All ORDER keys must be captured before comparison");
 			TupleQueryResult result = currentResult.get();
 			assertNotNull(result);
 			closeExecutor.submit(result::close).get(5, TimeUnit.SECONDS);
@@ -161,7 +162,8 @@ class LmdbReplayExposureContractTest {
 			Throwable failure = query.get(10, TimeUnit.SECONDS);
 			assertTrue(function.invocations.get() <= 2,
 					"closing the owner must prevent the next comparison; only its two already-running operands may finish, "
-							+ "but observed " + function.invocations.get() + " function calls");
+							+ "but observed " + function.invocations.get() + " comparison operands");
+			assertEquals(64, function.keyEvaluations.get(), "Cancellation must not reevaluate captured keys");
 			assertNotNull(findCause(failure, SailException.class),
 					"cancellation must retain the dispatched LMDB operation's closed-owner failure");
 			// SNAPSHOT's store-level cached generation outlives the transaction. A normal publication retires
@@ -865,6 +867,7 @@ class LmdbReplayExposureContractTest {
 		private final CountDownLatch entered = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final AtomicInteger invocations = new AtomicInteger();
+		private final AtomicInteger keyEvaluations = new AtomicInteger();
 
 		private OrderCloseBarrierFunction(String functionIri) {
 			this.functionIri = functionIri;
@@ -877,12 +880,12 @@ class LmdbReplayExposureContractTest {
 
 		@Override
 		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			keyEvaluations.incrementAndGet();
+			return new OrderComparisonIRI((Literal) args[0], this::pauseComparison);
+		}
+
+		private void pauseComparison() {
 			if (invocations.incrementAndGet() == 1) {
-				boolean preparing = StackWalker.getInstance()
-						.walk(frames -> frames
-								.anyMatch(frame -> frame.getClassName().equals(OrderComparator.class.getName())
-										&& frame.getMethodName().equals("prepareRow")));
-				assertTrue(preparing, "the cancellation barrier must run while preparing an ORDER key");
 				entered.countDown();
 				try {
 					if (!release.await(10, TimeUnit.SECONDS)) {
@@ -893,7 +896,6 @@ class LmdbReplayExposureContractTest {
 					throw new ValueExprEvaluationException("Interrupted at the closed sort-owner barrier", failure);
 				}
 			}
-			return args[0];
 		}
 	}
 

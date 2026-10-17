@@ -13,12 +13,16 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
+import java.util.NoSuchElementException;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -27,6 +31,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.OrderElem;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
@@ -105,6 +110,65 @@ class BlankNodeOrderSpillIdentityTest {
 	private static OrderComparator comparator(QueryEvaluationContext context, String variable) {
 		return new OrderComparator(mock(EvaluationStrategy.class),
 				new Order(new SingletonSet(), new OrderElem(Var.of(variable))), new ValueComparator(), context);
+	}
+
+	@Test
+	void repeatedExpressionPayloadKeepsEachOccurrencesHiddenLabels() {
+		for (long spillThreshold : List.of(Long.MAX_VALUE, 1L)) {
+			var context = new QueryEvaluationContext.Minimal(null);
+			var reused = new MapBindingSet();
+			reused.addBinding("key", VF.createLiteral(1));
+			var expected = new HashSet<Value>();
+			Iterator<BindingSet> input = new Iterator<>() {
+				private int remaining = 3;
+
+				@Override
+				public boolean hasNext() {
+					return remaining > 0;
+				}
+
+				@Override
+				public BindingSet next() {
+					if (!hasNext()) {
+						throw new NoSuchElementException();
+					}
+					remaining--;
+					try (var ignored = context.getBlankNodeAllocationScope().beginSolutionOccurrence(reused)) {
+						expected.add(context.getOrCreateBNode("hidden", reused, VF));
+					}
+					return reused;
+				}
+			};
+			var comparator = new OrderComparator(new DefaultEvaluationStrategy(null, null),
+					new Order(new SingletonSet(), new OrderElem(new ValueConstant(VF.createLiteral(1)))),
+					new ValueComparator(), context);
+			var actual = new HashSet<Value>();
+			long[] spills = { 0 };
+			int count = 0;
+			try (var rows = new OrderIterator(new CloseableIteratorIteration<>(input), comparator,
+					Long.MAX_VALUE, false, spillThreshold) {
+				@Override
+				protected void onSpillToDisk(int rowsWritten, long bytes) {
+					spills[0]++;
+				}
+			}) {
+				while (rows.hasNext()) {
+					BindingSet row = rows.next();
+					if (spillThreshold == Long.MAX_VALUE) {
+						assertSame(reused, row, "expression keys must remain separate from the original payload");
+					}
+					assertEquals(Set.of("key"), row.getBindingNames());
+					actual.add(context.getOrCreateBNode("hidden", row, VF));
+					count++;
+				}
+			}
+			assertEquals(3, count);
+			assertEquals(3, expected.size());
+			assertEquals(expected, actual, "each repeated payload occurrence retains its own labelled state");
+			if (spillThreshold == 1L) {
+				assertTrue(spills[0] > 0, "threshold one must exercise an actual serialized spill");
+			}
+		}
 	}
 
 	@Test

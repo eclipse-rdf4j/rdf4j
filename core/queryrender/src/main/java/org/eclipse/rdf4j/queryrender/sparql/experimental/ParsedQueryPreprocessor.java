@@ -41,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -790,6 +791,14 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	public void meet(Sample node) throws RuntimeException {
 		super.meet(node);
 
+	}
+
+	@Override
+	public void meet(Graph node) throws RuntimeException {
+		if (currentQueryProfile.whereClause == null) {
+			currentQueryProfile.whereClause = node;
+		}
+		super.meet(node);
 	}
 
 	@Override

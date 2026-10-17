@@ -198,8 +198,8 @@ test('dark mode shows the light-ink logo without a white plate', async ({ browse
 		};
 	});
 	await context.close();
-	expect(brand.sources.some((source) => source.endsWith('/images/logo-dark.png')), JSON.stringify(brand)).toBe(true);
-	expect(brand.sources.every((source) => source.endsWith('-dark.png')), JSON.stringify(brand)).toBe(true);
+	expect(brand.sources.some((source) => source.endsWith('/images/logo-dark.svg')), JSON.stringify(brand)).toBe(true);
+	expect(brand.sources.every((source) => source.endsWith('-dark.svg')), JSON.stringify(brand)).toBe(true);
 	expect(brand.background).toBe('rgba(0, 0, 0, 0)');
 });
 

@@ -22,9 +22,11 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -34,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
@@ -86,6 +90,12 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private final String contextVarName;
 
 	private final CollectionFactory cf;
+	private final boolean requiresNodeMembership;
+	private final boolean subjectConstant;
+	private final boolean objectConstant;
+	private final Var graphContextVar;
+	private final QueryEvaluationContext scanContext;
+	private static final String SCAN_CONTEXT_VAR = "zero_length_internal_context";
 
 	public ZeroLengthPathIteration(EvaluationStrategy evaluationStrategyImpl, Var subjectVar, Var objVar, Value subj,
 			Value obj, Var contextVar, BindingSet bindings, QueryEvaluationContext context) {
@@ -95,6 +105,39 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.subj = subj;
 		this.obj = obj;
 		this.bindings = bindings;
+		this.requiresNodeMembership = !subjectVar.isConstant() && !objVar.isConstant()
+				&& !(subj != null && context.getSubstitutionBindingNames().contains(subjectVar.getName()))
+				&& !(obj != null && context.getSubstitutionBindingNames().contains(objVar.getName()));
+		this.subjectConstant = subjectVar.isConstant();
+		this.objectConstant = objVar.isConstant();
+		this.graphContextVar = contextVar;
+		// Temporary statement variables have a private layout and do not receive caller bindings.
+		this.scanContext = new QueryEvaluationContext() {
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				return context.getBlankNodeAllocationScope();
+			}
+
+			@Override
+			public Literal getNow() {
+				return context.getNow();
+			}
+
+			@Override
+			public Dataset getDataset() {
+				return context.getDataset();
+			}
+
+			@Override
+			public ActiveGraph getActiveGraph() {
+				return context.getActiveGraph();
+			}
+
+			@Override
+			public boolean hasEnclosingProjection() {
+				return context.hasEnclosingProjection();
+			}
+		};
 		subjectVarName = subjectVar.getName();
 		objectVarName = objVar.getName();
 		contextVarName = contextVar == null ? null : contextVar.getName();
@@ -111,14 +154,14 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 		StatementPattern subjects;
 		if (contextVar != null) {
-			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, contextVar.clone());
+			subjects = new StatementPattern(Scope.NAMED_CONTEXTS, startVar, predicate, endVar, scanGraphVar());
 		} else {
 			subjects = new StatementPattern(startVar, predicate, endVar);
 		}
 
 		try (var ignored = context.getBlankNodeAllocationScope().activate()) {
 			precompile = evaluationStrategy.precompile(subjects,
-					new QueryEvaluationContext.Minimal(context.getDataset()));
+					scanContext);
 		}
 		setSubject = context.addBinding(subjectVarName);
 		setObject = context.addBinding(objectVarName);
@@ -132,6 +175,21 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
+		try {
+			return nextElement();
+		} catch (RuntimeException | Error failure) {
+			try {
+				close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			throw failure;
+		}
+	}
+
+	private BindingSet nextElement() {
 		if (subj == null && obj == null) {
 			if (this.reportedValues == null) {
 				reportedValues = cf.createSet();
@@ -153,7 +211,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 				String endpointVarName = isSubjOrObj ? internalSubject : internalObject;
 				Value v = bs.getValue(endpointVarName);
 
-				Value graph = contextVarName == null ? null : bs.getValue(contextVarName);
+				Value graph = contextVarName == null ? null : bs.getValue(SCAN_CONTEXT_VAR);
 				if (reportedValues.add(new GraphEndpoint(graph, v))) {
 					MutableBindingSet next = context.createBindingSet(bindings);
 					if (!addCompatibleBinding(next, subjectVarName, v, setSubject)
@@ -161,7 +219,7 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 						continue;
 					}
 					if (setContext != null) {
-						Value context = bs.getValue(contextVarName);
+						Value context = bs.getValue(SCAN_CONTEXT_VAR);
 						if (context != null) {
 							if (!addCompatibleBinding(next, contextVarName, context, setContext)) {
 								continue;
@@ -178,19 +236,18 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			reportedValues = null;
 			return null;
 		} else {
+			Value identity = subj != null ? subj : obj;
 			if (result != null) {
-				if (obj == null && subj != null) {
-					if (!addCompatibleBinding(result, objectVarName, subj, setObject)) {
-						result = null;
-					}
-				} else if (subj == null && obj != null) {
-					if (!addCompatibleBinding(result, subjectVarName, obj, setSubject)) {
-						result = null;
-					}
-				} else if (subj != null && subj.equals(obj)) {
-					// empty bindings
-					// (result but nothing to bind as subjectVar and objVar are both fixed)
-				} else {
+				if (subj != null && obj != null && !subj.equals(obj)
+						|| requiresNodeMembership && !isGraphNode(identity)) {
+					result = null;
+				}
+			}
+			if (result != null) {
+				// A runtime-assigned variable is still an output variable even when an optimizer has stored its
+				// value on the Var. Only original query constants have no solution binding to produce.
+				if (!subjectConstant && !addCompatibleBinding(result, subjectVarName, identity, setSubject)
+						|| !objectConstant && !addCompatibleBinding(result, objectVarName, identity, setObject)) {
 					result = null;
 				}
 			}
@@ -202,11 +259,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private CloseableIteration<BindingSet> createIteration() throws QueryEvaluationException {
-		QueryBindingSet graphBindings = new QueryBindingSet();
-		if (contextVarName != null && bindings.hasBinding(contextVarName)) {
-			graphBindings.addBinding(contextVarName, bindings.getValue(contextVarName));
-		}
-		return precompile.evaluate(graphBindings);
+		CloseableIteration<BindingSet> iter = precompile.evaluate(EmptyBindingSet.getInstance());
+		return iter;
 	}
 
 	private static String internalName(String base, Set<String> occupied) {
@@ -215,6 +269,32 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			name = base + "_" + suffix;
 		}
 		return name;
+	}
+
+	private boolean isGraphNode(Value value) {
+		if (value instanceof Resource && containsNode(value, true)) {
+			return true;
+		}
+		return containsNode(value, false);
+	}
+
+	private boolean containsNode(Value value, boolean subjectPosition) {
+		Var subject = subjectPosition ? Var.of(ANON_SUBJECT_VAR, value, true) : createAnonVar(ANON_SUBJECT_VAR);
+		Var object = subjectPosition ? createAnonVar(ANON_OBJECT_VAR) : Var.of(ANON_OBJECT_VAR, value, true);
+		StatementPattern pattern = graphContextVar == null
+				? new StatementPattern(subject, createAnonVar(ANON_PREDICATE_VAR), object)
+				: new StatementPattern(Scope.NAMED_CONTEXTS, subject, createAnonVar(ANON_PREDICATE_VAR), object,
+						scanGraphVar());
+		try (CloseableIteration<BindingSet> nodes = evaluationStrategy.precompile(pattern, scanContext)
+				.evaluate(EmptyBindingSet.getInstance())) {
+			return nodes.hasNext();
+		}
+	}
+
+	private Var scanGraphVar() {
+		Value value = graphContextVar.hasValue() ? graphContextVar.getValue()
+				: bindings.getValue(graphContextVar.getName());
+		return Var.of(SCAN_CONTEXT_VAR, value, true, graphContextVar.isConstant());
 	}
 
 	private boolean addCompatibleBinding(MutableBindingSet target, String name, Value value,
@@ -237,8 +317,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			if (iter != null) {
 				iter.close();
 			}
-		} finally {
-			cf.close();
+		} catch (RuntimeException | Error failure) {
+			try {
+				cf.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			throw failure;
 		}
+		cf.close();
 	}
 }

@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -126,8 +127,7 @@ class LmdbNonrepeatableBindingReplayTest {
 				}
 			});
 			assertTrue(function.entered.await(5, TimeUnit.SECONDS), "sorting must hold a native read view");
-			assertEquals(barrierInvocation, function.calls.get(),
-					"the barrier must run while preparing the selected ORDER key");
+			assertEquals(2, function.keyEvaluations.get(), "ORDER must capture both keys before comparing them");
 			if (sourceKind == SourceKind.SINGLE_USE) {
 				assertEquals(2, rows.index, "both input rows must be consumed before growth");
 				assertEquals(1, rows.opens);
@@ -258,6 +258,7 @@ class LmdbNonrepeatableBindingReplayTest {
 		private final CountDownLatch entered = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final AtomicInteger calls = new AtomicInteger();
+		private final AtomicInteger keyEvaluations = new AtomicInteger();
 
 		private BarrierFunction(int barrierInvocation) {
 			this.barrierInvocation = barrierInvocation;
@@ -275,7 +276,12 @@ class LmdbNonrepeatableBindingReplayTest {
 
 		@Override
 		public Value evaluate(TripleSource source, Value... args) {
-			if (calls.incrementAndGet() == barrierInvocation) {
+			keyEvaluations.incrementAndGet();
+			return new OrderComparisonIRI((Literal) args[0], () -> pauseComparison(source));
+		}
+
+		private void pauseComparison(TripleSource source) {
+			if (calls.incrementAndGet() == 1) {
 				try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
 						VF.createIRI("urn:binding-replay:predicate"), null)) {
 					assertTrue(statements.hasNext());
@@ -286,7 +292,6 @@ class LmdbNonrepeatableBindingReplayTest {
 					throw new AssertionError(interrupted);
 				}
 			}
-			return args[0];
 		}
 	}
 }

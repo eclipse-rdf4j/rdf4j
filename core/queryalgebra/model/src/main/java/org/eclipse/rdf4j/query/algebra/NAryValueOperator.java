@@ -35,6 +35,7 @@ public abstract class NAryValueOperator extends AbstractQueryModelNode implement
 	 *--------------*/
 
 	protected NAryValueOperator() {
+		args = new ArrayList<>();
 	}
 
 	/**

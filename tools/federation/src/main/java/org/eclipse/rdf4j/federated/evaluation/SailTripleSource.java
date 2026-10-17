@@ -21,6 +21,7 @@ import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExprRenderer;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
+import org.eclipse.rdf4j.federated.algebra.QueryRef;
 import org.eclipse.rdf4j.federated.algebra.TripleRefJoinGroup;
 import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -67,10 +69,14 @@ public class SailTripleSource extends TripleSourceBase {
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
 
-		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, queryInfo.getDataset())) {
+		Dataset dataset = stmt instanceof QueryRef queryRef ? queryRef.getExecutionDataset() : queryInfo.getDataset();
+		if (EndpointIdentity.localStore(endpoint) != null && requiresPreparedQuery(stmt, dataset)) {
 			return preparedStatements(stmt, bindings, filterExpr, queryInfo,
 					typed -> QueryStringUtil.selectQueryString(stmt, typed, null, new AtomicBoolean(), null),
-					typed -> QueryStringUtil.askQueryString(stmt, typed, null));
+					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
+		}
+		if (!FedXUtil.isContextAvailable(stmt, dataset)) {
+			return new EmptyIteration<>();
 		}
 
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
@@ -83,7 +89,7 @@ public class SailTripleSource extends TripleSourceBase {
 		}
 		Resource subject = (Resource) identity.outgoing(subjValue);
 		Value object = identity.outgoing(objValue);
-		Resource[] originalContexts = FedXUtil.toContexts(stmt, queryInfo.getDataset());
+		Resource[] originalContexts = FedXUtil.toContexts(stmt, dataset);
 		Resource[] contexts = identity.outgoing(originalContexts);
 		if (originalContexts.length != 0 && contexts.length == 0) {
 			return new EmptyIteration<>();
@@ -171,6 +177,9 @@ public class SailTripleSource extends TripleSourceBase {
 			return hasPreparedStatements(stmt, bindings, queryInfo,
 					typed -> QueryStringUtil.askQueryString(stmt, typed, null), dataset);
 		}
+		if (!FedXUtil.isContextAvailable(stmt, dataset)) {
+			return false;
+		}
 
 		Value subjValue = QueryAlgebraUtil.getVarValue(stmt.getSubjectVar(), bindings);
 		Value predValue = QueryAlgebraUtil.getVarValue(stmt.getPredicateVar(), bindings);
@@ -180,15 +189,40 @@ public class SailTripleSource extends TripleSourceBase {
 		if (identity.isForeignLocalValue(subjValue) || identity.isForeignLocalValue(objValue)) {
 			return false;
 		}
-		Resource[] originalContexts = FedXUtil.toContexts(dataset);
+		Resource subject = (Resource) identity.outgoing(subjValue);
+		Value object = identity.outgoing(objValue);
+		Resource[] originalContexts = FedXUtil.toContexts(stmt, dataset);
 		Resource[] contexts = identity.outgoing(originalContexts);
 		if (originalContexts.length != 0 && contexts.length == 0) {
 			return false;
 		}
 
 		try (RepositoryConnection conn = endpoint.getConnection()) {
-			return conn.hasStatement((Resource) identity.outgoing(subjValue), (IRI) predValue,
-					identity.outgoing(objValue), queryInfo.getIncludeInferred(), contexts);
+			Dataset rdfDataset = FedXUtil.toRdfDataset(dataset);
+			if (stmt.getScope() == Scope.NAMED_CONTEXTS && !stmt.getContextVar().hasValue()
+					&& (!(stmt instanceof QueryRef queryRef) || queryRef.getResolvedGraphSelection() == null)) {
+				if (FedXUtil.hasDatasetGraphSelection(rdfDataset)) {
+					for (Resource graph : contexts) {
+						if (conn.hasStatement(subject, (IRI) predValue, object,
+								queryInfo.getIncludeInferred(), graph)) {
+							return true;
+						}
+					}
+				} else {
+					try (RepositoryResult<Resource> names = conn.getContextIDs()) {
+						while (names.hasNext()) {
+							Resource graph = names.next();
+							if (graph != null && conn.hasStatement(subject, (IRI) predValue, object,
+									queryInfo.getIncludeInferred(), graph)) {
+								return true;
+							}
+						}
+					}
+				}
+				return false;
+			}
+			return conn.hasStatement(subject, (IRI) predValue, object, queryInfo.getIncludeInferred(),
+					contexts);
 		}
 	}
 
@@ -203,7 +237,7 @@ public class SailTripleSource extends TripleSourceBase {
 		if (stmt.getContextVar() != null && !stmt.getContextVar().hasValue()) {
 			return true;
 		}
-		Dataset ds = queryInfo.getDataset();
+		Dataset ds = FedXUtil.toRdfDataset(queryInfo.getDataset());
 		if (ds != null) {
 
 			// if FROM NAMED is used we rely on a prepared query
@@ -223,37 +257,37 @@ public class SailTripleSource extends TripleSourceBase {
 		CloseableIteration<BindingSet> result = preparedStatements(group, bindings, group.getFilterExpr(),
 				group.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(group, typed, null, new AtomicBoolean(), null),
-				typed -> QueryStringUtil.askQueryString(group, typed, null));
+				typed -> QueryStringUtil.askQueryString(group, typed, null), group.getExecutionDataset());
 		return group.getBoundFilters() == null ? result : new InsertBindingsIteration(result, group.getBoundFilters());
 	}
 
 	public CloseableIteration<BindingSet> getStatements(ExclusiveTupleExprRenderer expression, BindingSet bindings) {
 		return preparedStatements(expression, bindings, null, expression.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryString(expression, typed, null, new AtomicBoolean(), null),
-				typed -> QueryStringUtil.askQueryString(expression, typed, null));
+				typed -> QueryStringUtil.askQueryString(expression, typed, null), expression.getExecutionDataset());
 	}
 
 	public CloseableIteration<BindingSet> getStatements(TripleRefJoinGroup group, BindingSet bindings) {
 		return preparedStatements(group, bindings, null, group.getQueryInfo(),
 				typed -> QueryStringUtil.selectQueryStringTripleRefJoinGroup(group, typed, null),
-				typed -> QueryStringUtil.askQueryString(group, typed, null));
+				typed -> QueryStringUtil.askQueryString(group, typed, null), group.getExecutionDataset());
 	}
 
 	@Override
 	public boolean hasStatements(ExclusiveTupleExpr expression, BindingSet bindings) {
 		return hasPreparedStatements(expression, bindings, expression.getQueryInfo(),
 				typed -> QueryStringUtil.askQueryString(expression, typed, null),
-				expression.getQueryInfo().getDataset());
+				expression.getExecutionDataset());
 	}
 
 	private CloseableIteration<BindingSet> preparedStatements(QueryModelNode expression, BindingSet bindings,
 			FilterValueExpr filter, QueryInfo queryInfo, SelectQueryBuilder select,
-			Function<QueryStringUtil.TypedBindings, String> ask) {
+			Function<QueryStringUtil.TypedBindings, String> ask, Dataset dataset) {
 		QueryStringUtil.TypedBindings typed = new QueryStringUtil.TypedBindings(expression, bindings);
 		try {
-			return getStatements(select.build(typed), bindings, typed.getQueryBindings(), filter, queryInfo);
+			return getStatements(select.build(typed), bindings, typed.getQueryBindings(), filter, queryInfo, dataset);
 		} catch (IllegalQueryException allBound) {
-			if (!hasPreparedStatements(expression, bindings, queryInfo, ask, queryInfo.getDataset())) {
+			if (!hasPreparedStatements(expression, bindings, queryInfo, ask, dataset)) {
 				return new EmptyIteration<>();
 			}
 			CloseableIteration<BindingSet> result = new SingleBindingSetIteration(bindings);
@@ -275,7 +309,7 @@ public class SailTripleSource extends TripleSourceBase {
 			return false;
 		}
 		BindingSet outgoing = identity.outgoing(typed.getQueryBindings());
-		Dataset outgoingDataset = identity.outgoingDataset(dataset);
+		Dataset outgoingDataset = identity.outgoingDataset(FedXUtil.toRdfDataset(dataset));
 		try (RepositoryConnection connection = endpoint.getConnection()) {
 			var query = connection.prepareBooleanQuery(QueryLanguage.SPARQL, sparql);
 			for (Binding binding : outgoing) {

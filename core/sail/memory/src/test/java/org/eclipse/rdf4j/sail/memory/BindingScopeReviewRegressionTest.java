@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.memory;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
 
 import java.io.StringReader;
@@ -21,7 +22,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 
+import org.assertj.core.groups.Tuple;
+import org.eclipse.rdf4j.model.util.Values;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -29,6 +33,8 @@ import org.eclipse.rdf4j.rio.RDFFormat;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * End-to-end regressions for variable-scope handling in the standard optimizer pipeline and the scoped OPTIONAL
@@ -135,10 +141,97 @@ public class BindingScopeReviewRegressionTest {
 	}
 
 	@Test
-	public void zeroLengthPathDoesNotGuaranteeGraphVariable() throws Exception {
-		assertThat(query("<urn:G1> { <urn:a> <urn:p> <urn:b> }",
-				"SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
-						.containsExactly("{g=urn:G1, o=urn:a}", "{g=urn:G1, o=urn:b}");
+	public void graphVariableIsBoundForZeroLengthAndPositivePathRows() throws Exception {
+		String data = "<urn:G1> { <urn:a> <urn:p> <urn:b> }";
+		assertThat(query(data, "SELECT ?o ?g { GRAPH ?g { <urn:a> <urn:p>* ?o } FILTER(BOUND(?g)) }"))
+				.containsExactly("{g=urn:G1, o=urn:a}", "{g=urn:G1, o=urn:b}");
+		assertThat(query(data, "SELECT ?o { GRAPH <urn:missingGraph> { <urn:a> <urn:p>* ?o } }"))
+				.isEmpty();
+	}
+
+	@Test
+	public void defaultGraphOptionalSequenceRepeatKeepsAllEndpointBindings() throws Exception {
+		addPathChain(false);
+		assertPathPairs("SELECT ?s ?o WHERE { ?s (<urn:p>?/<urn:q>?)+ ?o }");
+	}
+
+	@Test
+	public void defaultGraphOptionalSequenceStarKeepsAllEndpointBindings() throws Exception {
+		addPathChain(false);
+		assertPathPairs("SELECT ?s ?o WHERE { ?s (<urn:p>?/<urn:q>?)* ?o }");
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void outerProjectionOmitsUnselectedApiBindingForDefaultAndNamedGraphPaths(boolean namedGraph)
+			throws Exception {
+		addPathChain(namedGraph);
+		String pattern = "?s (<urn:p>?/<urn:q>?)+ ?o";
+		String graphPattern = namedGraph ? "GRAPH <urn:graph> { " + pattern + " }" : pattern;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery query = connection.prepareTupleQuery("SELECT ?o WHERE { " + graphPattern + " }");
+			query.setBinding("unrelated", Values.iri("urn:incoming"));
+			try (TupleQueryResult result = query.evaluate()) {
+				List<BindingSet> rows = new ArrayList<>();
+				result.forEach(rows::add);
+				assertThat(rows).extracting(row -> row.getValue("o"))
+						.containsExactlyInAnyOrder(
+								Values.iri("urn:a"), Values.iri("urn:b"), Values.iri("urn:b"), Values.iri("urn:c"),
+								Values.iri("urn:c"), Values.iri("urn:c"));
+				rows.forEach(row -> assertThat(row.getBindingNames()).containsExactly("o"));
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" })
+	public void namedGraphOptionalSequenceRepeatKeepsAllEndpointBindings(String path) throws Exception {
+		addPathChain(true);
+		assertPathPairs("SELECT ?s ?o WHERE { GRAPH <urn:graph> { ?s " + path + " ?o } }");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" })
+	public void nestedNamedGraphOptionalSequenceRepeatKeepsAllEndpointBindings(String path) throws Exception {
+		addPathChain(true);
+		assertPathPairs("SELECT ?s ?o WHERE { { SELECT ?s ?o WHERE { GRAPH <urn:graph> { ?s " + path
+				+ " ?o } } } }");
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "(<urn:p>?/<urn:q>?)+", "(<urn:p>?/<urn:q>?)*" })
+	public void optionalSequenceRepeatKeepsAllBindingsAcrossValuesRows(String path) throws Exception {
+		addPathChain(true);
+		String query = "SELECT ?iteration ?s ?o WHERE { VALUES ?iteration { <urn:first> <urn:second> } "
+				+ "GRAPH <urn:graph> { ?s " + path + " ?o } }";
+		List<BindingSet> rows = queryBindings(query);
+		var a = Values.iri("urn:a");
+		var b = Values.iri("urn:b");
+		var c = Values.iri("urn:c");
+		var first = Values.iri("urn:first");
+		var second = Values.iri("urn:second");
+		assertThat(rows).extracting(row -> tuple(row.getValue("iteration"), row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(first, a, a), tuple(first, b, b), tuple(first, c, c),
+						tuple(first, a, b), tuple(first, b, c), tuple(first, a, c), tuple(second, a, a),
+						tuple(second, b, b), tuple(second, c, c), tuple(second, a, b), tuple(second, b, c),
+						tuple(second, a, c));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("iteration", "s", "o"));
+	}
+
+	@Test
+	public void samePreparedOptionalSequenceQueryCanBeEvaluatedRepeatedly() throws Exception {
+		addPathChain(true);
+		String text = "SELECT ?s ?o WHERE { GRAPH <urn:graph> { ?s (<urn:p>?/<urn:q>?)+ ?o } }";
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			TupleQuery prepared = connection.prepareTupleQuery(text);
+			for (int i = 0; i < 2; i++) {
+				try (TupleQueryResult result = prepared.evaluate()) {
+					List<BindingSet> rows = new ArrayList<>();
+					result.forEach(rows::add);
+					assertPathPairs(rows);
+				}
+			}
+		}
 	}
 
 	@Test
@@ -194,6 +287,46 @@ public class BindingScopeReviewRegressionTest {
 										"{c=\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>, n=\"n2\", p=http://ex/p2}",
 										"{c=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>, n=\"n1\", p=http://ex/p1}",
 										"{c=\"2\"^^<http://www.w3.org/2001/XMLSchema#integer>, n=\"n1\", p=http://ex/p2}");
+	}
+
+	private void addPathChain(boolean namedGraph) throws Exception {
+		var a = Values.iri("urn:a");
+		var b = Values.iri("urn:b");
+		var c = Values.iri("urn:c");
+		var p = Values.iri("urn:p");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			if (namedGraph) {
+				var graph = Values.iri("urn:graph");
+				connection.add(a, p, b, graph);
+				connection.add(b, p, c, graph);
+			} else {
+				connection.add(a, p, b);
+				connection.add(b, p, c);
+			}
+		}
+	}
+
+	private void assertPathPairs(String text) throws Exception {
+		assertPathPairs(queryBindings(text));
+	}
+
+	private void assertPathPairs(List<BindingSet> rows) {
+		var a = Values.iri("urn:a");
+		var b = Values.iri("urn:b");
+		var c = Values.iri("urn:c");
+		assertThat(rows).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(a, a), tuple(b, b), tuple(c, c), tuple(a, b), tuple(b, c),
+						tuple(a, c));
+		rows.forEach(row -> assertThat(row.getBindingNames()).containsExactlyInAnyOrder("s", "o"));
+	}
+
+	private List<BindingSet> queryBindings(String text) throws Exception {
+		try (SailRepositoryConnection connection = repository.getConnection();
+				TupleQueryResult result = connection.prepareTupleQuery(text).evaluate()) {
+			List<BindingSet> rows = new ArrayList<>();
+			result.forEach(rows::add);
+			return rows;
+		}
 	}
 
 	private List<String> query(String trig, String sparql) throws Exception {

@@ -95,6 +95,12 @@ public class SparqlTripleSource extends TripleSourceBase {
 	public boolean hasStatements(StatementPattern stmt,
 			BindingSet bindings, QueryInfo queryInfo, Dataset dataset) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
+		if (NativeGraphQuery.isRequired(stmt, bindings)) {
+			try (CloseableIteration<BindingSet> rows = getStatements(NativeGraphQuery.select(stmt, bindings, dataset),
+					queryInfo)) {
+				return rows.hasNext();
+			}
+		}
 
 		// decide whether to use ASK queries or a SELECT query
 		if (useASKQueries) {
@@ -138,12 +144,15 @@ public class SparqlTripleSource extends TripleSourceBase {
 			BindingSet bindings)
 			throws RepositoryException, MalformedQueryException,
 			QueryEvaluationException {
+		if (NativeGraphQuery.isRequired(expr, bindings)) {
+			return super.hasStatements(expr, bindings);
+		}
 
 		if (!useASKQueries) {
 
 			/* remote select limit 1 query */
 			String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
-					expr.getQueryInfo().getDataset());
+					expr.getExecutionDataset());
 			try (RepositoryConnection conn = endpoint.getConnection()) {
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, expr.getQueryInfo());
