@@ -15,9 +15,25 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /**
  * Normalizes anonymous variable tokens so structurally identical trees compare equal even if hashed suffixes differ.
@@ -42,6 +58,234 @@ public final class VarNameNormalizer {
 
 	public static String normalizeVars(String input) {
 		return normalizeVars(input, DEFAULT_PREFIXES);
+	}
+
+	/**
+	 * Canonical model text for anonymous constant symbols and the existing generated-placeholder families. Roles come
+	 * from the model, never from RDF text or a genuine variable's spelling. A bijection preserves repeated-name
+	 * relationships across the unchanged scope tree; equal Values do not merge distinct symbols. The source is not
+	 * modified, and no textual normalization is applied to Values.
+	 */
+	public static String normalizeModelVariables(QueryModelNode expression) {
+		if (expression == null) {
+			return null;
+		}
+		ModelSymbols symbols = new ModelSymbols();
+		expression.visit(symbols);
+		Map<String, String> names = symbols.canonicalNames();
+		QueryModelNode[] copy = { expression.clone() };
+		copy[0].visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			private String name(String original) {
+				return names.getOrDefault(original, original);
+			}
+
+			private void replace(QueryModelNode original, QueryModelNode replacement) {
+				if (original.getParentNode() == null) {
+					copy[0] = replacement;
+				} else {
+					original.replaceWith(replacement);
+				}
+			}
+
+			@Override
+			public void meet(Var variable) {
+				String renamed = name(variable.getName());
+				if (!renamed.equals(variable.getName())) {
+					Var replacement = Var.of(renamed, variable.getValue(), variable.isAnonymous(),
+							variable.isConstant(), variable.isBNode());
+					copyAnnotations(variable, replacement);
+					replace(variable, replacement);
+				}
+			}
+
+			@Override
+			public void meet(ExtensionElem element) {
+				element.setName(name(element.getName()));
+				super.meet(element);
+			}
+
+			@Override
+			public void meet(ProjectionElem element) {
+				// Only the source follows a generated symbol; a projection target is a genuine output name.
+				element.setName(name(element.getName()));
+			}
+
+			@Override
+			public void meet(Group group) {
+				List<String> renamed = new ArrayList<>(group.getGroupBindingNames().size());
+				group.getGroupBindingNames().forEach(original -> renamed.add(name(original)));
+				group.setGroupBindingNames(renamed);
+				super.meet(group);
+			}
+
+			@Override
+			public void meet(GroupElem element) {
+				element.setName(name(element.getName()));
+				super.meet(element);
+			}
+
+			@Override
+			public void meet(ValueExprTripleRef triple) {
+				super.meet(triple);
+				String renamed = name(triple.getExtVarName());
+				if (!Objects.equals(renamed, triple.getExtVarName())) {
+					ValueExprTripleRef replacement = new ValueExprTripleRef(renamed, triple.getSubjectExpr(),
+							triple.getPredicateExpr(), triple.getObjectExpr());
+					copyAnnotations(triple, replacement);
+					replace(triple, replacement);
+				}
+			}
+		});
+		return copy[0].toString();
+	}
+
+	private static void copyAnnotations(QueryModelNode source, QueryModelNode target) {
+		if (source instanceof VariableScopeChange sourceScope && target instanceof VariableScopeChange targetScope) {
+			targetScope.setVariableScopeChange(sourceScope.isVariableScopeChange());
+		}
+		target.setCostEstimate(source.getCostEstimate());
+		target.setResultSizeEstimate(source.getResultSizeEstimate());
+		target.setResultSizeActual(source.getResultSizeActual());
+		target.setTotalTimeNanosActual(source.getTotalTimeNanosActual());
+	}
+
+	private enum AnonymousRole {
+		CONSTANT,
+		PLACEHOLDER,
+		CONFLICT
+	}
+
+	private static final class ModelSymbols extends AbstractQueryModelVisitor<RuntimeException> {
+		private final Map<String, AnonymousRole> anonymous = new LinkedHashMap<>();
+		private final Set<String> genuine = new HashSet<>();
+		private final Set<String> referenced = new HashSet<>();
+
+		private void anonymous(String name, AnonymousRole role) {
+			anonymous.merge(name, role, (first, second) -> first == second ? first : AnonymousRole.CONFLICT);
+		}
+
+		@Override
+		public void meet(Var variable) {
+			String name = variable.getName();
+			if (variable.isAnonymous() && variable.hasValue()) {
+				anonymous(name, AnonymousRole.CONSTANT);
+			} else if (variable.isAnonymous() && !variable.hasValue() && placeholderFamily(name) != null) {
+				anonymous(name, AnonymousRole.PLACEHOLDER);
+			} else {
+				genuine.add(name);
+			}
+		}
+
+		@Override
+		public void meet(ExtensionElem element) {
+			String name = element.getName();
+			if (element.isAnonymousTarget()) {
+				if (element.getExpr() instanceof ValueConstant) {
+					anonymous(name, AnonymousRole.CONSTANT);
+				} else if (placeholderFamily(name) != null) {
+					anonymous(name, AnonymousRole.PLACEHOLDER);
+				}
+			} else {
+				genuine.add(name);
+			}
+			referenced.add(name);
+			super.meet(element);
+		}
+
+		@Override
+		public void meet(ProjectionElem element) {
+			referenced.add(element.getName());
+			element.getProjectionAlias().ifPresent(genuine::add);
+		}
+
+		@Override
+		public void meet(Group group) {
+			referenced.addAll(group.getGroupBindingNames());
+			super.meet(group);
+		}
+
+		@Override
+		public void meet(GroupElem element) {
+			if (element.isAnonymousTarget() && placeholderFamily(element.getName()) != null) {
+				anonymous(element.getName(), AnonymousRole.PLACEHOLDER);
+			} else {
+				genuine.add(element.getName());
+			}
+			super.meet(element);
+		}
+
+		@Override
+		public void meet(BindingSetAssignment assignment) {
+			genuine.addAll(assignment.getDeclaredBindingNames());
+			if (assignment.hasRepeatableBindingSets() && assignment.getBindingSets() != null) {
+				for (BindingSet row : assignment.getBindingSets()) {
+					genuine.addAll(row.getBindingNames());
+				}
+			}
+		}
+
+		@Override
+		public void meet(ValueExprTripleRef triple) {
+			referenced.add(triple.getExtVarName());
+			super.meet(triple);
+		}
+
+		private Map<String, String> canonicalNames() {
+			for (String name : referenced) {
+				if (!anonymous.containsKey(name)) {
+					genuine.add(name);
+				}
+			}
+			Set<String> occupied = new HashSet<>(genuine);
+			for (var symbol : anonymous.entrySet()) {
+				String family = placeholderFamily(symbol.getKey());
+				if (symbol.getValue() == AnonymousRole.CONFLICT
+						|| symbol.getValue() == AnonymousRole.PLACEHOLDER && family != null
+								&& isAllDigits(symbol.getKey(), family.length(), symbol.getKey().length())) {
+					occupied.add(symbol.getKey());
+				}
+			}
+			Map<String, String> result = new HashMap<>();
+			Map<String, Integer> counters = new HashMap<>();
+			for (var symbol : anonymous.entrySet()) {
+				String original = symbol.getKey();
+				if (genuine.contains(original) || symbol.getValue() == AnonymousRole.CONFLICT) {
+					continue;
+				}
+				String family = symbol.getValue() == AnonymousRole.CONSTANT ? "_const_"
+						: placeholderFamily(original);
+				if (symbol.getValue() == AnonymousRole.PLACEHOLDER
+						&& isAllDigits(original, family.length(), original.length())) {
+					continue;
+				}
+				int next = counters.getOrDefault(family, symbol.getValue() == AnonymousRole.CONSTANT ? 0 : 1);
+				String candidate;
+				do {
+					candidate = family + next++;
+				} while (!occupied.add(candidate));
+				counters.put(family, next);
+				result.put(original, candidate);
+			}
+			return result;
+		}
+	}
+
+	private static String placeholderFamily(String name) {
+		if (name == null) {
+			return null;
+		}
+		for (String family : DEFAULT_PREFIXES) {
+			if (name.startsWith(family) && name.length() > family.length()) {
+				boolean word = true;
+				for (int i = family.length(); word && i < name.length(); i++) {
+					word = isWordChar(name.charAt(i));
+				}
+				if (word) {
+					return family;
+				}
+			}
+		}
+		return null;
 	}
 
 	public static String normalizeVars(String input, List<String> families) {

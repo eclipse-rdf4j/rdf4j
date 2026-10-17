@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.testsuite.sparql.tests.AggregateTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ArbitraryLengthPathTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.BasicTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.BindTest;
+import org.eclipse.rdf4j.testsuite.sparql.tests.BlankNodeReferenceConformanceTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.BuiltinFunctionTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.ConstructTest;
 import org.eclipse.rdf4j.testsuite.sparql.tests.DefaultGraphTest;
@@ -88,6 +89,12 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 	@TestFactory
 	Stream<DynamicTest> bind() throws RDF4JException, IOException {
 		return new BindTest(this::getEmptyInitializedRepository).tests();
+	}
+
+	@TestFactory
+	Stream<DynamicTest> blankNodeReferences() throws IOException {
+		return new BlankNodeReferenceConformanceTest(this::getEmptyInitializedRepository)
+				.tests(supportsRdfStarTripleTerms());
 	}
 
 	@TestFactory
@@ -237,6 +244,10 @@ public abstract class RepositorySPARQLComplianceTestSuite {
 
 	protected boolean deleteDataDirAfterShutdown() {
 		return false;
+	}
+
+	protected boolean supportsRdfStarTripleTerms() {
+		return true;
 	}
 
 	protected void deleteDataDir(File dataDir) {

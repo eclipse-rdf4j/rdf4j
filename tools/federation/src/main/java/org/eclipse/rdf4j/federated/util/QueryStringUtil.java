@@ -18,9 +18,11 @@ import java.io.IOException;
 import java.util.AbstractSet;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -56,7 +58,9 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -66,6 +70,48 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class QueryStringUtil {
+
+	/** Typed operands for an in-process prepared query, kept out of the SPARQL text and projection. */
+	public static final class TypedBindings extends MapBindingSet {
+		private static final long serialVersionUID = 1L;
+		private final Set<String> names;
+		private final Map<Value, String> parameters = new IdentityHashMap<>();
+		private final MapBindingSet queryBindings = new MapBindingSet();
+		private int next;
+
+		public TypedBindings(QueryModelNode expression, BindingSet originals) {
+			super(originals.size());
+			originals.forEach(this::addBinding);
+			names = new HashSet<>(originals.getBindingNames());
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Var variable) {
+					names.add(variable.getName());
+				}
+			});
+		}
+
+		public BindingSet getQueryBindings() {
+			return queryBindings;
+		}
+
+		private StringBuilder append(StringBuilder target, Value value) {
+			String name = parameters.get(value);
+			if (name == null) {
+				do {
+					name = "__fedx_identity_" + next++;
+				} while (!names.add(name));
+				parameters.put(value, name);
+				queryBindings.addBinding(name, value);
+			}
+			return target.append('?').append(name);
+		}
+	}
+
+	public static boolean containsBlankNode(Value value) {
+		return value instanceof BNode || value instanceof TripleTerm triple
+				&& (containsBlankNode(triple.getSubject()) || containsBlankNode(triple.getObject()));
+	}
 
 	/* TODO make operations more performant, i.e. use same instance of StringBuilder more permanently */
 
@@ -223,6 +269,13 @@ public class QueryStringUtil {
 		Value graphValue = selection != null ? selection.logicalGraph()
 				: scope == Scope.NAMED_CONTEXTS ? QueryAlgebraUtil.getVarValue(context, bindings) : null;
 		if (graphValue instanceof BNode) {
+			if (bindings instanceof TypedBindings typed) {
+				return typed.append(new StringBuilder("GRAPH "), graphValue)
+						.append(" { ")
+						.append(body)
+						.append("} ")
+						.toString();
+			}
 			if (varNames instanceof ProjectionVariables variables && variables.graphBindings != null) {
 				String helper = variables.graphName();
 				variables.graphBindings.addBinding(helper, graphValue);
@@ -724,6 +777,18 @@ public class QueryStringUtil {
 		return res.toString();
 	}
 
+	public static String askQueryString(TripleRefJoinGroup group, BindingSet bindings, Dataset dataset) {
+		Set<String> names = projectionVariables(group, bindings, null);
+		StringBuilder result = new StringBuilder("ASK ");
+		appendDatasetClause(result, dataset);
+		result.append("WHERE { ")
+				.append(constructStatement(group.getTripleRefStatementPattern(), names, bindings));
+		for (StatementPattern statement : group.getStatementPatterns()) {
+			result.append(constructStatement(statement, names, bindings));
+		}
+		return result.append(" }").toString();
+	}
+
 	protected static String constructInnerUnion(StatementPattern stmt, int outerID, Set<String> varNames,
 			List<BindingSet> bindings) {
 
@@ -1003,6 +1068,9 @@ public class QueryStringUtil {
 	 */
 	protected static StringBuilder appendVar(StringBuilder sb, Var var, Set<String> varNames, BindingSet bindings) {
 		Value value = QueryAlgebraUtil.getVarValue(var, bindings);
+		if (bindings instanceof TypedBindings typed && containsBlankNode(value)) {
+			return typed.append(sb, value);
+		}
 		if (varNames instanceof ProjectionVariables variables
 				&& variables.graphBindings != null && variables.graphIdentities.contains(value)) {
 			return sb.append("?").append(variables.nativeValue(value));
@@ -1078,7 +1146,14 @@ public class QueryStringUtil {
 		if (value instanceof BNode) {
 			return appendBNode(sb, (BNode) value);
 		}
-		throw new RuntimeException("Type not supported: " + value.getClass().getCanonicalName());
+		if (value instanceof TripleTerm triple) {
+			sb.append("<<(");
+			appendValue(sb, triple.getSubject()).append(' ');
+			appendValue(sb, triple.getPredicate()).append(' ');
+			appendValue(sb, triple.getObject()).append(")>>");
+			return sb;
+		}
+		throw new QueryEvaluationException("Type not supported: " + value.getClass().getCanonicalName());
 	}
 
 	/**
@@ -1104,11 +1179,8 @@ public class QueryStringUtil {
 	 * @return the string builder
 	 */
 	protected static StringBuilder appendBNode(StringBuilder sb, BNode bNode) {
-		log.debug("Cannot express BNodes in SPARQl: Bnode " + bNode.toString() + " is replaced with "
-				+ BNODE_URI.stringValue());
-		// TODO think how this can be done in queries, for now we just append a
-		// dummy URI which does not produce any results
-		return appendURI(sb, BNODE_URI);
+		throw new QueryEvaluationException(
+				"Unsupported blank-node identity: FedX transport has no trusted scope mapping");
 	}
 
 	/**
@@ -1178,15 +1250,25 @@ public class QueryStringUtil {
 	}
 
 	private static StringBuilder appendDatasetClause(StringBuilder sb, Dataset dataset) {
+		dataset = FedXUtil.toRdfDataset(dataset);
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 		if (dataset == null) {
 			return sb;
 		}
-		for (IRI context : dataset.getDefaultGraphs()) {
-			sb.append("FROM <").append(context.stringValue()).append("> ");
+		for (Resource context : dataset.getDefaultGraphResources()) {
+			appendGraphSource(sb, context, false);
 		}
-		for (IRI namedContext : dataset.getNamedGraphs()) {
-			sb.append("FROM NAMED <").append(namedContext.stringValue()).append("> ");
+		for (Resource namedContext : dataset.getNamedGraphResources()) {
+			appendGraphSource(sb, namedContext, true);
 		}
 		return sb;
+	}
+
+	private static void appendGraphSource(StringBuilder sb, Resource graph, boolean named) {
+		if (!(graph instanceof IRI)) {
+			throw new QueryEvaluationException(
+					"Unsupported blank-node identity: SPARQL Protocol graph sources require IRIs");
+		}
+		sb.append(named ? "FROM NAMED <" : "FROM <").append(graph.stringValue()).append("> ");
 	}
 }

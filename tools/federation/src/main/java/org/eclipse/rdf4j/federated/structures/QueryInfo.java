@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +56,11 @@ public class QueryInfo {
 	private final long start;
 	private final boolean includeInferred;
 	private final Dataset dataset;
+	private final BlankNodeAllocationScope blankNodes = BlankNodeAllocationScope.currentOrNew();
+
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return blankNodes;
+	}
 
 	private TupleQueryResultHandler resultHandler = null;
 
@@ -98,7 +104,8 @@ public class QueryInfo {
 
 	public QueryInfo(Resource subj, IRI pred, Value obj, int maxExecutionTime, boolean includeInferred,
 			FederationContext federationContext, FederationEvaluationStrategy strategy, Dataset dataset) {
-		this(QueryStringUtil.toString(subj, pred, obj), null, QueryType.GET_STATEMENTS, maxExecutionTime,
+		// This is diagnostic text, not SPARQL transport: typed blank-node operands must not be serialized here.
+		this("{" + subj + "; " + pred + "; " + obj + "}", null, QueryType.GET_STATEMENTS, maxExecutionTime,
 				includeInferred,
 				federationContext, strategy, dataset);
 	}

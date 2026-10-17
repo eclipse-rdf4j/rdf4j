@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 
 import java.util.List;
 
@@ -144,8 +146,11 @@ public class FedXSingleSourceGraphTest extends SPARQLBaseTest {
 				+ "> ?source . GRAPH <" + emptyGraph + "> {} } }";
 		assertThat(optimize(text, dataset)).isNotInstanceOf(SingleSourceQuery.class);
 		assertThat(query(text, dataset))
-				.extracting(row -> tuple(row.getValue("g"), row.getValue("claim"), row.getValue("source")))
-				.containsExactly(tuple(GRAPH, CLAIM, VF.createLiteral("local source")));
+				.extracting(row -> tuple(row.getValue("g"), identity(row.getValue("claim")), row.getValue("source")))
+				.containsExactly(tuple(GRAPH,
+						memberValue(federationContext().getEndpointManager().getEndpointByName("http://endpoint1"),
+								CLAIM),
+						VF.createLiteral("local source")));
 	}
 
 	private TupleExpr optimize(String text, Dataset dataset) {

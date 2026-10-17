@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.IteratingGraphQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.rio.RDFHandler;
@@ -65,7 +66,8 @@ public class SailGraphQuery extends SailQuery implements GraphQuery {
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.GRAPH);
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline);
+					BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 				try {
 					bindingsIter1 = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(),
 							getIncludeInferred());

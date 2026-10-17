@@ -10,6 +10,8 @@ The tool is pinned to Maven Central's
 [`net.java.dev.javacc:javacc:7.0.12`](https://repo.maven.apache.org/maven2/net/java/dev/javacc/javacc/7.0.12/)
 ([JavaCC downloads](https://javacc.github.io/javacc/downloads.html)). Its SHA-256 is
 `067da95992b900106afa7b775dcd32a4a044078863d6e57bb7b551f44baf5d13`.
+The BNR grammar recognizes a complete raw IRIREF before decoding it once. WHERE and DATA offsets refer to the original source, including CR, LF and CRLF lines. Preserve ASTBNodeRef and ASTAnnotationSuffix behavior and customized ASTWhereClause/ASTUpdateContainer offset metadata through the recorded patches.
+
 The checker verifies this digest even when an explicit local jar is supplied.
 Use Python 3.10+, Git, Maven, and Java 25+ on Linux or macOS.
 
@@ -42,7 +44,7 @@ tracked patches using `git apply --check` and `git apply`, and runs the project'
 exact bytes against checked-in sources. Expected Java is first read during that
 final comparison. Checking never records patches or repairs a mismatch.
 
-`generated-sources.json` declares 170 fresh generator outputs, 173 patched outputs,
+`generated-sources.json` declares 172 fresh generator outputs, 175 patched outputs,
 and nine handwritten support files. The compatibility patch adds three marked
 files that the current grammar no longer emits: `ASTAnnotation.java`,
 `ASTPathNegatedPropertySet.java`, and `JavaCharStream.java`. Handwritten exclusions

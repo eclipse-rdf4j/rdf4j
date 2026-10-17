@@ -76,6 +76,17 @@ public class OrderQueryEvaluationStep implements QueryEvaluationStep {
 			private long spillBytes;
 
 			@Override
+			protected BindingSet prepareInputRow(BindingSet row) {
+				return keyComparator != null && !keyComparator.requiresKeyCapture() ? keyComparator.prepareRow(row)
+						: row;
+			}
+
+			@Override
+			protected BindingSet restoreResultRow(BindingSet row) {
+				return keyComparator != null ? keyComparator.restoreRow(row) : row;
+			}
+
+			@Override
 			protected Comparator<SortKey> sortKeyComparator(OrderComparator orderComparator) {
 				return (left, right) -> {
 					sortComparisons.incrementAndGet();

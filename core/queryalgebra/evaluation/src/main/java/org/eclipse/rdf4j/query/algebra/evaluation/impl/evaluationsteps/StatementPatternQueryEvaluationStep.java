@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Evaluate the StatementPattern - taking care of graph/datasets - avoiding redoing work every call of evaluate if
@@ -100,7 +102,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		this.context = context;
 		this.tripleSource = tripleSource;
 		this.valuePreparer = tripleSource.getValuePreparer();
-		Set<IRI> graphs = null;
+		Set<Resource> graphs = null;
 		// If the graph part is empty we do not need to check this
 		// in the conversion etc.
 		Dataset dataset = context.getDataset();
@@ -110,11 +112,13 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			emptyGraph = false;
 		} else if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
-				graphs = dataset.getDefaultGraphs();
-				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
+				graphs = dataset.getDefaultGraphResources();
+				emptyGraph = graphs.isEmpty()
+						&& (dataset.isExplicitReadDataset() || !dataset.getNamedGraphResources().isEmpty());
 			} else {
-				graphs = dataset.getNamedGraphs();
-				emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
+				graphs = dataset.getNamedGraphResources();
+				emptyGraph = graphs.isEmpty()
+						&& (dataset.isExplicitReadDataset() || !dataset.getDefaultGraphResources().isEmpty());
 			}
 		} else {
 			emptyGraph = false;
@@ -134,9 +138,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		objVar = replaceValueWithNewValue(objVar, tripleSource.getValueFactory());
 		conVar = replaceValueWithNewValue(conVar, tripleSource.getValueFactory());
 		if (valuePreparer != null && graphs != null) {
-			Set<IRI> preparedGraphs = new LinkedHashSet<>(graphs.size());
-			for (IRI graph : graphs) {
-				preparedGraphs.add((IRI) valuePreparer.apply(graph));
+			Set<Resource> preparedGraphs = new LinkedHashSet<>(graphs.size());
+			for (Resource graph : graphs) {
+				preparedGraphs.add((Resource) valuePreparer.apply(graph));
 			}
 			graphs = preparedGraphs;
 		}
@@ -219,53 +223,49 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		} else if (!var.hasValue()) {
 			return var.clone();
 		} else {
-			Var ret = valuePreparer == null ? getVarWithNewValue(var, valueFactory)
-					: Var.of(var.getName(), valuePreparer.apply(var.getValue()), var.isAnonymous(), var.isConstant());
+			Value original = var.getValue();
+			Value prepared = valuePreparer == null ? copyValue(original, valueFactory) : valuePreparer.apply(original);
+			// Normalized lookup operands also restore inlined bindings to result rows. Their semantic copy must retain
+			// the original's transport authority, including when a backend recursively copies a triple term.
+			Var ret = Var.of(var.getName(), RemoteBNode.preserveProvenance(original, prepared), var.isAnonymous(),
+					var.isConstant());
 			ret.setVariableScopeChange(var.isVariableScopeChange());
 			return ret;
 		}
 	}
 
-	private static Var getVarWithNewValue(Var var, ValueFactory valueFactory) {
-		boolean constant = var.isConstant();
-		boolean anonymous = var.isAnonymous();
-
-		Value value = var.getValue();
+	private static Value copyValue(Value value, ValueFactory valueFactory) {
 		if (value.isIRI()) {
-			return Var.of(var.getName(), valueFactory.createIRI(value.stringValue()), anonymous, constant);
+			return valueFactory.createIRI(value.stringValue());
 		} else if (value.isBNode()) {
-			return Var.of(var.getName(), valueFactory.createBNode(value.stringValue()), anonymous, constant);
+			return valueFactory.createBNode(value.stringValue());
 		} else if (value.isLiteral()) {
 			// preserve label + (language | datatype)
 			Literal lit = (Literal) value;
 
 			// If the literal has a language tag, recreate it with the same language
 			if (lit.getLanguage().isPresent()) {
-				return Var.of(var.getName(),
-						valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get(), lit.getBaseDirection()),
-						anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel(), lit.getLanguage().get(), lit.getBaseDirection());
 			}
 
 			CoreDatatype coreDatatype = lit.getCoreDatatype();
 			if (coreDatatype != CoreDatatype.NONE) {
 				// If the literal has a core datatype, recreate it with the same core datatype
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), coreDatatype), anonymous,
-						constant);
+				return valueFactory.createLiteral(lit.getLabel(), coreDatatype);
 			}
 
 			// Otherwise, preserve the datatype (falls back to xsd:string if none)
 			IRI dt = lit.getDatatype();
 			if (dt != null) {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel(), dt), anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel(), dt);
 			} else {
-				return Var.of(var.getName(), valueFactory.createLiteral(lit.getLabel()), anonymous, constant);
+				return valueFactory.createLiteral(lit.getLabel());
 			}
 		}
 		if (value instanceof TripleTerm triple) {
-			return Var.of(var.getName(), valueFactory.createTripleTerm(triple.getSubject(), triple.getPredicate(),
-					triple.getObject()), anonymous, constant);
+			return valueFactory.createTripleTerm(triple.getSubject(), triple.getPredicate(), triple.getObject());
 		}
-		return Var.of(var.getName(), value, anonymous, constant);
+		return value;
 	}
 
 	private record PreparedBindingAccess(Function<BindingSet, Value> getter,
@@ -281,7 +281,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		for (PreparedBindingAccess access : preparedBindingAccess) {
 			Value value = access.getter().apply(bindings);
 			if (value != null) {
-				Value replacement = valuePreparer.apply(value);
+				Value replacement = RemoteBNode.preserveProvenance(value, valuePreparer.apply(value));
 				if (replacement != value) {
 					if (prepared == null) {
 						prepared = context.createBindingSet(bindings);
@@ -702,8 +702,9 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			synchronized (this) {
 				localConverter = converter;
 				if (localConverter == null) {
-					localConverter = makeConverter(context, normalizedSubjectVar, normalizedPredicateVar,
-							normalizedObjectVar, normalizedContextVar);
+					localConverter = preservePreboundValues(
+							makeConverter(context, normalizedSubjectVar, normalizedPredicateVar,
+									normalizedObjectVar, normalizedContextVar));
 					converter = localConverter;
 				}
 			}
@@ -717,13 +718,36 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			synchronized (this) {
 				localConverter = convertStatementConverter;
 				if (localConverter == null) {
-					localConverter = makeConvertStatementConverter(context, normalizedSubjectVar,
-							normalizedPredicateVar, normalizedObjectVar, normalizedContextVar);
+					localConverter = preservePreboundValues(makeConvertStatementConverter(context, normalizedSubjectVar,
+							normalizedPredicateVar, normalizedObjectVar, normalizedContextVar));
 					convertStatementConverter = localConverter;
 				}
 			}
 		}
 		return localConverter;
+	}
+
+	private BiConsumer<MutableBindingSet, Statement> preservePreboundValues(
+			BiConsumer<MutableBindingSet, Statement> converter) {
+		List<Consumer<MutableBindingSet>> originalValues = new ArrayList<>(4);
+		for (Var variable : new Var[] { normalizedSubjectVar, normalizedPredicateVar,
+				normalizedObjectVar, normalizedContextVar }) {
+			if (variable != null && variable.hasValue() && !variable.isConstant()) {
+				BiConsumer<Value, MutableBindingSet> setter = context.setBinding(variable.getName());
+				Value original = variable.getValue();
+				originalValues.add(row -> setter.accept(original, row));
+			}
+		}
+		if (originalValues.isEmpty()) {
+			return converter;
+		}
+		return (row, statement) -> {
+			converter.accept(row, statement);
+			// Optimizer-inlined bindings retain their captured values and authority, even with an empty input row.
+			for (int i = 0; i < originalValues.size(); i++) {
+				originalValues.get(i).accept(row);
+			}
+		};
 	}
 
 	private CloseableIteration<? extends Statement> handleFilter(Resource[] contexts,
@@ -828,7 +852,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 	 * @return the contexts that are valid for this statement pattern or null
 	 */
 	protected static Function<Value, Resource[]> extractContextsFromDatasets(Var contextVar, boolean emptyGraph,
-			Set<IRI> graphs) {
+			Set<? extends Resource> graphs) {
 
 		if (emptyGraph) {
 			return RETURN_NULL_VALUE_RESOURCE_ARRAY;
@@ -845,7 +869,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 			} else {
 				return contextValue -> {
 					if (contextValue != null) {
-						if (contextValue.isIRI() && graphs.contains((IRI) contextValue)) {
+						if ((contextValue.isIRI() || contextValue.isBNode()) && graphs.contains(contextValue)) {
 							return new Resource[] { (Resource) contextValue };
 						} else {
 							// Statement pattern specifies a context that is not part of
@@ -864,8 +888,10 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		if (contextValue != null) {
 			if (RDF4J.NIL.equals(contextValue) || SESAME.NIL.equals(contextValue)) {
 				return DEFAULT_CONTEXT;
-			} else {
+			} else if (contextValue.isIRI() || contextValue.isBNode()) {
 				return new Resource[] { (Resource) contextValue };
+			} else {
+				return null;
 			}
 		}
 		/*
@@ -878,11 +904,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep 
 		}
 	}
 
-	private static Resource[] fillContextsFromDatasSetGraphs(Set<IRI> graphs) {
+	private static Resource[] fillContextsFromDatasSetGraphs(Set<? extends Resource> graphs) {
 		Resource[] contexts = new Resource[graphs.size()];
 		int i = 0;
-		for (IRI graph : graphs) {
-			IRI context = null;
+		for (Resource graph : graphs) {
+			Resource context = null;
 			if (!(RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph))) {
 				context = graph;
 			}

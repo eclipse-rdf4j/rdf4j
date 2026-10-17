@@ -227,10 +227,10 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 	await capture(page, 'explore-eight-records-desktop', health, { rowCount: await graphRows.count() });
 
 	const bnodeLink = page.locator('#explore-results td[data-label="Object"] a')
-		.filter({ hasText: /^_:/ }).first();
+		.filter({ hasText: /^<_:.*>$/ }).first();
 	await expect(bnodeLink).toBeVisible();
 	const bnodeText = (await bnodeLink.innerText()).trim();
-	expect(bnodeText).toMatch(/^_:/);
+	expect(bnodeText).toMatch(/^<_:.*>$/);
 	const bnodeHref = await bnodeLink.getAttribute('href');
 	const bnodeResource = new URL(bnodeHref, page.url()).searchParams.get('resource');
 	expect(bnodeResource).toBe(bnodeText);
@@ -246,7 +246,7 @@ test('Contexts links the named graph into Explore and RDF term links remain navi
 		.filter({ hasText: 'Literal target' }).first();
 	await expect(literalLink).toBeVisible();
 	const literalHref = await literalLink.getAttribute('href');
-	const literalResource = '"Literal target"^^<http://www.w3.org/2001/XMLSchema#string>';
+	const literalResource = '"Literal target"';
 	expect(new URL(literalHref, page.url()).searchParams.get('resource')).toBe(literalResource);
 	await literalLink.click();
 	await expectExploreRows(page, 1);

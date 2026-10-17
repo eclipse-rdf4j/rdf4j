@@ -217,6 +217,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 		currentQueryProfile.dataset = dataset;
 		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);
 		SerializableParsedUpdate queryProfile = new SerializableParsedUpdate();
+		queryProfile.dataset = dataset;
 		queryProfile.subQueriesByProjection.putAll(queriesByProjection);
 		if (currentQueryProfile.whereClause instanceof Extension) {
 			queryProfile.whereClause = ((Extension) currentQueryProfile.whereClause).getArg();

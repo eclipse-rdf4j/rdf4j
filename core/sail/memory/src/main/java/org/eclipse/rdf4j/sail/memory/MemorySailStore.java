@@ -27,6 +27,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.LongAdder;
+import java.util.function.Function;
 
 import org.apache.commons.lang3.time.StopWatch;
 import org.eclipse.rdf4j.common.concurrent.locks.ExclusiveReentrantLockManager;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.BackingSailSource;
@@ -105,6 +107,12 @@ class MemorySailStore implements SailStore {
 	 * Factory/cache for MemValue objects.
 	 */
 	private final MemValueFactory valueFactory = new MemValueFactory();
+
+	// Share the same read-only preparer across explicit and inferred datasets, including their union.
+	private final Function<Value, Value> readValuePreparer = value -> {
+		MemValue existing = valueFactory.getMemValue(value);
+		return existing == null ? value : RemoteBNode.preserveProvenance(value, existing);
+	};
 
 	/**
 	 * List containing all available statements.
@@ -1409,6 +1417,11 @@ class MemorySailStore implements SailStore {
 		private final int snapshot;
 		private final SnapshotMonitor.ReservedSnapshot reservedSnapshot;
 		private volatile boolean closed;
+
+		@Override
+		public Function<Value, Value> getValuePreparer() {
+			return readValuePreparer;
+		}
 
 		public MemorySailDataset(boolean explicit) throws SailException {
 			this.explicit = explicit;

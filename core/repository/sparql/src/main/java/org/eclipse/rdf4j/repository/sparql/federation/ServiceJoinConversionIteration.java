@@ -81,7 +81,7 @@ public class ServiceJoinConversionIteration extends ConvertingIteration<BindingS
 		return res;
 	}
 
-	private static int getRowIndex(BindingSet result, String rowIndexVar) {
+	static int getRowIndex(BindingSet result, String rowIndexVar) {
 		Value rowIndex = result.getValue(rowIndexVar);
 		// should never occur: in such case we would have to create the cross product (which
 		// is dealt with in another place)

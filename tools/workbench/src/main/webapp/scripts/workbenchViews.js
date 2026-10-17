@@ -1524,7 +1524,7 @@ var workbench;
             if (!term || typeof term !== 'object' || !term.kind) {
                 return h(__makeTemplateObject(["<td class=\"workbench-row-actions\" data-label=\"Actions\"></td>"], ["<td class=\"workbench-row-actions\" data-label=\"Actions\"></td>"]));
             }
-            var key = encodeURIComponent(ntriples(term));
+            var key = encodeURIComponent(resourceTerm(term));
             var name = termText(term);
             return h(__makeTemplateObject(["<td class=\"workbench-row-actions\" data-label=\"Actions\">", "", "</td>"], ["<td class=\"workbench-row-actions\" data-label=\"Actions\">", "", "</td>"]), pageEnabled(context, 'explore')
                 ? h(__makeTemplateObject(["<a class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                    href=\"", "\" aria-label=\"", "\" title=\"Explore\">", "</a>"], ["<a class=\"workbench-action workbench-action--ghost workbench-action--icon\"\n                    href=\"", "\" aria-label=\"", "\" title=\"Explore\">", "</a>"]), 'explore?resource=' + key, 'Explore ' + name, icon(runtime, 'explore')) : '', pageEnabled(context, 'clear') && repositoryWriteable(context) ? h(__makeTemplateObject(["<a\n                    class=\"workbench-action workbench-action--ghost workbench-action--icon\" href=\"", "\"\n                    aria-label=\"", "\" title=\"Clear graph\u2026\">", "</a>"], ["<a\n                    class=\"workbench-action workbench-action--ghost workbench-action--icon\" href=\"", "\"\n                    aria-label=\"", "\" title=\"Clear graph\u2026\">", "</a>"]), 'clear?context=' + key, 'Clear graph ' + name + '…', icon(runtime, 'clear')) : '');
@@ -1550,7 +1550,7 @@ var workbench;
             var nameColumn = model.vars && model.vars.length ? model.vars[0] : list.column;
             var cells = function (record) {
                 var term = record[nameColumn];
-                var value = list.resort ? record[list.count] : counts.values[term ? ntriples(term) : ''];
+                var value = list.resort ? record[list.count] : counts.values[term ? resourceTerm(term) : ''];
                 return h(__makeTemplateObject(["", "", "", ""], ["", "", "", ""]), browseNameCell(runtime, model, list, term), browseCountCell(runtime, list, counts, value, context), list.actions ? browseActionsCell(runtime, term, context) : '');
             };
             // The default graph has no name, so it is listed only without a filter (the server omits it too).
@@ -1572,19 +1572,16 @@ var workbench;
             { key: 'predicate', title: 'Used as predicate', columns: ['subject', 'object'] },
             { key: 'graph', title: 'Graph contents', columns: ['subject', 'predicate', 'object'] }
         ];
-        function ntriples(term) {
+        function resourceTerm(term) {
             var stream = workbench.queryStream;
-            return stream && typeof stream.ntriplesTerm === 'function' ? stream.ntriplesTerm(term) : text(term);
+            return stream && typeof stream.exploreResource === 'function' ? stream.exploreResource(term) : text(term);
         }
-        /** The explored resource in N-Triples form: the server's resolved value, or the typed text when it already
-         *  is N-Triples. */
+        /** The server's resolved resource operand, retaining legacy _: form inputs as exact references. */
         function exploreResourceKey(model) {
             var resolved = text(pageValue(model, 'explore-resource'));
-            if (resolved) {
-                return resolved;
-            }
             var typed = text(pageValue(model, 'resource')).trim();
-            return /^(?:<|_:|"|<<)/.test(typed) ? typed : '';
+            var value = resolved || (/^(?:<|_:|"|<<)/.test(typed) ? typed : '');
+            return value.indexOf('_:') === 0 ? resourceTerm({ kind: 'bnode', value: value.slice(2) }) : value;
         }
         function exploreNamespaces(model) {
             var map = model.namespaceMap || {};
@@ -1621,7 +1618,7 @@ var workbench;
                 var entries = roles[role.key];
                 var rows = entries.map(function (entry) { return entry.values; });
                 var graphs = rows.map(function (row) { return index('context') >= 0 ? row[index('context')] : null; });
-                var graphKeys = graphs.map(function (graph) { return graph ? ntriples(graph) : ''; });
+                var graphKeys = graphs.map(function (graph) { return graph ? resourceTerm(graph) : ''; });
                 var oneGraph = role.key === 'graph' || graphKeys.every(function (key) { return key === graphKeys[0]; });
                 var columns = role.columns.concat(oneGraph ? [] : ['context']);
                 var headingId = 'explore-group-' + role.key;
@@ -1643,7 +1640,8 @@ var workbench;
             var h = runtime.html;
             var namespaces = exploreNamespaces(model);
             var key = exploreResourceKey(model) || resource;
-            var isIri = /^<[^<]/.test(key);
+            var isIri = /^<(?!_:)[^<]/.test(key);
+            var isQueryable = isIri || key.indexOf('<_:') === 0;
             var comment = summary.comment ? text(summary.comment) : '';
             var types = distinctExploreValues(model, summary.types || []);
             var copy = function () {
@@ -1662,7 +1660,7 @@ var workbench;
                     button.textContent = expanded ? 'Show less' : 'Show more';
                 }
             };
-            return h(__makeTemplateObject(["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"], ["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"]), summary.label ? h(__makeTemplateObject(["<h2>", "</h2>"], ["<h2>", "</h2>"]), text(summary.label)) : '', isIri ? key.slice(1, -1) : key, copy, icon(runtime, 'copy'), types.length ? h(__makeTemplateObject(["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"], ["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"]), types.map(function (type) { return h(__makeTemplateObject(["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"], ["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"]), 'explore?resource=' + encodeURIComponent(ntriples(type)), exploreGraphLabel(type, namespaces)); })) : '', comment ? h(__makeTemplateObject(["<div class=\"explore-resource-card__description\"><p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", "</div>"], ["<div class=\"explore-resource-card__description\"><p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", "</div>"]), comment, comment.length > 240 ? h(__makeTemplateObject(["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"], ["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"]), toggleComment) : '') : '', isIri && pageEnabled(context, 'query') ? h(__makeTemplateObject(["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"], ["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"]), 'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }'), icon(runtime, 'query')) : '');
+            return h(__makeTemplateObject(["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"], ["<section id=\"explore-resource-card\" class=\"workbench-island explore-resource-card\" aria-label=\"Explored resource\">\n                ", "\n                <div class=\"explore-resource-card__iri\"><code id=\"explore-resource-iri\">", "</code>\n                    <button class=\"workbench-action workbench-action--ghost workbench-action--icon\" type=\"button\"\n                        aria-label=\"Copy resource\" title=\"Copy resource\" @click=", ">", "</button></div>\n                ", "\n                ", "\n                ", "\n            </section>"]), summary.label ? h(__makeTemplateObject(["<h2>", "</h2>"], ["<h2>", "</h2>"]), text(summary.label)) : '', isIri ? key.slice(1, -1) : key, copy, icon(runtime, 'copy'), types.length ? h(__makeTemplateObject(["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"], ["<ul class=\"explore-resource-card__types\" aria-label=\"Types\">", "</ul>"]), types.map(function (type) { return h(__makeTemplateObject(["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"], ["<li>\n                    <a class=\"explore-chip\" href=", ">", "</a></li>"]), 'explore?resource=' + encodeURIComponent(resourceTerm(type)), exploreGraphLabel(type, namespaces)); })) : '', comment ? h(__makeTemplateObject(["<div class=\"explore-resource-card__description\"><p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", "</div>"], ["<div class=\"explore-resource-card__description\"><p class=\"explore-resource-card__comment workbench-prose\">", "</p>\n                    ", "</div>"]), comment, comment.length > 240 ? h(__makeTemplateObject(["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"], ["<button class=\"workbench-action workbench-action--ghost explore-resource-card__more\" type=\"button\"\n                        aria-expanded=\"false\" @click=", ">Show more</button>"]), toggleComment) : '') : '', isQueryable && pageEnabled(context, 'query') ? h(__makeTemplateObject(["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"], ["<a class=\"workbench-action workbench-action--secondary explore-resource-card__query\"\n                    href=", ">", "<span>Query this resource</span></a>"]), 'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }'), icon(runtime, 'query')) : '');
         }
         var exploreGroups = [
             { key: 'superClasses', title: 'Super Classes', predicate: rdfsNamespace + 'subClassOf', field: 'object' },
@@ -1745,7 +1743,7 @@ var workbench;
             var objectIndex = model.vars.indexOf('object');
             var contextIndex = model.vars.indexOf('context');
             var key = accumulator.resourceKey;
-            var matches = function (term) { return !!key && !!term && ntriples(term) === key; };
+            var matches = function (term) { return !!key && !!term && resourceTerm(term) === key; };
             rows.forEach(function (row, offset) {
                 var subject = subjectIndex >= 0 ? row[subjectIndex] : null;
                 var predicate = predicateIndex >= 0 ? text(row[predicateIndex]) : '';
@@ -1883,7 +1881,7 @@ var workbench;
             var explored = exploreResourceKey(model);
             var seen = Object.create(null);
             return values.filter(function (value) {
-                var key = ntriples(value);
+                var key = resourceTerm(value);
                 if (key === explored || seen[key]) {
                     return false;
                 }
@@ -2661,7 +2659,7 @@ var workbench;
             var rejected = (model.vars || []).indexOf('error-message') >= 0;
             var selectedGraph = rejected ? text(pageValue(model, 'context')) : locationParameter('context');
             var listedGraph = selectedGraph === '' || selectedGraph === 'null'
-                || graphs.some(function (record) { return ntriples(record.context) === selectedGraph; });
+                || graphs.some(function (record) { return resourceTerm(record.context) === selectedGraph; });
             var previewDisabled = state.state === 'empty' || state.state === 'invalid' || counted && state.count === 0
                 || preview.state === 'loading';
             var namespaces = exploreNamespaces(model);
@@ -2671,7 +2669,7 @@ var workbench;
                 var onInput = function (event) { return recount(event.currentTarget.form); };
                 return h(__makeTemplateObject(["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"], ["<div class=\"workbench-field\"><label for=", ">", "</label>", "\n                            <p id=", " class=\"workbench-field__error\" ?hidden=", ">", "</p>\n                        </div>"]), entry[0], entry[1], entry[0] === 'obj'
                     ? h(__makeTemplateObject(["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"], ["<textarea id=\"obj\" name=\"obj\" rows=\"3\" placeholder=", " aria-invalid=", "\n                                aria-describedby=\"obj-error\" @input=", ">", "</textarea>"]), entry[2], invalid ? 'true' : 'false', onInput, text(pageValue(model, 'obj'))) : h(__makeTemplateObject(["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"], ["<input id=", " name=", " type=\"text\" placeholder=", " autocomplete=\"off\"\n                                spellcheck=\"false\" aria-invalid=", " aria-describedby=", "\n                                value=", " @input=", " />"]), entry[0], entry[0], entry[2], invalid ? 'true' : 'false', entry[0] + '-error', text(pageValue(model, entry[0])), onInput), entry[0] + '-error', !invalid, invalid ? state.message : '');
-            }), function (event) { return recount(event.currentTarget.form); }, !selectedGraph, selectedGraph === 'null', listedGraph ? '' : h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), selectedGraph, true, removeGraphPhrase(selectedGraph).replace(/^in graph /, '')), graphs.map(function (record) { return h(__makeTemplateObject(["<option value=", "\n                                ?selected=", ">", "</option>"], ["<option value=", "\n                                ?selected=", ">", "</option>"]), ntriples(record.context), ntriples(record.context) === selectedGraph, termText(record.context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), previewDisabled || sending, function (event) { return loadPreview(event.currentTarget.form); }, icon(runtime, 'eye'), disabled || sending, icon(runtime, 'remove'), 'Remove ' + amount + '…', state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : '', removeMatchLabel(state, context), submissionStatus(runtime, model), preview.state === 'loading' ? 'true' : 'false', preview.state === 'hidden', tableDisplay(runtime, model, 'remove-preview', { layout: 'remove-preview-layout',
+            }), function (event) { return recount(event.currentTarget.form); }, !selectedGraph, selectedGraph === 'null', listedGraph ? '' : h(__makeTemplateObject(["<option value=", " ?selected=", ">", "</option>"], ["<option value=", " ?selected=", ">", "</option>"]), selectedGraph, true, removeGraphPhrase(selectedGraph).replace(/^in graph /, '')), graphs.map(function (record) { return h(__makeTemplateObject(["<option value=", "\n                                ?selected=", ">", "</option>"], ["<option value=", "\n                                ?selected=", ">", "</option>"]), resourceTerm(record.context), resourceTerm(record.context) === selectedGraph, termText(record.context)); }), icon(runtime, 'chevron', 'workbench-select-chevron'), previewDisabled || sending, function (event) { return loadPreview(event.currentTarget.form); }, icon(runtime, 'eye'), disabled || sending, icon(runtime, 'remove'), 'Remove ' + amount + '…', state.state === 'timed-out' ? 'Counting took longer than 2 seconds' : '', removeMatchLabel(state, context), submissionStatus(runtime, model), preview.state === 'loading' ? 'true' : 'false', preview.state === 'hidden', tableDisplay(runtime, model, 'remove-preview', { layout: 'remove-preview-layout',
                 wrap: 'remove-preview-wrap-values' }, function (wrap) { return setPageResultPresentation(model, { wrap: wrap }); }, !preview.rows.length), preview.state === 'hidden' ? ''
                 : removePreviewLabel(preview), preview.rows.length ? resultTable(runtime, model, context, {
                 key: 'remove-preview',
@@ -2704,7 +2702,7 @@ var workbench;
                     counts.listing = recordsFromRows(answer, rows);
                     rows.forEach(function (row) {
                         if (text(row[1])) {
-                            values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                            values[row[0] ? resourceTerm(row[0]) : ''] = row[1];
                         }
                     });
                     var size = meta(answer, 'repository-size');
@@ -2811,8 +2809,8 @@ var workbench;
                 .concat(listing.filter(function (record) { return !record.context; })
                 .map(function (record) { return ({ value: 'null', label: 'Default graph', count: countOf('', record.statements) }); }))
                 .concat(listing.filter(function (record) { return !!record.context; })
-                .map(function (record) { return ({ value: ntriples(record.context), label: termText(record.context),
-                count: countOf(ntriples(record.context), record.statements) }); }));
+                .map(function (record) { return ({ value: resourceTerm(record.context), label: termText(record.context),
+                count: countOf(resourceTerm(record.context), record.statements) }); }));
             if (discoveryIncomplete && !targets.length) {
                 targets.push({ value: '__unavailable__', label: 'Graph choices unavailable', count: '', unavailable: true });
             }
@@ -3908,7 +3906,7 @@ var workbench;
                     return answer.rowStore.read(0, answer.rowCount).then(function (rows) {
                         answer.rowStore.dispose();
                         rows.forEach(function (row) {
-                            counts.values[row[0] ? ntriples(row[0]) : ''] = row[1];
+                            counts.values[row[0] ? resourceTerm(row[0]) : ''] = row[1];
                         });
                         counts.state = 'done';
                         if (!disposed) {

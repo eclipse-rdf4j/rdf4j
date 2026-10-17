@@ -22,10 +22,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.SingletonIteration;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -48,9 +51,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 public class GraphQueryEvaluationStepTest {
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
@@ -166,6 +174,146 @@ public class GraphQueryEvaluationStepTest {
 		assertThat(fixture.contextRequests).isZero();
 		assertThat(fixture.children).hasSize(1);
 		assertThat(fixture.children.getFirst().closes).isEqualTo(1);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "true,false,false", "true,false,true", "true,true,false", "true,true,true",
+			"false,false,false", "false,false,true", "false,true,false", "false,true,true" })
+	public void blankNodeDatasetGraphsRetainNamedAndDefaultSelection(boolean named, boolean fixed, boolean emptyBody) {
+		StatementFixture fixture = new StatementFixture();
+		Resource graph = VF.createBNode("dataset-graph");
+		fixture.contextIDs = List.of(graph);
+		fixture.statements = List.of(VF.createStatement(G1, fixture.predicate, VF.createLiteral("value"), graph));
+		SimpleDataset dataset = new SimpleDataset();
+		if (named) {
+			dataset.addNamedGraph(graph);
+		} else {
+			dataset.addDefaultGraph(graph);
+		}
+		Var graphName = fixed ? Var.of("g", graph, true, true) : Var.of("g");
+		TupleExpr body = emptyBody ? new SingletonSet() : fixture.pattern();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(fixture, dataset, null);
+		QueryEvaluationStep step = strategy.precompile(new Graph(graphName, body),
+				new QueryEvaluationContext.Minimal(dataset));
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			List<BindingSet> actual = QueryResults.asList(rows);
+			assertThat(actual).hasSize(named ? 1 : 0);
+			if (named && !fixed) {
+				assertThat(actual.getFirst().getValue("g")).isEqualTo(graph);
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "variable", "fixed", "default-alias" })
+	public void explicitlyEmptyReadDatasetExcludesEveryGraphIncludingEmptyBody(String selection) {
+		Fixture fixture = new Fixture();
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.setExplicitReadDataset(true);
+		Var graph = switch (selection) {
+		case "fixed" -> Var.of("g", G1, true, true);
+		case "default-alias" -> Var.of("g", RDF4J.NIL, true, true);
+		default -> Var.of("g");
+		};
+		try (var rows = fixture.step(dataset, graph).evaluate(EmptyBindingSet.getInstance())) {
+			assertThat(rows.hasNext()).isFalse();
+		}
+		assertThat(fixture.prepared).isEmpty();
+		assertThat(fixture.contextRequests).isZero();
+	}
+
+	@Test
+	public void graphResourceCapturePreservesTrustedRemoteIdentity() {
+		Object endpoint = new Object();
+		BNode graph = (BNode) RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, endpoint, true)
+				.map(VF.createBNode("physical-graph"));
+		TripleSource source = mock(TripleSource.class);
+		when(source.getValueFactory()).thenReturn(VF);
+		when(source.getContextIDs()).thenAnswer(ignored -> new CloseableIteratorIteration<>(List.of(graph).iterator()));
+		when(source.getValueCapturer()).thenReturn(value -> value instanceof BNode node
+				? VF.createBNode(node.getID())
+				: value);
+		QueryEvaluationStep step = GraphQueryEvaluationStep.supply(new Graph(Var.of("g"), new SingletonSet()),
+				source, new QueryEvaluationContext.Minimal(null),
+				(body, context) -> bindings -> new CloseableIteratorIteration<>(
+						List.<BindingSet>of(EmptyBindingSet.getInstance()).iterator()));
+		try (var rows = step.evaluate(EmptyBindingSet.getInstance())) {
+			Value returned = rows.next().getValue("g");
+			assertThat(returned).isEqualTo(graph).isInstanceOf(RemoteBNode.class);
+			assertThat(((RemoteBNode) returned).getProvenance().identityScope()).isSameAs(endpoint);
+			assertThat(rows.hasNext()).isFalse();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "canonical-scan", "canonical-dataset", "different-scope", "different-id",
+			"noncanonical", "plain-forgery", "same-response-copy" })
+	public void graphMembershipRequiresTrustedIdentityAcrossResponseAliases(String scenario) {
+		Object endpoint = new Object();
+		boolean canonical = !scenario.equals("noncanonical") && !scenario.equals("same-response-copy");
+		boolean accepted = scenario.startsWith("canonical") || scenario.equals("same-response-copy");
+		BNode candidate = (BNode) RemoteBNode.newResponseScope(
+				new BlankNodeAllocationScope("graph-alias-", id -> false), VF, endpoint, canonical)
+				.map(VF.createBNode("stored-graph"));
+		BNode selected = scenario.equals("same-response-copy")
+				? (BNode) RemoteBNode.preserveProvenance(candidate, VF.createBNode(candidate.getID()))
+				: scenario.equals("plain-forgery") ? VF.createBNode(candidate.getID())
+						: (BNode) RemoteBNode.newResponseScope(
+								new BlankNodeAllocationScope(
+										scenario.startsWith("canonical") ? "selected-" : "graph-alias-",
+										id -> false),
+								VF, scenario.equals("different-scope") ? new Object() : endpoint, canonical)
+								.map(VF.createBNode(scenario.equals("different-id") ? "other-graph" : "stored-graph"));
+		SimpleDataset dataset = null;
+		if (scenario.equals("canonical-dataset")) {
+			dataset = new SimpleDataset();
+			dataset.addNamedGraph(candidate);
+		}
+		for (String boundary : List.of("binding", "prevalued", "child")) {
+			BNode expectedAlias = boundary.equals("prevalued") ? candidate : selected;
+			TripleSource source = mock(TripleSource.class);
+			when(source.getValueFactory()).thenReturn(VF);
+			when(source.getContextIDs())
+					.thenAnswer(ignored -> new CloseableIteratorIteration<>(List.of(candidate).iterator()));
+			AtomicInteger prepared = new AtomicInteger();
+			Var graphName = boundary.equals("prevalued") ? Var.of("g", selected, false, false) : Var.of("g");
+			QueryEvaluationStep step = GraphQueryEvaluationStep.supply(new Graph(graphName, new SingletonSet()), source,
+					new QueryEvaluationContext.Minimal(dataset), (body, context) -> {
+						prepared.incrementAndGet();
+						assertThat(context.getActiveGraph().logicalGraph()).isSameAs(expectedAlias);
+						return bindings -> {
+							QueryBindingSet row = new QueryBindingSet();
+							if (boundary.equals("child")) {
+								row.addBinding("g", candidate);
+							}
+							return new SingletonIteration<>(row);
+						};
+					});
+			QueryBindingSet input = new QueryBindingSet();
+			input.addBinding("g", boundary.equals("prevalued") ? candidate : selected);
+			try (var rows = step.evaluate(input)) {
+				if (accepted) {
+					assertThat(rows.hasNext()).as(boundary).isTrue();
+					assertThat(rows.next().getValue("g")).as(boundary).isSameAs(expectedAlias);
+				}
+				assertThat(rows.hasNext()).as(boundary).isFalse();
+			}
+			assertThat(prepared).as(boundary).hasValue(accepted ? 1 : 0);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "urn:g1", "urn:g2" })
+	public void prevaluedPublicGraphKeepsInvocationBindingWithAnEmptyBody(String inputGraph) {
+		Fixture fixture = new Fixture();
+		QueryBindingSet input = new QueryBindingSet();
+		IRI selected = VF.createIRI(inputGraph);
+		input.addBinding("g", selected);
+		try (var rows = fixture.step(null, Var.of("g", G1, false, false)).evaluate(input)) {
+			assertThat(QueryResults.asList(rows)).hasSize(selected.equals(G1) ? 1 : 0);
+		}
+		assertThat(fixture.prepared).hasSize(selected.equals(G1) ? 1 : 0);
+		assertThat(input.getValue("g")).isEqualTo(selected);
 	}
 
 	@Test

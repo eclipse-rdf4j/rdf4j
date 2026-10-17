@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.helpers;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolverClient;
@@ -124,7 +126,7 @@ public class SailConnectionWrapper
 
 	@Override
 	public Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query, String baseURI) {
-		return wrappedCon.prepareQuery(ql, type, query, baseURI);
+		return wrappedCon.prepareQuery(ql, type, query, baseURI, QueryParseOptions.DEFAULT);
 	}
 
 	@Override
@@ -293,5 +295,14 @@ public class SailConnectionWrapper
 	@Override
 	public Set<StatementOrder> getSupportedOrders(Resource subj, IRI pred, Value obj, Resource... contexts) {
 		return wrappedCon.getSupportedOrders(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type,
+			String query, String baseURI, QueryParseOptions options) {
+		Objects.requireNonNull(options);
+		return options.equals(QueryParseOptions.DEFAULT)
+				? prepareQuery(language, type, query, baseURI)
+				: wrappedCon.prepareQuery(language, type, query, baseURI, options);
 	}
 }

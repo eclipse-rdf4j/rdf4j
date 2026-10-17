@@ -158,6 +158,7 @@ public class PathIterationTest {
 			assertThat(child.getNow()).isSameAs(now);
 			assertThat(child.getDataset()).isSameAs(dataset);
 			assertThat(child.getActiveGraph()).isSameAs(active);
+			assertThat(child.getBlankNodeAllocationScope()).isSameAs(parent.getBlankNodeAllocationScope());
 			assertThat(child.getComparator()).isSameAs(comparator);
 			assertThat(child.getOrCreateBNode("label", EmptyBindingSet.getInstance(), vf)).isSameAs(bnode);
 			assertThat(child.captureConstant(one, ignored -> two)).isSameAs(two);

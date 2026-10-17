@@ -66,7 +66,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
-					strategy);
+					strategy, rightPrepared, context.getBlankNodeAllocationScope());
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)) {
 			// The right side must not see left-row bindings, so both sides are evaluated independently and hashed on

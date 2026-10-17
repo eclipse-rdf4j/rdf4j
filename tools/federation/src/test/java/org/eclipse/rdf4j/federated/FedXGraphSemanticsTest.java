@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.util.List;
@@ -421,9 +423,12 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 		assertThat(countNodes(optimized, ExclusiveGroup.class)).as(optimized.toString()).isEqualTo(1);
 
 		assertThat(query(queryText))
-				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("outer"),
+				.extracting(row -> tuple(row.getValue("g"), identity(row.getValue("s")), row.getValue("outer"),
 						row.getValue("inner")))
-				.containsExactly(tuple(outerGraph, sharedBlankNode, literal("local outer"), literal("local inner")));
+				.containsExactly(tuple(outerGraph,
+						memberValue(federationContext().getEndpointManager().getEndpointByName("http://endpoint1"),
+								sharedBlankNode),
+						literal("local outer"), literal("local inner")));
 	}
 
 	@Test
@@ -796,11 +801,16 @@ public class FedXGraphSemanticsTest extends SPARQLBaseTest {
 								TupleQuery query = connection
 										.prepareTupleQuery("SELECT ?g WHERE { GRAPH ?g { " + body + " } }");
 								if (bound) {
-									query.setBinding("g", blank);
+									try (var unbound = query.evaluate()) {
+										List<BindingSet> graphs = QueryResults.asList(unbound);
+										assertThat(graphs).singleElement();
+										query.setBinding("g", graphs.getFirst().getValue("g"));
+									}
 								}
 								try (var rows = query.evaluate()) {
-									assertThat(QueryResults.asList(rows)).extracting(row -> row.getValue("g"))
-											.containsExactly(blank);
+									assertThat(QueryResults.asList(rows)).extracting(row -> identity(row.getValue("g")))
+											.containsExactly(memberValue(federationContext().getEndpointManager()
+													.getEndpointByName("http://endpoint1"), blank));
 								}
 							}
 						})));

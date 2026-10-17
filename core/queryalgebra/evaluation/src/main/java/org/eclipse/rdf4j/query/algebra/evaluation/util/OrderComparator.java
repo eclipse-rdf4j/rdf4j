@@ -15,12 +15,15 @@ import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.query.AbstractBindingSet;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Order;
@@ -31,6 +34,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,58 +69,105 @@ public class OrderComparator implements Comparator<BindingSet> {
 		this.bindingContentsComparator = precompileComparator(strategy, order, context);
 	}
 
+	private QueryEvaluationContext context;
+	private final Object solutionBoundary = new Object();
+
 	private Comparator<BindingSet> precompileComparator(EvaluationStrategy strategy, Order order,
 			QueryEvaluationContext context) {
+		this.context = context;
+		List<Comparator<BindingSet>> comparisons = new ArrayList<>();
+		int index = 0;
+		for (var element : order.getElements()) {
+			boolean ascending = element.isAscending();
+			ValueExpr expression = element.getExpr();
+			QueryValueEvaluationStep prepared;
+			if (expression instanceof Var variable && !variable.hasValue()) {
+				Function<BindingSet, Value> getValue = context.getValue(variable.getName());
+				prepared = getValue::apply;
+			} else {
+				prepared = strategy.precompile(expression, context);
+			}
+			int keyIndex = index++;
+			orderKeyEvaluators[keyIndex] = prepared;
+			this.ascending[keyIndex] = ascending;
+			comparisons.add((left, right) -> {
+				int compared = cmp.compare(key(left, keyIndex), key(right, keyIndex));
+				return ascending ? compared : -compared;
+			});
+		}
+		return comparisons.stream().reduce(Comparator::thenComparing).orElse((left, right) -> 0);
+	}
 
-		int[] index = { 0 };
-		return order.getElements()
-				.stream()
-				.map(element -> {
-					int keyIndex = index[0]++;
-					boolean ascending = element.isAscending();
-					this.ascending[keyIndex] = ascending;
-					ValueExpr expr = element.getExpr();
+	private Value key(BindingSet row, int index) {
+		if (row instanceof SortKeyBindingSet keyed) {
+			return keyed.keys[index];
+		}
+		try {
+			return orderKeyEvaluators[index].evaluate(row);
+		} catch (ValueExprEvaluationException ignored) {
+			return null;
+		}
+	}
 
-					if (expr instanceof Var) {
-						// Here we optimize for the most common case where the ORDER BY clause uses Var(s) e.g. "ORDER
-						// BY ?a"
+	/** Carries solution label state through the variable-only payload sort, including serialized spills. */
+	public BindingSet prepareRow(BindingSet input) {
+		if (input instanceof SortKeyBindingSet) {
+			return input;
+		}
+		SortKey key = createSortKey(input);
+		return new SortKeyBindingSet(context.createBindingSet(key.bindings), key.values, key.labels);
+	}
 
-						Function<BindingSet, Value> getValue = context.getValue(((Var) expr).getName());
-						orderKeyEvaluators[keyIndex] = getValue::apply;
+	/** Restores the same formal mapping's label state after an in-memory sort or a serialized spill. */
+	public BindingSet restoreRow(BindingSet row) {
+		if (row instanceof SortKeyBindingSet keyed) {
+			context.getBlankNodeAllocationScope().restoreSolution(keyed.row, keyed.labels);
+			return keyed.row;
+		}
+		return row;
+	}
 
-						return (Comparator<BindingSet>) (o1, o2) -> {
-							Value v1 = getValue.apply(o1);
-							Value v2 = getValue.apply(o2);
+	private static final class SortKeyBindingSet extends AbstractBindingSet {
+		private static final long serialVersionUID = 1L;
+		private final BindingSet row;
+		private final Value[] keys;
+		private final BlankNodeAllocationScope.SolutionSnapshot labels;
 
-							int compare = cmp.compare(v1, v2);
-							return ascending ? compare : -compare;
-						};
-					} else {
-						QueryValueEvaluationStep prepared = strategy.precompile(expr, context);
-						orderKeyEvaluators[keyIndex] = prepared;
+		private SortKeyBindingSet(BindingSet row, Value[] keys, BlankNodeAllocationScope.SolutionSnapshot labels) {
+			this.row = row;
+			this.keys = keys;
+			this.labels = labels;
+		}
 
-						return (Comparator<BindingSet>) (o1, o2) -> {
-							Value v1 = null;
-							Value v2 = null;
+		@Override
+		public Set<String> getBindingNames() {
+			return row.getBindingNames();
+		}
 
-							try {
-								v1 = prepared.evaluate(o1);
-							} catch (ValueExprEvaluationException ignored) {
-							}
+		@Override
+		public Binding getBinding(String name) {
+			return row.getBinding(name);
+		}
 
-							try {
-								v2 = prepared.evaluate(o2);
-							} catch (ValueExprEvaluationException ignored) {
-							}
+		@Override
+		public Value getValue(String name) {
+			return row.getValue(name);
+		}
 
-							int compare = cmp.compare(v1, v2);
-							return ascending ? compare : -compare;
-						};
-					}
-				})
-				.reduce(Comparator::thenComparing)
-				.orElse((o1, o2) -> 0);
+		@Override
+		public boolean hasBinding(String name) {
+			return row.hasBinding(name);
+		}
 
+		@Override
+		public int size() {
+			return row.size();
+		}
+
+		@Override
+		public Iterator<Binding> iterator() {
+			return row.iterator();
+		}
 	}
 
 	/**
@@ -128,15 +179,19 @@ public class OrderComparator implements Comparator<BindingSet> {
 	}
 
 	public SortKey createSortKey(BindingSet bindings) {
-		Value[] values = new Value[orderKeyEvaluators.length];
-		for (int i = 0; i < values.length; i++) {
-			try {
-				values[i] = orderKeyEvaluators[i].evaluate(bindings);
-			} catch (ValueExprEvaluationException ignored) {
-				// SPARQL orders an expression error in the same group as an unbound value.
+		BlankNodeAllocationScope scope = context.getBlankNodeAllocationScope();
+		try (var ignored = scope.visitSolutionOccurrence(bindings, solutionBoundary)) {
+			Value[] values = new Value[orderKeyEvaluators.length];
+			for (int i = 0; i < values.length; i++) {
+				values[i] = key(bindings, i);
 			}
+			return new SortKey(bindings, values, scope.snapshotCurrentSolution());
 		}
-		return new SortKey(bindings, values);
+	}
+
+	public BindingSet restoreSortKey(SortKey key) {
+		context.getBlankNodeAllocationScope().restoreSolution(key.bindings, key.labels);
+		return key.bindings;
 	}
 
 	public int compareSortKeys(SortKey left, SortKey right) {
@@ -160,10 +215,12 @@ public class OrderComparator implements Comparator<BindingSet> {
 
 		private final BindingSet bindings;
 		private final Value[] values;
+		private final BlankNodeAllocationScope.SolutionSnapshot labels;
 
-		private SortKey(BindingSet bindings, Value[] values) {
+		private SortKey(BindingSet bindings, Value[] values, BlankNodeAllocationScope.SolutionSnapshot labels) {
 			this.bindings = bindings;
 			this.values = values;
+			this.labels = labels;
 		}
 
 		public BindingSet getBindings() {
@@ -177,6 +234,13 @@ public class OrderComparator implements Comparator<BindingSet> {
 			int comparedContents = bindingContentsComparator.compare(o1, o2);
 			if (comparedContents != 0) {
 				return comparedContents;
+			}
+			// Hidden keys and occurrence state do not participate in the visible binding tie-breaker.
+			if (o1 instanceof SortKeyBindingSet keyed) {
+				o1 = keyed.row;
+			}
+			if (o2 instanceof SortKeyBindingSet keyed) {
+				o2 = keyed.row;
 			}
 
 			return compareBindingSets(o1, o2);
