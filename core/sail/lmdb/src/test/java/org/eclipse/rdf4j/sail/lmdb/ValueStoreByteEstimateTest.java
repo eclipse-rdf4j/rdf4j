@@ -15,6 +15,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -25,6 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -42,7 +45,9 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbLiteral;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
+import org.junit.jupiter.api.DynamicTest;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.api.io.TempDir;
 
 class ValueStoreByteEstimateTest {
@@ -307,6 +312,96 @@ class ValueStoreByteEstimateTest {
 		});
 		assertEquals(exact.bytes(), sampled.bytes(), "inputs within the exact prefix are never sampled");
 		assertEquals(exact.exactRecords(), sampled.exactRecords());
+	}
+
+	@TestFactory
+	Stream<DynamicTest> samplingPopulationIsIndependentOfLexicalIdentity() {
+		LexicalAliases aliases = collidingLexicalAliases();
+		return Stream.of("exact", "skipped", "already-fingerprinted", "chain-one", "chain-four")
+				.flatMap(mode -> Stream.of(aliases.colliding(), aliases.nonColliding())
+						.map(alias -> DynamicTest.dynamicTest(mode + ": "
+								+ (alias == aliases.colliding() ? "colliding identity" : "noncolliding identity"),
+								() -> {
+									DictionaryByteEstimate shared = samplingIdentityEstimate(mode, aliases.original(),
+											aliases.original());
+									DictionaryByteEstimate copied = samplingIdentityEstimate(mode, aliases.original(),
+											alias);
+									assertEquals(shared.bytes(), copied.bytes(),
+											"Identical RDF values and sampling decisions need the same extrapolation population");
+									assertTrue(shared.exactRecords() < 20 && copied.exactRecords() < 20,
+											"Repeated values must still avoid repeated sketch offers");
+								})));
+	}
+
+	private static DictionaryByteEstimate samplingIdentityEstimate(String mode, IRI original, IRI alias) {
+		DictionaryByteEstimate estimate = new DictionaryByteEstimate(true);
+		if (mode.equals("skipped")) {
+			estimate.add(VF.createIRI("urn:estimate:identity-seed"));
+		} else if (mode.equals("already-fingerprinted")) {
+			estimate.add(original);
+		}
+		for (int i = 0; i < 1000; i++) {
+			IRI value = i % 2 == 0 ? original : alias;
+			switch (mode) {
+			case "exact":
+				estimate.add(value);
+				break;
+			case "skipped":
+			case "already-fingerprinted":
+				estimate.skip(value);
+				break;
+			default:
+				Value term = VF.createLiteral("leaf");
+				for (int depth = 0; depth < (mode.equals("chain-one") ? 1 : 4); depth++) {
+					term = VF.createTripleTerm(value, original, term);
+				}
+				estimate.add(term);
+				break;
+			}
+		}
+		if (!mode.equals("skipped") && !mode.equals("already-fingerprinted")) {
+			for (int i = 0; i < 100; i++) {
+				estimate.skip(VF.createIRI("urn:estimate:identity-distinct:" + i));
+			}
+		}
+		return estimate;
+	}
+
+	/** Pigeonhole 257 equal lexical strings into the estimator's 256 real identity-cache slots. */
+	private static LexicalAliases collidingLexicalAliases() {
+		String[] firstInSlot = new String[256];
+		String original = null;
+		String colliding = null;
+		for (int i = 0; i < 257; i++) {
+			String lexical = new String("urn:estimate:identity-lexical");
+			int slot = System.identityHashCode(lexical) & 255;
+			if (firstInSlot[slot] != null && original == null) {
+				original = firstInSlot[slot];
+				colliding = lexical;
+			} else if (firstInSlot[slot] == null) {
+				firstInSlot[slot] = lexical;
+			}
+		}
+		assertNotNull(original, "257 strings must contain a pair colliding in 256 slots");
+		String nonColliding = null;
+		int collisionSlot = System.identityHashCode(original) & 255;
+		for (int i = 0; i < firstInSlot.length; i++) {
+			if (i != collisionSlot && firstInSlot[i] != null) {
+				nonColliding = firstInSlot[i];
+				break;
+			}
+		}
+		assertNotNull(nonColliding, "The runtime must also supply the noncolliding control");
+		IRI originalIri = VF.createIRI(original);
+		IRI collidingIri = VF.createIRI(colliding);
+		IRI nonCollidingIri = VF.createIRI(nonColliding);
+		assertSame(original, originalIri.stringValue());
+		assertSame(colliding, collidingIri.stringValue());
+		assertSame(nonColliding, nonCollidingIri.stringValue());
+		return new LexicalAliases(originalIri, collidingIri, nonCollidingIri);
+	}
+
+	private record LexicalAliases(IRI original, IRI colliding, IRI nonColliding) {
 	}
 
 	private static Value chain(Value leaf, int depth, Resource middleSubject) {
