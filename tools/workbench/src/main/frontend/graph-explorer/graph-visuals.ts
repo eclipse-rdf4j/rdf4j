@@ -31,6 +31,13 @@ export const BLANK_VISUAL = { stroke: "var(--graph-explorer-blank-stroke)", fill
 
 export const LOADING_IRI_VISUAL = { stroke: "var(--graph-explorer-loading-stroke)", fill: "var(--graph-explorer-loading-fill)" };
 
+/**
+ * The arrowhead of the canvas and of the SVG export, in stroke widths (`markerUnits="strokeWidth"`). The line ends 1.5
+ * stroke widths behind the tip, where the head is still wider than the line: a line running on to the tip pokes out of
+ * its narrowing point. The tip then reaches the card's border.
+ */
+export const ARROW_MARKER = { width: 8, height: 8, refX: 6.5, refY: 4, path: "M0,0 L8,4 L0,8 z" } as const;
+
 export function stableStringHash(value: string) {
   let hash = 2166136261;
   for (const character of value) {

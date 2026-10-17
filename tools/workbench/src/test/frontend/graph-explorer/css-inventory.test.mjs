@@ -40,3 +40,24 @@ test("the explorer takes its colours, fonts and radii from the Workbench tokens"
   assert.match(css, /html\[data-theme="dark"\] \.graph-explorer/, "dark theme follows the Workbench switch");
   assert.doesNotMatch(css, /^\s*(\*|html|body|button|input|select|textarea|code)\s*(,|\{)/m, "no element-level rules");
 });
+
+test("edges and their arrowheads share one opaque colour", () => {
+  // A translucent stroke under a translucent arrowhead doubles its alpha: the line shows through the head.
+  const edge = /--graph-explorer-edge:\s*([^;]+);/.exec(css)?.[1] ?? "";
+  assert.match(edge, /var\(--workbench-muted\)/, edge);
+  assert.doesNotMatch(edge, /transparent/, `--graph-explorer-edge: ${edge}`);
+});
+
+test("an edge drawn in the accent colour gets an accent arrowhead", () => {
+  // A marker takes its colour from where it is defined, not from the edge drawing it: without its own arrowhead an
+  // emphasised (accent) line keeps the grey head of the plain edges.
+  const app = readFileSync(fileURLToPath(new URL("../../../main/frontend/graph-explorer/GraphExplorerApp.tsx", import.meta.url)), "utf8");
+  assert.match(app, /<marker id="arrow-accent"[^]*?fill: "var\(--accent\)"[^]*?<\/marker>/);
+  const selectors = (block) => block.split(",").map((selector) => selector.trim().replace(/^\.graph-explorer /, ""));
+  const rules = css.replace(/\/\*[^]*?\*\//g, "");
+  const accentEdges = [...rules.matchAll(/([^{}]+)\{\s*color: var\(--accent\);\s*\}/g)]
+    .flatMap(([, block]) => selectors(block)).filter((selector) => /\.edge[.:\s]|\.edge$/.test(selector));
+  assert.ok(accentEdges.length >= 4, accentEdges.join(", "));
+  const accentHeads = [...rules.matchAll(/([^{}]+)\{\s*marker-end: url\(#arrow-accent\);\s*\}/g)].flatMap(([, block]) => selectors(block));
+  assert.deepEqual(accentEdges.filter((selector) => !accentHeads.includes(`${selector} path`)), []);
+});

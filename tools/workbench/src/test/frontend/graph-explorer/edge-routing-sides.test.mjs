@@ -15,7 +15,7 @@ import { canvasGraph } from '../../../main/frontend/graph-explorer/graph-canvas-
 import { routeDrawnEdges, routeDrawnGraph } from '../../../main/frontend/graph-explorer/graph-edge-routing.ts';
 import { curveMidpoint, nearestEdge } from '../../../main/frontend/graph-explorer/edge-hit.ts';
 import { createGraphVertexCache } from '../../../main/frontend/graph-explorer/graph-webgl.ts';
-import { computeEdgePorts, curveSamples, edgeGeometry, edgePortKey, graphNodeSize, optimizeEdgeBends, quadraticPoint } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
+import { computeEdgePorts, curveSamples, distributeCircularPortParameters, edgeGeometry, edgePortKey, graphNodeSize, nodeBoundaryPoint, optimizeEdgeBends, quadraticPoint, segmentDistance } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
 import { computeGraphLayout } from '../../../main/frontend/graph-explorer/graph-layout-engine.ts';
 import { STATEMENT_LINK_EDGE_PREFIX } from '../../../main/frontend/graph-explorer/statement-links.ts';
 import { badExportGraph, iri } from './fixtures/layout-demo-graph.mjs';
@@ -190,4 +190,66 @@ test('hit testing, the middle and the WebGL lines follow a stepped route', () =>
   for (let i = 0; i < points.length; i += 2) segments.push([points[i], points[i + 1]]);
   assert.ok(segments.some(([a, b]) => Math.abs(a.x - 300) < 0.5 && Math.abs(b.x - 300) < 0.5 && Math.abs(a.y - b.y) > 150), 'the vertical leg is drawn');
   assert.ok(!points.some((p) => Math.abs(p.y - p.x / 2) < 2 && p.x > 120 && p.x < 280), 'no straight line is drawn');
+});
+
+// The export that showed the bug: three arrows from Alice to Bob left Alice in order but swapped order at Bob and
+// crossed there, bunched against Bob's corner. Alice also has three incoming arrows from blank nodes.
+const parallelScene = (aliceId, bobId) => {
+  const alice = { id: aliceId, label: 'Alice', kind: 'iri', x: 727.2, y: 362.7 };
+  const bob = { id: bobId, label: 'Bob', kind: 'iri', x: 842.1, y: 240.5 };
+  const blanks = [[489.7, 412.7], [956.2, 436.5], [721.6, 506]].map(([x, y], i) => ({ id: `_:b${i}`, label: 'Blank node', kind: 'blank', x, y }));
+  const between = (source, target, predicate) => ({ id: `${source.id}|${predicate}|${target.id}`, source: source.id, target: target.id, predicate, label: predicate });
+  return { alice, bob, nodes: [alice, bob, ...blanks], blankEdges: blanks.map((blank) => between(blank, alice, 'about')), between };
+};
+
+function parallelCurves(nodes, edges) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const ports = computeEdgePorts(nodes, edges), bends = optimizeEdgeBends(nodes, edges, 2);
+  return edges.map((edge) => edgeGeometry(byId.get(edge.source), byId.get(edge.target), bends.get(edge.id) ?? 0,
+    ports.get(edgePortKey(edge.id, edge.source)), ports.get(edgePortKey(edge.id, edge.target))));
+}
+
+function crossingPairs(curves) {
+  const sampled = curves.map((curve) => Array.from({ length: 41 }, (_, i) => quadraticPoint(curve.start, curve.control, curve.end, i / 40)));
+  const pairs = [];
+  for (let a = 0; a < sampled.length; a++) {
+    for (let b = a + 1; b < sampled.length; b++) {
+      let touches = false;
+      for (let i = 0; i < 40 && !touches; i++) {
+        for (let j = 0; j < 40 && !touches; j++) touches = segmentDistance(sampled[a][i], sampled[a][i + 1], sampled[b][j], sampled[b][j + 1]) < 0.8;
+      }
+      if (touches) pairs.push([a, b]);
+    }
+  }
+  return pairs;
+}
+
+test('parallel arrows between two cards keep their order at both cards', () => {
+  // Both id orders: the lanes bend along the normal from the smaller id to the larger, whichever card that is.
+  for (const [aliceId, bobId] of [['urn:alice', 'urn:bob'], ['urn:zoe', 'urn:bob']]) {
+    const { alice, bob, nodes, blankEdges, between } = parallelScene(aliceId, bobId);
+    for (const parallel of [
+      ['knows', 'follows', 'worksWith'].map((predicate) => between(alice, bob, predicate)),
+      [between(alice, bob, 'knows'), between(bob, alice, 'follows'), between(alice, bob, 'worksWith')],
+    ]) {
+      const curves = parallelCurves(nodes, [...blankEdges, ...parallel]).slice(blankEdges.length);
+      assert.deepEqual(crossingPairs(curves), [], `${aliceId}/${bobId} ${parallel.map((edge) => edge.id).join(', ')}: ${curves.map((curve) => curve.path).join(' | ')}`);
+    }
+  }
+  // A card between them: the middle arrow detours to one side, and the lane on that side must go round it, not cross it.
+  const nodes = [card('a', 0, 0), card('z', 0, 1000), card('blocker', 0, 500)];
+  const edges = ['one', 'three'].map((id) => ({ ...link('a', 'z'), id })).concat({ ...link('z', 'a'), id: 'two' });
+  const curves = parallelCurves(nodes, edges);
+  assert.deepEqual(crossingPairs(curves), [], curves.map((curve) => curve.path).join(' | '));
+});
+
+test('a card linked to only one neighbour centres its ports on that neighbour', () => {
+  assert.deepEqual(distributeCircularPortParameters([40, 40, 40], 300).map((parameter) => Math.round(parameter * 1000) / 1000), [28, 40, 52]);
+  const { alice, bob, nodes, blankEdges, between } = parallelScene('urn:alice', 'urn:bob');
+  const parallel = ['knows', 'follows', 'worksWith'].map((predicate) => between(alice, bob, predicate));
+  const ports = computeEdgePorts(nodes, [...blankEdges, ...parallel]);
+  const atBob = parallel.map((edge) => ports.get(edgePortKey(edge.id, bob.id)));
+  const ideal = nodeBoundaryPoint(bob, alice);
+  const mean = { x: atBob.reduce((sum, port) => sum + port.x, 0) / 3, y: atBob.reduce((sum, port) => sum + port.y, 0) / 3 };
+  assert.ok(Math.hypot(mean.x - ideal.x, mean.y - ideal.y) < 1, `ports ${JSON.stringify(atBob)} centre ${JSON.stringify(mean)}, ideal ${JSON.stringify(ideal)}`);
 });

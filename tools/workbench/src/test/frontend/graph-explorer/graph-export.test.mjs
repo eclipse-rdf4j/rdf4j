@@ -117,3 +117,17 @@ test("the drawn graph exports as a standalone SVG framed around its nodes", () =
   assert.match(svg, />knows<\/text>/);
   assert.doesNotMatch(svg, /var\(/);
 });
+
+test("an arrow's line ends inside its head, short of the tip", () => {
+  const a = { id: "a", label: "a", kind: "iri", x: 0, y: 0 }, b = { id: "b", label: "b", kind: "iri", x: 300, y: 0 };
+  const curve = { path: "M 60 0 L 240 0", start: { x: 60, y: 0 }, control: { x: 150, y: 0 }, end: { x: 240, y: 0 } };
+  const svg = graphSvg({ nodes: [a, b], edges: [{ id: "e", source: "a", target: "b", predicate: "urn:p", label: "p" }],
+    curves: new Map([["e", curve]]), labels: new Map(), color: (value) => value,
+    palette: { background: "#fff", edge: "#888", nodeText: "#000", labelText: "#000", labelFill: "#fff", font: "sans-serif" } });
+  const marker = /<marker [^>]*refX="([\d.]+)"[^>]*markerUnits="strokeWidth"><path d="M0,0 L([\d.]+),4 L0,8 z"/.exec(svg);
+  assert.ok(marker, svg);
+  // In stroke widths: the head is as wide as the line one stroke width from its tip, so a line (and its cap) ending
+  // closer to the tip pokes out of the narrowing point. Much further back and the tip stops short of the card.
+  const behindTip = Number(marker[2]) - Number(marker[1]);
+  assert.ok(behindTip >= 1.5 && behindTip <= 2, `the line ends ${behindTip} stroke widths behind the tip`);
+});

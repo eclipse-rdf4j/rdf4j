@@ -78,7 +78,8 @@
   --graph-explorer-canvas-edge-label: #4e6670;
   --graph-explorer-canvas-selection: #c48a12;
   /* SVG graph */
-  --graph-explorer-edge: color-mix(in srgb, var(--workbench-muted) 50%, transparent);
+  /* Opaque (mixed with the graph panel, not transparent): a translucent line would show through its arrowhead. */
+  --graph-explorer-edge: color-mix(in srgb, var(--workbench-muted) 50%, var(--panel));
   --graph-explorer-edge-label: var(--workbench-body);
   --graph-explorer-node-text: var(--workbench-ink);
   --graph-explorer-node-shadow: #0f172a;
@@ -392,14 +393,21 @@ html[data-theme="dark"] .graph-explorer {
   font-size: 12px;
 }
 
-.graph-explorer #graph-explorer-app .label-preferences ol {
+.graph-explorer #graph-explorer-app .label-preferences .preference-order {
   display: grid;
   gap: 2px;
   padding-left: 22px;
+  max-height: 192px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .graph-explorer #graph-explorer-app .label-preferences li {
   padding-left: 2px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, 28px);
+  align-items: center;
+  gap: 2px;
 }
 
 .graph-explorer #graph-explorer-app .label-preferences li > * {
@@ -407,8 +415,18 @@ html[data-theme="dark"] .graph-explorer {
 }
 
 .graph-explorer #graph-explorer-app .label-preferences li span {
-  display: inline-block;
-  min-width: 96px;
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-explorer #graph-explorer-app .label-preferences h3 {
+  margin-top: 6px;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .graph-explorer #graph-explorer-app .label-preferences li .workbench-action--icon {
@@ -447,6 +465,32 @@ html[data-theme="dark"] .graph-explorer {
 .graph-explorer #graph-explorer-app .preference-error {
   color: var(--coral);
   font-size: 12px;
+}
+
+.graph-explorer #graph-explorer-app .label-guidance {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin: 8px 12px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--control-radius);
+  background: var(--panel-strong);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.graph-explorer #graph-explorer-app .label-guidance p {
+  flex: 1 1 220px;
+  margin: 0;
+}
+
+.graph-explorer #graph-explorer-app .label-guidance-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 
 /* ---------------------------------------------------------------------------
@@ -2687,6 +2731,14 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 
 .graph-explorer .edge.is-selected path {
   stroke-width: 2.6px;
+}
+
+/* The arrowhead of an accent edge: a marker keeps the colour of its <defs>, whatever edge draws it. */
+.graph-explorer .graph-canvas.has-active .edge.touches-active path,
+.graph-explorer .graph-canvas.has-selection .edge.touches-selection path,
+.graph-explorer .edge.is-on-path path,
+.graph-explorer .edge.is-selected path {
+  marker-end: url(#arrow-accent);
 }
 
 .graph-explorer .graph-canvas.dim-by-path .edge:not(.is-on-path),

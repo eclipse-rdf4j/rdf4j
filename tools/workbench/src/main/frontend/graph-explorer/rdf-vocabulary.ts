@@ -39,6 +39,16 @@ export const LABEL_PROPERTIES = [
   "http://purl.obolibrary.org/obo/IAO_0000111",
   "http://purl.obolibrary.org/obo/IAO_0000118",
 ] as const;
+/** Both direct literal predicates and the existing indirect label paths are configurable. */
+export const DEFAULT_LABEL_PROPERTIES: readonly string[] = [
+  LABEL_PROPERTIES[0],
+  SKOS_XL + "prefLabel",
+  ...LABEL_PROPERTIES.slice(1, 11),
+  "http://www.w3.org/ns/shacl#name",
+  "http://www.w3.org/ns/lemon/ontolex#canonicalForm",
+  ...LABEL_PROPERTIES.slice(11),
+  SKOS_XL + "altLabel",
+];
 const directRanks = new Map<string, number>(
   LABEL_PROPERTIES.map((p, i) => [p, i]),
 );
@@ -67,13 +77,50 @@ export function parseLanguagePreferences(value: string | string[]) {
     !languages.length ||
     languages.length > 16 ||
     languages.some(
-      (s) => s !== "*" && !/^[a-z]{2,8}(?:-[a-z0-9]{1,8})*$/.test(s),
+      (s) => s !== "*" && !isLanguageTag(s),
     )
   )
     throw new Error(
       "Enter 1–16 language tags, in order, such as nb, en, de. Use und for untagged labels or * for any language.",
     );
   return languages;
+}
+// BCP 47 syntax includes private-use and grandfathered tags, as well as ordinary browser locale tags.
+const GRANDFATHERED_LANGUAGES = new Set([
+  "en-gb-oed", "i-ami", "i-bnn", "i-default", "i-enochian", "i-hak", "i-klingon", "i-lux", "i-mingo",
+  "i-navajo", "i-pwn", "i-tao", "i-tay", "i-tsu", "sgn-be-fr", "sgn-be-nl", "sgn-ch-de", "art-lojban",
+  "cel-gaulish", "no-bok", "no-nyn", "zh-guoyu", "zh-hakka", "zh-min", "zh-min-nan", "zh-xiang",
+]);
+export function isLanguageTag(value: string) {
+  if (GRANDFATHERED_LANGUAGES.has(value.toLowerCase())) return true;
+  if (/^x(?:-[a-z0-9]{1,8})+$/i.test(value)) return true;
+  if (!/^(?:[a-z]{2,3}(?:-[a-z]{3}){0,3}|[a-z]{4}|[a-z]{5,8})(?:-[a-z]{4})?(?:-(?:[a-z]{2}|[0-9]{3}))?(?:-(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3}))*(?:-[0-9a-wy-z](?:-[a-z0-9]{2,8})+)*(?:-x(?:-[a-z0-9]{1,8})+)?$/i.test(value)) return false;
+  const parts = value.toLowerCase().split("-");
+  let at = 1;
+  if (parts[0].length <= 3) {
+    while (at <= 3 && /^[a-z]{3}$/.test(parts[at] ?? "")) at++;
+  }
+  if (/^[a-z]{4}$/.test(parts[at] ?? "")) at++;
+  if (/^(?:[a-z]{2}|[0-9]{3})$/.test(parts[at] ?? "")) at++;
+  const variants = new Set<string>();
+  while (/^(?:[a-z0-9]{5,8}|[0-9][a-z0-9]{3})$/.test(parts[at] ?? "")) {
+    if (variants.has(parts[at])) return false;
+    variants.add(parts[at++]);
+  }
+  const singletons = new Set<string>();
+  for (const part of parts) {
+    if (part === "x") break;
+    if (part.length !== 1) continue;
+    if (singletons.has(part)) return false;
+    singletons.add(part);
+  }
+  return true;
+}
+export function parseLabelProperties(value: readonly string[]) {
+  const properties = [...new Set(value.map(property => property.trim()).filter(Boolean))];
+  if (!properties.length || properties.length > 64 || properties.some(property => !isSafeSparqlIri(property)))
+    throw new Error("Choose 1–64 label predicates using their full IRIs, in preferred order.");
+  return properties;
 }
 export function languageRank(language: string, preferences: string[]) {
   const actual = (language || "und").toLowerCase();
@@ -82,10 +129,16 @@ export function languageRank(language: string, preferences: string[]) {
     if (range === "*") return i * 100 + 90;
     let depth = 0;
     while (range) {
-      if (actual === range) return i * 100 + depth;
-      if (actual.startsWith(range + "-")) return i * 100 + 20 + depth;
+      // Encode fallback depth within this language's bucket, regardless of the number of valid subtags.
+      if (actual === range) return i * 100 + depth / (depth + 1);
+      if (actual.startsWith(range + "-")) return i * 100 + 20 + depth / (depth + 1);
       const end = range.lastIndexOf("-");
       range = end < 0 ? "" : range.slice(0, end);
+      // A singleton introduces an extension/private-use sequence; it is never a fallback range on its own.
+      while (range && range.length - range.lastIndexOf("-") === 2) {
+        const singleton = range.lastIndexOf("-");
+        range = singleton < 0 ? "" : range.slice(0, singleton);
+      }
       depth++;
     }
   }
@@ -100,18 +153,22 @@ export function isHumanLabel(label: string, iri = "") {
       !/^P\d+$/.test(label),
   );
 }
-export function chooseLabel(candidates: LabelCandidate[], languages: string[]) {
-  return candidates
-    .filter((c) => isHumanLabel(c.value))
-    .slice()
-    .sort(
-      (a, b) =>
-        languageRank(a.language, languages) -
-          languageRank(b.language, languages) ||
-        labelPropertyRank(a.property) - labelPropertyRank(b.property) ||
-        (a.language < b.language ? -1 : a.language > b.language ? 1 : 0) ||
-        (a.value < b.value ? -1 : a.value > b.value ? 1 : 0),
-    )[0]?.value;
+export function labelComparator(languages: string[], properties: readonly string[] = DEFAULT_LABEL_PROPERTIES) {
+  const ranks = new Map(properties.map((property, index) => [property, index]));
+  const rank = (property: string) => ranks.get(property) ?? properties.length + labelPropertyRank(property);
+  return (a: LabelCandidate, b: LabelCandidate) =>
+    languageRank(a.language, languages) - languageRank(b.language, languages) ||
+    rank(a.property) - rank(b.property) ||
+    (a.language < b.language ? -1 : a.language > b.language ? 1 : 0) ||
+    (a.value < b.value ? -1 : a.value > b.value ? 1 : 0);
+}
+export function chooseLabel(candidates: LabelCandidate[], languages: string[], properties?: readonly string[]) {
+  const compare = labelComparator(languages, properties);
+  let chosen: LabelCandidate | undefined;
+  for (const candidate of candidates) {
+    if (isHumanLabel(candidate.value) && (!chosen || compare(candidate, chosen) < 0)) chosen = candidate;
+  }
+  return chosen?.value;
 }
 export function humanizeIri(iri: string) {
   let local =

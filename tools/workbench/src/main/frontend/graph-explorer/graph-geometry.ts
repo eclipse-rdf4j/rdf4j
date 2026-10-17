@@ -460,8 +460,12 @@ export function distributeCircularPortParameters(
   let cut = 0;
   sorted.forEach((candidate, index) => {
     const next = sorted[(index + 1) % sorted.length];
+    // The wrap-around gap is a whole perimeter when every port shares one parameter (a card linked to one neighbour):
+    // taken modulo the perimeter it would be 0, and the cut would land on the ports instead of opposite them.
     const gap =
-      (next.parameter - candidate.parameter + perimeter) % perimeter;
+      index === sorted.length - 1
+        ? next.parameter + perimeter - candidate.parameter
+        : next.parameter - candidate.parameter;
     if (gap > largestGap) {
       largestGap = gap;
       cut = (candidate.parameter + gap / 2) % perimeter;
@@ -713,10 +717,13 @@ export function centeredEdgeLanes(count: number) {
   );
 }
 
+/** Bend between neighbouring lanes of parallel arrows beyond the first. */
+const EDGE_LANE_SPACING = 30;
+
 export function edgeBendForLane(lane: number, distance: number) {
   if (lane === 0) return 0;
   const baseBend = Math.min(90, Math.max(42, distance * 0.18));
-  return Math.sign(lane) * (baseBend + (Math.abs(lane) - 1) * 30);
+  return Math.sign(lane) * (baseBend + (Math.abs(lane) - 1) * EDGE_LANE_SPACING);
 }
 
 export function edgeRoutingPasses(edgeCount: number, preferredPasses: number) {
@@ -779,9 +786,11 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
     edgeId: string;
     node: GraphNode;
     idealParameter: number;
+    side: number;
   };
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const buckets = new Map<string, PortCandidate[]>();
+  const lanes = computeEdgeLanes(edges);
 
   const addCandidate = (edgeId: string, node: GraphNode, neighbor: GraphNode) => {
     if (
@@ -797,6 +806,10 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
       y: neighbor.y - node.y,
     });
     if (Math.hypot(idealPoint.x, idealPoint.y) < 1e-6) return;
+    // Parallel arrows share one ideal parameter, so their order along the card comes from their lanes. A lane bends
+    // along edgeGeometry's normal from the smaller id to the larger; the perimeter runs clockwise, which is along that
+    // normal at the smaller id's card and against it at the other. Without the flip the arrows swap order and cross.
+    const lane = lanes.get(edgeId) ?? 0;
     const candidate = {
       edgeId,
       node,
@@ -806,6 +819,7 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
         height,
         radius,
       ),
+      side: node.id.localeCompare(neighbor.id) <= 0 ? lane : -lane,
     };
     const current = buckets.get(node.id);
     if (current) current.push(candidate);
@@ -825,6 +839,7 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
     candidates.sort(
       (left, right) =>
         left.idealParameter - right.idealParameter ||
+        left.side - right.side ||
         left.edgeId.localeCompare(right.edgeId),
     );
     const { node } = candidates[0];
@@ -917,10 +932,14 @@ export function optimizeEdgeBends(
   const lanes = computeEdgeLanes(edges);
   const ports = computeEdgePorts(nodes, edges);
   const pairCounts = new Map<string, number>();
+  const pairEdges = new Map<string, GraphEdge[]>();
   const degrees = new Map<string, number>();
   edges.forEach((edge) => {
     const pair = unorderedPairKey(edge.source, edge.target);
     pairCounts.set(pair, (pairCounts.get(pair) ?? 0) + 1);
+    const siblings = pairEdges.get(pair);
+    if (siblings) siblings.push(edge);
+    else pairEdges.set(pair, [edge]);
     degrees.set(edge.source, (degrees.get(edge.source) ?? 0) + 1);
     degrees.set(edge.target, (degrees.get(edge.target) ?? 0) + 1);
   });
@@ -1010,6 +1029,13 @@ export function optimizeEdgeBends(
         lane === 0
           ? [bends.get(edge.id) ?? 0, 0, 30, -30, 52, -52, 78, -78]
           : [bends.get(edge.id) ?? preferred, ...[0.66, 1, 1.46].map((factor) => preferred * factor)];
+      // A sibling that detoured (a lane-0 arrow round a card) can leave this lane only bends that cross it or share
+      // its control point. Offer the bend that keeps the lane spacing beyond each placed sibling; bends of parallel
+      // arrows share edgeGeometry's canonical normal, so they compare whatever their direction.
+      for (const sibling of pairEdges.get(unorderedPairKey(edge.source, edge.target)) ?? []) {
+        if (sibling.id === edge.id) continue;
+        candidates.push((bends.get(sibling.id) ?? 0) + (lane - (lanes.get(sibling.id) ?? 0)) * EDGE_LANE_SPACING);
+      }
       const dx = (target.x ?? 0) - (source.x ?? 0), dy = (target.y ?? 0) - (source.y ?? 0);
       const direction = source.id.localeCompare(target.id) <= 0 ? 1 : -1;
       const nx = -dy / Math.max(1, distance) * direction, ny = dx / Math.max(1, distance) * direction;

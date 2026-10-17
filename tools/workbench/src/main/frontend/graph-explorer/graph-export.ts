@@ -13,7 +13,7 @@
 import { NODE_TEXT_LEFT } from "./graph-config.ts";
 import { edgeLabelSize, graphNodePresentation, nodeCornerRadius } from "./graph-geometry.ts";
 import type { EdgeCurve, EdgeLabelPlacement, Graph, GraphEdge, GraphNode } from "./graph-types.ts";
-import { nodeVisual } from "./graph-visuals.ts";
+import { ARROW_MARKER, nodeVisual } from "./graph-visuals.ts";
 import { sparqlTermFromNodeId } from "./rdf-terms.ts";
 
 const RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
@@ -200,7 +200,7 @@ export function graphSvg({ nodes, edges, curves, labels, color, palette, connect
   const edgeColor = color(palette.edge);
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${round(minX)} ${round(minY)} ${round(width)} ${round(height)}" width="${Math.ceil(width)}" height="${Math.ceil(height)}">`,
-    `<defs><marker id="arrow" markerWidth="8" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L8,4 L0,8 z" fill="${xml(edgeColor)}"/></marker></defs>`,
+    `<defs><marker id="arrow" markerWidth="${ARROW_MARKER.width}" markerHeight="${ARROW_MARKER.height}" refX="${ARROW_MARKER.refX}" refY="${ARROW_MARKER.refY}" orient="auto" markerUnits="strokeWidth"><path d="${ARROW_MARKER.path}" fill="${xml(edgeColor)}"/></marker></defs>`,
     `<rect x="${round(minX)}" y="${round(minY)}" width="${round(width)}" height="${round(height)}" fill="${xml(color(palette.background))}"/>`,
     `<g font-family="${xml(color(palette.font))}" font-size="12" font-weight="600">`,
   ];
