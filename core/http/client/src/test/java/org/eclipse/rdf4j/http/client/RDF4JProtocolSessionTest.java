@@ -12,26 +12,36 @@
 package org.eclipse.rdf4j.http.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 import java.util.HashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.http.client.spi.HttpResponse;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClients;
 import org.eclipse.rdf4j.http.protocol.Protocol;
+import org.eclipse.rdf4j.http.protocol.RepositoryDeletionDeniedException;
+import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
 import org.junit.jupiter.api.Assumptions;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -52,6 +62,94 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 	private final String testHeader = "X-testing-header";
 	private final String testValue = "foobar";
+
+	@Test
+	void protocolAuthenticationFailureKeepsOriginalType() throws Exception {
+		RDF4JHttpClient client = mock(RDF4JHttpClient.class);
+		HttpResponse unauthorized = mock(HttpResponse.class);
+		when(unauthorized.getStatusCode()).thenReturn(401);
+		when(client.execute(any())).thenReturn(unauthorized);
+		sessionManager = new SharedHttpClientSessionManager(client, Executors.newCachedThreadPool());
+		sparqlSession = sessionManager.createRDF4JProtocolSession(serverURL);
+		assertThatThrownBy(() -> getRDF4JSession().deleteRepository("test", "deletion-password"))
+				.isExactlyInstanceOf(UnauthorizedException.class);
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	void discoversDeletionProtectionWithoutSendingPassword(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("HEAD").withPath("/rdf4j-server/protocol"), Times.once())
+				.respond(response().withStatusCode(200));
+		assertThat(getRDF4JSession().isRepositoryDeletionPasswordRequired()).isFalse();
+		client.when(request().withMethod("HEAD").withPath("/rdf4j-server/protocol"), Times.once())
+				.respond(response().withStatusCode(200)
+						.withHeader(Protocol.REPOSITORY_DELETE_PASSWORD_REQUIRED_HEADER, "true"));
+		assertThat(getRDF4JSession().isRepositoryDeletionPasswordRequired()).isTrue();
+		client.when(request().withMethod("HEAD").withPath("/rdf4j-server/protocol"), Times.once())
+				.respond(response().withStatusCode(200)
+						.withHeader(Protocol.REPOSITORY_DELETE_PASSWORD_REQUIRED_HEADER, "false"));
+		assertThat(getRDF4JSession().isRepositoryDeletionPasswordRequired()).isFalse();
+		client.verify(request().withMethod("HEAD").withHeader(Protocol.REPOSITORY_DELETE_PASSWORD_HEADER),
+				VerificationTimes.exactly(0));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	void discoveryFailureCannotSilentlyDisableProtection(String factoryName, MockServerClient client) {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("HEAD").withPath("/rdf4j-server/protocol"))
+				.respond(response().withStatusCode(500));
+		assertThatThrownBy(() -> getRDF4JSession().isRepositoryDeletionPasswordRequired())
+				.isInstanceOf(RepositoryException.class);
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	void deletionPasswordIsConfinedToOneRequest(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("DELETE").withPath("/rdf4j-server/repositories/test"))
+				.respond(response().withStatusCode(204));
+		String password = "  å秘密🔒\t ";
+		getRDF4JSession().deleteRepository("test", password);
+		getRDF4JSession().deleteRepository("test");
+		client.verify(request().withMethod("DELETE")
+				.withHeader(Protocol.REPOSITORY_DELETE_PASSWORD_HEADER,
+						Base64.getEncoder().encodeToString(password.getBytes(StandardCharsets.UTF_8))),
+				VerificationTimes.once());
+		assertThat(getRDF4JSession().getAdditionalHttpHeaders())
+				.doesNotContainKey(Protocol.REPOSITORY_DELETE_PASSWORD_HEADER);
+		client.verify(request().withMethod("DELETE").withPath("/rdf4j-server/repositories/test"),
+				VerificationTimes.exactly(2));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	void deletionPasswordIsIndependentOfBasicAuthentication(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("DELETE").withPath("/rdf4j-server/repositories/test"), Times.once())
+				.respond(response().withStatusCode(403)
+						.withBody("REPOSITORY DELETION DENIED: " + RepositoryDeletionDeniedException.MESSAGE));
+		assertThatThrownBy(() -> getRDF4JSession().deleteRepository("test", "wrong"))
+				.isExactlyInstanceOf(RepositoryDeletionDeniedException.class)
+				.hasMessage(RepositoryDeletionDeniedException.MESSAGE);
+		getRDF4JSession().setUsernameAndPassword("admin", "http-password");
+		client.when(request().withMethod("DELETE").withPath("/rdf4j-server/repositories/test"), Times.once())
+				.respond(response().withStatusCode(204));
+		getRDF4JSession().deleteRepository("test", "deletion-password");
+		client.verify(request().withMethod("DELETE")
+				.withPath("/rdf4j-server/repositories/test")
+				.withHeader("Authorization", "Basic " + Base64.getEncoder()
+						.encodeToString("admin:http-password".getBytes(StandardCharsets.UTF_8)))
+				.withHeader(Protocol.REPOSITORY_DELETE_PASSWORD_HEADER, Base64.getEncoder()
+						.encodeToString("deletion-password".getBytes(StandardCharsets.UTF_8))));
+	}
 
 	RDF4JProtocolSession getRDF4JSession() {
 		return (RDF4JProtocolSession) sparqlSession;

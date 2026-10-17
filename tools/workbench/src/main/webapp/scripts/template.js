@@ -1716,10 +1716,11 @@ var workbench;
     function submitForm(form) {
         var router = workbench.router;
         if (router && typeof router.submit === 'function') {
-            router.submit(form);
+            return Promise.resolve(router.submit(form));
         }
         else {
             form.submit();
+            return Promise.resolve('fallback');
         }
     }
     workbench.submitForm = submitForm;
