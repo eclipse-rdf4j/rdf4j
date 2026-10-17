@@ -110,7 +110,11 @@ public class WorkbenchServlet extends AbstractServlet {
 		for (Servlet servlet : repositories.values()) {
 			servlet.destroy();
 		}
-		manager.shutDown();
+		repositories.clear();
+		if (manager != null) {
+			manager.shutDown();
+			manager = null;
+		}
 	}
 
 	public void resetCache() {

@@ -226,6 +226,19 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
+	void workbenchContainerSessionCookieHasExplicitSameSitePolicy() throws Exception {
+		String repoId = registerRepository("session-cookie", new MemoryStoreConfig());
+		ResponseEntity<String> response = restTemplate.getForEntity(
+				"http://localhost:" + port + "/rdf4j-workbench/repositories/" + repoId + "/summary", String.class);
+
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+		assertThat(response.getHeaders().get(HttpHeaders.SET_COOKIE)).isNotNull().anySatisfy(cookie -> {
+			assertThat(cookie).startsWith("JSESSIONID=").contains("SameSite=Lax", "HttpOnly", "Path=/");
+			assertThat(cookie).doesNotContain("Secure");
+		});
+	}
+
+	@Test
 	void workbenchServletHasMultipartConfig() {
 		assertThat(rdf4jWorkbenchServlet.getMultipartConfig())
 				.as("Workbench servlet must be configured for multipart requests")
