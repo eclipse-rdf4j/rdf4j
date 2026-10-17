@@ -17,7 +17,9 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
@@ -26,6 +28,8 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.query.TupleQuery;
@@ -114,7 +118,7 @@ public class GraphServlet extends TransformationServlet {
 					"The query exceeds the maximum of " + maxQueryLength + " characters.");
 			return;
 		}
-		if (!isQueryExecutionEnabled()) {
+		if (!isQueryFeatureEnabled(QUERY_EXECUTION_FEATURE)) {
 			resp.sendError(HttpServletResponse.SC_FORBIDDEN);
 			return;
 		}
@@ -140,18 +144,46 @@ public class GraphServlet extends TransformationServlet {
 			if (timeout > 0) {
 				query.setMaxExecutionTime(timeout);
 			}
-			resp.setStatus(HttpServletResponse.SC_OK);
-			resp.setContentType(SPARQL_RESULTS_JSON);
-			resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
-			resp.setHeader("Cache-Control", "no-store");
-			SPARQLResultsJSONWriter writer = new OriginJSONWriter(resp.getOutputStream(), connection.getValueFactory());
+			ValueFactory factory = connection.getValueFactory();
 			long limit = rowLimit(req);
-			if (query instanceof GraphQuery graphQuery) {
-				writeStatements(graphQuery, writer, limit);
-			} else {
-				writeSolutions((TupleQuery) query, writer, limit);
+			try {
+				if (query instanceof GraphQuery graphQuery) {
+					writeStatements(graphQuery, resp, factory, limit);
+				} else {
+					writeSolutions((TupleQuery) query, resp, factory, limit);
+				}
+			} catch (QueryInterruptedException e) {
+				failEvaluation(resp, HttpServletResponse.SC_REQUEST_TIMEOUT,
+						Objects.requireNonNullElse(e.getMessage(), "Query evaluation took too long."), e);
+			} catch (QueryEvaluationException e) {
+				failEvaluation(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR,
+						"Query evaluation failed: " + e.getMessage(), e);
+			} catch (MalformedQueryException e) {
+				failEvaluation(resp, HttpServletResponse.SC_BAD_REQUEST, "Malformed query: " + e.getMessage(), e);
 			}
 		}
+	}
+
+	/**
+	 * The response is started once the result has its first row (or has none), so a failure up to then is answered with
+	 * its own status and message instead of a truncated document. A later failure cannot be answered any more.
+	 */
+	private static SPARQLResultsJSONWriter startResponse(HttpServletResponse resp, ValueFactory factory)
+			throws IOException {
+		resp.setStatus(HttpServletResponse.SC_OK);
+		resp.setContentType(SPARQL_RESULTS_JSON);
+		resp.setCharacterEncoding(StandardCharsets.UTF_8.name());
+		resp.setHeader("Cache-Control", "no-store");
+		return new OriginJSONWriter(resp.getOutputStream(), factory);
+	}
+
+	private static void failEvaluation(HttpServletResponse resp, int status, String message, RDF4JException e)
+			throws IOException {
+		if (resp.isCommitted()) {
+			throw e;
+		}
+		resp.reset();
+		reject(resp, status, message);
 	}
 
 	private static final class OriginJSONWriter extends SPARQLResultsJSONWriter {
@@ -182,30 +214,37 @@ public class GraphServlet extends TransformationServlet {
 	 * A CONSTRUCT or DESCRIBE result in the same SPARQL Results JSON the explorer reads for SELECT: one solution per
 	 * statement, binding {@code source}, {@code predicate} and {@code target}.
 	 */
-	private static void writeStatements(GraphQuery query, SPARQLResultsJSONWriter writer, long limit) {
+	private static void writeStatements(GraphQuery query, HttpServletResponse resp, ValueFactory factory, long limit)
+			throws IOException {
 		List<String> names = List.of("source", "predicate", "target");
-		writer.startQueryResult(names);
-		long written = 0;
 		try (GraphQueryResult statements = query.evaluate()) {
+			statements.hasNext();
+			SPARQLResultsJSONWriter writer = startResponse(resp, factory);
+			writer.startQueryResult(names);
+			long written = 0;
 			while (statements.hasNext() && written++ < limit) {
 				Statement statement = statements.next();
 				writer.handleSolution(new ListBindingSet(names, statement.getSubject(), statement.getPredicate(),
 						statement.getObject()));
 			}
+			writer.endQueryResult();
 		}
-		writer.endQueryResult();
 	}
 
 	/** A SELECT result, at most {@code limit} solutions of it. */
-	private static void writeSolutions(TupleQuery query, SPARQLResultsJSONWriter writer, long limit) {
+	private static void writeSolutions(TupleQuery query, HttpServletResponse resp, ValueFactory factory, long limit)
+			throws IOException {
 		try (TupleQueryResult solutions = query.evaluate()) {
-			writer.startQueryResult(solutions.getBindingNames());
+			List<String> names = solutions.getBindingNames();
+			solutions.hasNext();
+			SPARQLResultsJSONWriter writer = startResponse(resp, factory);
+			writer.startQueryResult(names);
 			long written = 0;
 			while (solutions.hasNext() && written++ < limit) {
 				writer.handleSolution(solutions.next());
 			}
+			writer.endQueryResult();
 		}
-		writer.endQueryResult();
 	}
 
 	/**
@@ -235,13 +274,13 @@ public class GraphServlet extends TransformationServlet {
 		return req.getParameter("query");
 	}
 
-	private static boolean includeInferred(WorkbenchRequest req) {
-		String infer = req.getParameter("infer");
+	private boolean includeInferred(WorkbenchRequest req) {
+		String infer = evaluationOption(req, "infer", "query-inferred-statements");
 		return infer == null || infer.isBlank() || Boolean.parseBoolean(infer);
 	}
 
-	private static int queryTimeout(WorkbenchRequest req) {
-		String timeout = req.getParameter("query-timeout");
+	private int queryTimeout(WorkbenchRequest req) {
+		String timeout = evaluationOption(req, "query-timeout", "query-timeout");
 		if (timeout == null || timeout.isBlank()) {
 			return 0;
 		}
@@ -259,9 +298,20 @@ public class GraphServlet extends TransformationServlet {
 		resp.getWriter().write(message);
 	}
 
-	private boolean isQueryExecutionEnabled() {
+	/**
+	 * The request's (or cookie's) value of an evaluation option. When the policy disables the option, as on the Query
+	 * page, the configured default ({@code default-<parameter>}) applies instead and the request cannot override it.
+	 */
+	private String evaluationOption(WorkbenchRequest req, String parameter, String featureId) {
+		if (isQueryFeatureEnabled(featureId)) {
+			return req.getParameter(parameter);
+		}
+		return config == null ? null : config.getInitParameter("default-" + parameter);
+	}
+
+	private boolean isQueryFeatureEnabled(String featureId) {
 		WorkbenchPolicy policy = getWorkbenchPolicy();
-		return policy == null || policy.isQueryFeatureEnabled(QUERY_EXECUTION_FEATURE);
+		return policy == null || policy.isQueryFeatureEnabled(featureId);
 	}
 
 	/** The deployment policy, or {@code null} when none can be loaded (tests without a servlet context). */

@@ -245,8 +245,10 @@ function rangeOf(valueIds: ReadonlySet<string>, nodeById: ReadonlyMap<string, Gr
   for (const kind of ["number", "date"] as const) {
     const values = literals.map((node) => ({ id: node!.id, value: literalValue(node!, kind) }));
     if (values.every(({ value }) => Number.isFinite(value))) {
-      const numbers = values.map(({ value }) => value);
-      return { kind, min: Math.min(...numbers), max: Math.max(...numbers), values };
+      // Reduced, not spread: a spread of 65,536+ arguments overflows the call stack.
+      const min = values.reduce((low, { value }) => Math.min(low, value), Infinity);
+      const max = values.reduce((high, { value }) => Math.max(high, value), -Infinity);
+      return { kind, min, max, values };
     }
   }
   return undefined;

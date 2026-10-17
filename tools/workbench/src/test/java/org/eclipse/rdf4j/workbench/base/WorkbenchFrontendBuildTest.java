@@ -71,11 +71,63 @@ class WorkbenchFrontendBuildTest {
 			assertThat(skip.getLength()).as("skip flag of execution " + index).isEqualTo(1);
 			assertThat(skip.item(0).getTextContent().trim()).isIn("${skipFrontend}", "${skipFrontendInstall}");
 		}
-		// The install step has its own property so a warm checkout (node_modules present) skips npm ci, while
-		// -DskipFrontend=true still skips everything because the property defaults to ${skipFrontend}.
+		// The install step has its own property so -DskipFrontend=true still skips everything (it defaults to
+		// ${skipFrontend}); a warm checkout (node_modules present) runs npm install --no-save instead of npm ci.
 		String pom = Files.readString(Path.of("pom.xml"));
 		assertThat(pom).contains("<skipFrontendInstall>${skipFrontend}</skipFrontendInstall>");
 		assertThat(pom).contains("<exists>${basedir}/node_modules</exists>");
+	}
+
+	/**
+	 * A warm checkout must still follow a changed package-lock.json (skipping the install would build against stale
+	 * packages), and must never rewrite the committed lockfile (a different npm version would reformat it).
+	 */
+	@Test
+	void aWarmCheckoutSyncsNodeModulesWithoutRewritingTheLockfile() throws Exception {
+		Document pom = pom();
+		Element warm = null;
+		NodeList profiles = pom.getElementsByTagName("profile");
+		for (int index = 0; index < profiles.getLength(); index++) {
+			Element profile = (Element) profiles.item(index);
+			if ("frontend-installed".equals(childText(profile, "id"))) {
+				warm = profile;
+			}
+		}
+		assertThat(warm).as("profile frontend-installed").isNotNull();
+		NodeList properties = warm.getElementsByTagName("skipFrontendInstall");
+		assertThat(properties.getLength()).as("a warm checkout does not skip the install").isZero();
+
+		String warmInstall = npmArguments(warm, "npm-ci");
+		assertThat(warmInstall).as("warm install arguments").startsWith("install ").contains("--no-save");
+		assertThat(warmInstall).doesNotContain("--package-lock=false");
+		assertThat(npmArguments(frontendPlugin(), "npm-ci")).as("a cold checkout installs exactly the lockfile")
+				.startsWith("ci ");
+	}
+
+	private static String npmArguments(Element scope, String executionId) {
+		NodeList executions = scope.getElementsByTagName("execution");
+		for (int index = 0; index < executions.getLength(); index++) {
+			Element execution = (Element) executions.item(index);
+			if (executionId.equals(childText(execution, "id"))) {
+				return execution.getElementsByTagName("arguments").item(0).getTextContent().trim();
+			}
+		}
+		throw new AssertionError("no execution " + executionId);
+	}
+
+	private static String childText(Element parent, String tag) {
+		for (Node child = parent.getFirstChild(); child != null; child = child.getNextSibling()) {
+			if (child instanceof Element element && tag.equals(element.getTagName())) {
+				return element.getTextContent().trim();
+			}
+		}
+		return null;
+	}
+
+	private static Document pom() throws Exception {
+		DocumentBuilderFactory factory = DocumentBuilderFactory.newInstance();
+		factory.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+		return factory.newDocumentBuilder().parse(Path.of("pom.xml").toFile());
 	}
 
 	@Test

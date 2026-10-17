@@ -132,6 +132,10 @@ class Rdf4jServerWorkbenchApplicationTest {
 	@Qualifier("cacheFilter")
 	private FilterRegistrationBean<CacheFilter> cacheFilter;
 
+	@Autowired
+	@Qualifier("revalidatedEntryFilter")
+	private FilterRegistrationBean<CacheFilter> revalidatedEntryFilter;
+
 	private ListAppender<ILoggingEvent> loggingAppender;
 	private Logger loggingFilterLogger;
 	private RemoteRepositoryManager repositoryManager;
@@ -245,6 +249,18 @@ class Rdf4jServerWorkbenchApplicationTest {
 		assertThat(serverPrefixForwardFilter.isAsyncSupported()).isTrue();
 		assertThat(workbenchRedirectFilter.isAsyncSupported()).isTrue();
 		assertThat(cacheFilter.isAsyncSupported()).isTrue();
+	}
+
+	@Test
+	void theExplorerEntryIsRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
+		assertThat(revalidatedEntryFilter.getUrlPatterns()).containsExactlyInAnyOrder(
+				"/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
+				"/rdf4j-workbench/styles/graph-explorer.css");
+		assertThat(revalidatedEntryFilter.getInitParameters()).containsEntry("Cache-Control", "0");
+		assertThat(cacheFilter.getInitParameters()).containsEntry("Cache-Control", "600");
+		assertThat(revalidatedEntryFilter.getOrder()).as("runs after, so its header wins")
+				.isGreaterThan(cacheFilter.getOrder());
+		assertThat(revalidatedEntryFilter.isAsyncSupported()).isTrue();
 	}
 
 	@Test

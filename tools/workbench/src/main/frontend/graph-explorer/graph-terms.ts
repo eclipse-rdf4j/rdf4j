@@ -106,11 +106,48 @@ export function findLabel(binding: Binding, role: "source" | "predicate" | "targ
   return undefined;
 }
 
+/**
+ * The aliases of a role that can match a column of these rows: an answer has the same few columns in every row, so
+ * most aliases (and every label alias of a plain ?source ?predicate ?target answer) are ruled out once, not per row.
+ */
+function presentAliases(bindings: Binding[]) {
+  const columns = new Set<string>();
+  for (const binding of bindings) {
+    if (binding && typeof binding === "object") for (const key of Object.keys(binding)) columns.add(key);
+  }
+  const lowered = new Set([...columns].map((column) => column.toLowerCase()));
+  return (aliases: readonly string[]) => aliases.filter((alias) => columns.has(alias) || lowered.has(alias));
+}
+
+const labelAliases = (role: keyof typeof termAliases) =>
+  termAliases[role].flatMap((alias) => [`${alias}Label`, `${alias}_label`, `${alias}Name`]);
+
 export function bindingsToTriples(bindings: Binding[]) {
+  const present = presentAliases(bindings);
+  const aliases = {
+    source: present(termAliases.source),
+    predicate: present(termAliases.predicate),
+    target: present(termAliases.target),
+  };
+  const labels = {
+    source: present(labelAliases("source")),
+    predicate: present(labelAliases("predicate")),
+    target: present(labelAliases("target")),
+  };
+  const labelOf = (binding: Binding, role: keyof typeof termAliases) =>
+    labels[role].length ? findBindingValue(binding, labels[role])?.value : undefined;
+  // A result has few predicates and many rows: each predicate's readable name is worked out once.
+  const predicateNames = new Map<string, string>();
+  const predicateName = (predicate: string, supplied: string | undefined) => {
+    if (supplied) return predicateLabel(predicate, supplied);
+    let name = predicateNames.get(predicate);
+    if (name === undefined) predicateNames.set(predicate, (name = predicateLabel(predicate)));
+    return name;
+  };
   return bindings.flatMap((binding) => {
-    const source = findBindingValue(binding, termAliases.source);
-    const predicate = findBindingValue(binding, termAliases.predicate);
-    const target = findBindingValue(binding, termAliases.target);
+    const source = findBindingValue(binding, aliases.source);
+    const predicate = findBindingValue(binding, aliases.predicate);
+    const target = findBindingValue(binding, aliases.target);
 
     if (
       !source ||
@@ -129,24 +166,27 @@ export function bindingsToTriples(bindings: Binding[]) {
 
     const sourceId = sparqlNodeId(source as SparqlTerm);
     const targetId = sparqlNodeId(target as SparqlTerm);
+    const sourceLabel = labelOf(binding, "source");
+    const suppliedPredicateLabel = labelOf(binding, "predicate");
+    const targetLabel = labelOf(binding, "target");
 
     return [
       {
         source: sourceId,
         sourceValue: source.value,
-        sourceLabel: findLabel(binding, "source") || compactTerm(source.value),
-        sourceLabelInput: findLabel(binding, "source") || null,
+        sourceLabel: sourceLabel || compactTerm(source.value),
+        sourceLabelInput: sourceLabel || null,
         sourceKind: termKind(source),
         sourceDatatype: source.datatype,
         sourceLanguage: source["xml:lang"],
         sourceDirection: source["its:dir"],
         predicate: predicate.value,
-        predicateLabel: predicateLabel(predicate.value, findLabel(binding, "predicate")),
-        predicateLabelInput: findLabel(binding, "predicate") || null,
+        predicateLabel: predicateName(predicate.value, suppliedPredicateLabel),
+        predicateLabelInput: suppliedPredicateLabel || null,
         target: targetId,
         targetValue: target.value,
-        targetLabel: findLabel(binding, "target") || compactTerm(target.value),
-        targetLabelInput: findLabel(binding, "target") || null,
+        targetLabel: targetLabel || compactTerm(target.value),
+        targetLabelInput: targetLabel || null,
         targetKind: termKind(target),
         targetDatatype: target.datatype,
         targetLanguage: target["xml:lang"],

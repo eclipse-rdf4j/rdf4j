@@ -145,6 +145,21 @@ class WorkbenchPolicyBootPackagingTest {
 	}
 
 	@Test
+	void theExplorerEntryAndStylesheetAreRevalidatedWhileOtherScriptsStayCached() {
+		// The entry and stylesheet keep their names across releases but load hashed chunks: a cached entry must not
+		// outlive an upgrade that removed the chunks it imports.
+		String base = "http://localhost:" + port + "/boot-mount/rdf4j-workbench";
+		for (String path : List.of("/scripts/graph-explorer/graph-explorer.mjs", "/styles/graph-explorer.css")) {
+			ResponseEntity<String> revalidated = restTemplate.getForEntity(base + path, String.class);
+			assertThat(revalidated.getStatusCode()).as(path).isEqualTo(HttpStatus.OK);
+			assertThat(revalidated.getHeaders().get(HttpHeaders.CACHE_CONTROL)).as(path)
+					.containsExactly("max-age=0, public");
+		}
+		ResponseEntity<String> classic = restTemplate.getForEntity(base + "/scripts/workbenchApp.js", String.class);
+		assertThat(classic.getHeaders().get(HttpHeaders.CACHE_CONTROL)).containsExactly("max-age=600, public");
+	}
+
+	@Test
 	void workbenchBundleDoesNotPackageStylesheetResources() throws IOException {
 		Path workbenchWebapp = webappResourceExtractor.getServerDocBase().resolve("rdf4j-workbench");
 		try (Stream<Path> resources = Files.walk(workbenchWebapp)) {

@@ -7901,8 +7901,8 @@ namespace workbench {
         }
 
         /** 'running' or 'ready' when a repository's query runs or ended while no Query page shows it (M13.5). */
-        export function activity(repositoryId: string): string {
-            return queryStream.queryPage.activity(repositoryId);
+        export function activity(repositoryId: string, serverIdentity?: string, basePath?: string): string {
+            return queryStream.queryPage.activity(repositoryId, serverIdentity, basePath);
         }
 
         export function isMounted(): boolean {

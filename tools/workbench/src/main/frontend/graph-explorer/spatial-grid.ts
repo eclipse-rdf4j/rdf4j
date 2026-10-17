@@ -17,6 +17,7 @@ export class SpatialGrid {
   private columns = new Map<number, Map<number, number[]>>();
   private oversized: number[] = [];
   private seen = new Uint32Array(64);
+  private bits = new Int32Array(0);
   private epoch = 0;
   private cellSize: number;
 
@@ -67,8 +68,7 @@ export class SpatialGrid {
   private index(id: number, bounds: Bounds) {
     const x0 = Math.floor(bounds.minX / this.cellSize), x1 = Math.floor(bounds.maxX / this.cellSize);
     const y0 = Math.floor(bounds.minY / this.cellSize), y1 = Math.floor(bounds.maxY / this.cellSize);
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 64 ||
-        ![x0, x1, y0, y1].every(Number.isSafeInteger)) {
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 64 || !safeCells(x0, x1, y0, y1)) {
       this.oversized.push(id);
       return;
     }
@@ -85,33 +85,184 @@ export class SpatialGrid {
 
   search(minX: number, minY: number, maxX: number, maxY: number, result: number[] = []) {
     result.length = 0;
-    if (![minX, minY, maxX, maxY].every(Number.isFinite) || minX > maxX || minY > maxY) return result;
-    this.epoch = (this.epoch + 1) >>> 0;
-    if (this.epoch === 0) { this.seen.fill(0); this.epoch = 1; }
-    const visit = (id: number) => {
-      if (this.seen[id] === this.epoch) return;
-      this.seen[id] = this.epoch;
-      const b = this.entries[id];
-      if (b.maxX >= minX && b.minX <= maxX && b.maxY >= minY && b.minY <= maxY) result.push(id);
-    };
+    if (!(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) || minX > maxX || minY > maxY) return result;
+    const entries = this.entries;
     const x0 = Math.floor(minX / this.cellSize), x1 = Math.floor(maxX / this.cellSize);
     const y0 = Math.floor(minY / this.cellSize), y1 = Math.floor(maxY / this.cellSize);
-    if ((x1 - x0 + 1) * (y1 - y0 + 1) > this.entries.length * 2 ||
-        ![x0, x1, y0, y1].every(Number.isSafeInteger)) {
-      for (let id = 0; id < this.entries.length; id++) visit(id);
-    } else {
-      for (let x = x0; x <= x1; x++) {
-        const column = this.columns.get(x);
-        if (!column) continue;
-        for (let y = y0; y <= y1; y++) {
-          const cell = column.get(y);
-          if (cell) for (const id of cell) visit(id);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > entries.length * 2 || !safeCells(x0, x1, y0, y1)) {
+      // Every entry once, in order.
+      for (let id = 0; id < entries.length; id++) {
+        const b = entries[id];
+        if (b.maxX >= minX && b.minX <= maxX && b.maxY >= minY && b.minY <= maxY) result.push(id);
+      }
+      return result;
+    }
+    this.epoch = (this.epoch + 1) >>> 0;
+    if (this.epoch === 0) { this.seen.fill(0); this.epoch = 1; }
+    const seen = this.seen, epoch = this.epoch;
+    for (let x = x0; x <= x1; x++) {
+      const column = this.columns.get(x);
+      if (!column) continue;
+      for (let y = y0; y <= y1; y++) {
+        const cell = column.get(y);
+        if (!cell) continue;
+        for (let k = 0; k < cell.length; k++) {
+          const id = cell[k];
+          if (seen[id] === epoch) continue;
+          seen[id] = epoch;
+          const b = entries[id];
+          if (b.maxX >= minX && b.minX <= maxX && b.maxY >= minY && b.minY <= maxY) result.push(id);
         }
       }
-      for (const id of this.oversized) visit(id);
+    }
+    for (const id of this.oversized) {
+      if (seen[id] === epoch) continue;
+      seen[id] = epoch;
+      const b = entries[id];
+      if (b.maxX >= minX && b.minX <= maxX && b.maxY >= minY && b.minY <= maxY) result.push(id);
     }
     // Stable order preserves floating-point accumulation and tie breaking.
-    result.sort((a, b) => a - b);
+    if (result.length > 12 && entries.length <= 64 * result.length) {
+      const words = (entries.length + 31) >>> 5;
+      if (this.bits.length < words) this.bits = new Int32Array(Math.max(words, 2 * this.bits.length));
+      orderByBits(result, this.bits);
+    } else sortIds(result);
     return result;
+  }
+}
+
+function safeCells(x0: number, x1: number, y0: number, y1: number) {
+  return Number.isSafeInteger(x0) && Number.isSafeInteger(x1) && Number.isSafeInteger(y0) && Number.isSafeInteger(y1);
+}
+
+let scratch = new Int32Array(256);
+
+/** Ascending order of distinct ids: insertion sort for short lists, a typed-array sort (no comparator calls) for long. */
+function sortIds(ids: number[]) {
+  const length = ids.length;
+  if (length <= 12) {
+    for (let i = 1; i < length; i++) {
+      const id = ids[i];
+      let j = i - 1;
+      while (j >= 0 && ids[j] > id) { ids[j + 1] = ids[j]; j--; }
+      ids[j + 1] = id;
+    }
+    return;
+  }
+  if (scratch.length < length) scratch = new Int32Array(Math.max(length, 2 * scratch.length));
+  const sorted = scratch.subarray(0, length);
+  for (let i = 0; i < length; i++) sorted[i] = ids[i];
+  sorted.sort();
+  for (let i = 0; i < length; i++) ids[i] = sorted[i];
+}
+
+/**
+ * A grid over rectangles given all at once (as arrays of their bounds), answering `search` exactly as `SpatialGrid`
+ * does (every rectangle meeting the bounds, in ascending order) from flat arrays. Each rectangle is kept once, in the
+ * cell of its top-left corner, and a search widens its bounds by the largest rectangle so it still meets them all;
+ * rectangles larger than two cells are kept aside and always tested.
+ */
+export class StaticGrid {
+  private readonly cellSize: number;
+  private readonly originX: number;
+  private readonly originY: number;
+  private readonly columns: number;
+  private readonly rows: number;
+  /** How far left of and above a search's bounds the top-left corner of a rectangle meeting them can be. */
+  private readonly reachX: number;
+  private readonly reachY: number;
+  /** The rectangles with their corner in cell c are cellItems[cellStart[c]] up to cellItems[cellStart[c + 1]], ascending. */
+  private readonly cellStart: Int32Array;
+  private readonly cellItems: Int32Array;
+  private readonly oversized: number[] = [];
+  private bits: Int32Array;
+  private readonly count: number;
+
+  private readonly minX: Float64Array;
+  private readonly minY: Float64Array;
+  private readonly maxX: Float64Array;
+  private readonly maxY: Float64Array;
+
+  constructor(minX: Float64Array, minY: Float64Array, maxX: Float64Array, maxY: Float64Array, cellSize = 256) {
+    this.minX = minX; this.minY = minY; this.maxX = maxX; this.maxY = maxY;
+    const count = minX.length;
+    this.count = count;
+    let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+    for (let i = 0; i < count; i++) {
+      if (!(Number.isFinite(minX[i]) && Number.isFinite(minY[i]) && Number.isFinite(maxX[i]) && Number.isFinite(maxY[i])) || minX[i] > maxX[i] || minY[i] > maxY[i]) {
+        throw new RangeError("Invalid spatial bounds");
+      }
+      if (minX[i] < left) left = minX[i]; if (minY[i] < top) top = minY[i];
+      if (maxX[i] > right) right = maxX[i]; if (maxY[i] > bottom) bottom = maxY[i];
+    }
+    if (!count) { left = top = right = bottom = 0; }
+    // Coarser cells where the rectangles are spread far apart, so the grid stays about as big as their number; a
+    // spread too wide to measure leaves every rectangle aside.
+    const spanX = right - left, spanY = bottom - top, measured = Number.isFinite(spanX) && Number.isFinite(spanY);
+    const limit = Math.max(1024, 4 * count);
+    if (measured) while ((Math.floor(spanX / cellSize) + 1) * (Math.floor(spanY / cellSize) + 1) > limit) cellSize *= 2;
+    this.cellSize = cellSize; this.originX = left; this.originY = top;
+    this.columns = measured ? Math.floor(spanX / cellSize) + 1 : 1; this.rows = measured ? Math.floor(spanY / cellSize) + 1 : 1;
+    const cells = this.columns * this.rows, start = new Int32Array(cells + 1), home = new Int32Array(count).fill(-1);
+    let reachX = 0, reachY = 0;
+    for (let i = 0; i < count; i++) {
+      const width = maxX[i] - minX[i], height = maxY[i] - minY[i];
+      if (!measured || width > 2 * cellSize || height > 2 * cellSize) { this.oversized.push(i); continue; }
+      if (width > reachX) reachX = width;
+      if (height > reachY) reachY = height;
+      home[i] = Math.floor((minY[i] - top) / cellSize) * this.columns + Math.floor((minX[i] - left) / cellSize);
+      start[home[i] + 1]++;
+    }
+    // A pixel more than the largest size: corners and sizes are rounded.
+    this.reachX = reachX + 1; this.reachY = reachY + 1;
+    for (let c = 0; c < cells; c++) start[c + 1] += start[c];
+    const fill = start.slice(0, cells), items = new Int32Array(start[cells]);
+    for (let i = 0; i < count; i++) if (home[i] >= 0) items[fill[home[i]]++] = i;
+    this.cellStart = start; this.cellItems = items;
+    this.bits = new Int32Array((count + 31) >>> 5);
+  }
+
+  search(minX: number, minY: number, maxX: number, maxY: number, result: number[] = []) {
+    result.length = 0;
+    if (!(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) || minX > maxX || minY > maxY) return result;
+    const cs = this.cellSize;
+    const bMinX = this.minX, bMinY = this.minY, bMaxX = this.maxX, bMaxY = this.maxY;
+    const x0 = Math.max(0, Math.floor((minX - this.reachX - this.originX) / cs)), x1 = Math.min(this.columns - 1, Math.floor((maxX - this.originX) / cs));
+    const y0 = Math.max(0, Math.floor((minY - this.reachY - this.originY) / cs)), y1 = Math.min(this.rows - 1, Math.floor((maxY - this.originY) / cs));
+    const start = this.cellStart, items = this.cellItems;
+    for (let y = y0; y <= y1; y++) {
+      const row = y * this.columns;
+      for (let k = start[row + x0], end = start[row + x1 + 1]; k < end; k++) {
+        const id = items[k];
+        if (bMaxX[id] >= minX && bMinX[id] <= maxX && bMaxY[id] >= minY && bMinY[id] <= maxY) result.push(id);
+      }
+    }
+    for (const id of this.oversized) {
+      if (bMaxX[id] >= minX && bMinX[id] <= maxX && bMaxY[id] >= minY && bMinY[id] <= maxY) result.push(id);
+    }
+    if (result.length > 12 && this.count <= 64 * result.length) orderByBits(result, this.bits);
+    else sortIds(result);
+    return result;
+  }
+}
+
+/** Puts distinct ids in ascending order by setting their bits in `bits` (all clear, one bit per id) and reading them back. */
+function orderByBits(ids: number[], bits: Int32Array) {
+  let low = bits.length, high = -1;
+  for (const id of ids) {
+    const word = id >>> 5;
+    bits[word] |= 1 << (id & 31);
+    if (word < low) low = word;
+    if (word > high) high = word;
+  }
+  let k = 0;
+  for (let word = low; word <= high; word++) {
+    let w = bits[word];
+    if (!w) continue;
+    bits[word] = 0;
+    while (w) {
+      ids[k++] = (word << 5) + 31 - Math.clz32(w & -w);
+      w &= w - 1;
+    }
   }
 }

@@ -22,6 +22,14 @@
 			<param-value>600</param-value>
 		</init-param>
 	</filter>
+	<filter>
+		<filter-name>RevalidatedEntryFilter</filter-name>
+		<filter-class>org.eclipse.rdf4j.workbench.proxy.CacheFilter</filter-class>
+		<init-param>
+			<param-name>Cache-Control</param-name>
+			<param-value>0</param-value>
+		</init-param>
+	</filter>
 	<filter-mapping>
 		<filter-name>redirect</filter-name>
 		<url-pattern>/</url-pattern>
@@ -33,6 +41,13 @@
 	<filter-mapping>
 		<filter-name>CacheFilter</filter-name>
 		<url-pattern>*</url-pattern>
+	</filter-mapping>
+	<!-- The graph explorer's entry and stylesheet keep their names across releases but load hashed chunks and
+	     workers: browsers revalidate them, so an upgrade never pairs an old entry with chunks that are gone. -->
+	<filter-mapping>
+		<filter-name>RevalidatedEntryFilter</filter-name>
+		<url-pattern>/scripts/graph-explorer/graph-explorer.mjs</url-pattern>
+		<url-pattern>/styles/graph-explorer.css</url-pattern>
 	</filter-mapping>
 	<servlet>
 		<servlet-name>workbench</servlet-name>

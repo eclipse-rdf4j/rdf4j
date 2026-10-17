@@ -16,13 +16,44 @@ type LayoutResult = Awaited<ReturnType<typeof computeGraphLayout>>;
 type LayoutReply = { result: LayoutResult } | { error: string };
 type LayoutWorker = Pick<Worker, "postMessage" | "terminate" | "onmessage" | "onerror" | "onmessageerror">;
 
+const createLayoutWorker = (): LayoutWorker =>
+  new Worker(new URL("./graph-layout-worker.ts", import.meta.url), { type: "module" });
+
+/**
+ * A worker started ahead of the next calculation. Starting one needs the page's main thread, which is busiest exactly
+ * when a large answer arrives (rendering it, working out its labels): a 50,000-node layout used to wait 0.8 s for its
+ * worker to start. A ready worker receives the job at once.
+ */
+let spare: LayoutWorker | null = null;
+
+/** Starts the spare worker if there is none (when the page is idle: on mount, and after each calculation). */
+export function warmGraphLayoutWorker() {
+  if (spare || typeof Worker === "undefined") return;
+  try {
+    spare = createLayoutWorker();
+  } catch {
+    spare = null;
+  }
+}
+
+/** Stops the spare worker (the explorer is leaving the page). */
+export function releaseGraphLayoutWorker() {
+  spare?.terminate();
+  spare = null;
+}
+
 /** One worker per active calculation. Termination cancels CPU work, not just delivery. */
 export function startGraphLayout(
   graph: Graph,
   options: LayoutOptions = {},
-  createWorker: () => LayoutWorker = () =>
-    new Worker(new URL("./graph-layout-worker.ts", import.meta.url), { type: "module" }),
+  createWorker: () => LayoutWorker = createLayoutWorker,
 ) {
+  const takeWorker = () => {
+    if (createWorker !== createLayoutWorker || !spare) return createWorker();
+    const ready = spare;
+    spare = null;
+    return ready;
+  };
   let worker: LayoutWorker | undefined;
   let settled = false;
   let rejectJob: (reason: Error) => void = () => {};
@@ -31,6 +62,8 @@ export function startGraphLayout(
     worker.onmessage = worker.onerror = worker.onmessageerror = null;
     worker.terminate();
     worker = undefined;
+    // The next calculation finds its worker started (outside the work that just ended).
+    if (createWorker === createLayoutWorker) setTimeout(warmGraphLayoutWorker, 0);
   };
   const promise = new Promise<LayoutResult>((resolve, reject) => {
     rejectJob = reject;
@@ -41,7 +74,7 @@ export function startGraphLayout(
       reject(error);
     };
     try {
-      worker = createWorker();
+      worker = takeWorker();
       worker.onmessage = (event: MessageEvent<LayoutReply>) => {
         if (settled) return;
         if ("error" in event.data) {

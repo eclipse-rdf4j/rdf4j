@@ -107,3 +107,54 @@ test("additions that could not be applied go back to the front of the queue", ()
   returnAdditions("/wb", "repo", [], storage, "server");
   assert.equal(storage.getItem(key), null, "nothing to return writes nothing");
 });
+
+test("escapes that name no Unicode scalar value make the term malformed instead of throwing", () => {
+  for (const term of [
+    '"x\\UFFFFFFFF"',
+    '"\\U00110000"',
+    '"\\uD800"',
+    '"\\uDFFF tail"',
+    "<urn:\\U00110000>",
+    "<urn:\\uDBFF>",
+    '"x"^^<urn:\\U0011FFFF>',
+    '"x"@en--ltr\\U00110000',
+  ]) {
+    assert.doesNotThrow(() => parseNTriplesTerm(term), term);
+    assert.equal(parseNTriplesTerm(term), null, term);
+  }
+});
+
+test("escapes up to the last scalar value still decode", () => {
+  assert.deepEqual(parseNTriplesTerm('"\\U0001F600"'), { type: "literal", value: "😀" });
+  assert.deepEqual(parseNTriplesTerm('"\\U0010FFFF"'), { type: "literal", value: String.fromCodePoint(0x10ffff) });
+  assert.deepEqual(parseNTriplesTerm('"\\uD7FF\\uE000"'), { type: "literal", value: "퟿" });
+  assert.deepEqual(parseNTriplesTerm("<urn:a\\u0062>"), { type: "uri", value: "urn:ab" });
+  assert.deepEqual(parseNTriplesTerm('"x"^^<urn:t\\u0079pe>'), { type: "literal", value: "x", datatype: "urn:type" });
+});
+
+test("one malformed queued entry is dropped without losing the rest of the queue", () => {
+  const key = additionsKey("/wb", "repo", "server");
+  const storage = memoryStorage({
+    [key]: JSON.stringify([
+      { kind: "resource", term: "<urn:first>" },
+      { kind: "resource", term: '"\\UFFFFFFFF"' },
+      { kind: "statement", subject: "<urn:a>", predicate: "<urn:p>", object: '"bad \\U00110000"' },
+      { kind: "statement", subject: "<urn:a>", predicate: "<urn:p\\uD800>", object: "<urn:b>" },
+      { kind: "query", query: "CONSTRUCT WHERE { ?s ?p ?o }" },
+      { kind: "resource", term: "<urn:last>" },
+    ]),
+  });
+
+  const taken = takeAdditions("/wb", "repo", storage, "server");
+
+  assert.deepEqual(taken.map((entry) => entry.term ?? entry.query), ["<urn:first>", "CONSTRUCT WHERE { ?s ?p ?o }", "<urn:last>"]);
+  assert.equal(storage.getItem(key), null, "the queue is taken once");
+});
+
+test("handing additions back never throws on a malformed entry already in the queue", () => {
+  const key = additionsKey("/wb", "repo", "server");
+  const storage = memoryStorage({ [key]: JSON.stringify([{ kind: "resource", term: '"\\UFFFFFFFF"' }, { kind: "resource", term: "<urn:kept>" }]) });
+
+  assert.doesNotThrow(() => returnAdditions("/wb", "repo", [{ kind: "resource", term: "<urn:back>" }], storage, "server"));
+  assert.deepEqual(takeAdditions("/wb", "repo", storage, "server").map((entry) => entry.term), ["<urn:back>", "<urn:kept>"]);
+});

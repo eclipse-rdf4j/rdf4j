@@ -13,7 +13,7 @@
 /** How many links of a node are loaded, which statements Expand skips, and how many are left to load. */
 import { RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { Graph } from "./graph-types.ts";
-import { sparqlFacetValueToken, isSafeSparqlIri } from "./rdf-terms.ts";
+import { sparqlFacetValueToken, sparqlTermFromNodeId, isSafeSparqlIri } from "./rdf-terms.ts";
 import type { LoadedLinks } from "./rdf-vocabulary.ts";
 
 /**
@@ -31,14 +31,29 @@ export function loadedLinkCounts(graph: Graph) {
   return counts;
 }
 
-/** Every loaded statement with reusable endpoints as SPARQL tokens, for Expand to skip. */
+/**
+ * Every loaded statement with reusable endpoints as SPARQL tokens, for Expand to skip. A document blank node (one
+ * the repository did not certify) has no token, and comes back under a new identity in every answer; its predicates
+ * are listed instead, so Expand leaves out the blank nodes it would only bring again as copies.
+ */
 export function loadedLinksOf(graph: Graph, ids: readonly string[]) {
   const wanted = new Set(ids);
-  const loaded = new Map<string, { outgoing: Array<[string, string]>; incoming: Array<[string, string]> }>();
+  type Links = {
+    outgoing: Array<[string, string]>;
+    incoming: Array<[string, string]>;
+    blankOutgoing?: string[];
+    blankIncoming?: string[];
+  };
+  const loaded = new Map<string, Links>();
   const entry = (id: string) => {
     let links = loaded.get(id);
     if (!links) loaded.set(id, (links = { outgoing: [], incoming: [] }));
     return links;
+  };
+  const documentBlank = (id: string) => sparqlTermFromNodeId(id)?.type === "bnode";
+  const addBlank = (links: Links, key: "blankOutgoing" | "blankIncoming", predicate: string) => {
+    const predicates = (links[key] ??= []);
+    if (!predicates.includes(predicate)) predicates.push(predicate);
   };
   for (const edge of graph.edges) {
     const predicate = isSafeSparqlIri(edge.predicate) ? `<${edge.predicate}>` : null;
@@ -46,10 +61,12 @@ export function loadedLinksOf(graph: Graph, ids: readonly string[]) {
     if (wanted.has(edge.source)) {
       const target = sparqlFacetValueToken(edge.target);
       if (target) entry(edge.source).outgoing.push([predicate, target]);
+      else if (documentBlank(edge.target)) addBlank(entry(edge.source), "blankOutgoing", predicate);
     }
     if (wanted.has(edge.target)) {
       const source = sparqlFacetValueToken(edge.source);
       if (source) entry(edge.target).incoming.push([source, predicate]);
+      else if (documentBlank(edge.source)) addBlank(entry(edge.target), "blankIncoming", predicate);
     }
   }
   return loaded as Map<string, LoadedLinks>;

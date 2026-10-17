@@ -103,7 +103,7 @@ export function useFacetFilters(input: {
         return {
           ...facet,
           values,
-          maxCount: Math.max(...values.map((value) => value.count), 1),
+          maxCount: values.reduce((max, value) => Math.max(max, value.count), 1),
           endpointQueryable: facet.category === "type" || facet.category === "predicate",
         };
       }),
@@ -170,7 +170,7 @@ export function useFacetFilters(input: {
           ...facet,
           values: shown,
           searchHit: Boolean(term) && !nameMatches,
-          maxCount: Math.max(...values.map((value) => value.count), 1),
+          maxCount: values.reduce((max, value) => Math.max(max, value.count), 1),
         },
       ];
     });

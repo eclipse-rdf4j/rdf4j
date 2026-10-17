@@ -102,7 +102,7 @@ export function isSafeSparqlIri(value: string) {
   return SAFE_SPARQL_IRI.test(value);
 }
 
-function escapedSparqlString(value: string) {
+export function escapedSparqlString(value: string) {
   return value
     .replace(/\\/g, "\\\\")
     .replace(/"/g, '\\"')
@@ -177,7 +177,7 @@ export function sparqlNodeId(term: SparqlTerm) {
       return `${INTERNAL_SCOPED_BNODE_NODE_PREFIX}${JSON.stringify([term["rdf4j:scope"], term.value])}`;
     return `${INTERNAL_BNODE_NODE_PREFIX}${term.value}`;
   }
-  const language = term["xml:lang"]?.trim().toLocaleLowerCase() ?? "";
+  const language = term["xml:lang"]?.trim().toLowerCase() ?? "";
   const datatype =
     language && term.datatype === RDF_LANG_STRING ? "" : term.datatype ?? "";
   const identity = {

@@ -2290,3 +2290,67 @@ test('Remove offers a preview of the statements it would remove, beside the Remo
     assert.match(markup.slice(section, markup.indexOf('>', section)), /\?hidden=true|\shidden[\s>=]/,
         'nothing is listed before Preview is chosen');
 });
+
+/** The click handlers of the "Add to graph" controls in a rendered template. */
+function addToGraphHandlers(template, handlers = []) {
+    if (Array.isArray(template)) {
+        template.forEach((entry) => addToGraphHandlers(entry, handlers));
+    } else if (template && Array.isArray(template.strings)) {
+        const isControl = template.strings.join('').includes('workbench-add-to-graph');
+        template.values.forEach((value) => {
+            if (isControl && typeof value === 'function') {
+                handlers.push(value);
+            } else {
+                addToGraphHandlers(value, handlers);
+            }
+        });
+    }
+    return handlers;
+}
+
+// Types and Named Graphs queue a CONSTRUCT that names the listed IRI. Only an IRI a SPARQL IRIREF can hold as is
+// may be written into it: anything else would break the query or extend it.
+test('Types and Named Graphs offer Add to graph only for IRIs a SPARQL query can hold', () => {
+    const safe = ['urn:Type', 'http://example.org/ns#Café', 'http://example.org/path/with-dash_and.dot~'];
+    const unsafe = ['http://example.org/a b', 'urn:x> } ?s ?p ?o . { <urn:y', 'urn:{x}', 'urn:a"b', 'urn:a\\b',
+        'urn:a|b', 'urn:a^b', 'urn:a`b', 'urn:tab\there', 'no-scheme', ''];
+    const iri = (value) => ({ kind: 'iri', value });
+    for (const [viewId, vars, expected] of [
+        ['types', ['type', 'count'], (value) => `{ ?s a <${value}> }`],
+        ['contexts', ['context'], (value) => `GRAPH <${value}> { ?s ?p ?o }`]
+    ]) {
+        const workbench = loadWorkbench();
+        const queued = [];
+        workbench.graphAdditions = {
+            add: (graph, entry) => queued.push({ graph, entry }),
+            graphUrl: () => '/workbench/repositories/repo-1/graph'
+        };
+        const context = { basePath: '/workbench', repositoryId: 'repo-1', serverIdentity: 'sha256:server', workbench: {} };
+        const rows = [...safe, ...unsafe].map((value) => vars.length === 2
+            ? [iri(value), { kind: 'literal', value: '3' }] : [iri(value)]);
+        const template = workbench.views.pageTemplate({ viewId, vars, rows, metadata: {} }, context, fakeRuntime());
+
+        const handlers = addToGraphHandlers(template);
+        handlers.forEach((handler) => handler({}));
+
+        assert.equal(handlers.length, safe.length, `${viewId}: one control per safe IRI`);
+        assert.deepEqual(queued.map(({ entry }) => entry.kind), safe.map(() => 'query'));
+        safe.forEach((value, index) => {
+            assert.ok(queued[index].entry.query.includes(expected(value)), `${viewId}: ${queued[index].entry.query}`);
+        });
+        for (const { entry } of queued) {
+            assert.equal((entry.query.match(/</g) || []).length, 1, `${viewId}: exactly one IRI in ${entry.query}`);
+        }
+        assert.deepEqual(queued.map(({ graph }) => graph.serverIdentity), safe.map(() => 'sha256:server'));
+    }
+});
+
+test('Types and Named Graphs offer no Add to graph without a server identity', () => {
+    const workbench = loadWorkbench();
+    workbench.graphAdditions = { add: () => assert.fail('nothing may be queued'), graphUrl: () => '' };
+    const template = workbench.views.pageTemplate({ viewId: 'types', vars: ['type', 'count'],
+        rows: [[{ kind: 'iri', value: 'urn:Type' }, { kind: 'literal', value: '1' }]], metadata: {} },
+    { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime());
+
+    assert.equal(addToGraphHandlers(template).length, 0);
+});

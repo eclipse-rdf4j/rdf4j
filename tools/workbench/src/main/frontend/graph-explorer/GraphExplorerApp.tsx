@@ -19,7 +19,7 @@ import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, L
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
 import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
-import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds } from "./graph-operations.ts";
+import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds, newEdgesOf } from "./graph-operations.ts";
 import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
 import { escapeStep } from "./graph-dismissal.ts";
 import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
@@ -44,7 +44,7 @@ import { useFacetFilters } from "./use-facet-filters.ts";
 import { DataViews, recommendedViewOf, type DataViewMode } from "./data-views.tsx";
 import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
-import { startGraphLayout } from "./graph-layout-client.ts";
+import { releaseGraphLayoutWorker, startGraphLayout, warmGraphLayoutWorker } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { loadedLinkCounts, loadedLinksOf, moreLinks } from "./link-counts.ts";
@@ -770,40 +770,12 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     labelEvidence.explorer === explorer ? labelEvidence.evidence : EMPTY_LABEL_EVIDENCE, dismissedLabelGuidance),
     [labelPolicy, labelEvidence, explorer, dismissedLabelGuidance]);
   useEffect(() => () => explorer.dispose(), [explorer]);
-  useEffect(() => () => window.clearTimeout(detailsArrivalTimerRef.current), []);
+  // A layout worker is started while the page is idle, so a large answer's layout does not wait for one to start.
   useEffect(() => {
-    const controller=new AbortController();
-    const current=graphRef.current;
-    explorer.observe(current);
-    setGraph(value=>explorer.apply(value));
-    const predicates=[...new Set(current.edges.map(edge=>edge.predicate))];
-    const ids=[...predicates,...current.nodes.slice(0,1000).flatMap(node=>[
-      ...(isQueryableResource(node.id)?[node.id]:[]),...(node.types??[]).map(type=>type.id),
-    ])];
-    setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
-    if (current.nodes[0]?.id.startsWith("urn:graph-field:stress:")) return () => controller.abort();
-    // Apply successful labels promptly; schema discovery may take longer and only gates absence guidance.
-    const resolved = explorer.resolve(ids,controller.signal).then(()=>{
-      if(controller.signal.aborted)return;
-      setGraph(value=>explorer.apply(value));
-      setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
-    });
-    void Promise.allSettled([resolved,
-      explorer.discoverVocabulary(predicates.slice(0,256),controller.signal)]).then(async outcomes=>{
-      if(controller.signal.aborted)return;
-      let successful = outcomes.every(outcome=>outcome.status === "fulfilled");
-      explorer.observe(graphRef.current);
-      const schema = outcomes[1];
-      if(schema.status === "fulfilled" && schema.value) {
-        try { await explorer.resolve(ids,controller.signal); } catch { successful = false; }
-      }
-      if(controller.signal.aborted)return;
-      setGraph(value=>explorer.apply(value));
-      const evidence = explorer.labelEvidence(ids);
-      setLabelEvidence({ explorer, evidence: { ...evidence, complete: successful && evidence.complete } });
-    });
-    return ()=>controller.abort();
-  }, [explorer,graph.revision]);
+    warmGraphLayoutWorker();
+    return releaseGraphLayoutWorker;
+  }, []);
+  useEffect(() => () => window.clearTimeout(detailsArrivalTimerRef.current), []);
   useEffect(() => {
     if(!focusedNodeId || !isQueryableResource(focusedNodeId) || focusedNodeId.startsWith("urn:graph-field:stress:"))return;
     const controller=new AbortController();
@@ -914,11 +886,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       controller.abort();
     };
   }, [drawnIriKey, explorer]);
-  const loadedLinks = useMemo(() => loadedLinkCounts(graph), [graph.revision, graph.edges]);
+  // Counted when a node first has a repository total to compare with: a large graph asks for none.
+  const loadedLinks = useMemo(() => ({ counts: null as Map<string, number> | null }), [graph.revision, graph.edges]);
   const showEveryMoreBadge = drawnGraph.nodes.length <= MORE_BADGE_NODE_LIMIT;
   const moreLinksOf = (nodeId: string) => {
     const total = linkTotals.get(nodeId);
-    return total === undefined ? null : moreLinks(total, loadedLinks.get(nodeId) ?? 0, LINK_COUNT_CAP);
+    if (total === undefined) return null;
+    loadedLinks.counts ??= loadedLinkCounts(graph);
+    return moreLinks(total, loadedLinks.counts.get(nodeId) ?? 0, LINK_COUNT_CAP);
   };
   const inspectorNode =
     (focusedNodeId ? nodeById.get(focusedNodeId) : undefined) ??
@@ -1396,6 +1371,42 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     layoutNonce,
     showValues,
   ]);
+
+  // Labels of the loaded resources. Declared after the layout effect, so a new graph's layout job is already with its
+  // worker while the labels are worked out (on a 50,000-node graph that is half a second the layout no longer waits).
+  useEffect(() => {
+    const controller=new AbortController();
+    const current=graphRef.current;
+    explorer.observe(current);
+    setGraph(value=>explorer.apply(value));
+    const predicates=[...new Set(current.edges.map(edge=>edge.predicate))];
+    const ids=[...predicates,...current.nodes.slice(0,1000).flatMap(node=>[
+      ...(isQueryableResource(node.id)?[node.id]:[]),...(node.types??[]).map(type=>type.id),
+    ])];
+    setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
+    if (current.nodes[0]?.id.startsWith("urn:graph-field:stress:")) return () => controller.abort();
+    // Apply successful labels promptly; schema discovery may take longer and only gates absence guidance.
+    const resolved = explorer.resolve(ids,controller.signal).then(()=>{
+      if(controller.signal.aborted)return;
+      setGraph(value=>explorer.apply(value));
+      setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
+    });
+    void Promise.allSettled([resolved,
+      explorer.discoverVocabulary(predicates.slice(0,256),controller.signal)]).then(async outcomes=>{
+      if(controller.signal.aborted)return;
+      let successful = outcomes.every(outcome=>outcome.status === "fulfilled");
+      explorer.observe(graphRef.current);
+      const schema = outcomes[1];
+      if(schema.status === "fulfilled" && schema.value) {
+        try { await explorer.resolve(ids,controller.signal); } catch { successful = false; }
+      }
+      if(controller.signal.aborted)return;
+      setGraph(value=>explorer.apply(value));
+      const evidence = explorer.labelEvidence(ids);
+      setLabelEvidence({ explorer, evidence: { ...evidence, complete: successful && evidence.complete } });
+    });
+    return ()=>controller.abort();
+  }, [explorer,graph.revision]);
 
   useEffect(() => {
     if (isLayoutComputing || isLayoutAnimating || draggingNodeId || isLargeGraphDragging) return;
@@ -1881,6 +1892,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         } else {
           placeOnlyNewNodes(graphRef.current, merged);
         }
+        // Where drawing and laying out a query's answer starts (User Timing; the scale tests measure from here).
+        performance.mark?.("graph-explorer:answer-shown", { detail: { revision: merged.revision, nodes: merged.nodes.length } });
         setGraph(merged);
         setStatus(
           capped
@@ -2301,7 +2314,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           pushHistory();
           setProvenanceBatches((current) => [...current, batch]);
           const previousNodeIds = new Set(currentGraph.nodes.map((node) => node.id));
-          const newEdges = merged.edges.filter((edge) => !currentGraph.edges.some((existing) => existing.id === edge.id));
+          const newEdges = newEdgesOf(currentGraph, merged);
           const anchorId = newEdges
             .flatMap((edge) => [edge.source, edge.target])
             .find((id) => previousNodeIds.has(id));

@@ -306,6 +306,9 @@ export function neighborsQuery(
 export type LoadedLinks = {
   outgoing: ReadonlyArray<readonly [string, string]>;
   incoming: ReadonlyArray<readonly [string, string]>;
+  /** Predicate tokens of loaded links to document blank nodes, which no token names (see loadedLinksOf). */
+  blankOutgoing?: ReadonlyArray<string>;
+  blankIncoming?: ReadonlyArray<string>;
 };
 
 /**
@@ -332,6 +335,34 @@ function minusLoaded(pairs: LoadedLinks["outgoing"] | undefined, variables: stri
 }
 
 /**
+ * Leaves out blank neighbours through predicates whose blank neighbours are loaded as document blank nodes: the
+ * repository cannot name them, so they would come back as copies under a new identity.
+ */
+function skipLoadedBlanks(predicates: ReadonlyArray<string> | undefined, neighbor: string, budget: number) {
+  if (!predicates?.length) return "";
+  const kept: string[] = [];
+  let used = 0;
+  for (const predicate of predicates) {
+    if (predicate.length > MAX_EXCLUDED_TOKEN) continue;
+    if (used + predicate.length + 2 > budget) break;
+    kept.push(predicate);
+    used += predicate.length + 2;
+  }
+  return kept.length ? `FILTER(!isBlank(${neighbor}) || ?predicate NOT IN (${kept.join(", ")}))` : "";
+}
+
+function expansionExclusions(links: LoadedLinks | undefined, role: "source" | "target", budget: number) {
+  const blanks = role === "source"
+    ? skipLoadedBlanks(links?.blankOutgoing, "?target", budget)
+    : skipLoadedBlanks(links?.blankIncoming, "?source", budget);
+  const rest = budget - blanks.length;
+  const minus = role === "source"
+    ? minusLoaded(links?.outgoing, "?predicate ?target", rest)
+    : minusLoaded(links?.incoming, "?source ?predicate", rest);
+  return [minus, blanks].filter(Boolean).join("\n ");
+}
+
+/**
  * Every neighbour of each node: up to `limit` outgoing and `limit` incoming triples per node, any predicate. With
  * `loaded`, the statements already in the graph are left out, so expanding again loads the next ones.
  */
@@ -353,7 +384,7 @@ export function expandQuery(
  ${anchors([id], "selected", fence)}
  BIND(?selected AS ?${role})
  ${scoped("?source ?predicate ?target .", scope)}
- ${role === "source" ? minusLoaded(loaded?.get(id)?.outgoing, "?predicate ?target", budget) : minusLoaded(loaded?.get(id)?.incoming, "?source ?predicate", budget)}
+ ${expansionExclusions(loaded?.get(id), role, budget)}
  } LIMIT ${limit}
  }`,
       ),

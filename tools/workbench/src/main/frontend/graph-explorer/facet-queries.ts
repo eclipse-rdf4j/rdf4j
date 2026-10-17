@@ -75,7 +75,7 @@ export async function countFacetValues(
 ): Promise<EndpointFacetValue[] | null> {
   const sources = [...new Set(sourceIds.filter(isQueryableResource))];
   const current = () => !options.signal?.aborted && (options.isCurrent?.() ?? true);
-  const language = countLabelLanguage(languages).toLocaleLowerCase();
+  const language = countLabelLanguage(languages).toLowerCase();
   type Count = { id: string; count: number; fallback: string; labels: Map<string, number> };
   const totals = new Map<string, Count>();
   for (let offset = 0; offset < sources.length; offset += COUNT_SOURCE_BATCH_SIZE) {
@@ -124,7 +124,7 @@ export async function countFacetValues(
         // OPTIONAL labels repeat the same aggregate count; they never represent additional sources.
         const label = row.valueLabel;
         if (label?.value) {
-          const tag = label["xml:lang"]?.toLocaleLowerCase() ?? "";
+          const tag = label["xml:lang"]?.toLowerCase() ?? "";
           const rank = tag === language ? 0 : tag.startsWith(`${language}-`) ? 1 : tag ? 3 : 2;
           entry.labels.set(label.value, Math.min(entry.labels.get(label.value) ?? Infinity, rank));
         }

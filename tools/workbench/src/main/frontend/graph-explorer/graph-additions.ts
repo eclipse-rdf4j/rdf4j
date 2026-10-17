@@ -95,11 +95,21 @@ export function returnAdditions(
   }
 }
 
-function unescapeNTriples(text: string) {
-  return text.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[tbnrf"'\\])/g, (_, escape: string) => {
-    if (escape[0] === "u" || escape[0] === "U") return String.fromCodePoint(Number.parseInt(escape.slice(1), 16));
+/** The text with its escapes decoded; null when an escape names no Unicode scalar value (above U+10FFFF, a surrogate). */
+function unescapeNTriples(text: string): string | null {
+  let valid = true;
+  const value = text.replace(/\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[tbnrf"'\\])/g, (_, escape: string) => {
+    if (escape[0] === "u" || escape[0] === "U") {
+      const code = Number.parseInt(escape.slice(1), 16);
+      if (code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) {
+        valid = false;
+        return "";
+      }
+      return String.fromCodePoint(code);
+    }
     return ({ t: "\t", b: "\b", n: "\n", r: "\r", f: "\f", '"': '"', "'": "'", "\\": "\\" } as Record<string, string>)[escape];
   });
+  return valid ? value : null;
 }
 
 const IRI = /^<([^<>"{}|^`\s]*)>$/;
@@ -113,12 +123,16 @@ export function parseNTriplesTerm(text: string): SparqlValue | null {
   if (reference) return reference;
   if (term.startsWith("<_:") || term.startsWith("<<")) return null;
   const iri = IRI.exec(term);
-  if (iri) return { type: "uri", value: unescapeNTriples(iri[1]) };
+  if (iri) {
+    const value = unescapeNTriples(iri[1]);
+    return value === null ? null : { type: "uri", value };
+  }
   const blank = BLANK.exec(term);
   if (blank) return { type: "bnode", value: blank[1] };
   const literal = LITERAL.exec(term);
   if (!literal) return null;
   const value = unescapeNTriples(literal[1]);
+  if (value === null) return null;
   if (literal[2]) {
     return {
       type: "literal",
@@ -127,7 +141,10 @@ export function parseNTriplesTerm(text: string): SparqlValue | null {
       ...(literal[3] ? { "its:dir": literal[3] as "ltr" | "rtl" } : {}),
     };
   }
-  if (literal[4]) return { type: "literal", value, datatype: unescapeNTriples(literal[4]) };
+  if (literal[4]) {
+    const datatype = unescapeNTriples(literal[4]);
+    return datatype === null ? null : { type: "literal", value, datatype };
+  }
   return { type: "literal", value };
 }
 

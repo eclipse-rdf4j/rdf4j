@@ -25,10 +25,20 @@ export const layoutNodeFixed = (node: Graph['nodes'][number], options: LayoutOpt
 export function layoutTopology(graph: Graph) {
   const topology = new UndirectedGraph();
   const index = new Map(graph.nodes.map((node, i) => [node.id, i]));
-  graph.nodes.forEach((_, i) => topology.addNode(String(i)));
+  const keys = graph.nodes.map((_, i) => String(i));
+  keys.forEach(key => topology.addNode(key));
+  // One link per pair of nodes, in statement order. The pairs are tracked here (a number per unordered pair) rather
+  // than asked of the graph, and keys are numbered rather than generated: a 50,000-node graph spent a third of a second
+  // in graphology's lookups and key generator.
+  const linked = new Set<number>();
+  const size = graph.nodes.length;
   graph.edges.forEach(edge => {
     const a = index.get(edge.source), b = index.get(edge.target);
-    if (a !== undefined && b !== undefined && a !== b && !topology.hasEdge(a, b)) topology.addEdge(a, b);
+    if (a === undefined || b === undefined || a === b) return;
+    const pair = a < b ? a * size + b : b * size + a;
+    if (linked.has(pair)) return;
+    linked.add(pair);
+    topology.addEdgeWithKey(String(linked.size - 1), keys[a], keys[b]);
   });
   return topology;
 }

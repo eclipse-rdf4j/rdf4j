@@ -259,8 +259,10 @@ export class RdfExplorer {
         observed: { properties: [...properties].sort(), languages: [...languages].sort() },
       },
       ttl = checked && !next.length ? 120000 : 21600000;
-    this.liveLabels.set(id, value, ttl);
-    metadata.set(key, value, ttl);
+    // Serialized once for both caches: observing a large graph adds every resource.
+    const json = JSON.stringify(value);
+    this.liveLabels.set(id, value, ttl, json);
+    metadata.set(key, value, ttl, json);
     this.labelVersion += 1;
     this.labelMemo.clear();
     persist();
@@ -298,9 +300,13 @@ export class RdfExplorer {
       for (const candidate of candidates) values.push(candidate);
       pending.set(id, values);
     };
+    // A graph has many statements and few predicates: each predicate's name is tested once.
+    const labelLike = new Map<string, boolean>();
     for (const edge of graph.edges) {
       this.observedIds.add(edge.predicate);
-      if (looksLikeLabelProperty(edge.predicate))
+      let looksLike = labelLike.get(edge.predicate);
+      if (looksLike === undefined) labelLike.set(edge.predicate, (looksLike = looksLikeLabelProperty(edge.predicate)));
+      if (looksLike)
         this.properties.add(edge.predicate);
       const target = nodes.get(edge.target);
       if (target?.kind === "literal" && this.properties.has(edge.predicate))

@@ -25,7 +25,7 @@
  * and a card cut by a link it is not part of is pushed off the link while the link's ends move the other way (ImPrEd,
  * Simonetto et al., Computer Graphics Forum 2011). A final phase repeats only the hinges until none applies.
  */
-import {SpatialGrid} from './spatial-grid.ts';
+import {StaticGrid} from './spatial-grid.ts';
 
 export type StressProblem = {
   /** Extent of each card from its position: left, right, top and bottom (a card is centred when left = right). */
@@ -180,24 +180,24 @@ function radius(left: number, right: number, top: number, bottom: number, ux: nu
 
 export type StressStats = {epochs: number; pairs: number; overlapsLeft: number; occlusionsLeft: number};
 
-/**
- * Lays out the cards of `problem` (mutating `problem.x` and `problem.y`). Cards in different components only interact
- * through the hinges; callers that want components apart pack them afterwards.
- */
-export function stressLayout(problem: StressProblem, overrides: Partial<StressOptions> = {}): StressStats {
-  const options = {...DEFAULT_STRESS_OPTIONS, ...overrides};
-  const {left, right, top, bottom, x, y} = problem;
-  const n = x.length;
-  if (!n) return {epochs: 0, pairs: 0, overlapsLeft: 0, occlusionsLeft: 0};
-  const fixed = problem.fixed ?? new Uint8Array(n);
-  const adjacency = adjacencyOf(n, problem.links, problem.linkLengths);
-  const L = options.edgeLength;
+/** The links' adjacency, all-pairs distances in hops, and the connected pairs (a < b, in order) with their distance. */
+type Distances = {n: number; links: Int32Array; linkLengths?: Float64Array; adjacency: Adjacency; hops: Float32Array;
+  pairA: Uint32Array; pairB: Uint32Array; pairHops: Float32Array; maxHops: number};
 
-  // Typical half extents for the cards a path passes through.
-  const halfWidths = Array.from({length: n}, (_, i) => (left[i] + right[i]) / 2).sort((a, b) => a - b);
-  const halfHeights = Array.from({length: n}, (_, i) => (top[i] + bottom[i]) / 2).sort((a, b) => a - b);
-  const typicalHalfWidth = halfWidths[n >> 1], typicalHalfHeight = halfHeights[n >> 1];
+/** Runs over the same links (the starts of a layout, its polish) share their distances while the links are alive. */
+const distanceCache = new WeakMap<Int32Array, Distances>();
 
+const sameValues = (a: ArrayLike<number> | undefined, b: ArrayLike<number> | undefined) => {
+  if (!a || !b) return a === b;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (!Object.is(a[i], b[i])) return false;
+  return true;
+};
+
+function distancesOf(n: number, links: Int32Array, linkLengths?: Float64Array): Distances {
+  const cached = distanceCache.get(links);
+  if (cached && cached.n === n && sameValues(cached.links, links) && sameValues(cached.linkLengths, linkLengths)) return cached;
+  const adjacency = adjacencyOf(n, links, linkLengths);
   // All-pairs distances in hops; the callers keep this path to at most a few thousand cards.
   const hops = new Float32Array(n * n), heap = new Int32Array(Math.max(n, adjacency.targets.length + 1)), heapKey = new Float64Array(heap.length);
   const uniform = adjacency.lengths.every(length => length === 1), row = new Float64Array(n);
@@ -212,6 +212,32 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
     const d = hops[i * n + j];
     if (d !== Infinity) { pairA[p] = i; pairB[p] = j; pairHops[p] = d; p++; }
   }
+  const distances = {n, links: links.slice(), linkLengths: linkLengths?.slice(), adjacency, hops, pairA, pairB, pairHops, maxHops};
+  distanceCache.set(links, distances);
+  return distances;
+}
+
+/**
+ * Lays out the cards of `problem` (mutating `problem.x` and `problem.y`). Cards in different components only interact
+ * through the hinges; callers that want components apart pack them afterwards.
+ */
+export function stressLayout(problem: StressProblem, overrides: Partial<StressOptions> = {}): StressStats {
+  const options = {...DEFAULT_STRESS_OPTIONS, ...overrides};
+  const {left, right, top, bottom, x, y} = problem;
+  const n = x.length;
+  if (!n) return {epochs: 0, pairs: 0, overlapsLeft: 0, occlusionsLeft: 0};
+  const fixed = problem.fixed ?? new Uint8Array(n);
+  const distances = distancesOf(n, problem.links, problem.linkLengths);
+  const {adjacency, hops, maxHops} = distances;
+  const L = options.edgeLength;
+
+  // Typical half extents for the cards a path passes through.
+  const halfWidths = Array.from({length: n}, (_, i) => (left[i] + right[i]) / 2).sort((a, b) => a - b);
+  const halfHeights = Array.from({length: n}, (_, i) => (top[i] + bottom[i]) / 2).sort((a, b) => a - b);
+  const typicalHalfWidth = halfWidths[n >> 1], typicalHalfHeight = halfHeights[n >> 1];
+
+  // The connected pairs, copied: an epoch shuffles them.
+  const pairA = distances.pairA.slice(), pairB = distances.pairB.slice(), pairHops = distances.pairHops.slice(), pairCount = pairA.length;
   const springs = (problem.springs ?? []).filter(s => s.a !== s.b && s.a >= 0 && s.b >= 0 && s.a < n && s.b < n);
 
   const next = random(options.seed);
@@ -228,33 +254,24 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
   const etaMax = maxTarget * maxTarget, etaMin = 0.02 * minTarget * minTarget;
   const epochs = Math.max(2, options.epochs);
   const decay = Math.log(etaMax / etaMin) / (epochs - 1);
-  const order = new Uint32Array(pairCount);
-  for (let p = 0; p < pairCount; p++) order[p] = p;
+  // The pairs are shuffled in place (the swaps that would shuffle their indices), so that an epoch reads them in order.
   const anchorWeight = problem.anchorWeight;
   const firstEpoch = Math.min(epochs - 1, Math.floor(epochs * Math.max(0, Math.min(1, options.startFraction))));
   const hingeStart = Math.max(firstEpoch, Math.floor(epochs / 2));
+  const linkWeight = options.linkWeight;
+  // The boxes the hinges keep apart and off links; their sizes do not change.
+  const entries = entriesOf(problem);
 
   for (let epoch = firstEpoch; epoch < epochs; epoch++) {
     const eta = etaMax * Math.exp(-decay * epoch);
     // Fisher–Yates shuffle with the seeded generator keeps runs reproducible.
     for (let p = pairCount - 1; p > 0; p--) {
-      const q = Math.floor(next() * (p + 1)), t = order[p]; order[p] = order[q]; order[q] = t;
+      const q = Math.floor(next() * (p + 1));
+      const t = pairA[p]; pairA[p] = pairA[q]; pairA[q] = t;
+      const u = pairB[p]; pairB[p] = pairB[q]; pairB[q] = u;
+      const h = pairHops[p]; pairHops[p] = pairHops[q]; pairHops[q] = h;
     }
-    for (let k = 0; k < pairCount; k++) {
-      const p = order[k], a = pairA[p], b = pairB[p];
-      if (fixed[a] && fixed[b]) continue;
-      const d = pairHops[p];
-      let dx = x[a] - x[b], dy = y[a] - y[b];
-      let distance = Math.sqrt(dx * dx + dy * dy);
-      if (distance < 1e-6) { dx = 1e-3 * (next() - 0.5); dy = 1e-3 * (next() - 0.5); distance = Math.sqrt(dx * dx + dy * dy); }
-      const ux = dx / distance, uy = dy / distance;
-      const ra = radius(left[a], right[a], top[a], bottom[a], -ux, -uy);
-      const rb = radius(left[b], right[b], top[b], bottom[b], ux, uy);
-      let target = ra + rb + d * L;
-      if (d > 1) target += (d - 1) * 2 * radius(typicalHalfWidth, typicalHalfWidth, typicalHalfHeight, typicalHalfHeight, ux, uy);
-      const weight = (d <= 1 ? options.linkWeight : 1) / (target * target);
-      movePair(x, y, fixed, a, b, ux, uy, distance, target, Math.min(1, eta * weight));
-    }
+    pairEpoch(x, y, fixed, left, right, top, bottom, pairA, pairB, pairHops, L, typicalHalfWidth, typicalHalfHeight, linkWeight, eta, next);
     for (const spring of springs) {
       const a = spring.a, b = spring.b;
       if (fixed[a] && fixed[b]) continue;
@@ -273,18 +290,49 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
     clamp(problem, fixed);
     if (epoch >= hingeStart) {
       const strength = Math.min(1, (epoch - hingeStart + 1) / Math.max(1, epochs - hingeStart));
-      if (options.overlap) overlapHinge(problem, fixed, options, 0.5 * strength);
-      if (options.occlusion) occlusionHinge(problem, fixed, adjacency, options, 0.5 * strength);
+      if (options.overlap) overlapHinge(problem, entries, fixed, options, 0.5 * strength);
+      if (options.occlusion) occlusionHinge(problem, entries, fixed, adjacency, options, 0.5 * strength);
     }
   }
   let overlapsLeft = 0, occlusionsLeft = 0;
   for (let round = 0; round < options.settleRounds; round++) {
-    overlapsLeft = options.overlap ? overlapHinge(problem, fixed, options, 0.6) : 0;
-    occlusionsLeft = options.occlusion ? occlusionHinge(problem, fixed, adjacency, options, 0.6) : 0;
+    overlapsLeft = options.overlap ? overlapHinge(problem, entries, fixed, options, 0.6) : 0;
+    occlusionsLeft = options.occlusion ? occlusionHinge(problem, entries, fixed, adjacency, options, 0.6) : 0;
     clamp(problem, fixed);
     if (!overlapsLeft && !occlusionsLeft) break;
   }
   return {epochs, pairs: pairCount, overlapsLeft, occlusionsLeft};
+}
+
+/** One pass over the pairs in their shuffled order (`radius` and `movePair` written out). */
+function pairEpoch(x: Float64Array, y: Float64Array, fixed: Uint8Array, left: Float64Array, right: Float64Array, top: Float64Array,
+  bottom: Float64Array, pairA: Uint32Array, pairB: Uint32Array, pairHops: Float32Array, L: number, typicalHalfWidth: number,
+  typicalHalfHeight: number, linkWeight: number, eta: number, next: () => number) {
+  for (let k = 0; k < pairA.length; k++) {
+    const a = pairA[k], b = pairB[k];
+    const fa = fixed[a], fb = fixed[b];
+    if (fa && fb) continue;
+    const d = pairHops[k];
+    let dx = x[a] - x[b], dy = y[a] - y[b];
+    let distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance < 1e-6) { dx = 1e-3 * (next() - 0.5); dy = 1e-3 * (next() - 0.5); distance = Math.sqrt(dx * dx + dy * dy); }
+    const ux = dx / distance, uy = dy / distance;
+    const ax = Math.abs(ux), ay = Math.abs(uy);
+    // radius(left[a], right[a], top[a], bottom[a], -ux, -uy) and radius(left[b], right[b], top[b], bottom[b], ux, uy).
+    const eax = -ux >= 0 ? right[a] : left[a], eay = -uy >= 0 ? bottom[a] : top[a];
+    const ebx = ux >= 0 ? right[b] : left[b], eby = uy >= 0 ? bottom[b] : top[b];
+    const ra = ax < 1e-9 ? eay : ay < 1e-9 ? eax : Math.min(eax / ax, eay / ay);
+    const rb = ax < 1e-9 ? eby : ay < 1e-9 ? ebx : Math.min(ebx / ax, eby / ay);
+    let target = ra + rb + d * L;
+    if (d > 1) target += (d - 1) * 2 * (ax < 1e-9 ? typicalHalfHeight : ay < 1e-9 ? typicalHalfWidth : Math.min(typicalHalfWidth / ax, typicalHalfHeight / ay));
+    const weight = (d <= 1 ? linkWeight : 1) / (target * target);
+    const mu = Math.min(1, eta * weight);
+    const shift = mu * (distance - target) / 2;
+    if (fa) { x[b] += 2 * shift * ux; y[b] += 2 * shift * uy; continue; }
+    if (fb) { x[a] -= 2 * shift * ux; y[a] -= 2 * shift * uy; continue; }
+    x[a] -= shift * ux; y[a] -= shift * uy;
+    x[b] += shift * ux; y[b] += shift * uy;
+  }
 }
 
 function clamp(problem: StressProblem, fixed: Uint8Array) {
@@ -317,15 +365,24 @@ function separateCoincident(x: Float64Array, y: Float64Array, fixed: Uint8Array,
   }
 }
 
-/** A box that moves with a card: its own card, or a card of a fan attached to it (offsets from the card's position). */
-type Entry = {owner: number; minX: number; maxX: number; minY: number; maxY: number};
+/**
+ * The boxes that move with the cards: each card's own, and those of a fan attached to it (offsets from the card's
+ * position), in that order; entry k belongs to card owner[k].
+ */
+type Entries = {owner: Int32Array; minX: Float64Array; maxX: Float64Array; minY: Float64Array; maxY: Float64Array};
 
-function entriesOf(problem: StressProblem): Entry[] {
+function entriesOf(problem: StressProblem): Entries {
   const {left, right, top, bottom, bodies} = problem, n = left.length;
-  const entries: Entry[] = [];
+  let count = n;
+  for (let i = 0; i < n; i++) count += bodies?.[i]?.length ?? 0;
+  const entries = {owner: new Int32Array(count), minX: new Float64Array(count), maxX: new Float64Array(count), minY: new Float64Array(count), maxY: new Float64Array(count)};
+  let k = 0;
+  const add = (owner: number, minX: number, maxX: number, minY: number, maxY: number) => {
+    entries.owner[k] = owner; entries.minX[k] = minX; entries.maxX[k] = maxX; entries.minY[k] = minY; entries.maxY[k] = maxY; k++;
+  };
   for (let i = 0; i < n; i++) {
-    entries.push({owner: i, minX: -left[i], maxX: right[i], minY: -top[i], maxY: bottom[i]});
-    for (const box of bodies?.[i] ?? []) entries.push({owner: i, ...box});
+    add(i, -left[i], right[i], -top[i], bottom[i]);
+    for (const box of bodies?.[i] ?? []) add(i, box.minX, box.maxX, box.minY, box.maxY);
   }
   return entries;
 }
@@ -334,24 +391,29 @@ function entriesOf(problem: StressProblem): Entry[] {
  * Pushes apart boxes of different cards closer than the clearance, along the axis that needs the shorter move (as
  * overlap removal by projection does), by `mu` of the shortfall. Returns how many pairs were too close.
  */
-function overlapHinge(problem: StressProblem, fixed: Uint8Array, options: StressOptions, mu: number) {
+function overlapHinge(problem: StressProblem, entries: Entries, fixed: Uint8Array, options: StressOptions, mu: number) {
   const {x, y} = problem;
-  const entries = entriesOf(problem);
-  const grid = new SpatialGrid(256), found: number[] = [];
+  const {owner, minX, maxX, minY, maxY} = entries, count = owner.length;
+  const found: number[] = [];
   const halfX = options.clearX / 2, halfY = options.clearY / 2;
-  for (const e of entries) grid.insert({minX: x[e.owner] + e.minX - halfX, maxX: x[e.owner] + e.maxX + halfX, minY: y[e.owner] + e.minY - halfY, maxY: y[e.owner] + e.maxY + halfY});
+  const gridMinX = new Float64Array(count), gridMaxX = new Float64Array(count), gridMinY = new Float64Array(count), gridMaxY = new Float64Array(count);
+  for (let k = 0; k < count; k++) {
+    const o = owner[k];
+    gridMinX[k] = x[o] + minX[k] - halfX; gridMaxX[k] = x[o] + maxX[k] + halfX; gridMinY[k] = y[o] + minY[k] - halfY; gridMaxY[k] = y[o] + maxY[k] + halfY;
+  }
+  const grid = new StaticGrid(gridMinX, gridMinY, gridMaxX, gridMaxY);
   let violations = 0;
-  entries.forEach((e, k) => {
-    const a = e.owner;
-    grid.search(x[a] + e.minX - halfX, y[a] + e.minY - halfY, x[a] + e.maxX + halfX, y[a] + e.maxY + halfY, found);
+  for (let k = 0; k < count; k++) {
+    const a = owner[k];
+    grid.search(x[a] + minX[k] - halfX, y[a] + minY[k] - halfY, x[a] + maxX[k] + halfX, y[a] + maxY[k] + halfY, found);
     for (const l of found) {
-      const f = entries[l], b = f.owner;
+      const b = owner[l];
       if (l <= k || a === b || (fixed[a] && fixed[b])) continue;
-      const ax = x[a] + (e.minX + e.maxX) / 2, ay = y[a] + (e.minY + e.maxY) / 2;
-      const bx = x[b] + (f.minX + f.maxX) / 2, by = y[b] + (f.minY + f.maxY) / 2;
+      const ax = x[a] + (minX[k] + maxX[k]) / 2, ay = y[a] + (minY[k] + maxY[k]) / 2;
+      const bx = x[b] + (minX[l] + maxX[l]) / 2, by = y[b] + (minY[l] + maxY[l]) / 2;
       const dx = ax - bx, dy = ay - by;
-      const needX = (e.maxX - e.minX + f.maxX - f.minX) / 2 + options.clearX;
-      const needY = (e.maxY - e.minY + f.maxY - f.minY) / 2 + options.clearY;
+      const needX = (maxX[k] - minX[k] + maxX[l] - minX[l]) / 2 + options.clearX;
+      const needY = (maxY[k] - minY[k] + maxY[l] - minY[l]) / 2 + options.clearY;
       const depthX = needX - Math.abs(dx), depthY = needY - Math.abs(dy);
       if (depthX <= 0.01 || depthY <= 0.01) continue;
       violations++;
@@ -363,7 +425,7 @@ function overlapHinge(problem: StressProblem, fixed: Uint8Array, options: Stress
       x[a] += mx * mu * share; y[a] += my * mu * share;
       x[b] -= mx * mu * (1 - share); y[b] -= my * mu * (1 - share);
     }
-  });
+  }
   return violations;
 }
 
@@ -371,12 +433,16 @@ function overlapHinge(problem: StressProblem, fixed: Uint8Array, options: Stress
  * Pushes cards (and the fans that move with them) off links they are not part of, and the link's ends the other way;
  * returns how many box–link cuts there were.
  */
-function occlusionHinge(problem: StressProblem, fixed: Uint8Array, adjacency: Adjacency, options: StressOptions, mu: number) {
+function occlusionHinge(problem: StressProblem, entries: Entries, fixed: Uint8Array, adjacency: Adjacency, options: StressOptions, mu: number) {
   const {x, y} = problem, n = x.length;
-  const entries = entriesOf(problem);
-  const grid = new SpatialGrid(256), found: number[] = [];
-  const pad = options.linkClearance;
-  for (const e of entries) grid.insert({minX: x[e.owner] + e.minX - pad, maxX: x[e.owner] + e.maxX + pad, minY: y[e.owner] + e.minY - pad, maxY: y[e.owner] + e.maxY + pad});
+  const {owner, minX: entryMinX, maxX: entryMaxX, minY: entryMinY, maxY: entryMaxY} = entries;
+  const pad = options.linkClearance, count = owner.length, found: number[] = [];
+  const gridMinX = new Float64Array(count), gridMaxX = new Float64Array(count), gridMinY = new Float64Array(count), gridMaxY = new Float64Array(count);
+  for (let k = 0; k < count; k++) {
+    const o = owner[k];
+    gridMinX[k] = x[o] + entryMinX[k] - pad; gridMaxX[k] = x[o] + entryMaxX[k] + pad; gridMinY[k] = y[o] + entryMinY[k] - pad; gridMaxY[k] = y[o] + entryMaxY[k] + pad;
+  }
+  const grid = new StaticGrid(gridMinX, gridMinY, gridMaxX, gridMaxY);
   let cuts = 0;
   for (let a = 0; a < n; a++) {
     for (let k = adjacency.offsets[a]; k < adjacency.offsets[a + 1]; k++) {
@@ -384,9 +450,9 @@ function occlusionHinge(problem: StressProblem, fixed: Uint8Array, adjacency: Ad
       if (b < a) continue;
       grid.search(Math.min(x[a], x[b]), Math.min(y[a], y[b]), Math.max(x[a], x[b]), Math.max(y[a], y[b]), found);
       for (const l of found) {
-        const e = entries[l], c = e.owner;
+        const c = owner[l];
         if (c === a || c === b || (fixed[c] && fixed[a] && fixed[b])) continue;
-        const minX = x[c] + e.minX - pad, maxX = x[c] + e.maxX + pad, minY = y[c] + e.minY - pad, maxY = y[c] + e.maxY + pad;
+        const minX = x[c] + entryMinX[l] - pad, maxX = x[c] + entryMaxX[l] + pad, minY = y[c] + entryMinY[l] - pad, maxY = y[c] + entryMaxY[l] + pad;
         if (!segmentHitsBox(x[a], y[a], x[b], y[b], minX, minY, maxX, maxY)) continue;
         cuts++;
         // Move the box perpendicular to the link, to the side its centre is on, until its extent clears the line.
@@ -412,17 +478,40 @@ function occlusionHinge(problem: StressProblem, fixed: Uint8Array, adjacency: Ad
   return cuts;
 }
 
-/** Whether segment (x0, y0)–(x1, y1) meets the box (Liang–Barsky clipping). */
+/**
+ * Whether segment (x0, y0)–(x1, y1) meets the box (Liang–Barsky clipping against the left, right, top and bottom side
+ * in turn). This is the innermost test of the layout and the router, so the four clips are written out.
+ */
 export function segmentHitsBox(x0: number, y0: number, x1: number, y1: number, minX: number, minY: number, maxX: number, maxY: number) {
-  let lo = 0, hi = 1;
+  let lo = 0, hi = 1, p: number, q: number, r: number;
   const dx = x1 - x0, dy = y1 - y0;
-  for (const [p, q] of [[-dx, x0 - minX], [dx, maxX - x0], [-dy, y0 - minY], [dy, maxY - y0]] as const) {
-    if (Math.abs(p) < 1e-12) { if (q < 0) return false; continue; }
-    const r = q / p;
-    if (p < 0) { if (r > hi) return false; if (r > lo) lo = r; }
-    else { if (r < lo) return false; if (r < hi) hi = r; }
-  }
+  p = -dx; q = x0 - minX;
+  if (Math.abs(p) < 1e-12) { if (q < 0) return false; }
+  else if ((r = q / p), p < 0) { if (r > hi) return false; if (r > lo) lo = r; }
+  else { if (r < lo) return false; if (r < hi) hi = r; }
+  p = dx; q = maxX - x0;
+  if (Math.abs(p) < 1e-12) { if (q < 0) return false; }
+  else if ((r = q / p), p < 0) { if (r > hi) return false; if (r > lo) lo = r; }
+  else { if (r < lo) return false; if (r < hi) hi = r; }
+  p = -dy; q = y0 - minY;
+  if (Math.abs(p) < 1e-12) { if (q < 0) return false; }
+  else if ((r = q / p), p < 0) { if (r > hi) return false; if (r > lo) lo = r; }
+  else { if (r < lo) return false; if (r < hi) hi = r; }
+  p = dy; q = maxY - y0;
+  if (Math.abs(p) < 1e-12) { if (q < 0) return false; }
+  else if ((r = q / p), p < 0) { if (r > hi) return false; if (r > lo) lo = r; }
+  else { if (r < lo) return false; if (r < hi) hi = r; }
   return lo <= hi;
+}
+
+/**
+ * Whether the bounding box of segment (x0, y0)–(x1, y1) lies more than `margin` away from the box on some axis. Then
+ * `segmentHitsBox` is false for that box (its clip on the separating side fails), so callers may skip the exact test;
+ * any margin of at least 0.5 is far above the rounding of drawing coordinates.
+ */
+export function segmentBoxApart(x0: number, y0: number, x1: number, y1: number, minX: number, minY: number, maxX: number, maxY: number, margin: number) {
+  return (x0 < x1 ? x1 : x0) < minX - margin || (x0 < x1 ? x0 : x1) > maxX + margin ||
+    (y0 < y1 ? y1 : y0) < minY - margin || (y0 < y1 ? y0 : y1) > maxY + margin;
 }
 
 /**
@@ -551,7 +640,8 @@ export function drawingCost(problem: StressProblem) {
     }
     for (let k = 0; k < n; k++) {
       if (k === a || k === b) continue;
-      if (segmentHitsBox(x[a], y[a], x[b], y[b], x[k] - left[k], y[k] - top[k], x[k] + right[k], y[k] + bottom[k])) cuts++;
+      const minX = x[k] - left[k], minY = y[k] - top[k], maxX = x[k] + right[k], maxY = y[k] + bottom[k];
+      if (!segmentBoxApart(x[a], y[a], x[b], y[b], minX, minY, maxX, maxY, 1) && segmentHitsBox(x[a], y[a], x[b], y[b], minX, minY, maxX, maxY)) cuts++;
     }
   }
   for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
@@ -564,8 +654,9 @@ export function drawingCost(problem: StressProblem) {
 
 function segmentsCross(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number) {
   const d1 = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax), d2 = (bx - ax) * (dy - ay) - (by - ay) * (dx - ax);
+  if (!(d1 * d2 < -1e-9)) return false;
   const d3 = (dx - cx) * (ay - cy) - (dy - cy) * (ax - cx), d4 = (dx - cx) * (by - cy) - (dy - cy) * (bx - cx);
-  return d1 * d2 < -1e-9 && d3 * d4 < -1e-9;
+  return d3 * d4 < -1e-9;
 }
 
 /**
@@ -579,40 +670,100 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
   const count = links.length / 2;
   const incident: number[][] = Array.from({length: n}, () => []);
   for (let p = 0; p < count; p++) { incident[links[2 * p]].push(p); incident[links[2 * p + 1]].push(p); }
-  // Every box that moves with a card: its own, and those of its fan (bodies).
-  const own: Array<Array<{minX: number; maxX: number; minY: number; maxY: number}>> = Array.from({length: n}, (_, i) =>
-    [{minX: -left[i], maxX: right[i], minY: -top[i], maxY: bottom[i]}, ...(bodies?.[i] ?? [])]);
-  const cuts = (ax: number, ay: number, bx: number, by: number, k: number, pad: number) => {
+  // Every box that moves with a card: its own, and those of its fan (bodies); card k's boxes are boxStart[k] up to
+  // boxStart[k + 1], as offsets from its position.
+  const boxStart = new Int32Array(n + 1);
+  for (let i = 0; i < n; i++) boxStart[i + 1] = boxStart[i] + 1 + (bodies?.[i]?.length ?? 0);
+  const total = boxStart[n];
+  const boxMinX = new Float64Array(total), boxMaxX = new Float64Array(total), boxMinY = new Float64Array(total), boxMaxY = new Float64Array(total);
+  for (let i = 0; i < n; i++) {
+    let e = boxStart[i];
+    boxMinX[e] = -left[i]; boxMaxX[e] = right[i]; boxMinY[e] = -top[i]; boxMaxY[e] = bottom[i];
+    for (const box of bodies?.[i] ?? []) { e++; boxMinX[e] = box.minX; boxMaxX[e] = box.maxX; boxMinY[e] = box.minY; boxMaxY[e] = box.maxY; }
+  }
+  // Centres and sizes of the boxes for the overlap test.
+  const boxMidX = Float64Array.from(boxMinX, (minX, e) => (minX + boxMaxX[e]) / 2), boxMidY = Float64Array.from(boxMinY, (minY, e) => (minY + boxMaxY[e]) / 2);
+  const boxWidth = Float64Array.from(boxMinX, (minX, e) => boxMaxX[e] - minX), boxHeight = Float64Array.from(boxMinY, (minY, e) => boxMaxY[e] - minY);
+  /** Boxes of card k that segment a–b passes within `pad` of (boxes more than a pixel beside its box are skipped). */
+  const cuts = (ax: number, ay: number, bx: number, by: number, k: number, pad: number) =>
+    cutsWithin(ax, ay, bx, by, ax < bx ? ax : bx, ax < bx ? bx : ax, ay < by ? ay : by, ay < by ? by : ay, k, pad);
+  /** `cuts` given the segment's box (loX..hiX, loY..hiY). */
+  const cutsWithin = (ax: number, ay: number, bx: number, by: number, loX: number, hiX: number, loY: number, hiY: number, k: number, pad: number) => {
     let hits = 0;
-    for (const box of own[k]) if (segmentHitsBox(ax, ay, bx, by, x[k] + box.minX - pad, y[k] + box.minY - pad, x[k] + box.maxX + pad, y[k] + box.maxY + pad)) hits++;
+    for (let e = boxStart[k]; e < boxStart[k + 1]; e++) {
+      const minX = x[k] + boxMinX[e] - pad;
+      if (hiX < minX - 1) continue;
+      const maxX = x[k] + boxMaxX[e] + pad;
+      if (loX > maxX + 1) continue;
+      const minY = y[k] + boxMinY[e] - pad;
+      if (hiY < minY - 1) continue;
+      const maxY = y[k] + boxMaxY[e] + pad;
+      if (loY > maxY + 1) continue;
+      if (segmentHitsBox(ax, ay, bx, by, minX, minY, maxX, maxY)) hits++;
+    }
     return hits;
   };
-  const linkCost = (p: number) => {
+  // A cost only grows while its conflicts are counted. Given `done`, counting stops (and `stopped` is set) as soon as
+  // `done` holds for the cost counted so far: callers that only compare the cost with a bound learn the same answer.
+  let stopped = false;
+  // `segmentsCross` for link p against every other link, written out: the side of each card of link p's line is the
+  // same for every link the card ends, so it is computed once per card; most links then have both ends on one side.
+  // The line's own cards have side exactly 0 (b's is ex·ey − ey·ex), so the side test also rejects p itself and the
+  // links sharing a card with it.
+  const side = new Float64Array(n);
+  const linkCost = (p: number, base = 0, done?: (cost: number) => boolean) => {
     const a = links[2 * p], b = links[2 * p + 1];
+    const ax = x[a], ay = y[a], bx = x[b], by = y[b];
     let cost = 0;
-    for (let q = 0; q < count; q++) {
-      if (q === p) continue;
-      const c = links[2 * q], d = links[2 * q + 1];
-      if (a === c || a === d || b === c || b === d) continue;
-      if (crossings && segmentsCross(x[a], y[a], x[b], y[b], x[c], y[c], x[d], y[d])) cost += crossings;
+    if (crossings) {
+      const ex = bx - ax, ey = by - ay;
+      for (let k = 0; k < n; k++) side[k] = ex * (y[k] - ay) - ey * (x[k] - ax);
+      for (let q = 0; q < count; q++) {
+        const c = links[2 * q], d = links[2 * q + 1];
+        if (!(side[c] * side[d] < -1e-9)) continue;
+        const cx = x[c], cy = y[c], fx = x[d] - cx, fy = y[d] - cy;
+        if (!((fx * (ay - cy) - fy * (ax - cx)) * (fx * (by - cy) - fy * (bx - cx)) < -1e-9)) continue;
+        cost += crossings;
+        if (done?.(base + cost)) { stopped = true; return cost; }
+      }
     }
-    for (let k = 0; k < n; k++) if (k !== a && k !== b) cost += 3 * cuts(x[a], y[a], x[b], y[b], k, 4);
+    const loX = ax < bx ? ax : bx, hiX = ax < bx ? bx : ax, loY = ay < by ? ay : by, hiY = ay < by ? by : ay;
+    for (let k = 0; k < n; k++) {
+      if (k === a || k === b) continue;
+      const hits = cutsWithin(ax, ay, bx, by, loX, hiX, loY, hiY, k, 4);
+      if (!hits) continue;
+      cost += 3 * hits;
+      if (done?.(base + cost)) { stopped = true; return cost; }
+    }
     return cost;
   };
-  const cardCost = (i: number) => {
+  const cardCost = (i: number, done?: (cost: number) => boolean) => {
+    stopped = false;
     let cost = 0;
-    for (const p of incident[i]) cost += linkCost(p);
+    // A bound already met with no conflicts counted (a candidate's move costs as much as the best) needs no count.
+    if (done?.(cost)) { stopped = true; return cost; }
+    for (const p of incident[i]) {
+      cost += linkCost(p, cost, done);
+      if (stopped) return cost;
+    }
     // Links of other cards cutting this card or its fan.
     for (let p = 0; p < count; p++) {
       const a = links[2 * p], b = links[2 * p + 1];
       if (a === i || b === i) continue;
-      cost += 3 * cuts(x[a], y[a], x[b], y[b], i, 4);
+      const hits = cuts(x[a], y[a], x[b], y[b], i, 4);
+      if (!hits) continue;
+      cost += 3 * hits;
+      if (done?.(cost)) { stopped = true; return cost; }
     }
+    const xi = x[i], yi = y[i];
     for (let k = 0; k < n; k++) {
       if (k === i) continue;
-      for (const e of own[i]) for (const f of own[k]) {
-        const dx = x[i] + (e.minX + e.maxX) / 2 - x[k] - (f.minX + f.maxX) / 2, dy = y[i] + (e.minY + e.maxY) / 2 - y[k] - (f.minY + f.maxY) / 2;
-        if (Math.abs(dx) < (e.maxX - e.minX + f.maxX - f.minX) / 2 + 24 && Math.abs(dy) < (e.maxY - e.minY + f.maxY - f.minY) / 2 + 18) cost += 20;
+      const xk = x[k], yk = y[k];
+      for (let e = boxStart[i]; e < boxStart[i + 1]; e++) for (let f = boxStart[k]; f < boxStart[k + 1]; f++) {
+        const dx = xi + boxMidX[e] - xk - boxMidX[f], dy = yi + boxMidY[e] - yk - boxMidY[f];
+        if (!(Math.abs(dx) < (boxWidth[e] + boxMaxX[f] - boxMinX[f]) / 2 + 24 && Math.abs(dy) < (boxHeight[e] + boxMaxY[f] - boxMinY[f]) / 2 + 18)) continue;
+        cost += 20;
+        if (done?.(cost)) { stopped = true; return cost; }
       }
     }
     return cost;
@@ -649,20 +800,30 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
       let bestCost = start, bestX = x0, bestY = y0;
       for (const [cx, cy] of candidates) {
         x[i] = cx; y[i] = cy;
-        const cost = cardCost(i) + Math.hypot(cx - x0, cy - y0) * moveCost / scale;
-        if (cost < bestCost - 0.05) { bestCost = cost; bestX = cx; bestY = cy; }
+        const move = Math.hypot(cx - x0, cy - y0) * moveCost / scale, limit = bestCost - 0.05;
+        // A position whose conflicts counted so far already reach the best cost cannot win.
+        const conflicts = cardCost(i, cost => cost + move >= limit);
+        if (stopped) continue;
+        const cost = conflicts + move;
+        if (cost < limit) { bestCost = cost; bestX = cx; bestY = cy; }
       }
       x[i] = bestX; y[i] = bestY;
       if (bestX !== x0 || bestY !== y0) { improved++; continue; }
-      // Trading places with a nearby card undoes crossings no single move can (two cards on the wrong sides).
-      const here = cardCost(i);
-      if (!here) continue;
+      // Trading places with a nearby card undoes crossings no single move can (two cards on the wrong sides). The card
+      // is back where its cost was `start`.
+      const here = start;
       let bestSwap = -1, bestGain = 0.5;
       for (let j = 0; j < n; j++) {
         if (j === i || fixed[j] || Math.hypot(x[j] - x0, y[j] - y0) > 4 * scale) continue;
         const before = here + cardCost(j);
         x[i] = x[j]; y[i] = y[j]; x[j] = x0; y[j] = y0;
-        const gain = before - (cardCost(i) + cardCost(j));
+        // A trade whose new conflicts counted so far already use up the gain to beat is not taken.
+        let gain = -Infinity;
+        const after = cardCost(i, cost => before - cost <= bestGain);
+        if (!stopped) {
+          const other = cardCost(j, cost => before - (after + cost) <= bestGain);
+          if (!stopped) gain = before - (after + other);
+        }
         x[j] = x[i]; y[j] = y[i]; x[i] = x0; y[i] = y0;
         if (gain > bestGain) { bestGain = gain; bestSwap = j; }
       }

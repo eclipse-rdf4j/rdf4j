@@ -23,8 +23,8 @@
  * (`EdgeRoute`), which the canvas honours while both cards keep the centres they were computed for.
  */
 import {computeEdgeLanes, computeEdgePorts, edgeBendForLane, edgePortKey, graphNodeSize, nodeBoundaryPoint, nodeCornerRadius} from './graph-geometry.ts';
-import {segmentHitsBox} from './graph-layout-stress.ts';
-import {SpatialGrid} from './spatial-grid.ts';
+import {segmentBoxApart, segmentHitsBox} from './graph-layout-stress.ts';
+import {SpatialGrid, type Bounds} from './spatial-grid.ts';
 import type {EdgeRoute, GraphEdge, GraphNode, PointerPosition} from './graph-types.ts';
 
 /** Space kept between an arrow and a card it passes. */
@@ -40,6 +40,8 @@ const DETOUR_OBSTACLE_LIMIT = 80;
 function crowding(a: PointerPosition, b: PointerPosition, near: readonly Box[]) {
   let cost = 0;
   for (const box of near) {
+    // A card more than `ROOM` away on an axis adds nothing; most of them are, so they skip the distance.
+    if (segmentBoxApart(a.x, a.y, b.x, b.y, box.x - box.halfWidth, box.y - box.halfHeight, box.x + box.halfWidth, box.y + box.halfHeight, ROOM + 1)) continue;
     const gap = boxDistance(a, b, box);
     if (gap < ROOM) cost += (ROOM - gap) * 2;
   }
@@ -63,30 +65,47 @@ function boxDistance(a: PointerPosition, b: PointerPosition, box: Box) {
 }
 
 type Box = {id: string; x: number; y: number; halfWidth: number; halfHeight: number};
-type Obstacles = {boxes: Box[]; grid: SpatialGrid};
+/** The cards' boxes, their bounds as the grid holds them, and the grid. */
+type Obstacles = {boxes: Box[]; bounds: Bounds[]; grid: SpatialGrid};
 
 function obstaclesOf(nodes: readonly GraphNode[]): Obstacles {
-  const grid = new SpatialGrid(192), boxes: Box[] = [];
+  const grid = new SpatialGrid(192), boxes: Box[] = [], bounds: Bounds[] = [];
   for (const node of nodes) {
     const {width, height} = graphNodeSize(node);
     const box = {id: node.id, x: node.x ?? 0, y: node.y ?? 0, halfWidth: width / 2, halfHeight: height / 2};
     boxes.push(box);
-    grid.insert({minX: box.x - box.halfWidth, maxX: box.x + box.halfWidth, minY: box.y - box.halfHeight, maxY: box.y + box.halfHeight});
+    const b = {minX: box.x - box.halfWidth, maxX: box.x + box.halfWidth, minY: box.y - box.halfHeight, maxY: box.y + box.halfHeight};
+    bounds.push(b);
+    grid.insert(b);
   }
-  return {boxes, grid};
+  return {boxes, bounds, grid};
 }
 
-/** Cards (other than `except`) the segment a–b passes within `clearance` of. */
-function blockers(o: Obstacles, a: PointerPosition, b: PointerPosition, except: ReadonlySet<string>, clearance: number, found: number[] = []) {
-  o.grid.search(Math.min(a.x, b.x) - clearance, Math.min(a.y, b.y) - clearance, Math.max(a.x, b.x) + clearance, Math.max(a.y, b.y) + clearance, found);
-  const hits: number[] = [];
-  for (const i of found) {
+/**
+ * Whether one of the cards `candidates` lists (none of them an end of the arrow) is within `clearance` of segment a–b
+ * and in the grid's answer for the segment's box: the cards a grid search for that box finds are those whose bounds
+ * meet it, so testing the same bounds on any list that holds them gives the same answer.
+ */
+function hitsAny(o: Obstacles, candidates: readonly number[], a: PointerPosition, b: PointerPosition, clearance: number) {
+  const minX = Math.min(a.x, b.x) - clearance, minY = Math.min(a.y, b.y) - clearance;
+  const maxX = Math.max(a.x, b.x) + clearance, maxY = Math.max(a.y, b.y) + clearance;
+  if (!(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) || minX > maxX || minY > maxY) return false;
+  for (const i of candidates) {
+    const e = o.bounds[i];
+    if (!(e.maxX >= minX && e.minX <= maxX && e.maxY >= minY && e.minY <= maxY)) continue;
     const box = o.boxes[i];
-    if (except.has(box.id)) continue;
     if (segmentHitsBox(a.x, a.y, b.x, b.y, box.x - box.halfWidth - clearance, box.y - box.halfHeight - clearance,
-      box.x + box.halfWidth + clearance, box.y + box.halfHeight + clearance)) hits.push(i);
+      box.x + box.halfWidth + clearance, box.y + box.halfHeight + clearance)) return true;
   }
-  return hits;
+  return false;
+}
+
+/** Whether a card (other than `except`) is within `clearance` of the segment a–b. */
+function blocked(o: Obstacles, a: PointerPosition, b: PointerPosition, except: ReadonlySet<string>, clearance: number) {
+  const found = o.grid.search(Math.min(a.x, b.x) - clearance, Math.min(a.y, b.y) - clearance, Math.max(a.x, b.x) + clearance, Math.max(a.y, b.y) + clearance);
+  const candidates: number[] = [];
+  for (const i of found) if (!except.has(o.boxes[i].id)) candidates.push(i);
+  return hitsAny(o, candidates, a, b, clearance);
 }
 
 /** Points on a card's border to try as an arrow's end: along each side, away from the rounded corners. */
@@ -101,13 +120,48 @@ function borderPoints(node: GraphNode): PointerPosition[] {
   return points;
 }
 
-/** Whether the segment leaves `node` at `from` without running back across the card. */
-function leavesCard(node: GraphNode, from: PointerPosition, to: PointerPosition) {
-  const {width, height} = graphNodeSize(node), x = node.x ?? 0, y = node.y ?? 0;
+/** Whether the segment leaves the card of this size at (x, y) at `from` without running back across the card. */
+function leavesCard(width: number, height: number, x: number, y: number, from: PointerPosition, to: PointerPosition) {
   // Sample just after the start: it must already be outside the card.
   const t = Math.min(0.5, 3 / Math.max(1, Math.hypot(to.x - from.x, to.y - from.y)));
   const px = from.x + (to.x - from.x) * t, py = from.y + (to.y - from.y) * t;
   return !(Math.abs(px - x) < width / 2 && Math.abs(py - y) < height / 2);
+}
+
+/**
+ * The cards that may block a straight line between any of `points` (both ends of every candidate arrow): those the
+ * grid finds in the points' box widened by `clearance`, other than the arrow's ends, without those lying wholly beside
+ * the band across the centre line that holds every point (no segment between the points comes near them). Closest to
+ * the centre line first, where a blocked line usually meets its first card. Null when a point has no finite
+ * coordinates: then each line asks the grid itself.
+ */
+function obstaclesNear(o: Obstacles, points: readonly PointerPosition[], sc: PointerPosition, tc: PointerPosition, except: ReadonlySet<string>, clearance: number) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of points) {
+    if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) return null;
+    if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+  }
+  const found = o.grid.search(minX - clearance, minY - clearance, maxX + clearance, maxY + clearance);
+  const length = Math.hypot(tc.x - sc.x, tc.y - sc.y);
+  const vx = length > 1e-6 ? -(tc.y - sc.y) / length : 0, vy = length > 1e-6 ? (tc.x - sc.x) / length : 0;
+  let low = Infinity, high = -Infinity;
+  for (const p of points) {
+    const across = (p.x - sc.x) * vx + (p.y - sc.y) * vy;
+    if (across < low) low = across; if (across > high) high = across;
+  }
+  const near: Array<{i: number; across: number}> = [];
+  for (const i of found) {
+    const box = o.boxes[i];
+    if (except.has(box.id)) continue;
+    const across = (box.x - sc.x) * vx + (box.y - sc.y) * vy;
+    const reach = (box.halfWidth + clearance) * Math.abs(vx) + (box.halfHeight + clearance) * Math.abs(vy);
+    // Two pixels beyond the band no segment comes within rounding of the card.
+    if (length > 1e-6 && (across - reach > high + 2 || across + reach < low - 2)) continue;
+    near.push({i, across: Math.abs(across - (low + high) / 2)});
+  }
+  near.sort((a, b) => a.across - b.across || a.i - b.i);
+  return near.map(entry => entry.i);
 }
 
 /** A straight line between two other border points of the cards, clear of every other card; the closest to the centre line. */
@@ -115,22 +169,87 @@ function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: 
   const sc = {x: source.x ?? 0, y: source.y ?? 0}, tc = {x: target.x ?? 0, y: target.y ?? 0};
   const direct = Math.atan2(tc.y - sc.y, tc.x - sc.x);
   const centreDistance = Math.hypot(tc.x - sc.x, tc.y - sc.y);
-  let best: {from: PointerPosition; to: PointerPosition; cost: number} | null = null;
-  const consider = (from: PointerPosition, to: PointerPosition) => {
-    if (!leavesCard(source, from, to) || !leavesCard(target, to, from)) return;
+  const sourceSize = graphNodeSize(source), targetSize = graphNodeSize(target);
+  type Choice = {from: PointerPosition; to: PointerPosition; cost: number};
+  const choice = (from: PointerPosition, to: PointerPosition): Choice | null => {
+    if (!leavesCard(sourceSize.width, sourceSize.height, sc.x, sc.y, from, to) || !leavesCard(targetSize.width, targetSize.height, tc.x, tc.y, to, from)) return null;
     const length = Math.hypot(to.x - from.x, to.y - from.y);
     const angle = Math.abs(Math.atan2(Math.sin(Math.atan2(to.y - from.y, to.x - from.x) - direct), Math.cos(Math.atan2(to.y - from.y, to.x - from.x) - direct)));
-    const cost = length + centreDistance * 0.6 * angle;
-    if (best && cost >= best.cost) return;
-    if (blockers(o, from, to, except, CLEARANCE).length) return;
-    best = {from, to, cost};
+    return {from, to, cost: length + centreDistance * 0.6 * angle};
   };
   const targetPoints = borderPoints(target), sourcePoints = borderPoints(source);
   // The hub's end aims at the other end (its arrows fan from its centre); the other end moves along its sides.
-  for (const to of targetPoints) consider(nodeBoundaryPoint(source, to), to);
-  for (const from of sourcePoints) consider(from, nodeBoundaryPoint(target, from));
-  if (!best) for (const from of sourcePoints) for (const to of targetPoints) consider(from, to);
-  return best as {from: PointerPosition; to: PointerPosition; cost: number} | null;
+  const aimed: Array<Choice | null> = [];
+  for (const to of targetPoints) aimed.push(choice(nodeBoundaryPoint(source, to), to));
+  for (const from of sourcePoints) aimed.push(choice(from, nodeBoundaryPoint(target, from)));
+  const ends: PointerPosition[] = [...targetPoints, ...sourcePoints];
+  for (const c of aimed) if (c) ends.push(c.from, c.to);
+  const near = obstaclesNear(o, ends, sc, tc, except, CLEARANCE);
+  const blockedLine = (from: PointerPosition, to: PointerPosition) => (near ? hitsAny(o, near, from, to, CLEARANCE) : blocked(o, from, to, except, CLEARANCE));
+  // The cheapest clear line, the first of equally cheap ones (as trying them in turn and keeping a strictly cheaper
+  // clear one would), testing lines for blockers cheapest first.
+  const cheapest = (choices: Array<Choice | null>) => {
+    const open = choices.filter((c): c is Choice => c !== null);
+    if (open.some(c => Number.isNaN(c.cost))) {
+      let best: Choice | null = null;
+      for (const c of open) if (!(best && c.cost >= best.cost) && !blockedLine(c.from, c.to)) best = c;
+      return best;
+    }
+    const order = open.map((_, k) => k).sort((a, b) => (open[a].cost < open[b].cost ? -1 : open[a].cost > open[b].cost ? 1 : a - b));
+    for (const k of order) if (!blockedLine(open[k].from, open[k].to)) return open[k];
+    return null;
+  };
+  const best = cheapest(aimed);
+  if (best) return best;
+  const pairs: Array<Choice | null> = [];
+  for (const from of sourcePoints) for (const to of targetPoints) pairs.push(choice(from, to));
+  return cheapest(pairs);
+}
+
+/**
+ * Whether a segment comes within `clearance` of one of the boxes (`segmentHitsBox` on each box widened by it), asked of
+ * a small grid over the boxes: a box the segment meets lies within half a pixel of the segment's own box, so only the
+ * cells under that are visited.
+ */
+function segmentMeetsBoxes(boxes: readonly Box[], clearance: number) {
+  const count = boxes.length;
+  const minX = new Float64Array(count), minY = new Float64Array(count), maxX = new Float64Array(count), maxY = new Float64Array(count);
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  boxes.forEach((box, i) => {
+    minX[i] = box.x - box.halfWidth - clearance; minY[i] = box.y - box.halfHeight - clearance;
+    maxX[i] = box.x + box.halfWidth + clearance; maxY[i] = box.y + box.halfHeight + clearance;
+    left = Math.min(left, minX[i]); top = Math.min(top, minY[i]); right = Math.max(right, maxX[i]); bottom = Math.max(bottom, maxY[i]);
+  });
+  const every = (a: PointerPosition, b: PointerPosition) => boxes.some((_, i) => segmentHitsBox(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i]));
+  if (!count || !(Number.isFinite(left) && Number.isFinite(top) && Number.isFinite(right) && Number.isFinite(bottom))) return every;
+  const size = Math.max(48, (right - left) / 12, (bottom - top) / 12);
+  const columns = Math.floor((right - left) / size) + 1, rows = Math.floor((bottom - top) / size) + 1;
+  const cells: number[][] = Array.from({length: columns * rows}, () => []);
+  for (let i = 0; i < count; i++) {
+    const x0 = Math.floor((minX[i] - left) / size), x1 = Math.floor((maxX[i] - left) / size);
+    const y0 = Math.floor((minY[i] - top) / size), y1 = Math.floor((maxY[i] - top) / size);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cells[y * columns + x].push(i);
+  }
+  const stamp = new Uint32Array(count);
+  let epoch = 0;
+  return (a: PointerPosition, b: PointerPosition) => {
+    const loX = Math.min(a.x, b.x) - 1, hiX = Math.max(a.x, b.x) + 1, loY = Math.min(a.y, b.y) - 1, hiY = Math.max(a.y, b.y) + 1;
+    // A segment without coordinates (NaN) is tested against every box, as it is.
+    if (!(loX <= hiX && loY <= hiY)) return every(a, b);
+    if (!(hiX >= left && loX <= right && hiY >= top && loY <= bottom)) return false;
+    const x0 = Math.max(0, Math.floor((loX - left) / size)), x1 = Math.min(columns - 1, Math.floor((hiX - left) / size));
+    const y0 = Math.max(0, Math.floor((loY - top) / size)), y1 = Math.min(rows - 1, Math.floor((hiY - top) / size));
+    epoch++;
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+      for (const i of cells[y * columns + x]) {
+        if (stamp[i] === epoch) continue;
+        stamp[i] = epoch;
+        if (!segmentBoxApart(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i], 1) &&
+          segmentHitsBox(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i])) return true;
+      }
+    }
+    return false;
+  };
 }
 
 /** Shortest path around the cards in the way, through their padded corners; null when none is short enough. */
@@ -152,16 +271,16 @@ function detour(source: GraphNode, target: GraphNode, o: Obstacles, except: Read
   }
   // Corners inside another padded card are useless.
   const usable = points.map((p, i) => i < 2 || !near.some(box => Math.abs(p.x - box.x) < box.halfWidth + pad - 0.5 && Math.abs(p.y - box.y) < box.halfHeight + pad - 0.5));
-  const visible = (a: PointerPosition, b: PointerPosition) => !near.some(box => segmentHitsBox(a.x, a.y, b.x, b.y,
-    box.x - box.halfWidth - CLEARANCE, box.y - box.halfHeight - CLEARANCE, box.x + box.halfWidth + CLEARANCE, box.y + box.halfHeight + CLEARANCE));
+  const meets = segmentMeetsBoxes(near, CLEARANCE);
+  const visible = (a: PointerPosition, b: PointerPosition) => !meets(a, b);
   // A* from the source centre to the target centre; the end cards are not obstacles.
   const count = points.length, distance = new Float64Array(count).fill(Infinity), previous = new Int32Array(count).fill(-1);
   const closed = new Uint8Array(count);
   distance[0] = 0;
-  const heuristic = (i: number) => Math.hypot(points[i].x - tc.x, points[i].y - tc.y);
+  const heuristic = Float64Array.from(points, p => Math.hypot(p.x - tc.x, p.y - tc.y));
   for (let step = 0; step < count; step++) {
     let current = -1, value = Infinity;
-    for (let i = 0; i < count; i++) if (!closed[i] && usable[i] && distance[i] + heuristic(i) < value) { value = distance[i] + heuristic(i); current = i; }
+    for (let i = 0; i < count; i++) if (!closed[i] && usable[i] && distance[i] + heuristic[i] < value) { value = distance[i] + heuristic[i]; current = i; }
     if (current < 0 || current === 1) break;
     closed[current] = 1;
     for (let next = 0; next < count; next++) {
@@ -211,7 +330,7 @@ export function routeEdges(nodes: readonly GraphNode[], edges: readonly GraphEdg
     const except = new Set([source.id, target.id]);
     const from = ports.get(edgePortKey(edge.id, source.id)) ?? nodeBoundaryPoint(source, tc);
     const to = ports.get(edgePortKey(edge.id, target.id)) ?? nodeBoundaryPoint(target, sc);
-    if (!blockers(o, from, to, except, CLEARANCE).length) continue;
+    if (!blocked(o, from, to, except, CLEARANCE)) continue;
     const moved = movedPorts(source, target, o, except);
     if (moved) { routes.set(edge.id, {source: sc, target: tc, points: [moved.from, moved.to]}); continue; }
     if (!detours) continue;

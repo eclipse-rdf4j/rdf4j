@@ -2054,7 +2054,9 @@ module workbench {
             const prefixed = list.column === 'type' && term.kind === 'iri' ? stream.abbreviateIri(term.value, exploreNamespaces(model)) : '';
             const label = prefixed && prefixed.charAt(0) !== '<' ? prefixed : full;
             // Types add 50 of their instances with their statements; graphs add 200 of their statements.
-            const iri = term.kind === 'iri' ? '<' + term.value + '>' : '';
+            // Only an IRI a SPARQL IRIREF can hold as is: anything else would break (or extend) the queued query.
+            const iri = term.kind === 'iri' && /^[A-Za-z][A-Za-z0-9+.-]*:[^<>"{}|^`\\\s]+$/.test(term.value)
+                ? '<' + term.value + '>' : '';
             const addition = !context || !iri ? '' : list.column === 'type'
                 ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ?s WHERE { ?s a '
                     + iri + ' } LIMIT 50 } ?s ?p ?o }' }, 'Add instances of ' + label + ' to the graph', true)

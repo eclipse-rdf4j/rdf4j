@@ -37,6 +37,7 @@ const STATUS_MESSAGES: Record<number, string> = {
   400: "The repository rejected the query.",
   403: "Query execution is disabled by the Workbench policy.",
   404: "The repository was not found.",
+  408: "The query took too long.",
   413: "The query is too long for the Workbench.",
   503: "The Workbench policy is invalid; the administrator must fix workbench.properties.",
 };

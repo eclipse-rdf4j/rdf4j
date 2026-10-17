@@ -174,6 +174,18 @@ export function wheelTransform(
 
 export const MAX_INCREMENTAL_ZOOM_OUT = 0.88;
 
+/** The extent of centred boxes. A loop, not Math.min(...xs): a spread of 65,536+ arguments overflows the call stack. */
+export function boxBounds(boxes: ReadonlyArray<PointerPosition & { width: number; height: number }>) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const box of boxes) {
+    minX = Math.min(minX, box.x - box.width / 2);
+    maxX = Math.max(maxX, box.x + box.width / 2);
+    minY = Math.min(minY, box.y - box.height / 2);
+    maxY = Math.max(maxY, box.y + box.height / 2);
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 export function revealBoxesIncrementally(
   current: GraphTransform,
   startAnchor: PointerPosition,
@@ -185,10 +197,7 @@ export function revealBoxesIncrementally(
   if (!boxes.length) return current;
   const padding = 58;
   const right = GRAPH_WIDTH - padding - rightInset;
-  const minX = Math.min(...boxes.map((box) => box.x - box.width / 2));
-  const maxX = Math.max(...boxes.map((box) => box.x + box.width / 2));
-  const minY = Math.min(...boxes.map((box) => box.y - box.height / 2));
-  const maxY = Math.max(...boxes.map((box) => box.y + box.height / 2));
+  const { minX, maxX, minY, maxY } = boxBounds(boxes);
   const fitScale = Math.min(
     current.k,
     (right - padding) / Math.max(1, maxX - minX),

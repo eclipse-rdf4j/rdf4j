@@ -104,8 +104,8 @@ export function placesOf(edges: readonly GraphEdge[], nodeById: ReadonlyMap<stri
 export function mapFrame(places: ReadonlyArray<{ latitude: number; longitude: number }>) {
   const round = (value: number) => Math.round(value * 10000) / 10000;
   const bounds = (values: number[], limit: number) => {
-    const low = Math.min(...values);
-    const high = Math.max(...values);
+    const low = values.reduce((min, value) => Math.min(min, value), Infinity);
+    const high = values.reduce((max, value) => Math.max(max, value), -Infinity);
     const margin = Math.max((high - low) / 10, (0.2 - (high - low)) / 2, 0);
     return [round(Math.max(-limit, low - margin)), round(Math.min(limit, high + margin))];
   };

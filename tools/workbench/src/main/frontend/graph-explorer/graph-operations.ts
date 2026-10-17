@@ -275,6 +275,12 @@ export function mergeTriples(
   return replace ? preserveSharedNodePositions(merged, graph) : merged;
 }
 
+/** The edges of `after` that `before` does not hold, in `after`'s order: one pass over each graph, however large. */
+export function newEdgesOf(before: Pick<Graph, "edges">, after: Pick<Graph, "edges">) {
+  const existing = new Set(before.edges.map((edge) => edge.id));
+  return after.edges.filter((edge) => !existing.has(edge.id));
+}
+
 export function cloneGraph(graph: Graph): Graph {
   return {
     revision: graph.revision,

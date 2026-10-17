@@ -1268,3 +1268,89 @@ test('shelved Query results and background activity belong to the resolved serve
     assert.equal(executions,1);
     again.dispose();
 });
+
+// The menu asks the stable workbench.queryPage hook with the repository's server and base path (workbenchViews
+// queryActivity); results out of sight are kept per [base path, server identity, repository], so the hook must
+// forward all three or a deployment with a server identity never shows "running" or "ready".
+test('the stable queryPage.activity hook reports activity per base path, server and repository', async () => {
+    const queryStream = loadQueryStreamApi();
+    const workbench = queryStream.__testWorkbench;
+    const window = queryStream.__testWindow;
+    window.addEventListener = () => {};
+    window.removeEventListener = () => {};
+    workbench.views = { refreshShell() {} };
+    const identity = 'sha256:server-a';
+    const records = [
+        { type: 'head', version: 1 },
+        { type: 'view', id: 'tuple' },
+        { type: 'vars', values: ['item'] },
+        { type: 'rows', values: [[{ kind: 'literal', value: 'late row' }]] },
+        { type: 'end', metadata: { 'result-offset': 0, 'result-limit': 1000000, 'result-batch-count': 1,
+            'result-has-more': false, 'result-next-offset': 1 } }
+    ].map(record => JSON.stringify(record) + '\n').join('');
+    let release;
+    window.fetch = async (url, options) => {
+        const body = String(options && options.body || '');
+        if (body.includes('action=cancel-query')) {
+            return { ok: true, status: 204, headers: { get: () => null } };
+        }
+        const held = new Promise(resolve => { release = resolve; });
+        const bytes = new TextEncoder().encode(records);
+        let delivered = false;
+        return {
+            ok: true,
+            status: 200,
+            headers: { get: (name) => name === 'X-Workbench-Server-Identity' ? identity : null },
+            body: { getReader: () => ({
+                read: async () => {
+                    if (delivered) {
+                        return { done: true };
+                    }
+                    await held;
+                    delivered = true;
+                    return { done: false, value: bytes };
+                },
+                cancel: async () => {}
+            }) }
+        };
+    };
+    const worker = new InMemoryWorker();
+    const document = new FakeDocument();
+    const form = document.createElement('form');
+    form.setAttribute('id', 'query-form');
+    form.setAttribute('action', 'query');
+    const query = document.createElement('textarea');
+    query.name = 'query';
+    query.value = 'SELECT ?item WHERE { VALUES ?item { "late row" } }';
+    form.appendChild(query);
+    const target = document.createElement('section');
+    target.setAttribute('id', 'query-results');
+    document.body.appendChild(form);
+    document.body.appendChild(target);
+    const dispose = workbench.queryPage.renderInto(document.body, {}, {
+        executionFormId: 'query-form', resultsMountId: 'query-results', repositoryId: 'repo-a',
+        serverIdentity: identity, basePath: '/wb/',
+        rowStoreOptions: { spillRowLimit: 0, workerFactory: () => worker }
+    });
+    const settle = async (condition) => {
+        for (let attempt = 0; attempt < 30 && !condition(); attempt += 1) {
+            await new Promise(resolve => setImmediate(resolve));
+        }
+    };
+    const activity = (...args) => workbench.queryPage.activity(...args);
+
+    form.trigger('submit');
+    await settle(() => !!release);
+    dispose('navigate');
+
+    assert.equal(activity('repo-a', identity, '/wb/'), 'running', 'the menu\'s own arguments find the query');
+    assert.equal(activity('repo-a', identity, '/wb'), 'running', 'a trailing slash names the same base path');
+    assert.equal(activity('repo-a', 'sha256:server-b', '/wb/'), '', 'the same repository ID on another server');
+    assert.equal(activity('repo-a', identity, '/other'), '', 'the same server under another Workbench');
+    assert.equal(activity('repo-b', identity, '/wb/'), '', 'another repository');
+    assert.equal(activity('repo-a'), '', 'without a server identity nothing is claimed');
+    release();
+    await settle(() => activity('repo-a', identity, '/wb/') === 'ready');
+    assert.equal(activity('repo-a', identity, '/wb/'), 'ready');
+    assert.equal(activity('repo-a', 'sha256:server-b', '/wb/'), '');
+});

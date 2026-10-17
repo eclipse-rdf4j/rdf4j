@@ -263,6 +263,21 @@ export function abortableDelay(ms: number, signal: AbortSignal) {
   });
 }
 
+/** The UTF-8 length of a string, as TextEncoder would encode it (a lone surrogate becomes U+FFFD), without encoding it. */
+export function utf8Length(text: string) {
+  let bytes = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff && (text.charCodeAt(index + 1) & 0xfc00) === 0xdc00) {
+      bytes += 4;
+      index++;
+    } else bytes += 3;
+  }
+  return bytes;
+}
+
 /** Byte-bounded LRU; expiration is checked on every read, including negative results. */
 export class BoundedCache<T> {
   private entries = new Map<
@@ -289,11 +304,14 @@ export class BoundedCache<T> {
     this.entries.set(key, item);
     return item.value;
   }
-  set(key: string, value: T, ttlMs: number) {
+  /**
+   * Stores `value` for `ttlMs`. Its size is that of `JSON.stringify([key, value])` in UTF-8; a caller that stores the
+   * same value in several caches passes `valueJson` (JSON.stringify(value)) so it is serialized once.
+   */
+  set(key: string, value: T, ttlMs: number, valueJson = JSON.stringify(value)) {
     this.delete(key);
-    const bytes = new TextEncoder().encode(
-      JSON.stringify([key, value]),
-    ).byteLength;
+    // "[" key "," value "]", measured without building the string or its bytes.
+    const bytes = utf8Length(JSON.stringify(key)) + utf8Length(valueJson ?? "null") + 3;
     if (bytes > this.maxBytes || ttlMs <= 0) return;
     this.entries.set(key, { value, bytes, expires: this.now() + ttlMs });
     this.bytes += bytes;

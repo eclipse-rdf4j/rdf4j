@@ -13,7 +13,8 @@
 	<properties>
 		<!-- -DskipFrontend=true skips the npm install and build (Java-only loops); the WAR then lacks the compiled scripts. -->
 		<skipFrontend>false</skipFrontend>
-		<!-- npm ci is skipped on a warm tree (profile frontend-installed below); rm -rf node_modules to force it. -->
+		<!-- A cold tree gets npm ci; a warm one an npm install that never writes package-lock.json (profile
+		     frontend-installed below): it syncs node_modules with a changed lock and is quick when nothing changed. -->
 		<skipFrontendInstall>${skipFrontend}</skipFrontendInstall>
 	</properties>
 	<dependencies>
@@ -286,16 +287,29 @@
 	</build>
 	<profiles>
 		<profile>
-			<!-- A warm checkout already has node_modules; skip npm ci so mvnf loops only run the build. -->
+			<!-- A warm checkout already has node_modules: npm install brings it up to date instead of reinstalling it. -->
 			<id>frontend-installed</id>
 			<activation>
 				<file>
 					<exists>${basedir}/node_modules</exists>
 				</file>
 			</activation>
-			<properties>
-				<skipFrontendInstall>true</skipFrontendInstall>
-			</properties>
+			<build>
+				<plugins>
+					<plugin>
+						<groupId>com.github.eirslett</groupId>
+						<artifactId>frontend-maven-plugin</artifactId>
+						<executions>
+							<execution>
+								<id>npm-ci</id>
+								<configuration>
+									<arguments>install --no-save --prefer-offline --no-audit --no-fund</arguments>
+								</configuration>
+							</execution>
+						</executions>
+					</plugin>
+				</plugins>
+			</build>
 		</profile>
 	</profiles>
 </project>
