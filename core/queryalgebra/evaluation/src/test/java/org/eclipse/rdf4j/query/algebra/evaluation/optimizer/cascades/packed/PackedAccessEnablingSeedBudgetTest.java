@@ -38,8 +38,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedAccessEnablingSeedBudgetTest {
@@ -272,11 +272,8 @@ class PackedAccessEnablingSeedBudgetTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		BindingSetAssignment unrelated = new BindingSetAssignment();
 		unrelated.setBindingNames(new LinkedHashSet<>(List.of("unrelated")));
-		QueryBindingSet first = new QueryBindingSet();
-		first.addBinding("unrelated", values.createLiteral("first"));
-		QueryBindingSet second = new QueryBindingSet();
-		second.addBinding("unrelated", values.createLiteral("second"));
-		unrelated.setBindingSets(List.of(first, second));
+		unrelated.setBindingSets(List.of(new ListBindingSet(List.of("unrelated"), values.createLiteral("first")),
+				new ListBindingSet(List.of("unrelated"), values.createLiteral("second"))));
 
 		StatementPattern type = pattern(values, "entity", "urn:seed-type", "type");
 		StatementPattern link = pattern(values, "entity", "urn:seed-link", "carrier");
@@ -802,11 +799,8 @@ class PackedAccessEnablingSeedBudgetTest {
 		StatementPattern unrelated = pattern(values, "left", "urn:unrelated", "leftValue");
 		BindingSetAssignment keys = new BindingSetAssignment();
 		keys.setBindingNames(new LinkedHashSet<>(List.of("key")));
-		QueryBindingSet first = new QueryBindingSet();
-		first.addBinding("key", values.createLiteral("first"));
-		QueryBindingSet second = new QueryBindingSet();
-		second.addBinding("key", values.createLiteral("second"));
-		keys.setBindingSets(List.of(first, second));
+		keys.setBindingSets(List.of(new ListBindingSet(List.of("key"), values.createLiteral("first")),
+				new ListBindingSet(List.of("key"), values.createLiteral("second"))));
 		StatementPattern keyed = pattern(values, "right", "urn:keyed", "key");
 		TupleExpr source = new Join(new Join(unrelated, keys), keyed);
 		PackedCostModel costs = new PackedCostModel() {
@@ -1097,11 +1091,9 @@ class PackedAccessEnablingSeedBudgetTest {
 	private static BindingSetAssignment finiteValues(SimpleValueFactory values, String bindingName) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingNames(new LinkedHashSet<>(List.of(bindingName)));
-		QueryBindingSet first = new QueryBindingSet();
-		first.addBinding(bindingName, values.createIRI("urn:" + bindingName + ":first"));
-		QueryBindingSet second = new QueryBindingSet();
-		second.addBinding(bindingName, values.createIRI("urn:" + bindingName + ":second"));
-		assignment.setBindingSets(List.of(first, second));
+		assignment.setBindingSets(List.of(
+				new ListBindingSet(List.of(bindingName), values.createIRI("urn:" + bindingName + ":first")),
+				new ListBindingSet(List.of(bindingName), values.createIRI("urn:" + bindingName + ":second"))));
 		return assignment;
 	}
 

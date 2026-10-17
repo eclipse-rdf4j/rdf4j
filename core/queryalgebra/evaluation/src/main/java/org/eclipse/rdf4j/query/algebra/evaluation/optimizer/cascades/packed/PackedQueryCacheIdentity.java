@@ -104,8 +104,16 @@ final class PackedQueryCacheIdentity {
 			sink.append(query.relPayload(relationId));
 			sink.append(query.relSemanticScope(relationId));
 			sink.append(query.relExecutionDomain(relationId));
+			sink.append(query.relOccurrence(relationId));
 			appendChildren(sink, query, relationId, IdentityRowKind.RELATION);
 			sink.append(query.relMetadataFlags(relationId));
+			sink.append(query.relRequiredInputNames(relationId));
+			sink.append(query.relProtectedInputNames(relationId));
+			sink.append(query.relNullableInputNames(relationId));
+			sink.append(query.relIndependentOutputNames(relationId));
+			sink.append(query.relReplaySafety(relationId));
+			sink.append(query.relSourceFirst(relationId));
+			sink.append(query.relSourceLast(relationId));
 			sink.append(query.isOriginalBindingSetRelation(relationId) ? 1L : 0L);
 		}
 

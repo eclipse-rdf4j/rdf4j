@@ -81,7 +81,7 @@ final class FactorCostCacheKey {
 		}
 		if (factor instanceof Filter filter) {
 			return UnaryFactorFingerprint.of("Filter", factorFingerprint(filter.getArg(), scope),
-					queryModelFingerprint(filter.getCondition(), scope));
+					queryModelFingerprint(filter.getCondition(), scope), filter.getRequiredInputBindingNames());
 		}
 		if (factor instanceof LeftJoin leftJoin) {
 			return BinaryFactorFingerprint.of("LeftJoin", factorFingerprint(leftJoin.getLeftArg(), scope),
@@ -99,8 +99,7 @@ final class FactorCostCacheKey {
 		if (factor != null && scope != null) {
 			return StructuralQueryModelFingerprint.of(factor);
 		}
-		return FallbackFactorFingerprint.of(factor == null ? "null" : factor.getClass().getName(),
-				factor == null ? "" : factor.toString());
+		return FallbackFactorFingerprint.of(factor);
 	}
 
 	private static Object queryModelFingerprint(QueryModelNode node, LmdbEstimatorOptimizationScope scope) {
@@ -108,7 +107,7 @@ final class FactorCostCacheKey {
 			return null;
 		}
 		return scope == null
-				? FallbackFactorFingerprint.of(node.getClass().getName(), node.toString())
+				? FallbackFactorFingerprint.of(node)
 				: StructuralQueryModelFingerprint.of(node);
 	}
 
@@ -239,9 +238,14 @@ final class FactorCostCacheKey {
 	private record BindingSetAssignmentFactorFingerprint(int hash, Set<String> bindingNames,
 			List<List<BindingFingerprint>> bindingRows) {
 
-		private static BindingSetAssignmentFactorFingerprint of(BindingSetAssignment bindingSetAssignment) {
+		private static Object of(BindingSetAssignment bindingSetAssignment) {
 			List<List<BindingFingerprint>> bindingRows = new ArrayList<>();
 			Iterable<BindingSet> bindingSets = bindingSetAssignment.getBindingSets();
+			if (bindingSets != null && !bindingSetAssignment.hasRepeatableBindingSets()) {
+				// Available headers do not describe unknown rows. Keep different sources distinct without opening them.
+				return new UnknownBindingSetSourceFingerprint(Set.copyOf(bindingSetAssignment.getBindingNames()),
+						new IdentityFingerprint(bindingSets));
+			}
 			if (bindingSets != null) {
 				for (BindingSet bindingSet : bindingSets) {
 					List<String> names = new ArrayList<>(bindingSet.getBindingNames());
@@ -265,13 +269,32 @@ final class FactorCostCacheKey {
 		}
 	}
 
-	private record UnaryFactorFingerprint(int hash, String operator, Object arg, Object condition) {
+	private record UnknownBindingSetSourceFingerprint(Set<String> bindingNames, IdentityFingerprint source) {
+	}
 
-		private static UnaryFactorFingerprint of(String operator, Object arg, Object condition) {
+	private record IdentityFingerprint(Object value) {
+		@Override
+		public int hashCode() {
+			return System.identityHashCode(value);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other || other instanceof IdentityFingerprint that && value == that.value;
+		}
+	}
+
+	private record UnaryFactorFingerprint(int hash, String operator, Object arg, Object condition,
+			Set<String> requiredInputs) {
+
+		private static UnaryFactorFingerprint of(String operator, Object arg, Object condition,
+				Set<String> requiredInputs) {
+			Set<String> inputs = Set.copyOf(requiredInputs);
 			int hash = nullableHash(operator);
 			hash = hashStep(hash, arg);
 			hash = hashStep(hash, condition);
-			return new UnaryFactorFingerprint(hash, operator, arg, condition);
+			hash = hashStep(hash, inputs);
+			return new UnaryFactorFingerprint(hash, operator, arg, condition, inputs);
 		}
 
 		@Override
@@ -301,12 +324,15 @@ final class FactorCostCacheKey {
 	 * operator shape and hash-safe value kinds because RDF values may defer lexical materialization and make
 	 * {@link Value#hashCode()} storage-dependent. Structural equality disambiguates every hash collision.
 	 */
-	private record StructuralQueryModelFingerprint(int hash, QueryModelNode node) {
+	private record StructuralQueryModelFingerprint(int hash, QueryModelNode node,
+			List<FilterInputContract> requiredInputs) {
 
-		private static StructuralQueryModelFingerprint of(QueryModelNode node) {
+		private static Object of(QueryModelNode node) {
 			StructuralHashVisitor visitor = new StructuralHashVisitor();
 			node.visit(visitor);
-			return new StructuralQueryModelFingerprint(visitor.hash(), node);
+			// Algebra equality delegates to source equality; opaque source implementations may inspect their rows.
+			return visitor.hasUnknownBindingSource ? new IdentityFingerprint(node)
+					: new StructuralQueryModelFingerprint(visitor.hash(), node, visitor.snapshot());
 		}
 
 		@Override
@@ -318,16 +344,49 @@ final class FactorCostCacheKey {
 		public boolean equals(Object other) {
 			return this == other || other instanceof StructuralQueryModelFingerprint that
 					&& hash == that.hash
+					&& requiredInputs.equals(that.requiredInputs)
 					&& node.equals(that.node);
 		}
 	}
 
-	private static final class StructuralHashVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	/** Physical work identities supplement logical equality without changing the public algebra contract. */
+	private record FilterInputContract(int position, Set<String> names) {
+	}
 
-		private int hash = 1;
+	private static class RequiredInputVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+
+		private int position;
+		private List<FilterInputContract> contracts = List.of();
+
+		protected final void captureNode(QueryModelNode node) {
+			int ordinal = position++;
+			if (node instanceof Filter filter && !filter.getRequiredInputBindingNames().isEmpty()) {
+				if (contracts.isEmpty()) {
+					contracts = new ArrayList<>();
+				}
+				contracts.add(new FilterInputContract(ordinal, Set.copyOf(filter.getRequiredInputBindingNames())));
+			}
+		}
 
 		@Override
 		protected void meetNode(QueryModelNode node) {
+			captureNode(node);
+			super.meetNode(node);
+		}
+
+		final List<FilterInputContract> snapshot() {
+			return List.copyOf(contracts);
+		}
+	}
+
+	private static final class StructuralHashVisitor extends RequiredInputVisitor {
+
+		private int hash = 1;
+		private boolean hasUnknownBindingSource;
+
+		@Override
+		protected void meetNode(QueryModelNode node) {
+			captureNode(node);
 			hash = hashStep(hash, node.getClass().getName());
 			if (node instanceof Var var) {
 				hash = hashStep(hash, var.getName());
@@ -337,7 +396,11 @@ final class FactorCostCacheKey {
 			} else if (node instanceof ValueConstant constant) {
 				hash = hashStep(hash, valueFingerprint(constant.getValue()));
 			} else if (node instanceof BindingSetAssignment assignment) {
+				hasUnknownBindingSource |= assignment.getBindingSets() != null
+						&& !assignment.hasRepeatableBindingSets();
 				hash = hashStep(hash, BindingSetAssignmentFactorFingerprint.of(assignment));
+			} else if (node instanceof Filter filter) {
+				hash = hashStep(hash, filter.getRequiredInputBindingNames());
 			}
 			node.visitChildren(this);
 			hash = hashStep(hash, "end");
@@ -368,11 +431,21 @@ final class FactorCostCacheKey {
 					retainedBytes = saturatedAdd(retainedBytes, stringBytes(bindingName));
 				}
 				Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+				if (bindingSets != null && !assignment.hasRepeatableBindingSets()) {
+					// An opaque retained source has no measurable row bound and cannot fit a bounded persistent cache.
+					retainedBytes = Long.MAX_VALUE;
+					return;
+				}
 				if (bindingSets != null) {
 					for (BindingSet bindingSet : bindingSets) {
 						retainedBytes = saturatedAdd(retainedBytes, 128L);
 						retainedBytes = saturatedAdd(retainedBytes, 256L * bindingSet.size());
 					}
+				}
+			} else if (node instanceof Filter filter && !filter.getRequiredInputBindingNames().isEmpty()) {
+				retainedBytes = saturatedAdd(retainedBytes, 64L + 32L * filter.getRequiredInputBindingNames().size());
+				for (String name : filter.getRequiredInputBindingNames()) {
+					retainedBytes = saturatedAdd(retainedBytes, stringBytes(name));
 				}
 			}
 			super.meetNode(node);
@@ -383,12 +456,21 @@ final class FactorCostCacheKey {
 		}
 	}
 
-	private record FallbackFactorFingerprint(int hash, String type, String tree) {
+	private record FallbackFactorFingerprint(int hash, String type, String tree,
+			List<FilterInputContract> requiredInputs) {
 
-		private static FallbackFactorFingerprint of(String type, String tree) {
+		private static FallbackFactorFingerprint of(QueryModelNode node) {
+			String type = node == null ? "null" : node.getClass().getName();
+			String tree = node == null ? "" : node.toString();
+			RequiredInputVisitor visitor = new RequiredInputVisitor();
+			if (node != null) {
+				node.visit(visitor);
+			}
+			List<FilterInputContract> inputs = visitor.snapshot();
 			int hash = nullableHash(type);
 			hash = hashStep(hash, tree);
-			return new FallbackFactorFingerprint(hash, type, tree);
+			hash = hashStep(hash, inputs);
+			return new FallbackFactorFingerprint(hash, type, tree, inputs);
 		}
 
 		@Override

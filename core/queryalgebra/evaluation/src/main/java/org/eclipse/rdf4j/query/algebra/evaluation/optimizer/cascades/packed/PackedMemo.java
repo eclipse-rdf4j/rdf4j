@@ -222,6 +222,13 @@ final class PackedMemo implements AutoCloseable {
 				: logicalOverlay.childCount(logicalExpressionId - baseLogicalExpressionCount);
 	}
 
+	int logicalOccurrenceId(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount
+				? query.relOccurrence(logicalExpressionId)
+				: logicalOverlay.occurrenceId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
 	int logicalChildGroupId(int logicalExpressionId, int childOrdinal) {
 		checkLogicalExpressionId(logicalExpressionId);
 		return logicalExpressionId <= baseLogicalExpressionCount
@@ -236,8 +243,17 @@ final class PackedMemo implements AutoCloseable {
 	int addLogicalAlternative(int targetGroupId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		checkGroupId(targetGroupId);
+		int original = firstLogicalByGroup[targetGroupId];
+		return addLogicalAlternative(targetGroupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				original == 0 ? 0 : logicalOccurrenceId(original), childGroupIds, childOffset, childCount);
+	}
+
+	int addLogicalAlternative(int targetGroupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		checkGroupId(targetGroupId);
 		checkChildGroups(childGroupIds, childOffset, childCount);
-		int existing = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+		int existing = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
 			if (query.relGroup(existing) != targetGroupId) {
@@ -251,7 +267,7 @@ final class PackedMemo implements AutoCloseable {
 		PackedExpressionInterner overlay = ensureLogicalOverlay();
 		int overlaySize = overlay.size();
 		int overlayId = overlay.internLogicalIfSameGroup(targetGroupId, operatorTag, payloadId, semanticScopeId,
-				executionDomainId, childGroupIds, childOffset, childCount);
+				executionDomainId, occurrenceId, childGroupIds, childOffset, childCount);
 		if (overlayId == 0) {
 			return 0;
 		}
@@ -271,7 +287,8 @@ final class PackedMemo implements AutoCloseable {
 			RuleApplicabilityResult result) {
 		long proofMask = validateRuleApplicability(sourceExpressionId, result);
 		int alternativeId = addLogicalAlternative(logicalGroupId(sourceExpressionId), operatorTag, payloadId,
-				semanticScopeId, executionDomainId, childGroupIds, childOffset, childCount);
+				semanticScopeId, executionDomainId, logicalOccurrenceId(sourceExpressionId), childGroupIds, childOffset,
+				childCount);
 		if (alternativeId > baseLogicalExpressionCount) {
 			addLogicalRuleMask(alternativeId, logicalRuleMask(sourceExpressionId) | proofMask);
 		}
@@ -298,8 +315,15 @@ final class PackedMemo implements AutoCloseable {
 
 	int addCanonicalLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int[] childGroupIds, int childOffset, int childCount) {
+		return addCanonicalLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, 0, childGroupIds,
+				childOffset, childCount);
+	}
+
+	int addCanonicalLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
 		checkChildGroups(childGroupIds, childOffset, childCount);
-		int existing = findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+		int existing = findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
 			return existing;
@@ -307,7 +331,7 @@ final class PackedMemo implements AutoCloseable {
 		int newGroupId = groupCount + 1;
 		ensureGroupCapacity(newGroupId);
 		int overlayId = ensureLogicalOverlay().internLogical(newGroupId, operatorTag, payloadId, semanticScopeId,
-				executionDomainId, childGroupIds, childOffset, childCount);
+				executionDomainId, occurrenceId, childGroupIds, childOffset, childCount);
 		groupCount = newGroupId;
 		int logicalExpressionId = baseLogicalExpressionCount + overlayId;
 		linkLogical(newGroupId, logicalExpressionId);
@@ -695,12 +719,16 @@ final class PackedMemo implements AutoCloseable {
 							seed.structuralLogicalOperatorTag(ordinal),
 							seed.structuralLogicalPayloadId(ordinal),
 							seed.structuralLogicalSemanticScopeId(ordinal),
-							seed.structuralLogicalExecutionDomainId(ordinal), childGroupIds, 0, childCount);
+							seed.structuralLogicalExecutionDomainId(ordinal),
+							seed.structuralLogicalOccurrenceId(ordinal),
+							childGroupIds, 0, childCount);
 				} else if (targetGroupId == groupCount + 1) {
 					logicalExpressionId = addCanonicalLogical(seed.structuralLogicalOperatorTag(ordinal),
 							seed.structuralLogicalPayloadId(ordinal),
 							seed.structuralLogicalSemanticScopeId(ordinal),
-							seed.structuralLogicalExecutionDomainId(ordinal), childGroupIds, 0, childCount);
+							seed.structuralLogicalExecutionDomainId(ordinal),
+							seed.structuralLogicalOccurrenceId(ordinal),
+							childGroupIds, 0, childCount);
 				} else {
 					throw new PackedMemoInvariantException(
 							"checkpoint logical group topology skips group " + targetGroupId);
@@ -730,6 +758,7 @@ final class PackedMemo implements AutoCloseable {
 				|| logicalPayloadId(logicalExpressionId) != seed.structuralLogicalPayloadId(ordinal)
 				|| logicalSemanticScopeId(logicalExpressionId) != seed.structuralLogicalSemanticScopeId(ordinal)
 				|| logicalExecutionDomainId(logicalExpressionId) != seed.structuralLogicalExecutionDomainId(ordinal)
+				|| logicalOccurrenceId(logicalExpressionId) != seed.structuralLogicalOccurrenceId(ordinal)
 				|| logicalChildCount(logicalExpressionId) != seed.structuralLogicalChildCount(ordinal)
 				|| logicalRuleMask(logicalExpressionId) != seed.structuralLogicalRuleMask(ordinal)) {
 			return false;
@@ -748,6 +777,7 @@ final class PackedMemo implements AutoCloseable {
 				|| logicalPayloadId(logicalExpressionId) != seed.logicalPayloadId(recipeId)
 				|| logicalSemanticScopeId(logicalExpressionId) != seed.logicalSemanticScopeId(recipeId)
 				|| logicalExecutionDomainId(logicalExpressionId) != seed.logicalExecutionDomainId(recipeId)
+				|| logicalOccurrenceId(logicalExpressionId) != seed.logicalOccurrenceId(recipeId)
 				|| logicalChildCount(logicalExpressionId) != seed.logicalChildCount(recipeId)
 				|| logicalRuleMask(logicalExpressionId) != seed.logicalRuleMask(recipeId)) {
 			return false;
@@ -2474,8 +2504,9 @@ final class PackedMemo implements AutoCloseable {
 	}
 
 	private int findLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
-			int[] childGroupIds, int childOffset, int childCount) {
+			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
 		int baseExpressionId = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId,
+				occurrenceId,
 				childGroupIds, childOffset, childCount);
 		if (baseExpressionId != 0) {
 			return baseExpressionId;
@@ -2484,7 +2515,7 @@ final class PackedMemo implements AutoCloseable {
 			return 0;
 		}
 		int overlayId = logicalOverlay.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId,
-				childGroupIds, childOffset, childCount);
+				occurrenceId, childGroupIds, childOffset, childCount);
 		return overlayId == 0 ? 0 : baseLogicalExpressionCount + overlayId;
 	}
 

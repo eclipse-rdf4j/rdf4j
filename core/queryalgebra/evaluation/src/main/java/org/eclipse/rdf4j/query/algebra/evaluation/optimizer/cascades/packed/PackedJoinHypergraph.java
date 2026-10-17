@@ -40,6 +40,54 @@ final class PackedJoinHypergraph {
 	private int[] nextEdgeIncidences;
 	private int edgeIncidenceCount;
 	private long[] simpleSubsetConnectivity;
+	private int[] inputConsumers = new int[4];
+	private int[][] inputProviders = new int[4][];
+	private int inputRequirementCount;
+
+	void addInputRequirement(int consumer, int[] providers) {
+		if (providers.length == 0) {
+			return;
+		}
+		if (inputRequirementCount == inputConsumers.length) {
+			inputConsumers = Arrays.copyOf(inputConsumers, inputConsumers.length << 1);
+			inputProviders = Arrays.copyOf(inputProviders, inputProviders.length << 1);
+		}
+		inputConsumers[inputRequirementCount] = consumer;
+		inputProviders[inputRequirementCount++] = providers.clone();
+	}
+
+	boolean allowsAppend(long prefix, int candidate) {
+		for (int requirement = 0; requirement < inputRequirementCount; requirement++) {
+			int consumer = inputConsumers[requirement];
+			boolean supplied = false;
+			boolean suppliedByCandidate = false;
+			for (int provider : inputProviders[requirement]) {
+				supplied |= (prefix & 1L << provider) != 0;
+				suppliedByCandidate |= provider == candidate;
+			}
+			if (consumer == candidate && !supplied
+					|| (prefix & 1L << consumer) != 0 && !supplied && suppliedByCandidate) {
+				return false;
+			}
+		}
+		return (prefix & 1L << candidate) == 0;
+	}
+
+	int inputRequirementCount() {
+		return inputRequirementCount;
+	}
+
+	int inputRequirementConsumer(int requirement) {
+		return inputConsumers[requirement];
+	}
+
+	int inputRequirementProviderCount(int requirement) {
+		return inputProviders[requirement].length;
+	}
+
+	int inputRequirementProvider(int requirement, int ordinal) {
+		return inputProviders[requirement][ordinal];
+	}
 
 	PackedJoinHypergraph(int nodeCount) {
 		this(nodeCount, null, true);

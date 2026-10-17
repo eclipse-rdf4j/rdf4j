@@ -102,6 +102,13 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	 */
 	private static final long PINGDELAY = TimeUnit.MILLISECONDS.convert(Protocol.DEFAULT_TIMEOUT, TimeUnit.SECONDS) / 2;
 
+	/**
+	 * An explanation request spends its whole max query time running the query and only then stops it and writes the
+	 * plan it has collected, flagged as timed out. The client waits this much longer than the max query time for that
+	 * partial plan.
+	 */
+	private static final Duration EXPLANATION_RESPONSE_GRACE = Duration.ofSeconds(30);
+
 	private final Logger logger = LoggerFactory.getLogger(RDF4JProtocolSession.class);
 
 	private String serverURL;
@@ -894,6 +901,11 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		Objects.requireNonNull(level, "Explanation level may not be null");
 		HttpRequest queryMethod = getQueryMethod(ql, query, baseURI, dataset, includeInferred, maxQueryTime, bindings);
 		HttpRequest explainMethod = withQueryParam(queryMethod, Protocol.EXPLAIN_PARAM_NAME, level.name());
+		if (maxQueryTime > 0) {
+			explainMethod = HttpRequest.copyOf(explainMethod, explainMethod.getUri())
+					.responseTimeout(Duration.ofSeconds(maxQueryTime).plus(EXPLANATION_RESPONSE_GRACE))
+					.build();
+		}
 		String explainRequestId = getTransactionURL() == null ? QueryExplanationRequestContext.getExplainRequestId()
 				: null;
 		if (explainRequestId != null) {

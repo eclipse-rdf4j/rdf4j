@@ -244,7 +244,12 @@ public final class PackedQueryView {
 			factors.add(factor);
 			bindingNames.addAll(bindingNames(factor));
 			if (factor instanceof BindingSetAssignment assignment) {
-				for (BindingSet bindingSet : assignment.getBindingSets()) {
+				PackedQueryCodec.requireRepeatableBindingSets(assignment, "prefix relation " + relationId);
+				Iterable<BindingSet> rows = assignment.getBindingSets();
+				if (rows == null) {
+					continue;
+				}
+				for (BindingSet bindingSet : rows) {
 					for (String name : bindingSet.getBindingNames()) {
 						Value value = bindingSet.getValue(name);
 						if (value != null) {

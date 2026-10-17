@@ -17,11 +17,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_NOOVERWRITE;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_put;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,6 +35,7 @@ import java.nio.ByteOrder;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -187,16 +190,15 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 	}
 
 	// REPRO: TripleStore#acknowledgeFrontierMutationsThrough commits through an independent LMDB write transaction that
-	// is not serialised with an in-flight two-phase (record-cache / auto-grow) commit. Landing between the first
-	// durable
-	// batch and the record-cache replay it prunes the covered rows and records the acknowledgement, but the replay then
+	// can commit after a capacity failure aborts the main writer and before its native mutation journal is replayed.
+	// The acknowledgement prunes covered rows and records its coverage, but replaying with stale counters then
 	// resumes from the writer's stale in-memory journal counters and its final metadata write reverts the
 	// acknowledgement and claims retained rows that were already deleted (the next acknowledgement fails as "corrupt").
 	@Test
 	void acknowledgementLandingInsideAutoGrowCommitWindowMustNotBeLostOrCorruptRetainedCount(@TempDir Path directory)
 			throws Exception {
 		LmdbStoreConfig config = config(FrontierEstimatorMode.AUTHORITATIVE);
-		try (TripleStore store = new TripleStore(directory.toFile(), config, null)) {
+		try (ReplayJournalTripleStore store = new ReplayJournalTripleStore(directory.toFile(), config)) {
 			store.startTransaction();
 			for (int index = 0; index < 50; index++) {
 				assertTrue(store.storeTriple(1_001L + index, 1L, 2_001L + index, 0L, true));
@@ -204,8 +206,12 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 			store.commit();
 			assertEquals(50L, journalState(store).latestSequence());
 
-			// Route the next commit through the two-phase record-cache path: durable batch, map resize, replay.
-			forceRecordCache(store, directory);
+			CountDownLatch writerAborted = new CountDownLatch(1);
+			CountDownLatch resumeReplay = new CountDownLatch(1);
+			store.failNextCommit(() -> {
+				writerAborted.countDown();
+				awaitLatch(resumeReplay, "the acknowledgement before native replay");
+			});
 			store.startTransaction();
 			for (int index = 0; index < 10; index++) {
 				assertTrue(store.storeTriple(3_001L + index, 1L, 4_001L + index, 0L, true));
@@ -232,22 +238,18 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 					commitFailure.set(failure);
 				}
 			}, "frontier-journal-committer");
-			Txn guard = store.getTxnManager().createReadTxn();
 			try {
-				// Holding the tracked txn monitor parks the committer inside TxnManager#deactivate(): after its first
-				// durable batch released the LMDB writer mutex and before the record-cache replay resumes.
-				synchronized (guard) {
-					committer.start();
-					assertTrue(awaitPersistedAcknowledgement(store, journalDbi, 50L, 15_000L),
-							"the acknowledgement must commit while the committer is parked between its durable batches");
-					assertTrue(awaitFrame(acknowledger, TripleStore.class.getName(),
-							"resetReadersAfterIndependentWrite", 10_000L),
-							"the acknowledger must have released the LMDB writer mutex before the committer resumes");
-				}
+				committer.start();
+				assertTrue(writerAborted.await(10, TimeUnit.SECONDS), "the failed commit must consume its writer");
+				assertTrue(awaitPersistedAcknowledgement(store, journalDbi, 50L, 15_000L),
+						"the acknowledgement must commit after native abort and before journal replay");
+				assertTrue(awaitFrame(acknowledger, TripleStore.class.getName(),
+						"resetReadersAfterIndependentWrite", 10_000L),
+						"the acknowledger must release its native writer before replay resumes");
 			} finally {
+				resumeReplay.countDown();
 				committer.join(TimeUnit.SECONDS.toMillis(30L));
 				acknowledger.join(TimeUnit.SECONDS.toMillis(30L));
-				guard.close();
 			}
 			assertFalse(committer.isAlive(), "committer must finish");
 			assertFalse(acknowledger.isAlive(), "acknowledger must finish");
@@ -257,6 +259,7 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 			if (acknowledgementFailure.get() != null) {
 				throw new AssertionError("acknowledgement failed", acknowledgementFailure.get());
 			}
+			assertEquals(1, store.replays, "the complete native journal must actually replay once");
 
 			JournalState state = journalState(store);
 			long unavailableThrough = Math.max(state.gapThroughSequence(), state.acknowledgedThroughSequence());
@@ -319,18 +322,19 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 		}
 	}
 
-	// REINFORCE: the record-cache replay path (auto-grow) records the OFF-mode invalidation coordinate exactly once for
+	// REINFORCE: native mutation replay records the OFF-mode invalidation coordinate exactly once for
 	// the whole transaction, keeps the statements, and leaves no raw journal rows behind.
 	@Test
 	void offModeRecordCacheReplayAdvancesStampOnceAndRetainsNoRows(@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = config(FrontierEstimatorMode.OFF);
-		try (TripleStore store = new TripleStore(directory.toFile(), config, null)) {
+		try (ReplayJournalTripleStore store = new ReplayJournalTripleStore(directory.toFile(), config)) {
 			store.startTransaction();
 			assertTrue(store.storeTriple(101L, 201L, 301L, 0L, true));
 			store.commit();
 			assertEquals(1L, store.latestFrontierMutationSequence());
 
-			forceRecordCache(store, directory);
+			store.failNextCommit(() -> {
+			});
 			store.startTransaction();
 			for (int index = 0; index < 5; index++) {
 				assertTrue(store.storeTriple(111L + index, 201L, 311L + index, 0L, true));
@@ -338,6 +342,7 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 			store.commit();
 
 			JournalState state = journalState(store);
+			assertEquals(1, store.replays);
 			assertEquals(2L, state.latestSequence());
 			assertEquals(2L, state.gapThroughSequence());
 			assertEquals(0L, state.retainedMutationCount());
@@ -428,11 +433,11 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 	}
 
 	// REINFORCE: deletions and explicit-over-inferred promotions are journaled with the right polarity and identity on
-	// both the direct write path and the record-cache replay path.
+	// both the direct write path and the native mutation replay path.
 	@Test
 	void deletionsAndPromotionsAreJournaledOnDirectAndRecordCachePaths(@TempDir Path directory) throws Exception {
 		LmdbStoreConfig config = config(FrontierEstimatorMode.AUTHORITATIVE);
-		try (TripleStore store = new TripleStore(directory.toFile(), config, null)) {
+		try (ReplayJournalTripleStore store = new ReplayJournalTripleStore(directory.toFile(), config)) {
 			store.startTransaction();
 			assertTrue(store.storeTriple(11L, 22L, 33L, 0L, true));
 			assertTrue(store.storeTriple(12L, 22L, 34L, 44L, true));
@@ -451,13 +456,15 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 			assertMutation(direct.get(1), false, false, 13L, 22L, 35L, 0L);
 			assertMutation(direct.get(2), true, true, 13L, 22L, 35L, 0L);
 
-			forceRecordCache(store, directory);
+			store.failNextCommit(() -> {
+			});
 			store.startTransaction();
 			store.removeTriplesByContext(12L, 22L, 34L, 44L, true, quad -> {
 			});
 			store.commit();
 
 			List<FrontierMutation> replayed = store.readFrontierMutationsAfter(6L, 100);
+			assertEquals(1, store.replays);
 			assertEquals(List.of(7L), sequences(replayed));
 			assertMutation(replayed.get(0), false, true, 12L, 22L, 34L, 44L);
 			assertEquals(7L, journalState(store).retainedMutationCount());
@@ -609,12 +616,43 @@ class TripleStoreFrontierMutationJournalLifecycleTest {
 		return count;
 	}
 
-	private static void forceRecordCache(TripleStore store, Path directory) throws Exception {
-		Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
-		recordCacheField.setAccessible(true);
-		File cacheDir = directory.resolve("forced-record-cache-" + System.nanoTime()).toFile();
-		assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
-		recordCacheField.set(store, new TxnRecordCache(cacheDir));
+	private static void awaitLatch(CountDownLatch latch, String description) {
+		try {
+			assertTrue(latch.await(20, TimeUnit.SECONDS), "Timed out waiting for " + description);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("Interrupted while waiting for " + description, interrupted);
+		}
+	}
+
+	private static final class ReplayJournalTripleStore extends TripleStore {
+		private Runnable afterAbort;
+		private int replays;
+
+		private ReplayJournalTripleStore(File directory, LmdbStoreConfig config) throws IOException {
+			super(directory, config, null);
+		}
+
+		private void failNextCommit(Runnable afterAbort) {
+			this.afterAbort = afterAbort;
+		}
+
+		@Override
+		int commitWriteTransaction(long transaction) {
+			Runnable failure = afterAbort;
+			if (failure != null) {
+				afterAbort = null;
+				mdb_txn_abort(transaction);
+				failure.run();
+				return MDB_MAP_FULL;
+			}
+			return super.commitWriteTransaction(transaction);
+		}
+
+		@Override
+		protected void afterMapGrowthReplay() {
+			replays++;
+		}
 	}
 
 	private static int journalDbi(TripleStore store) throws Exception {

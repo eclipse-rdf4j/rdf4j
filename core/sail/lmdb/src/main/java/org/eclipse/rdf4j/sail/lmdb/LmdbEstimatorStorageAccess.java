@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
@@ -75,7 +76,7 @@ final class LmdbEstimatorStorageAccess {
 	}
 
 	long dataRevision() {
-		return Math.max(0L, tripleStore == null ? 0L : tripleStore.getDataRevision());
+		return Math.max(0L, tripleStore == null ? 0L : tripleStore.planningDataRevision());
 	}
 
 	boolean mayHaveInferred() {
@@ -103,6 +104,27 @@ final class LmdbEstimatorStorageAccess {
 	 */
 	TripleStore.PlanningReadPin pinPlanningReads(TxnManager.Txn txn) {
 		return tripleStore == null || txn == null ? TripleStore.PlanningReadPin.NONE : tripleStore.pinPlanningTxn(txn);
+	}
+
+	TripleStore.PlanningReadPin pinPlanningReads(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		TripleStore.PlanningReadPin triples = pinPlanningReads(txn);
+		if (triples == TripleStore.PlanningReadPin.NONE || values == null) {
+			return triples;
+		}
+		SailClosable dictionary;
+		try {
+			dictionary = valueStore.pinPlanningReads(values);
+		} catch (RuntimeException | Error failure) {
+			triples.close();
+			throw failure;
+		}
+		return () -> {
+			try {
+				triples.close();
+			} finally {
+				dictionary.close();
+			}
+		};
 	}
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,

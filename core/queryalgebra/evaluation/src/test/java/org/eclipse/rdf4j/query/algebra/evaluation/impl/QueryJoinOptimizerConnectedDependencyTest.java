@@ -101,6 +101,123 @@ class QueryJoinOptimizerConnectedDependencyTest {
 	}
 
 	@Test
+	void apiEndpointCannotBypassItsOptionalRhsProvider() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { ?s <urn:endpoint> ?endpoint . "
+				+ "SERVICE ?endpoint { ?s <urn:remote> ?remote } } }";
+		MapBindingSet incoming = new MapBindingSet();
+		incoming.addBinding("endpoint", iri("urn:test-service"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:endpoint", "urn:test-service")));
+		RecordingServiceResolver rawResolver = new RecordingServiceResolver();
+		List<BindingSet> expected = evaluateWithoutOptimization(query, source, rawResolver, incoming);
+		assertThat(bindingRows(expected)).containsExactly(Map.of(
+				"s", "urn:s1",
+				"endpoint", "urn:test-service",
+				"remote", "urn:remote-result"));
+		assertThat(rawResolver.requestedUrls).containsExactly("urn:test-service");
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof Service) {
+					return 1;
+				}
+				if (expression instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+						&& iri("urn:endpoint").equals(pattern.getPredicateVar().getValue())) {
+					return 1_000_000;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		new QueryJoinOptimizer(statistics, source).optimize(parsed.getTupleExpr(), null, incoming);
+		List<String> optimizedOrder = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				if (pattern.getPredicateVar().hasValue()
+						&& iri("urn:endpoint").equals(pattern.getPredicateVar().getValue())) {
+					optimizedOrder.add("endpoint");
+				}
+				super.meet(pattern);
+			}
+
+			@Override
+			public void meet(Service service) {
+				optimizedOrder.add("service");
+				super.meet(service);
+			}
+		});
+		assertThat(optimizedOrder)
+				.as("OPTIONAL withholds the API endpoint, so its RHS producer must precede SERVICE")
+				.containsExactly("endpoint", "service");
+		RecordingServiceResolver optimizedResolver = new RecordingServiceResolver();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, optimizedResolver);
+		List<BindingSet> results = collect(strategy.evaluate(parsed.getTupleExpr(), incoming));
+
+		assertThat(bindingRows(results)).containsExactlyElementsOf(bindingRows(expected));
+		assertThat(optimizedResolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void apiEndpointCannotBypassItsOptionalRhsProviderWhenValuesDiffer() throws Exception {
+		String query = "SELECT ?s ?endpoint ?remote WHERE { VALUES ?s { <urn:s1> } "
+				+ "OPTIONAL { ?s <urn:endpoint> ?endpoint . "
+				+ "SERVICE ?endpoint { ?s <urn:remote> ?remote } } }";
+		MapBindingSet incoming = new MapBindingSet();
+		incoming.addBinding("endpoint", iri("urn:api-service"));
+		FiniteTripleSource source = new FiniteTripleSource(List.of(
+				statement("urn:s1", "urn:endpoint", "urn:test-service")));
+		RecordingServiceResolver rawResolver = new RecordingServiceResolver();
+		List<BindingSet> expected = evaluateWithoutOptimization(query, source, rawResolver, incoming);
+		assertThat(bindingRows(expected)).isEmpty();
+		assertThat(rawResolver.requestedUrls).containsExactly("urn:test-service");
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		EvaluationStatistics statistics = new EvaluationStatistics() {
+			@Override
+			public double getCardinality(TupleExpr expression) {
+				if (expression instanceof Service) {
+					return 1;
+				}
+				if (expression instanceof StatementPattern pattern && pattern.getPredicateVar().hasValue()
+						&& iri("urn:endpoint").equals(pattern.getPredicateVar().getValue())) {
+					return 1_000_000;
+				}
+				return super.getCardinality(expression);
+			}
+		};
+		new QueryJoinOptimizer(statistics, source).optimize(parsed.getTupleExpr(), null, incoming);
+		List<String> optimizedOrder = new ArrayList<>();
+		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				if (pattern.getPredicateVar().hasValue()
+						&& iri("urn:endpoint").equals(pattern.getPredicateVar().getValue())) {
+					optimizedOrder.add("endpoint");
+				}
+				super.meet(pattern);
+			}
+
+			@Override
+			public void meet(Service service) {
+				optimizedOrder.add("service");
+				super.meet(service);
+			}
+		});
+		assertThat(optimizedOrder)
+				.as("the OPTIONAL RHS must produce its value before the variable SERVICE is evaluated")
+				.containsExactly("endpoint", "service");
+
+		RecordingServiceResolver optimizedResolver = new RecordingServiceResolver();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, optimizedResolver);
+		List<BindingSet> results = collect(strategy.evaluate(parsed.getTupleExpr(), incoming));
+		assertThat(bindingRows(results)).containsExactlyElementsOf(bindingRows(expected));
+		assertThat(optimizedResolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
 	void parsedNamedGraphKeepsBothConnectedPatternsInsideTheRequestedContext() throws Exception {
 		String query = "SELECT ?s ?o ?q WHERE { GRAPH <urn:g1> { "
 				+ "?s <urn:p> ?o . ?o <urn:q> ?q } }";
@@ -234,6 +351,26 @@ class QueryJoinOptimizerConnectedDependencyTest {
 				"endpoint", "urn:test-service",
 				"remote", "urn:remote-result"));
 		assertThat(resolver.requestedUrls).containsExactly("urn:test-service");
+	}
+
+	@Test
+	void queryJoinOptimizerMatchesRawScopedFilterSemanticsAroundAnExtension() throws Exception {
+		String query = "SELECT ?s ?o WHERE { VALUES ?s { <urn:s> } "
+				+ "{ { FILTER (?o != ?s) FILTER (NOT EXISTS { ?o ?s ?c }) "
+				+ "BIND (<urn:o> AS ?o) } } }";
+		FiniteTripleSource source = new FiniteTripleSource(List.of());
+		List<BindingSet> rawResults = evaluateWithoutOptimization(query, source, null,
+				EmptyBindingSet.getInstance());
+		assertThat(bindingRows(rawResults)).isEmpty();
+
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		new QueryJoinOptimizer(new EvaluationStatistics(), source)
+				.optimize(parsed.getTupleExpr(), null, EmptyBindingSet.getInstance());
+
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		List<BindingSet> optimizedResults = collect(
+				strategy.evaluate(parsed.getTupleExpr(), EmptyBindingSet.getInstance()));
+		assertThat(bindingRows(optimizedResults)).containsExactlyElementsOf(bindingRows(rawResults));
 	}
 
 	@Test

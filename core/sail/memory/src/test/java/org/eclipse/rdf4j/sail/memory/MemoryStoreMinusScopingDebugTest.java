@@ -113,8 +113,12 @@ public class MemoryStoreMinusScopingDebugTest {
 
 			TupleQuery tq = conn.prepareTupleQuery(QueryLanguage.SPARQL, qb);
 			try (TupleQueryResult evaluate = tq.evaluate()) {
-				assertFalse(evaluate.hasNext(),
-						"The query should not return a result: " + Arrays.toString(evaluate.stream().toArray()));
+				List<BindingSet> rows = QueryResults.asList(evaluate);
+				assertEquals(1, rows.size());
+				BindingSet row = rows.getFirst();
+				assertEquals("urn:test:subj", row.getValue("biri").stringValue());
+				assertEquals("urn:test:pred", row.getValue("p2").stringValue());
+				assertEquals(row.getValue("blank"), row.getValue("o2"));
 			}
 		}
 	}

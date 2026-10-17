@@ -15,6 +15,7 @@ import java.util.Objects;
 import java.util.Optional;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 
 /**
  * Lexically scopes a {@link QueryOperationDeadline} to the current thread. Nested scopes always retain the earliest
@@ -37,9 +38,7 @@ public final class QueryOperationContext {
 	public static Scope open(QueryOperationDeadline deadline) {
 		Objects.requireNonNull(deadline, "deadline");
 		Frame previous = CURRENT.get();
-		QueryOperationDeadline effective = previous == null
-				? deadline
-				: previous.deadline.earliest(deadline);
+		QueryOperationDeadline effective = getDeadline().map(current -> current.earliest(deadline)).orElse(deadline);
 		Frame frame = new Frame(effective, previous);
 		CURRENT.set(frame);
 		return new Scope(frame);
@@ -50,7 +49,12 @@ public final class QueryOperationContext {
 	 */
 	public static Optional<QueryOperationDeadline> getDeadline() {
 		Frame frame = CURRENT.get();
-		return frame == null ? Optional.empty() : Optional.of(frame.deadline);
+		QueryExecutionDeadline execution = QueryExecutionDeadline.current();
+		if (execution == null) {
+			return frame == null ? Optional.empty() : Optional.of(frame.deadline);
+		}
+		QueryOperationDeadline shared = QueryOperationDeadline.from(execution);
+		return Optional.of(frame == null ? shared : frame.deadline.earliest(shared));
 	}
 
 	/**
@@ -60,6 +64,10 @@ public final class QueryOperationContext {
 		Frame frame = CURRENT.get();
 		if (frame != null) {
 			frame.deadline.throwIfExpired();
+		}
+		QueryExecutionDeadline execution = QueryExecutionDeadline.current();
+		if (execution != null && execution.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
 		}
 	}
 

@@ -30,10 +30,13 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.UnaryValueOperator;
@@ -43,10 +46,32 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.junit.jupiter.api.Test;
 
 class ScalarEvaluationEffectsTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void invocationLocalTupleSnapshotPreservesEveryExistingEffectClassification() {
+		StatementPattern leaf = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		Filter nested = new Filter(leaf.clone(), new FunctionCall("RAND"));
+		Filter scalarIsland = new Filter(leaf.clone(),
+				new And(new Bound(Var.of("s")), new Exists(nested)));
+		Service service = new Service(Var.of("endpoint", VF.createIRI("urn:test:service")), leaf.clone(),
+				"?s ?p ?o .", Map.of(), null, false);
+		Join root = new Join(scalarIsland, new Join(service, new ForeignUnaryTupleExpr(leaf.clone())));
+		Map<TupleExpr, ScalarEvaluationEffects.Effect> snapshot = ScalarEvaluationEffects.tupleEffects(root);
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					assertEquals(ScalarEvaluationEffects.tupleEffect(tuple), snapshot.get(tuple));
+				}
+				super.meetNode(node);
+			}
+		});
+	}
 
 	@Test
 	void nativeAndRegisteredCoreFunctionsAreRepeatable() {

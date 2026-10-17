@@ -129,8 +129,9 @@ final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline {
 			return TripleStore.PlanningReadPin.NONE;
 		}
 		return source.unwrapDataset(LmdbPinnedReadTxnSource.class)
-				.flatMap(LmdbPinnedReadTxnSource::pinnedReadTxn)
-				.map(runtime::pinPlanningReads)
+				.map(pinned -> pinned.pinnedReadTxn()
+						.map(txn -> runtime.pinPlanningReads(txn, pinned.pinnedValueSnapshot().orElse(null)))
+						.orElse(TripleStore.PlanningReadPin.NONE))
 				.orElse(TripleStore.PlanningReadPin.NONE);
 	}
 

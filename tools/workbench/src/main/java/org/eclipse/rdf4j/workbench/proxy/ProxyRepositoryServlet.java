@@ -17,10 +17,16 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
 import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
+import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
+import org.eclipse.rdf4j.workbench.commands.QueryServlet;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
+import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.DynamicHttpRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -39,10 +45,13 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 
 	private long lastModified;
 
+	private WorkbenchPolicy policy;
+
 	@Override
 	@SuppressWarnings("unchecked")
 	public void init(ServletConfig config) throws ServletException {
 		super.init(config);
+		policy = WorkbenchPolicyLoader.getPolicy(config.getServletContext(), appConfig);
 		lastModified = System.currentTimeMillis();
 		if (config.getInitParameter(DEFAULT_PATH_PARAM) == null) {
 			throw new MissingInitParameterException(DEFAULT_PATH_PARAM);
@@ -73,7 +82,26 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 
 	@Override
 	public void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-		if (isCachable(req)) {
+		String pathInfo = req.getPathInfo();
+		boolean landingRequest = pathInfo == null || pathInfo.isEmpty() || "/".equals(pathInfo);
+		String route = landingRequest
+				? policy.selectLandingPath(WorkbenchPolicy.LandingContext.REPOSITORY,
+						config.getInitParameter(DEFAULT_PATH_PARAM))
+				: pathInfo;
+		if (landingRequest && route == null) {
+			WorkbenchPolicyResponse.sendDisabledLanding(resp,
+					"The RDF4J Workbench has no repository landing page enabled by policy.");
+			return;
+		}
+		RepositoryServlet servlet = servlets.get(route);
+		if (!policy.isRouteAllowed(route, servlet == null ? null : servlet.getClass())) {
+			WorkbenchPolicyResponse.sendHiddenPage(resp);
+			return;
+		}
+		if (pathInfo != null && !pathInfo.isEmpty() && !"/".equals(pathInfo) && servlet == null) {
+			throw new BadRequestException("Unconfigured path: " + pathInfo);
+		}
+		if (isCachable(req) && !(servlet instanceof QueryServlet)) {
 			long ifModifiedSince = req.getDateHeader(HEADER_IFMODSINCE);
 			if (ifModifiedSince < lastModified) {
 				resp.setDateHeader(HEADER_LASTMOD, lastModified);
@@ -82,19 +110,20 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 				return;
 			}
 		}
-		String pathInfo = req.getPathInfo();
-		if (pathInfo == null) {
-			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);
-			resp.sendRedirect(req.getRequestURI() + defaultPath);
-		} else if ("/".equals(pathInfo)) {
-			String defaultPath = config.getInitParameter(DEFAULT_PATH_PARAM);
-			resp.sendRedirect(req.getRequestURI() + defaultPath.substring(1));
-		} else {
-			RepositoryServlet servlet = servlets.get(pathInfo);
-			if (servlet == null) {
-				throw new BadRequestException("Unconfigured path: " + pathInfo);
+		if (landingRequest) {
+			String landingSuffix = route.startsWith("/") ? route : "/" + route;
+			if (pathInfo == null || pathInfo.isEmpty()) {
+				resp.sendRedirect(req.getRequestURI() + landingSuffix);
+			} else {
+				resp.sendRedirect(req.getRequestURI() + landingSuffix.substring(1));
 			}
+		} else {
 			DynamicHttpRequest hreq = new DynamicHttpRequest(req);
+			WorkbenchViewRegistry.viewId(servlet.getClass())
+					.ifPresent(viewId -> hreq.setAttribute(WorkbenchPageProtocol.PAGE_VIEW_ID_ATTRIBUTE, viewId));
+			if (info != null && info.getId() != null) {
+				hreq.setAttribute(WorkbenchPageProtocol.REPOSITORY_ID_ATTRIBUTE, info.getId());
+			}
 			hreq.setServletPath(hreq.getServletPath() + hreq.getPathInfo());
 			hreq.setPathInfo(null);
 			servlet.service(hreq, resp);

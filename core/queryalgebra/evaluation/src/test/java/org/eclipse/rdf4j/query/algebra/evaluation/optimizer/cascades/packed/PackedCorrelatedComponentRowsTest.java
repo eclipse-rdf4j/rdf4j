@@ -31,7 +31,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedCorrelatedComponentRowsTest {
@@ -771,11 +771,8 @@ class PackedCorrelatedComponentRowsTest {
 	private static BindingSetAssignment keys(SimpleValueFactory values) {
 		BindingSetAssignment keys = new BindingSetAssignment();
 		keys.setBindingNames(new LinkedHashSet<>(List.of("key")));
-		QueryBindingSet first = new QueryBindingSet();
-		first.addBinding("key", values.createLiteral("first"));
-		QueryBindingSet second = new QueryBindingSet();
-		second.addBinding("key", values.createLiteral("second"));
-		keys.setBindingSets(List.of(first, second));
+		keys.setBindingSets(List.of(new ListBindingSet(List.of("key"), values.createLiteral("first")),
+				new ListBindingSet(List.of("key"), values.createLiteral("second"))));
 		return keys;
 	}
 

@@ -109,8 +109,12 @@ public final class OptionalBranchReorderSafety {
 		if (expression == null || TupleExprs.isVariableScopeChange(expression)) {
 			return false;
 		}
-		if (expression instanceof StatementPattern || expression instanceof BindingSetAssignment
-				|| expression instanceof SingletonSet || expression instanceof EmptySet) {
+		if (expression instanceof BindingSetAssignment assignment) {
+			// An unknown source may emit undeclared names, so its available header is not a complete output proof.
+			return assignment.getBindingSets() == null || assignment.hasRepeatableBindingSets();
+		}
+		if (expression instanceof StatementPattern || expression instanceof SingletonSet
+				|| expression instanceof EmptySet) {
 			return true;
 		}
 		if (expression instanceof Join join) {

@@ -14,7 +14,6 @@ var workbench;
         /**
          * Holds the current selected query language.
          */
-        var currentQueryLn = '';
         var yasqe = null;
         var compareYasqe = null;
         var vizRenderer = null;
@@ -23,20 +22,41 @@ var workbench;
         var pendingDotRenderKeys = {};
         var activePrimaryRequestSignature = null;
         var activeCompareRequestSignatures = {};
-        var requestIdCounter = 0;
         var activeExplainRequestId = 0;
         var activeExplainJqXHR = null;
-        var activeQueryRequestId = null;
+        var resultPresentationLayout = 'auto';
+        var resultPresentationWrap = true;
+        var resultLoadingRequested = false;
+        var RESULT_LOADING_ID = 'query-results-loading';
+        var RESULT_STATUS_ID = 'query-results-status';
         var CANCEL_REQUEST_MAX_RETRIES = 20;
+        /** The mounted Query page's own query endpoint, absolute: a later page may show another repository. */
+        var queryEndpointUrl = '';
+        /** Loaded only for DOT explanations (M11.1). */
+        var GRAPH_RENDERER_SCRIPTS = ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js'];
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
         var activeCompareExplainJqXHRs = [];
         var compareModeEnabled = false;
+        var lastPresentedCompareMode = false;
+        var lastPresentedDiffOpen = false;
         var compareSidebarOpen = false;
+        var compareNavigationDisclosureOpenBeforeCompare = null;
+        var compareNavigationNarrowModeBeforeCompare = null;
+        var compareSidebarPositionListenersInstalled = false;
+        /** The page is kept alive but hidden (M11.3): it must not change anything outside itself. */
+        var queryPageSuspended = false;
+        /** Releases each pane editor's resize handle (workbench.editorSizing). */
+        var editorSizingDisposers = {};
         var compareQuerySeeded = false;
         var diffNotReadyLabel = '';
         var lastDiffTriggerElement = null;
+        // Diff sits in the Explanation toolbar and, in compare mode, beside Execute and Explain under the editors.
+        var diffTriggerSelector = '#query-diff-trigger, #query-actions-diff';
+        var diffModalBackgroundLocked = false;
+        var diffModalPreviousBodyOverflow = '';
+        var diffModalBackgroundState = [];
         var explanationHighlightMode = 'syntax';
         var EXPLANATION_HIDDEN_PROPERTIES_STORAGE_KEY = 'rdf4j.workbench.query.explanation.hiddenProperties';
         var explanationHiddenProperties = loadExplanationHiddenProperties();
@@ -49,6 +69,7 @@ var workbench;
             explanationControlsRowId: 'query-explanation-controls-row',
             copyButtonId: 'copy-explanation',
             statusId: 'query-explanation-status',
+            timingId: 'query-explanation-timing',
             overlayId: 'query-explanation-overlay',
             explanationId: 'query-explanation',
             dotViewId: 'query-explanation-dot-view',
@@ -66,6 +87,7 @@ var workbench;
             explanationRowId: 'query-explanation-row-compare',
             copyButtonId: 'copy-explanation-compare',
             statusId: 'query-explanation-status-compare',
+            timingId: 'query-explanation-timing-compare',
             overlayId: 'query-explanation-overlay-compare',
             explanationId: 'query-explanation-compare',
             dotViewId: 'query-explanation-dot-view-compare',
@@ -98,7 +120,24 @@ var workbench;
                 .removeClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'true')
                 .prop('disabled', true);
+            $('.workbench-action.query-explain-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true');
         }
+        /** Shows a running explanation's Cancel button: the one beside Config, which cancels any explanation. */
+        function showExplanationCancelButton() {
+            $('#explanation-cancel')
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false')
+                .prop('disabled', false);
+        }
+        function hideExplanationCancelButton() {
+            $('#explanation-cancel')
+                .removeClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'true')
+                .prop('disabled', true);
+        }
+        /** Shows the Cancel button beside the button that started the explanation, and the one beside Config. */
         function showPrimaryExplainCancelButton(buttonId) {
             var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
             hidePrimaryExplainCancelButtons();
@@ -109,22 +148,24 @@ var workbench;
                 .addClass('query-explain-cancel--visible')
                 .attr('aria-hidden', 'false')
                 .prop('disabled', false);
+            $('#' + controlIds.cancelId).closest('.workbench-action.query-explain-cancel')
+                .addClass('query-explain-cancel--visible')
+                .attr('aria-hidden', 'false');
+            showExplanationCancelButton();
             return true;
         }
+        /*
+         * A slow request's wait state is its Cancel button; the Explanation panel shows the request's progress as
+         * its loading bar (syncExplanationPanelBusy).
+         */
         function hidePrimaryExplainSpinner() {
-            $('.query-explain-spinner')
-                .removeClass('query-explain-spinner--visible')
-                .attr('aria-hidden', 'true');
             hidePrimaryExplainCancelButtons();
         }
         function showPrimaryExplainSpinner(buttonId) {
             var controlIds = workbench.queryCancelPolicy.getExplainControlIds(buttonId);
-            if (!controlIds.spinnerId) {
+            if (!controlIds.buttonId) {
                 return false;
             }
-            $('#' + controlIds.spinnerId)
-                .addClass('query-explain-spinner--visible')
-                .attr('aria-hidden', 'false');
             showPrimaryExplainCancelButton(controlIds.buttonId);
             return true;
         }
@@ -132,37 +173,24 @@ var workbench;
             $('#explain-trigger').prop('disabled', disabled);
             $('#rerun-explanation').prop('disabled', disabled);
         }
+        /** A compare explanation's wait state is the Cancel beside Config, whichever button started it. */
         function normalizeCompareExplainButtonId() {
-            return 'explain-compare-trigger';
+            return 'explanation-cancel';
         }
         function hideCompareExplainCancelButtonInternal() {
-            $('#explain-compare-cancel')
-                .removeClass('query-explain-cancel--visible')
-                .attr('aria-hidden', 'true')
-                .prop('disabled', true);
+            hideExplanationCancelButton();
         }
         function showCompareExplainCancelButtonInternal() {
-            $('#explain-compare-cancel')
-                .addClass('query-explain-cancel--visible')
-                .attr('aria-hidden', 'false')
-                .prop('disabled', false);
+            showExplanationCancelButton();
             return true;
         }
         function hideCompareExplainSpinnerInternal() {
-            $('#explain-compare-trigger')
-                .attr('aria-busy', 'false')
-                .removeClass('query-compare-action--spinning');
             hideCompareExplainCancelButtonInternal();
         }
         function showCompareExplainSpinnerInternal() {
-            $('#explain-compare-trigger')
-                .attr('aria-busy', 'true')
-                .addClass('query-compare-action--spinning');
-            showCompareExplainCancelButtonInternal();
-            return true;
+            return showCompareExplainCancelButtonInternal();
         }
         function setCompareExplainButtonsDisabledInternal(disabled) {
-            $('#explain-compare-trigger').prop('disabled', disabled);
             $('#explain-trigger').prop('disabled', disabled);
             $('#rerun-explanation').prop('disabled', disabled);
         }
@@ -354,38 +382,12 @@ var workbench;
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
-                groupId: groupId
+                groupId: groupId,
+                startedAt: Date.now()
             };
         }
-        function createFallbackRequestId() {
-            requestIdCounter += 1;
-            var timestampPart = ('000000000000' + Date.now().toString(16)).slice(-12);
-            var counterPart = ('00000000' + requestIdCounter.toString(16)).slice(-8);
-            var randomPart = '';
-            var cryptoObject = window.crypto || window.msCrypto;
-            if (cryptoObject && cryptoObject.getRandomValues) {
-                var buffer = new Uint16Array(4);
-                cryptoObject.getRandomValues(buffer);
-                for (var i = 0; i < buffer.length; i++) {
-                    randomPart += ('0000' + buffer[i].toString(16)).slice(-4);
-                }
-            }
-            else {
-                while (randomPart.length < 16) {
-                    randomPart += ('00000000' + Math.floor(Math.random() * 0xffffffff).toString(16)).slice(-8);
-                }
-                randomPart = randomPart.substring(0, 16);
-            }
-            return timestampPart + '-' + randomPart.substring(0, 4) + '-4'
-                + randomPart.substring(4, 7) + '-a' + randomPart.substring(7, 10)
-                + '-' + randomPart.substring(10, 16) + counterPart.substring(0, 6);
-        }
         function generateRequestId() {
-            var cryptoObject = window.crypto || window.msCrypto;
-            if (cryptoObject && cryptoObject.randomUUID) {
-                return cryptoObject.randomUUID();
-            }
-            return createFallbackRequestId();
+            return workbench.generateRequestId();
         }
         function createInitialQueryPageState() {
             return {
@@ -425,7 +427,9 @@ var workbench;
                 rawContent: explanation.rawContent,
                 displayContent: explanation.displayContent,
                 lineSeparator: explanation.lineSeparator,
-                plan: explanation.plan
+                plan: explanation.plan,
+                timedOut: explanation.timedOut,
+                elapsedMs: explanation.elapsedMs
             };
         }
         function getExplanationDisplayContent(explanation) {
@@ -449,7 +453,8 @@ var workbench;
                 explanation.view,
                 explanation.rawContent,
                 explanation.lineSeparator,
-                getExplanationDisplayContent(explanation)
+                getExplanationDisplayContent(explanation),
+                String(!!explanation.timedOut)
             ].join('||');
         }
         function getStableExplanationContentKey(explanation) {
@@ -770,50 +775,96 @@ var workbench;
             renderQueryPageState();
         }
         /**
-         * Populate reasonable default name space declarations into the query text area.
-         * The server has provided the declaration text in hidden elements.
-         */
-        function loadNamespaces() {
-            function toggleNamespaces() {
-                workbench.query.setQueryValue(namespaces.text());
-                currentQueryLn = queryLn;
-            }
-            var query = workbench.query.getQueryValue();
-            var queryLn = $('#queryLn').val();
-            var namespaces = $('#' + queryLn + '-namespaces');
-            var last = $('#' + currentQueryLn + '-namespaces');
-            if (namespaces.length) {
-                if (!query || query.trim().length == 0) {
-                    toggleNamespaces();
-                }
-                if (last.length && (query == last.text())) {
-                    toggleNamespaces();
-                }
-            }
-        }
-        query_1.loadNamespaces = loadNamespaces;
-        /**
          *Fires when the query language is changed
          */
         function onQlChange() {
-            workbench.query.loadNamespaces();
             workbench.query.updateYasqe();
         }
         query_1.onQlChange = onQlChange;
         /**
-         * Invoked by the "clear" button. After confirming with the user,
-         * clears the query text and loads the current repository and query
-         * language name space declarations.
+         * Insert a PREFIX line for every repository namespace that the query does not declare yet, at the
+         * top of the editor. The edit goes through the editor, so Cmd/Ctrl+Z undoes it; no confirmation.
          */
-        function resetNamespaces() {
-            if (confirm('Click OK to clear the current query text and replace' +
-                'it with the ' + $('#queryLn').val() +
-                ' namespace declarations.')) {
-                workbench.query.setQueryValue('');
-                workbench.query.loadNamespaces();
+        /**
+         * The query without its comments, string literals and IRIs (each replaced by a space), so that the keywords
+         * left are the query's own: '# PREFIX ex: <...>' or "PREFIX ex:" declare nothing.
+         */
+        function sparqlKeywordText(query) {
+            var result = '';
+            var index = 0;
+            while (index < query.length) {
+                var character = query.charAt(index);
+                if (character === '#') {
+                    while (index < query.length && query.charAt(index) !== '\n') {
+                        index++;
+                    }
+                    result += ' ';
+                }
+                else if (character === '"' || character === '\'') {
+                    var quote = query.substr(index, 3) === character + character + character
+                        ? character + character + character : character;
+                    index += quote.length;
+                    while (index < query.length && query.substr(index, quote.length) !== quote
+                        && (quote.length === 3 || query.charAt(index) !== '\n')) {
+                        index += query.charAt(index) === '\\' ? 2 : 1;
+                    }
+                    index += quote.length;
+                    result += ' ';
+                }
+                else {
+                    // An IRI has no spaces; anything else starting with '<' is the less-than operator.
+                    var iri = character === '<' ? /^<[^<>"{}|^`\\\s]*>/.exec(query.substring(index)) : null;
+                    if (iri) {
+                        index += iri[0].length;
+                        result += ' ';
+                    }
+                    else {
+                        result += character;
+                        index++;
+                    }
+                }
+            }
+            return result;
+        }
+        function insertPrefixes() {
+            if (!isPrefixInsertionEnabled()) {
+                return;
+            }
+            var namespaces = typeof sparqlNamespaces === 'object' && sparqlNamespaces
+                ? sparqlNamespaces : {};
+            var query = getPaneRawQueryValue('primary');
+            var declared = {};
+            // A declaration may follow BASE or another PREFIX on its line; ?prefix or ex:PREFIX are no keyword.
+            var declaration = /(^|[^\w?$:.-])PREFIX\s+([^:\s]*):/gi;
+            var keywords = sparqlKeywordText(query);
+            var match;
+            while ((match = declaration.exec(keywords)) !== null) {
+                declared[match[2]] = true;
+            }
+            var lines = Object.keys(namespaces).map(function (key) {
+                var prefix = key.charAt(key.length - 1) === ':' ? key.slice(0, -1) : key;
+                return { prefix: prefix, line: 'PREFIX ' + prefix + ': <' + namespaces[key] + '>' };
+            }).filter(function (entry) {
+                return !declared[entry.prefix];
+            }).sort(function (left, right) {
+                return left.prefix < right.prefix ? -1 : left.prefix > right.prefix ? 1 : 0;
+            }).map(function (entry) {
+                return entry.line;
+            });
+            if (!lines.length) {
+                return;
+            }
+            var text = lines.join('\n') + '\n';
+            if (yasqe) {
+                var start = { line: 0, ch: 0 };
+                yasqe.getDoc().replaceRange(text, start, start);
+                yasqe.focus();
+            }
+            else {
+                setPaneQueryValue('primary', text + query);
             }
         }
-        query_1.resetNamespaces = resetNamespaces;
+        query_1.insertPrefixes = insertPrefixes;
         /**
          * Clear any contents of the save feedback field.
          */
@@ -830,11 +881,28 @@ var workbench;
          */
         function handleNameChange() {
             setTimeout(function disableSaveIfNotValidName() {
-                $('#save').prop('disabled', !/^[- \w]{1,32}$/.test($('#query-name').val()));
+                var name = String($('#query-name').val() || '');
+                var valid = validQueryName(name);
+                $('#save').prop('disabled', !valid);
                 workbench.query.clearFeedback();
+                if (name && !valid) {
+                    // Say why Save stays off (C23).
+                    $('#save-feedback').addClass('error')
+                        .text('A name has 1 to 32 letters, digits, spaces, \'-\' or \'_\'.');
+                }
             }, 0);
         }
         query_1.handleNameChange = handleNameChange;
+        /** A saved query's name: 1 to 32 letters (of any language), digits, spaces, '-' or '_' (C23). */
+        function validQueryName(name) {
+            try {
+                return new RegExp('^[-\\s\\p{L}\\p{N}_]{1,32}$', 'u').test(name);
+            }
+            catch (error) {
+                // A browser without Unicode property escapes.
+                return /^[- \w]{1,32}$/.test(name);
+            }
+        }
         function getPaneState(paneKey) {
             return paneKey === 'compare' ? comparePaneState : primaryPaneState;
         }
@@ -910,10 +978,12 @@ var workbench;
                 : '/';
         }
         function setWorkbenchCookie(name, value) {
-            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=' + encodeURIComponent(value || '') + '; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
         function clearWorkbenchCookie(name) {
-            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath();
+            document.cookie = name + '=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=' + getWorkbenchCookiePath()
+                + '; SameSite=Lax';
         }
         function shouldPersistPrimaryQueryCookieValue(queryValue) {
             return !queryValue || queryValue.length <= 2048;
@@ -977,7 +1047,12 @@ var workbench;
                 return 'Loading explanation...';
             }
             if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
-                return 'Explanation is stale. Re-run to refresh.';
+                return 'Explanation is stale. Click here to refresh.';
+            }
+            if (paneState.kind === 'ready' && paneState.explanation.timedOut) {
+                return 'The query timed out while it was explained, so this plan is incomplete: '
+                    + 'it shows only the work done before the timeout. '
+                    + 'Increase the explanation timeout in Config to see more.';
             }
             if (paneState.kind === 'error') {
                 return paneState.message;
@@ -994,10 +1069,56 @@ var workbench;
             if (paneState.kind === 'ready' && paneState.freshness === 'stale') {
                 return 'query-explanation-status--stale';
             }
+            if (paneState.kind === 'ready' && paneState.explanation.timedOut) {
+                return 'query-explanation-status--warning';
+            }
             if (paneState.kind === 'error') {
                 return 'query-explanation-status--error';
             }
             return '';
+        }
+        /** A stale explanation's status line is a button that explains the current query again. */
+        function isPaneStatusRefreshable(paneState) {
+            return !!paneState && paneState.kind === 'ready' && paneState.freshness === 'stale';
+        }
+        var PANE_STATUS_CLASS_NAMES = 'query-explanation-status--visible query-explanation-status--loading '
+            + 'query-explanation-status--stale query-explanation-status--warning query-explanation-status--error';
+        function renderPaneStatus(paneKey, message, className, refreshable) {
+            var status = document.getElementById(getPaneState(paneKey).statusId);
+            if (!status) {
+                return;
+            }
+            // Keep a focused refresh button in place while the pane re-renders around it.
+            var refreshButton = refreshable && message
+                ? status.querySelector('.query-explanation-status__refresh') : null;
+            $(status).removeClass(PANE_STATUS_CLASS_NAMES);
+            if (!refreshButton) {
+                $(status).text('');
+            }
+            if (!message) {
+                return;
+            }
+            $(status).addClass('query-explanation-status--visible').addClass(className);
+            if (!refreshable) {
+                $(status).text(message);
+                return;
+            }
+            if (!refreshButton) {
+                refreshButton = document.createElement('button');
+                refreshButton.type = 'button';
+                refreshButton.className = 'query-explanation-status__refresh';
+                refreshButton.addEventListener('click', refreshStaleExplanation);
+                status.appendChild(refreshButton);
+            }
+            refreshButton.textContent = message;
+        }
+        function refreshStaleExplanation() {
+            // The status button goes away once the refresh starts; keep keyboard focus in the explanation panel.
+            var panel = document.getElementById('query-explanation-panel');
+            if (panel && typeof panel.focus === 'function') {
+                panel.focus({ preventScroll: true });
+            }
+            runExplain(undefined, 'explain-trigger');
         }
         function getPaneOverlayMessage(paneState) {
             if (paneState && paneState.kind === 'loading' && paneState.mode === 'refresh') {
@@ -1077,41 +1198,123 @@ var workbench;
             $('#rerun-explanation').prop('disabled', primaryActionsDisabled);
             $('#explain-trigger').prop('disabled', primaryActionsDisabled);
             syncExplanationHighlightControls();
+            syncExplanationTimeoutControls();
+        }
+        function updateCompareSidebarNavigationPosition() {
+            var body = document.body;
+            var navigation = document.getElementById('navigation');
+            var toggle = document.getElementById('query-sidebar-toggle');
+            if (!body || !navigation || !toggle || !compareModeEnabled || !compareSidebarOpen) {
+                if (body) {
+                    body.style.removeProperty('--query-compare-nav-top');
+                    body.style.removeProperty('--query-compare-nav-left');
+                }
+                return;
+            }
+            var toggleBounds = toggle.getBoundingClientRect();
+            body.style.setProperty('--query-compare-nav-top', (toggleBounds.bottom + 8) + 'px');
+            body.style.setProperty('--query-compare-nav-left', toggleBounds.left + 'px');
         }
         function syncCompareSidebarState() {
+            if (queryPageSuspended) {
+                // A hidden page leaves the menu and body of the page shown instead alone; resume syncs again.
+                return;
+            }
             $('body').toggleClass('query-compare-mode', compareModeEnabled);
+            // Only an older shell renders the menu inside a details disclosure.
+            var navigationDisclosure = document.querySelector('details#workbench-navigation-disclosure');
+            if (compareModeEnabled) {
+                if (navigationDisclosure && compareNavigationDisclosureOpenBeforeCompare === null) {
+                    compareNavigationDisclosureOpenBeforeCompare = navigationDisclosure.open;
+                    compareNavigationNarrowModeBeforeCompare = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                }
+                if (navigationDisclosure && !navigationDisclosure.open) {
+                    workbench.setNativeDisclosureOpen(navigationDisclosure, true, false);
+                }
+            }
+            else if (compareNavigationDisclosureOpenBeforeCompare !== null) {
+                if (navigationDisclosure) {
+                    var narrowNavigationMode = window.matchMedia
+                        ? window.matchMedia('(max-width: 900px)').matches
+                        : window.innerWidth <= 900;
+                    var restoreNavigationOpen = compareNavigationDisclosureOpenBeforeCompare;
+                    if (narrowNavigationMode !== compareNavigationNarrowModeBeforeCompare) {
+                        restoreNavigationOpen = !narrowNavigationMode;
+                    }
+                    workbench.setNativeDisclosureOpen(navigationDisclosure, restoreNavigationOpen, false);
+                }
+                compareNavigationDisclosureOpenBeforeCompare = null;
+                compareNavigationNarrowModeBeforeCompare = null;
+            }
             $('body').toggleClass('query-compare-nav-open', compareModeEnabled && compareSidebarOpen);
             var sidebarToggle = $('#query-sidebar-toggle');
             var navigationTransform = '';
-            var queryWorkspaceTransform = '';
-            var sidebarToggleTransform = '';
             if (!compareModeEnabled) {
                 $('#navigation').css('transform', navigationTransform);
-                $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-                sidebarToggle.css('transform', sidebarToggleTransform);
+                $('#title_heading, .query-form').css('transform', '');
                 sidebarToggle
-                    .hide()
                     .removeClass('query-sidebar-toggle--nav-open')
                     .attr('aria-hidden', 'true')
+                    .attr('aria-expanded', 'false')
                     .attr('tabindex', '-1');
+                updateCompareSidebarNavigationPosition();
                 return;
             }
             navigationTransform = compareSidebarOpen ? 'translateX(0)' : 'translateX(-220px)';
-            queryWorkspaceTransform = compareSidebarOpen ? 'translateX(184px)' : 'translateX(0)';
-            sidebarToggleTransform = compareSidebarOpen ? 'translateX(192px)' : 'translateX(0)';
             $('#navigation').css('transform', navigationTransform);
-            $('#title_heading, #noscript-message, .query-form').css('transform', queryWorkspaceTransform);
-            sidebarToggle.css('transform', sidebarToggleTransform);
+            $('#title_heading, .query-form').css('transform', '');
             var label = compareSidebarOpen
                 ? sidebarToggle.attr('data-hide-label')
                 : sidebarToggle.attr('data-show-label');
             sidebarToggle
-                .show()
                 .toggleClass('query-sidebar-toggle--nav-open', compareSidebarOpen)
                 .attr('aria-hidden', 'false')
+                .attr('aria-expanded', compareSidebarOpen ? 'true' : 'false')
                 .attr('aria-label', label)
                 .attr('title', label)
                 .removeAttr('tabindex');
+            updateCompareSidebarNavigationPosition();
+            if (!compareSidebarPositionListenersInstalled) {
+                window.addEventListener('resize', syncCompareSidebarState);
+                window.addEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = true;
+            }
+        }
+        function exitEditorFullscreen(editor) {
+            if (editor && typeof editor.getOption === 'function' && editor.getOption('fullScreen')) {
+                editor.setOption('fullScreen', false);
+            }
+        }
+        /**
+         * Give the viewport back before the page is hidden or closed: results full screen, the Diff dialog and editor
+         * full screen each lock the document's scrolling.
+         */
+        function releasePageOverlays() {
+            var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+            if (fullscreenTarget) {
+                setResultsFullscreen(false, false, fullscreenTarget);
+            }
+            if (queryPageState && queryPageState.diffModal.kind === 'open') {
+                dispatchQueryPageEvent({ type: 'CLOSE_DIFF' });
+            }
+            exitEditorFullscreen(yasqe);
+            exitEditorFullscreen(compareYasqe);
+        }
+        /** Undo what compare mode changed outside the page: the menu's position, body classes and listeners. */
+        function releaseCompareChrome() {
+            if (compareSidebarPositionListenersInstalled) {
+                window.removeEventListener('resize', syncCompareSidebarState);
+                window.removeEventListener('scroll', updateCompareSidebarNavigationPosition, true);
+                compareSidebarPositionListenersInstalled = false;
+            }
+            $('body').removeClass('query-compare-mode query-compare-nav-open');
+            $('#navigation').css('transform', '');
+            if (document.body) {
+                document.body.style.removeProperty('--query-compare-nav-top');
+                document.body.style.removeProperty('--query-compare-nav-left');
+            }
         }
         function lockExplanationDimensions(paneKey) {
             var paneState = getPaneState(paneKey);
@@ -1332,7 +1535,8 @@ var workbench;
             restoreExplainButtonViewportTopIfNeeded(paneKey);
             clearExplanationDimensionLock(paneKey);
         }
-        function renderDotView(paneKey, explanationText, format) {
+        /** rendererLoaded: the graph renderer was already asked for once, so a missing one is reported, not loaded again. */
+        function renderDotView(paneKey, explanationText, format, rendererLoaded) {
             var paneState = getPaneState(paneKey);
             var dotView = $('#' + paneState.dotViewId);
             if (format === 'dot') {
@@ -1352,6 +1556,19 @@ var workbench;
                     return;
                 }
                 pendingDotRenderKeys[paneKey] = explanationContentKey;
+                var app = workbench.app;
+                if (typeof Viz === 'undefined' && !rendererLoaded && app && typeof app.loadScripts === 'function') {
+                    // The graph renderer (about 2 MB) is loaded with the first DOT explanation (M11.1).
+                    dotView.html('<div>Loading graph renderer…</div>').show();
+                    var renderAfterLoad = function () {
+                        if (pendingDotRenderKeys[paneKey] === explanationContentKey) {
+                            pendingDotRenderKeys[paneKey] = '';
+                            renderDotView(paneKey, explanationText, format, true);
+                        }
+                    };
+                    app.loadScripts(GRAPH_RENDERER_SCRIPTS).then(renderAfterLoad, renderAfterLoad);
+                    return;
+                }
                 dotView.html('<div>Rendering DOT graph...</div>').show();
                 if (typeof Viz === 'undefined') {
                     dotView.html('<div class="error">Graphviz visualizer script not loaded.</div>');
@@ -1734,7 +1951,7 @@ var workbench;
         function syncExplanationPropertyControls() {
             var properties = getAvailableExplanationProperties();
             var config = $('#explanation-property-config');
-            var visible = properties.length > 0;
+            var visible = properties.length > 0 && !!queryPageState && queryPageState.inputs.explainFormat === 'text';
             config.toggle(visible).attr('aria-hidden', visible ? 'false' : 'true');
             if (!visible) {
                 $('#explanation-property-count').text('');
@@ -1798,24 +2015,27 @@ var workbench;
         }
         query_1.setAllExplanationPropertiesVisible = setAllExplanationPropertiesVisible;
         function setExplanationSettingsOpen(open) {
-            $('#explanation-settings-toggle').attr('aria-expanded', open ? 'true' : 'false');
-            $('#explanation-settings-panel').prop('hidden', !open);
+            var toggle = document.getElementById('explanation-settings-toggle');
+            var panel = document.getElementById('explanation-settings-panel');
+            if (!toggle || !panel) {
+                return;
+            }
+            workbench.setDisclosureExpanded(toggle, panel, toggle.parentElement, open, true);
         }
         query_1.setExplanationSettingsOpen = setExplanationSettingsOpen;
-        function toggleExplanationSettings() {
-            setExplanationSettingsOpen($('#explanation-settings-toggle').attr('aria-expanded') !== 'true');
-        }
-        query_1.toggleExplanationSettings = toggleExplanationSettings;
+        /** Config offers the explanation timeout for every format, and highlighting and properties for Text. */
         function syncExplanationHighlightControls() {
-            var controlsVisible = !!queryPageState
-                && queryPageState.inputs.explainFormat === 'text'
+            var planShown = !!queryPageState
                 && (compareModeEnabled || queryPageState.primaryPane.kind !== 'empty');
+            var controlsVisible = planShown && queryPageState.inputs.explainFormat === 'text';
+            var settingsVisible = controlsVisible || (planShown && isExplanationTimeoutAvailable());
             $('#explanation-settings')
-                .toggle(controlsVisible)
-                .attr('aria-hidden', controlsVisible ? 'false' : 'true');
-            if (!controlsVisible) {
+                .toggle(settingsVisible)
+                .attr('aria-hidden', settingsVisible ? 'false' : 'true');
+            if (!settingsVisible) {
                 setExplanationSettingsOpen(false);
             }
+            $('#explanation-highlighting-section').css('display', controlsVisible ? '' : 'none');
             $('#explanation-highlight-mode')
                 .toggle(controlsVisible)
                 .attr('aria-hidden', controlsVisible ? 'false' : 'true');
@@ -1851,10 +2071,6 @@ var workbench;
                 hiddenProperties: explanationHiddenProperties,
                 namespaces: sparqlNamespaces
             });
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             $('#' + paneState.explanationId)
                 .empty()
                 .addClass('query-explanation--highlighted')
@@ -1873,10 +2089,6 @@ var workbench;
         function renderExplanation(paneKey, explanationText, format) {
             var paneState = getPaneState(paneKey);
             var normalizedFormat = (format || 'text').toLowerCase();
-            $('#' + paneState.explanationRowId).show();
-            if (paneState.explanationControlsRowId) {
-                $('#' + paneState.explanationControlsRowId).show();
-            }
             if (normalizedFormat === 'dot' || normalizedFormat === 'json') {
                 $('#' + paneState.explanationId)
                     .removeClass('query-explanation--highlighted')
@@ -1923,7 +2135,6 @@ var workbench;
         function renderPanePresentation(paneKey) {
             var paneMachineState = getPaneMachineState(paneKey);
             var paneState = getPaneState(paneKey);
-            var paneStatus = $('#' + paneState.statusId);
             var paneOverlay = $('#' + paneState.overlayId);
             var paneDisplayExplanation = getPaneDisplayExplanation(paneMachineState);
             var paneStatusMessage = getPaneStatusMessage(paneMachineState);
@@ -1935,12 +2146,9 @@ var workbench;
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
                 + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
                 + '||' + JSON.stringify(explanationHiddenProperties);
-            $('#' + paneState.explanationRowId).toggle(rowVisible);
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
-                paneStatus
-                    .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
-                    .text('');
+                renderPaneStatus(paneKey, '', '', false);
                 paneOverlay
                     .removeClass('query-explanation-overlay--visible')
                     .attr('aria-hidden', 'true')
@@ -1951,15 +2159,7 @@ var workbench;
                 clearExplanationDimensionLock(paneKey);
                 return;
             }
-            paneStatus
-                .removeClass('query-explanation-status--visible query-explanation-status--loading query-explanation-status--stale query-explanation-status--error')
-                .text('');
-            if (paneStatusMessage) {
-                paneStatus
-                    .addClass('query-explanation-status--visible')
-                    .addClass(paneStatusClassName)
-                    .text(paneStatusMessage);
-            }
+            renderPaneStatus(paneKey, paneStatusMessage, paneStatusClassName, isPaneStatusRefreshable(paneMachineState));
             paneOverlay
                 .toggleClass('query-explanation-overlay--visible', !!paneOverlayMessage)
                 .attr('aria-hidden', paneOverlayMessage ? 'false' : 'true')
@@ -1998,22 +2198,210 @@ var workbench;
                 renderStableExplanation(paneKey, paneDisplayExplanation, sharedMaximum);
             }
         }
+        /** While a plan loads, the Explanation panel draws the page's loading bar along its top edge. */
+        function syncExplanationPanelBusy() {
+            var busy = queryPageState.primaryPane.kind === 'loading' || queryPageState.comparePane.kind === 'loading';
+            $('#query-explanation-panel').attr('aria-busy', busy ? 'true' : 'false');
+        }
+        /** 'Explaining… 1.5 s' while the plan loads, then 'Explained in 1,520 ms' beside the current plan. */
+        function getPaneTimingText(paneState) {
+            if (paneState.kind === 'loading' && typeof paneState.request.startedAt === 'number') {
+                return 'Explaining… ' + workbench.format.elapsed(Date.now() - paneState.request.startedAt);
+            }
+            if (paneState.kind === 'ready' && paneState.freshness === 'current'
+                && typeof paneState.explanation.elapsedMs === 'number') {
+                return 'Explained in ' + workbench.format.count(Math.round(paneState.explanation.elapsedMs)) + ' ms';
+            }
+            return '';
+        }
+        var explainTimingTick = null;
+        function renderExplanationTiming() {
+            var loading = false;
+            ['primary', 'compare'].forEach(function (paneKey) {
+                var paneState = getPaneMachineState(paneKey);
+                loading = loading || paneState.kind === 'loading';
+                $('#' + getPaneState(paneKey).timingId).text(getPaneTimingText(paneState));
+            });
+            if (loading && explainTimingTick === null) {
+                explainTimingTick = window.setTimeout(function () {
+                    explainTimingTick = null;
+                    renderExplanationTiming();
+                }, 100);
+            }
+            else if (!loading && explainTimingTick !== null) {
+                window.clearTimeout(explainTimingTick);
+                explainTimingTick = null;
+            }
+        }
+        function restoreFocusFromClosingExplanation(paneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            if (!visible && row.contains && row.contains(document.activeElement)) {
+                var returnButtonId = paneKey === 'compare' ? 'compare-toggle' : 'explain-trigger';
+                var returnButton = document.getElementById(returnButtonId);
+                if (returnButton) {
+                    returnButton.focus();
+                }
+            }
+        }
+        function syncPaneExplanationVisibility(paneKey) {
+            var paneState = getPaneMachineState(paneKey);
+            var row = document.getElementById(getPaneState(paneKey).explanationRowId);
+            if (!row) {
+                return;
+            }
+            var visible = paneState.kind !== 'inactive' && paneState.kind !== 'empty';
+            workbench.setElementExpanded(row, visible, true);
+            if (paneKey === 'primary') {
+                $('.query-explanation-panel__empty').prop('hidden', visible);
+            }
+        }
+        function syncDiffModalPresentation(open) {
+            if (open === diffModalBackgroundLocked) {
+                return;
+            }
+            var body = document.body;
+            var backgroundElements = Array.prototype.slice.call(document.querySelectorAll('#query-page > form, #query-page > #query-output'));
+            if (open) {
+                diffModalPreviousBodyOverflow = body ? body.style.overflow : '';
+                diffModalBackgroundState = backgroundElements.map(function (element) {
+                    return {
+                        element: element,
+                        inert: !!element.inert,
+                        ariaHidden: element.getAttribute('aria-hidden')
+                    };
+                });
+                backgroundElements.forEach(function (element) {
+                    element.inert = true;
+                    element.setAttribute('aria-hidden', 'true');
+                });
+                if (body) {
+                    body.style.overflow = 'hidden';
+                }
+                diffModalBackgroundLocked = true;
+                return;
+            }
+            diffModalBackgroundState.forEach(function (state) {
+                state.element.inert = state.inert;
+                if (state.ariaHidden === null) {
+                    state.element.removeAttribute('aria-hidden');
+                }
+                else {
+                    state.element.setAttribute('aria-hidden', state.ariaHidden);
+                }
+            });
+            if (body) {
+                body.style.overflow = diffModalPreviousBodyOverflow;
+            }
+            diffModalBackgroundState = [];
+            diffModalBackgroundLocked = false;
+        }
+        function getDiffModalFocusableElements() {
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            if (!dialog) {
+                return [];
+            }
+            var candidates = Array.prototype.slice.call(dialog.querySelectorAll('a[href], area[href], button, input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+            return candidates.filter(function (element) {
+                var style = window.getComputedStyle(element);
+                return !element.hasAttribute('disabled') && style.display !== 'none'
+                    && style.visibility !== 'hidden' && element.getBoundingClientRect().width > 0
+                    && element.getBoundingClientRect().height > 0;
+            });
+        }
+        function handleDiffModalTab(event) {
+            if (!diffModalBackgroundLocked || event.key !== 'Tab') {
+                return;
+            }
+            var dialog = document.querySelector('.query-diff-modal__dialog');
+            var focusable = getDiffModalFocusableElements();
+            if (!dialog || focusable.length === 0) {
+                event.preventDefault();
+                return;
+            }
+            var first = focusable[0];
+            var last = focusable[focusable.length - 1];
+            var active = document.activeElement;
+            if (!dialog.contains(active) || (!event.shiftKey && active === last)) {
+                event.preventDefault();
+                first.focus();
+            }
+            else if (event.shiftKey && active === first) {
+                event.preventDefault();
+                last.focus();
+            }
+        }
+        query_1.handleDiffModalTab = handleDiffModalTab;
         function renderQueryPageState() {
             if (!queryPageState) {
                 return;
             }
             syncLegacyMachineFlags();
+            restoreFocusFromClosingExplanation('primary');
+            restoreFocusFromClosingExplanation('compare');
+            var compareLayout = document.getElementById('query-compare-layout');
+            var comparePane = document.getElementById('query-compare-pane');
+            var compareStateChanged = compareModeEnabled !== lastPresentedCompareMode;
+            if (comparePane) {
+                comparePane.setAttribute('aria-hidden', compareModeEnabled ? 'false' : 'true');
+                comparePane.inert = !compareModeEnabled;
+            }
+            if (compareStateChanged && compareLayout && comparePane) {
+                if (compareModeEnabled) {
+                    compareLayout.classList.remove('query-compare-layout--closing');
+                }
+                else {
+                    compareLayout.classList.add('query-compare-layout--closing');
+                }
+            }
             $('#query-compare-layout').toggleClass('query-compare-layout--active', compareModeEnabled);
-            $('#query-compare-controls').toggle(compareModeEnabled);
-            $('#query-diff-modal')
-                .toggleClass('query-diff-modal--open', queryPageState.diffModal.kind === 'open')
-                .attr('aria-hidden', queryPageState.diffModal.kind === 'open' ? 'false' : 'true');
+            var diffModalOpen = queryPageState.diffModal.kind === 'open';
+            var diffModal = document.getElementById('query-diff-modal');
+            var diffStateChanged = diffModalOpen !== lastPresentedDiffOpen;
+            if (diffModal) {
+                diffModal.setAttribute('aria-hidden', diffModalOpen ? 'false' : 'true');
+                diffModal.inert = !diffModalOpen;
+            }
+            if (diffStateChanged && diffModal) {
+                if (diffModalOpen) {
+                    diffModal.classList.remove('query-diff-modal--closing');
+                }
+                else {
+                    diffModal.classList.add('query-diff-modal--closing');
+                }
+            }
+            $('#query-diff-modal').toggleClass('query-diff-modal--open', diffModalOpen);
+            syncDiffModalPresentation(diffModalOpen);
+            if (compareStateChanged && comparePane) {
+                workbench.animateElementOpacity(comparePane, compareModeEnabled, function () {
+                    if (!compareModeEnabled && compareLayout) {
+                        compareLayout.classList.remove('query-compare-layout--closing');
+                    }
+                });
+                lastPresentedCompareMode = compareModeEnabled;
+            }
+            if (diffStateChanged && diffModal) {
+                workbench.animateElementOpacity(diffModal, diffModalOpen, function () {
+                    if (!diffModalOpen) {
+                        diffModal.classList.remove('query-diff-modal--closing');
+                    }
+                });
+                lastPresentedDiffOpen = diffModalOpen;
+            }
             renderPanePresentation('primary');
             renderPanePresentation('compare');
+            syncExplanationPanelBusy();
+            renderExplanationTiming();
             updateDownloadButtonState();
             syncPrimaryExplanationControls();
             syncCompareSidebarState();
             updateCompareActionState();
+            syncPaneExplanationVisibility('primary');
+            syncPaneExplanationVisibility('compare');
             if (queryPageState.diffModal.kind === 'open') {
                 renderDiffView('#query-diff-query', getPaneRawQueryValue('primary'), getPaneRawQueryValue('compare'));
                 if (queryPageState.diffModal.explanation === 'ready'
@@ -2026,22 +2414,33 @@ var workbench;
                 }
             }
         }
-        function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
-            var response = jqXHR.responseJSON;
+        /** The message of a JSON error answer ({"error": "..."}), or '' when the answer has none. */
+        function jsonErrorMessage(jqXHR) {
+            var response = jqXHR && jqXHR.responseJSON;
             if (response && response.error) {
-                return response.error;
+                return String(response.error);
             }
-            var responseText = jqXHR.responseText;
+            var responseText = jqXHR && jqXHR.responseText;
             if (responseText) {
                 try {
                     var parsedResponse = JSON.parse(responseText);
                     if (parsedResponse && parsedResponse.error) {
-                        return parsedResponse.error;
+                        return String(parsedResponse.error);
                     }
                 }
                 catch (e) {
-                    // fall through and return plain response text
+                    // Not JSON.
                 }
+            }
+            return '';
+        }
+        function getExplainErrorMessage(jqXHR, textStatus, errorThrown) {
+            var message = jsonErrorMessage(jqXHR);
+            if (message) {
+                return message;
+            }
+            var responseText = jqXHR.responseText;
+            if (responseText) {
                 return responseText;
             }
             if (textStatus == 'timeout') {
@@ -2277,6 +2676,32 @@ var workbench;
             var tokenized = JSON.parse(quoteJsonNumberTokens(explanationText, tokens));
             return hydratePlanJsonValue(tokenized, parsed, 'node');
         }
+        /** Config's explanation timeout is offered only where the server takes a query timeout at all. */
+        function isExplanationTimeoutAvailable() {
+            var section = document.getElementById('explanation-timeout-section');
+            var queryTimeout = document.getElementById('query-timeout');
+            // A disabled query timeout control means the policy turned timeouts off: none may be sent.
+            return !!section && !section.hidden && !(queryTimeout && queryTimeout.disabled);
+        }
+        /** The explanation timeout in whole seconds, or '' to use the query timeout from Query settings. */
+        function getExplanationTimeout() {
+            if (!isExplanationTimeoutAvailable()) {
+                return '';
+            }
+            var value = $.trim(String($('#explanation-timeout').val() || ''));
+            return /^\d+$/.test(value) ? String(Number(value)) : '';
+        }
+        function getExplanationTimeoutHelp(queryTimeout) {
+            var seconds = Number(queryTimeout);
+            return 'Empty uses the query timeout: '
+                + (seconds > 0 ? seconds + (seconds === 1 ? ' second' : ' seconds') + '. 0 means no limit.' : 'no limit.');
+        }
+        /** While it is empty the explanation timeout shows the query timeout it falls back to. */
+        function syncExplanationTimeoutControls() {
+            var queryTimeout = $.trim(String($('#query-timeout').val() || '')) || '0';
+            $('#explanation-timeout').attr('placeholder', queryTimeout);
+            $('#explanation-timeout-help').text(getExplanationTimeoutHelp(queryTimeout));
+        }
         function serializeExplainFormData(queryValue, level, format, serverRequestId) {
             var serializedForm = $('form[action="query"]').serializeArray();
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
@@ -2320,7 +2745,10 @@ var workbench;
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: transportFormat });
             }
-            if (!seenInfer) {
+            // An unchecked checkbox is not serialized: send its explicit false, but only for an enabled control (a
+            // disabled one is turned off by policy and must not be sent at all).
+            var inferControl = document.getElementById('infer');
+            if (!seenInfer && inferControl && inferControl.type === 'checkbox' && !inferControl.disabled) {
                 serializedForm.push({ name: 'infer', value: 'false' });
             }
             if (!seenQuery) {
@@ -2328,6 +2756,13 @@ var workbench;
             }
             if (!seenExplainRequestId) {
                 serializedForm.push({ name: 'explain-request-id', value: serverRequestId });
+            }
+            var explanationTimeout = getExplanationTimeout();
+            if (explanationTimeout) {
+                serializedForm = serializedForm.filter(function (entry) {
+                    return entry.name !== 'query-timeout';
+                });
+                serializedForm.push({ name: 'query-timeout', value: explanationTimeout });
             }
             return $.param(serializedForm);
         }
@@ -2337,16 +2772,42 @@ var workbench;
                 { name: 'explain-request-id', value: serverRequestId }
             ]);
         }
-        function postCancellationWithRetry(data, remainingRetries) {
+        /** A URL relative to the page shown now, made absolute (it must not change meaning on another page). */
+        function absolutePageUrl(relative) {
+            var base = document.baseURI || (document.location && document.location.href) || '';
+            var urlConstructor = typeof URL === 'function' ? URL : null;
+            if (urlConstructor && base) {
+                try {
+                    return new urlConstructor(relative, base).href;
+                }
+                catch (error) {
+                    // Fall back to resolving the path by hand below.
+                }
+            }
+            var page = base.split('#')[0].split('?')[0];
+            return /^[a-z][a-z0-9+.-]*:\/\/[^/]+\//i.test(page) ? page.substring(0, page.lastIndexOf('/') + 1) + relative
+                : relative;
+        }
+        function queryEndpoint() {
+            return queryEndpointUrl || 'query';
+        }
+        /**
+         * Retries failures that may pass (the network, the server); a 404 means the server does not know the
+         * request (it ended, or this is another repository's endpoint), and asking again changes nothing.
+         */
+        function postCancellationWithRetry(data, remainingRetries, url) {
             var retriesRemaining = remainingRetries === undefined
                 ? CANCEL_REQUEST_MAX_RETRIES : remainingRetries;
+            var endpoint = url || queryEndpoint();
             $.ajax({
-                url: 'query',
+                url: endpoint,
                 type: 'POST',
                 data: data
             }).fail(function () {
+                // Every failure is retried, 404 included (GH-5904): behind a load balancer the cancellation may reach
+                // a replica that does not run the query, or overtake the query's own registration.
                 if (retriesRemaining > 0) {
-                    postCancellationWithRetry(data, retriesRemaining - 1);
+                    postCancellationWithRetry(data, retriesRemaining - 1, endpoint);
                 }
             });
         }
@@ -2356,51 +2817,185 @@ var workbench;
             }
             postCancellationWithRetry(serializeCancelExplainFormData(serverRequestId));
         }
-        function postCancelQuery(queryRequestId) {
+        /** A page being unloaded: only one keepalive request outlives it (a retrying XHR would be dropped). */
+        function postCancelExplainOnLeave(serverRequestId) {
+            var fetcher = window.fetch;
+            if (typeof fetcher !== 'function') {
+                postCancelExplain(serverRequestId);
+                return;
+            }
+            try {
+                fetcher.call(window, queryEndpoint(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+                    body: serializeCancelExplainFormData(serverRequestId),
+                    keepalive: true
+                });
+            }
+            catch (error) {
+                // The browser may refuse requests while the page is going away.
+            }
+        }
+        /**
+         * An explanation request that failed without an answer (status 0: the network failed, or the browser stopped
+         * the requests of a page it unloads, which Firefox and Safari do before pagehide) may still run on the server:
+         * ask it to stop, with one keepalive request that outlives a page being unloaded. A request this page aborted
+         * itself (textStatus 'abort') was cancelled where it was aborted.
+         */
+        function cancelUnansweredExplanation(jqXHR, textStatus, signature) {
+            if (textStatus !== 'abort' && (!jqXHR || !jqXHR.status) && signature && signature.serverRequestId) {
+                postCancelExplainOnLeave(signature.serverRequestId);
+            }
+        }
+        /**
+         * The explanations still running when the page goes: the server is asked to stop them. leaving: the document
+         * is being unloaded (the route is disposed for 'pagehide'), so only a keepalive request outlives it. pagehide
+         * runs before the document is hidden, so visibilityState cannot tell.
+         */
+        function cancelRunningExplanationsOnServer(leaving) {
+            var signatures = [activePrimaryRequestSignature];
+            Object.keys(activeCompareRequestSignatures).forEach(function (pane) {
+                signatures.push(activeCompareRequestSignatures[pane]);
+            });
+            signatures.forEach(function (signature) {
+                if (signature && signature.serverRequestId) {
+                    if (leaving) {
+                        postCancelExplainOnLeave(signature.serverRequestId);
+                    }
+                    else {
+                        postCancelExplain(signature.serverRequestId);
+                    }
+                }
+            });
+        }
+        function postCancelQuery(queryRequestId, url) {
             if (!queryRequestId) {
                 return;
             }
             postCancellationWithRetry($.param([
                 { name: 'action', value: 'cancel-query' },
                 { name: 'query-request-id', value: queryRequestId }
-            ]));
+            ]), undefined, url);
         }
+        /** Cancel a query on the server: at url, the endpoint the query ran at, or this page's own. */
+        function cancelServerQuery(queryRequestId, url) {
+            postCancelQuery(queryRequestId, url);
+        }
+        query_1.cancelServerQuery = cancelServerQuery;
         function setQueryCancelVisible(visible) {
             $('#query-cancel')
                 .prop('disabled', !visible)
                 .attr('aria-hidden', visible ? 'false' : 'true')
                 .toggleClass('query-cancel--visible', visible);
         }
-        function clearActiveQuery(queryRequestId) {
-            if (queryRequestId && queryRequestId !== activeQueryRequestId) {
+        function setResultLoading(loading) {
+            var loadingElement = document.getElementById(RESULT_LOADING_ID);
+            if (resultLoadingRequested !== loading) {
+                resultLoadingRequested = loading;
+                if (loadingElement) {
+                    if (loading) {
+                        loadingElement.hidden = false;
+                        loadingElement.setAttribute('aria-hidden', 'false');
+                        workbench.animateElementOpacity(loadingElement, true);
+                    }
+                    else if (!loadingElement.hidden) {
+                        loadingElement.setAttribute('aria-hidden', 'true');
+                        workbench.animateElementOpacity(loadingElement, false, function () {
+                            if (!resultLoadingRequested) {
+                                loadingElement.hidden = true;
+                            }
+                        });
+                    }
+                }
+            }
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                if (loading && resultsElement.hidden) {
+                    resultsElement.hidden = false;
+                    resultsElement.setAttribute('aria-hidden', 'false');
+                    workbench.animateElementOpacity(resultsElement, true);
+                }
+                resultsElement.setAttribute('aria-busy', loading ? 'true' : 'false');
+            }
+        }
+        function setResultStatus(message) {
+            var statusElement = document.getElementById(RESULT_STATUS_ID);
+            if (statusElement) {
+                var wasEmpty = !statusElement.textContent;
+                statusElement.textContent = message || '';
+                if (message && wasEmpty) {
+                    workbench.animateElementOpacity(statusElement, true);
+                }
+            }
+            if (message) {
+                var resultsElement = document.getElementById('query-results');
+                if (resultsElement) {
+                    if (resultsElement.hidden) {
+                        resultsElement.hidden = false;
+                        resultsElement.setAttribute('aria-hidden', 'false');
+                        workbench.animateElementOpacity(resultsElement, true);
+                    }
+                }
+            }
+        }
+        function getResultFullscreenButton(results) {
+            var target = results || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var streamed = target && target.querySelector
+                ? target.querySelector('[data-query-stream-root] .query-results__fullscreen') : null;
+            if (!streamed && target && target.id !== 'query-results') {
+                return target.querySelector ? target.querySelector('.query-results__fullscreen') : null;
+            }
+            return streamed || document.getElementById('query-results-fullscreen');
+        }
+        function isQueryRerunEnabled() {
+            var button = document.getElementById('rerun-explanation');
+            return !!button && button.getAttribute('data-query-rerun-enabled') !== 'false';
+        }
+        function isPrefixInsertionEnabled() {
+            var button = document.getElementById('query-insert-prefixes');
+            return !button || button.getAttribute('data-editor-namespaces-enabled') !== 'false';
+        }
+        function isResultsFullscreen() {
+            return workbench.resultFullscreen.isFullscreen(workbench.resultFullscreen.currentTarget()
+                || document.getElementById('query-results'));
+        }
+        query_1.isResultsFullscreen = isResultsFullscreen;
+        function setResultsFullscreen(enabled, restoreFocus, target, control) {
+            if (restoreFocus === void 0) { restoreFocus = true; }
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            if (!results) {
                 return;
             }
-            activeQueryRequestId = null;
+            var button = control || getResultFullscreenButton(results);
+            workbench.resultFullscreen.set(results, button, enabled, restoreFocus);
+        }
+        query_1.setResultsFullscreen = setResultsFullscreen;
+        function getResultPresentationState() {
+            return { layout: resultPresentationLayout, wrap: resultPresentationWrap };
+        }
+        query_1.getResultPresentationState = getResultPresentationState;
+        function applyResultPresentationState(layout, wrap) {
+            if (layout === 'table' || layout === 'records' || layout === 'auto' || layout === 'nquads') {
+                resultPresentationLayout = layout;
+            }
+            resultPresentationWrap = wrap !== false;
+        }
+        query_1.applyResultPresentationState = applyResultPresentationState;
+        function clearActiveQuery() {
             $('#query-request-id').val('');
             setQueryCancelVisible(false);
         }
-        function installQueryPageLifecycleHandlers() {
-            if (!window.addEventListener) {
-                return;
+        /** Leaving the page (or returning to it from the back/forward cache) starts the result area afresh. */
+        function resetResultArea() {
+            setResultsFullscreen(false, false);
+            setResultLoading(false);
+            setResultStatus('');
+            var resultsElement = document.getElementById('query-results');
+            if (resultsElement) {
+                resultsElement.hidden = true;
             }
-            window.addEventListener('pagehide', function () {
-                clearActiveQuery();
-            }, false);
-            window.addEventListener('pageshow', function () {
-                clearActiveQuery();
-            }, false);
+            clearActiveQuery();
         }
-        function beginTrackedQuery() {
-            if (activeQueryRequestId) {
-                cancelQuery();
-            }
-            var queryRequestId = generateRequestId();
-            activeQueryRequestId = queryRequestId;
-            $('#query-request-id').val(queryRequestId);
-            setQueryCancelVisible(true);
-            return true;
-        }
-        installQueryPageLifecycleHandlers();
         function createStableExplanationFromResponse(signature, response, fallbackFormat) {
             var responseFormat = getNormalizedExplainFormat(response.format || fallbackFormat || 'text');
             var explanationText = response.content || '';
@@ -2449,7 +3044,9 @@ var workbench;
                 rawContent: explanationText,
                 displayContent: displayContent,
                 lineSeparator: lineSeparator,
-                plan: parsedPlan
+                plan: parsedPlan,
+                timedOut: response.timedOut === true || (!!parsedPlan && parsedPlan.timedOut === true),
+                elapsedMs: typeof signature.startedAt === 'number' ? Date.now() - signature.startedAt : undefined
             };
         }
         function applyExplainResponseToPane(paneKey, signature, response, fallbackFormat) {
@@ -2474,6 +3071,9 @@ var workbench;
                 dataType: 'json',
                 data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format, signature.serverRequestId),
                 error: function (jqXHR, textStatus, errorThrown) {
+                    if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
+                        cancelUnansweredExplanation(jqXHR, textStatus, signature);
+                    }
                     if (textStatus !== 'abort' && activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
                         dispatchQueryPageEvent({
                             type: 'EXPLAIN_ERROR',
@@ -2520,13 +3120,13 @@ var workbench;
             hideExplainRequestSpinner('compare');
         }
         function showCompareExplainSpinner() {
-            showExplainRequestSpinner('compare', 'explain-compare-trigger');
+            showExplainRequestSpinner('compare');
         }
         function hideCompareExplainCancelButton() {
             hideExplainRequestCancelButtons('compare');
         }
         function showCompareExplainCancelButton() {
-            showExplainRequestCancelButton('compare', 'explain-compare-trigger');
+            showExplainRequestCancelButton('compare');
         }
         function clearCompareExplainSpinnerDelayTimeout() {
             clearExplainRequestSpinnerDelayTimeout('compare');
@@ -2541,7 +3141,7 @@ var workbench;
             var bothQueriesAvailable = compareModeEnabled
                 && getPaneQueryValue('primary').length > 0
                 && getPaneQueryValue('compare').length > 0;
-            $('#query-diff-trigger').prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
+            $(diffTriggerSelector).prop('disabled', !bothQueriesAvailable || activeComparePendingRequests > 0);
         }
         function refreshVisibleQueryEditors() {
             window.requestAnimationFrame(function () {
@@ -2574,6 +3174,7 @@ var workbench;
         }
         function syncCompareModeVisibility() {
             $('#explain-trigger').show();
+            $('#query-compare-toolbar, #query-actions-compare').prop('hidden', !compareModeEnabled);
             if (!compareModeEnabled) {
                 hideCompareExplainSpinner();
             }
@@ -2747,8 +3348,8 @@ var workbench;
                 });
             }
             beginComparePrimaryExplainWaitState(triggerButtonId);
-            $('#query-diff-trigger').prop('disabled', true);
-            beginExplainRequestUiWaitState('compare', activeCompareRequestId, triggerButtonId || 'explain-compare-trigger', function (requestCounter) {
+            $(diffTriggerSelector).prop('disabled', true);
+            beginExplainRequestUiWaitState('compare', activeCompareRequestId, normalizeCompareExplainButtonId(), function (requestCounter) {
                 return requestCounter === activeCompareRequestId
                     && activeComparePendingRequests > 0
                     && !!activeCompareRequestId;
@@ -2795,6 +3396,10 @@ var workbench;
                 dataType: 'json',
                 data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format, signature.serverRequestId),
                 error: function (jqXHR, textStatus, errorThrown) {
+                    if (activeCompareRequestSignatures[signature.pane]
+                        && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
+                        cancelUnansweredExplanation(jqXHR, textStatus, signature);
+                    }
                     if (textStatus !== 'abort'
                         && activeCompareRequestSignatures[signature.pane]
                         && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
@@ -2822,33 +3427,36 @@ var workbench;
             });
             activeCompareExplainJqXHRs.push(compareRequest);
         }
-        /**
-         * Send a background HTTP request to save the query, and handle the
-         * response asynchronously.
-         *
-         * @param overwrite
-         *            if true, add a URL parameter that tells the server we wish
-         *            to overwrite any already saved query
-         */
-        function ajaxSave(overwrite) {
-            var feedback = $('#save-feedback');
-            var url = [];
-            url[url.length] = 'query';
-            if (overwrite) {
-                url[url.length] = document.all ? ';' : '?';
-                url[url.length] = 'overwrite=true&';
+        function ajaxSave(overwrite, operation) {
+            if (!operation) {
+                var form = $('form[action="query"]');
+                operation = { owner: workbench.captureFormOwner(form.get(0)), data: form.serialize(),
+                    name: String($('#query-name').val() || ''), feedback: $('#save-feedback') };
             }
-            var href = url.join('');
-            var form = $('form[action="query"]');
+            if (!operation.owner.isCurrent()) {
+                return;
+            }
+            var saved = operation;
+            var feedback = saved.feedback;
+            var suffix = overwrite ? (document.all ? ';' : '?') + 'overwrite=true&' : '';
+            var href = (saved.owner.url ? new URL('query', saved.owner.url).href : 'query') + suffix;
             $.ajax({
                 url: href,
                 type: 'POST',
                 dataType: 'json',
-                data: form.serialize(),
+                data: saved.data,
                 timeout: 5000,
                 error: function (jqXHR, textStatus, errorThrown) {
+                    if (!saved.owner.isCurrent()) {
+                        return;
+                    }
                     feedback.removeClass().addClass('error');
-                    if (textStatus == 'timeout') {
+                    // The server's own reason, such as a private save without a signed-in user.
+                    var serverMessage = jsonErrorMessage(jqXHR);
+                    if (serverMessage) {
+                        feedback.text('Save failed: ' + serverMessage);
+                    }
+                    else if (textStatus == 'timeout') {
                         feedback.text('Timed out waiting for response. Uncertain if save occured.');
                     }
                     else {
@@ -2857,21 +3465,32 @@ var workbench;
                     }
                 },
                 success: function (response) {
+                    if (!saved.owner.isCurrent()) {
+                        return;
+                    }
                     if (response.accessible) {
                         if (response.written) {
                             feedback.removeClass().addClass('success');
                             feedback.text('Query saved.');
                         }
-                        else {
-                            if (response.existed) {
-                                if (confirm('Query name exists. Click OK to overwrite.')) {
-                                    ajaxSave(true);
+                        else if (response.existed) {
+                            workbench.confirmDialog.open({
+                                title: 'Replace saved query?',
+                                body: 'A saved query named "' + saved.name + '" already exists. Saving replaces it.',
+                                confirmLabel: 'Replace',
+                                danger: true
+                            }).then(function (overwrite) {
+                                if (!saved.owner.isCurrent()) {
+                                    return;
+                                }
+                                if (overwrite) {
+                                    ajaxSave(true, saved);
                                 }
                                 else {
                                     feedback.removeClass().addClass('error');
                                     feedback.text('Cancelled overwriting existing query.');
                                 }
-                            }
+                            });
                         }
                     }
                     else {
@@ -2892,68 +3511,110 @@ var workbench;
             if (yasqe)
                 yasqe.save();
             $('#include-query-text').val('false');
-            var allowPageToSubmitForm = false;
             var save = ($('#action').val() == 'save');
             if (save) {
                 clearExplainSelection();
                 ajaxSave(false);
+                return false;
             }
-            else {
-                if (!beginTrackedQuery()) {
-                    return false;
-                }
-                var url = [];
-                url[url.length] = 'query';
-                if (document.all) {
-                    url[url.length] = ';';
-                }
-                else {
-                    url[url.length] = '?';
-                }
-                workbench.addParam(url, 'action');
-                workbench.addParam(url, 'queryLn');
-                workbench.addParam(url, 'query');
-                workbench.addParam(url, 'limit_query');
-                workbench.addParam(url, 'query-timeout');
-                workbench.addParam(url, 'infer');
-                workbench.addParam(url, 'explain');
-                workbench.addParam(url, 'explain-format');
-                workbench.addParam(url, 'query-request-id');
-                var href = url.join('');
-                var loc = document.location;
-                var currentBaseLength = loc.href.length - loc.pathname.length
-                    - loc.search.length;
-                var pathLength = href.length;
-                var urlLength = pathLength + currentBaseLength;
-                // Published Internet Explorer restrictions on URL length, which are the
-                // most restrictive of the major browsers.
-                if (pathLength > 2048 || urlLength > 2083) {
-                    alert("Due to its length, your query will be posted in the request body. "
-                        + "It won't be possible to use a bookmark for the results page.");
-                    $('#include-query-text').val('true');
-                    allowPageToSubmitForm = true;
-                }
-                else {
-                    // GET using the constructed URL, method exits here
-                    document.location.href = href;
-                }
+            var streamedQueryPage = workbench.queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                && streamedQueryPage.ownsForm(queryForm)
+                && typeof streamedQueryPage.submitExecution === 'function') {
+                return streamedQueryPage.submitExecution();
             }
-            // Value returned to form submit event. If not true, prevents normal form
-            // submission.
-            return allowPageToSubmitForm;
+            // The streamed result renderer is the only way to show results (M9.1 removed the result iframe).
+            setResultStatus('Query results are unavailable on this page.');
+            return false;
         }
         query_1.doSubmit = doSubmit;
         function cancelQuery() {
-            var queryRequestId = activeQueryRequestId;
-            if (!queryRequestId) {
-                return;
+            var streamedQueryPage = workbench.queryPage;
+            var queryForm = document.getElementById('query-form');
+            if (streamedQueryPage && typeof streamedQueryPage.ownsForm === 'function'
+                && streamedQueryPage.ownsForm(queryForm)
+                && typeof streamedQueryPage.hasActiveRequest === 'function'
+                && streamedQueryPage.hasActiveRequest()
+                && typeof streamedQueryPage.cancelExecution === 'function') {
+                streamedQueryPage.cancelExecution();
             }
-            window.stop();
-            postCancelQuery(queryRequestId);
-            clearActiveQuery(queryRequestId);
         }
         query_1.cancelQuery = cancelQuery;
+        function toggleResultsFullscreen(target, control) {
+            var results = target || workbench.resultFullscreen.currentTarget() || document.getElementById('query-results');
+            var button = control || getResultFullscreenButton(results);
+            if (!results || !button || button.disabled
+                || button.getAttribute('data-result-fullscreen-enabled') === 'false') {
+                return;
+            }
+            setResultsFullscreen(results.getAttribute('data-fullscreen') !== 'true', true, results, button);
+        }
+        query_1.toggleResultsFullscreen = toggleResultsFullscreen;
+        var serverErrorLine = null;
+        /**
+         * Mark the editor line that a server parser error points at (gutter marker and line background); with
+         * reveal, also put the cursor there. The next edit clears the mark.
+         */
+        function showQueryErrorLocation(line, column, reveal) {
+            if (!yasqe || !(line >= 1)) {
+                return;
+            }
+            clearQueryErrorLocation();
+            var doc = yasqe.getDoc();
+            var index = Math.min(line - 1, Math.max(0, doc.lineCount() - 1));
+            var marker = document.createElement('span');
+            marker.className = 'query-editor-error-marker';
+            marker.title = 'The server reported a syntax error on this line';
+            yasqe.setGutterMarker(index, 'gutterErrorBar', marker);
+            yasqe.addLineClass(index, 'background', 'query-editor-error-line');
+            serverErrorLine = index;
+            if (reveal) {
+                yasqe.focus();
+                doc.setCursor({ line: index, ch: Math.max(0, column - 1) });
+                yasqe.scrollIntoView(null, 80);
+            }
+        }
+        query_1.showQueryErrorLocation = showQueryErrorLocation;
+        function clearQueryErrorLocation() {
+            if (serverErrorLine === null) {
+                return;
+            }
+            if (yasqe) {
+                yasqe.setGutterMarker(serverErrorLine, 'gutterErrorBar', null);
+                yasqe.removeLineClass(serverErrorLine, 'background', 'query-editor-error-line');
+            }
+            serverErrorLine = null;
+        }
+        query_1.clearQueryErrorLocation = clearQueryErrorLocation;
+        /** Show the output card below the editor and select its 'results' or 'explanation' tab. */
+        function showOutputTab(name) {
+            var card = document.getElementById('query-output');
+            var tab = document.getElementById('query-output-tab-' + name);
+            if (!card || !tab) {
+                return;
+            }
+            card.hidden = false;
+            workbench.tabs.select(tab);
+        }
+        query_1.showOutputTab = showOutputTab;
+        /** Badge the Results tab with the number of rows, from the renderer's result summary. */
+        function updateResultsBadge(summary) {
+            var badge = document.getElementById('query-results-count');
+            if (!badge) {
+                return;
+            }
+            var visible = !!summary && !!summary.rows;
+            badge.hidden = !visible;
+            badge.textContent = visible
+                ? workbench.format.count(summary.total !== null && summary.total !== undefined ? summary.total : summary.rowCount)
+                : '';
+        }
+        query_1.updateResultsBadge = updateResultsBadge;
         function runExplain(level, buttonId) {
+            if (buttonId === 'rerun-explanation' && !isQueryRerunEnabled()) {
+                return;
+            }
             if (compareModeEnabled) {
                 runCompareExplain(buttonId || 'explain-trigger');
                 return;
@@ -2964,6 +3625,7 @@ var workbench;
                 return;
             }
             $('#explain-level').val(effectiveLevel);
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', buttonId);
             savePaneQuery('primary');
             activeExplainRequestId += 1;
@@ -2998,6 +3660,7 @@ var workbench;
             activeExplainRequestId += 1;
         }
         query_1.cancelExplain = cancelExplain;
+        /** Explains both queries; Explain and Explain again do this in compare mode. */
         function runCompareExplain(buttonId) {
             if (!compareModeEnabled) {
                 return;
@@ -3007,7 +3670,8 @@ var workbench;
             }
             savePaneQuery('primary');
             savePaneQuery('compare');
-            var triggerButtonId = buttonId || 'explain-compare-trigger';
+            var triggerButtonId = buttonId || 'explain-trigger';
+            showOutputTab('explanation');
             captureExplainButtonViewportTop('primary', triggerButtonId);
             captureExplainButtonViewportTop('compare', triggerButtonId);
             var nextGroupId = activeCompareRequestId + 1;
@@ -3029,7 +3693,7 @@ var workbench;
             $('#explain-level').val(getNormalizedExplainLevel(level));
             var nextGroupId = activeCompareRequestId + 1;
             var compareSignature = createRequestSignature('compare', 'compare-auto', nextGroupId, nextGroupId);
-            beginCompareExplainRequest([compareSignature], 'explain-compare-trigger');
+            beginCompareExplainRequest([compareSignature]);
             enqueueCompareExplanationRequest(compareSignature);
         }
         function cancelCompareExplain() {
@@ -3172,12 +3836,78 @@ var workbench;
             updateCompareActionState();
         }
         query_1.updateYasqe = updateYasqe;
+        /** True while an execution is running: Execute is disabled or Cancel is offered. */
+        function isQueryExecutionRunning() {
+            var exec = document.getElementById('exec');
+            var cancel = document.getElementById('query-cancel');
+            return !!(exec && exec.disabled) || !!(cancel && !cancel.disabled && cancel.getAttribute('aria-hidden') !== 'true');
+        }
+        function clickControl(id) {
+            var control = document.getElementById(id);
+            if (control && !control.disabled && !control.hidden) {
+                control.click();
+            }
+        }
+        function openSaveQuery() {
+            var toggle = document.getElementById('save-query-toggle');
+            if (toggle && !toggle.hidden && toggle.getAttribute('aria-expanded') !== 'true') {
+                toggle.click();
+            }
+            var name = document.getElementById('query-name');
+            if (name) {
+                name.focus();
+            }
+        }
+        /**
+         * Editor shortcuts (M3.1). They click the same buttons as the pointer does, so the Execute and Explain
+         * click handlers still set the form's action fields and copy the editor text before submitting.
+         */
+        function queryEditorKeys(paneKey) {
+            // In the compare editor both shortcuts explain both queries, which Explain does in compare mode.
+            var run = function () {
+                if (!isQueryExecutionRunning()) {
+                    clickControl(paneKey === 'compare' ? 'explain-trigger' : 'exec');
+                }
+            };
+            var explain = function () {
+                if (!isQueryExecutionRunning()) {
+                    clickControl('explain-trigger');
+                }
+            };
+            var save = function () {
+                openSaveQuery();
+            };
+            return {
+                'Ctrl-Enter': run,
+                'Cmd-Enter': run,
+                'Shift-Ctrl-Enter': explain,
+                'Shift-Cmd-Enter': explain,
+                'Ctrl-S': save,
+                'Cmd-S': save
+            };
+        }
         function initPaneYasqe(paneKey, clearFeedbackOnChange) {
             workbench.yasqeHelper.setupCompleters(sparqlNamespaces);
             var paneEditor = YASQE.fromTextArea(document.getElementById(getPaneState(paneKey).queryId), {
-                consumeShareLink: null, //don't try to parse the url args. this is already done by the addLoad function below
-                persistent: null
+                consumeShareLink: null, //don't try to parse the url args. mountQueryPage already does
+                persistent: null,
+                // Queries run through the Workbench form; YASQE must never send them to its default endpoint.
+                sparql: { endpoint: '', showQueryButton: false },
+                extraKeys: queryEditorKeys(paneKey)
             });
+            var queryPage = document.getElementById('query-page');
+            if (queryPage && queryPage.getAttribute('data-editor-fullscreen-enabled') === 'false') {
+                var fullscreenControl = paneEditor.getWrapperElement().querySelector('.fullscreenToggleBtns');
+                if (fullscreenControl) {
+                    fullscreenControl.hidden = true;
+                }
+                var extraKeys = paneEditor.getOption('extraKeys');
+                paneEditor.setOption('extraKeys', $.extend({}, extraKeys, {
+                    F11: function () {
+                        // The deployment disabled editor fullscreen in the Workbench policy.
+                    }
+                }));
+            }
             clearPanePersistedQuery(paneKey);
             $(paneEditor.getWrapperElement()).css({
                 "fontSize": "14px",
@@ -3191,10 +3921,17 @@ var workbench;
                 }
                 else {
                     persistPrimaryQueryEditorValue(paneEditor);
+                    clearQueryErrorLocation();
                 }
                 workbench.query.clearFeedback();
                 handleQueryPageInputChange(paneKey === 'compare' ? 'COMPARE_QUERY_CHANGED' : 'PRIMARY_QUERY_CHANGED');
             });
+            var sizing = workbench.editorSizing;
+            var resizeHandle = document.getElementById(paneKey === 'compare' ? 'query-compare-editor-resize' : 'query-editor-resize');
+            if (sizing && typeof sizing.install === 'function' && resizeHandle) {
+                releaseEditorSizing(paneKey);
+                editorSizingDisposers[paneKey] = sizing.install(paneEditor, resizeHandle, 'rdf4j.workbench.editor-height.v1');
+            }
             paneEditor.refresh();
             setPaneQueryEditor(paneKey, paneEditor);
             return paneEditor;
@@ -3212,7 +3949,15 @@ var workbench;
             }
             initPaneYasqe('compare');
         }
+        function releaseEditorSizing(paneKey) {
+            var release = editorSizingDisposers[paneKey];
+            delete editorSizingDisposers[paneKey];
+            if (typeof release === 'function') {
+                release();
+            }
+        }
         function closeCompareYasqe() {
+            releaseEditorSizing('compare');
             if (compareYasqe) {
                 compareYasqe.toTextArea();
                 compareYasqe = null;
@@ -3220,6 +3965,7 @@ var workbench;
             clearPanePersistedQuery('compare');
         }
         function closeYasqe() {
+            releaseEditorSizing('primary');
             if (yasqe) {
                 yasqe.toTextArea();
                 yasqe = null;
@@ -3248,6 +3994,30 @@ var workbench;
             }
         }
         query_1.toggleCompareMode = toggleCompareMode;
+        function closeComparePane() {
+            if (compareModeEnabled) {
+                toggleCompareMode();
+            }
+            var compareTrigger = document.getElementById('compare-toggle');
+            if (compareTrigger) {
+                compareTrigger.focus();
+            }
+        }
+        query_1.closeComparePane = closeComparePane;
+        function swapCompareQueries() {
+            if (!compareModeEnabled) {
+                return;
+            }
+            var primaryQuery = getPaneRawQueryValue('primary');
+            var compareQuery = getPaneRawQueryValue('compare');
+            setPaneQueryValue('primary', compareQuery);
+            setPaneQueryValue('compare', primaryQuery);
+            persistPrimaryQueryValue();
+            handleQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+            handleQueryPageInputChange('COMPARE_QUERY_CHANGED');
+            refreshVisibleQueryEditors();
+        }
+        query_1.swapCompareQueries = swapCompareQueries;
         function toggleCompareSidebar() {
             if (!compareModeEnabled) {
                 return;
@@ -3255,11 +4025,12 @@ var workbench;
             dispatchQueryPageEvent({ type: 'TOGGLE_SIDEBAR' });
         }
         query_1.toggleCompareSidebar = toggleCompareSidebar;
-        function openDiffModal() {
+        /** Opens the diff of both queries and plans; closing it returns focus to the Diff button that opened it. */
+        function openDiffModal(triggerButtonId) {
             if (!compareModeEnabled) {
                 return;
             }
-            lastDiffTriggerElement = document.getElementById('query-diff-trigger');
+            lastDiffTriggerElement = document.getElementById(triggerButtonId || 'query-diff-trigger');
             dispatchQueryPageEvent({ type: 'OPEN_DIFF' });
             document.getElementById('query-diff-close').focus();
         }
@@ -3282,6 +4053,371 @@ var workbench;
             updateCompareActionState();
         }
         query_1.refreshCompareActionState = refreshCompareActionState;
+        /**
+         * Mount the Query page in outlet (plan task M9.1): fill the editor from the URL, the session draft or the
+         * cookies, set up the explanation and compare views, and bind the page's controls. Element handlers and
+         * document handlers use the .wbQuery event namespace; the returned function removes them, the window and
+         * output listeners and pending input timers, and resets the module (resetState).
+         */
+        function mountQueryPage(outlet) {
+            var page = $(outlet);
+            queryEndpointUrl = absolutePageUrl('query');
+            var bound = [];
+            var timers = [];
+            /** Bind handler to the events of the page element that selector names, in the .wbQuery namespace. */
+            function on(selector, events, handler) {
+                var element = page.find(selector);
+                element.on(events.split(' ').map(function (name) { return name + '.wbQuery'; }).join(' '), handler);
+                bound.push(element);
+            }
+            /**
+             * Gets a parameter from the URL or the cookies, preferentially in that
+             * order.
+             *
+             * @param param
+             *            the name of the parameter
+             * @returns the value of the given parameter, or something that evaluates
+             *          as false, if the parameter was not found
+             */
+            function getParameterFromUrl(param) {
+                // The whole address, the fragment included: a query link typed by hand may hold an unencoded '#'
+                // (PREFIX ex: <http://example.org/ns#>), which the browser takes as the start of the fragment.
+                var href = document.location.href;
+                var start = href.indexOf('?') >= 0 ? href.indexOf('?') : href.indexOf(';');
+                if (start < 0) {
+                    return '';
+                }
+                var elements = href.substring(start + 1).split(decodeURIComponent('%26'));
+                var result = '';
+                for (var i = 0; elements.length - i; i++) {
+                    var separator = elements[i].indexOf('=');
+                    if (separator < 0 || elements[i].substring(0, separator) != param) {
+                        continue;
+                    }
+                    // '+' is a form-encoded space; an encoded plus (%2B) must survive, so replace before decoding.
+                    var value = elements[i].substring(separator + 1).replace(/\+/g, ' ');
+                    try {
+                        result = decodeURIComponent(value);
+                    }
+                    catch (error) {
+                        result = value;
+                    }
+                }
+                return result;
+            }
+            function getParameterFromUrlOrCookie(param) {
+                var result = getParameterFromUrl(param);
+                if (!result) {
+                    result = workbench.getCookie(param);
+                }
+                return result;
+            }
+            function getQueryTextFromServer(queryParam, refParam) {
+                $.getJSON('query', {
+                    action: "get",
+                    query: queryParam,
+                    ref: refParam
+                }, function (response) {
+                    if (response.queryText) {
+                        applyLoadedPrimaryQuery(response.queryText);
+                    }
+                });
+            }
+            var onDocumentClick = function (event) {
+                if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
+                    && $(event.target).closest('#explanation-settings, #explanation-settings-panel').length === 0) {
+                    setExplanationSettingsOpen(false);
+                }
+            };
+            var onDocumentKeydown = function (event) {
+                if ($('#query-diff-modal').hasClass('query-diff-modal--open') && event.key === 'Tab') {
+                    handleDiffModalTab(event);
+                    return;
+                }
+                if (event.key === 'Escape' && isResultsFullscreen()) {
+                    toggleResultsFullscreen();
+                    event.preventDefault();
+                    return;
+                }
+                if (event.key === 'Escape'
+                    && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
+                    setExplanationSettingsOpen(false);
+                    var settingsToggle = document.getElementById('explanation-settings-toggle');
+                    if (settingsToggle) {
+                        settingsToggle.focus();
+                    }
+                    return;
+                }
+                if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
+                    closeDiffModal();
+                }
+            };
+            /** The page's window and document listeners, dropped while the page is kept alive (M11.3). */
+            function listen() {
+                window.addEventListener('pagehide', resetResultArea, false);
+                window.addEventListener('pageshow', resetResultArea, false);
+                $(document).on('click.wbQuery', onDocumentClick);
+                $(document).on('keydown.wbQuery', onDocumentKeydown);
+            }
+            function unlisten() {
+                window.removeEventListener('pagehide', resetResultArea, false);
+                window.removeEventListener('pageshow', resetResultArea, false);
+                $(document).off('.wbQuery');
+            }
+            listen();
+            // Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
+            // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).
+            updateYasqe();
+            // Populate the query text area with the value of the URL query parameter, only if it is present. If
+            // it is not present in the URL query, then looks for the 'query' cookie, and sets it from that. (The
+            // cookie enables re-populating the text field with the previous query when the user returns via the
+            // browser back button.)
+            var query = getParameterFromUrl('query');
+            if (query) {
+                var ref = getParameterFromUrl('ref');
+                if (ref == 'id' || ref == 'hash') {
+                    getQueryTextFromServer(query, ref);
+                }
+                else {
+                    setQueryValue(query);
+                    persistPrimaryQueryValue();
+                }
+            }
+            else {
+                var initialQueryValue = getQueryValue();
+                if (initialQueryValue) {
+                    persistPrimaryQueryValue();
+                }
+                else {
+                    var sessionDraft = getPrimaryQueryDraftSessionValue();
+                    if (sessionDraft) {
+                        setQueryValue(sessionDraft);
+                    }
+                    else {
+                        query = getParameterFromUrlOrCookie('query');
+                        if (query) {
+                            var fallbackRef = getParameterFromUrlOrCookie('ref');
+                            if (fallbackRef == 'id' || fallbackRef == 'hash') {
+                                getQueryTextFromServer(query, fallbackRef);
+                            }
+                            else {
+                                setQueryValue(query);
+                                persistPrimaryQueryValue();
+                            }
+                        }
+                    }
+                }
+            }
+            // Trim the query text area contents of any leading and/or trailing whitespace.
+            setQueryValue($.trim(getQueryValue()));
+            initializeExplanationView();
+            initializeCompareUi();
+            workbench.tabs.bind(outlet.querySelector('#query-output [role="tablist"]'));
+            var queryOutput = outlet.querySelector('#query-output');
+            var onResultSummary = function (event) {
+                updateResultsBadge(event.detail);
+            };
+            var onErrorLocation = function (event) {
+                var location = event.detail || {};
+                showQueryErrorLocation(location.line, location.column, !!location.reveal);
+            };
+            if (queryOutput) {
+                queryOutput.addEventListener('workbench:query-result-summary', onResultSummary);
+                queryOutput.addEventListener('workbench:query-error-location', onErrorLocation);
+            }
+            // Add click handlers identifying the clicked element in a hidden 'action' form field.
+            var addHandler = function (id, callback) {
+                on('#' + id, 'click', function setAction() {
+                    $('#action').val(id);
+                    if (callback) {
+                        callback();
+                    }
+                });
+            };
+            addHandler('exec', function () {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            addHandler('save', function () {
+                $('#explain').val('');
+                $('#explain-level').val('');
+            });
+            on('#copy-explanation', 'click', function () {
+                copyExplanation('primary');
+            });
+            on('#copy-explanation-compare', 'click', function () {
+                copyExplanation('compare');
+            });
+            on('#query-compare-copy', 'click', function () {
+                copyExplanation('primary');
+            });
+            on('#query-compare-swap', 'click', function () {
+                swapCompareQueries();
+            });
+            on('#download-explanation', 'click', downloadExplanation);
+            on('#explanation-highlight-syntax', 'click', function () {
+                setExplanationHighlightMode('syntax');
+            });
+            on('#explanation-highlight-hotspot', 'click', function () {
+                setExplanationHighlightMode('hotspot');
+            });
+            on('#explanation-properties-all', 'click', function () {
+                setAllExplanationPropertiesVisible(true);
+            });
+            on('#explanation-properties-none', 'click', function () {
+                setAllExplanationPropertiesVisible(false);
+            });
+            // Add event handlers to the save name field to react to changes in it.
+            // 'input' covers autofill and a dropped text, which press no key (C23).
+            on('#query-name', 'keydown cut paste input', handleNameChange);
+            // Add event handlers to the query text area to react to changes in it.
+            function deferInputChange(handler) {
+                return function () {
+                    timers.push(window.setTimeout(handler, 0));
+                };
+            }
+            on('#query', 'keydown cut paste change', deferInputChange(function () {
+                clearFeedback();
+                notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+            }));
+            on('#query-compare', 'keydown cut paste change', deferInputChange(function () {
+                clearFeedback();
+                notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
+            }));
+            on('#explain-level', 'change', function () {
+                notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
+            });
+            on('#explain-format', 'change', function () {
+                notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
+            });
+            on('#query-timeout', 'input change', syncExplanationTimeoutControls);
+            on('#query-diff-modal', 'click', function (event) {
+                if (event.target && event.target.id === 'query-diff-modal') {
+                    closeDiffModal();
+                }
+            });
+            var suspended = false;
+            var cleanup = function (reason) {
+                unlisten();
+                bound.forEach(function (element) {
+                    element.off('.wbQuery');
+                });
+                if (queryOutput) {
+                    queryOutput.removeEventListener('workbench:query-result-summary', onResultSummary);
+                    queryOutput.removeEventListener('workbench:query-error-location', onErrorLocation);
+                }
+                timers.forEach(function (timer) {
+                    clearTimeout(timer);
+                });
+                resetState(reason);
+            };
+            // Kept alive (M11.3): hidden, the page listens to nothing outside itself and compare mode leaves the
+            // page shown instead alone; the editors, results and a running query stay as they are.
+            cleanup.suspend = function () {
+                if (!suspended) {
+                    // The compare-mode menu flyout was the way out of this page: it is closed when the page comes back
+                    // (C28).
+                    if (compareModeEnabled && compareSidebarOpen) {
+                        dispatchQueryPageEvent({ type: 'TOGGLE_SIDEBAR' });
+                    }
+                    suspended = true;
+                    queryPageSuspended = true;
+                    unlisten();
+                    releasePageOverlays();
+                    releaseCompareChrome();
+                }
+            };
+            cleanup.resume = function () {
+                if (suspended) {
+                    suspended = false;
+                    queryPageSuspended = false;
+                    listen();
+                    syncCompareSidebarState();
+                }
+            };
+            return cleanup;
+        }
+        query_1.mountQueryPage = mountQueryPage;
+        /**
+         * Return the module to the state it had before the page was mounted: close the editors and the diff
+         * modal, stop pending explanation requests and timers, and undo compare mode outside the page. The Query
+         * route's dispose and the unit tests use it.
+         */
+        function resetState(reason) {
+            ['primary', 'compare'].forEach(function (controllerKey) {
+                var uiState = getExplainRequestUiState(controllerKey);
+                clearTimeout(uiState.spinnerDelayTimeoutId);
+                clearTimeout(uiState.spinnerHideTimeoutId);
+            });
+            if (explainTimingTick !== null) {
+                clearTimeout(explainTimingTick);
+                explainTimingTick = null;
+            }
+            cancelRunningExplanationsOnServer(reason === 'pagehide');
+            queryEndpointUrl = '';
+            [activeExplainJqXHR].concat(activeCompareExplainJqXHRs).forEach(function (request) {
+                if (request && typeof request.abort === 'function') {
+                    request.abort();
+                }
+            });
+            destroyDotPanZoom('primary');
+            destroyDotPanZoom('compare');
+            syncDiffModalPresentation(false);
+            releaseCompareChrome();
+            releaseEditorSizing('primary');
+            releaseEditorSizing('compare');
+            queryPageSuspended = false;
+            exitEditorFullscreen(yasqe);
+            exitEditorFullscreen(compareYasqe);
+            if (yasqe && typeof yasqe.toTextArea === 'function') {
+                yasqe.toTextArea();
+            }
+            if (compareYasqe && typeof compareYasqe.toTextArea === 'function') {
+                compareYasqe.toTextArea();
+            }
+            clearActiveQuery();
+            yasqe = null;
+            compareYasqe = null;
+            vizRenderer = null;
+            queryPageState = createInitialQueryPageState();
+            lastRenderedExplanationKeys = {};
+            pendingDotRenderKeys = {};
+            activePrimaryRequestSignature = null;
+            activeCompareRequestSignatures = {};
+            resetExplainRequestUiState('primary');
+            resetExplainRequestUiState('compare');
+            activeExplainRequestId = 0;
+            activeExplainJqXHR = null;
+            resultPresentationLayout = 'auto';
+            resultPresentationWrap = true;
+            var fullscreenTarget = workbench.resultFullscreen.currentTarget();
+            if (fullscreenTarget) {
+                setResultsFullscreen(false, false, fullscreenTarget);
+            }
+            primaryExplanationPending = false;
+            activeCompareRequestId = 0;
+            activeComparePendingRequests = 0;
+            activeCompareExplainJqXHRs = [];
+            compareModeEnabled = false;
+            compareSidebarOpen = false;
+            compareQuerySeeded = false;
+            diffNotReadyLabel = '';
+            lastDiffTriggerElement = null;
+            explanationHighlightMode = 'syntax';
+            explanationHiddenProperties = loadExplanationHiddenProperties();
+            explanationPropertyOptionsKey = '';
+            primaryPaneState.latestExplanation = '';
+            primaryPaneState.latestExplanationFormat = 'text';
+            primaryPaneState.dotPanZoomInstance = null;
+            primaryPaneState.explainButtonViewportTopBeforeRequest = null;
+            primaryPaneState.explainButtonIdBeforeRequest = '';
+            comparePaneState.latestExplanation = '';
+            comparePaneState.latestExplanationFormat = 'text';
+            comparePaneState.dotPanZoomInstance = null;
+            comparePaneState.explainButtonViewportTopBeforeRequest = null;
+            comparePaneState.explainButtonIdBeforeRequest = '';
+        }
+        query_1.resetState = resetState;
         query_1.testing = {
             applyDotPanZoom: applyDotPanZoom,
             ajaxSave: ajaxSave,
@@ -3306,8 +4442,8 @@ var workbench;
             createDiffModalState: createDiffModalState,
             createEmptyQueryPageInputs: createEmptyQueryPageInputs,
             createErrorPaneState: createErrorPaneState,
-            createFallbackExplainServerRequestId: createFallbackRequestId,
-            createFallbackRequestId: createFallbackRequestId,
+            createFallbackExplainServerRequestId: generateRequestId,
+            createFallbackRequestId: generateRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
             createJsonTreeNode: createJsonTreeNode,
@@ -3408,14 +4544,11 @@ var workbench;
                     activeCompareRequestId: activeCompareRequestId,
                     activeCompareRequestSignatures: activeCompareRequestSignatures,
                     activePrimaryRequestSignature: activePrimaryRequestSignature,
-                    activeQueryRequestId: activeQueryRequestId,
                     compareModeEnabled: compareModeEnabled,
                     comparePaneState: comparePaneState,
                     compareQuerySeeded: compareQuerySeeded,
                     compareSidebarOpen: compareSidebarOpen,
-                    currentQueryLn: currentQueryLn,
                     diffNotReadyLabel: diffNotReadyLabel,
-                    explainServerRequestIdCounter: requestIdCounter,
                     explanationHighlightMode: explanationHighlightMode,
                     explanationHiddenProperties: explanationHiddenProperties,
                     lastRenderedExplanationKeys: lastRenderedExplanationKeys,
@@ -3424,46 +4557,7 @@ var workbench;
                     queryPageState: queryPageState
                 };
             },
-            resetInternalState: function () {
-                clearActiveQuery();
-                currentQueryLn = '';
-                yasqe = null;
-                compareYasqe = null;
-                vizRenderer = null;
-                queryPageState = createInitialQueryPageState();
-                lastRenderedExplanationKeys = {};
-                pendingDotRenderKeys = {};
-                activePrimaryRequestSignature = null;
-                activeCompareRequestSignatures = {};
-                requestIdCounter = 0;
-                resetExplainRequestUiState('primary');
-                resetExplainRequestUiState('compare');
-                activeExplainRequestId = 0;
-                activeExplainJqXHR = null;
-                activeQueryRequestId = null;
-                primaryExplanationPending = false;
-                activeCompareRequestId = 0;
-                activeComparePendingRequests = 0;
-                activeCompareExplainJqXHRs = [];
-                compareModeEnabled = false;
-                compareSidebarOpen = false;
-                compareQuerySeeded = false;
-                diffNotReadyLabel = '';
-                lastDiffTriggerElement = null;
-                explanationHighlightMode = 'syntax';
-                explanationHiddenProperties = loadExplanationHiddenProperties();
-                explanationPropertyOptionsKey = '';
-                primaryPaneState.latestExplanation = '';
-                primaryPaneState.latestExplanationFormat = 'text';
-                primaryPaneState.dotPanZoomInstance = null;
-                primaryPaneState.explainButtonViewportTopBeforeRequest = null;
-                primaryPaneState.explainButtonIdBeforeRequest = '';
-                comparePaneState.latestExplanation = '';
-                comparePaneState.latestExplanationFormat = 'text';
-                comparePaneState.dotPanZoomInstance = null;
-                comparePaneState.explainButtonViewportTopBeforeRequest = null;
-                comparePaneState.explainButtonIdBeforeRequest = '';
-            },
+            resetInternalState: resetState,
             setInternalState: function (state) {
                 if ('activeComparePendingRequests' in state) {
                     activeComparePendingRequests = state.activeComparePendingRequests;
@@ -3486,14 +4580,8 @@ var workbench;
                 if ('compareSidebarOpen' in state) {
                     compareSidebarOpen = state.compareSidebarOpen;
                 }
-                if ('currentQueryLn' in state) {
-                    currentQueryLn = state.currentQueryLn;
-                }
                 if ('diffNotReadyLabel' in state) {
                     diffNotReadyLabel = state.diffNotReadyLabel;
-                }
-                if ('explainServerRequestIdCounter' in state) {
-                    requestIdCounter = state.explainServerRequestIdCounter;
                 }
                 if ('explanationHiddenProperties' in state) {
                     explanationHiddenProperties = normalizeExplanationHiddenProperties(state.explanationHiddenProperties);
@@ -3517,188 +4605,4 @@ var workbench;
         };
     })(query = workbench.query || (workbench.query = {}));
 })(workbench || (workbench = {}));
-workbench.addLoad(function queryPageLoaded() {
-    /**
-     * Gets a parameter from the URL or the cookies, preferentially in that
-     * order.
-     *
-     * @param param
-     *            the name of the parameter
-     * @returns the value of the given parameter, or something that evaluates
-                  as false, if the parameter was not found
-     */
-    function getParameterFromUrl(param) {
-        var href = document.location.href;
-        var elements = href.substring(href.indexOf('?') + 1).substring(href.indexOf(';') + 1).split(decodeURIComponent('%26'));
-        var result = '';
-        for (var i = 0; elements.length - i; i++) {
-            var pair = elements[i].split('=');
-            var value = decodeURIComponent(pair[1]).replace(/\+/g, ' ');
-            if (pair[0] == param) {
-                result = value;
-            }
-        }
-        return result;
-    }
-    function getParameterFromUrlOrCookie(param) {
-        var result = getParameterFromUrl(param);
-        if (!result) {
-            result = workbench.getCookie(param);
-        }
-        return result;
-    }
-    function getQueryTextFromServer(queryParam, refParam) {
-        $.getJSON('query', {
-            action: "get",
-            query: queryParam,
-            ref: refParam
-        }, function (response) {
-            if (response.queryText) {
-                workbench.query.applyLoadedPrimaryQuery(response.queryText);
-            }
-        });
-    }
-    //Start with initializing our YASQE instance, given that 'SPARQL' is the selected query language
-    //(all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance
-    workbench.query.updateYasqe();
-    // Populate the query text area with the value of the URL query parameter,
-    // only if it is present. If it is not present in the URL query, then
-    // looks for the 'query' cookie, and sets it from that. (The cookie
-    // enables re-populating the text field with the previous query when the
-    // user returns via the browser back button.)
-    var query = getParameterFromUrl('query');
-    if (query) {
-        var ref = getParameterFromUrl('ref');
-        if (ref == 'id' || ref == 'hash') {
-            getQueryTextFromServer(query, ref);
-        }
-        else {
-            workbench.query.setQueryValue(query);
-            workbench.query.persistPrimaryQueryValue();
-        }
-    }
-    else {
-        var initialQueryValue = workbench.query.getQueryValue();
-        if (initialQueryValue) {
-            workbench.query.persistPrimaryQueryValue();
-        }
-        else {
-            var sessionDraft = workbench.query.getPrimaryQueryDraftSessionValue();
-            if (sessionDraft) {
-                workbench.query.setQueryValue(sessionDraft);
-            }
-            else {
-                query = getParameterFromUrlOrCookie('query');
-                if (query) {
-                    var fallbackRef = getParameterFromUrlOrCookie('ref');
-                    if (fallbackRef == 'id' || fallbackRef == 'hash') {
-                        getQueryTextFromServer(query, fallbackRef);
-                    }
-                    else {
-                        workbench.query.setQueryValue(query);
-                        workbench.query.persistPrimaryQueryValue();
-                    }
-                }
-            }
-        }
-    }
-    workbench.query.loadNamespaces();
-    // Trim the query text area contents of any leading and/or trailing
-    // whitespace.
-    workbench.query.setQueryValue($.trim(workbench.query.getQueryValue()));
-    workbench.query.initializeExplanationView();
-    workbench.query.initializeCompareUi();
-    // Add click handlers identifying the clicked element in a hidden 'action'
-    // form field.
-    var addHandler = function (id, callback) {
-        $('#' + id).click(function setAction() {
-            $('#action').val(id);
-            if (callback) {
-                callback();
-            }
-        });
-    };
-    addHandler('exec', function () {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    addHandler('save', function () {
-        $('#explain').val('');
-        $('#explain-level').val('');
-    });
-    $('#copy-explanation').click(function () {
-        workbench.query.copyExplanation('primary');
-    });
-    $('#copy-explanation-compare').click(function () {
-        workbench.query.copyExplanation('compare');
-    });
-    $('#download-explanation').click(workbench.query.downloadExplanation);
-    $('#explanation-highlight-syntax').click(function () {
-        workbench.query.setExplanationHighlightMode('syntax');
-    });
-    $('#explanation-highlight-hotspot').click(function () {
-        workbench.query.setExplanationHighlightMode('hotspot');
-    });
-    $('#explanation-settings-toggle').click(function () {
-        workbench.query.toggleExplanationSettings();
-    });
-    $(document).click(function (event) {
-        if ($('#explanation-settings-toggle').attr('aria-expanded') === 'true'
-            && $(event.target).closest('#explanation-settings').length === 0) {
-            workbench.query.setExplanationSettingsOpen(false);
-        }
-    });
-    $('#explanation-properties-all').click(function () {
-        workbench.query.setAllExplanationPropertiesVisible(true);
-    });
-    $('#explanation-properties-none').click(function () {
-        workbench.query.setAllExplanationPropertiesVisible(false);
-    });
-    // Add event handlers to the save name field to react to changes in it.
-    $('#query-name').bind('keydown cut paste', workbench.query.handleNameChange);
-    // Add event handlers to the query text area to react to changes in it.
-    function deferInputChange(handler) {
-        return function () {
-            window.setTimeout(handler, 0);
-        };
-    }
-    $('#query').bind('keydown cut paste change', deferInputChange(function () {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    }));
-    $('#query-compare').bind('keydown cut paste change', deferInputChange(function () {
-        workbench.query.clearFeedback();
-        workbench.query.notifyQueryPageInputChange('COMPARE_QUERY_CHANGED');
-    }));
-    $('#explain-level').change(function () {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_LEVEL_CHANGED');
-    });
-    $('#explain-format').change(function () {
-        workbench.query.notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
-    });
-    $('#query-diff-modal').click(function (event) {
-        if (event.target && event.target.id === 'query-diff-modal') {
-            workbench.query.closeDiffModal();
-        }
-    });
-    $(document).keydown(function (event) {
-        if (event.key === 'Escape'
-            && $('#explanation-settings-toggle').attr('aria-expanded') === 'true') {
-            workbench.query.setExplanationSettingsOpen(false);
-            var settingsToggle = document.getElementById('explanation-settings-toggle');
-            if (settingsToggle) {
-                settingsToggle.focus();
-            }
-            return;
-        }
-        if (event.key === 'Escape' && $('#query-diff-modal').hasClass('query-diff-modal--open')) {
-            workbench.query.closeDiffModal();
-        }
-    });
-    // Detect if there is no current authenticated user, and if so, disable
-    // the 'save privately' option.
-    if ($('#selected-user>span').is('.disabled')) {
-        $('#save-private').prop('checked', false).prop('disabled', true);
-    }
-});
 //# sourceMappingURL=query.js.map

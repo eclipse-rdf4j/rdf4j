@@ -17,6 +17,7 @@ import java.util.EnumSet;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DualUnionIteration;
@@ -35,7 +36,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Håvard M. Ottestad
  */
-class UnionSailDataset implements SailDataset {
+class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 
 	private final SailDataset dataset1;
 	private final SailDataset dataset2;
@@ -83,12 +84,58 @@ class UnionSailDataset implements SailDataset {
 	}
 
 	@Override
+	public Function<Value, Value> getValuePreparer() {
+		Function<Value, Value> first = dataset1.getValuePreparer();
+		return first == dataset2.getValuePreparer() ? first : null;
+	}
+
+	@Override
+	public Function<Value, Value> getValueCapturer() {
+		Function<Value, Value> first = dataset1.getValueCapturer();
+		return first == dataset2.getValueCapturer() ? first : null;
+	}
+
+	@Override
+	public void cursorsCloseBeforeDataset() {
+		if (dataset1 instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
+		if (dataset2 instanceof TreeOwnedDataset owned) {
+			owned.cursorsCloseBeforeDataset();
+		}
+	}
+
+	@Override
 	public void close() throws SailException {
 		try {
 			dataset1.close();
 		} finally {
 			dataset2.close();
 		}
+	}
+
+	@Override
+	public void abandonUnobserved() throws SailException {
+		try {
+			dataset1.abandonUnobserved();
+		} finally {
+			dataset2.abandonUnobserved();
+		}
+	}
+
+	@Override
+	public boolean isSnapshotCurrent() {
+		return dataset1.isSnapshotCurrent() && dataset2.isSnapshotCurrent();
+	}
+
+	@Override
+	public boolean isSnapshotCompatibleWithCurrentAdmission() {
+		return dataset1.isSnapshotCompatibleWithCurrentAdmission()
+				&& dataset2.isSnapshotCompatibleWithCurrentAdmission();
+	}
+
+	boolean isSnapshotCurrent(SailSource primary, SailSource additional) {
+		return primary.isSnapshotCurrent(dataset1) && additional.isSnapshotCurrent(dataset2);
 	}
 
 	@Override

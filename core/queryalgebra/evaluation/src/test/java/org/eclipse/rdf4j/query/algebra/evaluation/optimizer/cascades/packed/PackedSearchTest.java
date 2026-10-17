@@ -566,11 +566,9 @@ class PackedSearchTest {
 	@Test
 	void contextualBoundedSeedRanksAnchorWithItsFirstExpansion() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet anchorRow = new MapBindingSet(1);
-		anchorRow.setBinding("left", values.createIRI("urn:selected-left"));
 		BindingSetAssignment tinyAnchor = new BindingSetAssignment();
 		tinyAnchor.setBindingNames(new LinkedHashSet<>(List.of("left")));
-		tinyAnchor.setBindingSets(List.of(anchorRow));
+		tinyAnchor.setBindingSets(List.of(new ListBindingSet(List.of("left"), values.createIRI("urn:selected-left"))));
 
 		StatementPattern explosiveForward = pattern(values, "left", "urn:forward", "middle", Double.NaN);
 		StatementPattern connector = pattern(values, "middle", "urn:connector", "right", Double.NaN);
@@ -1841,10 +1839,8 @@ class PackedSearchTest {
 	@Test
 	void safeFilterLetsOuterFiniteAnchorEnterTheSameJoinSearch() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet first = new MapBindingSet(1);
-		first.setBinding("branchName", values.createLiteral("first"));
-		MapBindingSet second = new MapBindingSet(1);
-		second.setBinding("branchName", values.createLiteral("second"));
+		ListBindingSet first = new ListBindingSet(List.of("branchName"), values.createLiteral("first"));
+		ListBindingSet second = new ListBindingSet(List.of("branchName"), values.createLiteral("second"));
 		BindingSetAssignment selectedNames = new BindingSetAssignment();
 		selectedNames.setBindingNames(new LinkedHashSet<>(List.of("branchName")));
 		selectedNames.setBindingSets(List.of(first, second));
@@ -2356,8 +2352,7 @@ class PackedSearchTest {
 	@Test
 	void correlatedNotExistsRunsWhenItsOuterBindingsAreAssured() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet thresholdRow = new MapBindingSet(1);
-		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		ListBindingSet thresholdRow = new ListBindingSet(List.of("threshold"), values.createLiteral(3));
 		BindingSetAssignment threshold = new BindingSetAssignment();
 		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
 		threshold.setBindingSets(List.of(thresholdRow));
@@ -2404,11 +2399,9 @@ class PackedSearchTest {
 	@Test
 	void boundedCorrelatedSeedAppliesSelectiveAntiJoinBeforeFiniteWeightFanout() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet thresholdRow = new MapBindingSet(1);
-		thresholdRow.setBinding("threshold", values.createLiteral(3));
 		BindingSetAssignment threshold = new BindingSetAssignment();
 		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
-		threshold.setBindingSets(List.of(thresholdRow));
+		threshold.setBindingSets(List.of(new ListBindingSet(List.of("threshold"), values.createLiteral(3))));
 
 		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
 		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
@@ -2456,19 +2449,14 @@ class PackedSearchTest {
 	@Test
 	void correlatedNotExistsSchedulingIsIndependentOfSyntacticJoinOrder() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet firstWeight = new MapBindingSet(1);
-		firstWeight.setBinding("weight", values.createLiteral(1));
-		MapBindingSet secondWeight = new MapBindingSet(1);
-		secondWeight.setBinding("weight", values.createLiteral(2));
 		BindingSetAssignment selectedWeights = new BindingSetAssignment();
 		selectedWeights.setBindingNames(new LinkedHashSet<>(List.of("weight")));
-		selectedWeights.setBindingSets(List.of(firstWeight, secondWeight));
+		selectedWeights.setBindingSets(List.of(new ListBindingSet(List.of("weight"), values.createLiteral(1)),
+				new ListBindingSet(List.of("weight"), values.createLiteral(2))));
 
-		MapBindingSet thresholdRow = new MapBindingSet(1);
-		thresholdRow.setBinding("threshold", values.createLiteral(3));
 		BindingSetAssignment threshold = new BindingSetAssignment();
 		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
-		threshold.setBindingSets(List.of(thresholdRow));
+		threshold.setBindingSets(List.of(new ListBindingSet(List.of("threshold"), values.createLiteral(3))));
 
 		StatementPattern weight = pattern(values, "node", "urn:weight", "weight", Double.NaN);
 		StatementPattern type = pattern(values, "node", "urn:type", "nodeType", Double.NaN);
@@ -2522,8 +2510,7 @@ class PackedSearchTest {
 	@Test
 	void correlatedDenseSearchCostsEquivalentContinuationInRetainedState() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet thresholdRow = new MapBindingSet(1);
-		thresholdRow.setBinding("threshold", values.createLiteral(3));
+		ListBindingSet thresholdRow = new ListBindingSet(List.of("threshold"), values.createLiteral(3));
 		BindingSetAssignment threshold = new BindingSetAssignment();
 		threshold.setBindingNames(new LinkedHashSet<>(List.of("threshold")));
 		threshold.setBindingSets(List.of(thresholdRow));
@@ -2745,9 +2732,7 @@ class PackedSearchTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<BindingSet> selectedUsers = new ArrayList<>();
 		for (int ordinal = 0; ordinal < 4; ordinal++) {
-			MapBindingSet row = new MapBindingSet(1);
-			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
-			selectedUsers.add(row);
+			selectedUsers.add(new ListBindingSet(List.of("b"), values.createIRI("urn:user:" + ordinal)));
 		}
 		BindingSetAssignment selectedB = new BindingSetAssignment();
 		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
@@ -2791,9 +2776,7 @@ class PackedSearchTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<BindingSet> selectedUsers = new ArrayList<>();
 		for (int ordinal = 0; ordinal < 4; ordinal++) {
-			MapBindingSet row = new MapBindingSet(1);
-			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
-			selectedUsers.add(row);
+			selectedUsers.add(new ListBindingSet(List.of("b"), values.createIRI("urn:user:" + ordinal)));
 		}
 		BindingSetAssignment selectedB = new BindingSetAssignment();
 		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
@@ -2852,9 +2835,7 @@ class PackedSearchTest {
 		String namePredicate = "urn:renamed-name";
 		List<BindingSet> selectedUsers = new ArrayList<>();
 		for (int ordinal = 0; ordinal < 4; ordinal++) {
-			MapBindingSet row = new MapBindingSet(1);
-			row.setBinding(b, values.createIRI("urn:renamed-user:" + ordinal));
-			selectedUsers.add(row);
+			selectedUsers.add(new ListBindingSet(List.of(b), values.createIRI("urn:renamed-user:" + ordinal)));
 		}
 		BindingSetAssignment selectedB = new BindingSetAssignment();
 		selectedB.setBindingNames(new LinkedHashSet<>(List.of(b)));
@@ -2891,9 +2872,7 @@ class PackedSearchTest {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
 		List<BindingSet> selectedUsers = new ArrayList<>();
 		for (int ordinal = 0; ordinal < 4; ordinal++) {
-			MapBindingSet row = new MapBindingSet(1);
-			row.setBinding("b", values.createIRI("urn:user:" + ordinal));
-			selectedUsers.add(row);
+			selectedUsers.add(new ListBindingSet(List.of("b"), values.createIRI("urn:user:" + ordinal)));
 		}
 		BindingSetAssignment selectedB = new BindingSetAssignment();
 		selectedB.setBindingNames(new LinkedHashSet<>(List.of("b")));
@@ -3304,15 +3283,11 @@ class PackedSearchTest {
 	@Test
 	void explicitValuesPrecedesPatternWhenJoinCostIsDirectionallyAsymmetric() {
 		SimpleValueFactory values = SimpleValueFactory.getInstance();
-		MapBindingSet fifty = new MapBindingSet(1);
-		fifty.setBinding("value", values.createLiteral(50));
-		MapBindingSet sixty = new MapBindingSet(1);
-		sixty.setBinding("value", values.createLiteral(60));
-		MapBindingSet seventy = new MapBindingSet(1);
-		seventy.setBinding("value", values.createLiteral(70));
 		BindingSetAssignment selectedValues = new BindingSetAssignment();
 		selectedValues.setBindingNames(new LinkedHashSet<>(List.of("value")));
-		selectedValues.setBindingSets(List.of(fifty, sixty, seventy));
+		selectedValues.setBindingSets(List.of(new ListBindingSet(List.of("value"), values.createLiteral(50)),
+				new ListBindingSet(List.of("value"), values.createLiteral(60)),
+				new ListBindingSet(List.of("value"), values.createLiteral(70))));
 
 		StatementPattern valuePattern = pattern(values, "obs", "urn:medical-value", "value", Double.NaN);
 		Join source = new Join(valuePattern, selectedValues);

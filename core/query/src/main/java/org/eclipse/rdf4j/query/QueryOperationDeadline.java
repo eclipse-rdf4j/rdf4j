@@ -16,6 +16,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.function.LongSupplier;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 
 /**
  * An absolute deadline for a query operation, measured exclusively with a monotonic nanosecond clock.
@@ -30,12 +31,33 @@ public final class QueryOperationDeadline {
 	private final long timeoutNanos;
 	private final long deadlineNanos;
 	private final LongSupplier nanoTime;
+	private final QueryExecutionDeadline executionDeadline;
 
 	private QueryOperationDeadline(long startNanos, long timeoutNanos, long deadlineNanos, LongSupplier nanoTime) {
 		this.startNanos = startNanos;
 		this.timeoutNanos = timeoutNanos;
 		this.deadlineNanos = deadlineNanos;
 		this.nanoTime = nanoTime;
+		this.executionDeadline = null;
+	}
+
+	private QueryOperationDeadline(QueryExecutionDeadline executionDeadline) {
+		this.startNanos = 0L;
+		this.timeoutNanos = 0L;
+		this.deadlineNanos = executionDeadline.deadlineNanos();
+		this.nanoTime = SYSTEM_NANO_TIME;
+		this.executionDeadline = executionDeadline;
+	}
+
+	/** Returns a budget view of the shared execution deadline without acquiring timer or close ownership. */
+	public static QueryOperationDeadline from(QueryExecutionDeadline deadline) {
+		return new QueryOperationDeadline(Objects.requireNonNull(deadline, "deadline"));
+	}
+
+	/** Returns whether this budget borrows the supplied execution deadline's timer and expiration state. */
+	@InternalUseOnly
+	public boolean isBackedBy(QueryExecutionDeadline deadline) {
+		return executionDeadline != null && executionDeadline == deadline;
 	}
 
 	/**
@@ -64,7 +86,7 @@ public final class QueryOperationDeadline {
 	 * Returns the remaining budget in nanoseconds, or zero once this deadline has expired.
 	 */
 	public long remainingNanos() {
-		return remainingNanos(nanoTime.getAsLong());
+		return executionDeadline == null ? remainingNanos(nanoTime.getAsLong()) : executionDeadline.remainingNanos();
 	}
 
 	private long remainingNanos(long now) {
@@ -107,7 +129,7 @@ public final class QueryOperationDeadline {
 	}
 
 	QueryOperationDeadline earliest(QueryOperationDeadline other) {
-		if (nanoTime == other.nanoTime) {
+		if (executionDeadline == null && other.executionDeadline == null && nanoTime == other.nanoTime) {
 			long now = nanoTime.getAsLong();
 			return remainingNanos(now) <= other.remainingNanos(now) ? this : other;
 		}

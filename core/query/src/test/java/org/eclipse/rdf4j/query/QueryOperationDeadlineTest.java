@@ -18,9 +18,57 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.junit.jupiter.api.Test;
 
 class QueryOperationDeadlineTest {
+
+	@Test
+	void executionDeadlineBudgetViewDoesNotOwnItsTimer() {
+		QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
+		try {
+			QueryOperationDeadline budget = QueryOperationDeadline.from(execution);
+			assertThat(budget.deadlineNanos()).isEqualTo(execution.deadlineNanos());
+			assertThat(budget.remainingNanos()).isPositive().isLessThanOrEqualTo(TimeUnit.MINUTES.toNanos(1));
+			execution.close();
+			assertThat(budget.remainingNanos()).isEqualTo(Long.MAX_VALUE);
+		} finally {
+			execution.close();
+		}
+	}
+
+	@Test
+	void executionDeadlineIsVisibleWithoutAnOperationScope() {
+		try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
+				QueryExecutionDeadline.Scope ignored = execution.enter()) {
+			assertThat(QueryOperationContext.getDeadline()).isPresent();
+			assertThat(QueryOperationContext.getDeadline().orElseThrow().deadlineNanos())
+					.isEqualTo(execution.deadlineNanos());
+			QueryOperationContext.throwIfDeadlineExpired();
+		}
+		assertThat(QueryOperationContext.getDeadline()).isEmpty();
+	}
+
+	@Test
+	void earlierOperationBudgetWinsAndScopesRestoreAcrossExecutionDeadline() {
+		AtomicLong nanoTime = new AtomicLong(100L);
+		QueryOperationDeadline earlier = QueryOperationDeadline.after(10L, TimeUnit.NANOSECONDS, nanoTime::get);
+		try (QueryOperationContext.Scope outer = QueryOperationContext.open(earlier)) {
+			try (QueryExecutionDeadline execution = QueryExecutionDeadline.start(60_000L);
+					QueryExecutionDeadline.Scope ignored = execution.enter()) {
+				assertThat(QueryOperationContext.getDeadline()).containsSame(earlier);
+				try (QueryOperationContext.Scope nested = QueryOperationContext.open(
+						QueryOperationDeadline.after(120L, TimeUnit.SECONDS))) {
+					assertThat(nested.getDeadline()).isSameAs(earlier);
+				}
+				nanoTime.set(110L);
+				assertThatThrownBy(QueryOperationContext::throwIfDeadlineExpired)
+						.isInstanceOf(QueryInterruptedException.class);
+			}
+			assertThat(QueryOperationContext.getDeadline()).containsSame(earlier);
+		}
+		assertThat(QueryOperationContext.getDeadline()).isEmpty();
+	}
 
 	@Test
 	void remainingTimeUsesMonotonicClock() {

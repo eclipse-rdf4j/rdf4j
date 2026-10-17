@@ -26,6 +26,7 @@ import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -44,10 +46,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptionalConditionEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 	public static final String MAX_MATERIALIZED_RIGHT_ROWS_PROPERTY = "org.eclipse.rdf4j.query.algebra.evaluation.leftjoin.maxMaterializedRightRows";
@@ -80,6 +87,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				? JoinMetricsTracking.wrapRightInput(rightRaw, leftJoin, leftJoin.getRightArg(),
 						runtimeTelemetryTrackingActive)
 				: JoinMetricsTracking.wrapRightInput(rightRaw, deferredTelemetry);
+		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
+				EmptyBindingSet.getInstance());
 
 		// Check whether optional join is "well designed" as defined in section
 		// 4.2 of "Semantics and Complexity of SPARQL", 2006, Jorge Pérez et al.
@@ -88,7 +97,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
-			condition = strategy.precompile(leftJoin.getCondition(), context);
+			condition = precompileScopedCondition(strategy, leftJoin, context);
 		} else {
 			condition = null;
 		}
@@ -102,8 +111,18 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 		LeftJoinQueryEvaluationStep standard = new LeftJoinQueryEvaluationStep(
 				right, condition, left, leftJoin, optionalVars);
+		if (!bindingAnalysis.requiredInputBindingNames(leftJoin.getRightArg()).isEmpty()) {
+			if (!bindingAnalysis.canReceiveSiblingBindings(leftJoin.getRightArg(),
+					leftJoin.getLeftArg().getBindingNames(),
+					bindingAnalysis.contextAt(leftJoin))) {
+				throw new QueryEvaluationException("Required FILTER parameters cannot cross an independent scope");
+			}
+			return standard;
+		}
 
-		if (BindingScopeAnalysis.isOutOfScopeForOptionalCorrelation(leftJoin.getRightArg())) {
+		if (BindingScopeAnalysis.isOutOfScopeForOptionalCorrelation(leftJoin.getRightArg())
+				|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)) {
 			// A sub-select or MINUS in the optional part is a bottom-up scope boundary: it is evaluated exactly once
 			// with this OPTIONAL's own input and hash-joined by compatibility, and the OPTIONAL condition becomes a
 			// residual on every candidate (a left row survives alone iff no compatible optional row satisfies it).
@@ -149,6 +168,21 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			return standard.whenWellDesigned(optimized);
 		}
 		return standard;
+	}
+
+	private static QueryValueEvaluationStep precompileScopedCondition(EvaluationStrategy strategy, LeftJoin leftJoin,
+			QueryEvaluationContext context) {
+		QueryValueEvaluationStep condition;
+		try {
+			condition = strategy.precompile(leftJoin.getCondition(), context);
+		} catch (QueryEvaluationException e) {
+			// A condition that fails to compile can never be true, so the OPTIONAL never matches (as in
+			// FilterIterator).
+			condition = new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(BooleanLiteral.FALSE);
+		}
+		// Like the ordinary OPTIONAL path, the condition only sees the operands' bindings; incoming bindings of other
+		// names may come from a sibling row and are out of scope.
+		return new ScopedQueryValueEvaluationStep(conditionScopeBindingNames(leftJoin), condition);
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,
@@ -363,7 +397,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		private final LeftJoin leftJoin;
 		private final long maxKeys;
 		private final long maxRows;
-		private final LinkedHashMap<BindingSet, List<BindingSet>> cache = new LinkedHashMap<>(16, 0.75f, true);
+		private final LinkedHashMap<CorrelationKey, List<BindingSet>> cache = new LinkedHashMap<>(16, 0.75f, true);
 		private long cachedRows;
 		private BindingSet currentLeft;
 		private Iterator<BindingSet> currentDeltas;
@@ -411,7 +445,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 				}
 
 				BindingSet leftBindings = leftIter.next();
-				QueryBindingSet key = correlationKey(leftBindings);
+				CorrelationKey key = correlationKey(leftBindings);
 				List<BindingSet> deltas;
 				synchronized (lifecycleLock) {
 					deltas = closing ? null : cache.get(key);
@@ -440,14 +474,17 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			return null;
 		}
 
-		private QueryBindingSet correlationKey(BindingSet bindings) {
+		private CorrelationKey correlationKey(BindingSet bindings) {
 			QueryBindingSet key = new QueryBindingSet(correlationNames.size());
 			for (String name : correlationNames) {
 				if (bindings.hasBinding(name)) {
 					key.addBinding(name, bindings.getValue(name));
 				}
 			}
-			return key;
+			return new CorrelationKey(key, BindingSetOrigin.of(bindings).key(correlationNames));
+		}
+
+		private record CorrelationKey(BindingSet values, BindingSetOrigin.OriginKey origin) {
 		}
 
 		private List<BindingSet> materializeDeltas(BindingSet leftBindings) {
@@ -507,16 +544,16 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			iteration.close();
 		}
 
-		private void cache(BindingSet key, List<BindingSet> deltas) {
+		private void cache(CorrelationKey key, List<BindingSet> deltas) {
 			synchronized (lifecycleLock) {
 				if (closing) {
 					return;
 				}
 				cache.put(key, deltas);
 				cachedRows += deltas.size();
-				Iterator<Map.Entry<BindingSet, List<BindingSet>>> entries = cache.entrySet().iterator();
+				Iterator<Map.Entry<CorrelationKey, List<BindingSet>>> entries = cache.entrySet().iterator();
 				while ((cache.size() > maxKeys || cachedRows > maxRows) && entries.hasNext()) {
-					Map.Entry<BindingSet, List<BindingSet>> eldest = entries.next();
+					Map.Entry<CorrelationKey, List<BindingSet>> eldest = entries.next();
 					cachedRows -= eldest.getValue().size();
 					entries.remove();
 				}
@@ -835,12 +872,11 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			return new PostFilterQueryEvaluationStep(
 					prepareRightArg,
 					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition),
-					join);
+					join, OptionalConditionEvaluation.usesLeftFrame(join));
 		}
 	}
 
 	private static boolean canEvaluateConditionBasedOnLeftHandSide(LeftJoin leftJoin) {
-		var varNames = VarNameCollector.process(leftJoin.getCondition());
-		return leftJoin.getAssuredBindingNames().containsAll(varNames);
+		return OptionalConditionEvaluation.canPrefilter(leftJoin);
 	}
 }

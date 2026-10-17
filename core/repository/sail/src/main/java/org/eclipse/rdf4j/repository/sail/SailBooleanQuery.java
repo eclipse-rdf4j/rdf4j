@@ -12,13 +12,13 @@
 package org.eclipse.rdf4j.repository.sail;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.BooleanQuery;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryOperationContext;
-import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -41,29 +41,32 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 
 	@Override
 	public boolean evaluate() throws QueryEvaluationException {
-		ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
-		TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
-		Dataset dataset = getDataset();
-		if (dataset == null) {
-			// No external dataset specified, use query's own dataset (if any)
-			dataset = parsedBooleanQuery.getDataset();
-		}
-
+		QueryExecutionDeadline deadline = startQueryExecutionDeadline();
 		CloseableIteration<? extends BindingSet> bindingsIter1 = null;
 		CloseableIteration<? extends BindingSet> bindingsIter2 = null;
 
-		try (QueryOperationContext.Scope ignored = openQueryOperation()) {
+		try (QueryExecutionDeadline.Scope deadlineScope = QueryExecutionDeadline.enter(deadline)) {
+			QueryOperationContext.throwIfDeadlineExpired();
+			ParsedBooleanQuery parsedBooleanQuery = getParsedQuery();
+			TupleExpr tupleExpr = parsedBooleanQuery.getTupleExpr();
+			Dataset dataset = getDataset();
+			if (dataset == null) {
+				// No external dataset specified, use query's own dataset (if any)
+				dataset = parsedBooleanQuery.getDataset();
+			}
+
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.BOOLEAN);
-			try {
-				bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
-			} finally {
-				SlowQueryContextHolder.restore(previous);
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				try {
+					bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
+				} finally {
+					SlowQueryContextHolder.restore(previous);
+				}
 			}
 
 			QueryOperationContext.throwIfDeadlineExpired();
-			QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
 			bindingsIter2 = enforceMaxQueryTime(bindingsIter1, deadline);
 
 			return bindingsIter2.hasNext();
@@ -76,8 +79,14 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 					bindingsIter2.close();
 				}
 			} finally {
-				if (bindingsIter1 != null) {
-					bindingsIter1.close();
+				try {
+					if (bindingsIter1 != null) {
+						bindingsIter1.close();
+					}
+				} finally {
+					if (deadline != null) {
+						deadline.close();
+					}
 				}
 			}
 		}

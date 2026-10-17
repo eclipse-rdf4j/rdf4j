@@ -19,7 +19,6 @@ import java.util.Objects;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
@@ -39,8 +38,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSu
  * pressure or missing projected evidence makes a candidate more conservative rather than opening LMDB statements.
  */
 final class LmdbMappedSemiAntiCosting {
-	private static final String MEMO_CAPACITY_PROPERTY = "rdf4j.evaluation.semiAntiMemoCapacity";
-	private static final int DEFAULT_MEMO_CAPACITY = 4_096;
 	private static final String[] NO_BINDINGS = new String[0];
 	private static final int[] SEMI_ANTI_ALGORITHMS = {
 			PackedQueryView.SEMI_ANTI_STREAMING,
@@ -141,7 +138,7 @@ final class LmdbMappedSemiAntiCosting {
 		double boundAccessWorkRows = rhsRows == 0.0d
 				? 0.0d
 				: Math.max(1.0d, rhsRows / Math.max(1.0d, rhsDistinctKeys));
-		DependentRhsCost dependentRhs = DependentRhsCost.from(output);
+		LmdbSemiAntiPhysicalCost.DependentRhs dependentRhs = LmdbSemiAntiPhysicalCost.DependentRhs.from(output);
 		double probeWorkRows = dependentRhs.required()
 				? Math.max(boundAccessWorkRows, dependentRhs.workRows())
 				: boundAccessWorkRows;
@@ -164,37 +161,21 @@ final class LmdbMappedSemiAntiCosting {
 		double expectedProbeOutputRows = dependentRhs.required() && dependentRhs.resultRows() > 0.0d
 				? dependentRhs.resultRows()
 				: rhsRows;
-		double firstMatchWorkRows = firstMatchWorkRows(probeWorkRows, expectedProbeOutputRows);
-		double streamingRowsExamined = saturatedAdd(
-				saturatedMultiply(costingMatchedRows, firstMatchWorkRows),
-				saturatedMultiply(costingUnmatchedRows, probeWorkRows));
-		double memoizedMisses = memoizedMisses(outerRows, memoizedCostingDistinctKeys);
-		double memoizedRowsExamined = saturatedMultiply(memoizedMisses,
-				saturatedAdd(saturatedMultiply(costingHitProbability, firstMatchWorkRows),
-						saturatedMultiply(1.0d - costingHitProbability, probeWorkRows)));
-		double memoizedCacheRows = Math.min(memoizedCostingDistinctKeys, memoCapacity());
-		double materializationPartitions = rhsRows == 0.0d ? 0.0d : 1.0d;
+		double firstMatchWorkRows = LmdbSemiAntiPhysicalCost.firstMatchWork(probeWorkRows, expectedProbeOutputRows);
 		double materializationAccessRows = rhsRows;
 		double materializationBuildRows = rhsRows;
-		double streamingObjective = saturatedAdd(streamingRowsExamined, outerRows);
-		double memoizedObjective = saturatedAdd(memoizedRowsExamined, memoizedMisses, outerRows);
-		double materializedObjective = saturatedAdd(materializationAccessRows, materializationBuildRows, outerRows);
-		int cheapestAlgorithm = bestAlgorithm(streamingObjective, memoizedObjective, materializedObjective,
-				memoizedCostingDistinctKeys, materializationBuildRows);
-
-		switch (algorithm) {
-		case PackedQueryView.SEMI_ANTI_STREAMING -> output.setLocalPhysicalCost(
-				streamingRowsExamined, outerRows, outerRows, 0.0d, 0.0d, 0.0d, 0.0d,
-				resultRows, 0.0d, 0.0d);
-		case PackedQueryView.SEMI_ANTI_MEMOIZED -> output.setLocalPhysicalCost(
-				memoizedRowsExamined, memoizedMisses, memoizedMisses, 0.0d, 0.0d, outerRows, 0.0d,
-				resultRows, 0.0d, memoizedCacheRows);
-		case PackedQueryView.SEMI_ANTI_MATERIALIZED -> output.setLocalPhysicalCost(
-				materializationAccessRows, 0.0d, materializationPartitions, 0.0d,
-				materializationBuildRows, outerRows, 0.0d, resultRows, 0.0d,
+		LmdbSemiAntiPhysicalCost physical = LmdbSemiAntiPhysicalCost.estimate(outerRows, memoizedCostingDistinctKeys,
+				costingHitProbability, firstMatchWorkRows, probeWorkRows, materializationAccessRows,
 				materializationBuildRows);
-		default -> throw new IllegalStateException("unknown packed semi/anti algorithm " + algorithm);
-		}
+		double streamingRowsExamined = physical.streamingRowsExamined();
+		double memoizedMisses = physical.memoizedMisses();
+		double memoizedCacheRows = physical.memoizedCacheRows();
+		double materializationPartitions = physical.materializationPartitions();
+		double streamingObjective = physical.streamingObjective();
+		double memoizedObjective = physical.memoizedObjective();
+		double materializedObjective = physical.materializedObjective();
+		int cheapestAlgorithm = physical.cheapestAlgorithm();
+		physical.apply(output, algorithm, resultRows);
 		output.setContextualOutputRowsPreservingPhysicalCost(resultRows);
 
 		stampStructuralProfile(output, outerRows, distinctProfile, rhsRows, rhsDistinctProfile, matchedRows,
@@ -440,41 +421,6 @@ final class LmdbMappedSemiAntiCosting {
 		return semanticKind == PackedQueryView.SEMI_ANTI_EXISTS ? outputRatio : 1.0d - outputRatio;
 	}
 
-	private static double memoizedMisses(double outerRows, double distinctKeys) {
-		if (distinctKeys <= memoCapacity()) {
-			return Math.min(outerRows, distinctKeys);
-		}
-		/* Unknown ordering beyond the bounded cache is charged as a miss; this cannot make memoization optimistic. */
-		return outerRows;
-	}
-
-	private static double firstMatchWorkRows(double exhaustionWorkRows, double expectedOutputRows) {
-		if (!(exhaustionWorkRows > 0.0d)) {
-			return 0.0d;
-		}
-		if (!(expectedOutputRows > 0.0d)) {
-			return exhaustionWorkRows;
-		}
-		return Math.min(exhaustionWorkRows,
-				Math.max(Math.min(1.0d, exhaustionWorkRows),
-						exhaustionWorkRows / Math.max(1.0d, expectedOutputRows)));
-	}
-
-	private static int bestAlgorithm(double streaming, double memoized, double materialized,
-			double memoizedPeakRows, double materializedPeakRows) {
-		int best = PackedQueryView.SEMI_ANTI_STREAMING;
-		double objective = streaming;
-		if (memoizedPeakRows <= memoCapacity() && memoized < objective) {
-			best = PackedQueryView.SEMI_ANTI_MEMOIZED;
-			objective = memoized;
-		}
-		if (materializedPeakRows <= MinusQueryEvaluationStep.maxMaterializedRightRows()
-				&& materialized < objective) {
-			best = PackedQueryView.SEMI_ANTI_MATERIALIZED;
-		}
-		return best;
-	}
-
 	private String[] correlationNames(int relationId) {
 		String[] names = new String[query.semiAntiCorrelationBindingCount(relationId)];
 		for (int ordinal = 0; ordinal < names.length; ordinal++) {
@@ -511,15 +457,7 @@ final class LmdbMappedSemiAntiCosting {
 	}
 
 	private static int memoCapacity() {
-		String configured = System.getProperty(MEMO_CAPACITY_PROPERTY);
-		if (configured != null && !configured.isBlank()) {
-			try {
-				return Math.max(1, Integer.parseInt(configured.trim()));
-			} catch (NumberFormatException ignored) {
-				// Preserve the evaluation iterator's documented default for malformed configuration.
-			}
-		}
-		return DEFAULT_MEMO_CAPACITY;
+		return LmdbSemiAntiPhysicalCost.memoCapacity();
 	}
 
 	private static boolean finiteNonNegative(double value) {
@@ -553,37 +491,6 @@ final class LmdbMappedSemiAntiCosting {
 	}
 
 	private record LogicalSelectivityKey(int semanticKind, int rightRelationId, String bindingIdentity) {
-	}
-
-	private record DependentRhsCost(boolean required, double workRows, double resultRows) {
-		private static DependentRhsCost from(PackedCostEstimate estimate) {
-			boolean outerIndependentWork = estimate.plannedDoubleMetric(
-					"plannedDependentSubqueryContainsOuterIndependentWork", 0.0d) >= 1.0d;
-			boolean independentHash = estimate.plannedDoubleMetric(
-					"plannedDependentSubqueryContainsIndependentHash", 0.0d) >= 1.0d;
-			String prefix = outerIndependentWork
-					? "plannedDependentSubqueryReopen"
-					: "plannedDependentSubquery";
-			double objective = preferredMetric(estimate, prefix + "ObjectiveCost",
-					"plannedDependentSubqueryObjectiveCost");
-			double workRows = preferredMetric(estimate, prefix + "WorkRows", prefix + "ObjectiveCost");
-			double resultRows = preferredMetric(estimate, prefix + "ResultRows",
-					"plannedDependentSubqueryResultRows");
-			boolean required = (outerIndependentWork || independentHash)
-					&& finiteNonNegative(objective) && objective > 0.0d;
-			return new DependentRhsCost(
-					required,
-					required && finiteNonNegative(workRows) ? workRows : 0.0d,
-					required && finiteNonNegative(resultRows) ? resultRows : 0.0d);
-		}
-
-		private static double preferredMetric(PackedCostEstimate estimate, String preferredName,
-				String fallbackName) {
-			double preferred = estimate.plannedDoubleMetric(preferredName, Double.NaN);
-			return finiteNonNegative(preferred)
-					? preferred
-					: estimate.plannedDoubleMetric(fallbackName, Double.NaN);
-		}
 	}
 
 	private record SurfaceSelectivity(double hitProbability, double observationCount, double outerRows,

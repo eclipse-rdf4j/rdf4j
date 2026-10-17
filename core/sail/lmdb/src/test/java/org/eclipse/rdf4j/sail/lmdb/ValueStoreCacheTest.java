@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
@@ -212,6 +213,36 @@ class ValueStoreCacheTest {
 			assertSame(CoreDatatype.XSD.INT, valueStore.cachedDatatypeCoreDatatype(datatypeId));
 			assertNull(valueStore.cachedValue(datatypeId));
 			assertEquals(1, valueStore.readCount(datatypeId));
+		} finally {
+			valueStore.close();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
+	@Test
+	void datatypeCacheRejectsChangedPayloadWithinTheSameRevision(@TempDir File dataDir) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig().setValueCacheSize(1).setInlineLiterals(false);
+		CountingValueStore valueStore = new CountingValueStore(dataDir, config);
+		try {
+			IRI datatype = SimpleValueFactory.getInstance().createIRI("urn:datatype-cache:original");
+			valueStore.startTransaction(true);
+			long first = valueStore.storeValue(SimpleValueFactory.getInstance().createLiteral("first", datatype));
+			long second = valueStore.storeValue(SimpleValueFactory.getInstance().createLiteral("second", datatype));
+			valueStore.commit();
+			long datatypeId = valueStore.getId(datatype);
+			valueStore.clearCaches();
+			valueStore.clearReadCounts();
+			assertEquals(datatype, ((Literal) valueStore.getValue(first)).getDatatype());
+			LmdbIRI cached = valueStore.cachedDatatype(datatypeId);
+			assertNotNull("decoding must admit the datatype to its separate cache", cached);
+			cached.setNamespaceAndIri("urn:datatype-cache:", "mutated");
+			assertNull("mutable payload changes invalidate the cached semantic version",
+					valueStore.cachedDatatype(datatypeId));
+			Literal decoded = (Literal) valueStore.getValue(second);
+			assertEquals(datatype, decoded.getDatatype());
+			assertSame(decoded.getDatatype(), valueStore.cachedDatatype(datatypeId));
+			assertEquals("a changed payload requires exactly one authoritative reload", 2,
+					valueStore.readCount(datatypeId));
 		} finally {
 			valueStore.close();
 			LmdbTestUtil.deleteDir(dataDir);

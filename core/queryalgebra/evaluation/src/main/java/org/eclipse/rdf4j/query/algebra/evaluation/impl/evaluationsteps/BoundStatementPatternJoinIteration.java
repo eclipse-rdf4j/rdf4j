@@ -51,16 +51,16 @@ final class BoundStatementPatternJoinIteration extends LookAheadIteration<Bindin
 				return null;
 			}
 
-			BindingSet leftBindings = leftIteration.next();
+			BindingSet leftBindings = rightStatementPattern.prepareBindings(leftIteration.next());
 			long statementCount = rightStatementPattern.getFullyBoundStatementCount(leftBindings);
 			if (statementCount < 0) {
 				fallbackIteration = rightStatementPattern.evaluate(leftBindings);
 				continue;
 			}
 			if (statementCount > 0) {
-				repeatedBindings = leftBindings;
+				repeatedBindings = rightStatementPattern.producedBindings(leftBindings);
 				remainingRepeats = statementCount - 1;
-				return leftBindings;
+				return repeatedBindings;
 			}
 		}
 	}

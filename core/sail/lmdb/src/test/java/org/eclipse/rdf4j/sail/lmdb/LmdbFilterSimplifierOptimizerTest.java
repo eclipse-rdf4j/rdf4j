@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertIterableEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -63,9 +64,12 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -1655,4 +1659,37 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertFalse(containsBindingSetAssignment(uncommitted.getArg()),
 				"No guarantee-narrowed VALUES anchor may enumerate stored terms for an uncommitted overlay");
 	}
+
+	@Test
+	void generatedLiteralAnchorsPreserveEnclosingCorrelatedNotExistsRepeatability() {
+		StatementPattern input = statementPatternWithPredicate("entity", "http://example.com/type", "type");
+		Filter nameCondition = new Filter(
+				statementPatternWithPredicate("entity", "http://example.com/theme/grid/name", "name"),
+				listMember("name", "A", "A", "B"));
+		Filter outer = new Filter(new Join(input, statementPattern("entity", "tail", "item")),
+				new Not(new Exists(nameCondition)));
+		QueryRoot root = new QueryRoot(outer);
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null,
+				EmptyBindingSet.getInstance());
+		Exists exists = assertInstanceOf(Exists.class, ((Not) outer.getCondition()).getArg());
+		Join anchored = assertInstanceOf(Join.class, exists.getSubQuery());
+		BindingSetAssignment generated = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
+		assertIterableEquals(Set.of("name"), generated.getDeclaredBindingNames());
+		assertIterableEquals(List.of(VF.createLiteral("A"), VF.createLiteral("B")), bindingValues(generated, "name"));
+		FilterPlacementAnalyzer.Envelope envelope = new FilterPlacementAnalyzer(root,
+				QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance())).analyze(outer);
+		assertTrue(envelope.repeatable(), "optimizer-owned finite VALUES inside NOT EXISTS must remain repeatable");
+		assertTrue(envelope.singletonAlternatives()
+				.stream()
+				.anyMatch(alternative -> alternative.cut().getFirst().argument() == input));
+	}
+
+	private static List<Value> bindingValues(BindingSetAssignment assignment, String bindingName) {
+		List<Value> values = new ArrayList<>();
+		for (BindingSet bindingSet : assignment.getBindingSets()) {
+			values.add(bindingSet.getValue(bindingName));
+		}
+		return values;
+	}
+
 }

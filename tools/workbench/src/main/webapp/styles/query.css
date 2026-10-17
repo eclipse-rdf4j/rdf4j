@@ -6,7 +6,16 @@
     width: 100%;
     display: flex;
     flex-direction: column;
-    gap: 0.75em;
+    gap: var(--workbench-form-gap, 12px);
+}
+
+.query-page[data-editor-fullscreen-enabled="false"] .fullscreenToggleBtns {
+    display: none !important;
+}
+
+.query-page [hidden],
+.query-result-embedded [hidden] {
+    display: none !important;
 }
 
 .query-form__row {
@@ -14,8 +23,8 @@
     grid-template-columns:max-content minmax(0, 1fr);
     grid-template-columns:var(--query-form-label-width) minmax(0, 1fr);
     align-items: start;
-    column-gap: 1em;
-    row-gap: 0.5em;
+    column-gap: var(--workbench-space-subgroup, 16px);
+    row-gap: var(--workbench-field-gap, 4px);
 }
 
 .query-form__row--stacked {
@@ -23,12 +32,24 @@
 }
 
 .query-form__label {
-    font-family: Roboto, Libre Franklin, Helvetica Neue, Helvetica, Arial, sans-serif;
+    font-family: inherit;
     font-weight: bold;
     white-space: nowrap;
     margin-top: auto;
     margin-bottom: auto;
     padding-left: 1px;
+}
+
+.query-editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--workbench-space-subgroup, 16px);
+    min-height: var(--workbench-control-height);
+}
+
+.query-editor-header .query-form__label {
+    margin: 0 auto 0 0;
 }
 
 .query-form__label:after {
@@ -64,14 +85,14 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.1em;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-form__field--controls-group {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 0.1em;
+    gap: var(--workbench-control-gap, 8px);
 }
 
 .query-form__field--actions #query-name {
@@ -84,6 +105,55 @@
 
 .query-cancel--visible {
     display: inline-block;
+}
+
+/* Cancel buttons appear only while their request runs (their --visible class). The button component
+ * sets display on every .workbench-action button, so restate the resting state at a higher specificity. */
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"]).workbench-action.query-cancel:not(.query-cancel--visible),
+:is(body.workbench-body, body.query-result-embedded-body) :is(button, input[type="button"]).workbench-action.query-explain-cancel:not(.query-explain-cancel--visible) {
+    display: none;
+}
+
+.query-results {
+    margin-top: var(--query-result-section-gap, var(--workbench-space-section, 24px));
+}
+
+.query-results[hidden] {
+    display: none !important;
+}
+
+.query-results__status {
+    margin: 0.5rem 0;
+}
+
+/* The results panel shows a running query as its loading bar (.workbench-local-progress); the loading line only
+ * tells screen readers. */
+.query-results__loading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    border: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.query-results__loading[hidden] {
+    display: none;
+}
+
+.query-results__status:empty {
+    display: none;
+}
+
+body.workbench-body .query-page .error:empty {
+    display: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
 }
 
 #query,
@@ -104,16 +174,1374 @@
     .query-form__label:after {
         content: '';
     }
+
+    .query-editor-header {
+        min-height: var(--workbench-touch-height);
+        gap: var(--workbench-control-gap, 8px);
+    }
 }
 
-.yasqe .CodeMirror {
+/* Editor sizing (M3.2): the editor grows with its content from six lines (6 x 21px + 16px padding)
+ * to half the viewport; a drag handle (workbench.editorSizing) can fix another height. The selectors
+ * are prefixed so they outrank yasqe.min.css (".yasqe .CodeMirror { height: 300px }"). */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror {
     height: auto;
 }
 
-.yasqe .CodeMirror-scroll {
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror-scroll {
     height: auto;
-    min-height: 300px;
-    max-height: 55vh;
+    min-height: 142px;
+    max-height: 50vh;
     overflow-y: auto;
     overflow-x: auto;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror[data-workbench-editor-height] .CodeMirror-scroll {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
+/* Full screen (CodeMirror's add-on fixes the editor to the viewport): the text area fills it, without the six-line to
+ * half-viewport limits of the page editor. */
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror.CodeMirror-fullscreen .CodeMirror-scroll {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
+.query-editor-resize {
+    position: relative;
+    height: 10px;
+    margin: 2px 0 0;
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.query-editor-resize::before {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 50%;
+    width: 36px;
+    height: 4px;
+    margin-left: -18px;
+    border-radius: 2px;
+    background: var(--workbench-soft-rule);
+}
+
+.query-editor-resize:hover::before,
+.query-editor-resize:focus-visible::before,
+.query-editor-resize[data-dragging="true"]::before {
+    background: var(--workbench-rule);
+}
+
+.query-editor-resize:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 1px;
+    border-radius: 4px;
+}
+
+/* Results come into view under the sticky context bar after an execution starts; the page's scroll padding already
+ * keeps them clear of the bar. */
+.query-results,
+.query-output {
+    scroll-margin-top: 16px;
+}
+
+/* Output card (M3.3): Results and Explanation are tabs of one card below the editor card, so running
+ * or explaining a query never moves the editor's action row. */
+.query-output {
+    box-sizing: border-box;
+    margin-top: var(--workbench-space-section, 24px);
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--workbench-surface);
+    box-shadow: var(--workbench-shadow);
+}
+
+.query-output[hidden],
+.query-output__panel[hidden],
+.query-output__badge[hidden],
+.query-output__empty[hidden] {
+    display: none;
+}
+
+.query-output__tabs {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    padding: 0 calc(var(--workbench-card-inset, 24px) - 12px);
+    border-bottom: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    margin: 0 0 -1px;
+    padding: 0 12px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    color: var(--workbench-muted);
+    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    cursor: pointer;
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab:hover {
+    background: transparent;
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab[aria-selected="true"] {
+    border-bottom-color: var(--workbench-teal);
+    color: var(--workbench-ink);
+}
+
+body.workbench-body .workbench-page-surface .query-output__tab:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: -4px;
+    border-radius: var(--workbench-control-radius);
+}
+
+.query-output__badge {
+    min-width: 1.5em;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: var(--workbench-inset);
+    color: var(--workbench-muted);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.5;
+    text-align: center;
+}
+
+.query-output__panel {
+    padding: var(--workbench-card-inset, 24px);
+}
+
+.query-output__panel:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: -2px;
+}
+
+.query-output__empty {
+    margin: 0;
+    color: var(--workbench-muted);
+}
+
+#query-results:not([hidden]) ~ .query-results-panel__empty {
+    display: none;
+}
+
+/* Inside the card the result is the Results panel's content, not a second card; full screen still
+ * lifts it out as its own surface. */
+.query-output .query-results:not([data-fullscreen="true"]):not(.query-results--fullscreen) {
+    margin-top: 0;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+}
+
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror,
+body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror pre {
+	font-family: var(--workbench-code-font);
+	font-size: var(--workbench-code-font-size);
+}
+
+/* Keep the query shell on the shared Workbench geometry. Query-specific tokens
+ * and the page-surface reset live here; layout, header, context, and navigation
+ * styling come from workbench-refresh.css. */
+body.workbench-body:has(#query-page),
+body.query-result-embedded-body,
+.query-results,
+.query-result-embedded {
+    --query-accent: var(--workbench-teal);
+    --query-accent-strong: var(--workbench-teal-dark);
+    --query-ink: var(--workbench-ink);
+    --query-muted: var(--workbench-muted);
+    --query-rule: var(--workbench-soft-rule);
+    --query-surface: var(--workbench-surface);
+    --query-soft: var(--workbench-inset);
+    --query-canvas: var(--workbench-canvas);
+    --query-link: var(--workbench-teal);
+    --query-focus: var(--workbench-focus);
+}
+
+body.workbench-body:has(#query-page) #workbench-page-surface {
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
+}
+
+.query-page,
+.query-result-embedded {
+    box-sizing: border-box;
+    color: var(--query-ink);
+    font-family: var(--workbench-font);
+}
+
+.query-page > form,
+.query-results {
+    padding: var(--workbench-card-inset, 24px);
+}
+
+.query-page > form {
+    box-sizing: border-box;
+    width: 100%;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--query-surface);
+    box-shadow: var(--workbench-shadow);
+}
+
+.query-page .query-form {
+    gap: var(--workbench-space-subgroup, 16px);
+}
+
+.query-page .query-form__row {
+    column-gap: var(--workbench-space-subgroup, 16px);
+}
+
+.query-actions-toolbar {
+	margin-top: var(--workbench-field-gap, 4px);
+}
+
+/* In compare mode Swap and Diff follow Execute and Explain as items of the same row. */
+.query-actions-compare:not([hidden]) {
+	display: contents;
+}
+
+.query-page .query-option {
+    white-space: nowrap;
+}
+
+.query-page .query-save-disclosure__body #query-name {
+    box-sizing: border-box;
+    width: min(22rem, 100%);
+    min-width: 0;
+    max-width: 100%;
+}
+
+.query-page select,
+.query-result-embedded select {
+	margin: 0;
+}
+
+.query-page input[type="button"],
+.query-page input[type="submit"],
+.query-page button,
+.query-page select,
+.query-page input[type="number"],
+.query-page input[type="text"],
+.query-result-embedded input[type="button"],
+.query-result-embedded input[type="submit"],
+.query-result-embedded button,
+.query-result-embedded select {
+    box-sizing: border-box;
+    min-height: var(--workbench-control-height);
+    border: 1px solid var(--workbench-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--query-surface);
+    color: var(--query-ink);
+    font: inherit;
+    line-height: 1.2;
+}
+
+.query-page .workbench-action .workbench-action-label button,
+.query-result-embedded .workbench-action .workbench-action-label button {
+    display: inline-flex;
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: center;
+    gap: var(--workbench-control-gap, 8px);
+    min-height: 36px;
+    margin: 0;
+    padding: 0 var(--workbench-control-inset, 12px);
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    color: inherit;
+    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+    cursor: pointer;
+}
+
+.query-page input[type="button"],
+.query-page input[type="submit"],
+.query-result-embedded input[type="button"],
+.query-result-embedded input[type="submit"] {
+    padding: 0.45rem 0.75rem;
+    cursor: pointer;
+}
+
+.query-page input[type="button"]:hover,
+.query-page input[type="submit"]:hover,
+.query-result-embedded input[type="button"]:hover,
+.query-result-embedded input[type="submit"]:hover {
+    border-color: var(--workbench-rule);
+    background: var(--workbench-inset);
+}
+
+.query-page .query-action,
+.query-result-embedded .query-action-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-page .query-action-icon,
+.query-result-embedded .query-action-icon {
+    width: 1rem;
+    height: 1rem;
+    flex: 0 0 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+}
+
+.query-page input[type="button"]:focus-visible,
+.query-page input[type="submit"]:focus-visible,
+.query-page button:focus-visible,
+.query-page select:focus-visible,
+.query-page input[type="number"]:focus-visible,
+.query-page input[type="text"]:focus-visible,
+.query-result-embedded input:focus-visible,
+.query-result-embedded select:focus-visible {
+    outline: 2px solid var(--workbench-focus);
+    outline-offset: 2px;
+}
+
+.query-page input:disabled,
+.query-page button:disabled,
+.query-result-embedded input:disabled,
+.query-result-embedded button:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.query-page .query-form__field--actions {
+    gap: var(--workbench-control-gap, 8px);
+}
+
+.query-page .query-form__field--actions #query-name {
+    min-width: 12rem;
+    flex: 1 1 12rem;
+}
+
+.query-page .yasqe,
+.query-page .CodeMirror {
+    border-color: var(--query-rule);
+    border-radius: 6px;
+}
+
+.query-page .yasqe .CodeMirror-focused {
+    box-shadow: 0 0 0 3px var(--query-focus);
+}
+
+.query-results {
+    box-sizing: border-box;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--query-surface);
+    box-shadow: var(--workbench-shadow);
+}
+
+.query-results h2 {
+    margin: 0 0 0.6rem;
+    color: var(--query-ink);
+    font-family: inherit;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.query-results__header {
+    margin-bottom: var(--workbench-control-gap, 8px);
+}
+
+.query-results__header[hidden] {
+    display: none;
+}
+
+.query-results__header h2 {
+    margin: 0;
+}
+
+.query-results__fullscreen {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+    min-height: var(--workbench-control-height);
+    padding: 0.45rem 12px;
+    border: 1px solid var(--workbench-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--query-surface);
+    color: var(--query-ink);
+    cursor: pointer;
+    font: 600 var(--workbench-control-font-size)/1.2 var(--workbench-font);
+}
+
+.query-results__fullscreen:hover {
+    border-color: var(--query-link);
+    background: var(--query-soft);
+}
+
+.query-results__fullscreen:focus-visible {
+    outline: 3px solid var(--query-focus);
+    outline-offset: 1px;
+}
+
+.query-results__fullscreen-icon {
+    width: 1rem;
+    height: 1rem;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+}
+
+body.query-results-fullscreen-active {
+    overflow: hidden;
+}
+
+.query-results--fullscreen,
+.query-results[data-fullscreen="true"] {
+    position: fixed;
+    z-index: 1000;
+    inset: 0;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    margin: 0;
+    overflow: hidden;
+    border-radius: 0;
+}
+
+.query-results__status {
+    box-sizing: border-box;
+    margin: 0.5rem 0;
+    padding: 0.55rem 0.7rem;
+    border-radius: 4px;
+    background: var(--query-soft);
+    color: var(--query-muted);
+}
+
+.query-result-embedded-body {
+	margin: 0;
+	min-height: 100vh;
+	box-sizing: border-box;
+	min-width: 0;
+    background: var(--query-surface);
+    color: var(--query-ink);
+    font-family: var(--workbench-font);
+    font-size: var(--workbench-body-font-size);
+    line-height: 1.5;
+    overflow: visible;
+}
+
+.query-result-embedded a {
+    color: var(--workbench-primary);
+}
+
+.query-result-embedded a:hover {
+    text-decoration: underline;
+}
+
+.query-result-embedded {
+	box-sizing: border-box;
+	width: 100%;
+	max-width: 100%;
+	padding: 0;
+	overflow-x: clip;
+	overflow-y: visible;
+}
+
+.query-result-toolbar {
+	position: sticky;
+	top: 0;
+	z-index: 3;
+	margin: 0;
+	padding: 0;
+	background: var(--query-surface);
+}
+
+:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar__actions {
+	display: flex;
+	flex: 0 1 auto;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--workbench-control-gap);
+	min-width: 0;
+	max-width: 100%;
+}
+
+/* In the page the toolbar scrolls with its rows: stuck at the top it would sit under the sticky context bar, and the
+ * pinned header row already names the columns. Full screen, which covers the context bar, keeps it at the top. */
+body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-toolbar {
+	position: relative;
+}
+
+/* Download and Display stay together; when the toolbar is narrow they move below the status as one row. */
+:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar__disclosures {
+	flex-wrap: nowrap;
+}
+
+/* On phones the query actions fill each row they wrap onto, so no row is left ragged; the result toolbar keeps its
+ * controls at their own widths on one row, with Full screen as an icon named by its aria-label. */
+@media (max-width: 600px) {
+	:where(body.workbench-body) .query-actions-toolbar :is(.workbench-action-toolbar__primary, .workbench-action-toolbar__group,
+			.workbench-action-toolbar__primary > .workbench-action, .query-actions-compare > .workbench-action,
+			.workbench-action-toolbar__group .workbench-disclosure__toggle) {
+		flex: 1 1 auto;
+	}
+
+	/* Save query and Query settings take a row each when they cannot share one. */
+	:where(body.workbench-body) .query-actions-toolbar .workbench-action-toolbar__group {
+		flex-wrap: wrap;
+	}
+
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen {
+		justify-content: center;
+		min-width: var(--workbench-touch-height);
+		padding-inline: 0;
+	}
+
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen-label {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0 0 0 0);
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+}
+
+/* An open Download or Display pane hangs over the rows and the pinned header row (M14.3). */
+.query-result-toolbar:has(.workbench-disclosure__panel:not([hidden])) {
+	z-index: 4;
+}
+
+.query-result-toolbar__header h2,
+.query-result-embedded-header h2 {
+	min-width: 0;
+	margin: 0;
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	padding: 0.2rem 0;
+	background: var(--query-surface);
+	color: var(--query-ink);
+	font-family: inherit;
+    font-size: 1.1rem;
+    line-height: 1.3;
+	overflow-wrap: anywhere;
+	white-space: normal;
+	overflow: visible;
+}
+
+.query-result-embedded form {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0;
+    vertical-align: top;
+}
+
+.query-result-embedded .query-result-disclosure {
+	display: contents;
+	min-width: 0;
+}
+
+.query-result-embedded .query-result-download-toggle,
+.query-result-embedded .query-result-options-toggle {
+	width: fit-content;
+	max-width: 100%;
+}
+
+.query-result-embedded :is(#query-result-fullscreen, .query-results__fullscreen) {
+	position: static;
+}
+
+.query-result-embedded .query-result-disclosure > .query-disclosure__panel > form {
+	display: block;
+	max-width: 100%;
+	margin: 0;
+}
+
+.query-result-embedded .query-result-download-fields {
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+}
+
+.query-result-embedded .query-result-download-action {
+	align-self: end;
+	justify-self: end;
+	min-width: max-content;
+}
+
+.query-result-embedded .query-result-check {
+	justify-self: start;
+	min-width: 0;
+	color: var(--query-ink);
+	font-size: var(--workbench-control-font-size);
+	line-height: 1.5;
+}
+
+@media (max-width: 900px) {
+	.query-result-embedded .query-result-download-fields {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.query-result-embedded .query-result-download-action {
+		justify-self: start;
+	}
+}
+
+.query-result-embedded .query-result-controls,
+.query-result-embedded .query-result-controls tbody {
+	display: block;
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	max-width: 100%;
+}
+
+.query-result-embedded .query-result-controls tbody {
+	display: grid;
+	gap: var(--workbench-form-gap, 12px);
+}
+
+@media (min-width: 901px) {
+	.query-result-embedded .query-result-controls tbody {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+		align-items: start;
+	}
+
+	.query-result-embedded .query-result-controls tr {
+		width: auto;
+	}
+
+	.query-result-embedded .query-result-controls tr:first-child {
+		grid-column: 1 / -1;
+	}
+}
+
+.query-result-embedded .query-result-controls tr {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--workbench-field-gap, 4px) var(--workbench-space-subgroup, 16px);
+	box-sizing: border-box;
+	width: 100%;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+}
+
+.query-result-embedded .query-result-controls tr:first-child {
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: end;
+}
+
+.query-result-embedded .query-result-controls th,
+.query-result-embedded .query-result-controls td {
+	display: block;
+	box-sizing: border-box;
+	width: auto;
+	min-width: 0;
+	max-width: 100%;
+	padding: 0;
+	border: 0;
+	text-align: left;
+}
+
+.query-result-embedded .query-result-controls tr:first-child > th {
+	grid-column: 1;
+	grid-row: 1;
+}
+
+.query-result-embedded .query-result-controls tr:first-child > td:nth-child(2) {
+	grid-column: 1;
+	grid-row: 2;
+}
+
+.query-result-embedded .query-result-controls tr:first-child > td:nth-child(3) {
+	grid-column: 2;
+	grid-row: 2;
+	align-self: end;
+}
+
+.query-result-embedded .query-result-controls th {
+	color: var(--query-muted);
+	font-size: var(--workbench-label-font-size);
+	font-weight: 600;
+	line-height: 1.25;
+}
+
+.query-result-embedded .query-result-controls td:empty {
+	display: none;
+}
+
+.query-result-embedded .query-result-controls select,
+.query-result-embedded .query-result-controls input,
+.query-result-embedded .query-result-controls button {
+	max-width: 100%;
+}
+
+.query-result-embedded input[type="checkbox"] {
+	accent-color: var(--query-accent);
+}
+
+.query-result-navigation {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--workbench-control-gap, 8px);
+    margin: var(--workbench-space-subgroup, 16px) 0 0;
+    padding-top: var(--workbench-form-gap, 12px);
+    border-top: 1px solid var(--query-rule);
+}
+
+/* The status line and, while the query runs (or after it stopped early), its running time. It starts the result
+ * toolbar row, centred on the buttons at its end. */
+.query-result-toolbar__header {
+    align-items: center;
+}
+
+.query-result-status-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    column-gap: var(--workbench-control-gap, 8px);
+    min-width: 0;
+}
+
+.query-result-timer {
+    color: var(--query-muted);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+.query-result-timer::before {
+    content: '·';
+    margin-right: var(--workbench-control-gap, 8px);
+}
+
+.query-result-status:empty + .query-result-timer::before {
+    content: none;
+}
+
+.query-result-timer[hidden] {
+    display: none;
+}
+
+/* While the query runs, its Cancel stands alone above the rows that keep arriving; keep it clear of the table. */
+.query-result-navigation:has(> .workbench-action--warning:not([hidden])) {
+    margin-bottom: var(--workbench-space-subgroup, 16px);
+}
+
+.query-result-navigation__label {
+    color: var(--query-muted);
+    font-size: var(--workbench-control-font-size);
+    font-weight: 600;
+}
+
+.query-result-embedded table.dataentry {
+    width: auto;
+    max-width: 100%;
+}
+
+.query-result-embedded table.dataentry th,
+.query-result-embedded table.dataentry td {
+    padding: 0.3rem 0.45rem;
+    font-size: var(--workbench-body-font-size);
+    line-height: 1.5;
+    vertical-align: middle;
+}
+
+.query-result-embedded table.dataentry th {
+    color: var(--query-muted);
+    font-size: var(--workbench-label-font-size);
+    font-weight: 600;
+}
+
+.query-result-layout {
+    --query-result-readable-column-characters: 16;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.query-result-layout > .ERROR:not(.workbench-callout) {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.query-page .workbench-select-control > select,
+.query-result-embedded .workbench-select-control > select {
+	padding-right: 36px;
+}
+
+.query-result-table-wrap {
+    max-width: 100%;
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+}
+
+.query-result-table-wrap table.data thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: var(--workbench-inset);
+    white-space: nowrap;
+}
+
+/* Results scroll with the page (M4.1). Only full screen and results taller than the browser's scroll capacity
+ * use an inner scroll element (data-scroll-source="element"). */
+.query-result-layout[data-scroll-source="element"] > .query-result-table-wrap,
+.query-result-layout[data-scroll-source="element"] > .query-result-records {
+    height: calc(100vh - var(--workbench-contextbar-height, 0px) - 96px);
+    overflow: auto;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout > * {
+    flex: none;
+}
+
+.query-results[data-fullscreen="true"] > .query-result-layout > .query-result-table-wrap,
+.query-results[data-fullscreen="true"] > .query-result-layout > .query-result-records {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+    overflow: auto;
+}
+
+/* In page mode the browser's scroll anchoring keeps the visible records in place while rows are measured. */
+.query-result-layout[data-scroll-source="page"] > .query-result-records {
+    overflow-anchor: auto;
+}
+
+/* Cells (M4.3, mockup 01): literals read as values in body ink, IRIs keep the link color, numbers align right,
+ * and language and datatype are small tags. Variable names are monospace. */
+.query-result-layout :is(td, dd).rdf-literal a {
+    color: var(--workbench-body);
+    text-decoration: none;
+}
+
+.query-result-layout :is(td, dd).rdf-literal a:hover,
+.query-result-layout :is(td, dd).rdf-literal a:focus-visible {
+    text-decoration: underline;
+}
+
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout table.data td.rdf-numeric,
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout table.data th.query-result-numeric-column {
+    text-align: right;
+}
+
+.query-result-layout .rdf-numeric {
+    font-variant-numeric: tabular-nums;
+}
+
+.query-result-layout .rdf-language,
+.query-result-layout .rdf-datatype {
+    display: inline-block;
+    margin-left: 6px;
+    padding: 0 5px;
+    border-radius: 4px;
+    background: var(--workbench-inset);
+    color: var(--workbench-muted);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1.6;
+    vertical-align: 1px;
+    white-space: nowrap;
+}
+
+.query-result-layout .rdf-datatype,
+.query-result-layout .query-result-variable {
+    font-family: var(--workbench-code-font);
+}
+
+/* A literal with line breaks (or XML) keeps them, in the cell's font, and wraps its long lines like any other value;
+ * with wrapping off each of its lines stays one line (C27). */
+.query-result-layout .rdf-preformatted {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    tab-size: 4;
+}
+
+.query-result-layout[data-wrap="false"] .rdf-preformatted {
+    white-space: pre;
+}
+
+/* With wrapping on, a tag longer than its column (a datatype IRI without a prefix) wraps inside it instead of being
+ * cut off at the edge of the cell or record. */
+:is(body.workbench-body, body.query-result-embedded-body) .query-result-layout[data-wrap="true"] :is(.rdf-language, .rdf-datatype) {
+    box-sizing: border-box;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: break-word;
+}
+
+/* The pinned copy of the header row: zero height in the flow, so showing it never moves the table. */
+.query-result-floating-head {
+    position: sticky;
+    top: var(--workbench-contextbar-height, 0px);
+    z-index: 3;
+    height: 0;
+}
+
+.query-result-floating-head[hidden] {
+    display: none;
+}
+
+.query-result-floating-head__viewport {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    overflow: hidden;
+    background: var(--workbench-surface);
+    box-shadow: 0 1px 0 var(--workbench-soft-rule);
+}
+
+.query-result-floating-head table.data {
+    margin: 0;
+}
+
+.query-result-floating-head table.data thead th {
+    background: var(--workbench-inset);
+    white-space: nowrap;
+}
+
+/* Narrow pages turn data tables into scroll boxes; the result table and its pinned header copy scroll in their
+ * wrappers instead, so both stay tables with the same column widths. */
+@media (max-width: 900px) {
+    body.workbench-body .workbench-page-surface :is(.query-result-table-wrap, .query-result-floating-head) table.data {
+        display: table;
+        overflow: visible;
+    }
+}
+
+.query-result-table-wrap[hidden],
+.query-result-records[hidden] {
+    display: none;
+}
+
+.query-result-layout[data-wrap="false"] table.data {
+    width: max-content;
+    min-width: 100%;
+}
+
+body.query-result-embedded-body .query-result-embedded .query-result-layout[data-wrap="false"] table.data {
+    width: max-content;
+    min-width: 100%;
+}
+
+.query-result-layout[data-wrap="false"] table.data th,
+.query-result-layout[data-wrap="false"] table.data td {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+}
+
+.query-result-layout[data-wrap="false"] table.data td {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.query-result-records {
+    display: flex;
+    flex-direction: column;
+    overflow-anchor: none;
+    gap: 0;
+}
+
+.query-result-record {
+    flex: none;
+    margin: 0 0 var(--workbench-space-field);
+    padding: 0.8rem;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--query-surface);
+}
+
+.query-result-record-spacer {
+    flex: none;
+    min-height: 0;
+}
+
+/* The N-Quads layout: one statement per line in the records box, in the code font. A line is never wrapped (whatever
+ * Wrap values says); the box scrolls sideways. */
+.query-result-layout[data-effective-layout="nquads"] > .query-result-records {
+    padding: 0.4rem 0;
+    overflow-x: auto;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-radius);
+    background: var(--query-surface);
+    font-family: var(--workbench-code-font);
+    font-size: 12.5px;
+    line-height: 1.6;
+}
+
+.query-result-nquad {
+    flex: none;
+    box-sizing: border-box;
+    width: max-content;
+    min-width: 100%;
+    padding: 0.1rem 0.8rem;
+    white-space: pre;
+}
+
+.query-result-load-more-actions {
+    margin-block-start: var(--workbench-space-subgroup);
+}
+
+.query-result-load-more-actions:has(> [hidden]) {
+    display: none;
+}
+
+.query-result-record__title {
+    margin: 0 0 0.55rem;
+    color: var(--query-muted);
+    font-size: var(--workbench-control-font-size);
+    font-weight: 600;
+}
+
+.query-result-record__fields {
+    display: grid;
+    grid-template-columns: minmax(5rem, 0.3fr) minmax(0, 1fr);
+    gap: 0.35rem 0.8rem;
+    margin: 0;
+}
+
+.query-result-record__fields dt {
+    min-width: 0;
+    color: var(--query-muted);
+    font-size: var(--workbench-label-font-size);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+}
+
+.query-result-record__fields dd {
+    min-width: 0;
+    margin: 0;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+}
+
+.query-result-record__fields a {
+    color: var(--workbench-primary);
+}
+
+.query-result-unbound {
+    color: var(--query-muted);
+}
+
+/* External-link arrow beside result IRIs: shown on hover or keyboard focus only. */
+.query-result-embedded a.resourceURL {
+    margin-left: 8px;
+    visibility: hidden;
+}
+
+.query-result-embedded div.resource:hover > a.resourceURL,
+.query-result-embedded div.resource:focus-within > a.resourceURL {
+    visibility: visible;
+}
+
+.query-result-embedded .queryResult {
+    box-sizing: border-box;
+    margin: 1rem 0;
+    padding: 1rem;
+    border: 1px solid var(--query-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--query-soft);
+    font-size: 1.2rem;
+}
+
+.query-result-embedded .queryResult img {
+    margin-right: 0.5rem;
+}
+
+.query-result-embedded .ERROR:not(.workbench-callout) {
+    box-sizing: border-box;
+    margin: 0.5rem 0;
+    padding: 0.75rem;
+    border: 1px solid var(--workbench-danger);
+    border-radius: var(--workbench-control-radius);
+    background: var(--workbench-surface);
+    color: var(--workbench-danger);
+    font-size: var(--workbench-body-font-size);
+    line-height: 1.5;
+}
+
+/* In the output card the Results tab names the result; its heading stays for assistive technology and
+ * returns in full screen (M3.5, mockup 02). Out of the flow it leaves the status at the very start of the row. */
+.query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2,
+body.workbench-body #content .query-output .query-results:not([data-fullscreen="true"]) .query-result-toolbar__header > h2 {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+}
+
+/* Result states (M3.5, mockup 02): the error callout, the empty result and the Yes/No answer. */
+.query-result-error {
+    margin: 12px 0;
+}
+
+.query-result-error[hidden] {
+    display: none;
+}
+
+.query-result-error .workbench-callout__title,
+.query-result-error .query-result-error__message {
+    display: block;
+}
+
+.query-result-error .query-result-error__message {
+    white-space: pre-wrap;
+}
+
+.query-result-error__actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--workbench-control-gap, 8px);
+    margin-top: 10px;
+}
+
+.query-result-error__details {
+    margin-top: 10px;
+    color: var(--workbench-muted);
+}
+
+.query-result-error__details > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.query-result-error__details > pre {
+    max-height: 16rem;
+    margin: 8px 0 0;
+    padding: 10px 12px;
+    overflow: auto;
+    border: 1px solid var(--workbench-soft-rule);
+    border-radius: var(--workbench-control-radius);
+    background: var(--workbench-surface);
+    color: var(--workbench-ink);
+    font-family: var(--workbench-code-font);
+    font-size: 12px;
+    white-space: pre-wrap;
+}
+
+.query-result-empty {
+    display: grid;
+    justify-items: center;
+    gap: 4px;
+    padding: 32px 16px;
+    text-align: center;
+}
+
+.query-result-empty[hidden] {
+    display: none;
+}
+
+.query-result-empty__icon {
+    width: 28px;
+    height: 28px;
+    margin-bottom: 4px;
+    fill: none;
+    stroke: var(--workbench-muted);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.75;
+}
+
+.query-result-empty__title {
+    margin: 0;
+    color: var(--workbench-ink);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.query-result-empty__text {
+    max-width: 48ch;
+    margin: 0;
+    color: var(--workbench-muted);
+}
+
+.query-result-embedded .queryResult.query-result-boolean {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 12px 0;
+    padding: 20px;
+    font-size: var(--workbench-body-font-size);
+}
+
+.query-result-boolean__badge {
+    display: inline-grid;
+    flex: 0 0 44px;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: color-mix(in srgb, var(--workbench-success) 16%, transparent);
+}
+
+.query-result-boolean--negative .query-result-boolean__badge {
+    background: color-mix(in srgb, var(--workbench-danger) 14%, transparent);
+}
+
+.query-result-boolean__copy {
+    display: grid;
+    gap: 2px;
+}
+
+.query-result-boolean__value {
+    color: var(--workbench-ink);
+    font-size: 20px;
+    font-weight: 600;
+    line-height: 1.3;
+}
+
+.query-result-boolean__text {
+    color: var(--workbench-muted);
+}
+
+/* The editor line a server parser error points at; the next edit clears it. */
+.query-page .query-editor-error-line {
+    background: var(--workbench-danger-surface);
+}
+
+.query-page .query-editor-error-marker {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin: 6px 0 0 2px;
+    border-radius: 50%;
+    background: var(--workbench-danger);
+}
+
+@media (max-width: 900px) {
+    .query-page .query-form__row {
+        grid-template-columns: minmax(0, 1fr);
+        align-items: start;
+    }
+
+    .query-page .query-form__field--actions {
+        align-items: stretch;
+    }
+
+    .query-page .query-form__field--actions input,
+    .query-page .query-form__field--actions #query-name {
+        flex: 1 1 9rem;
+        min-width: 0;
+    }
+
+    .query-actions-toolbar__primary input {
+        flex: 0 1 auto;
+        min-width: 0;
+    }
+
+    .query-result-embedded form {
+        display: block;
+        width: 100%;
+        margin-right: 0;
+    }
+
+    .query-result-embedded .query-result-controls tr:first-child {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .query-result-embedded .query-result-controls tr:first-child > td:nth-child(3) {
+        grid-column: 1;
+        grid-row: 3;
+    }
+
+    .query-result-embedded table.data {
+        width: 100%;
+        min-width: 0;
+    }
+
+    .query-page input[type="button"],
+    .query-page input[type="submit"],
+    .query-page button,
+    .query-page select,
+    .query-page input[type="number"],
+    .query-page input[type="text"] {
+        min-height: 44px;
+    }
+
+    .query-result-embedded input[type="button"],
+    .query-result-embedded input[type="submit"],
+    .query-result-embedded select,
+    .query-result-embedded input[type="number"],
+    .query-result-embedded input[type="text"],
+    .query-result-embedded textarea {
+        min-height: 44px;
+    }
+
+    .query-page button,
+    .query-result-embedded button,
+    .query-page .workbench-action .workbench-action-label button,
+    .query-result-embedded .workbench-action .workbench-action-label button {
+        min-height: 44px;
+        padding: 0.45rem 0.75rem;
+    }
+
+}
+
+body.workbench-body .query-page .workbench-select-control > select,
+body.query-result-embedded-body .query-result-embedded .workbench-select-control > select {
+	padding-right: 36px;
+}
+
+/* Keyboard hint inside the Execute button (M3.1). */
+.query-page #exec .workbench-shortcut-hint {
+    margin-left: 2px;
+    padding: 1px 5px;
+    border: 1px solid color-mix(in srgb, currentColor 45%, transparent);
+    border-radius: 4px;
+    font: 600 11px/1.2 var(--workbench-font);
+    opacity: .85;
+}
+
+@media (pointer: coarse), (max-width: 600px) {
+    .query-page #exec .workbench-shortcut-hint {
+        display: none;
+    }
 }

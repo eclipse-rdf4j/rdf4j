@@ -1796,6 +1796,15 @@ final class LmdbPackedCostModel
 	@Override
 	public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 			PackedCostEstimate output) {
+		refineLogicalOperator(query, relationId, context, output);
+		if (statisticsView == null && relationId > 0 && relationId <= query.relationCount()
+				&& (query.isSemiJoin(relationId) || query.isAntiJoin(relationId))) {
+			LmdbScalarSemiAntiCosting.refine(this, query, relationId, context, output);
+		}
+	}
+
+	private void refineLogicalOperator(PackedQueryView query, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
 		if (relationId <= 0 || relationId > query.relationCount() || query.isStatementPattern(relationId)
 				|| !finiteNonNegative(output.outputRows()) || !finiteNonNegative(output.workRows())) {
 			return;

@@ -31,14 +31,18 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
@@ -109,6 +113,36 @@ public class JoinIteratorTest {
 
 		assertEquals(0, rows.size(),
 				"The left ?c must join-filter the independently produced BIND value, not be overwritten on the RHS");
+	}
+
+	@Test
+	public void closingProjectionOutputsStayIndependentThroughAliasesAndWrappers() {
+		for (boolean alias : List.of(false, true)) {
+			for (int wrapper = 0; wrapper < 4; wrapper++) {
+				BindingSetAssignment left = new BindingSetAssignment();
+				left.setBindingSets(List.of(binding("c", "left")));
+				BindingSetAssignment source = new BindingSetAssignment();
+				source.setBindingSets(List.of(binding("a", "right")));
+				Extension local = new Extension(source, new ExtensionElem(new Var("a"), "local"));
+				ProjectionElemList elements = new ProjectionElemList();
+				elements.addElement(alias ? new ProjectionElem("local", "c") : new ProjectionElem("c"));
+				if (!alias) {
+					local.addElement(new ExtensionElem(new Var("local"), "c"));
+				}
+				Projection projection = new Projection(local, elements);
+				projection.setSubquery(false);
+				TupleExpr right = switch (wrapper) {
+				case 1 -> new Filter(projection, new ValueConstant(vf.createLiteral(true)));
+				case 2 -> new Order(projection);
+				case 3 -> new Distinct(projection);
+				default -> projection;
+				};
+				Join join = new Join(left, right);
+				List<BindingSet> rows = Iterations.asList(evaluator.precompile(join)
+						.evaluate(EmptyBindingSet.getInstance()));
+				assertEquals(List.of(), rows, "closed local output: alias=" + alias + ", wrapper=" + wrapper);
+			}
+		}
 	}
 
 	@Test

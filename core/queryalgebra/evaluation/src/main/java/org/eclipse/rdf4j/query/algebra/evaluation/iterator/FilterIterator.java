@@ -72,6 +72,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
@@ -134,19 +135,18 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			return assuredSharedMinus;
 		}
 
-		QueryEvaluationStep fusedAssignmentJoin = supplyFilteredBindingSetAssignmentJoin(filter, strategy, context,
-				evaluationStatistics);
-		if (fusedAssignmentJoin != null) {
-			return fusedAssignmentJoin;
-		}
-
-		QueryEvaluationStep materializedExistsSemiJoin = supplyMaterializedExistsSemiJoin(filter, strategy, context,
-				evaluationStatistics);
-		if (materializedExistsSemiJoin != null) {
-			return materializedExistsSemiJoin;
+		boolean movable = AdaptiveFilterEvaluationStep.hasMovableFilter(context, filter)
+				&& filter.getStringMetricPlanned(OPTIMIZER_FILTER_ALGORITHM_HINT) == null
+				&& filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND) == null;
+		if (!movable) {
+			QueryEvaluationStep specialized = automaticSpecialization(filter, strategy, context, evaluationStatistics);
+			if (specialized != null) {
+				return specialized;
+			}
 		}
 
 		QueryEvaluationStep arg = strategy.precompile(filter.getArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, filter.getArg(), arg);
 		QueryValueEvaluationStep ves;
 		try {
 			ves = strategy.precompile(filter.getCondition(), context);
@@ -165,9 +165,19 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		FilterFeedbackMode feedbackMode = feedbackMode(filter, evaluationStatistics);
 		Function<BindingSet, BindingSet> argumentBindings = resourceEqualityArgumentBindings(filter);
 
-		return (bs) -> new FilterIterator(filter, arg.evaluate(argumentBindings.apply(bs)), ves, strategy, retain,
-				evaluationStatistics,
-				feedbackMode);
+		QueryEvaluationStep prepared = (bs) -> new FilterIterator(filter, arg.evaluate(argumentBindings.apply(bs)), ves,
+				strategy, retain, evaluationStatistics, feedbackMode);
+		return AdaptiveFilterEvaluationStep.filter(context, prepared, movable
+				? () -> automaticSpecialization(filter, strategy, context, evaluationStatistics)
+				: null);
+	}
+
+	private static QueryEvaluationStep automaticSpecialization(Filter filter, EvaluationStrategy strategy,
+			QueryEvaluationContext context, EvaluationStatistics evaluationStatistics) {
+		QueryEvaluationStep fused = supplyFilteredBindingSetAssignmentJoin(filter, strategy, context,
+				evaluationStatistics);
+		return fused == null ? supplyMaterializedExistsSemiJoin(filter, strategy, context, evaluationStatistics)
+				: fused;
 	}
 
 	/**
@@ -647,6 +657,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				|| !(filter.getArg()instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
 				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
@@ -672,6 +683,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 
 		List<BindingSet> assignmentRows = bindingRows(assignment);
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
+		AdaptiveFilterEvaluationStep.recordPrepared(context, join.getLeftArg(), leftPrepared);
 		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
 				assignment, context);
 		boolean recordFilterOutcomes = shouldRecordFilterOutcomes(filter, evaluationStatistics);
@@ -848,7 +860,12 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	}
 
 	private static Function<BindingSet, BindingSet> buildRetainFunction(Filter filter, QueryEvaluationContext context) {
-		final Set<String> bindingNames = filterScopeBindingNames(filter);
+		return retainBindings(filterScopeBindingNames(filter), context);
+	}
+
+	/** Prepares the same condition-visible binding projection for a proven alternate filter placement. */
+	public static Function<BindingSet, BindingSet> retainBindings(Set<String> bindingNames,
+			QueryEvaluationContext context) {
 		@SuppressWarnings("unchecked")
 		final Predicate<BindingSet>[] hasBinding = new Predicate[bindingNames.size()];
 		@SuppressWarnings("unchecked")
@@ -875,58 +892,19 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	}
 
 	private static Set<String> filterScopeBindingNames(Filter filter) {
-		Set<String> scopeBindingNames = new LinkedHashSet<>(filter.getBindingNames());
-		Set<String> conditionBindingNames = VarNameCollector.process(filter.getCondition());
-		if (!filter.isVariableScopeChange()) {
-			// A filter that does not change variable scope evaluates its condition against the group's bindings,
-			// including bindings pushed in during evaluation that no algebra parent can reveal.
-			scopeBindingNames.addAll(conditionBindingNames);
-			return scopeBindingNames;
-		}
-		if (scopeBindingNames.containsAll(conditionBindingNames)) {
-			return scopeBindingNames;
-		}
-
-		QueryModelNode child = filter;
-		QueryModelNode parent = filter.getParentNode();
-		while (parent != null && !scopeBindingNames.containsAll(conditionBindingNames)) {
-			if (isVariableScopeChange(child)) {
-				break;
-			}
-			if (parent instanceof Join join && join.getRightArg() == child) {
-				scopeBindingNames.addAll(join.getLeftArg().getBindingNames());
-			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
-				scopeBindingNames.addAll(leftJoin.getLeftArg().getBindingNames());
-			}
-			child = parent;
-			parent = parent.getParentNode();
-		}
-		return scopeBindingNames;
-	}
-
-	private static boolean isVariableScopeChange(QueryModelNode node) {
-		return node instanceof VariableScopeChange && ((VariableScopeChange) node).isVariableScopeChange();
+		return TupleExprs.filterConditionBindingNames(filter.getCondition(), filter.isVariableScopeChange(),
+				filter.getArg(), TupleExpr::getBindingNames);
 	}
 
 	private static boolean canEvaluateConditionAgainstInputBindings(Filter filter) {
-		if (containsSubQueryValueOperator(filter.getCondition())) {
-			// For non-scope-changing filters the retained copy would already include every
-			// condition variable, including correlated subquery variables. Passing the
-			// original row is equivalent for those names and avoids copying each row.
-			return !filter.isVariableScopeChange();
-		}
-		return filter.getArg().getBindingNames().containsAll(VarNameCollector.process(filter.getCondition()));
+		// Unobserved extra bindings do not require a copy. Implicit structural inputs, including VALUES headers,
+		// must be proved inside the frame before the original row can be used for subquery substitution.
+		return TupleExprs.conditionFrameContainsAllObservations(
+				TupleExprs.conditionBindingDomain(filter.getCondition()), filterScopeBindingNames(filter));
 	}
 
 	private static boolean containsSubQueryValueOperator(ValueExpr condition) {
-		final boolean[] contains = { false };
-		condition.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			protected void meetSubQueryValueOperator(SubQueryValueOperator node) {
-				contains[0] = true;
-			}
-		});
-		return contains[0];
+		return TupleExprs.containsSubQueryValueOperator(condition);
 	}
 
 	private static boolean shouldRecordFilterOutcomes(Filter filter, EvaluationStatistics evaluationStatistics) {

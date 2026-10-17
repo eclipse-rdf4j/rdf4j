@@ -15,10 +15,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Iterator;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -121,6 +124,37 @@ class BindingShapeTest {
 		assignment.setBindingSets(List.of(row));
 
 		assertShapeMatches(assignment);
+	}
+
+	@Test
+	void unknownBindingSourcesKeepRuntimeShapeConservativeWithoutOpeningRows() {
+		for (boolean declared : List.of(false, true)) {
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("declared", VF.createIRI("urn:declared"));
+			row.addBinding("rowOnly", VF.createIRI("urn:row-only"));
+			Iterator<BindingSet> iterator = List.<BindingSet>of(row).iterator();
+			AtomicInteger opens = new AtomicInteger();
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			if (declared) {
+				assignment.setDeclaredBindingNames(Set.of("declared"));
+			}
+			assignment.setBindingSets(() -> {
+				opens.incrementAndGet();
+				return iterator;
+			});
+			BindingUniverse universe = BindingUniverse.from(assignment, PhysicalProperties.ANY);
+			BindingShape shape = BindingShape.from(assignment, universe);
+			assertEquals(declared ? Set.of("declared") : Set.of(), universe.names(shape.possible()));
+			assertTrue(shape.assured().isEmpty(), "An uninspected source proves no assured runtime hash keys");
+			assertTrue(StreamBindingSchema.from(assignment).assured().isEmpty());
+			assertFalse(HashJoinBindingContract.from(assignment, pattern("declared", "p", "o"))
+					.hasLookupBindings());
+			assertFalse(OptionalBranchReorderSafety.facts(assignment, universe).structurallySafe(),
+					"An available header cannot prove the complete output domain used for OPTIONAL reordering");
+			assertEquals(0, opens.get());
+			assertEquals(row, assignment.getBindingSets().iterator().next());
+			assertFalse(iterator.hasNext());
+		}
 	}
 
 	@Test

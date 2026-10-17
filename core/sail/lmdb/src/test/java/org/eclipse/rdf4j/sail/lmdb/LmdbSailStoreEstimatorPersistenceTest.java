@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,10 +22,13 @@ import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
@@ -96,6 +100,72 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			assertEquals(4L, exactStatementCount(reader));
 		} finally {
 			reader.shutDown();
+		}
+	}
+
+	@Test
+	void noneIsolationRollbackKeepsReadyEstimatorWhenPendingRowNeverPublishes(@TempDir File dataDir) {
+		LmdbStore store = open(dataDir);
+		try {
+			addRows(store, 1);
+			assertTrue(store.forceFlushSketchEstimator());
+			SketchBasedJoinEstimator estimator = store.getBackingStore().getSketchBasedJoinEstimator();
+			estimator.stop();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			assertTrue(estimator.isReadyNonBlocking());
+			long checkpointsBefore = store.getBackingStore().noneIngestionMetrics().checkpoints();
+			IRI pending = VF.createIRI("urn:persistence:pending-rollback");
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				connection.addStatement(pending, PREDICATE, VF.createLiteral("pending"));
+				assertEquals(checkpointsBefore, store.getBackingStore().noneIngestionMetrics().checkpoints(),
+						"a single default-bulk row must stay in the pending batch");
+				connection.rollback();
+			}
+			assertTrue(estimator.isReadyNonBlocking(),
+					"discarding an unpublished pending row must not invalidate the ready estimator");
+			assertEquals(1.0d, predicateRows(estimator), 0.0d,
+					"the ready unified snapshot must contain only the committed seed row");
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				assertFalse(connection.hasStatement(pending, PREDICATE, null, false));
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void directSinkCommitAfterRollbackIsVisibleToNativeAndConnectionReads(@TempDir File dataDir) {
+		LmdbStore store = open(dataDir);
+		try {
+			addRows(store, 1);
+			assertTrue(store.forceFlushSketchEstimator());
+			LmdbSailStore backingStore = store.getBackingStore();
+			IRI rolledBack = VF.createIRI("urn:persistence:direct-rollback");
+			IRI committed = VF.createIRI("urn:persistence:direct-after-rollback");
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approve(rolledBack, PREDICATE, VF.createLiteral("rolled-back"), null);
+				backingStore.rollback();
+			}
+			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
+				sink.approve(committed, PREDICATE, VF.createLiteral("committed"), null);
+				sink.flush();
+			}
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> rows = dataset.getStatements(committed, PREDICATE, null)) {
+				assertTrue(rows.hasNext(), "native reads must see the direct sink commit after rollback");
+				assertEquals(committed, rows.next().getSubject());
+				assertFalse(rows.hasNext());
+			}
+			try (NotifyingSailConnection connection = store.getConnection()) {
+				assertTrue(connection.hasStatement(committed, PREDICATE, null, false));
+				assertFalse(connection.hasStatement(rolledBack, PREDICATE, null, false));
+			}
+			assertTrue(store.forceFlushSketchEstimator());
+			assertEquals(2.0d, predicateRows(backingStore.getSketchBasedJoinEstimator()), 0.0d);
+			assertEquals(2L, exactStatementCount(store));
+		} finally {
+			store.shutDown();
 		}
 	}
 

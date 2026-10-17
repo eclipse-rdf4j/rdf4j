@@ -10,7 +10,6 @@ test('uses compare cancel while compare refresh is pending', () => {
 test('maps explain trigger controls', () => {
     assert.deepEqual(queryCancelPolicy.getExplainControlIds('explain-trigger'), {
         buttonId: 'explain-trigger',
-        spinnerId: 'explain-trigger-spinner',
         cancelId: 'explain-trigger-cancel'
     });
 });
@@ -18,7 +17,6 @@ test('maps explain trigger controls', () => {
 test('maps rerun explanation controls', () => {
     assert.deepEqual(queryCancelPolicy.getExplainControlIds('rerun-explanation'), {
         buttonId: 'rerun-explanation',
-        spinnerId: 'rerun-explanation-spinner',
         cancelId: 'rerun-explanation-cancel'
     });
 });
@@ -26,7 +24,6 @@ test('maps rerun explanation controls', () => {
 test('returns empty control ids for non-primary buttons', () => {
     assert.deepEqual(queryCancelPolicy.getExplainControlIds('explain-compare-trigger'), {
         buttonId: '',
-        spinnerId: '',
         cancelId: ''
     });
 });

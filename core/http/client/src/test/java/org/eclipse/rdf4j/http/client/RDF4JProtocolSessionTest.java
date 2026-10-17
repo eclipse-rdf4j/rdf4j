@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
@@ -657,6 +658,32 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationWaitsForPartialPlanAfterMaxQueryTime(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		// The server runs the query for the whole max query time, then writes the plan it collected so far.
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Executed"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\",\"timedOut\":true}")
+								.withContentType(MediaType.APPLICATION_JSON)
+								.withDelay(TimeUnit.MILLISECONDS, 1500)
+				);
+
+		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 1, Explanation.Level.Executed);
+
+		assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
 	}
 
 	@ParameterizedTest(name = "[{0}]")

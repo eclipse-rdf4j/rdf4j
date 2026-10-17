@@ -112,7 +112,8 @@ public class BindSelect implements PlanNode {
 					.visit(new AbstractQueryModelVisitor<Exception>() {
 						@Override
 						public void meet(BindingSetAssignment node) throws Exception {
-							if (node.getBindingNames().equals(expectedBindingNames)
+							// The dynamic VALUES placeholder has an empty body; only its declared header identifies it.
+							if (node.getDeclaredBindingNames().equals(expectedBindingNames)
 									&& isEmpty(node.getBindingSets())) {
 								dynamicValuesAssignments.add(node);
 							}

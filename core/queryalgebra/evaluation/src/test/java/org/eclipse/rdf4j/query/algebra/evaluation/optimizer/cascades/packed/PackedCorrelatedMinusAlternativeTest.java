@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -435,10 +436,8 @@ class PackedCorrelatedMinusAlternativeTest {
 	}
 
 	private static BindingSetAssignment assuredEntities(SimpleValueFactory values) {
-		MapBindingSet first = new MapBindingSet(1);
-		first.setBinding("entity", values.createIRI("urn:entity:1"));
-		MapBindingSet second = new MapBindingSet(1);
-		second.setBinding("entity", values.createIRI("urn:entity:2"));
+		ListBindingSet first = new ListBindingSet(List.of("entity"), values.createIRI("urn:entity:1"));
+		ListBindingSet second = new ListBindingSet(List.of("entity"), values.createIRI("urn:entity:2"));
 		BindingSetAssignment entities = new BindingSetAssignment();
 		entities.setBindingNames(new LinkedHashSet<>(List.of("entity")));
 		entities.setBindingSets(List.of(first, second));

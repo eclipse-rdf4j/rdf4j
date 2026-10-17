@@ -36,6 +36,7 @@ import java.util.function.LongSupplier;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -45,6 +46,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.CompareAll;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
@@ -73,7 +75,6 @@ import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.PatternFilterSampleEstimate;
-import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchFootprint;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
@@ -115,6 +116,7 @@ class LmdbFilterSelectivityStats
 	private final long optimizerSamplingMaxMillis;
 	private final int optimizerSamplingMaxRows;
 	private final boolean backgroundRawSamplingEnabled;
+	private Supplier<LmdbSailStore.DatasetAdmission> samplingViewSupplier;
 
 	private final Map<PatternFilterKey, LearnedCounts> learnedByFilter = new HashMap<>();
 	private final Map<PatternFilterKey, LearnedCounts> learnedByTemplate = new HashMap<>();
@@ -153,6 +155,8 @@ class LmdbFilterSelectivityStats
 			this.generation = generation;
 		}
 	}
+
+	private long statisticsRevision;
 
 	LmdbFilterSelectivityStats(Path estimatorPath, TripleStore tripleStore, ValueStore valueStore) {
 		this(estimatorPath, tripleStore, valueStore, true, LmdbStoreConfig.OPTIMIZER_SAMPLING_MAX_MILLIS,
@@ -250,6 +254,11 @@ class LmdbFilterSelectivityStats
 		learnedStateObserver = observer;
 	}
 
+	/** Installed before publication by the store that owns the paired native read views. */
+	void setSamplingViewSupplier(Supplier<LmdbSailStore.DatasetAdmission> samplingViewSupplier) {
+		this.samplingViewSupplier = Objects.requireNonNull(samplingViewSupplier, "samplingViewSupplier");
+	}
+
 	@Override
 	public synchronized void reset() {
 		LearnedStateObserver observer = learnedStateObserver;
@@ -261,6 +270,7 @@ class LmdbFilterSelectivityStats
 		// evidence behind either.
 		exactZeroProbeCache.clear();
 		exactDistinctProbeCache.clear();
+		statisticsRevision++;
 		boolean hasPersistedStats = !learnedByFilter.isEmpty() || !learnedByTemplate.isEmpty()
 				|| !learnedByPattern.isEmpty() || !learnedBySurface.isEmpty() || !sampledByFilter.isEmpty();
 		boolean hasVolatileStats = !backgroundSamplingRequests.isEmpty() || !expectedRuntimeRowsByPattern.isEmpty();
@@ -646,40 +656,63 @@ class LmdbFilterSelectivityStats
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
+		long revision = currentStatisticsRevision();
 		SampledPassRatio sampled = sampleFilterPassRatio(candidate, true, 0L);
 		if (!isUsableSampledPassRatio(sampled)) {
 			return new PatternFilterSampleEstimate(-1.0d, -1L);
 		}
 
-		synchronized (this) {
+		cacheSampleIfCurrent(key, sampled, revision);
+		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.reportedSampleSize());
+	}
+
+	private synchronized long currentStatisticsRevision() {
+		return statisticsRevision;
+	}
+
+	private synchronized void cacheSampleIfCurrent(PatternFilterKey key, SampledPassRatio sampled, long revision) {
+		if (sampled.cacheableSnapshot && statisticsRevision == revision) {
 			sampledByFilter.put(key, sampled);
 			dirty = true;
 			planningRevision++;
 		}
-		return new PatternFilterSampleEstimate(sampled.passRatio, sampled.reportedSampleSize());
 	}
 
 	public EvaluationStatistics.FilterPassEstimate estimateSnapshotFilterPass(Filter filter,
 			StatementPattern pattern) {
-		if (coldSynopsisCapacity <= 0 || !supportsColdSynopsis(filter, pattern)) {
-			return unknownFilterPassEstimate();
-		}
-		ColdSamplingCandidate candidate = coldSamplingCandidate(filter, pattern);
-		if (candidate == null) {
+		if (coldSynopsisCapacity <= 0 || !supportsColdSynopsis(filter, pattern) || samplingViewSupplier == null) {
 			return unknownFilterPassEstimate();
 		}
 
-		ColdFilterSynopsis synopsis;
-		SketchSnapshotIdentity identity = currentSnapshotIdentity();
-		synchronized (this) {
-			if (coldSynopsis == null || identity == null
-					|| identity.mutationVersion() != coldSynopsisMutationVersion
-					|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
+		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+			LmdbSailStore.ReadView view = admission.view();
+			if (!view.isCurrentForStatistics()) {
 				return unknownFilterPassEstimate();
 			}
-			synopsis = coldSynopsis;
+			ColdSamplingCandidate candidate = coldSamplingCandidate(view.valueSnapshot(), filter, pattern);
+			if (candidate == null) {
+				return unknownFilterPassEstimate();
+			}
+			ColdFilterSynopsis synopsis;
+			long revision;
+			SketchSnapshotIdentity identity = currentSnapshotIdentity();
+			synchronized (this) {
+				if (coldSynopsis == null || identity == null
+						|| identity.mutationVersion() != coldSynopsisMutationVersion
+						|| coldSynopsisStatementMutationStamp != appliedStatementMutationStamp) {
+					return unknownFilterPassEstimate();
+				}
+				synopsis = coldSynopsis;
+				revision = statisticsRevision;
+			}
+			EvaluationStatistics.FilterPassEstimate estimate = evaluateColdSynopsis(view.valueSnapshot(), candidate,
+					synopsis);
+			synchronized (this) {
+				return statisticsRevision == revision && view.isCurrentForStatistics()
+						? estimate
+						: unknownFilterPassEstimate();
+			}
 		}
-		return evaluateColdSynopsis(candidate, synopsis);
 	}
 
 	/**
@@ -696,26 +729,37 @@ class LmdbFilterSelectivityStats
 	 * from a walk that completed under its own bound.
 	 */
 	boolean isExactBoundedFilterZero(Filter filter, StatementPattern pattern, int maxScannedRows) {
-		if (maxScannedRows <= 0 || !supportsColdSynopsis(filter, pattern)) {
+		if (maxScannedRows <= 0 || !supportsColdSynopsis(filter, pattern) || samplingViewSupplier == null) {
 			return false;
 		}
 		Filter probeFilter = new Filter(pattern.clone(), filter.getCondition().clone());
 		FilterSurfaceKey surface = exactSurfaceKey(probeFilter);
-		SketchSnapshotIdentity snapshot = probeSnapshotIdentity();
-		Optional<ExactZeroProbe> cached = exactZeroProbeCache.get(snapshot, surface, maxScannedRows);
-		if (cached.isPresent()) {
-			return cached.orElseThrow() == ExactZeroProbe.ALL_REJECTED;
-		}
+		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+			LmdbSailStore.ReadView view = admission.view();
+			SketchSnapshotIdentity snapshot = probeSnapshotIdentity(view);
+			long revision = currentStatisticsRevision();
+			if (view.isCurrentForStatistics()) {
+				Optional<ExactZeroProbe> cached = exactZeroProbeCache.get(snapshot, surface, maxScannedRows);
+				if (cached.isPresent()) {
+					return cached.orElseThrow() == ExactZeroProbe.ALL_REJECTED;
+				}
+			}
 
-		ExactZeroProbe result = exactBoundedFilterZero(filter, pattern, maxScannedRows);
-		if (result != ExactZeroProbe.INCONCLUSIVE && snapshotStillCurrent(snapshot)) {
-			exactZeroProbeCache.put(snapshot, surface, maxScannedRows, result);
+			ExactZeroProbe result = exactBoundedFilterZero(view, filter, pattern, maxScannedRows);
+			synchronized (this) {
+				if (result != ExactZeroProbe.INCONCLUSIVE && statisticsRevision == revision
+						&& snapshotStillCurrent(view, snapshot)) {
+					exactZeroProbeCache.put(snapshot, surface, maxScannedRows, result);
+				}
+			}
+			return result == ExactZeroProbe.ALL_REJECTED;
 		}
-		return result == ExactZeroProbe.ALL_REJECTED;
 	}
 
-	private ExactZeroProbe exactBoundedFilterZero(Filter filter, StatementPattern pattern, int maxScannedRows) {
-		ColdSamplingCandidate candidate = coldSamplingCandidate(filter, pattern);
+	private ExactZeroProbe exactBoundedFilterZero(LmdbSailStore.ReadView view, Filter filter, StatementPattern pattern,
+			int maxScannedRows) {
+		ValueStore.ReadSnapshot values = view.valueSnapshot();
+		ColdSamplingCandidate candidate = coldSamplingCandidate(values, filter, pattern);
 		if (candidate == null) {
 			return ExactZeroProbe.INCONCLUSIVE;
 		}
@@ -726,12 +770,14 @@ class LmdbFilterSelectivityStats
 		}
 
 		int scannedRows = 0;
-		try (Txn txn = tripleStore.planningReadTxn()) {
+		Txn txn = view.tripleTxn();
+		try {
 			for (boolean explicit : new boolean[] { true, false }) {
 				try (RecordIterator triples = tripleStore.getTriples(txn, candidate.subjId, candidate.predId,
 						candidate.objId, candidate.contextId, explicit)) {
 					long[] row;
 					while ((row = triples.next()) != null) {
+						checkSamplingQueryDeadline();
 						if (++scannedRows > maxScannedRows) {
 							return ExactZeroProbe.INCONCLUSIVE;
 						}
@@ -740,7 +786,7 @@ class LmdbFilterSelectivityStats
 							continue;
 						}
 						try {
-							if (strategy.isTrue(condition, toBindingSet(candidate.pattern, row))) {
+							if (strategy.isTrue(condition, toBindingSet(values, candidate.pattern, row))) {
 								return ExactZeroProbe.PASSING_ROW;
 							}
 						} catch (ValueExprEvaluationException e) {
@@ -750,6 +796,8 @@ class LmdbFilterSelectivityStats
 				}
 			}
 			return ExactZeroProbe.ALL_REJECTED;
+		} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+			throw failure;
 		} catch (IOException | RuntimeException e) {
 			return ExactZeroProbe.INCONCLUSIVE;
 		}
@@ -771,6 +819,7 @@ class LmdbFilterSelectivityStats
 	DistinctFilterValues exactMatchingDistinctValues(StatementPattern pattern, ValueExpr condition,
 			String bindingName, int maximumDistinctValues) {
 		if (pattern == null || condition == null || bindingName == null || bindingName.isBlank()
+				|| samplingViewSupplier == null
 				|| maximumDistinctValues < 1
 				|| !VarNameCollector.process(condition).equals(Set.of(bindingName))
 				|| hasRepeatedUnboundVariable(pattern)) {
@@ -788,24 +837,35 @@ class LmdbFilterSelectivityStats
 			return DistinctFilterValues.unavailable();
 		}
 		FilterSurfaceKey surface = exactSurfaceKey(synthetic);
-		SketchSnapshotIdentity snapshot = probeSnapshotIdentity();
-		Optional<DistinctFilterValues> cached = exactDistinctProbeCache.get(snapshot, surface,
-				maximumDistinctValues);
-		if (cached.isPresent()) {
-			return cached.orElseThrow();
-		}
+		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+			LmdbSailStore.ReadView view = admission.view();
+			SketchSnapshotIdentity snapshot = probeSnapshotIdentity(view);
+			long revision = currentStatisticsRevision();
+			if (view.isCurrentForStatistics()) {
+				Optional<DistinctFilterValues> cached = exactDistinctProbeCache.get(snapshot, surface,
+						maximumDistinctValues);
+				if (cached.isPresent()) {
+					return cached.orElseThrow();
+				}
+			}
 
-		DistinctFilterValues result = exactMatchingDistinctValues(pattern, condition, bindingName,
-				maximumDistinctValues, valueComponent, synthetic);
-		if (result.status() != DistinctFilterStatus.UNAVAILABLE && snapshotStillCurrent(snapshot)) {
-			exactDistinctProbeCache.put(snapshot, surface, maximumDistinctValues, result);
+			DistinctFilterValues result = exactMatchingDistinctValues(view, pattern, condition, bindingName,
+					maximumDistinctValues, valueComponent, synthetic);
+			synchronized (this) {
+				if (result.status() != DistinctFilterStatus.UNAVAILABLE && statisticsRevision == revision
+						&& snapshotStillCurrent(view, snapshot)) {
+					exactDistinctProbeCache.put(snapshot, surface, maximumDistinctValues, result);
+				}
+			}
+			return result;
 		}
-		return result;
 	}
 
-	private DistinctFilterValues exactMatchingDistinctValues(StatementPattern pattern, ValueExpr condition,
+	private DistinctFilterValues exactMatchingDistinctValues(LmdbSailStore.ReadView view, StatementPattern pattern,
+			ValueExpr condition,
 			String bindingName, int maximumDistinctValues, int valueComponent, Filter synthetic) {
-		ColdSamplingCandidate candidate = coldSamplingCandidate(synthetic, pattern);
+		ValueStore.ReadSnapshot values = view.valueSnapshot();
+		ColdSamplingCandidate candidate = coldSamplingCandidate(values, synthetic, pattern);
 		if (candidate == null) {
 			return DistinctFilterValues.unavailable();
 		}
@@ -823,7 +883,8 @@ class LmdbFilterSelectivityStats
 		}
 		LinkedHashSet<Long> support = new LinkedHashSet<>();
 		List<Value> matchingValues = new ArrayList<>();
-		try (Txn txn = tripleStore.planningReadTxn()) {
+		Txn txn = view.tripleTxn();
+		try {
 			for (boolean explicit : new boolean[] { true, false }) {
 				Optional<RecordIterator> records = tripleStore.getTriplesWithDistinctCursorSkip(txn, projected,
 						candidate.subjId, candidate.predId, candidate.objId, candidate.contextId, explicit,
@@ -834,6 +895,7 @@ class LmdbFilterSelectivityStats
 				try (RecordIterator iterator = records.orElseThrow()) {
 					long[] row;
 					while ((row = iterator.next()) != null) {
+						checkSamplingQueryDeadline();
 						long valueId = row[valueComponent];
 						if (!support.add(valueId)) {
 							continue;
@@ -847,8 +909,8 @@ class LmdbFilterSelectivityStats
 							continue;
 						}
 						try {
-							if (strategy.isTrue(preparedCondition, toBindingSet(candidate.pattern, row))) {
-								matchingValues.add(valueStore.getValue(valueId));
+							if (strategy.isTrue(preparedCondition, toBindingSet(values, candidate.pattern, row))) {
+								matchingValues.add(valueStore.getValue(values, valueId));
 							}
 						} catch (ValueExprEvaluationException e) {
 							// RDF4J query execution treats expression errors as filtered rows.
@@ -857,25 +919,27 @@ class LmdbFilterSelectivityStats
 				}
 			}
 			return DistinctFilterValues.complete(matchingValues);
+		} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+			throw failure;
 		} catch (IOException | RuntimeException e) {
 			return DistinctFilterValues.unavailable();
 		}
 	}
 
-	private boolean snapshotStillCurrent(SketchSnapshotIdentity snapshot) {
-		return snapshot != null && snapshot.equals(probeSnapshotIdentity());
+	private boolean snapshotStillCurrent(LmdbSailStore.ReadView view, SketchSnapshotIdentity snapshot) {
+		return view.isCurrentForStatistics() && snapshot.equals(probeSnapshotIdentity(view));
 	}
 
 	/**
 	 * Identity that keys the exact storage probes (bounded zero proofs and COMPLETE stored-term enumerations). Those
-	 * probes are facts about the committed data, so they follow the store's data revision, which every commit advances,
-	 * and not {@link #currentSnapshotIdentity()}: the learned-statistics identity is the sketch synopsis identity when
-	 * the sketch estimator is on, which only moves when a background rebuild publishes, and the statement mutation
-	 * stamp otherwise, which is static while the Frontier journal is disabled. The store id components are constant
-	 * because the probe caches belong to one store instance.
+	 * probes are facts about the committed data, so they follow the admitted native transaction ID, which every commit
+	 * advances, and not {@link #currentSnapshotIdentity()}: the learned-statistics identity is the sketch synopsis
+	 * identity when the sketch estimator is on, which only moves when a background rebuild publishes, and the statement
+	 * mutation stamp otherwise, which is static while the Frontier journal is disabled. The store id components are
+	 * constant because the probe caches belong to one store instance.
 	 */
-	private SketchSnapshotIdentity probeSnapshotIdentity() {
-		return new SketchSnapshotIdentity(0L, 0L, tripleStore.getDataRevision());
+	private SketchSnapshotIdentity probeSnapshotIdentity(LmdbSailStore.ReadView view) {
+		return new SketchSnapshotIdentity(0L, 0L, view.tripleTxn().nativeTransactionId());
 	}
 
 	private static long distinctFilterCacheWeight(DistinctFilterValues values) {
@@ -960,6 +1024,7 @@ class LmdbFilterSelectivityStats
 			}
 			BackgroundSamplingRequest request = requests.getFirst();
 			attemptedCount++;
+			long revision = currentStatisticsRevision();
 			SampledPassRatio sampled = sampleFilterPassRatio(request.toSamplingCandidate(), false, deadlineNanos);
 			if (!isUsableSampledPassRatio(sampled)) {
 				logger.info(
@@ -968,11 +1033,7 @@ class LmdbFilterSelectivityStats
 						request.expectedRuntimeRows(), request.expectedBenefitRows());
 				continue;
 			}
-			synchronized (this) {
-				sampledByFilter.put(request.key, sampled);
-				dirty = true;
-				planningRevision++;
-			}
+			cacheSampleIfCurrent(request.key, sampled, revision);
 			logger.info(
 					"LMDB background filter sampling sampled request: predicate={}, filterKey={}, passRatio={}, sampleSize={}, votes={}, foregroundNeeded={}, expectedRuntimeRows={}, expectedBenefitRows={}",
 					request.predicateIri(), request.filterKey(), sampled.passRatio, sampled.sampleSize,
@@ -1246,16 +1307,17 @@ class LmdbFilterSelectivityStats
 				contextId, expectedRuntimeRows, expectedBenefitRows);
 	}
 
-	private ColdSamplingCandidate coldSamplingCandidate(Filter filter, StatementPattern pattern) {
+	private ColdSamplingCandidate coldSamplingCandidate(ValueStore.ReadSnapshot snapshot, Filter filter,
+			StatementPattern pattern) {
 		long subjId;
 		long predId;
 		long objId;
 		long contextId;
 		try {
-			subjId = resolvePatternId(pattern.getSubjectVar());
-			predId = resolvePatternId(pattern.getPredicateVar());
-			objId = resolvePatternId(pattern.getObjectVar());
-			contextId = resolvePatternId(pattern.getContextVar());
+			subjId = resolvePatternId(snapshot, pattern.getSubjectVar());
+			predId = resolvePatternId(snapshot, pattern.getPredicateVar());
+			objId = resolvePatternId(snapshot, pattern.getObjectVar());
+			contextId = resolvePatternId(snapshot, pattern.getContextVar());
 		} catch (IOException e) {
 			return null;
 		}
@@ -1267,7 +1329,8 @@ class LmdbFilterSelectivityStats
 				contextId);
 	}
 
-	private EvaluationStatistics.FilterPassEstimate evaluateColdSynopsis(ColdSamplingCandidate candidate,
+	private EvaluationStatistics.FilterPassEstimate evaluateColdSynopsis(ValueStore.ReadSnapshot snapshot,
+			ColdSamplingCandidate candidate,
 			ColdFilterSynopsis synopsis) {
 		DefaultEvaluationStrategy strategy = samplingStrategy();
 		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
@@ -1278,6 +1341,7 @@ class LmdbFilterSelectivityStats
 		long matchingRows = 0L;
 		long passedRows = 0L;
 		for (int i = 0; i < synopsis.retainedRows(); i++) {
+			checkSamplingQueryDeadline();
 			long subject = synopsis.subjectAt(i);
 			long predicate = synopsis.predicateAt(i);
 			long object = synopsis.objectAt(i);
@@ -1287,10 +1351,12 @@ class LmdbFilterSelectivityStats
 			}
 			matchingRows++;
 			try {
-				BindingSet bindings = toBindingSet(candidate.pattern, subject, predicate, object, context);
+				BindingSet bindings = toBindingSet(snapshot, candidate.pattern, subject, predicate, object, context);
 				if (strategy.isTrue(condition, bindings)) {
 					passedRows++;
 				}
+			} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+				throw failure;
 			} catch (ValueExprEvaluationException e) {
 				// RDF4J query execution treats expression errors as filtered rows.
 			} catch (IOException | RuntimeException e) {
@@ -1323,7 +1389,8 @@ class LmdbFilterSelectivityStats
 
 	private SampledPassRatio sampleFilterPassRatio(SamplingCandidate candidate, boolean foregroundSampling,
 			long deadlineNanos) {
-		if (candidate == null) {
+		if (candidate == null || samplingViewSupplier == null
+				|| ScalarEvaluationEffects.effectOf(candidate.condition) != ScalarEvaluationEffects.Effect.REPEATABLE) {
 			return null;
 		}
 
@@ -1333,11 +1400,6 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
-		DefaultEvaluationStrategy strategy = samplingStrategy();
-		QueryValueEvaluationStep condition = prepareCondition(strategy, candidate.condition);
-		if (condition == null) {
-			return null;
-		}
 		if (foregroundSampling) {
 			deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(optimizerSamplingMaxMillis);
 		}
@@ -1348,32 +1410,101 @@ class LmdbFilterSelectivityStats
 		int[] eligibleRows = { 0 };
 		int[] scannedRows = { 0 };
 
-		// One planning transaction serves the stratified pass and the prefix fallback: pinned to the query's dataset
-		// lease when planning in the foreground (no nested reader lease), one ordinary lease otherwise. This removes
-		// the second admission wait the fallback used to take after a failed stratified pass.
-		try (Txn planningTxn = tripleStore.planningReadTxn()) {
-			return sampleFilterPassRatio(planningTxn, candidate, strategy, condition, scanBudget, deadlineNanos,
+		QueryExecutionDeadline callerDeadline = QueryExecutionDeadline.current();
+		long remainingNanos = deadlineNanos - System.nanoTime();
+		if (remainingNanos <= 0L) {
+			return null;
+		}
+		boolean needsLocalDeadline = callerDeadline == null || remainingNanos < callerDeadline.remainingNanos();
+		long remainingMillis = TimeUnit.NANOSECONDS.toMillis(remainingNanos);
+		if (TimeUnit.MILLISECONDS.toNanos(remainingMillis) < remainingNanos) {
+			remainingMillis++;
+		}
+		QueryExecutionDeadline localDeadline = needsLocalDeadline
+				? QueryExecutionDeadline.start(remainingMillis)
+				: null;
+		try (localDeadline;
+				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(localDeadline);
+				LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
+			LmdbSailStore.ReadView view = admission.view();
+			ValueStore.ReadSnapshot values = view.valueSnapshot();
+			// Queued requests preserve RDF terms; all identifiers are resolved again in this admitted dictionary.
+			long subjId = resolvePatternId(values, candidate.pattern.getSubjectVar());
+			long predId = resolvePatternId(values, candidate.pattern.getPredicateVar());
+			long objId = resolvePatternId(values, candidate.pattern.getObjectVar());
+			long contextId = resolvePatternId(values, candidate.pattern.getContextVar());
+			if (subjId == MISSING_VALUE_ID || predId == MISSING_VALUE_ID || objId == MISSING_VALUE_ID
+					|| contextId == MISSING_VALUE_ID) {
+				return null;
+			}
+			SamplingCandidate admittedCandidate = new SamplingCandidate(candidate.key, candidate.pattern,
+					candidate.condition, subjId, predId, objId, contextId, candidate.expectedRuntimeRows,
+					candidate.expectedBenefitRows);
+			DefaultEvaluationStrategy strategy = samplingStrategy();
+			QueryValueEvaluationStep condition = prepareCondition(strategy, admittedCandidate.condition);
+			if (condition == null) {
+				return null;
+			}
+			SampledPassRatio sampled = sampleFilterPassRatio(view, admittedCandidate, strategy, condition, scanBudget,
+					deadlineNanos,
 					reservoirSize, minimumEvidence, samples, eligibleRows, scannedRows);
+			checkSamplingQueryDeadline();
+			return sampled;
+		} catch (QueryInterruptedException failure) {
+			if (Thread.currentThread().isInterrupted() || callerDeadline != null && callerDeadline.isExpired()) {
+				throw failure;
+			}
+			// Published expiration is authoritative, including while native admission is waiting.
+			if (localDeadline != null && localDeadline.isExpired()) {
+				return null;
+			}
+			throw failure;
 		} catch (IOException e) {
+			checkSamplingQueryDeadline();
 			return null;
 		}
 	}
 
-	private SampledPassRatio sampleFilterPassRatio(Txn planningTxn, SamplingCandidate candidate,
+	private static void checkSamplingQueryDeadline() {
+		QueryExecutionDeadline deadline = QueryExecutionDeadline.current();
+		if (Thread.currentThread().isInterrupted() || deadline != null && deadline.isExpired()) {
+			throw new QueryInterruptedException("Query evaluation took too long");
+		}
+	}
+
+	private SampledPassRatio sampleFilterPassRatio(LmdbSailStore.ReadView view, SamplingCandidate candidate,
 			DefaultEvaluationStrategy strategy, QueryValueEvaluationStep condition, int scanBudget,
 			long deadlineNanos, int reservoirSize, int minimumEvidence, List<BindingSet> samples,
 			int[] eligibleRows, int[] scannedRows) {
+		Txn planningTxn = view.tripleTxn();
+		ValueStore.ReadSnapshot values = view.valueSnapshot();
 		boolean truncated = false;
 		boolean stratifiedDelivered = false;
+		long exactPopulation = -1L;
+		try {
+			// The configured retention cap bounds the census independently of an underestimated adaptive budget.
+			// Probe plus complete delivery can approach twice this cap (+1 key to disprove completeness), under the
+			// same hard deadline; retained terms remain bounded by the cap. Unknown ranges keep the adaptive budget.
+			int completePopulationCap = Math.min(SAMPLE_RESERVOIR_SIZE, optimizerSamplingMaxRows);
+			exactPopulation = tripleStore.boundedExactCardinality(planningTxn, candidate.subjId, candidate.predId,
+					candidate.objId, candidate.contextId, completePopulationCap).orElse(-1L);
+		} catch (IOException failure) {
+			// Lack of a complete-population proof leaves the existing stratified path available.
+		}
+		boolean completePopulation = exactPopulation >= 0L;
+		int effectiveScanBudget = completePopulation ? Math.max(scanBudget, Math.toIntExact(exactPopulation))
+				: scanBudget;
+		int effectiveReservoirSize = completePopulation ? Math.max(reservoirSize, Math.toIntExact(exactPopulation))
+				: reservoirSize;
 
-		if (stratifiedSamplingEnabled()) {
+		if (stratifiedSamplingEnabled() && !completePopulation) {
 			/*
 			 * A budget-capped prefix scan reads only the FIRST scanBudget rows in index order — systematically wrong
 			 * whenever the filtered variable correlates with index order (e.g. a range filter over an object-ordered
 			 * index). Stratified starts cover the whole key range under the same row budget.
 			 */
-			int strata = Math.min(16, Math.max(1, scanBudget / 64));
-			int rowsPerStratum = Math.max(1, scanBudget / strata / 2);
+			int strata = Math.min(16, Math.max(1, effectiveScanBudget / 64));
+			int rowsPerStratum = Math.max(1, effectiveScanBudget / strata / 2);
 			long stratifiedDeadline = deadlineNanos;
 			boolean[] conversionFailed = { false };
 			boolean[] deadlineStopped = { false };
@@ -1381,28 +1512,29 @@ class LmdbFilterSelectivityStats
 				for (boolean explicit : new boolean[] { true, false }) {
 					tripleStore.sampleTriplesStratified(planningTxn, candidate.subjId, candidate.predId,
 							candidate.objId, candidate.contextId, explicit, strata, rowsPerStratum, row -> {
+								checkSamplingQueryDeadline();
 								scannedRows[0]++;
 								if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
-									return continueStratifiedSampling(stratifiedDeadline, scanBudget,
+									return continueStratifiedSampling(stratifiedDeadline, effectiveScanBudget,
 											minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
 								}
 								BindingSet bindingSet;
 								try {
-									bindingSet = toBindingSet(candidate.pattern, row);
+									bindingSet = toBindingSet(values, candidate.pattern, row);
 								} catch (IOException e) {
 									conversionFailed[0] = true;
 									return false;
 								}
 								eligibleRows[0]++;
-								if (samples.size() < reservoirSize) {
+								if (samples.size() < effectiveReservoirSize) {
 									samples.add(bindingSet);
 								} else {
 									int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
-									if (replacementIndex < reservoirSize) {
+									if (replacementIndex < effectiveReservoirSize) {
 										samples.set(replacementIndex, bindingSet);
 									}
 								}
-								return continueStratifiedSampling(stratifiedDeadline, scanBudget,
+								return continueStratifiedSampling(stratifiedDeadline, effectiveScanBudget,
 										minimumEvidence, eligibleRows[0], scannedRows[0], deadlineStopped);
 							});
 					if (conversionFailed[0] || deadlineStopped[0]) {
@@ -1411,6 +1543,7 @@ class LmdbFilterSelectivityStats
 				}
 				stratifiedDelivered = !conversionFailed[0]
 						&& samples.size() >= minimumEvidence;
+				truncated = deadlineStopped[0];
 			} catch (IOException e) {
 				stratifiedDelivered = false;
 			}
@@ -1426,27 +1559,28 @@ class LmdbFilterSelectivityStats
 							candidate.predId,
 							candidate.objId, candidate.contextId, explicit)) {
 						long[] row;
-						while (scannedRows[0] < scanBudget && !samplingDeadlineExceeded(deadlineNanos)
+						while (scannedRows[0] < effectiveScanBudget && !samplingDeadlineExceeded(deadlineNanos)
 								&& (row = triples.next()) != null) {
 							scannedRows[0]++;
+							checkSamplingQueryDeadline();
 							if (!matchesRepeatedVarEquality(candidate.pattern, row)) {
 								continue;
 							}
-							BindingSet bindingSet = toBindingSet(candidate.pattern, row);
+							BindingSet bindingSet = toBindingSet(values, candidate.pattern, row);
 							eligibleRows[0]++;
-							if (samples.size() < reservoirSize) {
+							if (samples.size() < effectiveReservoirSize) {
 								samples.add(bindingSet);
 								continue;
 							}
 							int replacementIndex = ThreadLocalRandom.current().nextInt(eligibleRows[0]);
-							if (replacementIndex < reservoirSize) {
+							if (replacementIndex < effectiveReservoirSize) {
 								samples.set(replacementIndex, bindingSet);
 							}
 						}
 					}
-					if (scannedRows[0] >= scanBudget || samplingDeadlineExceeded(deadlineNanos)) {
+					if (scannedRows[0] >= effectiveScanBudget || samplingDeadlineExceeded(deadlineNanos)) {
 						// The scan stopped before covering the pattern's range: an index-order prefix sample.
-						truncated = true;
+						truncated = !completePopulation;
 						break;
 					}
 				}
@@ -1455,16 +1589,19 @@ class LmdbFilterSelectivityStats
 			}
 		}
 
-		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, scanBudget)) {
+		if (samples.size() < minimumSamplingEvidence(candidate.expectedRuntimeRows, effectiveScanBudget)) {
 			return null;
 		}
 
 		int passed = 0;
 		for (BindingSet sample : samples) {
+			checkSamplingQueryDeadline();
 			try {
 				if (strategy.isTrue(condition, sample)) {
 					passed++;
 				}
+			} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+				throw failure;
 			} catch (ValueExprEvaluationException e) {
 				// Per-row evaluation failures behave like filtered rows during query execution.
 			} catch (RuntimeException e) {
@@ -1476,11 +1613,13 @@ class LmdbFilterSelectivityStats
 			return null;
 		}
 
-		return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated);
+		return new SampledPassRatio((double) passed / samples.size(), samples.size(), truncated,
+				view.isCurrentForStatistics());
 	}
 
 	private static boolean continueStratifiedSampling(long deadlineNanos, int scanBudget, int minimumEvidence,
 			int eligibleRows, int scannedRows, boolean[] deadlineStopped) {
+		checkSamplingQueryDeadline();
 		if (!samplingDeadlineExceeded(deadlineNanos)) {
 			return true;
 		}
@@ -1643,17 +1782,22 @@ class LmdbFilterSelectivityStats
 
 	private double expectedRuntimeRows(long subjId, long predId, long objId, long contextId) {
 		RuntimeRowsKey key = new RuntimeRowsKey(subjId, predId, objId, contextId);
+		long revision;
 		synchronized (this) {
 			Double cached = expectedRuntimeRowsByPattern.get(key);
 			if (cached != null) {
 				return cached;
 			}
+			revision = statisticsRevision;
 		}
 
 		try {
 			double rows = tripleStore.cardinality(subjId, predId, objId, contextId);
 			double sanitizedRows = Double.isFinite(rows) && rows > 0.0d ? rows : 0.0d;
 			synchronized (this) {
+				if (statisticsRevision != revision) {
+					return sanitizedRows;
+				}
 				Double cached = expectedRuntimeRowsByPattern.putIfAbsent(key, sanitizedRows);
 				return cached == null ? sanitizedRows : cached;
 			}
@@ -1729,6 +1873,8 @@ class LmdbFilterSelectivityStats
 	private QueryValueEvaluationStep prepareCondition(DefaultEvaluationStrategy strategy, ValueExpr condition) {
 		try {
 			return strategy.precompile(condition, new QueryEvaluationContext.Minimal(null, valueStore, null));
+		} catch (QueryInterruptedException | LmdbSailStore.MapResizeConflictException failure) {
+			throw failure;
 		} catch (RuntimeException e) {
 			return null;
 		}
@@ -1756,7 +1902,9 @@ class LmdbFilterSelectivityStats
 	}
 
 	private boolean supportsSampling(Filter filter, StatementPattern pattern) {
-		if (filter == null || filter.getCondition() == null || pattern == null) {
+		if (filter == null || filter.getCondition() == null || pattern == null
+				|| ScalarEvaluationEffects
+						.effectOf(filter.getCondition()) != ScalarEvaluationEffects.Effect.REPEATABLE) {
 			return false;
 		}
 		Set<String> patternBindings = pattern.getBindingNames();
@@ -1868,6 +2016,14 @@ class LmdbFilterSelectivityStats
 		return id == LmdbValue.UNKNOWN_ID ? MISSING_VALUE_ID : id;
 	}
 
+	private long resolvePatternId(ValueStore.ReadSnapshot snapshot, Var var) throws IOException {
+		if (var == null || !var.hasValue()) {
+			return LmdbValue.UNKNOWN_ID;
+		}
+		long id = valueStore.getStatementId(snapshot, var.getValue());
+		return id == LmdbValue.UNKNOWN_ID ? MISSING_VALUE_ID : id;
+	}
+
 	private boolean matchesRepeatedVarEquality(StatementPattern pattern, long[] row) {
 		Map<String, Long> bindingsByName = new HashMap<>(4);
 		return matchesRepeatedVar(pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX], bindingsByName)
@@ -1903,31 +2059,34 @@ class LmdbFilterSelectivityStats
 		return existing == null || existing.longValue() == valueId;
 	}
 
-	private BindingSet toBindingSet(StatementPattern pattern, long[] row) throws IOException {
-		QueryBindingSet bindingSet = new QueryBindingSet();
-		addBinding(bindingSet, pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX]);
-		addBinding(bindingSet, pattern.getPredicateVar(), row[TripleIndex.PRED_IDX]);
-		addBinding(bindingSet, pattern.getObjectVar(), row[TripleIndex.OBJ_IDX]);
-		addBinding(bindingSet, pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX]);
-		return bindingSet;
-	}
-
-	private BindingSet toBindingSet(StatementPattern pattern, long subject, long predicate, long object, long context)
+	private BindingSet toBindingSet(ValueStore.ReadSnapshot snapshot, StatementPattern pattern, long[] row)
 			throws IOException {
 		QueryBindingSet bindingSet = new QueryBindingSet();
-		addBinding(bindingSet, pattern.getSubjectVar(), subject);
-		addBinding(bindingSet, pattern.getPredicateVar(), predicate);
-		addBinding(bindingSet, pattern.getObjectVar(), object);
-		addBinding(bindingSet, pattern.getContextVar(), context);
+		addBinding(snapshot, bindingSet, pattern.getSubjectVar(), row[TripleIndex.SUBJ_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getPredicateVar(), row[TripleIndex.PRED_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getObjectVar(), row[TripleIndex.OBJ_IDX]);
+		addBinding(snapshot, bindingSet, pattern.getContextVar(), row[TripleIndex.CONTEXT_IDX]);
 		return bindingSet;
 	}
 
-	private void addBinding(QueryBindingSet bindingSet, Var var, long valueId) throws IOException {
+	private BindingSet toBindingSet(ValueStore.ReadSnapshot snapshot, StatementPattern pattern, long subject,
+			long predicate, long object, long context)
+			throws IOException {
+		QueryBindingSet bindingSet = new QueryBindingSet();
+		addBinding(snapshot, bindingSet, pattern.getSubjectVar(), subject);
+		addBinding(snapshot, bindingSet, pattern.getPredicateVar(), predicate);
+		addBinding(snapshot, bindingSet, pattern.getObjectVar(), object);
+		addBinding(snapshot, bindingSet, pattern.getContextVar(), context);
+		return bindingSet;
+	}
+
+	private void addBinding(ValueStore.ReadSnapshot snapshot, QueryBindingSet bindingSet, Var var, long valueId)
+			throws IOException {
 		if (var == null || var.hasValue() || var.getName() == null || bindingSet.hasBinding(var.getName())
 				|| valueId == 0L) {
 			return;
 		}
-		bindingSet.addBinding(var.getName(), valueStore.getValue(valueId));
+		bindingSet.addBinding(var.getName(), valueStore.getValue(snapshot, valueId));
 	}
 
 	private long statementValueId(Value value) throws IOException {
@@ -2301,7 +2460,7 @@ class LmdbFilterSelectivityStats
 		}
 	}
 
-	private record SampledPassRatio(double passRatio, int sampleSize, boolean truncated) {
+	private record SampledPassRatio(double passRatio, int sampleSize, boolean truncated, boolean cacheableSnapshot) {
 
 		/*
 		 * An index-order prefix sample that stopped before covering the pattern's range is systematically biased when
@@ -2310,6 +2469,10 @@ class LmdbFilterSelectivityStats
 		 */
 		int reportedSampleSize() {
 			return truncated ? Math.max(1, sampleSize / 4) : sampleSize;
+		}
+
+		private SampledPassRatio(double passRatio, int sampleSize, boolean truncated) {
+			this(passRatio, sampleSize, truncated, true);
 		}
 
 		private void writeTo(DataOutputStream out) throws IOException {

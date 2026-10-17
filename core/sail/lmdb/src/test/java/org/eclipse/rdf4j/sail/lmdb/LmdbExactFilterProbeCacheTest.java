@@ -111,6 +111,54 @@ class LmdbExactFilterProbeCacheTest {
 				any(LmdbValueIdFilter.class));
 	}
 
+	@Test
+	void staleReadViewDoesNotUseOrReplaceCurrentExactZeroCache(@TempDir Path dataDir) throws Exception {
+		long[] storedRow = row(1L, 2L, 3L);
+		ProbeFixture fixture = fixture(dataDir, () -> SNAPSHOT, storedRow);
+		Filter filter = filter("subject", "value", "keep");
+		assertTrue(fixture.stats.isExactBoundedFilterZero(filter, pattern(filter), 4_096));
+
+		when(fixture.view.isCurrentForStatistics()).thenReturn(false);
+		storedRow[TripleStore.OBJ_IDX] = 4L;
+		assertFalse(fixture.stats.isExactBoundedFilterZero(filter, pattern(filter), 4_096),
+				"the admitted stale view must inspect its rows instead of consuming a current-view zero proof");
+		assertFalse(fixture.stats.isExactBoundedFilterZero(filter, pattern(filter), 4_096));
+
+		storedRow[TripleStore.OBJ_IDX] = 3L;
+		when(fixture.view.isCurrentForStatistics()).thenReturn(true);
+		assertTrue(fixture.stats.isExactBoundedFilterZero(filter, pattern(filter), 4_096),
+				"an uncacheable local result must not replace the current-view proof");
+		verify(fixture.tripleStore, times(4)).getTriples(any(Txn.class), anyLong(), anyLong(), anyLong(),
+				anyLong(), anyBoolean());
+	}
+
+	@Test
+	void staleReadViewDoesNotUseOrReplaceCurrentDistinctSupport(@TempDir Path dataDir) throws Exception {
+		long[] storedRow = row(1L, 2L, 3L);
+		ProbeFixture fixture = fixture(dataDir, () -> SNAPSHOT, storedRow);
+		Filter filter = filter("subject", "value", "keep");
+		assertTrue(fixture.stats.exactMatchingDistinctValues(pattern(filter), filter.getCondition(), "value", 4_096)
+				.matchingValues()
+				.isEmpty());
+
+		when(fixture.view.isCurrentForStatistics()).thenReturn(false);
+		storedRow[TripleStore.OBJ_IDX] = 4L;
+		for (int attempt = 0; attempt < 2; attempt++) {
+			assertEquals(List.of(VF.createLiteral("keep")), fixture.stats
+					.exactMatchingDistinctValues(pattern(filter), filter.getCondition(), "value", 4_096)
+					.matchingValues());
+		}
+
+		storedRow[TripleStore.OBJ_IDX] = 3L;
+		when(fixture.view.isCurrentForStatistics()).thenReturn(true);
+		assertTrue(fixture.stats.exactMatchingDistinctValues(pattern(filter), filter.getCondition(), "value", 4_096)
+				.matchingValues()
+				.isEmpty());
+		verify(fixture.tripleStore, times(6)).getTriplesWithDistinctCursorSkip(any(Txn.class),
+				any(StatementPattern.class), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean(),
+				any(LmdbValueIdFilter.class));
+	}
+
 	private static ProbeFixture fixture(Path dataDir, Supplier<SketchSnapshotIdentity> snapshotIdentity,
 			long[]... explicitRows) throws Exception {
 		ValueStore valueStore = mock(ValueStore.class);
@@ -140,7 +188,19 @@ class LmdbExactFilterProbeCacheTest {
 		LmdbFilterSelectivityStats stats = new LmdbFilterSelectivityStats(
 				dataDir.resolve("join-estimator.rjes"), tripleStore, valueStore, false, 0L, 0, false,
 				snapshotIdentity, 0, () -> false);
-		return new ProbeFixture(stats, tripleStore);
+		LmdbSailStore.DatasetAdmission admission = mock(LmdbSailStore.DatasetAdmission.class);
+		LmdbSailStore.ReadView view = mock(LmdbSailStore.ReadView.class);
+		ValueStore.ReadSnapshot values = mock(ValueStore.ReadSnapshot.class);
+		when(admission.view()).thenReturn(view);
+		when(view.tripleTxn()).thenReturn(txn);
+		when(view.valueSnapshot()).thenReturn(values);
+		when(view.isCurrentForStatistics()).thenReturn(true);
+		when(txn.nativeTransactionId()).thenAnswer(invocation -> tripleStore.getDataRevision());
+		when(valueStore.getStatementId(any(ValueStore.ReadSnapshot.class), any(Value.class))).thenReturn(2L);
+		when(valueStore.getValue(any(ValueStore.ReadSnapshot.class), anyLong()))
+				.thenAnswer(invocation -> valueStore.getValue(invocation.getArgument(1, Long.class)));
+		stats.setSamplingViewSupplier(() -> admission);
+		return new ProbeFixture(stats, tripleStore, view);
 	}
 
 	private static long[] row(long subject, long predicate, long object) {
@@ -185,6 +245,7 @@ class LmdbExactFilterProbeCacheTest {
 		return (StatementPattern) filter.getArg();
 	}
 
-	private record ProbeFixture(LmdbFilterSelectivityStats stats, TripleStore tripleStore) {
+	private record ProbeFixture(LmdbFilterSelectivityStats stats, TripleStore tripleStore,
+			LmdbSailStore.ReadView view) {
 	}
 }

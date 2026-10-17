@@ -219,6 +219,10 @@ final class BindingShapeAnalyzer {
 		BindingMask assured = possible;
 		boolean hasRows = false;
 		Iterable<BindingSet> rows = assignment.getBindingSets();
+		if (rows != null && !assignment.hasRepeatableBindingSets()) {
+			// Runtime consumers can use the known header, but must not acquire rows or infer assured hash keys.
+			return new BindingShape(possible, BindingMask.EMPTY, null, possible);
+		}
 		if (rows != null) {
 			for (BindingSet row : rows) {
 				hasRows = true;

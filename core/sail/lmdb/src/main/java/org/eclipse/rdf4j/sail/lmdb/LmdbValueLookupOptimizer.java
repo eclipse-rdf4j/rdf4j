@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -53,18 +54,22 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 	private final class Visitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		/**
-		 * One optimize() pass resolves every occurrence of the same {@link Value} instance to the same LMDB wrapper.
-		 * ConstantOptimizer folds all {@code NOW()} calls of a query into one shared literal whose object identity is
-		 * observable ({@code SELECT ?p (NOW() AS ?n) { BIND(NOW() AS ?p) }} must yield {@code p == n}); a fresh wrapper
-		 * per node would break that identity. The memo also spares repeated ValueStore round-trips for repeated
-		 * constants.
+		 * One optimize() pass captures every occurrence of the same {@link Value} instance in one LMDB wrapper. Only an
+		 * actual statement-pattern input upgrades that wrapper with dictionary membership. ConstantOptimizer folds all
+		 * {@code NOW()} calls of a query into one shared literal whose object identity is observable ({@code SELECT ?p
+		 * (NOW() AS ?n) { BIND(NOW() AS ?p) }} must yield {@code p == n}); a fresh wrapper per node would break that
+		 * identity. The memo also spares repeated ValueStore round-trips for repeated constants.
 		 */
 		private final Map<Value, Lookup> lookups = new IdentityHashMap<>();
 
-		private Lookup lookup(Value value) {
+		private Lookup lookup(Value value, boolean statementInput) {
 			Lookup lookup = lookups.get(value);
 			if (lookup == null) {
-				lookup = LmdbValueLookupOptimizer.this.lookup(value);
+				lookup = capture(value);
+				lookups.put(value, lookup);
+			}
+			if (statementInput && !lookup.lookupAttempted && lookup.value instanceof LmdbValue) {
+				lookup = resolve(lookup);
 				lookups.put(value, lookup);
 			}
 			return lookup;
@@ -75,11 +80,13 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 			if (!node.hasValue()) {
 				return;
 			}
-			Lookup lookup = lookup(node.getValue());
+			Lookup lookup = lookup(node.getValue(), node.getParentNode() instanceof StatementPattern);
 			if (!(lookup.value instanceof LmdbValue lmdbValue)) {
 				return;
 			}
-			if (lookup.value == node.getValue() && node instanceof LmdbValueVar) {
+			if (lookup.value == node.getValue() && node instanceof LmdbValueVar nativeVar
+					&& nativeVar.getLmdbValue() == lookup.knownValue
+					&& nativeVar.isLmdbValueResolved() == lookup.resolved) {
 				return;
 			}
 			replaceVar(node, LmdbValueVar.from(node, lmdbValue, lookup.knownValue, lookup.resolved));
@@ -87,12 +94,14 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(ValueConstant node) {
-			node.setValue(lookup(node.getValue()).value);
+			// Scalar/BIND values need lexical capture, not dictionary membership. The eventual statement consumer
+			// owns preparation; a shared occurrence there upgrades this same wrapper without losing NOW identity.
+			node.setValue(lookup(node.getValue(), false).value);
 		}
 
 		@Override
 		public void meet(BindingSetAssignment node) {
-			if (node.getBindingSets() == null) {
+			if (node.getBindingSets() == null || !node.hasRepeatableBindingSets()) {
 				return;
 			}
 
@@ -107,7 +116,7 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 						normalized.addBinding(binding.getName(), bindingValue);
 						continue;
 					}
-					Lookup lookup = lookup(bindingValue);
+					Lookup lookup = lookup(bindingValue, false);
 					normalized.addBinding(binding.getName(), lookup.value);
 					rowChanged |= lookup.value != bindingValue;
 				}
@@ -116,7 +125,6 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 			}
 
 			if (changed) {
-				node.setBindingNames(null);
 				node.setBindingSets(bindingSets);
 			}
 		}
@@ -133,24 +141,26 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 		}
 	}
 
-	private Lookup lookup(Value value) {
-		LmdbValue lmdbValue;
+	private Lookup capture(Value value) {
 		try {
-			lmdbValue = valueStore.getLmdbValue(value);
+			return new Lookup(valueStore.getLmdbValue(value), null, false, false);
 		} catch (IllegalArgumentException e) {
-			return new Lookup(value, null, false);
-		}
-
-		try {
-			long id = valueStore.getId(lmdbValue);
-			LmdbValue knownValue = id == LmdbValue.UNKNOWN_ID ? null : lmdbValue;
-			return new Lookup(lmdbValue, knownValue, true);
-		} catch (IOException e) {
-			log.debug("Unable to resolve LMDB value id for {}", value, e);
-			return new Lookup(lmdbValue, null, false);
+			return new Lookup(value, null, false, false);
 		}
 	}
 
-	private record Lookup(Value value, LmdbValue knownValue, boolean resolved) {
+	private Lookup resolve(Lookup captured) {
+		LmdbValue lmdbValue = (LmdbValue) captured.value;
+		try {
+			long id = valueStore.getId(lmdbValue);
+			LmdbValue knownValue = id == LmdbValue.UNKNOWN_ID ? null : lmdbValue;
+			return new Lookup(lmdbValue, knownValue, true, true);
+		} catch (IOException e) {
+			log.debug("Unable to resolve LMDB value id for {}", lmdbValue, e);
+			return new Lookup(lmdbValue, null, false, true);
+		}
+	}
+
+	private record Lookup(Value value, LmdbValue knownValue, boolean resolved, boolean lookupAttempted) {
 	}
 }

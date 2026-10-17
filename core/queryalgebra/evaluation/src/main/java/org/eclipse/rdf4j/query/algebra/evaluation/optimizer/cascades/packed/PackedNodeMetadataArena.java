@@ -21,6 +21,8 @@ final class PackedNodeMetadataArena {
 	static final int MERGE_JOIN = 1 << 1;
 	static final int CACHEABLE_JOIN = 1 << 2;
 	static final int SCALAR_REORDERING_SAFE = 1 << 3;
+	static final int INPUT_FRAME_SENSITIVE = 1 << 4;
+	static final int UNKNOWN_OUTPUT_DOMAIN = 1 << 5;
 	static final int SEMANTIC_ASSURED_SHARED_MINUS_FILTER = 1;
 
 	private final Columns relations;
@@ -44,6 +46,103 @@ final class PackedNodeMetadataArena {
 			return;
 		}
 		relations.copy(sourceRelationId, targetRelationId);
+	}
+
+	boolean attachRelationInputContract(int id, int requiredNames, int protectedNames, int nullableNames,
+			int independentNames) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.checkId(id);
+		if (relations.inputContractsPresent[id] != 0) {
+			return relations.requiredInputNames[id] == requiredNames
+					&& relations.protectedInputNames[id] == protectedNames
+					&& relations.nullableInputNames[id] == nullableNames
+					&& relations.independentOutputNames[id] == independentNames;
+		}
+		relations.inputContractsPresent[id] = 1;
+		relations.requiredInputNames[id] = requiredNames;
+		relations.protectedInputNames[id] = protectedNames;
+		relations.nullableInputNames[id] = nullableNames;
+		relations.independentOutputNames[id] = independentNames;
+		return true;
+	}
+
+	int relationRequiredInputNames(int id) {
+		relations.checkId(id);
+		return relations.requiredInputNames[id];
+	}
+
+	int relationProtectedInputNames(int id) {
+		relations.checkId(id);
+		return relations.protectedInputNames[id];
+	}
+
+	int relationIndependentOutputNames(int id) {
+		relations.checkId(id);
+		return relations.independentOutputNames[id];
+	}
+
+	int relationNullableInputNames(int id) {
+		relations.checkId(id);
+		return relations.nullableInputNames[id];
+	}
+
+	void attachRelationReplaySafety(int id, boolean safe) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.checkId(id);
+		byte proof = (byte) (safe ? 2 : 1);
+		relations.replaySafety[id] = relations.replaySafety[id] == 0 ? proof
+				: (byte) Math.min(relations.replaySafety[id], proof);
+	}
+
+	int relationReplaySafety(int id) {
+		relations.checkId(id);
+		return relations.replaySafety[id];
+	}
+
+	/** Complete input proof shared by logical rewrites and physical scheduling; original nodes are pre-audited. */
+	boolean relationReplayIsSafe(PackedExpressionInterner expressions, int id) {
+		int proof = relationReplaySafety(id);
+		if (proof != 0) {
+			return proof == 2;
+		}
+		boolean compositional = switch (expressions.operatorTag(id)) {
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.JOIN, PackedRelOp.UNION, PackedRelOp.DIFFERENCE, PackedRelOp.INTERSECTION, PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.MULTI_PROJECTION, PackedRelOp.DISTINCT, PackedRelOp.REDUCED, PackedRelOp.SLICE -> true;
+		default -> false;
+		};
+		if (!compositional) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < expressions.childCount(id); ordinal++) {
+			if (!relationReplayIsSafe(expressions, expressions.childGroupId(id, ordinal))) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	void attachRelationSourceOrder(int id, int first, int last) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.checkId(id);
+		// Canonical twins cover all their occurrences. Overlapping intervals cannot prove a legal barrier crossing.
+		relations.sourceFirst[id] = relations.sourceFirst[id] == 0 ? first
+				: Math.min(first, relations.sourceFirst[id]);
+		relations.sourceLast[id] = Math.max(last, relations.sourceLast[id]);
+	}
+
+	int relationSourceFirst(int id) {
+		relations.checkId(id);
+		return relations.sourceFirst[id];
+	}
+
+	int relationSourceLast(int id) {
+		relations.checkId(id);
+		return relations.sourceLast[id];
 	}
 
 	void addRelationRuleMask(int relationId, long ruleMask) {
@@ -182,6 +281,14 @@ final class PackedNodeMetadataArena {
 		private long[] ruleMasks;
 		private int[] semanticFlags;
 		private int[] exactCoverIds;
+		private byte[] inputContractsPresent;
+		private int[] requiredInputNames;
+		private int[] protectedInputNames;
+		private int[] nullableInputNames;
+		private int[] independentOutputNames;
+		private byte[] replaySafety;
+		private int[] sourceFirst;
+		private int[] sourceLast;
 
 		private boolean hasSameFlags(Columns other) {
 			int rowLimit = Math.max(present.length, other.present.length);
@@ -189,7 +296,14 @@ final class PackedNodeMetadataArena {
 				boolean leftPresent = id < present.length && present[id] != 0;
 				boolean rightPresent = id < other.present.length && other.present[id] != 0;
 				if (leftPresent != rightPresent
-						|| leftPresent && flags[id] != other.flags[id]) {
+						|| leftPresent && (flags[id] != other.flags[id]
+								|| requiredInputNames[id] != other.requiredInputNames[id]
+								|| protectedInputNames[id] != other.protectedInputNames[id]
+								|| nullableInputNames[id] != other.nullableInputNames[id]
+								|| independentOutputNames[id] != other.independentOutputNames[id]
+								|| replaySafety[id] != other.replaySafety[id]
+								|| sourceFirst[id] != other.sourceFirst[id]
+								|| sourceLast[id] != other.sourceLast[id])) {
 					return false;
 				}
 			}
@@ -207,6 +321,14 @@ final class PackedNodeMetadataArena {
 			ruleMasks = new long[capacity];
 			semanticFlags = new int[capacity];
 			exactCoverIds = new int[capacity];
+			inputContractsPresent = new byte[capacity];
+			requiredInputNames = new int[capacity];
+			protectedInputNames = new int[capacity];
+			nullableInputNames = new int[capacity];
+			independentOutputNames = new int[capacity];
+			replaySafety = new byte[capacity];
+			sourceFirst = new int[capacity];
+			sourceLast = new int[capacity];
 		}
 
 		private void attach(int id, int metricSetId, int nodeFlags, double resultSizeEstimate, double costEstimate,
@@ -252,6 +374,14 @@ final class PackedNodeMetadataArena {
 					Double.longBitsToDouble(costEstimateBits[sourceId]), algorithmNameIds[sourceId]);
 			ruleMasks[targetId] |= ruleMasks[sourceId];
 			semanticFlags[targetId] |= semanticFlags[sourceId];
+			inputContractsPresent[targetId] = inputContractsPresent[sourceId];
+			requiredInputNames[targetId] = requiredInputNames[sourceId];
+			protectedInputNames[targetId] = protectedInputNames[sourceId];
+			nullableInputNames[targetId] = nullableInputNames[sourceId];
+			independentOutputNames[targetId] = independentOutputNames[sourceId];
+			replaySafety[targetId] = replaySafety[sourceId];
+			sourceFirst[targetId] = sourceFirst[sourceId];
+			sourceLast[targetId] = sourceLast[sourceId];
 		}
 
 		private void addRuleMask(int id, long ruleMask) {
@@ -327,6 +457,14 @@ final class PackedNodeMetadataArena {
 			ruleMasks = Arrays.copyOf(ruleMasks, capacity);
 			semanticFlags = Arrays.copyOf(semanticFlags, capacity);
 			exactCoverIds = Arrays.copyOf(exactCoverIds, capacity);
+			inputContractsPresent = Arrays.copyOf(inputContractsPresent, capacity);
+			requiredInputNames = Arrays.copyOf(requiredInputNames, capacity);
+			protectedInputNames = Arrays.copyOf(protectedInputNames, capacity);
+			nullableInputNames = Arrays.copyOf(nullableInputNames, capacity);
+			independentOutputNames = Arrays.copyOf(independentOutputNames, capacity);
+			replaySafety = Arrays.copyOf(replaySafety, capacity);
+			sourceFirst = Arrays.copyOf(sourceFirst, capacity);
+			sourceLast = Arrays.copyOf(sourceLast, capacity);
 		}
 	}
 }

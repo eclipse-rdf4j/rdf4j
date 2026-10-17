@@ -18,6 +18,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.Locale;
 
 final class NioStorePropertiesFileOps implements StorePropertiesFileOps {
 
@@ -50,8 +51,14 @@ final class NioStorePropertiesFileOps implements StorePropertiesFileOps {
 
 	@Override
 	public void forceDirectory(Path directory) throws IOException {
+		// Native manifests are authoritative; directory forcing is only supported by some file systems.
+		if (System.getProperty("os.name", "").toLowerCase(Locale.ROOT).startsWith("windows")) {
+			return;
+		}
 		try (FileChannel channel = FileChannel.open(directory, StandardOpenOption.READ)) {
 			channel.force(true);
+		} catch (UnsupportedOperationException unsupported) {
+			// Some providers do not expose directories as forceable channels.
 		}
 	}
 

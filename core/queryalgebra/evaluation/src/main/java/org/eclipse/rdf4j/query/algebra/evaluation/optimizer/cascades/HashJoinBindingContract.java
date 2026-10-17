@@ -18,6 +18,8 @@ import java.util.TreeSet;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 /**
  * Immutable contract between hash-join planning and execution.
@@ -35,9 +37,18 @@ public final class HashJoinBindingContract {
 
 	private final List<String> lookupBindings;
 	private final List<String> compatibilityBindings;
+	/** Null means that a complete local-output domain was not proved, including legacy/schema-only callers. */
+	private final Set<String> leftProducedBindings;
+	private final Set<String> rightProducedBindings;
 
 	private HashJoinBindingContract(Collection<String> lookupBindings,
 			Collection<String> compatibilityBindings) {
+		this(lookupBindings, compatibilityBindings, null, null);
+	}
+
+	private HashJoinBindingContract(Collection<String> lookupBindings,
+			Collection<String> compatibilityBindings, Set<String> leftProducedBindings,
+			Set<String> rightProducedBindings) {
 		List<String> normalizedCompatibility = sortedPlannerNames(compatibilityBindings);
 		List<String> normalizedLookup = sortedPlannerNames(lookupBindings);
 		if (!normalizedCompatibility.containsAll(normalizedLookup)) {
@@ -45,10 +56,34 @@ public final class HashJoinBindingContract {
 		}
 		this.lookupBindings = normalizedLookup;
 		this.compatibilityBindings = normalizedCompatibility;
+		this.leftProducedBindings = leftProducedBindings == null ? null : Set.copyOf(leftProducedBindings);
+		this.rightProducedBindings = rightProducedBindings == null ? null : Set.copyOf(rightProducedBindings);
 	}
 
 	public static HashJoinBindingContract from(TupleExpr left, TupleExpr right) {
-		return from(StreamBindingSchema.from(left), StreamBindingSchema.from(right));
+		HashJoinBindingContract keys = from(StreamBindingSchema.from(left), StreamBindingSchema.from(right));
+		return new HashJoinBindingContract(keys.lookupBindings, keys.compatibilityBindings,
+				provedProducedBindings(left), provedProducedBindings(right));
+	}
+
+	private static Set<String> provedProducedBindings(TupleExpr expression) {
+		if (expression == null) {
+			return null;
+		}
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(expression,
+				EmptyBindingSet.getInstance());
+		QueryAlgebraBindingAnalysis.OutputFacts facts = analysis.outputFacts(expression, analysis.rootContext());
+		return facts.possibleOutputsKnown() ? facts.possibleOutputs() : null;
+	}
+
+	public boolean excludesLocalProduction(boolean left, String name) {
+		Set<String> domain = left ? leftProducedBindings : rightProducedBindings;
+		return domain != null && !domain.contains(name);
+	}
+
+	public boolean canProduceLocally(boolean left, String name) {
+		Set<String> domain = left ? leftProducedBindings : rightProducedBindings;
+		return domain != null && domain.contains(name);
 	}
 
 	public static HashJoinBindingContract from(StreamBindingSchema left, StreamBindingSchema right) {

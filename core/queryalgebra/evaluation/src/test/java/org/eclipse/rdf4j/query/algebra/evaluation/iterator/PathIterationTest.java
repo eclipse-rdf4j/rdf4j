@@ -345,12 +345,12 @@ public class PathIterationTest {
 				new String[] { startVar.getName(), endVar.getName() }, null);
 		ArbitraryLengthPath path = new ArbitraryLengthPath(startVar.clone(), pathExpression, endVar.clone(), 1);
 
-		try (PathIteration pathIteration = (PathIteration) evaluator.precompile(path, fixedArrayContext)
+		try (CloseableIteration<BindingSet> pathIteration = evaluator.precompile(path, fixedArrayContext)
 				.evaluate(new QueryBindingSet())) {
-			assertExpected(pathIteration.getNextElement(), one, two);
-			assertExpected(pathIteration.getNextElement(), two, three);
-			assertExpected(pathIteration.getNextElement(), one, three);
-			assertNull(pathIteration.getNextElement());
+			assertExpected(pathIteration.next(), one, two);
+			assertExpected(pathIteration.next(), two, three);
+			assertExpected(pathIteration.next(), one, three);
+			assertFalse(pathIteration.hasNext());
 		}
 	}
 

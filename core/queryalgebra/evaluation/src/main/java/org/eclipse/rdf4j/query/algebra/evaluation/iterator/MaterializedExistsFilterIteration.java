@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
@@ -212,7 +213,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 
 	private boolean memoizedProbe(BindingSet left) {
 		cacheLookups++;
-		BindingSetHashKey key = BindingSetHashKey.create(correlationKeyBindingNames, left);
+		BindingSetHashKey key = BindingSetHashKey.createForEvaluation(correlationKeyBindingNames, left);
 		Boolean cached = sharedProbeCache.get(key);
 		if (cached != null) {
 			cacheHits++;
@@ -232,7 +233,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 			return matches(partition, left);
 		}
 		cacheLookups++;
-		BindingSetHashKey key = BindingSetHashKey.create(correlationKeyBindingNames, left);
+		BindingSetHashKey key = BindingSetHashKey.createForEvaluation(correlationKeyBindingNames, left);
 		Boolean cached = sharedProbeCache.get(key);
 		if (cached != null) {
 			cacheHits++;
@@ -302,6 +303,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 				materializationBindings.setBinding(bindingName, value);
 			}
 		}
+		BindingSetOrigin.copy(left, materializationBindings);
 		MaterializedPartition built;
 		// Never hold the shared cache monitor while opening or consuming a potentially blocking scan.
 		try (ActiveRhs scan = openRhs(existsMaterializationFunction, materializationBindings)) {
@@ -383,7 +385,7 @@ final class MaterializedExistsFilterIteration extends LookAheadIteration<Binding
 	}
 
 	private BindingSetHashKey materializationKey(BindingSet left) {
-		return BindingSetHashKey.create(materializationParameterBindingNames, left);
+		return BindingSetHashKey.createForEvaluation(materializationParameterBindingNames, left);
 	}
 
 	private boolean matches(MaterializedPartition partition, BindingSet left) {

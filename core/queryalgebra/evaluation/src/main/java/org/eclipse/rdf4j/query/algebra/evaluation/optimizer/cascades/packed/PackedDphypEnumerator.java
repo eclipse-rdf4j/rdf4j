@@ -83,6 +83,12 @@ final class PackedDphypEnumerator {
 		int fullSet = stateCount - 1;
 		for (int state = 0; state < stateCount; state++) {
 			extensions[state] &= fullSet & ~state;
+			for (int remaining = extensions[state]; remaining != 0; remaining &= remaining - 1) {
+				int candidate = Integer.numberOfTrailingZeros(remaining);
+				if (!graph.allowsAppend(Integer.toUnsignedLong(state), candidate)) {
+					extensions[state] &= ~(1 << candidate);
+				}
+			}
 		}
 		return extensions;
 	}

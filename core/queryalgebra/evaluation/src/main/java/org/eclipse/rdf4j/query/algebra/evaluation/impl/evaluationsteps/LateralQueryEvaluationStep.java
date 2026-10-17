@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -131,12 +132,16 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 
 		QueryBindingSet filtered = new QueryBindingSet(originalBindings.size() + rightInputBindingNames.size());
 		filtered.addAll(originalBindings);
+		Set<String> addedNames = new HashSet<>();
 		for (String bindingName : rightInputBindingNames) {
 			Binding binding = leftBindings.getBinding(bindingName);
 			if (binding != null && !filtered.hasBinding(bindingName)) {
 				filtered.addBinding(binding);
+				addedNames.add(bindingName);
 			}
 		}
+		BindingSetOrigin.set(filtered, BindingSetOrigin.overlay(BindingSetOrigin.of(originalBindings),
+				BindingSetOrigin.of(leftBindings), addedNames));
 		return filtered;
 	}
 
@@ -148,6 +153,7 @@ public final class LateralQueryEvaluationStep implements QueryEvaluationStep {
 				filtered.addBinding(binding);
 			}
 		}
+		BindingSetOrigin.copy(leftBindings, filtered);
 		return filtered.isEmpty() ? EmptyBindingSet.getInstance() : filtered;
 	}
 

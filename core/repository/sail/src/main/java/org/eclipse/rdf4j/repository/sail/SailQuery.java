@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.repository.sail;
 
 import java.util.concurrent.TimeUnit;
 
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.query.QueryOperationContext;
 import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -21,6 +22,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 
 /**
  * @author Arjohn Kampman
@@ -46,7 +48,9 @@ public abstract class SailQuery extends AbstractParserQuery {
 			timeout = getMaxExecutionTime();
 		}
 
-		try (QueryOperationContext.Scope ignored = openQueryOperation(timeout)) {
+		try (QueryExecutionDeadline executionDeadline = startQueryExecutionDeadline(timeout);
+				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(executionDeadline)) {
+			QueryOperationContext.throwIfDeadlineExpired();
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();
 
 			if (!(tupleExpr instanceof QueryRoot)) {
@@ -63,7 +67,7 @@ public abstract class SailQuery extends AbstractParserQuery {
 			if (level == Explanation.Level.Optimized) {
 				QueryOperationContext.throwIfDeadlineExpired();
 			}
-			return explanation;
+			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
 		}
 
 	}

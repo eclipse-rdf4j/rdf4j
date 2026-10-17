@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -104,6 +106,44 @@ class PackedExpressionInternerTest {
 			assertEquals(i, interner.internLogical(i, i, i + 1, i + 2, i + 3, new int[] { i + 4 }, 0, 1));
 		}
 		assertEquals(100, interner.size());
+	}
+
+	@Test
+	void occurrenceIdentitySurvivesGrowthWithoutChangingScopeOrAuditedSharing() {
+		PackedExpressionInterner interner = new PackedExpressionInterner(1, 1);
+		int[] children = { 11, 12, 13 };
+		int audited = interner.internCanonical(7, 3, 5, 9, children, 0, children.length);
+		assertEquals(audited, interner.internCanonical(7, 3, 5, 9, children, 0, children.length));
+		for (int occurrence = 1; occurrence <= 100; occurrence++) {
+			int id = interner.internCanonical(7, 3, 5, 9, occurrence, children, 0, children.length);
+			assertEquals(occurrence + 1, id);
+			assertEquals(occurrence, interner.occurrenceId(id));
+			assertEquals(5, interner.semanticScopeId(id));
+			assertEquals(9, interner.executionDomainId(id));
+		}
+		for (int occurrence = 1; occurrence <= 100; occurrence++) {
+			assertEquals(occurrence + 1,
+					interner.internCanonical(7, 3, 5, 9, occurrence, children, 0, children.length));
+			assertEquals(occurrence + 1,
+					interner.findLogical(7, 3, 5, 9, occurrence, children, 0, children.length));
+		}
+		assertEquals(audited, interner.findLogical(7, 3, 5, 9, children, 0, children.length));
+	}
+
+	@Test
+	void explicitCollisionStillSeparatesEvaluationOccurrencesAndTheirRows() {
+		PackedExpressionInterner first = new PackedExpressionInterner(1, 1);
+		PackedExpressionInterner same = new PackedExpressionInterner(1, 1);
+		PackedExpressionInterner different = new PackedExpressionInterner(1, 1);
+		int[] children = { 11 };
+		assertEquals(1, first.internLogicalHashed(42L, 1, 7, 3, 5, 9, 10, children, 0, 1));
+		assertEquals(2, first.internLogicalHashed(42L, 2, 7, 3, 5, 9, 20, children, 0, 1));
+		same.internLogicalHashed(42L, 1, 7, 3, 5, 9, 10, children, 0, 1);
+		same.internLogicalHashed(42L, 2, 7, 3, 5, 9, 20, children, 0, 1);
+		different.internLogicalHashed(42L, 1, 7, 3, 5, 9, 10, children, 0, 1);
+		different.internLogicalHashed(42L, 2, 7, 3, 5, 9, 21, children, 0, 1);
+		assertTrue(first.hasSameRows(same));
+		assertFalse(first.hasSameRows(different));
 	}
 
 	private static long referenceHashStep(long hash, long value) {

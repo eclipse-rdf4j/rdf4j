@@ -34,6 +34,7 @@ final class PackedPlanContinuationSeed {
 	private final int[] logicalPayloadIds;
 	private final int[] logicalSemanticScopeIds;
 	private final int[] logicalExecutionDomainIds;
+	private final int[] logicalOccurrenceIds;
 	private final int[] logicalChildStarts;
 	private final int[] logicalChildCounts;
 	private final int[] logicalChildGroupIds;
@@ -43,6 +44,7 @@ final class PackedPlanContinuationSeed {
 	private final int[] structuralLogicalPayloadIds;
 	private final int[] structuralLogicalSemanticScopeIds;
 	private final int[] structuralLogicalExecutionDomainIds;
+	private final int[] structuralLogicalOccurrenceIds;
 	private final int[] structuralLogicalChildStarts;
 	private final int[] structuralLogicalChildCounts;
 	private final int[] structuralLogicalChildGroupIds;
@@ -54,10 +56,12 @@ final class PackedPlanContinuationSeed {
 	PackedPlanContinuationSeed(int rootRecipeId, int[] groupIds, int[] requiredPropertyIds,
 			int[] semanticRowGoalIds, int[] inputContextIds, int[] costPolicyIds, short[] logicalOperatorTags,
 			int[] logicalPayloadIds, int[] logicalSemanticScopeIds, int[] logicalExecutionDomainIds,
+			int[] logicalOccurrenceIds,
 			int[] logicalChildStarts, int[] logicalChildCounts, int[] logicalChildGroupIds, long[] logicalRuleMasks,
 			int[] structuralLogicalGroupIds, short[] structuralLogicalOperatorTags,
 			int[] structuralLogicalPayloadIds, int[] structuralLogicalSemanticScopeIds,
-			int[] structuralLogicalExecutionDomainIds, int[] structuralLogicalChildStarts,
+			int[] structuralLogicalExecutionDomainIds, int[] structuralLogicalOccurrenceIds,
+			int[] structuralLogicalChildStarts,
 			int[] structuralLogicalChildCounts, int[] structuralLogicalChildGroupIds,
 			long[] structuralLogicalRuleMasks,
 			double[] startupCosts, double[] totalCosts, double[] comparisonCosts) {
@@ -72,6 +76,7 @@ final class PackedPlanContinuationSeed {
 				|| logicalPayloadIds.length != rowCount
 				|| logicalSemanticScopeIds.length != rowCount
 				|| logicalExecutionDomainIds.length != rowCount
+				|| logicalOccurrenceIds.length != rowCount
 				|| logicalChildStarts.length != rowCount
 				|| logicalChildCounts.length != rowCount
 				|| logicalRuleMasks.length != rowCount
@@ -80,6 +85,7 @@ final class PackedPlanContinuationSeed {
 				|| structuralLogicalPayloadIds.length != structuralLogicalCount
 				|| structuralLogicalSemanticScopeIds.length != structuralLogicalCount
 				|| structuralLogicalExecutionDomainIds.length != structuralLogicalCount
+				|| structuralLogicalOccurrenceIds.length != structuralLogicalCount
 				|| structuralLogicalChildStarts.length != structuralLogicalCount
 				|| structuralLogicalChildCounts.length != structuralLogicalCount
 				|| structuralLogicalRuleMasks.length != structuralLogicalCount
@@ -113,6 +119,7 @@ final class PackedPlanContinuationSeed {
 		this.logicalPayloadIds = logicalPayloadIds.clone();
 		this.logicalSemanticScopeIds = logicalSemanticScopeIds.clone();
 		this.logicalExecutionDomainIds = logicalExecutionDomainIds.clone();
+		this.logicalOccurrenceIds = logicalOccurrenceIds.clone();
 		this.logicalChildStarts = logicalChildStarts.clone();
 		this.logicalChildCounts = logicalChildCounts.clone();
 		this.logicalChildGroupIds = logicalChildGroupIds.clone();
@@ -122,6 +129,7 @@ final class PackedPlanContinuationSeed {
 		this.structuralLogicalPayloadIds = structuralLogicalPayloadIds.clone();
 		this.structuralLogicalSemanticScopeIds = structuralLogicalSemanticScopeIds.clone();
 		this.structuralLogicalExecutionDomainIds = structuralLogicalExecutionDomainIds.clone();
+		this.structuralLogicalOccurrenceIds = structuralLogicalOccurrenceIds.clone();
 		this.structuralLogicalChildStarts = structuralLogicalChildStarts.clone();
 		this.structuralLogicalChildCounts = structuralLogicalChildCounts.clone();
 		this.structuralLogicalChildGroupIds = structuralLogicalChildGroupIds.clone();
@@ -175,6 +183,10 @@ final class PackedPlanContinuationSeed {
 		return logicalExecutionDomainIds[recipeId];
 	}
 
+	int logicalOccurrenceId(int recipeId) {
+		return logicalOccurrenceIds[recipeId];
+	}
+
 	int logicalChildCount(int recipeId) {
 		return logicalChildCounts[recipeId];
 	}
@@ -214,6 +226,10 @@ final class PackedPlanContinuationSeed {
 		return structuralLogicalExecutionDomainIds[ordinal];
 	}
 
+	int structuralLogicalOccurrenceId(int ordinal) {
+		return structuralLogicalOccurrenceIds[ordinal];
+	}
+
 	int structuralLogicalChildCount(int ordinal) {
 		return structuralLogicalChildCounts[ordinal];
 	}
@@ -243,10 +259,10 @@ final class PackedPlanContinuationSeed {
 
 	long retainedBytes() {
 		return 96L + (long) groupIds.length
-				* (Short.BYTES + Integer.BYTES * 11L + Long.BYTES + Double.BYTES * 3L)
+				* (Short.BYTES + Integer.BYTES * 12L + Long.BYTES + Double.BYTES * 3L)
 				+ (long) logicalChildGroupIds.length * Integer.BYTES
 				+ (long) structuralLogicalGroupIds.length
-						* (Short.BYTES + Integer.BYTES * 7L + Long.BYTES)
+						* (Short.BYTES + Integer.BYTES * 8L + Long.BYTES)
 				+ (long) structuralLogicalChildGroupIds.length * Integer.BYTES;
 	}
 

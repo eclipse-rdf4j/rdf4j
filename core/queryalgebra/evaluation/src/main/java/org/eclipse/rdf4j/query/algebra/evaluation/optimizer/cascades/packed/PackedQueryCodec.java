@@ -111,10 +111,11 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PackedInputFrameNormalizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
-import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 
 /** Lossless TupleExpr boundary encoder for the packed Cascades representation. */
 final class PackedQueryCodec {
@@ -157,9 +158,13 @@ final class PackedQueryCodec {
 			PackedPredicateRangeProvider rangeProvider, Map<String, Integer> anonymousNames,
 			boolean retainAnnotations, boolean parameterizeValues) {
 		Objects.requireNonNull(root, "root");
+		PackedInputFrameNormalizer.Prepared prepared = PackedInputFrameNormalizer.prepare(root,
+				node -> new UnsupportedCascadesOperatorException(node.getClass(), "root.requiredInputFrame"));
+		root = prepared.root();
 		EncodingShape shape = EncodingShape.measure(root);
 		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider, shape, anonymousNames,
-				retainAnnotations, parameterizeValues);
+				retainAnnotations, parameterizeValues, new PackedInputFrameContracts(root), prepared.replaySafety(),
+				prepared.sourceOrder());
 		int rootRelId = builder.relation(root, "root");
 		builder.finishParameterization();
 		builder.deriveFactsAndSaturateRules(rootRelId);
@@ -207,6 +212,7 @@ final class PackedQueryCodec {
 	}
 
 	private static boolean assignmentMatches(PackedQuery query, int relationId, BindingSetAssignment assignment) {
+		requireRepeatableBindingSets(assignment, "cache relation " + relationId);
 		int payloadId = query.relPayload(relationId);
 		Set<String> names = assignment.getBindingNames();
 		int nameSetId = query.payloadPrimary(payloadId);
@@ -230,6 +236,13 @@ final class PackedQueryCodec {
 			}
 		}
 		return !iterator.hasNext();
+	}
+
+	static void requireRepeatableBindingSets(BindingSetAssignment assignment, String path) {
+		if (assignment.getBindingSets() != null && !assignment.hasRepeatableBindingSets()) {
+			// A packed relation owns inspectable finite rows. An arbitrary source belongs to evaluation instead.
+			throw new UnsupportedCascadesOperatorException(assignment.getClass(), path + ".nonrepeatableRows");
+		}
 	}
 
 	private static boolean bindingRowMatches(PackedQuery query, int rowId, BindingSet row) {
@@ -300,14 +313,23 @@ final class PackedQueryCodec {
 		private int[] scratch = new int[32];
 		private int scratchSize;
 		private int serviceDepth;
+		private int sourceOccurrenceId;
 		private byte[] originalBindingSetRelations = new byte[16];
 		private Object[] originalBindingSets = new Object[16];
 		private PackedParameterSchema parameterSchema = PackedParameterSchema.empty();
 		private PackedParameterVector parameterVector = PackedParameterVector.empty();
+		private final PackedInputFrameContracts inputFrames;
+		private final Map<TupleExpr, Boolean> replaySafety;
+		private final Map<TupleExpr, PackedInputFrameNormalizer.SourceOrder> sourceOrder;
 
 		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider,
 				EncodingShape shape, Map<String, Integer> anonymousNames, boolean retainAnnotations,
-				boolean parameterizeValues) {
+				boolean parameterizeValues, PackedInputFrameContracts inputFrames,
+				Map<TupleExpr, Boolean> replaySafety,
+				Map<TupleExpr, PackedInputFrameNormalizer.SourceOrder> sourceOrder) {
+			this.inputFrames = inputFrames;
+			this.replaySafety = replaySafety;
+			this.sourceOrder = sourceOrder;
 			relations = new PackedExpressionInterner(shape.relationNodes, shape.relationNodes);
 			scalars = new PackedExpressionInterner(shape.valueNodes, shape.valueNodes);
 			metadata = new PackedNodeMetadataArena(shape.relationNodes, shape.valueNodes, shape.termNodes);
@@ -337,7 +359,23 @@ final class PackedQueryCodec {
 
 		private int relation(TupleExpr expression, String path) {
 			int flags = nodeFlags(expression);
-			int relationId = relationStructure(expression, path, flags);
+			PackedInputFrameContracts.Contract contract = inputFrames.at(expression);
+			if (!contract.isEmpty()) {
+				flags |= PackedNodeMetadataArena.INPUT_FRAME_SENSITIVE;
+			}
+			if (!contract.outputDomainKnown()) {
+				flags |= PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN;
+			}
+			int enclosingOccurrenceId = sourceOccurrenceId;
+			// Structural equality alone cannot merge caller-owned inputs or effectful evaluation occurrences.
+			// The ordinal is invocation-local and stable across cache-equivalent clones, unlike object identity.
+			sourceOccurrenceId = replaySafety.getOrDefault(expression, false) ? 0 : sourceOrder.get(expression).first();
+			int relationId;
+			try {
+				relationId = relationStructure(expression, path, flags);
+			} finally {
+				sourceOccurrenceId = enclosingOccurrenceId;
+			}
 			int algorithmNameId = retainAnnotations && expression instanceof BinaryTupleOperator binary
 					? objects.intern(binary.getAlgorithmName())
 					: 0;
@@ -345,7 +383,25 @@ final class PackedQueryCodec {
 					retainAnnotations ? expression.getResultSizeEstimate() : 0.0d,
 					retainAnnotations ? expression.getCostEstimate() : 0.0d,
 					retainAnnotations ? algorithmNameId : 0);
+			if (!metadata.attachRelationInputContract(relationId,
+					contract.required().isEmpty() ? 0 : nameSetPayload(contract.required()),
+					contract.protectedReads().isEmpty() ? 0 : nameSetPayload(contract.protectedReads()),
+					contract.nullableReads().isEmpty() ? 0 : nameSetPayload(contract.nullableReads()),
+					contract.independentOutputs().isEmpty() ? 0 : nameSetPayload(contract.independentOutputs()))) {
+				throw new UnsupportedCascadesOperatorException(expression.getClass(), path + ".ambiguousInputFrame");
+			}
+			metadata.attachRelationReplaySafety(relationId, replaySafety.getOrDefault(expression, false));
+			PackedInputFrameNormalizer.SourceOrder order = sourceOrder.get(expression);
+			if (order != null) {
+				metadata.attachRelationSourceOrder(relationId, order.first(), order.last());
+			}
 			return relationId;
+		}
+
+		private int internRelation(int operator, int payload, int scope, int domain, int[] children, int offset,
+				int count) {
+			return relations.internCanonical(operator, payload, scope, domain, sourceOccurrenceId, children, offset,
+					count);
 		}
 
 		/**
@@ -586,7 +642,7 @@ final class PackedQueryCodec {
 				return statementPattern(pattern, nodeFlags);
 			}
 			if (expression instanceof BindingSetAssignment assignment) {
-				return bindingSetAssignment(assignment, nodeFlags);
+				return bindingSetAssignment(assignment, path, nodeFlags);
 			}
 			if (expression instanceof TupleFunctionCall call) {
 				return tupleFunction(call, path, nodeFlags);
@@ -686,15 +742,20 @@ final class PackedQueryCodec {
 				return binaryRelation(PackedRelOp.JOIN, 0, join.getLeftArg(), join.getRightArg(), path, nodeFlags);
 			}
 			if (expression instanceof Filter filter) {
+				if (!filter.getRequiredInputBindingNames().isEmpty()) {
+					// This packed format has no parameter-frame payload. Never intern, cache, or materialize a
+					// logically equal unparameterized filter in its place; the standard correlated path retains it.
+					throw new UnsupportedCascadesOperatorException(filter.getClass(), path + ".requiredInputFrame");
+				}
 				int input = relation(filter.getArg(), path + ".arg");
 				int condition = scalar(filter.getCondition(), path + ".condition");
 				return unaryRelation(PackedRelOp.FILTER, condition, input, nodeFlags);
 			}
 			if (expression instanceof EmptySet) {
-				return relations.internCanonical(PackedRelOp.EMPTY_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
+				return internRelation(PackedRelOp.EMPTY_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
 			}
 			if (expression instanceof SingletonSet) {
-				return relations.internCanonical(PackedRelOp.SINGLETON_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
+				return internRelation(PackedRelOp.SINGLETON_SET, 0, nodeFlags, 0, NO_CHILDREN, 0, 0);
 			}
 			return unsupportedTuple(expression, path, nodeFlags);
 		}
@@ -710,7 +771,7 @@ final class PackedQueryCodec {
 				return binaryRelation(PackedRelOp.UNSUPPORTED, payload, binaryOperator.getLeftArg(),
 						binaryOperator.getRightArg(), path, nodeFlags);
 			}
-			return relations.internCanonical(PackedRelOp.UNSUPPORTED, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
+			return internRelation(PackedRelOp.UNSUPPORTED, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int unaryRelation(int operator, TupleExpr input, String path, int nodeFlags) {
@@ -719,7 +780,7 @@ final class PackedQueryCodec {
 
 		private int unaryRelation(int operator, int payload, int input, int nodeFlags) {
 			unary[0] = relations.groupId(input);
-			return relations.internCanonical(operator, payload, nodeFlags, 0, unary, 0, 1);
+			return internRelation(operator, payload, nodeFlags, 0, unary, 0, 1);
 		}
 
 		private int binaryRelation(int operator, int payload, TupleExpr left, TupleExpr right, String path,
@@ -728,7 +789,7 @@ final class PackedQueryCodec {
 			int rightId = relation(right, path + ".right");
 			binary[0] = relations.groupId(leftId);
 			binary[1] = relations.groupId(rightId);
-			return relations.internCanonical(operator, payload, nodeFlags, 0, binary, 0, 2);
+			return internRelation(operator, payload, nodeFlags, 0, binary, 0, 2);
 		}
 
 		private int statementPattern(StatementPattern pattern, int nodeFlags) {
@@ -740,7 +801,7 @@ final class PackedQueryCodec {
 			int indexNameId = objects.intern(pattern.getIndexName());
 			int payload = payloads.internCanonical(PackedPayloadOp.STATEMENT_PATTERN,
 					pattern.getScope().ordinal() + 1, statementOrderId, indexNameId, statementTerms, 0, 4);
-			int relationId = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, payload, nodeFlags, 0,
+			int relationId = internRelation(PackedRelOp.STATEMENT_PATTERN, payload, nodeFlags, 0,
 					NO_CHILDREN, 0,
 					0);
 			seedStatementPatternFact(pattern, relationId);
@@ -818,14 +879,15 @@ final class PackedQueryCodec {
 			return true;
 		}
 
-		private int bindingSetAssignment(BindingSetAssignment assignment, int nodeFlags) {
+		private int bindingSetAssignment(BindingSetAssignment assignment, String path, int nodeFlags) {
+			requireRepeatableBindingSets(assignment, path);
 			Set<String> outputNames = assignment.getBindingNames();
 			int names = nameSetPayload(outputNames);
 			Iterable<BindingSet> rows = assignment.getBindingSets();
 			if (rows == null) {
 				int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, 0, 0,
 						NO_CHILDREN, 0, 0);
-				int relationId = relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0,
+				int relationId = internRelation(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0,
 						NO_CHILDREN, 0, 0);
 				attachOriginalBindingSets(relationId, null);
 				return relationId;
@@ -847,7 +909,7 @@ final class PackedQueryCodec {
 			int payload = payloads.internCanonical(PackedPayloadOp.BINDING_SET_ASSIGNMENT, names, assured, 1,
 					scratch, start, count);
 			releaseScratch(start);
-			int relationId = relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0,
+			int relationId = internRelation(PackedRelOp.BINDING_SET_ASSIGNMENT, payload, nodeFlags, 0,
 					NO_CHILDREN, 0, 0);
 			attachOriginalBindingSets(relationId, rows);
 			return relationId;
@@ -987,7 +1049,7 @@ final class PackedQueryCodec {
 			int payload = payloads.internCanonical(PackedPayloadOp.TUPLE_FUNCTION, objects.intern(call.getURI()),
 					argumentCount, resultCount, scratch, start, argumentCount + resultCount);
 			releaseScratch(start);
-			return relations.internCanonical(PackedRelOp.TUPLE_FUNCTION, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
+			return internRelation(PackedRelOp.TUPLE_FUNCTION, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int zeroLengthPath(ZeroLengthPath path, int nodeFlags) {
@@ -996,7 +1058,7 @@ final class PackedQueryCodec {
 			statementTerms[2] = term(path.getContextVar());
 			int payload = payloads.internCanonical(PackedPayloadOp.ZERO_LENGTH_PATH,
 					path.getScope().ordinal() + 1, 0, 0, statementTerms, 0, 3);
-			return relations.internCanonical(PackedRelOp.ZERO_LENGTH_PATH, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
+			return internRelation(PackedRelOp.ZERO_LENGTH_PATH, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int arbitraryLengthPath(ArbitraryLengthPath path, String operatorPath, int nodeFlags) {
@@ -1022,7 +1084,7 @@ final class PackedQueryCodec {
 			}
 			int payload = payloads.internCanonical(PackedPayloadOp.TRIPLE_REF, 0, 0, 0, scratch, start, count);
 			releaseScratch(start);
-			return relations.internCanonical(operator, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
+			return internRelation(operator, payload, nodeFlags, 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int slicePayload(Slice slice) {
@@ -1256,7 +1318,7 @@ final class PackedQueryCodec {
 			}
 			if (expression instanceof Exists exists) {
 				int payload = subqueryPayload(exists.getSubQuery(), 0, path);
-				int referencedNames = nameSetPayload(VarNameCollector.process(exists.getSubQuery()));
+				int referencedNames = nameSetPayload(TupleExprs.conditionBindingDomain(exists).names());
 				return scalars.internCanonical(PackedScalarOp.EXISTS, payload, referencedNames, 0, NO_CHILDREN, 0,
 						0);
 			}
@@ -1396,7 +1458,7 @@ final class PackedQueryCodec {
 			int payload = subqueryPayload(subquery, compareOperator, path);
 			// Same slot convention as EXISTS: the subquery's referenced names, so liveness and scheduling see
 			// every outer binding the subquery reads rather than only the names it can bind.
-			int referencedNames = nameSetPayload(VarNameCollector.process(subquery));
+			int referencedNames = nameSetPayload(TupleExprs.tupleBindingObservationDomain(subquery).names());
 			unary[0] = argumentId;
 			return scalars.internCanonical(operator, payload, referencedNames, 0, unary, 0, 1);
 		}

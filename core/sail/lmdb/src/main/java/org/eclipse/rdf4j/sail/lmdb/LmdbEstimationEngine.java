@@ -155,6 +155,11 @@ final class LmdbEstimationEngine {
 				return BagEstimate.exact(1.0d, "singleton-set");
 			}
 			if (expression instanceof BindingSetAssignment assignment) {
+				if (assignment.getBindingSets() != null && !assignment.hasRepeatableBindingSets()) {
+					// Unknown rows belong to evaluation. Use the ordinary unknown-leaf evidence without inspecting
+					// them.
+					return leaf(assignment, context);
+				}
 				return finiteRelation(assignment, context);
 			}
 			if (expression instanceof Lateral lateral) {

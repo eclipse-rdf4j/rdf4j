@@ -349,6 +349,9 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		List<ExactAccess> prefixAccesses = new ArrayList<>();
 		for (TupleExpr prefixFactor : effectivePrefix) {
 			if (prefixFactor instanceof BindingSetAssignment assignment) {
+				if (assignment.getBindingSets() != null && !assignment.hasRepeatableBindingSets()) {
+					return Optional.empty();
+				}
 				assignments.add(assignment);
 			} else {
 				ExactAccess access = exactAccess(prefixFactor);
@@ -651,9 +654,13 @@ final class LmdbFiniteJoinSurfaceEstimator {
 		rows.add(emptyRow(slots.size()));
 		if (!assignments.isEmpty()) {
 			for (BindingSetAssignment assignment : assignments) {
+				Iterable<BindingSet> bindingSets = assignment.getBindingSets();
+				if (bindingSets == null) {
+					return List.of();
+				}
 				List<long[]> joined = new ArrayList<>();
 				for (long[] row : rows) {
-					for (BindingSet bindingSet : assignment.getBindingSets()) {
+					for (BindingSet bindingSet : bindingSets) {
 						long[] merged = merge(row, slots, bindingSet);
 						if (merged != null) {
 							joined.add(merged);

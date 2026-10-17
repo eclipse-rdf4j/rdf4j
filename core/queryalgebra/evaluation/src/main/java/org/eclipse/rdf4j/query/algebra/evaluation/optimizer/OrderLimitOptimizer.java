@@ -12,6 +12,8 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer;
 
+import java.util.Set;
+
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -22,9 +24,9 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Reduced;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
 /**
  * Moves the Order node above the Projection when variables are projected.
@@ -35,27 +37,32 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new OrderOptimizer());
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(tupleExpr, bindings);
+		tupleExpr.visit(new OrderOptimizer(analysis));
 	}
 
 	private static class OrderOptimizer extends AbstractSimpleQueryModelVisitor<RuntimeException> {
 
+		private final QueryAlgebraBindingAnalysis analysis;
+
 		private Projection projection;
 
-		protected OrderOptimizer() {
+		OrderOptimizer(QueryAlgebraBindingAnalysis analysis) {
 			super(false);
+			this.analysis = analysis;
 		}
 
 		@Override
 		public void meet(Projection node) {
+			Projection previousProjection = projection;
 			projection = node;
 			node.getArg().visit(this);
-			projection = null;
+			projection = previousProjection;
 		}
 
 		@Override
 		public void meet(Order node) {
-			if (variablesProjected(node)) {
+			if (projection != null && orderKeysAreProjected(node, projection)) {
 				QueryModelNode parent = node.getParentNode();
 				if (projection == parent) {
 					node.replaceWith(node.getArg().clone());
@@ -63,54 +70,59 @@ public class OrderLimitOptimizer implements QueryOptimizer {
 					Order replacement = node.clone();
 					projection.replaceWith(replacement);
 					QueryModelNode distinct = replacement.getParentNode();
-					if (distinct instanceof Distinct) {
-						distinct.replaceWith(new Reduced(replacement.clone()));
+					if (distinct instanceof Distinct distinctNode) {
+						Reduced reduced = new Reduced(replacement.clone());
+						reduced.setVariableScopeChange(distinctNode.isVariableScopeChange());
+						distinct.replaceWith(reduced);
+					}
+					analysis.invalidate();
+				}
+			}
+		}
+
+		private boolean orderKeysAreProjected(Order order, Projection projection) {
+			QueryAlgebraBindingAnalysis.ReadOnlyContext childContext = analysis.contextAt(projection.getArg());
+			if (analysis.contextAt(order).scopeIdentity() != childContext.scopeIdentity()) {
+				return false;
+			}
+			QueryAlgebraBindingAnalysis.OutputFacts projectionFacts = analysis.outputFacts(projection,
+					analysis.contextAt(projection));
+			if (!projectionFacts.possibleOutputsKnown()) {
+				return false;
+			}
+
+			for (OrderElem element : order.getElements()) {
+				if (!AlgebraEvaluationSafety.isRepeatable(element.getExpr())) {
+					return false;
+				}
+				QueryAlgebraBindingAnalysis.Dependencies dependencies = analysis.dependencies(element.getExpr(),
+						analysis.contextAt(element));
+				if (!dependencies.correlatedInputs().isEmpty() || !dependencies.existsLocals().isEmpty()
+						|| !projectionFacts.possibleOutputs().containsAll(dependencies.directReferences())
+						|| !projectionPreservesOrderInputs(projection, dependencies.directReferences())) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		private boolean projectionPreservesOrderInputs(Projection projection, Set<String> referencedNames) {
+			for (String referencedName : referencedNames) {
+				boolean identityMappingFound = false;
+				for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+					String targetName = element.getProjectionAlias().orElse(element.getName());
+					if (targetName.equals(referencedName)) {
+						if (!element.getName().equals(referencedName)) {
+							return false;
+						}
+						identityMappingFound = true;
 					}
 				}
-			}
-		}
-
-		private boolean variablesProjected(Order node) {
-			OrderVariableProjectionChecker checker = new OrderVariableProjectionChecker(projection);
-			for (OrderElem e : node.getElements()) {
-				e.visit(checker);
-			}
-			return checker.variablesProjected;
-		}
-
-	}
-
-	private static class OrderVariableProjectionChecker extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-
-		private final Projection projection;
-		private boolean variablesProjected = true;
-
-		private OrderVariableProjectionChecker(Projection projection) {
-			// Visit statement-pattern variables too: an ORDER BY EXISTS { ... } references variables only through
-			// the patterns nested in its subquery, and an unprojected variable there must keep the Order below the
-			// Projection exactly like an unprojected variable in an ORDER BY expression does.
-			super(true);
-			this.projection = projection;
-		}
-
-		@Override
-		public void meet(Var node) {
-			if (node.hasValue()) {
-				// a constant does not depend on the projected bindings
-				return;
-			}
-			if (projection != null && variablesProjected) {
-				boolean projected = false;
-				for (ProjectionElem e : projection.getProjectionElemList().getElements()) {
-					if (node.getName().equals(e.getName())) {
-						projected = true;
-						break;
-					}
-				}
-				if (!projected) {
-					variablesProjected = false;
+				if (!identityMappingFound) {
+					return false;
 				}
 			}
+			return true;
 		}
 
 	}

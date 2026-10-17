@@ -197,4 +197,20 @@ class StorePropertiesTest {
 		assertTrue(afterRestart.load());
 		assertEquals(storeId, afterRestart.getOrCreateStoreId());
 	}
+
+	@Test
+	void unchangedLaterPropertyDoesNotDiscardEarlierDirtyChange(@TempDir File dir) {
+		new StoreProperties(dir).setVersion("1").setTripleIndexes("spoc,posc").save();
+
+		StoreProperties loaded = new StoreProperties(dir);
+		assertTrue(loaded.load());
+		loaded.setVersion("2");
+		loaded.setTripleIndexes("spoc,posc");
+		loaded.save();
+
+		StoreProperties reopened = new StoreProperties(dir);
+		assertTrue(reopened.load());
+		assertEquals("2", reopened.getVersion(),
+				"Setting an unchanged index spec must not clear a pending version update");
+	}
 }

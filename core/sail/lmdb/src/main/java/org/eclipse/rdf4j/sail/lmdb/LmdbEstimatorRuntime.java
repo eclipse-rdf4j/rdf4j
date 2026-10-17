@@ -456,6 +456,10 @@ final class LmdbEstimatorRuntime {
 		return storageAccess.pinPlanningReads(txn);
 	}
 
+	TripleStore.PlanningReadPin pinPlanningReads(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		return storageAccess.pinPlanningReads(txn, values);
+	}
+
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
 			int repeatedComponentPairMask) {
 		return storageAccess.packedStatementPatternRows(subject, predicate, object, context, repeatedComponentPairMask);

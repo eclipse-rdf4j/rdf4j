@@ -18,10 +18,12 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
@@ -50,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -73,6 +76,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	private final Function<BindingSet, Binding>[] getBinding;
 	private final Function<BindingSet, Value>[] getValue;
 	private final BiConsumer<Value, MutableBindingSet>[] setBinding;
+	private final Consumer<MutableBindingSet>[] removeBinding;
 	private final BiConsumer<Value, MutableBindingSet>[] addBinding;
 	private final Comparator<Value> comparator;
 	private final ArrayBindingSet.SortedBindingNamesCache sortedBindingNamesCache;
@@ -94,6 +98,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 		getBinding = new Function[allVariables.length];
 		getValue = new Function[allVariables.length];
 		setBinding = new BiConsumer[allVariables.length];
+		removeBinding = new Consumer[allVariables.length];
 		addBinding = new BiConsumer[allVariables.length];
 
 		for (int i = 0; i < allVariables.length; i++) {
@@ -101,6 +106,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 			getBinding[i] = getBinding(allVariables[i]);
 			getValue[i] = getValue(allVariables[i]);
 			setBinding[i] = setBinding(allVariables[i]);
+			removeBinding[i] = removeBinding(allVariables[i]);
 			addBinding[i] = addBinding(allVariables[i]);
 		}
 
@@ -116,6 +122,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public Literal getNow() {
 		return context.getNow();
+	}
+
+	@Override
+	public Value captureConstant(Value value, Function<Value, Value> capturer) {
+		return context.captureConstant(value, capturer);
 	}
 
 	@Override
@@ -176,6 +187,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public boolean test(BindingSet bs) {
+			bs = BindingSetOrigin.unwrap(bs);
 			if (bs.isEmpty()) {
 				return false;
 			}
@@ -210,6 +222,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		if (directAccessForVariable != null) {
 			return (bs) -> {
+				bs = BindingSetOrigin.unwrap(bs);
 				if (bs.isEmpty()) {
 					return null;
 				} else if (bs instanceof ArrayBindingSet) {
@@ -266,6 +279,7 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 		@Override
 		public Value apply(BindingSet bs) {
+			bs = BindingSetOrigin.unwrap(bs);
 			if (bs.isEmpty()) {
 				return null;
 			}
@@ -311,6 +325,39 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	}
 
 	@Override
+	public Consumer<MutableBindingSet> removeBinding(String variableName) {
+		if (initialized) {
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i] == variableName) {
+					return removeBinding[i];
+				}
+			}
+
+			for (int i = 0; i < allVariables.length; i++) {
+				if (allVariables[i].equals(variableName)) {
+					return removeBinding[i];
+				}
+			}
+
+			return bindings -> bindings.removeBinding(variableName);
+		}
+
+		BiConsumer<Value, ArrayBindingSet> directAccessForVariable = defaultArrayBindingSet
+				.getDirectSetBinding(variableName);
+		if (directAccessForVariable != null) {
+			return bindings -> {
+				if (bindings instanceof ArrayBindingSet arrayBindingSet) {
+					directAccessForVariable.accept(null, arrayBindingSet);
+				} else {
+					bindings.removeBinding(variableName);
+				}
+			};
+		}
+
+		return bindings -> bindings.removeBinding(variableName);
+	}
+
+	@Override
 	public BiConsumer<Value, MutableBindingSet> addBinding(String variableName) {
 		if (initialized) {
 			for (int i = 0; i < allVariables.length; i++) {
@@ -343,13 +390,18 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 	@Override
 	public ArrayBindingSet createBindingSet(BindingSet bindings) {
+		BindingSet original = bindings;
+		bindings = BindingSetOrigin.unwrap(bindings);
+		ArrayBindingSet copy;
 		if (bindings instanceof ArrayBindingSet) {
-			return new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
+			copy = new ArrayBindingSet((ArrayBindingSet) bindings, allVariables, sortedBindingNamesCache);
 		} else if (bindings == EmptyBindingSet.getInstance()) {
-			return createBindingSet();
+			copy = createBindingSet();
 		} else {
-			return new ArrayBindingSet(bindings, allVariablesSet, allVariables, sortedBindingNamesCache);
+			copy = new ArrayBindingSet(bindings, allVariablesSet, allVariables, sortedBindingNamesCache);
 		}
+		BindingSetOrigin.copy(original, copy);
+		return copy;
 	}
 
 	private ArrayBindingSet.SortedBindingNamesCache createSortedBindingNamesCache() {
@@ -487,13 +539,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 
 			@Override
 			public void meet(BindingSetAssignment node) throws QueryEvaluationException {
-				Set<String> bindingNames = node.getBindingNames();
-
-				Set<String> collect = bindingNames.stream()
-						.map(varName -> varNames.computeIfAbsent(varName, k -> k))
-						.collect(Collectors.toSet());
-
-				node.setBindingNames(collect);
+				Set<String> bindingNames = new LinkedHashSet<>(node.getDeclaredBindingNames());
+				bindingNames.addAll(node.getPossibleBindingNames());
+				bindingNames.forEach(varName -> varNames.computeIfAbsent(varName, k -> k));
 
 				super.meet(node);
 			}

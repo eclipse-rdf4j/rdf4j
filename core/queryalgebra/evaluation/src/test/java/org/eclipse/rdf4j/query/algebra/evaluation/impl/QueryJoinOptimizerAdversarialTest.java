@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -51,6 +52,7 @@ import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -67,9 +69,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.IndependentJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -80,6 +81,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Adversarial unit attempts for the connectedness-sensitive parts of {@link QueryJoinOptimizer}.
@@ -354,7 +356,7 @@ class QueryJoinOptimizerAdversarialTest {
 	}
 
 	@Test
-	void independentJoinClosesLeftWhenRightEvaluationFails() {
+	void hashJoinClosesLeftWhenRightEvaluationFails() {
 		AtomicBoolean leftClosed = new AtomicBoolean();
 		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
 			private boolean returned;
@@ -379,7 +381,8 @@ class QueryJoinOptimizerAdversarialTest {
 			throw new QueryEvaluationException("right evaluation failed");
 		};
 
-		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right, EmptyBindingSet.getInstance());
+		HashJoinIteration iteration = new HashJoinIteration(left, right, EmptyBindingSet.getInstance(), false,
+				new String[0], new QueryEvaluationContext.Minimal(null));
 		assertThatThrownBy(iteration::hasNext)
 				.isInstanceOf(QueryEvaluationException.class)
 				.hasMessage("right evaluation failed");
@@ -387,7 +390,7 @@ class QueryJoinOptimizerAdversarialTest {
 	}
 
 	@Test
-	void independentJoinDefersRightEvaluationUntilItHasALeftRow() {
+	void hashJoinDefersRightEvaluationUntilItHasALeftRow() {
 		AtomicBoolean rightEvaluated = new AtomicBoolean();
 		AtomicBoolean leftClosed = new AtomicBoolean();
 		QueryEvaluationStep left = bindings -> new AbstractCloseableIteration<BindingSet>() {
@@ -411,8 +414,8 @@ class QueryJoinOptimizerAdversarialTest {
 			return new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator());
 		};
 
-		IndependentJoinIteration iteration = new IndependentJoinIteration(left, right,
-				EmptyBindingSet.getInstance());
+		HashJoinIteration iteration = new HashJoinIteration(left, right, EmptyBindingSet.getInstance(), false,
+				new String[0], new QueryEvaluationContext.Minimal(null));
 		assertThat(rightEvaluated).as("RHS evaluation must wait until a left row exists").isFalse();
 		iteration.close();
 		assertThat(leftClosed).as("closing before consumption must close the left iteration").isTrue();
@@ -737,6 +740,212 @@ class QueryJoinOptimizerAdversarialTest {
 		assertThat(actual)
 				.as("VALUES bindings from MINUS left must not become RHS filter inputs")
 				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	@Test
+	void minusRemovesOnlyPairsWithAMemberMissingFromTheSuperset() throws Exception {
+		String query = "SELECT (?s1 AS ?subset) (?s2 AS ?superset) WHERE { "
+				+ "?s2 <urn:type> <urn:Set> . ?s1 <urn:type> <urn:Set> . "
+				+ "FILTER(?s1 != ?s2) MINUS { "
+				+ "?s1 <urn:type> <urn:Set> . ?s2 <urn:type> <urn:Set> . "
+				+ "FILTER(?s1 != ?s2) ?s1 <urn:member> ?x . "
+				+ "FILTER NOT EXISTS { ?s2 <urn:member> ?x . } } }";
+		IRI a = VF.createIRI("urn:a");
+		IRI b = VF.createIRI("urn:b");
+		IRI type = VF.createIRI("urn:type");
+		IRI set = VF.createIRI("urn:Set");
+		IRI member = VF.createIRI("urn:member");
+		List<Statement> statements = List.of(
+				VF.createStatement(a, type, set),
+				VF.createStatement(b, type, set),
+				VF.createStatement(a, member, VF.createLiteral("1")),
+				VF.createStatement(a, member, VF.createLiteral("2")),
+				VF.createStatement(b, member, VF.createLiteral("1")));
+		TripleSource source = new ListTripleSource(statements);
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, null);
+		TupleExpr expression = parsed.getTupleExpr();
+		MapBindingSet expected = new MapBindingSet();
+		expected.addBinding("subset", b);
+		expected.addBinding("superset", a);
+		assertThat(evaluate(expression.clone(), source))
+				.as("raw MINUS algebra should remove the superset that misses a member")
+				.containsExactly(expected);
+		strategy.optimize(expression, new EvaluationStatistics(), EmptyBindingSet.getInstance());
+		assertThat(evaluate(expression, source)).containsExactly(expected);
+	}
+
+	@ParameterizedTest(name = "exists={0}")
+	@ValueSource(booleans = { true, false })
+	void scopedExistenceMustRetainBindingsAcrossNestedJoinDescent(boolean exists) throws Exception {
+		IRI x = VF.createIRI("urn:x");
+		IRI y = VF.createIRI("urn:y");
+		IRI blocked = VF.createIRI("urn:blocked");
+		MapBindingSet outerRow = new MapBindingSet();
+		outerRow.addBinding("x", x);
+		outerRow.addBinding("outerOnly", VF.createIRI("urn:outer-only"));
+		BindingSetAssignment outerX = bindingAssignment(List.<BindingSet>of(outerRow));
+		BindingSetAssignment precedingX = bindingAssignment("x", x);
+		BindingSetAssignment candidateY = bindingAssignment("y", y);
+		StatementPattern blockedPattern = new StatementPattern(Var.of("x"), Var.of("blocked", blocked),
+				Var.of("y"));
+		Join innerJoin = new Join(precedingX, candidateY);
+		Join outerJoin = new Join(outerX, innerJoin);
+		Filter scopedFilter = new Filter(outerJoin,
+				exists ? new Exists(blockedPattern) : new Not(new Exists(blockedPattern)));
+		scopedFilter.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(scopedFilter);
+		TripleSource source = new ListTripleSource(List.of(
+				VF.createStatement(VF.createIRI("urn:other"), blocked, y)));
+		List<BindingSet> expected = evaluate(root.clone(), source);
+		assertThat(expected).hasSize(exists ? 0 : 1);
+
+		// Force descent attempts so unavailable placement costs cannot mask the binding-safety proof.
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
+		assertThat(evaluate(root, source))
+				.as("a scoped EXISTS/NOT EXISTS must keep bindings supplied by nested join siblings")
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void scopedNotExistsMustPreserveNullableBindingsAcrossNestedJoinDescent() throws Exception {
+		IRI x = VF.createIRI("urn:x");
+		IRI y = VF.createIRI("urn:y");
+		IRI blocked = VF.createIRI("urn:blocked");
+		MapBindingSet boundOuterRow = new MapBindingSet();
+		boundOuterRow.addBinding("x", x);
+		boundOuterRow.addBinding("outerOnly", VF.createIRI("urn:outer-only"));
+		MapBindingSet unboundOuterRow = new MapBindingSet();
+		unboundOuterRow.addBinding("outerOnly", VF.createIRI("urn:outer-only"));
+		BindingSetAssignment outerRows = bindingAssignment(List.<BindingSet>of(boundOuterRow, unboundOuterRow));
+		MapBindingSet boundPrecedingRow = new MapBindingSet();
+		boundPrecedingRow.addBinding("x", x);
+		MapBindingSet unboundPrecedingRow = new MapBindingSet();
+		BindingSetAssignment precedingRows = bindingAssignment(List.<BindingSet>of(boundPrecedingRow,
+				unboundPrecedingRow));
+		BindingSetAssignment candidateY = bindingAssignment("y", y);
+		StatementPattern blockedPattern = new StatementPattern(Var.of("x"), Var.of("blocked", blocked),
+				Var.of("y"));
+		Filter scopedFilter = new Filter(new Join(outerRows, new Join(precedingRows, candidateY)),
+				new Not(new Exists(blockedPattern)));
+		scopedFilter.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(scopedFilter);
+		TripleSource source = new ListTripleSource(List.of(
+				VF.createStatement(VF.createIRI("urn:other"), blocked, y)));
+		List<BindingSet> expected = evaluate(root.clone(), source);
+		assertThat(expected).hasSize(3).allSatisfy(row -> assertThat(row.getValue("x")).isEqualTo(x));
+
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(root, source))
+				.as("nullable bindings supplied by nested siblings must not be replaced by an unbound candidate input")
+				.containsExactlyElementsOf(expected);
+	}
+
+	@ParameterizedTest(name = "exists={0}")
+	@ValueSource(booleans = { true, false })
+	void scopedExistenceCanMoveToCandidateThatBindsItsCorrelatedInputs(boolean exists) throws Exception {
+		IRI x = VF.createIRI("urn:x");
+		IRI y = VF.createIRI("urn:y");
+		IRI blocked = VF.createIRI("urn:blocked");
+		BindingSetAssignment outer = bindingAssignment("outerOnly", VF.createIRI("urn:outer-only"));
+		MapBindingSet candidateRow = new MapBindingSet();
+		candidateRow.addBinding("x", x);
+		candidateRow.addBinding("y", y);
+		BindingSetAssignment candidate = bindingAssignment(List.<BindingSet>of(candidateRow));
+		StatementPattern blockedPattern = new StatementPattern(Var.of("x"), Var.of("blocked", blocked),
+				Var.of("y"));
+		Filter scopedFilter = new Filter(new Join(outer, candidate),
+				exists ? new Exists(blockedPattern) : new Not(new Exists(blockedPattern)));
+		scopedFilter.setVariableScopeChange(true);
+		QueryRoot root = new QueryRoot(scopedFilter);
+		TripleSource source = new ListTripleSource(List.of(
+				VF.createStatement(VF.createIRI("urn:other"), blocked, y)));
+		List<BindingSet> expected = evaluate(root.clone(), source);
+
+		new FilterOptimizer(null, true, false).optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(scopedFilter.getArg())
+				.as("the candidate itself supplies both correlated values")
+				.isSameAs(candidate);
+		assertThat(evaluate(root, source)).containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	void scopedNotExistsMayMoveOntoItsOwnBindingProducer() throws Exception {
+		String query = "SELECT ?subject ?member WHERE { "
+				+ "?subject <urn:member> ?member . ?member <urn:label> ?label . "
+				+ "FILTER NOT EXISTS { ?subject <urn:blocked> ?member . } }";
+		IRI subject = VF.createIRI("urn:subject");
+		IRI memberPredicate = VF.createIRI("urn:member");
+		IRI labelPredicate = VF.createIRI("urn:label");
+		IRI blockedPredicate = VF.createIRI("urn:blocked");
+		IRI memberOne = VF.createIRI("urn:member-one");
+		IRI memberTwo = VF.createIRI("urn:member-two");
+		List<Statement> statements = List.of(
+				VF.createStatement(subject, memberPredicate, memberOne),
+				VF.createStatement(subject, memberPredicate, memberTwo),
+				VF.createStatement(memberOne, labelPredicate, VF.createLiteral("label-one")),
+				VF.createStatement(memberTwo, labelPredicate, VF.createLiteral("label-two")),
+				VF.createStatement(subject, blockedPredicate, memberTwo));
+		TripleSource source = new ListTripleSource(statements);
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expression = parsed.getTupleExpr();
+		List<BindingSet> rawResults = evaluate(expression.clone(), source);
+		new FilterOptimizer(null, true, false).optimize(expression, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(expression, source)).containsExactlyElementsOf(rawResults)
+				.singleElement()
+				.satisfies(row -> {
+					assertThat(row.getValue("subject")).isEqualTo(subject);
+					assertThat(row.getValue("member")).isEqualTo(memberOne);
+				});
+		List<Filter> filters = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists) {
+					filters.add(filter);
+				}
+				super.meet(filter);
+			}
+		});
+		assertThat(filters).singleElement().satisfies(filter -> {
+			assertThat(filter.getArg()).isInstanceOf(StatementPattern.class);
+			assertThat(filter.getArg().getBindingNames()).contains("subject", "member");
+		});
+	}
+
+	@Test
+	void scopedNotExistsCanMoveIntoLeftJoinLeftArgument() throws Exception {
+		String query = "SELECT ?subject ?member ?label WHERE { "
+				+ "?subject <urn:member> ?member . "
+				+ "OPTIONAL { ?subject <urn:label> ?label . } "
+				+ "FILTER NOT EXISTS { ?subject <urn:blocked> ?member . } }";
+		IRI subject = VF.createIRI("urn:subject");
+		IRI memberPredicate = VF.createIRI("urn:member");
+		IRI labelPredicate = VF.createIRI("urn:label");
+		IRI blockedPredicate = VF.createIRI("urn:blocked");
+		Value memberOne = VF.createLiteral("one");
+		Value memberTwo = VF.createLiteral("two");
+		List<Statement> statements = List.of(
+				VF.createStatement(subject, memberPredicate, memberOne),
+				VF.createStatement(subject, memberPredicate, memberTwo),
+				VF.createStatement(subject, labelPredicate, VF.createLiteral("label")),
+				VF.createStatement(subject, blockedPredicate, memberTwo));
+		TripleSource source = new ListTripleSource(statements);
+		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		TupleExpr expression = parsed.getTupleExpr();
+		List<BindingSet> rawResults = evaluate(expression.clone(), source);
+		new FilterOptimizer(null, true, false).optimize(expression, null, EmptyBindingSet.getInstance());
+
+		assertThat(evaluate(expression, source)).containsExactlyElementsOf(rawResults)
+				.singleElement()
+				.satisfies(row -> {
+					assertThat(row.getValue("subject")).isEqualTo(subject);
+					assertThat(row.getValue("member")).isEqualTo(memberOne);
+					assertThat(row.getValue("label")).isEqualTo(VF.createLiteral("label"));
+				});
 	}
 
 	@ParameterizedTest(name = "{0}")

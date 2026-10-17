@@ -12,9 +12,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_stat;
 
@@ -26,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -71,6 +74,29 @@ public final class TripleStoreInitializationTest {
 			assertEquals(0, stats.mapSize() % stats.pageSize(),
 					"LMDB map size must remain page aligned after initialization");
 		}
+	}
+
+	@Test
+	void closesNativeEnvironmentWhenInitializationFailsAfterOpen(@TempDir Path directory) {
+		AtomicInteger closeCalls = new AtomicInteger();
+		TripleStore.EnvironmentLifecycle lifecycle = new TripleStore.EnvironmentLifecycle() {
+			@Override
+			public void afterOpen(long env) throws IOException {
+				throw new IOException("injected failure after environment open");
+			}
+
+			@Override
+			public void close(long env) {
+				mdb_env_close(env);
+				closeCalls.incrementAndGet();
+			}
+		};
+
+		IOException failure = assertThrows(IOException.class, () -> new TripleStore(directory.toFile(),
+				new StoreProperties(directory.toFile()), config(INITIAL_MAP_SIZE, false), null, lifecycle));
+		assertTrue(failure.getMessage().contains("injected failure"));
+		assertEquals(1, closeCalls.get(),
+				"Every created native environment must close on partial construction failure");
 	}
 
 	@Test

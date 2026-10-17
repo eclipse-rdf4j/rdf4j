@@ -1281,6 +1281,7 @@ final class PackedPlanRecipe {
 		private int[] continuationLogicalPayloadIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalOccurrenceIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
@@ -1290,6 +1291,7 @@ final class PackedPlanRecipe {
 		private int[] continuationStructuralLogicalPayloadIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalOccurrenceIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
@@ -1436,6 +1438,7 @@ final class PackedPlanRecipe {
 					take(continuationLogicalPayloadIds, rowCount),
 					take(continuationLogicalSemanticScopeIds, rowCount),
 					take(continuationLogicalExecutionDomainIds, rowCount),
+					take(continuationLogicalOccurrenceIds, rowCount),
 					take(continuationLogicalChildStarts, rowCount),
 					take(continuationLogicalChildCounts, rowCount),
 					take(continuationLogicalChildGroupIds, continuationLogicalChildSize),
@@ -1445,6 +1448,7 @@ final class PackedPlanRecipe {
 					take(continuationStructuralLogicalPayloadIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalSemanticScopeIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalExecutionDomainIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalOccurrenceIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildStarts, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildCounts, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildGroupIds, continuationStructuralLogicalChildSize),
@@ -1488,6 +1492,7 @@ final class PackedPlanRecipe {
 				continuationStructuralLogicalPayloadIds[ordinal] = memo.logicalPayloadId(expressionId);
 				continuationStructuralLogicalSemanticScopeIds[ordinal] = memo.logicalSemanticScopeId(expressionId);
 				continuationStructuralLogicalExecutionDomainIds[ordinal] = memo.logicalExecutionDomainId(expressionId);
+				continuationStructuralLogicalOccurrenceIds[ordinal] = memo.logicalOccurrenceId(expressionId);
 				int childCount = memo.logicalChildCount(expressionId);
 				continuationStructuralLogicalChildStarts[ordinal] = continuationStructuralLogicalChildSize;
 				continuationStructuralLogicalChildCounts[ordinal] = childCount;
@@ -1677,6 +1682,7 @@ final class PackedPlanRecipe {
 						.logicalSemanticScopeId(sourceLogicalExpressionId);
 				continuationLogicalExecutionDomainIds[recipeId] = memo
 						.logicalExecutionDomainId(sourceLogicalExpressionId);
+				continuationLogicalOccurrenceIds[recipeId] = memo.logicalOccurrenceId(sourceLogicalExpressionId);
 				int logicalChildCount = memo.logicalChildCount(sourceLogicalExpressionId);
 				continuationLogicalChildStarts[recipeId] = continuationLogicalChildSize;
 				continuationLogicalChildCounts[recipeId] = logicalChildCount;
@@ -1880,6 +1886,7 @@ final class PackedPlanRecipe {
 			continuationLogicalPayloadIds = Arrays.copyOf(continuationLogicalPayloadIds, newCapacity);
 			continuationLogicalSemanticScopeIds = Arrays.copyOf(continuationLogicalSemanticScopeIds, newCapacity);
 			continuationLogicalExecutionDomainIds = Arrays.copyOf(continuationLogicalExecutionDomainIds, newCapacity);
+			continuationLogicalOccurrenceIds = Arrays.copyOf(continuationLogicalOccurrenceIds, newCapacity);
 			continuationLogicalChildStarts = Arrays.copyOf(continuationLogicalChildStarts, newCapacity);
 			continuationLogicalChildCounts = Arrays.copyOf(continuationLogicalChildCounts, newCapacity);
 			continuationLogicalRuleMasks = Arrays.copyOf(continuationLogicalRuleMasks, newCapacity);
@@ -1951,6 +1958,8 @@ final class PackedPlanRecipe {
 					continuationStructuralLogicalSemanticScopeIds, newCapacity);
 			continuationStructuralLogicalExecutionDomainIds = Arrays.copyOf(
 					continuationStructuralLogicalExecutionDomainIds, newCapacity);
+			continuationStructuralLogicalOccurrenceIds = Arrays.copyOf(continuationStructuralLogicalOccurrenceIds,
+					newCapacity);
 			continuationStructuralLogicalChildStarts = Arrays.copyOf(continuationStructuralLogicalChildStarts,
 					newCapacity);
 			continuationStructuralLogicalChildCounts = Arrays.copyOf(continuationStructuralLogicalChildCounts,

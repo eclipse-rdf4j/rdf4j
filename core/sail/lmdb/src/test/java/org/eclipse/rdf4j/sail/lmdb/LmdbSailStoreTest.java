@@ -18,11 +18,12 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
+import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.atMost;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
@@ -38,7 +39,9 @@ import java.io.UncheckedIOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -75,6 +78,7 @@ import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -109,7 +113,7 @@ public class LmdbSailStoreTest {
 		defaultLocale = Locale.getDefault();
 		Locale.setDefault(Locale.ENGLISH);
 		this.dataDir = dataDir;
-		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc")));
+		repo = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setBulkOperationSize(256)));
 		repo.init();
 
 		try (RepositoryConnection conn = repo.getConnection()) {
@@ -259,6 +263,32 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
+	void retiredReadViewRejectsDatasetConstructionWithoutRetainingOwnership() {
+		LmdbSailStore backing = ((LmdbStore) ((SailRepository) repo).getSail()).getBackingStore();
+		LmdbSailStore.ReadView retired;
+		AtomicReference<SailDataset> unexpected = new AtomicReference<>();
+		try {
+			try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(
+					IsolationLevels.SNAPSHOT_READ, null)) {
+				retired = admission.view();
+				retired.retireNativeSnapshots(LmdbSailStore.MapResizeKind.TRIPLE_STORE);
+				assertThrows(LmdbSailStore.MapResizeConflictException.class,
+						() -> unexpected.set(backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)),
+						"construction must reject the retired native capability before lending a dataset");
+			}
+		} finally {
+			if (unexpected.get() != null) {
+				unexpected.get().close();
+			}
+		}
+		assertThrows(IllegalStateException.class, () -> {
+			try (LmdbSailStore.ReadView leaked = retired.retain()) {
+				// Release a diagnostic borrow even if the failed constructor leaked its retained ownership.
+			}
+		}, "failed construction must release its retained view before the admitting owner closes");
+	}
+
+	@Test
 	void createStatementIteratorReusesCurrentLmdbValues() {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();
@@ -272,6 +302,16 @@ public class LmdbSailStoreTest {
 		}
 
 		LmdbSailStore backingStore = sail.getBackingStore();
+		// Mutation capture owns lexical copies. Bind these caller values through the normal current dictionary lookup
+		// before asserting the known-input reuse path, without making ingestion mutate the caller's native identity.
+		for (Value value : List.of(subject, predicate, object, context)) {
+			try {
+				assertTrue("the reuse fixture must provide a known current native input",
+						((ValueStore) backingStore.getValueFactory()).getId(value) != LmdbValue.UNKNOWN_ID);
+			} catch (IOException failure) {
+				throw new AssertionError("could not bind the reuse fixture's current native inputs", failure);
+			}
+		}
 		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
 				CloseableIteration<? extends Statement> iteration = dataset.getStatements(subject, predicate, object,
 						context)) {
@@ -427,7 +467,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void pinnedDatasetDropsExactLookupAndCountCachesWhenTxnIsRenewedOntoNewerSnapshot() {
+	void pinnedDatasetRetainsExactLookupCountAndEpochAcrossExternalCommit() {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();
 		IRI subject = valueFactory.createIRI("urn:renewed-snapshot:subject");
@@ -454,25 +494,34 @@ public class LmdbSailStoreTest {
 			}
 			assertEquals(1L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
 
-			// the commit resets+renews the tracked read txn onto the post-commit snapshot
+			// Ordinary tracked readers may renew; an admitted paired dataset owns its immutable native snapshot.
 			try (RepositoryConnection conn = repo.getConnection()) {
 				conn.remove(subject, predicate, object);
 			}
 
 			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(statementPattern, subject,
 					predicate, object)) {
-				assertFalse("deleted statement must not be served from the exact lookup cache", iteration.hasNext());
+				assertTrue("the admitted snapshot must retain its cached statement after external deletion",
+						iteration.hasNext());
 			}
-			assertEquals(0L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
+			assertEquals(1L, dataset.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
 
 			long epochAfter = dataset.getSnapshotEpoch().orElseThrow();
-			assertTrue("snapshot epoch should advance once the txn observes the newer snapshot",
-					epochAfter > epochBefore);
+			assertEquals("the admitted dataset must keep its original epoch", epochBefore, epochAfter);
+			try (SailDataset fresh = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> iteration = fresh.getStatements(statementPattern, subject,
+							predicate, object)) {
+				assertFalse("a fresh dataset must observe the committed deletion", iteration.hasNext());
+				assertEquals(0L,
+						fresh.getStatementCount(statementPattern, subject, predicate, object, (Resource) null));
+				assertTrue("a fresh admission must report the newer committed epoch",
+						fresh.getSnapshotEpoch().orElseThrow() > epochBefore);
+			}
 		}
 	}
 
 	@Test
-	void pinnedDatasetRechecksTxnVersionBeforeServingExactLookupCacheHit() throws Exception {
+	void pinnedDatasetRetainsExactLookupDuringInputCaptureAndExternalCommit() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();
 		IRI subject = valueFactory.createIRI("urn:renewed-lookup-race:subject");
@@ -487,6 +536,7 @@ public class LmdbSailStoreTest {
 
 		LmdbSailStore backingStore = sail.getBackingStore();
 		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			long epochBefore = dataset.getSnapshotEpoch().orElseThrow();
 			StatementPattern primingPattern = new StatementPattern(Var.of("s", subject), Var.of("p", predicate),
 					Var.of("o", object));
 			try (CloseableIteration<? extends Statement> iteration = dataset.getStatements(primingPattern, subject,
@@ -511,7 +561,8 @@ public class LmdbSailStoreTest {
 			blockingSubject.arm();
 			try {
 				reader.start();
-				assertTrue("reader must pause after capturing the old txn version", blockingSubject.awaitEntered());
+				assertTrue("reader must pause while capturing its actual lexical input",
+						blockingSubject.awaitEntered());
 				try (RepositoryConnection conn = repo.getConnection()) {
 					conn.remove(subject, predicate, object);
 				}
@@ -524,12 +575,19 @@ public class LmdbSailStoreTest {
 			if (readerFailure.get() != null) {
 				throw new AssertionError("contested exact lookup failed", readerFailure.get());
 			}
-			assertFalse("a renewed tracked txn must not serve the old exact lookup cache entry", staleHit.get());
+			assertTrue("the admitted snapshot must retain its exact lookup result across the commit", staleHit.get());
+			assertEquals(epochBefore, dataset.getSnapshotEpoch().orElseThrow());
+			try (SailDataset fresh = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> iteration = fresh.getStatements(subject, predicate,
+							object)) {
+				assertFalse("a fresh dataset must observe the committed deletion", iteration.hasNext());
+				assertTrue(fresh.getSnapshotEpoch().orElseThrow() > epochBefore);
+			}
 		}
 	}
 
 	@Test
-	void pinnedDatasetRechecksTxnVersionBeforeServingExactCountCacheHit() throws Exception {
+	void pinnedDatasetRetainsExactCountDuringInputCaptureAndExternalCommit() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		ValueFactory valueFactory = sail.getValueFactory();
 		IRI subject = valueFactory.createIRI("urn:renewed-count-race:subject");
@@ -544,6 +602,7 @@ public class LmdbSailStoreTest {
 
 		LmdbSailStore backingStore = sail.getBackingStore();
 		try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+			long epochBefore = dataset.getSnapshotEpoch().orElseThrow();
 			StatementPattern primingPattern = new StatementPattern(Var.of("s", subject), Var.of("p", predicate),
 					Var.of("o", object));
 			assertEquals("the exact count cache must be primed before the race", 1L,
@@ -566,7 +625,8 @@ public class LmdbSailStoreTest {
 			blockingSubject.arm();
 			try {
 				reader.start();
-				assertTrue("reader must pause after capturing the old txn version", blockingSubject.awaitEntered());
+				assertTrue("reader must pause while capturing its actual lexical input",
+						blockingSubject.awaitEntered());
 				try (RepositoryConnection conn = repo.getConnection()) {
 					conn.remove(subject, predicate, object);
 				}
@@ -579,8 +639,14 @@ public class LmdbSailStoreTest {
 			if (readerFailure.get() != null) {
 				throw new AssertionError("contested exact count failed", readerFailure.get());
 			}
-			assertEquals("a renewed tracked txn must not serve the old exact count cache entry", Long.valueOf(0L),
+			assertEquals("the admitted snapshot must retain its exact count across the commit", Long.valueOf(1L),
 					staleCount.get());
+			assertEquals(epochBefore, dataset.getSnapshotEpoch().orElseThrow());
+			try (SailDataset fresh = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+				assertEquals("a fresh dataset must observe the committed deletion", 0L,
+						fresh.getStatementCount(subject, predicate, object, (Resource) null));
+				assertTrue(fresh.getSnapshotEpoch().orElseThrow() > epochBefore);
+			}
 		}
 	}
 
@@ -681,15 +747,12 @@ public class LmdbSailStoreTest {
 		SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE);
 
 		doAnswer(invocation -> {
-			Value[] values = invocation.getArgument(0);
-			int count = invocation.getArgument(2);
-			for (int i = 0; i < count; i++) {
-				if (failingPredicate.equals(values[i])) {
-					throw new IOException("expected predicate failure");
-				}
+			Value value = invocation.getArgument(0);
+			if (failingPredicate.equals(value)) {
+				throw new IOException("expected predicate failure");
 			}
 			return invocation.callRealMethod();
-		}).when(valueStoreSpy).storeValues(any(Value[].class), any(long[].class), anyInt());
+		}).when(valueStoreSpy).storeValue(any(Value.class));
 
 		valueStoreField.set(backingStore, valueStoreSpy);
 		try {
@@ -714,6 +777,15 @@ public class LmdbSailStoreTest {
 		tripleStoreField.setAccessible(true);
 		TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
 		TripleStore tripleStoreSpy = spy(originalTripleStore);
+		List<Integer> alignedCounts = new ArrayList<>();
+		List<Integer> alignedCapacities = new ArrayList<>();
+		doAnswer(invocation -> {
+			alignedCounts.add(invocation.getArgument(4));
+			alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
+			return invocation.callRealMethod();
+		}).when(tripleStoreSpy)
+				.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+						any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 
 		Set<Statement> statements = new LinkedHashSet<>();
 		for (int i = 0; i < 1025; i++) {
@@ -730,9 +802,21 @@ public class LmdbSailStoreTest {
 			sink.approveAll(statements, Set.of());
 			sink.flush();
 
-			verify(tripleStoreSpy, atMost(2)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+			assertEquals(List.of(256, 256, 256, 256, 1), alignedCounts);
+			assertEquals(List.of(256, 256, 256, 256, 1), alignedCapacities);
+			verify(tripleStoreSpy, times(5)).storeTriplesAligned(any(long[].class), any(long[].class),
+					any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
+			verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 		} finally {
 			tripleStoreField.set(backingStore, originalTripleStore);
+		}
+
+		try (RepositoryConnection observer = repo.getConnection()) {
+			assertEquals("bulk addition must preserve the three seed rows and add every input", 1028L, observer.size());
+			for (Statement statement : statements) {
+				assertTrue("every aligned input row must be stored: " + statement,
+						observer.hasStatement(statement, false));
+			}
 		}
 	}
 
@@ -877,7 +961,7 @@ public class LmdbSailStoreTest {
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
-				sink.approveAll(sampleStatements(2), Set.of());
+				sink.approveAll(sampleStatements(3), Set.of());
 				assertTrue("async writer should enter the aligned bulk store",
 						writerEntered.await(5, TimeUnit.SECONDS));
 
@@ -941,7 +1025,7 @@ public class LmdbSailStoreTest {
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.READ_COMMITTED)) {
-				sink.approveAll(sampleStatements(2), Set.of());
+				sink.approveAll(sampleStatements(3), Set.of());
 				assertTrue("async writer should finish the bulk write before flush queues commit",
 						bulkWriteFinished.await(5, TimeUnit.SECONDS));
 
@@ -960,7 +1044,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void approveBuffersSingleStatementCallsThroughBatchValueStore() throws Exception {
+	void approveAllUsesDeduplicatedBatchValueStore() throws Exception {
 		LmdbStore sail = (LmdbStore) ((SailRepository) repo).getSail();
 		LmdbSailStore backingStore = sail.getBackingStore();
 		backingStore.enableMultiThreading = false;
@@ -978,14 +1062,16 @@ public class LmdbSailStoreTest {
 		valueStoreField.set(backingStore, valueStoreSpy);
 		try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 			clearInvocations(valueStoreSpy);
-			sink.approve(subject, predicate, F.createLiteral("single-batch-id-literal-1"), context);
-			sink.approve(subject, predicate, resourceObject, context);
-			sink.approve(subject, predicate, F.createLiteral("single-batch-id-literal-2"), context);
+			sink.approveAll(Set.of(
+					F.createStatement(subject, predicate, F.createLiteral("single-batch-id-literal-1"), context),
+					F.createStatement(subject, predicate, resourceObject, context),
+					F.createStatement(subject, predicate, F.createLiteral("single-batch-id-literal-2"), context)),
+					Set.of());
 			sink.flush();
 
-			assertEquals("single approve calls should enter the value store batch API once", 1,
+			assertEquals("one logical approval batch should enter the value store batch API once", 1,
 					invocationCount(valueStoreSpy, "storeValues"));
-			assertEquals("single approve calls should not store each value independently", 0,
+			assertEquals("a logical approval batch should not store each value independently", 0,
 					invocationCount(valueStoreSpy, "storeValue"));
 			assertEquals("subject, predicate, two literals, resource object and context should be deduplicated", 6,
 					onlyInvocationIntArgument(valueStoreSpy, "storeValues", 2));
@@ -995,7 +1081,7 @@ public class LmdbSailStoreTest {
 	}
 
 	@Test
-	void defaultBufferedApproveDoesNotFlushSmallIngestBatch() throws Exception {
+	void defaultApproveAllSubmitsOneSmallIngestBatch() throws Exception {
 		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
 		LmdbStore sail = new LmdbStore(new File(dataDir, "bulk-default-small-ingest"), config);
 		sail.init();
@@ -1013,19 +1099,24 @@ public class LmdbSailStoreTest {
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
 				IRI subject = F.createIRI("urn:default-buffer:subject");
 				IRI predicate = F.createIRI("urn:default-buffer:predicate");
-				IRI object = F.createIRI("urn:default-buffer:object");
+				Set<Statement> statements = new LinkedHashSet<>();
 
 				clearInvocations(valueStoreSpy);
 				for (int i = 0; i < 31; i++) {
-					sink.approve(subject, predicate, object, null);
+					statements.add(F.createStatement(subject, predicate, F.createLiteral("row-" + i)));
 				}
-
-				Field pendingCountField = sink.getClass().getDeclaredField("pendingApproveCount");
-				pendingCountField.setAccessible(true);
-				assertEquals("default bulk ingest should not flush after the 32-statement chunk", 31,
-						pendingCountField.getInt(sink));
-				assertEquals("small buffered approve batches should stay in-memory until flush", 0,
+				sink.approveAll(statements, Set.of());
+				assertEquals("a small logical ingest batch must resolve values together", 1,
 						invocationCount(valueStoreSpy, "storeValues"));
+				assertEquals("shared subject and predicate plus 31 distinct literals must be deduplicated", 33,
+						onlyInvocationIntArgument(valueStoreSpy, "storeValues", 2));
+				assertEquals("bulk ingest must avoid scalar value writes", 0,
+						invocationCount(valueStoreSpy, "storeValue"));
+				sink.flush();
+				try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE)) {
+					assertEquals("every row of the small logical batch must be published", 31L,
+							dataset.getStatementCount(subject, predicate, null));
+				}
 			} finally {
 				valueStoreField.set(backingStore, originalValueStore);
 			}
@@ -1082,6 +1173,15 @@ public class LmdbSailStoreTest {
 			tripleStoreField.setAccessible(true);
 			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
 			TripleStore tripleStoreSpy = spy(originalTripleStore);
+			List<Integer> alignedCounts = new ArrayList<>();
+			List<Integer> alignedCapacities = new ArrayList<>();
+			doAnswer(invocation -> {
+				alignedCounts.add(invocation.getArgument(4));
+				alignedCapacities.add(((long[]) invocation.getArgument(0)).length);
+				return invocation.callRealMethod();
+			}).when(tripleStoreSpy)
+					.storeTriplesAligned(any(long[].class), any(long[].class), any(long[].class),
+							any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try (SailSink sink = backingStore.getExplicitSailSource().sink(IsolationLevels.NONE)) {
@@ -1089,7 +1189,11 @@ public class LmdbSailStoreTest {
 				sink.approveAll(sampleStatements(5), Set.of());
 				sink.flush();
 
-				verify(tripleStoreSpy, times(2)).storeTriplesAligned(any(long[].class), any(long[].class),
+				assertEquals("the full batches and one-row tail must use ordered aligned calls", List.of(2, 2, 1),
+						alignedCounts);
+				assertEquals("each prepared aligned array must match the valid row count", List.of(2, 2, 1),
+						alignedCapacities);
+				verify(tripleStoreSpy, times(3)).storeTriplesAligned(any(long[].class), any(long[].class),
 						any(long[].class), any(long[].class), anyInt(), anyBoolean(), any(IntConsumer.class));
 				verify(tripleStoreSpy, times(1)).storeTriple(anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
 			} finally {
@@ -1147,7 +1251,7 @@ public class LmdbSailStoreTest {
 
 	// REPRO: LmdbSailStore#currentStoreSnapshotCoordinates reads the journal mutation stamp through the caller's
 	// thread-local read txn without holding the TxnManager read lock. A concurrent commit (TxnManager#deactivate during
-	// the two-phase auto-grow commit, or #reset after every commit and after each independent journal acknowledgement)
+	// journal replay, or #reset after every commit and after each independent journal acknowledgement)
 	// resets that txn underneath the read; LMDB answers EINVAL and the coordinate read fails although the data is
 	// already durable.
 	@Test
@@ -1160,23 +1264,40 @@ public class LmdbSailStoreTest {
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
+			Field valueStoreField = LmdbSailStore.class.getDeclaredField("valueStore");
+			valueStoreField.setAccessible(true);
+			ValueStore valueStore = (ValueStore) valueStoreField.get(backingStore);
+			IRI subject = F.createIRI("urn:snapshot-race:subject");
+			Value object = F.createLiteral("race");
+			valueStore.startTransaction(true);
+			valueStore.storeValue(subject);
+			valueStore.storeValue(RDFS.LABEL);
+			valueStore.storeValue(object);
+			valueStore.commit();
 			Field tripleStoreField = LmdbSailStore.class.getDeclaredField("tripleStore");
 			tripleStoreField.setAccessible(true);
 			TripleStore originalTripleStore = (TripleStore) tripleStoreField.get(backingStore);
 			TripleStore tripleStoreSpy = spy(originalTripleStore);
 			tripleStoreField.set(backingStore, tripleStoreSpy);
 			try {
+				long initialRevision = tripleStoreSpy.getDataRevision();
+				long initialStamp = tripleStoreSpy.latestFrontierMutationSequence();
 				CountDownLatch stampEntered = new CountDownLatch(1);
 				CountDownLatch stampRelease = new CountDownLatch(1);
 				CountDownLatch replayEntered = new CountDownLatch(1);
 				CountDownLatch replayRelease = new CountDownLatch(1);
 				AtomicReference<Thread> coordinateReader = new AtomicReference<>();
+				AtomicReference<Long> coordinateStamp = new AtomicReference<>();
 				doAnswer(invocation -> {
 					if (Thread.currentThread() == coordinateReader.get()) {
 						stampEntered.countDown();
 						awaitLatch(stampRelease, "the mutation-stamp read to be released");
 					}
-					return invocation.callRealMethod();
+					Long stamp = (Long) invocation.callRealMethod();
+					if (Thread.currentThread() == coordinateReader.get()) {
+						coordinateStamp.set(stamp);
+					}
+					return stamp;
 				}).when(tripleStoreSpy).latestFrontierMutationSequence(any(Txn.class));
 				doAnswer(invocation -> {
 					if (Thread.currentThread() == coordinateReader.get()) {
@@ -1185,11 +1306,18 @@ public class LmdbSailStoreTest {
 					}
 					return invocation.callRealMethod();
 				}).when(tripleStoreSpy).latestFrontierMutationSequence();
+				AtomicBoolean failFirstCommit = new AtomicBoolean(true);
+				AtomicInteger nativeCommitAttempts = new AtomicInteger();
 				doAnswer(invocation -> {
+					nativeCommitAttempts.incrementAndGet();
+					if (failFirstCommit.compareAndSet(true, false)) {
+						mdb_txn_abort(invocation.getArgument(0, Long.class));
+						return MDB_MAP_FULL;
+					}
 					replayEntered.countDown();
-					awaitLatch(replayRelease, "the record-cache replay to be released");
+					awaitLatch(replayRelease, "the retried native commit to be released");
 					return invocation.callRealMethod();
-				}).when(tripleStoreSpy).updateFromCache();
+				}).when(tripleStoreSpy).commitWriteTransaction(anyLong());
 
 				Method coordinates = LmdbSailStore.class.getDeclaredMethod("currentStoreSnapshotCoordinates");
 				coordinates.setAccessible(true);
@@ -1209,15 +1337,13 @@ public class LmdbSailStoreTest {
 						stampEntered.await(10L, TimeUnit.SECONDS));
 				boolean readLockHeld = readLockHeldWhileParked(originalTripleStore.getTxnManager());
 
-				// The next commit takes the two-phase auto-grow path, which deactivates every tracked read txn between
-				// its first durable batch and the record-cache replay.
-				forceRecordCache(tripleStoreSpy);
+				// Force a consumed native commit failure, then park the real Sail transaction's retry before
+				// publication.
 				AtomicReference<Throwable> writerFailure = new AtomicReference<>();
 				Thread writer = new Thread(() -> {
 					try (SailConnection connection = store.getConnection()) {
-						connection.begin();
-						connection.addStatement(F.createIRI("urn:snapshot-race:subject"), RDFS.LABEL,
-								F.createLiteral("race"));
+						connection.begin(IsolationLevels.SNAPSHOT);
+						connection.addStatement(subject, RDFS.LABEL, object);
 						connection.commit();
 					} catch (Throwable failure) {
 						writerFailure.set(failure);
@@ -1229,7 +1355,10 @@ public class LmdbSailStoreTest {
 						// a read that holds the read lock legitimately has to finish before the commit can proceed
 						stampRelease.countDown();
 					}
-					assertTrue("writer must reach the record-cache replay", replayEntered.await(10L, TimeUnit.SECONDS));
+					assertTrue("writer must reach the retried native commit",
+							replayEntered.await(10L, TimeUnit.SECONDS));
+					assertEquals("replay must not publish its data revision before native commit", initialRevision,
+							tripleStoreSpy.getDataRevision());
 					stampRelease.countDown();
 					// the read either completes now or legitimately waits for the parked commit to finish
 					reader.join(TimeUnit.SECONDS.toMillis(5L));
@@ -1249,6 +1378,14 @@ public class LmdbSailStoreTest {
 							+ "concurrent commit reset the thread-local read txn underneath the unlocked stamp read",
 							readerFailure.get());
 				}
+				assertEquals("the actual Sail transaction must retry exactly one consumed native commit", 2,
+						nativeCommitAttempts.get());
+				assertTrue("the final authoritative commit must publish its data revision",
+						tripleStoreSpy.getDataRevision() > initialRevision);
+				assertEquals("the coordinate reader must retain the pre-commit statement stamp", initialStamp,
+						coordinateStamp.get().longValue());
+				assertTrue("the final authoritative commit must publish its statement mutation stamp",
+						tripleStoreSpy.latestFrontierMutationSequence() > initialStamp);
 			} finally {
 				tripleStoreField.set(backingStore, originalTripleStore);
 			}
@@ -1338,16 +1475,6 @@ public class LmdbSailStoreTest {
 		}
 	}
 
-	private static void forceRecordCache(TripleStore store) throws Exception {
-		Field dirField = TripleStore.class.getDeclaredField("dir");
-		dirField.setAccessible(true);
-		File cacheDir = new File((File) dirField.get(store), "forced-record-cache");
-		assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
-		Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
-		recordCacheField.setAccessible(true);
-		recordCacheField.set(store, new TxnRecordCache(cacheDir));
-	}
-
 	private static void setBulkOperationSize(LmdbStoreConfig config, int bulkOperationSize) {
 		try {
 			Method setter = config.getClass().getMethod("setBulkOperationSize", int.class);
@@ -1431,7 +1558,7 @@ public class LmdbSailStoreTest {
 		}
 
 		@Override
-		public int hashCode() {
+		public String getNamespace() {
 			if (armed.compareAndSet(true, false)) {
 				entered.countDown();
 				try {
@@ -1443,7 +1570,7 @@ public class LmdbSailStoreTest {
 					throw new AssertionError("Interrupted while blocking the IRI lookup", e);
 				}
 			}
-			return super.hashCode();
+			return super.getNamespace();
 		}
 	}
 

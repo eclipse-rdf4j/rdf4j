@@ -14,11 +14,11 @@ package org.eclipse.rdf4j.repository.sail;
 import java.util.ArrayList;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryOperationContext;
-import org.eclipse.rdf4j.query.QueryOperationDeadline;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
+import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 
 /**
@@ -47,27 +48,36 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 
 	@Override
 	public TupleQueryResult evaluate() throws QueryEvaluationException {
-		TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
-
+		QueryExecutionDeadline deadline = startQueryExecutionDeadline();
 		CloseableIteration<? extends BindingSet> bindingsIter = null;
 
-		try (QueryOperationContext.Scope ignored = openQueryOperation()) {
+		try (QueryExecutionDeadline.Scope deadlineScope = QueryExecutionDeadline.enter(deadline)) {
+			QueryOperationContext.throwIfDeadlineExpired();
+			TupleExpr tupleExpr = getParsedQuery().getTupleExpr();
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE);
-			try {
-				bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
-			} finally {
-				SlowQueryContextHolder.restore(previous);
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+				try {
+					bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
+					bindingsIter = getConnection().exposeIteration(bindingsIter, SailResultValueExtractor.BINDING_SETS);
+				} finally {
+					SlowQueryContextHolder.restore(previous);
+				}
 			}
 			QueryOperationContext.throwIfDeadlineExpired();
-			QueryOperationDeadline deadline = QueryOperationContext.getDeadline().orElse(null);
 			bindingsIter = enforceMaxQueryTime(bindingsIter, deadline);
 
 			return new IteratingTupleQueryResult(new ArrayList<>(tupleExpr.getBindingNames()), bindingsIter);
 		} catch (Throwable e) {
-			if (bindingsIter != null) {
-				bindingsIter.close();
+			try {
+				if (bindingsIter != null) {
+					bindingsIter.close();
+				}
+			} finally {
+				if (deadline != null) {
+					deadline.close();
+				}
 			}
 			if (e instanceof SailException) {
 				throw new QueryEvaluationException(e.getMessage(), e);

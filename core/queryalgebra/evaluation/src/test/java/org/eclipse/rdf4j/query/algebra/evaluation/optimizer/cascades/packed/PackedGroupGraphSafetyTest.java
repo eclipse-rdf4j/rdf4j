@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
@@ -44,7 +46,11 @@ import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -54,6 +60,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -66,6 +73,202 @@ import org.junit.jupiter.params.provider.CsvSource;
 class PackedGroupGraphSafetyTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void positiveHavingOptionalPruningPreservesCountUsedByAliasesAndWrapperFilters(boolean aliasChain,
+			boolean additionalFilter) {
+		TupleExpr source = positiveHavingOptionalQuery(">", "0");
+		Projection projection = (Projection) source;
+		String having = havingName(source);
+		TupleExpr input = projection.getArg();
+		if (additionalFilter) {
+			input = new Filter(input,
+					new Compare(Var.of(having), new ValueConstant(VF.createLiteral(2)), Compare.CompareOp.EQ));
+		}
+		if (aliasChain) {
+			input = new Extension(input, new ExtensionElem(Var.of(having), "copy"));
+		}
+		input = new Extension(input, new ExtensionElem(new MathExpr(Var.of(aliasChain ? "copy" : having),
+				new ValueConstant(VF.createLiteral(1)), MathExpr.MathOp.PLUS), "alias"));
+		projection.setArg(input);
+		projection.setProjectionElemList(new ProjectionElemList(new ProjectionElem("alias")));
+		assertEquals(List.of(Map.of("alias", "3")), normalized(evaluate(source, List.of())));
+		assertEquivalentAlternatives(source, List.of(), PackedRuleProofs.REMOVE_UNUSED_OPTIONAL, false);
+		assertNoRootAlternative(source, PackedRuleProofs.REMOVE_UNUSED_OPTIONAL);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void eligibilityPreservesCountUsedByArithmeticAliasesAndWrapperFilters(boolean aliasChain,
+			boolean additionalFilter) {
+		Projection source = (Projection) eligibilityQuery("patient", "patient");
+		String having = havingName(source);
+		TupleExpr input = source.getArg();
+		if (additionalFilter) {
+			input = new Filter(input,
+					new Compare(Var.of(having), new ValueConstant(VF.createLiteral(4)), Compare.CompareOp.EQ));
+		}
+		if (aliasChain) {
+			input = new Extension(input, new ExtensionElem(Var.of(having), "copy"));
+		}
+		input = new Extension(input, new ExtensionElem(new MathExpr(Var.of(aliasChain ? "copy" : having),
+				new ValueConstant(VF.createLiteral(1)), MathExpr.MathOp.PLUS), "alias"));
+		source.setArg(input);
+		source.getProjectionElemList().addElement(new ProjectionElem("alias"));
+		List<Statement> statements = new ArrayList<>(medicationStatements("patient"));
+		statements.add(VF.createStatement(iri("urn:patient1"), iri("urn:eligibleBy"), iri("urn:witness")));
+		assertEquals(List.of(Map.of("patient", "urn:patient1", "medCount", "2", "alias", "5")),
+				normalized(evaluate(source, statements)));
+		assertEquivalentAlternatives(source, statements, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, false);
+		assertNoRootAlternative(source, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS);
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = {
+			">|\"0\"", ">=|\"1\"", ">|\"0\"@en", ">=|\"1\"@en",
+			">|\"0\"^^<urn:custom>", ">=|\"1\"^^<urn:custom>" })
+	void nonnumericHavingThresholdsCannotAuthorizeOptionalCountProofs(String comparison, String literal) {
+		TupleExpr optional = positiveHavingOptionalQuery(comparison, literal);
+		assertEquals(List.of(), evaluate(optional, List.of()));
+		assertEquivalentAlternatives(optional, List.of(), PackedRuleProofs.REMOVE_UNUSED_OPTIONAL, false);
+		assertNoRootAlternative(optional, PackedRuleProofs.REMOVE_UNUSED_OPTIONAL);
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = {
+			">|\"0\"", ">=|\"1\"", ">|\"0\"@en", ">=|\"1\"@en",
+			">|\"0\"^^<urn:custom>", ">=|\"1\"^^<urn:custom>" })
+	void nonnumericHavingThresholdsPreserveEligibilityTypeErrors(String comparison, String literal) {
+		TupleExpr eligibility = eligibilityQuery("patient", "patient", "?med", "med", comparison, literal);
+		List<Statement> statements = medicationStatements("patient");
+		assertEquals(List.of(), evaluate(eligibility, statements));
+		assertEquivalentAlternatives(eligibility, statements, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, false);
+		assertNoRootAlternative(eligibility, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS);
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = {
+			">|0", ">=|1", ">|\"0\"^^<http://www.w3.org/2001/XMLSchema#int>",
+			">=|\"1\"^^<http://www.w3.org/2001/XMLSchema#integer>", ">|0.0", ">=|1.0", ">|0e0", ">=|1e0" })
+	void numericHavingThresholdsRetainSafeCountProofs(String comparison, String literal) {
+		TupleExpr optional = positiveHavingOptionalQuery(comparison, literal);
+		assertEquals(List.of(Map.of("count", "1")), normalized(evaluate(optional, List.of())));
+		assertEquivalentAlternatives(optional, List.of(), PackedRuleProofs.REMOVE_UNUSED_OPTIONAL, true);
+		TupleExpr eligibility = eligibilityQuery("patient", "patient", "?med", "med", comparison, literal);
+		assertEquivalentAlternatives(eligibility, medicationStatements("patient"),
+				PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, true);
+	}
+
+	@ParameterizedTest
+	@CsvSource(delimiter = '|', value = { ">|1", ">=|2", ">|2.0", ">=|3e0" })
+	void otherNumericHavingThresholdsKeepTheirMultiplicitySensitiveGate(String comparison, String literal) {
+		TupleExpr optional = positiveHavingOptionalQuery(comparison, literal);
+		assertEquivalentAlternatives(optional, List.of(), PackedRuleProofs.REMOVE_UNUSED_OPTIONAL, false);
+		assertNoRootAlternative(optional, PackedRuleProofs.REMOVE_UNUSED_OPTIONAL);
+		TupleExpr eligibility = eligibilityQuery("patient", "patient", "?med", "med", comparison, literal);
+		List<Statement> statements = new ArrayList<>(medicationStatements("patient"));
+		statements.add(VF.createStatement(iri("urn:patient1"), iri("urn:eligibleBy"), iri("urn:witness")));
+		assertEquivalentAlternatives(eligibility, statements, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, false);
+		assertNoRootAlternative(eligibility, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,0,patient", "true,0,patient", "false,17,patient", "true,17,patient", "true,17,''" })
+	void eligibilityProducerSurfacePreservesHavingOrderAndArbitraryWrapperDepth(boolean pushed, int depth,
+			String groupKeys) {
+		TupleExpr source = eligibilityQuery("patient", groupKeys);
+		if (pushed) {
+			new FilterOptimizer().optimize(source, null, EmptyBindingSet.getInstance());
+		}
+		Projection projection = (Projection) source;
+		TupleExpr input = projection.getArg();
+		for (int ordinal = 0; ordinal < depth; ordinal++) {
+			input = new Extension(input,
+					new ExtensionElem(new ValueConstant(VF.createLiteral(ordinal)), "pad" + ordinal));
+		}
+		projection.setArg(new Filter(input, new Bound(Var.of("medCount"))));
+		assertEquivalentAlternatives(source, medicationStatements("patient"), PackedRuleProofs.ELIGIBILITY_UNION_EXISTS,
+				true);
+		assertEquivalentAlternatives(source, medicationStatements("patient").subList(0, 3),
+				PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, true);
+		assertEquivalentAlternatives(source, List.of(), PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, true);
+	}
+
+	@Test
+	void eligibilityKeepsEveryLiveHavingAliasAndMultiplicitySensitiveAggregate() {
+		List<Statement> statements = new ArrayList<>(medicationStatements("patient"));
+		statements.add(VF.createStatement(iri("urn:patient1"), iri("urn:eligibleBy"), iri("urn:witness")));
+		for (boolean aliasChain : List.of(false, true)) {
+			Projection source = (Projection) eligibilityQuery("patient", "patient");
+			Group[] group = { null };
+			source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Group candidate) {
+					group[0] = candidate;
+				}
+			});
+			String having = group[0].getGroupElements()
+					.stream()
+					.filter(element -> element.getOperator()instanceof Count count && !count.isDistinct())
+					.findFirst()
+					.orElseThrow()
+					.getName();
+			if (aliasChain) {
+				source.setArg(new Extension(new Extension(source.getArg(), new ExtensionElem(Var.of(having), "copy")),
+						new ExtensionElem(Var.of("copy"), "visibleCount")));
+			} else {
+				group[0].addGroupElement(new GroupElem("visibleCount", new Count(Var.of("med"), false)));
+			}
+			source.getProjectionElemList().addElement(new ProjectionElem("visibleCount"));
+			assertEquals(List.of(Map.of("patient", "urn:patient1", "medCount", "2", "visibleCount", "4")),
+					normalized(evaluate(source, statements)));
+			assertEquivalentAlternatives(source, statements, PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, false);
+			PackedQuery query = PackedQueryCodec.encodeForPlanning(source);
+			for (int id = 1; id <= query.relationCount(); id++) {
+				if (query.relGroup(id) == query.relGroup(query.rootRelId())) {
+					assertFalse((query.relRuleMask(id) & PackedRuleProofs.ELIGIBILITY_UNION_EXISTS) != 0,
+							"a live non-distinct count cannot become an eligibility semi probe");
+				}
+			}
+		}
+	}
+
+	@Test
+	void eligibilityPreservesDistributedCommonAliasesAndRemovesOnlyDeadForwardingCopies() {
+		for (boolean duplicateForwarding : List.of(false, true)) {
+			Projection source = (Projection) eligibilityQuery("patient", "patient");
+			source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Group group) {
+					Union union = (Union) group.getArg();
+					Join left = (Join) union.getLeftArg();
+					Join right = (Join) union.getRightArg();
+					Filter common = new Filter(new Extension(left.getLeftArg().clone(),
+							new ExtensionElem(Var.of("med"), "optMed")),
+							new Compare(Var.of("optMed"), Var.of("patient"), Compare.CompareOp.NE));
+					group.setArg(new Union(new Join(common.clone(), left.getRightArg().clone()),
+							new Join(common.clone(), right.getRightArg().clone())));
+					if (duplicateForwarding) {
+						GroupElem count = group.getGroupElements()
+								.stream()
+								.filter(element -> element.getOperator()instanceof Count candidate
+										&& !candidate.isDistinct())
+								.findFirst()
+								.orElseThrow();
+						source.setArg(new Extension(source.getArg(),
+								new ExtensionElem(count.getOperator().clone(), count.getName()),
+								new ExtensionElem(count.getOperator().clone(), count.getName())));
+					}
+				}
+			});
+			new FilterOptimizer().optimize(source, null, EmptyBindingSet.getInstance());
+			assertEquivalentAlternatives(source, medicationStatements("patient"),
+					PackedRuleProofs.ELIGIBILITY_UNION_EXISTS, true);
+			assertEquivalentAlternatives(source, medicationStatements("patient"), PackedRuleProofs.TRIVIAL_BIND_ALIAS,
+					true);
+		}
+	}
 
 	@Test
 	void eligibilityOnAggregateInputRemainsBelowGrouping() {
@@ -199,19 +402,24 @@ class PackedGroupGraphSafetyTest {
 
 	private static TupleExpr eligibilityQuery(String correlation, String groupKeys, String countedExpression,
 			String havingVariable) {
+		return eligibilityQuery(correlation, groupKeys, countedExpression, havingVariable, ">", "0");
+	}
+
+	private static TupleExpr eligibilityQuery(String correlation, String groupKeys, String countedExpression,
+			String havingVariable, String comparison, String literal) {
 		TupleExpr source = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
 				SELECT %s (COUNT(DISTINCT %s) AS ?medCount) WHERE {
 				  ?patient <urn:hasMedication> ?med .
 				}
 				%s
-				HAVING (COUNT(?%s) > 0)
+				HAVING (COUNT(?%s) %s %s)
 				""".formatted(groupKeys.isEmpty() ? "" : "?patient", countedExpression,
 				groupKeys.isEmpty() ? ""
 						: "GROUP BY " + Arrays.stream(groupKeys.split(" "))
 								.map(name -> "?" + name)
 								.reduce((left, right) -> left + " " + right)
 								.orElseThrow(),
-				havingVariable),
+				havingVariable, comparison, literal),
 				null).getTupleExpr();
 		source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
@@ -231,6 +439,41 @@ class PackedGroupGraphSafetyTest {
 			}
 		});
 		return source instanceof QueryRoot root ? root.getArg().clone() : source;
+	}
+
+	private static TupleExpr positiveHavingOptionalQuery(String comparison, String literal) {
+		TupleExpr source = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, """
+				SELECT (COUNT(DISTINCT ?w) AS ?count) WHERE {
+				  VALUES ?w { 1 }
+				  OPTIONAL { VALUES ?z { 10 20 } }
+				}
+				HAVING (COUNT(?w) %s %s)
+				""".formatted(comparison, literal), null).getTupleExpr();
+		return source instanceof QueryRoot root ? root.getArg().clone() : source;
+	}
+
+	private static String havingName(TupleExpr source) {
+		String[] name = { null };
+		source.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				if (filter.getCondition()instanceof Compare compare && compare.getLeftArg()instanceof Var var) {
+					name[0] = var.getName();
+				}
+				super.meet(filter);
+			}
+		});
+		return Objects.requireNonNull(name[0]);
+	}
+
+	private static void assertNoRootAlternative(TupleExpr source, long proof) {
+		PackedQuery query = PackedQueryCodec.encodeForPlanning(source.clone());
+		for (int id = 1; id <= query.relationCount(); id++) {
+			if (query.relGroup(id) == query.relGroup(query.rootRelId())) {
+				assertFalse((query.relRuleMask(id) & proof) != 0,
+						"the aggregate gate or its output remains observable above the group");
+			}
+		}
 	}
 
 	private static BindingSetAssignment assignment(Set<String> names, BindingSet... rows) {

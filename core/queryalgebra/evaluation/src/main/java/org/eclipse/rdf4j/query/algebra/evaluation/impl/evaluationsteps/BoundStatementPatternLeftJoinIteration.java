@@ -21,7 +21,7 @@ final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<Bi
 
 	private final StatementPatternQueryEvaluationStep leftStatementPattern;
 	private final QueryEvaluationStep rightPrepared;
-	private final BindingSet bindings;
+	private BindingSet bindings;
 
 	private CloseableIteration<BindingSet> resultIteration;
 	private boolean initialized;
@@ -37,12 +37,13 @@ final class BoundStatementPatternLeftJoinIteration extends LookAheadIteration<Bi
 	protected BindingSet getNextElement() {
 		if (!initialized) {
 			initialized = true;
+			bindings = leftStatementPattern.prepareBindings(bindings);
 			long statementCount = leftStatementPattern.getFullyBoundStatementCount(bindings);
 			if (statementCount == 0) {
 				return null;
 			}
 			if (statementCount == 1) {
-				resultIteration = rightPrepared.evaluate(bindings);
+				resultIteration = rightPrepared.evaluate(leftStatementPattern.producedBindings(bindings));
 			} else {
 				resultIteration = JoinIterator.getInstance(leftStatementPattern, rightPrepared, bindings);
 			}

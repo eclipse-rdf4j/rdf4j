@@ -22,6 +22,11 @@ final class PackedBindingFacts {
 	private final PackedMaskLayout layout;
 	private final int[] relationOutputMaskIds;
 	private final int[] relationAssuredMaskIds;
+	private final int[] requiredInputMaskIds;
+	private final int[] protectedInputMaskIds;
+	private final int[] nullableInputMaskIds;
+	private final int allSymbolMaskId;
+	private final int[] independentOutputMaskIds;
 	private final long[] derivedRelationGroupWords;
 	private final int[] scalarDependencyMaskIds;
 	private final int[] scalarEmbeddedReferenceMaskIds;
@@ -36,21 +41,63 @@ final class PackedBindingFacts {
 		layout = masks.layout();
 		relationOutputMaskIds = new int[query.relationCount() + 1];
 		relationAssuredMaskIds = new int[query.relationCount() + 1];
+		requiredInputMaskIds = new int[query.relationCount() + 1];
+		protectedInputMaskIds = new int[query.relationCount() + 1];
+		nullableInputMaskIds = new int[query.relationCount() + 1];
+		independentOutputMaskIds = new int[query.relationCount() + 1];
 		derivedRelationGroupWords = new long[(query.relationCount() >>> 6) + 1];
 		scalarDependencyMaskIds = new int[query.scalarCount() + 1];
 		scalarEmbeddedReferenceMaskIds = new int[query.scalarCount() + 1];
 		scalarSafeToRelocateWords = new long[(query.scalarCount() >>> 6) + 1];
 		scalarSafeWhenAssuredWords = new long[(query.scalarCount() >>> 6) + 1];
 		scratch = new long[layout.wordCount()];
+		for (int symbol = 0; symbol < query.symbolCount(); symbol++) {
+			layout.set(scratch, 0, symbol);
+		}
+		allSymbolMaskId = masks.intern(scratch, 0);
+		clearScratch();
 		deriveScalarDependencies();
 		deriveScalarSchedulingFacts();
 		deriveRelationOutputs();
 		deriveRelationAssuredBindings();
+		for (int id = 1; id <= query.relationCount(); id++) {
+			requiredInputMaskIds[id] = nameSetMask(query.relRequiredInputNames(id));
+			protectedInputMaskIds[id] = nameSetMask(query.relProtectedInputNames(id));
+			nullableInputMaskIds[id] = nameSetMask(query.relNullableInputNames(id));
+			independentOutputMaskIds[id] = nameSetMask(query.relIndependentOutputNames(id));
+		}
+	}
+
+	private int nameSetMask(int payload) {
+		clearScratch();
+		if (payload != 0) {
+			addNameSet(payload);
+		}
+		return masks.intern(scratch, 0);
+	}
+
+	int requiredInputMaskId(int id) {
+		return requiredInputMaskIds[id];
+	}
+
+	int protectedInputMaskId(int id) {
+		return protectedInputMaskIds[id];
+	}
+
+	int independentOutputMaskId(int id) {
+		return independentOutputMaskIds[id];
+	}
+
+	int nullableInputMaskId(int id) {
+		return nullableInputMaskIds[id];
 	}
 
 	int relationOutputMaskId(int relationId) {
 		if (relationId <= 0 || relationId >= relationOutputMaskIds.length) {
 			throw new IndexOutOfBoundsException("unknown relation " + relationId);
+		}
+		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+			return allSymbolMaskId;
 		}
 		return relationOutputMaskIds[query.relGroup(relationId)];
 	}

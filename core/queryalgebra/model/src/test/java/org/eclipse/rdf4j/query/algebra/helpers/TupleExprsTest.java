@@ -14,21 +14,173 @@ package org.eclipse.rdf4j.query.algebra.helpers;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.query.algebra.helpers.TupleExprs.isFilterExistsFunction;
 
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.Avg;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.GroupConcat;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MathExpr;
+import org.eclipse.rdf4j.query.algebra.Max;
+import org.eclipse.rdf4j.query.algebra.Min;
 import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 public class TupleExprsTest {
 
 	private final ValueFactory f = SimpleValueFactory.getInstance();
+
+	@Test
+	public void optionalConditionUsesCompleteLeftOrMatchedFrameForImplicitReadsAndUnsafeOverwrites() {
+		BindingSetAssignment right = new BindingSetAssignment();
+		right.setBindingSets(List.of(new ListBindingSet(List.of("hidden"), f.createLiteral("outer"))));
+		BindingSetAssignment inner = new BindingSetAssignment();
+		inner.setBindingSets(List.of(new ListBindingSet(List.of("hidden"), f.createLiteral("inner"))));
+		Exists condition = new Exists(inner);
+		LeftJoin optional = new LeftJoin(new SingletonSet(), right, condition);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(optional,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.contextAt(condition).guaranteedNames()).contains("hidden");
+		assertThat(analysis.contextAt(condition).fixedValues().get("hidden")).isEqualTo(f.createLiteral("outer"));
+		assertThat(analysis.outputFacts(optional).guaranteedOutputs()).doesNotContain("hidden");
+
+		Extension left = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(f.createLiteral("left")), "x"));
+		Extension overwritten = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(f.createLiteral("right")), "x"),
+				new ExtensionElem(new BNodeGenerator(), "nonce"));
+		Compare readsOverwrite = new Compare(Var.of("x"), new ValueConstant(f.createLiteral("right")));
+		LeftJoin withEffects = new LeftJoin(left, overwritten, readsOverwrite);
+		QueryAlgebraBindingAnalysis effects = QueryAlgebraBindingAnalysis.withBindingValues(withEffects,
+				EmptyBindingSet.getInstance());
+		assertThat(effects.contextAt(readsOverwrite).fixedValues().get("x")).isEqualTo(f.createLiteral("left"));
+	}
+
+	@Test
+	public void matchedOptionalFramePreservesIndependentCompatibilityAndNullableInputs() {
+		Extension left = new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(f.createLiteral("left")), "x"));
+		Projection independent = new Projection(new Extension(new SingletonSet(),
+				new ExtensionElem(new ValueConstant(f.createLiteral("right")), "x")),
+				new ProjectionElemList(new ProjectionElem("x")), true);
+		LeftJoin joined = new LeftJoin(left, independent, new Compare(Var.of("x"), Var.of("x")));
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(joined,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.leftJoinConditionContext(joined).fixedValues().get("x"))
+				.isEqualTo(f.createLiteral("left"));
+
+		BindingSetAssignment nullable = new BindingSetAssignment();
+		nullable.setDeclaredBindingNames(Set.of("x"));
+		nullable.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		LeftJoin retained = new LeftJoin(left.clone(), nullable);
+		QueryAlgebraBindingAnalysis retainedAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(retained,
+				EmptyBindingSet.getInstance());
+		assertThat(retainedAnalysis.leftJoinConditionContext(retained).guaranteedNames()).contains("x");
+		assertThat(retainedAnalysis.leftJoinConditionContext(retained).fixedValues().get("x"))
+				.isEqualTo(f.createLiteral("left"));
+
+		Extension failedAssignment = new Extension(new SingletonSet(), new ExtensionElem(Var.of("missing"), "x"));
+		LeftJoin overwrittenNullable = new LeftJoin(left.clone(), failedAssignment);
+		QueryAlgebraBindingAnalysis overwrittenAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(
+				overwrittenNullable, EmptyBindingSet.getInstance());
+		assertThat(overwrittenAnalysis.leftJoinConditionContext(overwrittenNullable).guaranteedNames())
+				.doesNotContain("x");
+		assertThat(overwrittenAnalysis.leftJoinConditionContext(overwrittenNullable).fixedValues())
+				.doesNotContainKey("x");
+	}
+
+	@Test
+	public void declaredOutputMemoSharesSubtreeWorkAndSupportsExplicitInvalidation() {
+		AtomicInteger leafCalls = new AtomicInteger();
+		TupleExprs.DeclaredOutputBindings memo = new TupleExprs.DeclaredOutputBindings(expression -> {
+			leafCalls.incrementAndGet();
+			return expression.getBindingNames();
+		});
+		StatementPattern first = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("first"));
+		StatementPattern second = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("second"));
+		Join join = new Join(first, second);
+		Filter filter = new Filter(join, new Exists(new StatementPattern(Var.of("hidden"),
+				Var.of("predicate"), Var.of("object"))));
+		assertThat(memo.apply(filter)).containsExactlyInAnyOrder("s", "p", "first", "second");
+		assertThat(memo.apply(join)).isEqualTo(memo.apply(filter));
+		assertThat(memo.apply(filter)).isSameAs(memo.apply(filter));
+		assertThat(memo.apply(first)).containsExactlyInAnyOrder("s", "p", "first");
+		assertThat(leafCalls.get()).isEqualTo(2);
+
+		second.replaceChildNode(second.getObjectVar(), Var.of("renamed"));
+		memo.clear();
+		assertThat(memo.apply(filter)).containsExactlyInAnyOrder("s", "p", "first", "renamed");
+		assertThat(leafCalls.get()).isEqualTo(4);
+	}
+
+	@Test
+	public void conditionObservationDomainIncludesImplicitValuesHeadersWithoutOpeningRows() {
+		AtomicInteger opened = new AtomicInteger();
+		BindingSetAssignment values = new BindingSetAssignment();
+		values.setDeclaredBindingNames(Set.of("implicit"));
+		values.setBindingSets((Iterable<BindingSet>) () -> {
+			opened.incrementAndGet();
+			throw new AssertionError("condition-frame inspection must not acquire a streaming source");
+		});
+		TupleExprs.ConditionBindingDomain domain = TupleExprs.conditionBindingDomain(new Exists(values));
+		assertThat(domain.names()).containsExactly("implicit");
+		assertThat(domain.known()).isFalse();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("implicit"))).isFalse();
+		assertThat(opened.get()).isZero();
+
+		values.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		domain = TupleExprs.conditionBindingDomain(new Exists(values));
+		assertThat(domain.known()).isTrue();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("implicit"))).isTrue();
+		assertThat(TupleExprs.conditionFrameContainsAllObservations(domain, Set.of("other"))).isFalse();
+	}
+
+	@Test
+	public void onlyRootAggregatesAreUnevaluatedExtensionElements() {
+		for (ValueExpr aggregate : List.of(new Count(null), new Count(Var.of("item")),
+				new Count(Var.of("item"), true), new Sum(Var.of("item")), new Avg(Var.of("item")),
+				new Min(Var.of("item")), new Max(Var.of("item")), new Sample(Var.of("item")),
+				new GroupConcat(Var.of("item")))) {
+			assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(aggregate, "result"))).isFalse();
+		}
+		assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(Var.of("result", true), "copy"))).isTrue();
+		assertThat(TupleExprs.isEvaluatedExtensionElement(new ExtensionElem(
+				new MathExpr(new Count(Var.of("item")), Var.of("other"), MathExpr.MathOp.PLUS), "nested"))).isTrue();
+	}
 
 	@Test
 	public void isFilterExistsFunctionOnEmptyFilter() {
@@ -78,6 +230,71 @@ public class TupleExprsTest {
 	public void constVarNameIncludesDirectedLanguageBaseDirection() {
 		assertThat(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.RTL)))
 				.isNotEqualTo(TupleExprs.getConstVarName(f.createLiteral("שלום", "he", Literal.BaseDirection.LTR)));
+	}
+
+	@Test
+	public void containsSubqueryContinuesPastJoinForRemainingSiblings() {
+		assertThat(TupleExprs.containsSubquery(new Union(join(), subquery()))).isTrue();
+		assertThat(TupleExprs.containsSubquery(new Union(subquery(), join()))).isTrue();
+	}
+
+	@Test
+	public void remoteModifiersAreOpaqueAcrossLocalComposition() {
+		BindingSetAssignment heterogeneous = new BindingSetAssignment();
+		heterogeneous.setDeclaredBindingNames(Set.of("x"));
+		heterogeneous.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		for (TupleExpr modifier : List.of(new Slice(new SingletonSet(), 0, 1),
+				new Distinct(new Union(heterogeneous, new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))),
+				new Reduced(new Union(heterogeneous.clone(),
+						new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))))) {
+			Service service = service(modifier);
+			for (TupleExpr composition : List.of(service, new Join(service.clone(), new SingletonSet()),
+					new LeftJoin(new SingletonSet(), service.clone()),
+					new Union(service.clone(), new SingletonSet()), new Lateral(new SingletonSet(), service.clone()))) {
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(composition,
+						EmptyBindingSet.getInstance());
+				assertThat(TupleExprs.containsResultSetModifier(composition, analysis)).isFalse();
+			}
+		}
+	}
+
+	@Test
+	public void remoteSubqueriesDoNotCreateALocalScopeBoundary() {
+		Service service = service(subquery());
+		assertThat(TupleExprs.containsSubquery(service)).isFalse();
+		assertThat(TupleExprs.containsSubquery(new Union(service, subquery()))).isTrue();
+	}
+
+	@Test
+	public void localModifiersRemainSensitiveBesideRemoteModifiers() {
+		BindingSetAssignment heterogeneous = new BindingSetAssignment();
+		heterogeneous.setDeclaredBindingNames(Set.of("x"));
+		heterogeneous.setBindingSets(List.of(EmptyBindingSet.getInstance()));
+		for (TupleExpr modifier : List.of(new Slice(new SingletonSet(), 0, 1),
+				new Distinct(new Union(heterogeneous, new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))),
+				new Reduced(new Union(heterogeneous.clone(),
+						new StatementPattern(Var.of("x"), Var.of("p"), Var.of("o")))))) {
+			for (TupleExpr composition : List.of(new Union(service(new Slice(new SingletonSet(), 0, 1)), modifier),
+					new Lateral(new SingletonSet(), modifier.clone()))) {
+				QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(composition,
+						EmptyBindingSet.getInstance());
+				assertThat(TupleExprs.containsResultSetModifier(composition, analysis)).isTrue();
+			}
+		}
+	}
+
+	private static Service service(TupleExpr body) {
+		return new Service(Var.of("endpoint"), body, "", Map.of(), null, false);
+	}
+
+	private static Join join() {
+		return new Join(new StatementPattern(Var.of("leftS"), Var.of("leftP"), Var.of("leftO")),
+				new StatementPattern(Var.of("rightS"), Var.of("rightP"), Var.of("rightO")));
+	}
+
+	private static Projection subquery() {
+		return new Projection(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new ProjectionElemList(new ProjectionElem("s")), true);
 	}
 
 }

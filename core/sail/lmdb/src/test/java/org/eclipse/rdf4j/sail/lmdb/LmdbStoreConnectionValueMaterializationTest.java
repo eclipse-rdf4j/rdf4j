@@ -16,7 +16,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.mockito.Mockito.mock;
 
-import java.io.File;
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.List;
@@ -25,25 +24,21 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.query.BindingSet;
-import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
-import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.lmdb.ValueStoreRevision;
-import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
+/** Explicit materialization retains batch locality while raw Sail evaluation remains deferred. */
 class LmdbStoreConnectionValueMaterializationTest {
 
 	private static final ValueStore DEFAULT_VALUE_STORE = mock(ValueStore.class);
 	private static final ValueStoreRevision DEFAULT_REVISION = new InitOnResolveRevision(1, DEFAULT_VALUE_STORE);
 
 	@Test
-	void materializesBufferedRowsInInternalIdOrderAfterFirstResult(@TempDir File dataDir) {
+	void materializesBufferedRowsInInternalIdOrderAfterFirstResult() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 40, materialized);
 		RecordingLmdbValue shared10 = value("shared10", 10, materialized);
@@ -55,14 +50,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		BindingSet thirdRow = row("shared", shared10);
 		BindingSet fourthRow = row("value", id20);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, secondRow, thirdRow, fourthRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
@@ -72,8 +62,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(thirdRow, result.next());
 			assertSame(fourthRow, result.next());
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 
 		assertEquals(1, shared10.initCount);
@@ -110,7 +98,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	@Test
-	void reusesCachedValueForDuplicateIdsInMutableBufferedRows(@TempDir File dataDir) {
+	void reusesCachedValueForDuplicateIdsInMutableBufferedRows() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		RecordingLmdbValue canonical = value("canonical", 10, materialized);
@@ -120,14 +108,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		QueryBindingSet canonicalRow = row("value", canonical);
 		QueryBindingSet duplicateRow = row("value", duplicate);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, canonicalRow, duplicateRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, canonicalRow, duplicateRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
@@ -138,8 +121,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 
 			assertSame(duplicateRow, result.next());
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 
 		assertEquals(1, canonical.initCount);
@@ -147,7 +128,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	@Test
-	void keepsDuplicateIdsFromDifferentRevisionsSeparateInMutableBufferedRows(@TempDir File dataDir) {
+	void keepsDuplicateIdsFromDifferentRevisionsSeparateInMutableBufferedRows() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		RecordingLmdbValue firstRevisionValue = value("first-revision", 10, revision(1), materialized);
@@ -157,14 +138,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		QueryBindingSet firstRevisionRow = row("value", firstRevisionValue);
 		QueryBindingSet secondRevisionRow = row("value", secondRevisionValue);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, firstRevisionRow, secondRevisionRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstRevisionRow, secondRevisionRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 
 			assertSame(firstRevisionRow, result.next());
@@ -173,15 +149,13 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(secondRevisionRow, result.next());
 			assertSame(secondRevisionValue, secondRevisionRow.getValue("value"));
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 
 		assertEquals(List.of("first", "first-revision", "second-revision"), materialized);
 	}
 
 	@Test
-	void keepsKnownIdsWithNullRevisionsSeparateInMutableBufferedRows(@TempDir File dataDir) {
+	void keepsKnownIdsWithNullRevisionsSeparateInMutableBufferedRows() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		RecordingLmdbValue firstNullRevisionValue = value("first-null-revision", 10, null, materialized);
@@ -191,14 +165,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		QueryBindingSet firstNullRevisionRow = row("value", firstNullRevisionValue);
 		QueryBindingSet secondNullRevisionRow = row("value", secondNullRevisionValue);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, firstNullRevisionRow, secondNullRevisionRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstNullRevisionRow, secondNullRevisionRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 
 			assertSame(firstNullRevisionRow, result.next());
@@ -207,15 +176,13 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(secondNullRevisionRow, result.next());
 			assertSame(secondNullRevisionValue, secondNullRevisionRow.getValue("value"));
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 
 		assertEquals(List.of("first", "first-null-revision", "second-null-revision"), materialized);
 	}
 
 	@Test
-	void skipsAlreadyInitializedValuesWhenDeduplicatingMutableBufferedRows(@TempDir File dataDir) {
+	void skipsAlreadyInitializedValuesWhenDeduplicatingMutableBufferedRows() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		ValueStoreRevision revision = revision(1);
@@ -226,14 +193,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		QueryBindingSet firstInitializedRow = row("value", firstInitialized);
 		QueryBindingSet secondInitializedRow = row("value", secondInitialized);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, firstInitializedRow, secondInitializedRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, firstInitializedRow, secondInitializedRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 
 			assertSame(firstInitializedRow, result.next());
@@ -242,13 +204,11 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(secondInitializedRow, result.next());
 			assertSame(secondInitialized, secondInitializedRow.getValue("value"));
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 	}
 
 	@Test
-	void keepsUnknownIdsOutOfBufferedIdSort(@TempDir File dataDir) {
+	void keepsUnknownIdsOutOfBufferedIdSort() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		RecordingLmdbValue unknown = value("unknown", LmdbValue.UNKNOWN_ID, materialized);
@@ -260,14 +220,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		BindingSet thirdRow = row("value", unknown);
 		BindingSet fourthRow = row("value", id10);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, secondRow, thirdRow, fourthRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, secondRow, thirdRow, fourthRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
@@ -277,13 +232,11 @@ class LmdbStoreConnectionValueMaterializationTest {
 			assertSame(thirdRow, result.next());
 			assertSame(fourthRow, result.next());
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 	}
 
 	@Test
-	void copiesCachedValueForDuplicateIdsInImmutableBufferedRows(@TempDir File dataDir) {
+	void copiesCachedValueForDuplicateIdsInImmutableBufferedRows() {
 		List<String> materialized = new ArrayList<>();
 		RecordingLmdbValue first = value("first", 0, materialized);
 		RecordingLmdbValue canonical = value("canonical", 10, materialized);
@@ -293,14 +246,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 		BindingSet canonicalRow = immutableRow("value", canonical);
 		BindingSet duplicateRow = immutableRow("value", duplicate);
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(List.of(firstRow, canonicalRow, duplicateRow));
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(firstRow, canonicalRow, duplicateRow),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
@@ -309,8 +257,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 
 			assertSame(duplicateRow, result.next());
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 
 		assertEquals(1, canonical.initCount);
@@ -320,7 +266,7 @@ class LmdbStoreConnectionValueMaterializationTest {
 	}
 
 	@Test
-	void rampsBufferedMaterializationBatchSizeAfterFirstResult(@TempDir File dataDir) {
+	void rampsBufferedMaterializationBatchSizeAfterFirstResult() {
 		List<String> materialized = new ArrayList<>();
 		List<BindingSet> rows = new ArrayList<>();
 		int[] expectedBatchSizes = {
@@ -345,14 +291,9 @@ class LmdbStoreConnectionValueMaterializationTest {
 			bufferedRows += batchSize;
 		}
 
-		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(rows);
-
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
-		store.init();
-		try (SailConnection connection = store.getConnection();
-				CloseableIteration<? extends BindingSet> result = connection.evaluate(assignment, null,
-						EmptyBindingSet.getInstance(), false)) {
+		try (LmdbValueMaterializingIteration result = new LmdbValueMaterializingIteration(
+				bindingSets(rows.toArray(BindingSet[]::new)),
+				LmdbValueMaterializingIteration.DEFAULT_MAX_BATCH_SIZE)) {
 			assertSame(firstRow, result.next());
 			assertEquals(List.of("first"), materialized);
 
@@ -370,8 +311,6 @@ class LmdbStoreConnectionValueMaterializationTest {
 			}
 
 			assertFalse(result.hasNext());
-		} finally {
-			store.shutDown();
 		}
 	}
 

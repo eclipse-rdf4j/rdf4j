@@ -17,6 +17,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.ByteArrayInputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.time.Duration;
@@ -25,14 +26,25 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.AbstractTupleQueryResultHandler;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
+import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultParser;
+import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriter;
+import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.sparqljson.SPARQLResultsJSONWriterFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -156,6 +168,127 @@ public class TupleQueryResultViewTest {
 
 		assertThat(response.getContentAsByteArray()).isNotEmpty();
 		assertThat(response.getContentAsByteArray()).endsWith((byte) 0);
+	}
+
+	@Test
+	public void testRender_BinaryTupleTimeoutAfterRowsPreservesTypedTerminalError() throws Exception {
+		var request = new MockHttpServletRequest();
+		var response = new MockHttpServletResponse();
+		TupleQueryResult queryResult = mock(TupleQueryResult.class);
+		when(queryResult.getBindingNames()).thenReturn(List.of("value"));
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("first"));
+		when(queryResult.hasNext()).thenReturn(true).thenAnswer(invocation -> {
+			response.flushBuffer();
+			throw new QueryInterruptedException("Query evaluation took too long");
+		});
+		when(queryResult.next()).thenReturn(row);
+
+		QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(response.getOutputStream(), Duration.ofHours(1),
+				() -> {
+				});
+		BinaryQueryResultWriter writer = (BinaryQueryResultWriter) new BinaryQueryResultWriterFactory()
+				.getWriter(heartbeat.getOutputStream());
+		Map<String, Object> model = new HashMap<>();
+		model.put(TupleQueryResultView.FACTORY_KEY, new BinaryQueryResultWriterFactory());
+		model.put(TupleQueryResultView.QUERY_RESULT_KEY, queryResult);
+		model.put(TupleQueryResultView.RESPONSE_HEARTBEAT_KEY, heartbeat);
+		model.put(TupleQueryResultView.RESPONSE_WRITER_KEY, writer);
+
+		view.render(model, request, response);
+
+		AtomicInteger parsedRows = new AtomicInteger();
+		BinaryQueryResultParser parser = new BinaryQueryResultParser();
+		parser.setTupleQueryResultHandler(new AbstractTupleQueryResultHandler() {
+			@Override
+			public void handleSolution(BindingSet bindingSet) {
+				parsedRows.incrementAndGet();
+			}
+		});
+		assertThatThrownBy(() -> parser.parseQueryResult(new ByteArrayInputStream(response.getContentAsByteArray())))
+				.isInstanceOf(QueryResultParseException.class)
+				.hasMessageContaining("QUERY_EVALUATION_ERROR: Query evaluation took too long");
+		assertThat(parsedRows).hasValue(1);
+	}
+
+	@Test
+	public void testRender_BinaryCircuitBreakerAfterRowsPreservesItsReason() throws Exception {
+		String[] properties = {
+				QueryCircuitBreaker.ENABLED_PROPERTY,
+				QueryCircuitBreaker.WARN_FREE_MB_PROPERTY,
+				QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY,
+				QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY
+		};
+		Map<String, String> previousValues = new HashMap<>();
+		for (String property : properties) {
+			previousValues.put(property, System.getProperty(property));
+		}
+		System.setProperty(QueryCircuitBreaker.ENABLED_PROPERTY, "true");
+		System.setProperty(QueryCircuitBreaker.WARN_FREE_MB_PROPERTY, Integer.toString(Integer.MAX_VALUE));
+		System.setProperty(QueryCircuitBreaker.HIGH_FREE_MB_PROPERTY, Integer.toString(Integer.MAX_VALUE));
+		System.setProperty(QueryCircuitBreaker.CRITICAL_FREE_MB_PROPERTY, Integer.toString(Integer.MAX_VALUE));
+
+		QueryCircuitBreaker breaker = QueryCircuitBreaker.getInstance();
+		QueryCircuitBreakerHandle handle = breaker.register(QueryCircuitBreakerHandle.Source.SERVER, "repo",
+				"select * where { ?s ?p ?o }");
+		try {
+			AtomicReference<QueryCircuitBreaker.CircuitBreakerException> breakerFailure = new AtomicReference<>();
+			assertThatThrownBy(() -> breaker.beforeExecution(handle))
+					.isInstanceOf(QueryCircuitBreaker.CircuitBreakerException.class)
+					.satisfies(failure -> breakerFailure.set((QueryCircuitBreaker.CircuitBreakerException) failure));
+
+			var request = new MockHttpServletRequest();
+			var response = new MockHttpServletResponse();
+			TupleQueryResult queryResult = mock(TupleQueryResult.class);
+			when(queryResult.getBindingNames()).thenReturn(List.of("value"));
+			MapBindingSet row = new MapBindingSet();
+			row.addBinding("value", SimpleValueFactory.getInstance().createLiteral("first"));
+			when(queryResult.hasNext()).thenReturn(true).thenAnswer(invocation -> {
+				response.flushBuffer();
+				throw breakerFailure.get();
+			});
+			when(queryResult.next()).thenReturn(row);
+
+			QueryResponseHeartbeat heartbeat = new QueryResponseHeartbeat(response.getOutputStream(),
+					Duration.ofHours(1),
+					() -> {
+					});
+			BinaryQueryResultWriter writer = (BinaryQueryResultWriter) new BinaryQueryResultWriterFactory()
+					.getWriter(heartbeat.getOutputStream());
+			Map<String, Object> model = new HashMap<>();
+			model.put(TupleQueryResultView.FACTORY_KEY, new BinaryQueryResultWriterFactory());
+			model.put(TupleQueryResultView.QUERY_RESULT_KEY, queryResult);
+			model.put(TupleQueryResultView.RESPONSE_HEARTBEAT_KEY, heartbeat);
+			model.put(TupleQueryResultView.RESPONSE_WRITER_KEY, writer);
+
+			view.render(model, request, response);
+
+			AtomicInteger parsedRows = new AtomicInteger();
+			BinaryQueryResultParser parser = new BinaryQueryResultParser();
+			parser.setTupleQueryResultHandler(new AbstractTupleQueryResultHandler() {
+				@Override
+				public void handleSolution(BindingSet bindingSet) {
+					parsedRows.incrementAndGet();
+				}
+			});
+			assertThatThrownBy(
+					() -> parser.parseQueryResult(new ByteArrayInputStream(response.getContentAsByteArray())))
+							.isInstanceOf(QueryResultParseException.class)
+							.hasMessageContaining(
+									"QUERY_EVALUATION_ERROR: Query rejected by global memory circuit breaker")
+							.hasMessageNotContaining("Query evaluation took too long");
+			assertThat(parsedRows).hasValue(1);
+		} finally {
+			breaker.complete(handle);
+			for (String property : properties) {
+				String previous = previousValues.get(property);
+				if (previous == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, previous);
+				}
+			}
+		}
 	}
 
 	private static final class FlushObservingResponse extends MockHttpServletResponse {

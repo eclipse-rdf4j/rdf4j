@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -84,7 +85,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 
 	private BindingSet compatibleJoin(BindingSet left, BindingSet right) {
 		if (right.isEmpty()) {
-			return left;
+			return BindingSetOrigin.produced(left, bindingNamesByName.keySet());
 		}
 		MutableBindingSet joined = null;
 		for (Binding binding : right) {
@@ -108,7 +109,7 @@ final class FilteredBindingSetAssignmentJoinIteration extends LookAheadIteration
 				bindingNameAccess.addBinding.accept(value, joined);
 			}
 		}
-		return joined == null ? left : joined;
+		return BindingSetOrigin.produced(joined == null ? left : joined, bindingNamesByName.keySet());
 	}
 
 	private boolean accept(BindingSet bindings) throws QueryEvaluationException {

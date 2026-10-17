@@ -35,6 +35,27 @@ import org.junit.jupiter.api.Test;
 class PackedDphypEnumeratorTest {
 
 	@Test
+	void leftDeepOrderCacheDistinguishesEqualTopologyWithDifferentInputPartialOrders() {
+		PackedJoinHypergraph first = new PackedJoinHypergraph(2);
+		first.addEdge(1L, 2L);
+		first.addInputRequirement(1, new int[] { 0 });
+		PackedJoinHypergraph reversed = new PackedJoinHypergraph(2);
+		reversed.addEdge(1L, 2L);
+		reversed.addInputRequirement(0, new int[] { 1 });
+		PackedJoinHypergraph equivalent = new PackedJoinHypergraph(2);
+		equivalent.addEdge(1L, 2L);
+		equivalent.addInputRequirement(0, new int[] { 1 });
+		PackedJoinEnumerator.LeftDeepOrderCache cache = new PackedJoinEnumerator.LeftDeepOrderCache();
+		int[] originalOrder = cache.resolve(first, 2, 0);
+		assertArrayEquals(new int[] { 0, 1 }, originalOrder);
+		int[] reversedOrder = cache.resolve(reversed, 2, 0);
+		assertArrayEquals(new int[] { 1, 0 }, reversedOrder);
+		assertEquals(2, cache.searchCount());
+		assertSame(reversedOrder, cache.resolve(equivalent, 2, 0), "equal input proofs retain legal cache reuse");
+		assertEquals(2, cache.searchCount());
+	}
+
+	@Test
 	void chainEmitsOnlyConnectedSubgraphComplementPairs() {
 		PackedJoinHypergraph graph = chain(3);
 		RecordingReceiver receiver = enumerate(graph);

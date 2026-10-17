@@ -219,6 +219,22 @@ final class PackedQuery {
 		return bindingFacts.relationOutputMaskId(relId);
 	}
 
+	int relRequiredInputMaskId(int relId) {
+		return bindingFacts.requiredInputMaskId(relId);
+	}
+
+	int relProtectedInputMaskId(int relId) {
+		return bindingFacts.protectedInputMaskId(relId);
+	}
+
+	int relIndependentOutputMaskId(int relId) {
+		return bindingFacts.independentOutputMaskId(relId);
+	}
+
+	int relNullableInputMaskId(int relId) {
+		return bindingFacts.nullableInputMaskId(relId);
+	}
+
 	int relAssuredMaskId(int relId) {
 		return bindingFacts.relationAssuredMaskId(relId);
 	}
@@ -473,6 +489,47 @@ final class PackedQuery {
 		return metadata.relationFlags(relId);
 	}
 
+	int relRequiredInputNames(int relId) {
+		return metadata.relationRequiredInputNames(relId);
+	}
+
+	int relProtectedInputNames(int relId) {
+		return metadata.relationProtectedInputNames(relId);
+	}
+
+	int relIndependentOutputNames(int relId) {
+		return metadata.relationIndependentOutputNames(relId);
+	}
+
+	int relNullableInputNames(int relId) {
+		return metadata.relationNullableInputNames(relId);
+	}
+
+	int relReplaySafety(int relId) {
+		return metadata.relationReplaySafety(relId);
+	}
+
+	int relSourceFirst(int id) {
+		return metadata.relationSourceFirst(id);
+	}
+
+	int relSourceLast(int id) {
+		return metadata.relationSourceLast(id);
+	}
+
+	/** Pure regions may reorder; a factor without an audited replay proof retains its original execution boundary. */
+	boolean executionOrderAllows(int left, int right) {
+		boolean conditionalRead = masksIntersect(relNullableInputMaskId(left), relOutputMaskId(right))
+				|| masksIntersect(relNullableInputMaskId(right), relOutputMaskId(left));
+		return !conditionalRead && relationReplayIsSafe(left) && relationReplayIsSafe(right)
+				|| relSourceFirst(left) != 0 && relSourceFirst(right) != 0
+						&& relSourceLast(left) < relSourceFirst(right);
+	}
+
+	boolean relationReplayIsSafe(int id) {
+		return metadata.relationReplayIsSafe(relations, id);
+	}
+
 	double relResultSizeEstimate(int relId) {
 		return metadata.relationResultSizeEstimate(relId);
 	}
@@ -524,8 +581,13 @@ final class PackedQuery {
 				&& relPayload(first) == relPayload(second)
 				&& relSemanticScope(first) == relSemanticScope(second)
 				&& relExecutionDomain(first) == relExecutionDomain(second)
+				&& relOccurrence(first) == relOccurrence(second)
 				&& relSemanticFlags(first) == relSemanticFlags(second)
-				&& relMetadataFlags(first) == relMetadataFlags(second);
+				&& relMetadataFlags(first) == relMetadataFlags(second)
+				&& relRequiredInputNames(first) == relRequiredInputNames(second)
+				&& relProtectedInputNames(first) == relProtectedInputNames(second)
+				&& relNullableInputNames(first) == relNullableInputNames(second)
+				&& relIndependentOutputNames(first) == relIndependentOutputNames(second);
 	}
 
 	int scalarMetricSetId(int scalarId) {
@@ -580,6 +642,10 @@ final class PackedQuery {
 		return relations.executionDomainId(relId);
 	}
 
+	int relOccurrence(int relId) {
+		return relations.occurrenceId(relId);
+	}
+
 	int relChildCount(int relId) {
 		return relations.childCount(relId);
 	}
@@ -590,7 +656,14 @@ final class PackedQuery {
 
 	int findRelation(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int[] childGroupIds, int childOffset, int childCount) {
-		return relations.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, childGroupIds,
+		return findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, 0, childGroupIds,
+				childOffset, childCount);
+	}
+
+	int findRelation(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int occurrenceId,
+			int[] childGroupIds, int childOffset, int childCount) {
+		return relations.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				childGroupIds,
 				childOffset, childCount);
 	}
 

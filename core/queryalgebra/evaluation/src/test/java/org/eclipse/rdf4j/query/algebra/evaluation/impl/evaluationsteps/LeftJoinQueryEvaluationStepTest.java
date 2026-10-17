@@ -32,6 +32,9 @@ import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -51,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptionalConditionEvaluation;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
@@ -58,6 +62,77 @@ import org.junit.jupiter.api.Test;
 class LeftJoinQueryEvaluationStepTest {
 
 	private static final SimpleValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
+
+	@Test
+	void pureLeftConditionStillPrefiltersOnceAndSkipsOnlyAuditedRightEvaluation() {
+		for (boolean accepted : List.of(false, true)) {
+			LeftJoin join = new LeftJoin(statementPattern("root", "left"), statementPattern("root", "right"),
+					new ValueConstant(accepted ? BooleanLiteral.TRUE : BooleanLiteral.FALSE));
+			AtomicInteger conditionCalls = new AtomicInteger();
+			AtomicInteger rightCalls = new AtomicInteger();
+			QueryEvaluationStep right = bindings -> {
+				rightCalls.incrementAndGet();
+				return new CloseableIteratorIteration<>(List.of(bindings, bindings).iterator());
+			};
+			QueryValueEvaluationStep condition = bindings -> {
+				conditionCalls.incrementAndGet();
+				return accepted ? BooleanLiteral.TRUE : BooleanLiteral.FALSE;
+			};
+			QueryEvaluationStep prepared = LeftJoinQueryEvaluationStep.determineRightEvaluationStep(join, right,
+					condition, join.getBindingNames());
+			assertTrue(prepared instanceof PreFilterQueryEvaluationStep);
+			int rows = 0;
+			try (var iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
+				while (iteration.hasNext()) {
+					iteration.next();
+					rows++;
+				}
+			}
+			assertEquals(accepted ? 2 : 0, rows);
+			assertEquals(1, conditionCalls.get());
+			assertEquals(accepted ? 1 : 0, rightCalls.get());
+		}
+	}
+
+	@Test
+	void prefilterAdmissionUsesCompleteLeftFrameAndPreservesImplicitSubqueryReads() {
+		LeftJoin overwritten = new LeftJoin(statementPattern("root", "left"),
+				new Extension(new SingletonSet(),
+						new ExtensionElem(new ValueConstant(VALUE_FACTORY.createLiteral("new")), "root")),
+				new Bound(Var.of("root")));
+		assertTrue(OptionalConditionEvaluation.canPrefilter(overwritten),
+				"an audited complete-left condition precedes the right assignment even when that assignment overwrites");
+		LeftJoin implicit = new LeftJoin(statementPattern("root", "left"), statementPattern("root", "right"),
+				new Exists(statementPattern("right", "hidden")));
+		assertFalse(OptionalConditionEvaluation.canPrefilter(implicit),
+				"the condition can observe right-only structural inputs absent before the right evaluation");
+	}
+
+	@Test
+	void pureFalseConditionDoesNotSkipAnUnauditedRightInput() {
+		StatementPattern unknownRight = new StatementPattern(Var.of("root"),
+				new Var("predicate", VALUE_FACTORY.createIRI("urn:p")), Var.of("right")) {
+		};
+		LeftJoin join = new LeftJoin(statementPattern("root", "left"), unknownRight,
+				new ValueConstant(BooleanLiteral.FALSE));
+		AtomicInteger rightCalls = new AtomicInteger();
+		AtomicInteger conditionCalls = new AtomicInteger();
+		QueryEvaluationStep right = bindings -> {
+			rightCalls.incrementAndGet();
+			return new CloseableIteratorIteration<>(List.of(bindings, bindings).iterator());
+		};
+		QueryEvaluationStep prepared = LeftJoinQueryEvaluationStep.determineRightEvaluationStep(join, right,
+				bindings -> {
+					conditionCalls.incrementAndGet();
+					return BooleanLiteral.FALSE;
+				}, join.getBindingNames());
+		assertTrue(prepared instanceof PostFilterQueryEvaluationStep);
+		try (var iteration = prepared.evaluate(EmptyBindingSet.getInstance())) {
+			assertFalse(iteration.hasNext());
+		}
+		assertEquals(1, rightCalls.get());
+		assertEquals(2, conditionCalls.get());
+	}
 
 	@Test
 	void positiveRightSubtreeKeepsProblemBindingOutOfRightProbe() {
