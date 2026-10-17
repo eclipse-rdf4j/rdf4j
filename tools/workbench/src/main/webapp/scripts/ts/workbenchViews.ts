@@ -1138,8 +1138,10 @@ module workbench {
             }
             const display = termText(value);
             if (link && (value.kind === 'iri' || value.kind === 'literal' || value.kind === 'bnode')) {
-                const resource = workbench.queryStream.exploreResource(value);
-                return h`<a href=${'explore?resource=' + encodeURIComponent(resource)}>${display}</a>`;
+                const href = resultExploreHref(value);
+                if (href) {
+                    return h`<a href=${href}>${display}</a>`;
+                }
             }
             if (value.kind === 'literal' && value.language) {
                 return h`<span class="rdf-literal" lang=${value.language}>${display}<span class="rdf-language">@${value.language}</span></span>`;
@@ -2060,8 +2062,9 @@ module workbench {
                     ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ' + iri
                         + ' { ?s ?p ?o } } LIMIT 200' }, 'Add statements of ' + label + ' to the graph', true)
                     : '';
-            return h`<td data-label=${list.label}><a href="${'explore?resource=' + encodeURIComponent(stream.exploreResource(term))}"
-                title=${full}>${label}</a>${addition}</td>`;
+            const href = resultExploreHref(term);
+            return h`<td data-label=${list.label}>${href
+                ? h`<a href="${href}" title=${full}>${label}</a>` : label}${addition}</td>`;
         }
 
         function browseCountCell(runtime: LitRuntime, list: any, counts: BrowseCounts, value: any,
@@ -2081,14 +2084,15 @@ module workbench {
         /** A graph's actions: Explore it, and Clear it when the Clear page is available (not hidden by the policy). */
         function browseActionsCell(runtime: LitRuntime, term: any, context: ViewContext): any {
             const h = runtime.html;
-            if (!term || typeof term !== 'object' || !term.kind) {
+            const href = resultExploreHref(term);
+            if (!href) {
                 return h`<td class="workbench-row-actions" data-label="Actions"></td>`;
             }
             const key = encodeURIComponent(resourceTerm(term));
             const name = termText(term);
             return h`<td class="workbench-row-actions" data-label="Actions">${pageEnabled(context, 'explore')
                 ? h`<a class="workbench-action workbench-action--ghost workbench-action--icon"
-                    href="${'explore?resource=' + key}" aria-label="${'Explore ' + name}" title="Explore">${icon(runtime, 'explore')}</a>` : ''}${
+                    href="${href}" aria-label="${'Explore ' + name}" title="Explore">${icon(runtime, 'explore')}</a>` : ''}${
                 pageEnabled(context, 'clear') && repositoryWriteable(context) ? h`<a
                     class="workbench-action workbench-action--ghost workbench-action--icon" href="${'clear?context=' + key}"
                     aria-label="${'Clear graph ' + name + '…'}" title="Clear graph…">${icon(runtime, 'clear')}</a>` : ''}</td>`;
@@ -2160,6 +2164,13 @@ module workbench {
         function resourceTerm(term: any): string {
             const stream = workbench.queryStream as any;
             return stream && typeof stream.exploreResource === 'function' ? stream.exploreResource(term) : text(term);
+        }
+
+        /** Result labels become request operands only when their recursively typed identity is reusable. */
+        function resultExploreHref(term: any): string {
+            const stream = workbench.queryStream as any;
+            return term && typeof term === 'object' && term.kind && stream && typeof stream.formatRdfTerm === 'function'
+                ? stream.formatRdfTerm(term).exploreHref : undefined;
         }
 
         /** The server's resolved resource operand, retaining legacy _: form inputs as exact references. */
@@ -2262,14 +2273,18 @@ module workbench {
                 <div class="explore-resource-card__iri"><code id="explore-resource-iri">${isIri ? key.slice(1, -1) : key}</code>
                     <button class="workbench-action workbench-action--ghost workbench-action--icon" type="button"
                         aria-label="Copy resource" title="Copy resource" @click=${copy}>${icon(runtime, 'copy')}</button></div>
-                ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => h`<li>
-                    <a class="explore-chip" href=${'explore?resource=' + encodeURIComponent(resourceTerm(type))}>${exploreGraphLabel(type, namespaces)}</a></li>`)}</ul>` : ''}
+                ${types.length ? h`<ul class="explore-resource-card__types" aria-label="Types">${types.map((type: any) => {
+                    const href = resultExploreHref(type);
+                    const label = exploreGraphLabel(type, namespaces);
+                    return h`<li>${href ? h`<a class="explore-chip" href=${href}>${label}</a>`
+                        : h`<span class="explore-chip">${label}</span>`}</li>`;
+                })}</ul>` : ''}
                 ${comment ? h`<div class="explore-resource-card__description"><p class="explore-resource-card__comment workbench-prose">${comment}</p>
                     ${comment.length > 240 ? h`<button class="workbench-action workbench-action--ghost explore-resource-card__more" type="button"
                         aria-expanded="false" @click=${toggleComment}>Show more</button>` : ''}</div>` : ''}
                 ${isQueryable && pageEnabled(context, 'query') ? h`<a class="workbench-action workbench-action--secondary explore-resource-card__query"
                     href=${'query?query=' + encodeURIComponent('SELECT * WHERE { ' + key + ' ?p ?o }')}>${icon(runtime, 'query')}<span>Query this resource</span></a>` : ''}
-                ${isIri ? addToGraphControl(runtime, context, { kind: 'resource', term: key },
+                ${isQueryable ? addToGraphControl(runtime, context, { kind: 'resource', term: key },
                     'Add this resource and its neighbours to the graph', false) : ''}
             </section>`;
         }

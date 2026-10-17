@@ -15,6 +15,7 @@ import { DETAILS_ITEM_LIMIT } from "./explorer-config.ts";
 import { compactTerm } from "./graph-terms.ts";
 import type { GraphNode } from "./graph-types.ts";
 import { nodeVisual, typeVisual } from "./graph-visuals.ts";
+import { isQueryableResource, sparqlTermFromNodeId } from "./rdf-terms.ts";
 import { Icon } from "./icons.tsx";
 import { languageLiteralPresentation } from "./literal-language-presentation.ts";
 import type { NodeDetails } from "./node-details.ts";
@@ -78,6 +79,8 @@ export function NodeDetailsCard({
   onStatementLink,
 }: NodeDetailsCardProps) {
   const nodeLanguage = languageLiteralPresentation({ language: node.language, direction: node.direction });
+  const reusable = isQueryableResource(node.id);
+  const identifier = node.kind === "blank" && !reusable ? `_:${node.termValue ?? sparqlTermFromNodeId(node.id)?.value ?? node.label}` : node.id;
   return (
     <aside
       ref={cardRef}
@@ -121,20 +124,20 @@ export function NodeDetailsCard({
       </header>
       {node.kind !== "literal" ? (
         <div className="node-details-identifier">
-          <code title={node.id}>{node.id}</code>
+          <code title={identifier}>{identifier}</code>
           <button
             className="workbench-action workbench-action--ghost workbench-action--icon"
             type="button"
             aria-label="Copy identifier"
             title="Copy identifier"
-            onClick={() => onCopy(node.id)}
+            onClick={() => onCopy(identifier)}
           >
             <Icon name="copy" />
           </button>
         </div>
       ) : null}
       <div className="node-details-actions">
-        {node.kind === "iri" ? (
+        {reusable ? (
           <button
             className="workbench-action workbench-action--primary"
             type="button"
@@ -146,7 +149,7 @@ export function NodeDetailsCard({
             {expanding ? "Expanding…" : "Expand"}
           </button>
         ) : null}
-        {node.kind === "iri" ? (
+        {reusable ? (
           <a
             className="workbench-action workbench-action--secondary"
             href={exploreHref}

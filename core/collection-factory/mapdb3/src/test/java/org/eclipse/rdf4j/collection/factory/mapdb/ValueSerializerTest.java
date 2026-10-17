@@ -12,23 +12,54 @@
 package org.eclipse.rdf4j.collection.factory.mapdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.GeneratedBNode;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.impl.RepositoryBNode;
 import org.junit.jupiter.api.Test;
 import org.mapdb.DataInput2;
 import org.mapdb.DataOutput2;
 
 public class ValueSerializerTest {
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
+
+	@Test
+	void temporaryValueSpillsPreserveNestedGeneratedAndNegotiatedOrigin() throws IOException {
+		BNode generated = new BlankNodeAllocationScope("generated-", ignored -> false).createBNode(vf);
+		var stored = RepositoryBNode.fromNegotiatedResult("wire-id", "raw-id", true);
+		var term = vf.createTripleTerm(generated, vf.createIRI("urn:p"), stored);
+		var restored = (TripleTerm) serializeDeserialize(term);
+		assertInstanceOf(GeneratedBNode.class, restored.getSubject());
+		var restoredStored = assertInstanceOf(RepositoryBNode.class, restored.getObject());
+		assertTrue(restoredStored.isReference());
+		assertEquals("raw-id", restoredStored.getRawID());
+	}
+
+	@Test
+	void temporaryValueSpillsPreserveRemoteAliasAuthorityRatherThanPromotingItsLabel() throws IOException {
+		Object epoch = new Object();
+		var remote = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
+				.map(vf.createBNode("remote-id"));
+		var restored = serializeDeserialize(remote);
+		assertInstanceOf(RemoteBNode.class, restored);
+		assertEquals(vf.createBNode("remote-id"), RemoteBNode.toRemoteValue(restored, epoch, true, true));
+	}
 
 	@Test
 	void literalOneInt() throws IOException {

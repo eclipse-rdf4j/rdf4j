@@ -98,6 +98,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.StoredBNodeIdResolver;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -133,7 +134,12 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
-class ValueStore extends AbstractValueFactory implements BNodeIdResolver {
+class ValueStore extends AbstractValueFactory implements BNodeIdResolver, StoredBNodeIdResolver {
+	@Override
+	public boolean hasStoredBNodeId(String id) {
+		return hasBNodeId(id);
+	}
+
 	@Override
 	public boolean hasBNodeId(String id) {
 		try {

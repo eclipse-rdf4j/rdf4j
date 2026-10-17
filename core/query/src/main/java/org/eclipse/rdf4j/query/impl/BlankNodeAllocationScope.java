@@ -278,7 +278,7 @@ public final class BlankNodeAllocationScope {
 		if (known == null && label == null) {
 			BNode fresh = factory.createBNode();
 			if (unavailable.add(fresh.getID())) {
-				return fresh;
+				return new GeneratedBNode(fresh.getID());
 			}
 			throw new QueryEvaluationException(
 					"Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
@@ -308,7 +308,7 @@ public final class BlankNodeAllocationScope {
 				throw new QueryEvaluationException("Unsupported blank-node identity: factory changed a candidate ID");
 			}
 			unavailable.add(candidate);
-			return fresh;
+			return new GeneratedBNode(fresh.getID());
 		}
 	}
 

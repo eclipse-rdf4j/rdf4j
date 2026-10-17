@@ -81,7 +81,7 @@ export async function queryRepository(endpoint: string, query: string, signal?: 
     throw new QueryFailure("The RDF4J server connection changed. Reload this page to reconnect.", 409);
   }
   try {
-    return parseSparqlResponse(body);
+    return parseSparqlResponse(body, {repositoryReferences: Boolean(serverIdentity)});
   } catch {
     throw new Error("The Workbench returned a response that was not SPARQL Results JSON.");
   }

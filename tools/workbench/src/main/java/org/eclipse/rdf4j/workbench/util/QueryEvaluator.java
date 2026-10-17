@@ -272,6 +272,7 @@ public final class QueryEvaluator {
 			return;
 		}
 		if (WorkbenchPageProtocol.requestsPageData(req)) {
+			builder.repositoryOrigins(con);
 			evaluateBrowserBatch(builder, req, con, query, responseQueryText, responseHeartbeat, queryStartedNanos);
 			return;
 		}

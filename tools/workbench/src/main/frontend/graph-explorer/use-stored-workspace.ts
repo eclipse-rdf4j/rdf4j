@@ -60,7 +60,7 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
       let saved: WorkspacePayload | null = null;
       try {
         const raw = await loadWorkspaceText(scope);
-        saved = raw ? parseWorkspacePayload(raw) : null;
+        saved = raw ? parseWorkspacePayload(raw, {repositoryReferences: true}) : null;
         // A record this version cannot read is kept aside before anything can be saved over it.
         if (raw && !saved) await saveWorkspaceText(raw, `${scope}:unreadable`).catch(() => {});
       } catch {
@@ -147,7 +147,7 @@ export function useStoredWorkspace({ scope, snapshot, changes, busy, restore, re
     let saved: WorkspacePayload | null = null;
     try {
       const raw = await loadWorkspaceText(scope);
-      saved = raw ? parseWorkspacePayload(raw) : null;
+      saved = raw ? parseWorkspacePayload(raw, {repositoryReferences: true}) : null;
     } catch {
       return false;
     }

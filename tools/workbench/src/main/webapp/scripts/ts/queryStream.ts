@@ -190,6 +190,8 @@ namespace workbench {
             predicate?: RdfTerm;
             object?: RdfTerm;
             scope?: string;
+            /** Explicit repository identity proof from the Workbench backend; document scope grants no authority. */
+            reference?: boolean;
         }
 
         export interface QueryResultRecord {
@@ -771,6 +773,8 @@ namespace workbench {
                             || (typeof current.datatype !== 'undefined' && typeof current.datatype !== 'string')) {
                         return false;
                     }
+                    if (typeof current.reference !== 'undefined'
+                            && (current.kind !== 'bnode' || typeof current.reference !== 'boolean')) return false;
                     continue;
                 }
                 if (current.kind !== 'triple'
@@ -806,10 +810,13 @@ namespace workbench {
                 if (!Array.isArray(current)) {
                     return false;
                 }
-                if (current[0] === 0 || current[0] === 1) {
+                if (current[0] === 0) {
                     if (current.length !== 2 || typeof current[1] !== 'string') {
                         return false;
                     }
+                } else if (current[0] === 1) {
+                    if (typeof current[1] !== 'string' || (current.length !== 2
+                            && (current.length !== 4 || current[2] !== null || current[3] !== true))) return false;
                 } else if (current[0] === 2) {
                     if (typeof current[1] !== 'string') {
                         return false;
@@ -846,7 +853,9 @@ namespace workbench {
                     return { kind: 'iri', value: value[1] };
                 }
                 if (value[0] === 1) {
-                    return { kind: 'bnode', value: value[1], scope: value[2] };
+                    var blank: RdfTerm = { kind: 'bnode', value: value[1], scope: value[2] };
+                    if (value[3] === true) blank.reference = true;
+                    return blank;
                 }
                 if (value[0] === 2) {
                     return value[2] === null
@@ -3317,6 +3326,17 @@ namespace workbench {
                     ? '^^' + abbreviatedIri(term.datatype, config.namespaces || []) : '');
         }
 
+        /** A triple is reusable only when every nested blank component has explicit repository origin. */
+        function hasReusableIdentity(term: RdfTerm): boolean {
+            var pending = term ? [term] : [];
+            while (pending.length) {
+                var value = pending.pop();
+                if (!value || (value.kind === 'bnode' && value.reference !== true)) return false;
+                if (value.kind === 'triple') pending.push(value.subject, value.predicate, value.object);
+            }
+            return Boolean(term);
+        }
+
         export function formatRdfTerm(term: RdfTerm, options?: RdfTermDisplayOptions): FormattedRdfTerm {
             var config = options || {};
             if (term === null) {
@@ -3339,15 +3359,15 @@ namespace workbench {
                     display.externalHref = term.value;
                 }
             } else if (term.kind === 'bnode') {
-                display.label = exploreResource(term);
+                display.label = term.reference === true ? exploreResource(term) : ntriplesTerm(term);
                 display.title = display.label;
-                display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
+                if (term.reference === true) display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             } else if (term.kind === 'triple') {
                 display.label = '<<( ' + inlineTermLabel(term.subject, config) + ' '
                     + inlineTermLabel(term.predicate, config) + ' '
                     + inlineTermLabel(term.object, config) + ' )>>';
                 display.title = display.label;
-                display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
+                if (hasReusableIdentity(term)) display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             } else {
                 // Literals show their lexical value; the renderer adds language badges and datatype tags (M4.3). Every
                 // literal links to its Explore page; one with line breaks, or XML, keeps its white space (C27).
@@ -4034,7 +4054,7 @@ namespace workbench {
                     var value = pending.pop();
                     if (Array.isArray(value)) {
                         if (value[0] === 1) {
-                            value.push(scope);
+                            value[2] = scope;
                         } else if (value[0] === 3) {
                             pending.push(value[1], value[2], value[3]);
                         }
@@ -5209,8 +5229,9 @@ namespace workbench {
         /** Queues a resource for the Graph page of `context` (workbench.graphAdditions); true when it was queued. */
         export function addResourceToGraph(context: any, term: RdfTerm): boolean {
             var additions = (workbench as any).graphAdditions;
-            return Boolean(additions && term && term.kind === 'iri'
-                && additions.add(context, { kind: 'resource', term: ntriplesTerm(term) }) > 0);
+            term = unpackTerm(term);
+            return Boolean(additions && term && (term.kind === 'iri' || (term.kind === 'bnode' && term.reference === true))
+                && additions.add(context, { kind: 'resource', term: exploreResource(term) }) > 0);
         }
 
         /**
@@ -5922,7 +5943,7 @@ namespace workbench {
                         external.textContent = '↗';
                         resource.appendChild(external);
                     }
-                    if (this.options.addToGraph && display.kind === 'iri') {
+                    if (this.options.addToGraph && (display.kind === 'iri' || (display.kind === 'bnode' && term.reference === true))) {
                         resource.appendChild(this.addToGraphButton(term, display.title));
                     }
                     target.appendChild(resource);

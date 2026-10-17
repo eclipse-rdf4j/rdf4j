@@ -16,16 +16,22 @@ import static org.eclipse.rdf4j.http.protocol.Protocol.QUERY_PARAM_NAME;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.http.client.QueryRequestContext;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.rio.RDFFormat;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.web.servlet.View;
@@ -40,6 +46,25 @@ import jakarta.servlet.http.HttpServletResponse;
  * @author Arjohn Kampman
  */
 public abstract class QueryResultView implements View {
+
+	/** Configures the opt-in only for formats whose blank-node labels round-trip exactly. */
+	public static boolean negotiateBNodeOrigin(HttpServletRequest request, HttpServletResponse response,
+			Object format) {
+		boolean enabled = BNodeOriginTransport.VERSION.equals(request.getHeader(BNodeOriginTransport.HEADER))
+				&& (TupleQueryResultFormat.BINARY.equals(format) || RDFFormat.BINARY.equals(format));
+		if (enabled) {
+			response.setHeader(BNodeOriginTransport.HEADER, BNodeOriginTransport.VERSION);
+		}
+		return enabled;
+	}
+
+	public static UnaryOperator<Value> bNodeOriginMapper(RepositoryConnection connection, HttpServletRequest request,
+			HttpServletResponse response, Object format) {
+		return negotiateBNodeOrigin(request, response, format)
+				? BNodeOriginTransport
+						.encoder(connection == null ? SimpleValueFactory.getInstance() : connection.getValueFactory())
+				: null;
+	}
 
 	private final Logger logger = LoggerFactory.getLogger(this.getClass());
 

@@ -54,6 +54,7 @@ export function useFacetFilters(input: {
    * costs a pass over every node and edge, so it is not kept up to date while nobody looks at it.
    */
   needed: boolean;
+  scope?: string;
 }) {
   const { selection, setSelection, nodes, edges, nodeById, hiddenPredicates, onChange, needed } = input;
   // Filters the user opened or closed by hand; the others follow the defaults of the panel.
@@ -135,6 +136,7 @@ export function useFacetFilters(input: {
     () =>
       generatedFacetQuery(selection, {
         wikidata: false,
+        scope: input.scope,
         ranges: new Map(
           facets.flatMap((facet) => {
             const draft = rangeDrafts.get(facet.id);
@@ -144,7 +146,7 @@ export function useFacetFilters(input: {
           }),
         ),
       }),
-    [facets, rangeDrafts, selection],
+    [facets, rangeDrafts, selection, input.scope],
   );
 
   const displayed = useMemo<DisplayedFacet[]>(() => {

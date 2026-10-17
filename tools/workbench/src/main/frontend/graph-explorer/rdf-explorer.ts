@@ -15,7 +15,7 @@ import type { Graph } from "./graph-types.ts";
 
 /** Link counts above this show as "more than"; counting a hub costs at most this many index steps. */
 export const LINK_COUNT_CAP = 999;
-import { isSafeSparqlIri, isSparqlTerm, type SparqlTerm } from "./rdf-terms.ts";
+import { isSafeSparqlIri, isSparqlTerm, isQueryableResource, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
 import {
   AdaptiveBatchLoader,
   BoundedCache,
@@ -96,9 +96,7 @@ export function clearMetadataCache() {
 }
 
 /** One endpoint, authentication generation, graph scope and language policy per session. */
-// Existing blank-node lookup remains IRI-only until the in-progress fixed-reference support (Jena-style <_:id>)
-// merges. Ordinary _:label is query-local, so it cannot identify a stored blank node. Switch the shared lookup
-// tokens then, retaining this explorer's server/repository namespace for metadata and expansion.
+// Fixed blank references remain within this explorer's server/repository namespace, just like cached IRI metadata.
 export class RdfExplorer {
   readonly properties = new Set<string>(LABEL_PROPERTIES);
   private labels: AdaptiveBatchLoader<LabelCandidate[]>;
@@ -182,7 +180,7 @@ export class RdfExplorer {
               !isHumanLabel(row.label.value)
             )
               continue;
-            values.get(row.resource.value)?.push({
+            values.get(sparqlNodeId(row.resource))?.push({
               value: row.label.value,
               language: row.label["xml:lang"] ?? "",
               property: row.labelProperty?.value ?? RDFS_LABEL,
@@ -375,7 +373,10 @@ export class RdfExplorer {
     let hasBlank = false;
     for (const n of graph.nodes) {
       if (n.kind === "iri") iriLabels.set(n.id, this.label(n.id, n.label));
-      else if (n.kind === "blank") hasBlank = true;
+      else if (n.kind === "blank") {
+        hasBlank = true;
+        if (this.cached(n.id)?.candidates.length) iriLabels.set(n.id, this.label(n.id, n.label));
+      }
     }
     // Blank nodes are named from their neighbourhood, which needs the IRIs' labels first.
     const blankLabels = hasBlank
@@ -402,7 +403,7 @@ export class RdfExplorer {
   async resolve(ids: string[], signal?: AbortSignal) {
     const version = this.schemaVersion;
     const missing = [...new Set(ids)].filter(
-      (id) => isSafeSparqlIri(id) && !this.cached(id)?.checked,
+      (id) => isQueryableResource(id) && !this.cached(id)?.checked,
     );
     // Independent batches can finish successfully even if another batch fails.
     // Promise.all used to discard every successful label in that situation.
@@ -473,7 +474,7 @@ export class RdfExplorer {
           const values = new Map(keys.map((k) => [k, [] as RdfBinding[]]));
           for (const row of bindings) {
             const key = row[resultKey];
-            if (key?.type === "uri") values.get(key.value)?.push(row);
+            if (key && isSparqlTerm(key)) values.get(sparqlNodeId(key))?.push(row);
           }
           return { values, rows: bindings.length };
         },
@@ -488,7 +489,7 @@ export class RdfExplorer {
       this.operations.set(template, loader);
     }
     const result = await Promise.all(
-      [...new Set(ids)].filter(isSafeSparqlIri).map(async (id) => {
+      [...new Set(ids)].filter(isQueryableResource).map(async (id) => {
         const key = JSON.stringify([template, id]);
         const cached = this.results.get(key);
         if (cached) return cached;
@@ -548,7 +549,7 @@ export class RdfExplorer {
   /** The neighbourhood of each node; with `loaded`, the statements after those already in the graph (not cached). */
   async expand(ids: string[], limit: number, signal?: AbortSignal, loaded?: ReadonlyMap<string, LoadedLinks>) {
     if (loaded?.size) {
-      const keys = [...new Set(ids)].filter(isSafeSparqlIri);
+      const keys = [...new Set(ids)].filter(isQueryableResource);
       if (!keys.length) return [];
       return (await this.query(expandQuery(keys, limit, this.scope, this.fence, loaded), signal)).results?.bindings ?? [];
     }
@@ -574,7 +575,7 @@ export class RdfExplorer {
     const counts = new Map<string, number>(ids.map((id) => [id, 0]));
     for (const row of rows) {
       const count = Number.parseInt(row.links?.value ?? "", 10);
-      if (row.selected?.type === "uri" && Number.isFinite(count)) counts.set(row.selected.value, count);
+      if (row.selected && isSparqlTerm(row.selected) && Number.isFinite(count)) counts.set(sparqlNodeId(row.selected), count);
     }
     return counts;
   }

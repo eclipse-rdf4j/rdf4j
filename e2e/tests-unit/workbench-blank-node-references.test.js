@@ -24,7 +24,7 @@ function queryStream() {
 }
 
 const iri = value => ({ kind: 'iri', value });
-const bnode = value => ({ kind: 'bnode', value });
+const bnode = value => ({ kind: 'bnode', value, reference: true });
 const literal = value => ({ kind: 'literal', value });
 
 test('Workbench result references retain raw blank node IDs and escape the complete resource envelope', () => {

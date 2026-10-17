@@ -18,7 +18,7 @@
  */
 import type { Binding, SparqlValue } from "./explorer-types.ts";
 import type { GraphEdge } from "./graph-types.ts";
-import { sparqlFacetValueToken } from "./rdf-terms.ts";
+import { sparqlFacetValueToken, isSafeSparqlIri } from "./rdf-terms.ts";
 import { iriToken, scoped, type GraphScope } from "./rdf-vocabulary.ts";
 
 const RDF = "http://www.w3.org/1999/02/22-rdf-syntax-ns#";
@@ -33,11 +33,8 @@ export type StatementTokens = { subject: string; predicate: string; object: stri
 
 /** The edge's statement as SPARQL tokens; null when its subject or object cannot be safely named in a later query. */
 export function statementTokens(edge: Pick<GraphEdge, "source" | "predicate" | "target">): StatementTokens | null {
-  // Ordinary _:label is query-local and cannot name an existing repository node. Fixed-node reference syntax
-  // such as Jena <_:id> is in progress in RDF4J; switch after support merges, preserving server/repository
-  // identity, then enable blank-node statement details alongside expansion, lookup and loaded-statement exclusions.
   const subject = sparqlFacetValueToken(edge.source);
-  const predicate = sparqlFacetValueToken(edge.predicate);
+  const predicate = isSafeSparqlIri(edge.predicate) ? iriToken(edge.predicate) : null;
   const object = sparqlFacetValueToken(edge.target);
   return subject && predicate && object && !subject.startsWith('"') ? { subject, predicate, object } : null;
 }

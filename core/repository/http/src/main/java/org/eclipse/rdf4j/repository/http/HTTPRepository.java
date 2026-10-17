@@ -21,6 +21,7 @@ import java.util.concurrent.ConcurrentMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
@@ -60,6 +61,14 @@ import org.eclipse.rdf4j.rio.RDFFormat;
  * @see org.eclipse.rdf4j.http.protocol.UnauthorizedException
  */
 public class HTTPRepository extends AbstractRepository implements HttpClientDependent, SessionManagerDependent {
+
+	/** Enables origin negotiation on one internal HTTP connection without changing shared repository headers. */
+	@InternalUseOnly
+	public static void setBNodeOriginEnabled(RepositoryConnection connection, boolean enabled) {
+		if (connection instanceof HTTPRepositoryConnection http) {
+			http.setBNodeOriginEnabled(enabled);
+		}
+	}
 
 	/*-----------*
 	 * Variables *

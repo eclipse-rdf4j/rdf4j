@@ -42,6 +42,28 @@ module workbench {
         export var STORAGE_PREFIX = 'rdf4j-workbench-graph-additions:';
         var LIMIT = 500;
         var TERM = /^(<[^<>"{}|^`\\\s]*>|_:\S+|".*"(@[A-Za-z0-9-]+|\^\^<[^<>\s]*>)?|<<\(.*\)>>)$/;
+        var FIXED_REFERENCE = /^<_:(?:[^\u0000-\u0020<>"{}|^`\\]|\\u[0-9A-Fa-f]{4}|\\U[0-9A-Fa-f]{8})*>$/;
+
+        function termValid(term: any): boolean {
+            if (typeof term !== 'string') return false;
+            if (term.indexOf('<_:') !== 0) return TERM.test(term);
+            if (!FIXED_REFERENCE.test(term)) return false;
+            var escapes = /\\([uU])([0-9A-Fa-f]+)/g;
+            var match: RegExpExecArray;
+            while ((match = escapes.exec(term))) {
+                var size = match[1] === 'u' ? 4 : 8;
+                var scalar = parseInt(match[2].slice(0, size), 16);
+                if (scalar > 0x10ffff || (scalar >= 0xd800 && scalar <= 0xdfff)) return false;
+                escapes.lastIndex = match.index + 2 + size;
+            }
+            for (var index = 0; index < term.length; index++) {
+                var code = term.charCodeAt(index);
+                if (code >= 0xd800 && code <= 0xdbff && index + 1 < term.length
+                        && term.charCodeAt(index + 1) >= 0xdc00 && term.charCodeAt(index + 1) <= 0xdfff) index++;
+                else if (code >= 0xd800 && code <= 0xdfff) return false;
+            }
+            return true;
+        }
 
         function scopeOf(context: GraphContext): string {
             return JSON.stringify(['repository-v2', String(context.basePath || '').replace(/\/+$/, ''),
@@ -66,11 +88,10 @@ module workbench {
                 return false;
             }
             if (entry.kind === 'resource') {
-                return typeof entry.term === 'string' && TERM.test(entry.term);
+                return termValid(entry.term);
             }
             if (entry.kind === 'statement') {
-                return [entry.subject, entry.predicate, entry.object].every((term: any) =>
-                    typeof term === 'string' && TERM.test(term));
+                return [entry.subject, entry.predicate, entry.object].every(termValid);
             }
             if (entry.kind === 'query') {
                 return typeof entry.query === 'string' && entry.query.trim().length > 0 && entry.query.length <= 150000;

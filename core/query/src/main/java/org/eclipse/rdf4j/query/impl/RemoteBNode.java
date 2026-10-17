@@ -85,10 +85,17 @@ public final class RemoteBNode extends SimpleBNode {
 	public static final class SpillScope implements AutoCloseable {
 		private final Map<BigInteger, SpillEntry> entries = new HashMap<>();
 		private final Map<String, SpilledNode> references = new HashMap<>();
+		private final Map<BigInteger, RepositoryBNode> repositoryEntries = new HashMap<>();
 		private final Registry registry = new Registry();
 		private BigInteger next = BigInteger.ZERO;
 
 		public Object replace(Object value) {
+			if (value instanceof RepositoryBNode repository) {
+				BigInteger reference = next;
+				next = next.add(BigInteger.ONE);
+				repositoryEntries.put(reference, repository);
+				return new SpilledRepositoryNode(reference, repository.getID());
+			}
 			if (value instanceof RemoteBNode remote) {
 				Provenance provenance = remote.getProvenance();
 				if (provenance == null) {
@@ -114,6 +121,14 @@ public final class RemoteBNode extends SimpleBNode {
 		}
 
 		public Object resolve(Object value) {
+			if (value instanceof SpilledRepositoryNode node) {
+				RepositoryBNode entry = repositoryEntries.get(node.reference());
+				if (entry == null || !entry.getID().equals(node.alias())) {
+					throw new QueryEvaluationException(
+							"Unsupported blank-node identity: unknown repository spill reference");
+				}
+				return entry;
+			}
 			if (value instanceof SpilledNode node) {
 				SpillEntry entry = entries.get(node.reference());
 				if (entry == null || !entry.alias().equals(node.alias())) {
@@ -129,6 +144,7 @@ public final class RemoteBNode extends SimpleBNode {
 		public void close() {
 			entries.clear();
 			references.clear();
+			repositoryEntries.clear();
 		}
 	}
 
@@ -141,6 +157,9 @@ public final class RemoteBNode extends SimpleBNode {
 	}
 
 	private record SpilledNode(BigInteger reference, String alias) implements Serializable {
+	}
+
+	private record SpilledRepositoryNode(BigInteger reference, String alias) implements Serializable {
 	}
 
 	public static ResponseScope newResponseScope(BlankNodeAllocationScope allocation, ValueFactory localFactory,
@@ -398,6 +417,13 @@ public final class RemoteBNode extends SimpleBNode {
 
 	/** Only trusted value-copy boundaries call this with both the original and its semantic copy. */
 	public static Value preserveProvenance(Value original, Value captured) {
+		if (original instanceof GeneratedBNode || original instanceof RepositoryBNode) {
+			if (!(captured instanceof BNode copy) || !((BNode) original).getID().equals(copy.getID())) {
+				throw new QueryEvaluationException(
+						"Unsupported blank-node identity: value copy changed result identity");
+			}
+			return original;
+		}
 		if (original instanceof RemoteBNode remote) {
 			if (!(captured instanceof BNode) || !remote.getID().equals(((BNode) captured).getID())) {
 				throw new QueryEvaluationException("Unsupported blank-node identity: value copy changed its alias");

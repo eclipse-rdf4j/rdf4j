@@ -73,7 +73,7 @@ export function graphTurtle(graph: Graph) {
     const value = sparqlTermFromNodeId(nodeId);
     if (!value) return null;
     if (value.type === "uri") return iri(value.value);
-    if (value.type === "bnode") return `_:${blankNodeLabel(value.value)}`;
+    if (value.type === "bnode") return `_:${blankNodeLabel(nodeId)}`;
     const text = turtleString(value.value);
     if (value["xml:lang"]) return `${text}@${value["xml:lang"]}${value["its:dir"] ? `--${value["its:dir"]}` : ""}`;
     return value.datatype && value.datatype !== XSD_STRING ? `${text}^^${iri(value.datatype)}` : text;

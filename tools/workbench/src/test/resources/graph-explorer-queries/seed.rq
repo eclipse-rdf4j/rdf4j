@@ -1,2 +1,7 @@
-SELECT DISTINCT ?source ?predicate ?target WHERE { VALUES ?__anchor { <urn:ex:named> }
-BIND(?__anchor AS ?source) GRAPH <urn:ex:graph> { ?source ?predicate ?target . } } LIMIT 100
+SELECT DISTINCT ?source ?predicate ?target WHERE {
+ { VALUES ?__anchor { <urn:ex:named> }
+BIND(?__anchor AS ?source) GRAPH <urn:ex:graph> { ?source ?predicate ?target . } }
+ UNION
+ { VALUES ?__anchor { <urn:ex:named> }
+BIND(?__anchor AS ?target) GRAPH <urn:ex:graph> { ?source ?predicate ?target . } }
+} LIMIT 100

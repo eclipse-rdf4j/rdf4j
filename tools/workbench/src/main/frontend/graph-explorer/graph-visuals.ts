@@ -65,7 +65,8 @@ export function nodeVisual(node: GraphNode) {
 }
 
 export function nodeTypeIds(node: GraphNode) {
-  if (node.kind !== "iri" || node.types === undefined) return [];
+  if (node.kind === "literal" || node.types === undefined) return [];
+  if (node.kind === "blank") return node.types.map((type) => type.id);
   return node.types.length
     ? node.types.map((type) => type.id)
     : [UNTYPED_IRI_TYPE.id];

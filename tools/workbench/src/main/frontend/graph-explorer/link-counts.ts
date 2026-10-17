@@ -13,7 +13,7 @@
 /** How many links of a node are loaded, which statements Expand skips, and how many are left to load. */
 import { RDF_TYPE } from "./graph-canvas-scope.ts";
 import type { Graph } from "./graph-types.ts";
-import { sparqlFacetValueToken } from "./rdf-terms.ts";
+import { sparqlFacetValueToken, isSafeSparqlIri } from "./rdf-terms.ts";
 import type { LoadedLinks } from "./rdf-vocabulary.ts";
 
 /**
@@ -31,11 +31,8 @@ export function loadedLinkCounts(graph: Graph) {
   return counts;
 }
 
-/** Every loaded statement of these nodes as SPARQL tokens, for Expand to skip; blank nodes cannot be named. */
+/** Every loaded statement with reusable endpoints as SPARQL tokens, for Expand to skip. */
 export function loadedLinksOf(graph: Graph, ids: readonly string[]) {
-  // Ordinary _:label is query-local and cannot name an existing repository node. Fixed-node references such as
-  // Jena <_:id> are in progress in RDF4J; after support merges, preserve server/repository identity and use them
-  // here before enabling blank-node expansion, lookup, statement details and loaded-statement exclusions.
   const wanted = new Set(ids);
   const loaded = new Map<string, { outgoing: Array<[string, string]>; incoming: Array<[string, string]> }>();
   const entry = (id: string) => {
@@ -44,7 +41,7 @@ export function loadedLinksOf(graph: Graph, ids: readonly string[]) {
     return links;
   };
   for (const edge of graph.edges) {
-    const predicate = sparqlFacetValueToken(edge.predicate);
+    const predicate = isSafeSparqlIri(edge.predicate) ? `<${edge.predicate}>` : null;
     if (!predicate) continue;
     if (wanted.has(edge.source)) {
       const target = sparqlFacetValueToken(edge.target);

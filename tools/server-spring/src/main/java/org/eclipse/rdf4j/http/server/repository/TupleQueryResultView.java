@@ -17,10 +17,13 @@ import static jakarta.servlet.http.HttpServletResponse.SC_OK;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Map;
+import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.http.client.BNodeOriginTransport;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -32,6 +35,7 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.binary.QueryErrorType;
+import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -72,6 +76,8 @@ public class TupleQueryResultView extends QueryResultView {
 			throws IOException {
 		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
 		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
+		UnaryOperator<Value> origin = bNodeOriginMapper((RepositoryConnection) model.get(CONNECTION_KEY), request,
+				response, qrFormat);
 
 		response.setStatus(SC_OK);
 		setContentType(response, qrFormat);
@@ -88,7 +94,9 @@ public class TupleQueryResultView extends QueryResultView {
 						TupleQueryResultWriter qrWriter = qrWriterFactory.getWriter(out);
 						configureWriter(qrWriter, request);
 						TupleQueryResult tupleQueryResult = (TupleQueryResult) model.get(QUERY_RESULT_KEY);
-						QueryResults.report(tupleQueryResult, qrWriter);
+						QueryResults.report(
+								origin == null ? tupleQueryResult : BNodeOriginTransport.map(tupleQueryResult, origin),
+								qrWriter);
 					} catch (QueryInterruptedException e) {
 						if (isExplicitlyCancelled(model)) {
 							return;
@@ -116,7 +124,9 @@ public class TupleQueryResultView extends QueryResultView {
 						qrWriter = qrWriterFactory.getWriter(heartbeat.getOutputStream());
 						configureWriter(qrWriter, request);
 					}
-					QueryResults.report(tupleQueryResult, qrWriter);
+					QueryResults.report(
+							origin == null ? tupleQueryResult : BNodeOriginTransport.map(tupleQueryResult, origin),
+							qrWriter);
 					heartbeat.complete();
 				} catch (QueryInterruptedException e) {
 					handleHeartbeatFailure(model, response, e, "Query evaluation took too long");

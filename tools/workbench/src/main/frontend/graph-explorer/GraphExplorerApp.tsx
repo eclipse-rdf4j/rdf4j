@@ -89,6 +89,9 @@ import {
 import {
   sparqlNodeId,
   sparqlTermFromNodeId,
+  isQueryableResource,
+  resourceNodeId,
+  sparqlResourceToken,
   type SparqlTerm,
 } from "./rdf-terms";
 import type { WorkspacePayload } from "./workspace";
@@ -725,7 +728,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     setGraph(value=>explorer.apply(value));
     const predicates=[...new Set(current.edges.map(edge=>edge.predicate))];
     const ids=[...predicates,...current.nodes.slice(0,1000).flatMap(node=>[
-      ...(node.kind==="iri"?[node.id]:[]),...(node.types??[]).map(type=>type.id),
+      ...(isQueryableResource(node.id)?[node.id]:[]),...(node.types??[]).map(type=>type.id),
     ])];
     if (current.nodes[0]?.id.startsWith("urn:graph-field:stress:")) return () => controller.abort();
     void explorer.resolve(ids,controller.signal).then(()=>{
@@ -737,7 +740,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     return ()=>controller.abort();
   }, [explorer,graph.revision]);
   useEffect(() => {
-    if(!focusedNodeId || !isSafeSparqlIri(focusedNodeId) || focusedNodeId.startsWith("urn:graph-field:stress:"))return;
+    if(!focusedNodeId || !isQueryableResource(focusedNodeId) || focusedNodeId.startsWith("urn:graph-field:stress:"))return;
     const controller=new AbortController();
     const predicates=graphRef.current.edges.filter(edge=>edge.source===focusedNodeId||edge.target===focusedNodeId).map(edge=>edge.predicate);
     void explorer.resolve([focusedNodeId,...predicates],controller.signal).then(()=>{if(!controller.signal.aborted)setGraph(current=>explorer.apply(current));}).catch(()=>{});
@@ -751,14 +754,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const discoverableIriCount = useMemo(
     () =>
       metadataNodes.filter(
-        (node) => node.kind === "iri" && isSafeSparqlIri(node.id),
+        (node) => isQueryableResource(node.id),
       ).length,
     [metadataNodes],
   );
   const pendingIriTypeKey = useMemo(() => {
     const focused = focusedNodeId ? metadataNodeById.get(focusedNodeId) : undefined;
     const candidates = focused ? [focused,...metadataNodes.slice(0,1000)] : metadataNodes.slice(0,1000);
-    return JSON.stringify([...new Set(candidates.filter(node=>node.kind==="iri"&&node.types===undefined&&isSafeSparqlIri(node.id)).map(node=>node.id))]);
+    return JSON.stringify([...new Set(candidates.filter(node=>node.types===undefined&&isQueryableResource(node.id)).map(node=>node.id))]);
   }, [metadataNodes, metadataNodeById, focusedNodeId]);
   const iriTypesLoading = pendingIriTypeKey !== "[]";
   // Filters work on what the Graph view draws, so a facet never selects hidden values.
@@ -779,6 +782,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     edges: graph.edges,
     nodeById: metadataNodeById,
     hiddenPredicates: hiddenFilterPredicates,
+    scope: graphScope,
     onChange: clearManualSelection,
     needed: filterSidebarOpen || [...selectedFacetValues.values()].some((values) => values.size > 0),
   });
@@ -812,7 +816,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     () =>
       largeGraph
         ? "" // the canvas renderer draws no badges
-        : drawnGraph.nodes.flatMap((node) => (node.kind === "iri" && isSafeSparqlIri(node.id) ? [node.id] : [])).join("\n"),
+        : drawnGraph.nodes.flatMap((node) => (isQueryableResource(node.id) ? [node.id] : [])).join("\n"),
     [drawnGraph.nodes],
   );
   useEffect(() => {
@@ -1062,11 +1066,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           if (
             !node ||
             !type ||
-            node.type !== "uri" ||
             type.type !== "uri" ||
-            !isSafeSparqlIri(node.value) ||
+            !isQueryableResource(sparqlNodeId(node)) ||
             !isSafeSparqlIri(type.value) ||
-            !typesByNodeId.has(node.value)
+            !typesByNodeId.has(sparqlNodeId(node))
           ) {
             return;
           }
@@ -1074,7 +1077,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
             "typeLabel",
             "classLabel",
           ])?.value;
-          typesByNodeId.get(node.value)?.set(type.value, {
+          typesByNodeId.get(sparqlNodeId(node))?.set(type.value, {
             id: type.value,
             label:
               suppliedLabel && suppliedLabel !== type.value
@@ -1650,7 +1653,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const withLabels = useCallback(
     (ids: string[]) =>
       Promise.race([
-        explorer.resolve(ids.filter((id) => isSafeSparqlIri(id)).slice(0, 1000)).catch(() => {}),
+        explorer.resolve(ids.filter(isQueryableResource).slice(0, 1000)).catch(() => {}),
         new Promise<void>((resolve) => window.setTimeout(resolve, LABEL_WAIT_MS)),
       ]),
     [explorer],
@@ -1770,8 +1773,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     const searchRequestId = entitySearchRef.current + 1;
     entitySearchRef.current = searchRequestId;
     // An absolute IRI (with "//" or a urn:) loads that resource; anything else, "foaf:Person" included, searches labels.
-    const looksLikeIri = isSafeSparqlIri(term) && /^([A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/i.test(term);
-    const nextQuery = looksLikeIri ? seedQuery([term],graphScope) : entitySearchQuery(term,[...explorer.properties],graphScope);
+    const resource = resourceNodeId(term);
+    const looksLikeResource = resource !== undefined && (term.startsWith("<_:") || /^<?([A-Za-z][A-Za-z0-9+.-]*:\/\/|urn:)/i.test(term));
+    const nextQuery = looksLikeResource ? seedQuery([resource!],graphScope) : entitySearchQuery(term,[...explorer.properties],graphScope);
     setQuery(nextQuery);
     await execute(nextQuery, !graphRef.current.nodes.length);
   }, [execute, explorer, graphScope]);
@@ -1805,7 +1809,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           (graphNode) => graphNode.id === nodeId,
         );
         return (
-          candidate?.kind === "iri" && isSafeSparqlIri(candidate.id)
+          candidate && isQueryableResource(candidate.id)
         );
       });
       if (!nodeIds.length) {
@@ -1819,7 +1823,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           openedAt,
           phase: "error",
           predicates: [],
-          error: "Only IRI nodes can be expanded.",
+          error: "This result has no reusable identifier in this repository.",
         });
         return;
       }
@@ -1892,7 +1896,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
             const key = JSON.stringify([direction, predicate.value]);
             const current = predicateByKey.get(key);
             if (current) {
-              if (selected) current.supportingNodeIds.add(selected.value);
+              if (selected) current.supportingNodeIds.add(sparqlNodeId(selected));
               return;
             }
             predicateByKey.set(key, {
@@ -1901,7 +1905,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
               suppliedLabel: suppliedPredicateLabel?.value,
               direction,
               count: null,
-              supportingNodeIds: new Set(selected ? [selected.value] : []),
+              supportingNodeIds: new Set(selected ? [sparqlNodeId(selected)] : []),
             });
           });
         }
@@ -2057,7 +2061,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     /** Resolves to false when something the user started meanwhile superseded the expansion. */
     async (nodeIds: string[], anchorId: string): Promise<boolean> => {
       const expandable = nodeIds.filter((nodeId) =>
-        graphRef.current.nodes.some((node) => node.id === nodeId && node.kind === "iri" && isSafeSparqlIri(node.id)),
+        graphRef.current.nodes.some((node) => node.id === nodeId && isQueryableResource(node.id)),
       );
       if (!expandable.length) return true;
       invalidateAsyncRequests();
@@ -2222,7 +2226,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           additions.flatMap((entry) => {
             if (entry.kind !== "resource") return [];
             const term = parseNTriplesTerm(entry.term);
-            return term?.type === "uri" && isSafeSparqlIri(term.value) ? [term.value] : [];
+            const id = term ? sparqlNodeId(term) : undefined;
+            return id && isQueryableResource(id) ? [id] : [];
           }),
         ),
       ];
@@ -2303,11 +2308,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     const discoveryRevision = graphRef.current.revision;
     const iriIds = graphRef.current.nodes
       .filter(
-        (node) => node.kind === "iri" && isSafeSparqlIri(node.id),
+        (node) => isQueryableResource(node.id),
       )
       .map((node) => node.id);
     if (iriIds.length < 2) {
-      setStatus("Load at least two IRI nodes before looking for missing relations.");
+      setStatus("Load at least two reusable resources before looking for missing relations.");
       return;
     }
 
@@ -2321,7 +2326,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
 
     try {
       const result = await discoverConnections(iriIds,(q,signal)=>queryRepository(endpoint,q,signal),graphScope,controller.signal,
-        requests=>setStatus(`Checking loaded IRIs for missing relations · ${requests} adaptive queries`));
+        requests=>setStatus(`Checking loaded resources for missing relations · ${requests} adaptive queries`));
       const checkedQueries=result.requests;
       const limitNotice=result.truncatedSources ? ` ${result.truncatedSources} high-degree resources reached the 4,096-relation safety limit; their checks are partial.` : "";
       bindingsToTriples(result.bindings).forEach(triple=>discoveredById.set(tripleEdgeId(triple.source,triple.predicate,triple.target),triple));
@@ -2354,13 +2359,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
 
       if (!missingTriples.length) {
         setStatus(
-          `No missing relations were found between the ${iriIds.length} loaded IRI nodes after ${checkedQueries} batched queries.${limitNotice}`,
+          `No missing relations were found between the ${iriIds.length} loaded resources after ${checkedQueries} batched queries.${limitNotice}`,
         );
         return;
       }
 
       const provenanceQuery = `# Missing-edge discovery
-# Executed ${checkedQueries} batched queries across ${iriIds.length} loaded IRI nodes.
+# Executed ${checkedQueries} batched queries across ${iriIds.length} loaded resources.
 # Representative batch:
 ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       const batch = createBatch(
@@ -2594,8 +2599,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     return hit === null ? null : edgeHitCurves.statementOf.get(hit) ?? hit;
   };
   const addStatementCard = (card: StatementCard) => {
-    if (card.about.type === "uri") {
-      void addToGraph([card.about.value], [], "");
+    if (isQueryableResource(sparqlNodeId(card.about))) {
+      void addToGraph([sparqlNodeId(card.about)], [], "");
       return;
     }
     const rows: Binding[] = card.rows.flatMap((row) =>
@@ -2871,7 +2876,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const facetGraphRevision = graphRef.current.revision;
     const facetQueryRun = queryRunRef.current;
     const sourceIds = [...new Set(graphRef.current.nodes
-      .filter((node) => node.kind === "iri" && isSafeSparqlIri(node.id))
+      .filter((node) => isQueryableResource(node.id))
       .map((node) => node.id))];
     if (!sourceIds.length) return null;
     const requestId = facetRequestRef.current + 1;
@@ -3585,7 +3590,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               <NodeDetailsCard
                 node={inspectorNode}
                 details={inspectorDetails}
-                exploreHref={explorePageUrl(basePath, repositoryId, `<${inspectorNode.id}>`)}
+                exploreHref={explorePageUrl(basePath, repositoryId, sparqlResourceToken(inspectorNode.id) ?? inspectorNode.id)}
                 expanding={expandingNodeIds.has(inspectorNode.id)}
                 drawn={drawnNodeById.has(inspectorNode.id)}
                 arriving={detailsArriving}

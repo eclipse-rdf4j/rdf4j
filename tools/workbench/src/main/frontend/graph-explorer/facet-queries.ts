@@ -22,10 +22,10 @@ import {
 } from "./facet-ranges.ts";
 import { TYPE_FACET_ID } from "./graph-facets.ts";
 import { intrinsicFacetSparqlFilter } from "./graph-filters.ts";
-import { compactTerm, isSafeSparqlIri } from "./graph-terms.ts";
+import { compactTerm } from "./graph-terms.ts";
 import { UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
-import { sparqlFacetValueToken, sparqlNodeId } from "./rdf-terms.ts";
-import { iriToken, scoped, type GraphScope } from "./rdf-vocabulary.ts";
+import { sparqlFacetValueToken, sparqlNodeId, isQueryableResource } from "./rdf-terms.ts";
+import { iriToken, scoped, resourceToken, type GraphScope } from "./rdf-vocabulary.ts";
 import { QueryFailure } from "./request-batching.ts";
 
 const COUNT_SOURCE_BATCH_SIZE = 120;
@@ -41,8 +41,8 @@ export function facetCountQuery(
   scope: GraphScope = "default",
   languages: readonly string[] = ["en"],
 ) {
-  const values = [...new Set(sourceIds.filter(isSafeSparqlIri))]
-    .map(iriToken)
+  const values = [...new Set(sourceIds.filter(isQueryableResource))]
+    .map(resourceToken)
     .join(" ");
   const relation =
     predicate === TYPE_FACET_ID
@@ -73,7 +73,7 @@ export async function countFacetValues(
   execute: (query: string, signal?: AbortSignal) => Promise<SparqlResponse>,
   options: { signal?: AbortSignal; isCurrent?: () => boolean } = {},
 ): Promise<EndpointFacetValue[] | null> {
-  const sources = [...new Set(sourceIds.filter(isSafeSparqlIri))];
+  const sources = [...new Set(sourceIds.filter(isQueryableResource))];
   const current = () => !options.signal?.aborted && (options.isCurrent?.() ?? true);
   const language = countLabelLanguage(languages).toLocaleLowerCase();
   type Count = { id: string; count: number; fallback: string; labels: Map<string, number> };
@@ -196,8 +196,9 @@ export function formatRangeValue(kind: "number" | "date", value: number) {
 
 export function generatedFacetQuery(
   selectedFacetValues: Map<string, Set<string>>,
-  options: { wikidata: boolean; ranges?: ReadonlyMap<string, QueryRange> },
+  options: { wikidata: boolean; ranges?: ReadonlyMap<string, QueryRange>; scope?: GraphScope },
 ) {
+  const scope = options.scope ?? "default";
   const activeFacets = [...selectedFacetValues.entries()].filter(
     ([, values]) => values.size > 0,
   );
@@ -226,17 +227,17 @@ export function generatedFacetQuery(
         .filter((value): value is string => Boolean(value));
       const typedVariable = `?facetTypeValue${index}`;
       const typedMatch = typedTokens.length
-        ? `EXISTS { ?focus ${relation} ${typedVariable} . VALUES ${typedVariable} { ${typedTokens.join(" ")} } }`
+        ? `EXISTS { ${scoped(`?focus ${relation} ${typedVariable} .`, scope, `__facetType${index}`)} VALUES ${typedVariable} { ${typedTokens.join(" ")} } }`
         : "false";
       const untypedMatch = untypedSelected
-        ? `isIRI(?focus) && NOT EXISTS { ?focus ${relation} ?anyType }`
+        ? `isIRI(?focus) && NOT EXISTS { ${scoped(`?focus ${relation} ?anyType .`, scope, `__facetUntyped${index}`)} }`
         : "false";
       lines.push(`  FILTER(${untypedMatch} || ${typedMatch})`);
       index += 1;
       return;
     }
     const variable = `?facetValue${index}`;
-    lines.push(`  ?focus ${relation} ${variable} .`);
+    lines.push(`  ${scoped(`?focus ${relation} ${variable} .`, scope, `__facet${index}`)}`);
     const range = options.ranges?.get(facetId);
     const rangeFilter = range ? rangeSparqlFilter(variable, range) : null;
     if (rangeFilter) {
@@ -258,13 +259,13 @@ export function generatedFacetQuery(
     index += 1;
   });
   if (!activeFacets.length) {
-    return "SELECT ?source ?predicate ?target WHERE {\n  ?source ?predicate ?target .\n}\nLIMIT 300";
+    return `SELECT ?source ?predicate ?target WHERE {\n  ${scoped("?source ?predicate ?target .", scope)}\n}\nLIMIT 300`;
   }
   // BIND cannot read a variable supplied only by a join outside its UNION branch. Each branch binds its own
   // statement first, then applies every facet to the same endpoint, preserving OR within and AND across facets.
   const branch = (endpoint: "source" | "target") => [
     "  {",
-    "    ?source ?predicate ?target .",
+    `    ${scoped("?source ?predicate ?target .", scope, `__facetStatement_${endpoint}`)}`,
     `    BIND(?${endpoint} AS ?focus)`,
     ...lines.map((line) => `  ${line}`),
     "  }",

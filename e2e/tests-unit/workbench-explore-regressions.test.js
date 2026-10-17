@@ -311,8 +311,8 @@ const terms = [
     [{ kind: 'iri', value: 'https://example.org/café%20x?x=1&y=2#fragment' },
         '<https://example.org/café%20x?x=1&y=2#fragment>'],
     [{ kind: 'iri', value: 'urn:example:resource' }, '<urn:example:resource>'],
-    [{ kind: 'bnode', value: 'node-1' }, '<_:node-1>'],
-    [{ kind: 'bnode', value: '_:node-2' }, '<_:_:node-2>'],
+    [{ kind: 'bnode', value: 'node-1', reference: true }, '<_:node-1>'],
+    [{ kind: 'bnode', value: '_:node-2', reference: true }, '<_:_:node-2>'],
     [{ kind: 'literal', value: 'plain "quoted" \\ value' }, String.raw`"plain \"quoted\" \\ value"`],
     [{ kind: 'literal', value: 'line\n\ttwo\rthree' }, '"line\\n\\ttwo\\rthree"'],
     [{ kind: 'literal', value: 'bonjour', language: 'fr' }, '"bonjour"@fr'],
@@ -339,6 +339,63 @@ for (const viewId of ['contexts', 'types']) {
         });
     });
 }
+
+for (const viewId of ['contexts', 'types']) {
+    test(`${viewId} browse links require certified blank-node result identity`, () => {
+        const { workbench } = loadWorkbench();
+        const untrusted = { kind: 'bnode', value: 'unverified', scope: 'old-server-result' };
+        const trusted = { kind: 'bnode', value: 'stored', reference: true };
+        const model = modelFor(viewId, [[untrusted], [trusted]]);
+        model.vars = [viewId === 'contexts' ? 'context' : 'type'];
+        const mount = {};
+        workbench.views.render(mount, model, context, runtime());
+        const links = exploreLinks(mount.template);
+        assert.equal(links.filter(link => link.includes(encodeURIComponent('<_:unverified>'))).length, 0,
+            'an unverified result label must not introduce a fixed-reference request');
+        assert.equal(links.filter(link => link.includes(encodeURIComponent('<_:stored>'))).length,
+            viewId === 'contexts' ? 2 : 1, 'certified resources retain their navigation actions');
+        assert.match(flatten(mount.template), /_:unverified/, 'unverified values remain visible');
+        assert.doesNotMatch(flatten(mount.template), /clear\?context=%3C_%3Aunverified%3E/,
+            'an unverified graph label must not become a Clear operand');
+    });
+}
+
+test('Explore summary links and type chips preserve result provenance recursively', () => {
+    const { workbench } = loadWorkbench();
+    const iri = value => ({ kind: 'iri', value });
+    const resource = iri('urn:example:resource');
+    const untrusted = { kind: 'bnode', value: 'unverified', scope: 'old-server-result' };
+    const trusted = { kind: 'bnode', value: 'stored', reference: true };
+    const nested = { kind: 'triple', subject: trusted, predicate: iri('urn:p'), object: untrusted };
+    const model = modelFor('explore', [
+        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), untrusted],
+        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), trusted],
+        [resource, iri('http://www.w3.org/1999/02/22-rdf-syntax-ns#type'), nested],
+        [resource, iri('http://www.w3.org/2000/01/rdf-schema#subClassOf'), untrusted],
+        [resource, iri('http://www.w3.org/2000/01/rdf-schema#subClassOf'), trusted]
+    ]);
+    const mount = {};
+    workbench.views.render(mount, model, context, runtime());
+    const links = exploreLinks(routeTemplate(workbench, mount));
+    assert.equal(links.filter(link => decodeURIComponent(link).includes('<_:unverified>')).length, 0,
+        'neither type chips nor summary links can promote an unverified nested component');
+    assert.equal(links.filter(link => link === 'explore?resource=' + encodeURIComponent('<_:stored>')).length, 2,
+        'both certified type and summary navigation remain available');
+    assert.match(flatten(routeTemplate(workbench, mount)), /_:unverified/);
+});
+
+test('Explore preserves an explicit fixed-reference operand without result certification', () => {
+    const { workbench } = loadWorkbench();
+    workbench.graphAdditions = { add() { return 1; } };
+    const model = modelFor('explore', []);
+    model.metadata = { resource: '<_:explicit>', 'explore-resource': '<_:explicit>' };
+    const mount = {};
+    workbench.views.render(mount, model, { ...context, serverIdentity: 'server' }, runtime());
+    const markup = flatten(routeTemplate(workbench, mount));
+    assert.match(markup, /Query this resource/);
+    assert.match(markup, /workbench-add-to-graph/,
+        'a deliberate user operand remains usable without a matching certified result row');
+});
 
 // The statements of a long Explore page are the shared result table, which reads only a window of rows itself;
 // bindRowWindows reads the page in bounded chunks for the resource card (.agent/execplans/workbench-shared-result-table.md).
@@ -592,6 +649,17 @@ for (const viewId of ['explore', 'export']) {
         });
         assert.equal(page.hosts[0].querySelectorAll('pre').length, 0, 'no bare <pre>');
         assert.equal(page.hosts[0].querySelectorAll('a.rdf-preformatted').length, 1, 'a multi-line literal keeps its breaks');
+    });
+
+    test(`${viewId} keeps untrusted blank-node labels out of Explore links`, async () => {
+        const { workbench } = loadWorkbench();
+        const model = modelFor(viewId, [[{ kind: 'bnode', value: 'untrusted', scope: 'document' }]]);
+        model.vars = ['value'];
+        model.metadata['statement-preview-requested'] = 'true';
+        const page = await renderPageResultTables(workbench, model, context);
+        assert.equal(page.hosts.length, 1, `${viewId} keeps the value in its shared result table`);
+        assert.equal(page.hosts[0].querySelectorAll('a').length, 0, 'an untrusted label has no reusable Explore link');
+        assert.match(page.hosts[0].textContent, /_:untrusted/, 'the blank-node value remains visible');
     });
 }
 

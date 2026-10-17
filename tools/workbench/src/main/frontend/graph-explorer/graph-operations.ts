@@ -388,7 +388,7 @@ export function withLoadedTypes(graph: Graph): Graph {
   let changed = false;
   const nodes = graph.nodes.map((node) => {
     const typeIds = stated.get(node.id);
-    if (!typeIds || node.kind !== "iri") return node;
+    if (!typeIds || node.kind === "literal") return node;
     const known = new Set((node.types ?? []).map((type) => type.id));
     const added = [...new Set(typeIds)].filter((id) => !known.has(id));
     if (!added.length && node.types) return node;

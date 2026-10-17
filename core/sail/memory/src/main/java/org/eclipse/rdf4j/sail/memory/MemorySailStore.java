@@ -1331,6 +1331,9 @@ class MemorySailStore implements SailStore {
 			segment.additions.add(st);
 			statements.add(st);
 			st.addToComponentLists();
+			valueFactory.markStoredOrigin(memSubj);
+			valueFactory.markStoredOrigin(memObj);
+			valueFactory.markStoredOrigin(memContext);
 			invalidateCache();
 			return st;
 		}
