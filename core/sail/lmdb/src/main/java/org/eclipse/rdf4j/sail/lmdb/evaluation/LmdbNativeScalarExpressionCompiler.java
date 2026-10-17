@@ -99,13 +99,7 @@ final class LmdbNativeScalarExpressionCompiler {
 		}
 		if (expr instanceof Str) {
 			LmdbNativeCompiledValue arg = compileValue(((Str) expr).getArg());
-			return arg == null ? null : value(arg.requiredMask, row -> {
-				LmdbNativeValueCodec.DecodedValue decoded = arg.evaluator.eval(row);
-				// STR preserves the exact RDF term only for a plain xsd:string input. Other kinds still lose their
-				// datatype, language or direction as required by the existing plain-string result channel.
-				return decoded.plainStringLiteral() ? decoded
-						: stringLiteral(decoded.error() ? null : decoded.stringValue());
-			});
+			return arg == null ? null : value(arg.requiredMask, row -> strValue(arg.evaluator.eval(row)));
 		}
 		if (expr instanceof Lang) {
 			LmdbNativeCompiledString language = compileString(expr);
@@ -319,7 +313,7 @@ final class LmdbNativeScalarExpressionCompiler {
 			LmdbNativeCompiledValue value = compileValue(((Str) expr).getArg());
 			return value == null ? null : string(value.requiredMask, row -> {
 				LmdbNativeValueCodec.DecodedValue decoded = value.evaluator.eval(row);
-				return decoded.error() ? null : decoded.stringValue();
+				return strLexicalValue(decoded);
 			});
 		}
 		if (expr instanceof Lang) {
@@ -411,7 +405,8 @@ final class LmdbNativeScalarExpressionCompiler {
 			return arg == null ? null : numeric(arg.requiredMask, row -> {
 				String value = arg.evaluator.eval(row);
 				return value == null ? LmdbNativeNumericValue.ERROR
-						: LmdbNativeNumericValue.decimal(BigDecimal.valueOf(value.length()),
+						: LmdbNativeNumericValue.decimal(
+								BigDecimal.valueOf(value.codePointCount(0, value.length())),
 								CoreDatatype.XSD.INTEGER);
 			});
 		}
@@ -472,6 +467,20 @@ final class LmdbNativeScalarExpressionCompiler {
 		return result == null ? LmdbNativeValueCodec.DecodedValue.ERROR
 				: LmdbNativeValueCodec.DecodedValue.literal(result, null,
 						CoreDatatype.XSD.STRING.getIri().stringValue(), CoreDatatype.XSD.STRING);
+	}
+
+	private LmdbNativeValueCodec.DecodedValue strValue(LmdbNativeValueCodec.DecodedValue value) {
+		if (value.plainStringLiteral()) {
+			return value;
+		}
+		return stringLiteral(strLexicalValue(value));
+	}
+
+	private static String strLexicalValue(LmdbNativeValueCodec.DecodedValue value) {
+		if (value.error() || !(value.iri() || value.literal() || value.triple())) {
+			return null;
+		}
+		return value.triple() ? value.tripleValue().stringValue() : value.stringValue();
 	}
 
 	private static LmdbNativeCompiledValue value(long requiredMask, LmdbNativeValueEvaluator evaluator) {

@@ -666,20 +666,24 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
 		TupleExpr right = join.getRightArg();
-		if (join.isMergeJoin()) {
-			// InnerMergeJoinIterator evaluates both sides from the join's incoming frame, then merges matching rows.
-			// Do not treat left-side outputs as inputs to the right side while optimizers are still planning this join.
-			return input;
-		}
 		String algorithm = join.getAlgorithmName();
 		if (algorithm == null || algorithm.isEmpty()) {
+			// Direct SERVICE joins are prepared before the merge candidate flag is considered.
+			if (right instanceof Service) {
+				return withOutput(input, outputFacts(join.getLeftArg(), input));
+			}
+			if (join.isMergeJoin()) {
+				// An unprepared merge candidate evaluates both sides from the incoming frame.
+				return input;
+			}
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
-			if (right instanceof Service || !isOutOfScopeForLeftBindings(right, input)) {
+			if (!isOutOfScopeForLeftBindings(right, input)) {
 				return withOutput(input, outputFacts(join.getLeftArg(), input));
 			}
 			return input;
 		}
+		// Preparation may have selected another contract after the optimizer marked a merge candidate.
 		if (INPUT_ONLY_JOIN_ALGORITHMS.contains(algorithm)) {
 			return input;
 		}

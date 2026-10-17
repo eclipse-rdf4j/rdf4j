@@ -222,12 +222,23 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		private void renameVar(Var oldVar, Var newVar, Filter filter) {
-			filter.getArg().visit(new VarRenamer(oldVar, newVar));
+			if (oldVar.equals(newVar)) {
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+				bindingAnalysis.invalidate();
+				return;
+			}
+			TupleExpr renamedArgument = filter.getArg().clone();
+			renamedArgument.visit(new VarRenamer(oldVar, newVar));
+			if (renamedArgument.getBindingNames().contains(oldVar.getName())) {
+				// Scope boundaries and output producers can keep exporting the original name. An Extension
+				// would overwrite that unconstrained value and fabricate equality, so retain the original tree.
+				return;
+			}
 
 			// TODO: skip this step if old variable name is not used
 			// Replace SameTerm-filter with an Extension, the old variable name
 			// might still be relevant to nodes higher in the tree
-			Extension extension = new Extension(filter.getArg());
+			Extension extension = new Extension(renamedArgument);
 			extension.addElement(new ExtensionElem(Var.of(newVar.getName()), oldVar.getName()));
 			QueryModelNormalizerOptimizer.replacePreservingScope(filter, extension);
 			bindingAnalysis.invalidate();

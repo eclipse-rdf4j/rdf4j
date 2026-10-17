@@ -72,6 +72,100 @@ import org.junit.jupiter.api.Test;
 public class QueryEvaluationUtilityTest {
 
 	@Test
+	void numericOperatorsTreatNaNAsUnordered() {
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtility
+				.compareLiterals(left, right, operator)
+				.orElse(false));
+	}
+
+	@Test
+	void nanRetainsItsTotalOrderingIndependentlyOfNumericPredicates() {
+		for (CoreDatatype.XSD type : List.of(CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE)) {
+			Literal nan = f.createLiteral("NaN", type);
+			Literal finite = f.createLiteral(1);
+			assertEquals(QueryEvaluationUtility.Order.greater,
+					QueryEvaluationUtility.compareLiterals(nan, finite, true));
+			assertEquals(QueryEvaluationUtility.Order.smaller,
+					QueryEvaluationUtility.compareLiterals(finite, nan, true));
+			assertEquals(QueryEvaluationUtility.Order.equal,
+					QueryEvaluationUtility.compareLiterals(nan, nan, true));
+			assertTrue(new ValueComparator().compare(nan, finite) > 0);
+			assertTrue(new ValueComparator().compare(finite, nan) < 0);
+			assertEquals(0, new ValueComparator().compare(nan, nan));
+		}
+	}
+
+	@Test
+	void invalidFloatingLiteralIdentityKeepsItsExistingValueComparisonContract() {
+		Literal invalid = f.createLiteral("not-a-floating-value", CoreDatatype.XSD.DOUBLE);
+		for (CompareOp operator : CompareOp.values()) {
+			boolean expected = operator == EQ || operator == CompareOp.LE || operator == CompareOp.GE;
+			assertEquals(expected, QueryEvaluationUtil.compare(invalid, invalid, operator));
+			assertEquals(expected, QueryEvaluationUtility.compareLiterals(invalid, invalid, operator).orElse(false));
+		}
+	}
+
+	@Test
+	void specializedNumericOperatorsTreatNaNAsUnordered() {
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtil.compare(left, right, operator));
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtil.compareLiterals(left, right, operator));
+	}
+
+	@Test
+	void specializedNumericOperatorsTreatSignedZerosAsEqual() {
+		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
+				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };
+		for (CoreDatatype.XSD leftType : types) {
+			for (CoreDatatype.XSD rightType : types) {
+				Literal left = f.createLiteral("-0", leftType);
+				Literal right = f.createLiteral("0", rightType);
+				for (CompareOp operator : CompareOp.values()) {
+					boolean expected = operator == EQ || operator == CompareOp.LE || operator == CompareOp.GE;
+					assertEquals(expected, QueryEvaluationUtil.compare(left, right, operator),
+							left + " " + operator + " " + right);
+					assertEquals(expected, QueryEvaluationUtil.compare(right, left, operator),
+							right + " " + operator + " " + left);
+				}
+			}
+		}
+	}
+
+	@Test
+	void specializedNumericOperatorsPromoteTheRoundedFloatValueToDouble() {
+		Literal left = f.createLiteral("16777217", CoreDatatype.XSD.FLOAT);
+		Literal right = f.createLiteral("16777217", CoreDatatype.XSD.DOUBLE);
+		for (CompareOp operator : CompareOp.values()) {
+			boolean forward = operator == LT || operator == CompareOp.LE || operator == NE;
+			boolean reverse = operator == CompareOp.GT || operator == CompareOp.GE || operator == NE;
+			assertEquals(forward, QueryEvaluationUtil.compare(left, right, operator), operator.toString());
+			assertEquals(reverse, QueryEvaluationUtil.compare(right, left, operator), operator.toString());
+		}
+	}
+
+	private void assertNaNComparisons(NumericOperator comparison) {
+		for (CoreDatatype.XSD type : List.of(CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE)) {
+			Literal nan = f.createLiteral("NaN", type);
+			for (Literal other : List.of(nan, f.createLiteral("NaN", type),
+					f.createLiteral("NaN",
+							type == CoreDatatype.XSD.FLOAT ? CoreDatatype.XSD.DOUBLE : CoreDatatype.XSD.FLOAT),
+					f.createLiteral(1), f.createLiteral(BigDecimal.ONE), f.createLiteral("-0", type),
+					f.createLiteral("INF", type), f.createLiteral("-INF", type))) {
+				for (CompareOp operator : CompareOp.values()) {
+					assertEquals(operator == NE, comparison.compare(nan, other, operator),
+							nan + " " + operator + " " + other);
+					assertEquals(operator == NE, comparison.compare(other, nan, operator),
+							other + " " + operator + " " + nan);
+				}
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface NumericOperator {
+		boolean compare(Literal left, Literal right, CompareOp operator);
+	}
+
+	@Test
 	void signedZeroNumericComparisonsAreEqualAcrossDatatypes() {
 		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
 				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };

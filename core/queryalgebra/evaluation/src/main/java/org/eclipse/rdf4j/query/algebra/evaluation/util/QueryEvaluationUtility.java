@@ -1344,8 +1344,47 @@ public class QueryEvaluationUtility {
 	 *         otherwise.
 	 */
 	public static Result compareLiterals(Literal leftLit, Literal rightLit, CompareOp operator, boolean strict) {
+		Result floating = compareFloatingPointLiterals(leftLit, rightLit, operator);
+		if (floating != null) {
+			return floating;
+		}
 		Order order = compareLiterals(leftLit, rightLit, strict);
 		return order.toResult(operator);
+	}
+
+	/**
+	 * Numeric predicates use IEEE comparison, independently of the total order used for sorting. A null result leaves
+	 * non-floating pairs and invalid lexical forms to the caller's existing RDF-term/error handling.
+	 */
+	static Result compareFloatingPointLiterals(Literal leftLit, Literal rightLit, CompareOp operator) {
+		CoreDatatype.XSD leftType = leftLit.getCoreDatatype().asXSDDatatypeOrNull();
+		CoreDatatype.XSD rightType = rightLit.getCoreDatatype().asXSDDatatypeOrNull();
+		if (leftType == null || rightType == null || !leftType.isNumericDatatype() || !rightType.isNumericDatatype()
+				|| !(leftType.isFloatingPointDatatype() || rightType.isFloatingPointDatatype())) {
+			return null;
+		}
+		try {
+			double left;
+			double right;
+			if (leftType == CoreDatatype.XSD.DOUBLE || rightType == CoreDatatype.XSD.DOUBLE) {
+				left = leftType == CoreDatatype.XSD.FLOAT ? leftLit.floatValue() : leftLit.doubleValue();
+				right = rightType == CoreDatatype.XSD.FLOAT ? rightLit.floatValue() : rightLit.doubleValue();
+			} else {
+				// Promote both operands to float before widening; the widening itself is exact.
+				left = leftLit.floatValue();
+				right = rightLit.floatValue();
+			}
+			return Result.fromBoolean(switch (operator) {
+			case EQ -> left == right;
+			case NE -> left != right;
+			case LT -> left < right;
+			case LE -> left <= right;
+			case GT -> left > right;
+			case GE -> left >= right;
+			});
+		} catch (IllegalArgumentException invalidLexicalForm) {
+			return null;
+		}
 	}
 
 	private static Order handleCommonDatatype(Literal leftLit, Literal rightLit, boolean strict,

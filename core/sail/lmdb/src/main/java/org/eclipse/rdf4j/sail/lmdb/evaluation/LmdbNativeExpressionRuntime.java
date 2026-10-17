@@ -481,14 +481,11 @@ final class LmdbNativeExpressionOps {
 				return LmdbNativeTruth.ERROR;
 			}
 		}
-		boolean equalityOp = op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE;
-		if (left.numeric() && right.numeric() && (left.floatingValue() != null || right.floatingValue() != null)
-				&& equalityOp) {
-			double l = left.floatingValue() != null ? left.floatingValue() : left.decimalValue().doubleValue();
-			double r = right.floatingValue() != null ? right.floatingValue() : right.decimalValue().doubleValue();
-			boolean equal = l == r;
-			return (op == Compare.CompareOp.EQ ? equal : !equal) ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
+		if (left.numeric() && right.numeric()) {
+			boolean result = compareNumericValues(left, right, op);
+			return result ? LmdbNativeTruth.TRUE : LmdbNativeTruth.FALSE;
 		}
+		boolean equalityOp = op == Compare.CompareOp.EQ || op == Compare.CompareOp.NE;
 		Integer cmp = nativeCompare(left, right);
 		if (cmp != null && (equalityOp || orderableNatively(left, right))) {
 			boolean result = switch (op) {
@@ -700,10 +697,75 @@ final class LmdbNativeExpressionOps {
 	private static int compareNumeric(LmdbNativeValueCodec.DecodedValue left,
 			LmdbNativeValueCodec.DecodedValue right) {
 		if (left.floatingValue() != null || right.floatingValue() != null) {
-			double l = left.floatingValue() != null ? left.floatingValue() : left.decimalValue().doubleValue();
-			double r = right.floatingValue() != null ? right.floatingValue() : right.decimalValue().doubleValue();
-			return Double.compare(l, r);
+			if (promotesToDouble(left, right)) {
+				return Double.compare(promoteToDouble(left), promoteToDouble(right));
+			}
+			return Float.compare(promoteToFloat(left), promoteToFloat(right));
 		}
 		return left.decimalValue().compareTo(right.decimalValue());
+	}
+
+	/** Applies SPARQL's numeric promotion before evaluating a FILTER comparison. */
+	private static boolean compareNumericValues(LmdbNativeValueCodec.DecodedValue left,
+			LmdbNativeValueCodec.DecodedValue right, Compare.CompareOp op) {
+		if (left.floatingValue() != null || right.floatingValue() != null) {
+			if (promotesToDouble(left, right)) {
+				double l = promoteToDouble(left);
+				double r = promoteToDouble(right);
+				return compareDoubleValues(l, r, op);
+			}
+			float l = promoteToFloat(left);
+			float r = promoteToFloat(right);
+			return compareFloatValues(l, r, op);
+		}
+		int comparison = left.decimalValue().compareTo(right.decimalValue());
+		return compareOrdering(comparison, op);
+	}
+
+	private static boolean promotesToDouble(LmdbNativeValueCodec.DecodedValue left,
+			LmdbNativeValueCodec.DecodedValue right) {
+		return left.coreDatatype().asXSDDatatypeOrNull() == CoreDatatype.XSD.DOUBLE
+				|| right.coreDatatype().asXSDDatatypeOrNull() == CoreDatatype.XSD.DOUBLE;
+	}
+
+	private static double promoteToDouble(LmdbNativeValueCodec.DecodedValue value) {
+		return value.floatingValue() != null ? value.floatingValue() : value.decimalValue().doubleValue();
+	}
+
+	private static float promoteToFloat(LmdbNativeValueCodec.DecodedValue value) {
+		return value.floatingValue() != null ? value.floatingValue().floatValue() : value.decimalValue().floatValue();
+	}
+
+	private static boolean compareDoubleValues(double left, double right, Compare.CompareOp op) {
+		return switch (op) {
+		case EQ -> left == right;
+		case NE -> left != right;
+		case LT -> left < right;
+		case LE -> left <= right;
+		case GT -> left > right;
+		case GE -> left >= right;
+		};
+	}
+
+	private static boolean compareFloatValues(float left, float right, Compare.CompareOp op) {
+		return switch (op) {
+		case EQ -> left == right;
+		case NE -> left != right;
+		case LT -> left < right;
+		case LE -> left <= right;
+		case GT -> left > right;
+		case GE -> left >= right;
+		};
+	}
+
+	private static boolean compareOrdering(int comparison, Compare.CompareOp op) {
+		return switch (op) {
+		case EQ -> comparison == 0;
+		case NE -> comparison != 0;
+		case LT -> comparison < 0;
+		case LE -> comparison <= 0;
+		case GT -> comparison > 0;
+		case GE -> comparison >= 0;
+		};
 	}
 }

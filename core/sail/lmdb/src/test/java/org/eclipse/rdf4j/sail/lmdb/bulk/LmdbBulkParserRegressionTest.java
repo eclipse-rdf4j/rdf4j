@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,6 +25,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -31,6 +34,7 @@ import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -105,6 +109,86 @@ class LmdbBulkParserRegressionTest {
 	@Test
 	void scopesRdf11ColonBlankNodesIndependentlyAcrossParallelFiles() throws IOException {
 		assertScopedFiles(":a.b:c:");
+	}
+
+	@Test
+	void acceptsBomAtEachCompressedAndPlainInputAcrossSerialAndParallelStaging() throws Exception {
+		StringBuilder firstInput = new StringBuilder("\uFEFF");
+		Set<Statement> expected = new HashSet<>();
+		for (int index = 0; index < 300; index++) {
+			IRI subject = VF.createIRI("urn:bom:first:" + index);
+			IRI object = VF.createIRI("urn:bom:object:" + index);
+			firstInput.append('<').append(subject).append("> <urn:p> <").append(object).append("> .\n");
+			expected.add(VF.createStatement(subject, PREDICATE, object));
+		}
+		IRI secondSubject = VF.createIRI("urn:bom:second");
+		IRI secondObject = VF.createIRI("urn:bom:second-object");
+		String secondInput = "\uFEFF<" + secondSubject + "> <urn:p> <" + secondObject + "> .\n";
+		expected.add(VF.createStatement(secondSubject, PREDICATE, secondObject));
+
+		Path compressed = temporaryDirectory.resolve("first.nq.gz");
+		Path plain = temporaryDirectory.resolve("second.nq");
+		ByteArrayOutputStream compressedBytes = new ByteArrayOutputStream();
+		try (GZIPOutputStream gzip = new GZIPOutputStream(compressedBytes)) {
+			gzip.write(firstInput.toString().getBytes(UTF_8));
+		}
+		Files.write(compressed, compressedBytes.toByteArray());
+		Files.writeString(plain, secondInput, UTF_8);
+		List<LmdbBulkLoader.PathInput> inputs = List.of(
+				new LmdbBulkLoader.PathInput(compressed, RDFFormat.NQUADS, "urn:bom:first:"),
+				new LmdbBulkLoader.PathInput(plain, RDFFormat.NQUADS, "urn:bom:second:"));
+
+		for (String variant : List.of("serial-fast", "serial-auto", "parallel-auto", "rio")) {
+			LmdbBulkLoader.ParserMode mode = switch (variant) {
+			case "serial-fast" -> LmdbBulkLoader.ParserMode.FAST;
+			case "serial-auto", "parallel-auto" -> LmdbBulkLoader.ParserMode.AUTO;
+			default -> LmdbBulkLoader.ParserMode.RIO;
+			};
+			int workers = variant.equals("parallel-auto") ? 4 : 1;
+			Path target = target("bom-" + variant, RDFFormat.NQUADS, mode, workers);
+			LmdbBulkLoader bulkLoader = loader(target, mode, workers);
+			if (variant.equals("parallel-auto")) {
+				assertTrue(ParallelStager.applicable(bulkLoader, List.of(RDFFormat.NQUADS)));
+			}
+			LmdbBulkLoader.Result result = bulkLoader.load(inputs);
+			assertEquals(expected.size(), result.parsedStatements(), variant);
+			assertEquals(expected, read(target), variant);
+		}
+	}
+
+	@Test
+	void validatesVersionDirectivesAtTheBulkLoaderBoundaryLikeRio() throws Exception {
+		String statement = "<urn:s> <urn:p> <urn:o> .\n";
+		List<String> malformedDirectives = List.of("VERSION garbage", "VERSION \"1.2");
+		for (int index = 0; index < malformedDirectives.size(); index++) {
+			String inputText = malformedDirectives.get(index) + "\n" + statement;
+			for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
+					LmdbBulkLoader.ParserMode.RIO)) {
+				Path input = temporaryDirectory.resolve("malformed-version-" + index + "-" + mode + ".nt");
+				Path target = target("malformed-version-" + index, RDFFormat.NTRIPLES, mode, 1);
+				Files.writeString(input, inputText, UTF_8);
+				LmdbBulkLoader bulkLoader = loader(target, mode, 1);
+
+				assertThrows(RDFParseException.class,
+						() -> bulkLoader.load(List.of(
+								new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:"))),
+						mode + ": " + malformedDirectives.get(index));
+				assertTrue(Files.notExists(target), mode + " must not publish malformed input");
+			}
+		}
+
+		String validInput = "VERSION \"1.2\"\n" + statement;
+		Set<Statement> expected = Set.of(VF.createStatement(SUBJECT, PREDICATE, VF.createIRI("urn:o")));
+		for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
+				LmdbBulkLoader.ParserMode.RIO)) {
+			Path input = temporaryDirectory.resolve("valid-version-" + mode + ".nt");
+			Path target = target("valid-version", RDFFormat.NTRIPLES, mode, 1);
+			Files.writeString(input, validInput, UTF_8);
+			LmdbBulkLoader.Result result = loader(target, mode, 1)
+					.load(List.of(new LmdbBulkLoader.PathInput(input, RDFFormat.NTRIPLES, "urn:test:")));
+			assertEquals(expected.size(), result.parsedStatements(), mode.toString());
+			assertEquals(expected, read(target), mode.toString());
+		}
 	}
 
 	private void assertScopedFiles(String label) throws IOException {

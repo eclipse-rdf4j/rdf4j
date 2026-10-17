@@ -680,7 +680,7 @@ final class LmdbNativeValueCodec {
 			return CoreDatatype.NONE;
 		}
 
-		return CoreDatatype.from(iri);
+		return CoreDatatype.fromString(iri);
 	}
 
 	static final class DecodedValue {

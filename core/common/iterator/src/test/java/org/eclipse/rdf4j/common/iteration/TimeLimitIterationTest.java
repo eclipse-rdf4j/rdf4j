@@ -46,7 +46,7 @@ class TimeLimitIterationTest {
 	private static final long LONG_TIME_LIMIT_MILLIS = TimeUnit.HOURS.toMillis(1L);
 
 	@Test
-	void timeoutSignalReturnsWithoutClosingBlockingDelegate() throws Exception {
+	void timeoutSignalReturnsWhileIdleCleanupRunsOutsideSignalThread() throws Exception {
 		CountDownLatch closeEntered = new CountDownLatch(1);
 		CountDownLatch releaseClose = new CountDownLatch(1);
 		CountDownLatch cancellationRequested = new CountDownLatch(1);
@@ -54,14 +54,21 @@ class TimeLimitIterationTest {
 				cancellationRequested, true);
 		TestTimeLimitIteration iteration = new TestTimeLimitIteration(delegate, LONG_TIME_LIMIT_MILLIS);
 		ExecutorService executor = Executors.newSingleThreadExecutor();
-		Future<?> signal = executor.submit(iteration::interrupt);
+		AtomicReference<Thread> signalThread = new AtomicReference<>();
+		Future<?> signal = executor.submit(() -> {
+			signalThread.set(Thread.currentThread());
+			iteration.interrupt();
+		});
 
 		try {
 			signal.get(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS);
 			assertEquals(0L, cancellationRequested.getCount(),
 					"the timeout wrapper must delegate a cooperative cancellation request");
-			assertEquals(1L, closeEntered.getCount(),
-					"an accepted cooperative request must not close the delegate on the timer thread");
+			assertTrue(closeEntered.await(FUTURE_TIMEOUT_SECONDS, TimeUnit.SECONDS),
+					"accepted idle cancellation must arrange resource cleanup");
+			assertThat(((BlockingIteration) delegate).closeThread.get()).isNotSameAs(signalThread.get());
+			assertEquals(1L, releaseClose.getCount(),
+					"the cancellation signal must return while delegate cleanup remains blocked");
 		} finally {
 			releaseClose.countDown();
 			if (!signal.isDone()) {
@@ -337,6 +344,7 @@ class TimeLimitIterationTest {
 		private final CountDownLatch releaseHasNext;
 		private final CountDownLatch closeEntered;
 		private final CountDownLatch releaseClose;
+		private final AtomicReference<Thread> closeThread = new AtomicReference<>();
 
 		private BlockingIteration(CountDownLatch hasNextEntered, CountDownLatch releaseHasNext,
 				CountDownLatch closeEntered, CountDownLatch releaseClose) {
@@ -371,6 +379,7 @@ class TimeLimitIterationTest {
 
 		@Override
 		public void close() {
+			closeThread.set(Thread.currentThread());
 			closeEntered.countDown();
 			await(releaseClose, "blocked close release");
 		}

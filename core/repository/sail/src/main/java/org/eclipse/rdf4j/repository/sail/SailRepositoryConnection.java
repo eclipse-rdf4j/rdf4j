@@ -426,6 +426,12 @@ public class SailRepositoryConnection extends AbstractRepositoryConnection imple
 	@Override
 	protected void addWithoutCommit(Iterable<? extends Statement> statements, Resource... contexts)
 			throws RepositoryException {
+		if (getClass() != SailRepositoryConnection.class) {
+			// Existing subclasses can customize either protected per-statement hook. Only this concrete
+			// implementation is known to have the same semantics as a direct Sail batch.
+			super.addWithoutCommit(statements, contexts);
+			return;
+		}
 		try {
 			sailConnection.addStatements(statements, contexts);
 		} catch (SailReadOnlyException e) {

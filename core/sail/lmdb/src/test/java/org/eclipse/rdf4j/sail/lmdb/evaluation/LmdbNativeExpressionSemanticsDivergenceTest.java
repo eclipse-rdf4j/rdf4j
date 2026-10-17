@@ -15,13 +15,20 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.File;
+import java.util.Arrays;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -41,6 +48,7 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String NATIVE_FLAG = "rdf4j.lmdb.nativeQueryEngine.enabled";
+	private static final ValueFactory VALUE_FACTORY = SimpleValueFactory.getInstance();
 
 	@TempDir
 	File dataDir;
@@ -59,6 +67,10 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 			IRI date = vf.createIRI(EX, "date");
 			IRI flag = vf.createIRI(EX, "flag");
 			IRI ref = vf.createIRI(EX, "ref");
+			IRI numericLeft = vf.createIRI(EX, "numericLeft");
+			IRI numericRight = vf.createIRI(EX, "numericRight");
+			IRI stringTerm = vf.createIRI(EX, "stringTerm");
+			IRI codePointString = vf.createIRI(EX, "codePointString");
 
 			conn.add(vf.createIRI(EX, "s1"), label, vf.createLiteral("abc", "en"));
 			conn.add(vf.createIRI(EX, "s2"), label, vf.createLiteral("abc", "fr"));
@@ -78,7 +90,71 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 
 			conn.add(vf.createIRI(EX, "r1"), ref, vf.createIRI(EX, "aaa"));
 			conn.add(vf.createIRI(EX, "r2"), ref, vf.createIRI(EX, "zzz"));
+
+			addNumericPair(conn, vf, numericLeft, numericRight, "floatRoundedEqual",
+					vf.createLiteral("16777216", XSD.FLOAT), vf.createLiteral("16777217", XSD.INTEGER));
+			addNumericPair(conn, vf, numericLeft, numericRight, "floatDecimalRoundedEqual",
+					vf.createLiteral("16777216", XSD.FLOAT), vf.createLiteral("16777217", XSD.DECIMAL));
+			addNumericPair(conn, vf, numericLeft, numericRight, "doubleRoundedEqual",
+					vf.createLiteral("9007199254740992", XSD.DOUBLE),
+					vf.createLiteral("9007199254740993", XSD.INTEGER));
+			addNumericPair(conn, vf, numericLeft, numericRight, "floatGreater",
+					vf.createLiteral("16777218", XSD.FLOAT), vf.createLiteral("16777217", XSD.INTEGER));
+			addNumericPair(conn, vf, numericLeft, numericRight, "decimalLess",
+					vf.createLiteral("9007199254740992", XSD.DECIMAL),
+					vf.createLiteral("9007199254740993", XSD.INTEGER));
+			addNumericPair(conn, vf, numericLeft, numericRight, "integerGreater",
+					vf.createLiteral("9007199254740993", XSD.INTEGER),
+					vf.createLiteral("9007199254740992", XSD.INTEGER));
+
+			addNumericValue(conn, vf, "floatRoundingValue", "floatRounding",
+					vf.createLiteral("16777216", XSD.FLOAT));
+			addNumericValue(conn, vf, "decimalRoundingValue", "decimalRounding",
+					vf.createLiteral("16777216", XSD.FLOAT));
+			addNumericValue(conn, vf, "decimalBoundaryValue", "decimalBoundary",
+					vf.createLiteral("9007199254740992", XSD.DECIMAL));
+			addNumericValue(conn, vf, "integerBoundaryValue", "integerBoundary",
+					vf.createLiteral("9007199254740992", XSD.INTEGER));
+			addNumericValue(conn, vf, "doubleBoundaryValue", "doubleBoundary",
+					vf.createLiteral("9007199254740992", XSD.DOUBLE));
+			addNumericValue(conn, vf, "nanValue", "nanValue", vf.createLiteral("NaN", XSD.FLOAT));
+			addNumericValue(conn, vf, "positiveInfinityValue", "positiveInfinity",
+					vf.createLiteral("INF", XSD.FLOAT));
+			addNumericValue(conn, vf, "negativeInfinityValue", "negativeInfinity",
+					vf.createLiteral("-INF", XSD.FLOAT));
+			addNumericValue(conn, vf, "negativeZeroValue", "negativeZero", vf.createLiteral("-0", XSD.FLOAT));
+
+			conn.add(vf.createIRI(EX, "bnodeTerm"), stringTerm, vf.createBNode("native-str-bnode"));
+			conn.add(vf.createIRI(EX, "iriTerm"), stringTerm, vf.createIRI(EX, "validIri"));
+			conn.add(vf.createIRI(EX, "literalTerm"), stringTerm, vf.createLiteral("valid literal"));
+			conn.add(vf.createIRI(EX, "tripleTerm"), stringTerm, quotedTripleTerm(vf));
+			conn.add(vf.createIRI(EX, "codepointEmpty"), codePointString, vf.createLiteral(""));
+			conn.add(vf.createIRI(EX, "codepointBmp"), codePointString, vf.createLiteral("é"));
+			conn.add(vf.createIRI(EX, "codepointEmoji"), codePointString, vf.createLiteral("\uD83D\uDE00"));
+			conn.add(vf.createIRI(EX, "codepointMixed"), codePointString, vf.createLiteral("a\uD83D\uDE00b"));
+			conn.add(vf.createIRI(EX, "codepointAscii"), codePointString, vf.createLiteral("abc"));
+			conn.add(vf.createIRI(EX, "codepointLanguage"), codePointString,
+					vf.createLiteral("\uD83D\uDE00", "en"));
+			conn.add(vf.createIRI(EX, "codepointTyped"), codePointString,
+					vf.createLiteral("\uD83D\uDE00", XSD.STRING));
 		}
+	}
+
+	private static void addNumericPair(SailRepositoryConnection connection, ValueFactory valueFactory,
+			IRI leftPredicate, IRI rightPredicate, String subjectName, Literal left, Literal right) {
+		IRI subject = valueFactory.createIRI(EX, subjectName);
+		connection.add(subject, leftPredicate, left);
+		connection.add(subject, rightPredicate, right);
+	}
+
+	private static void addNumericValue(SailRepositoryConnection connection, ValueFactory valueFactory,
+			String predicateName, String subjectName, Literal value) {
+		connection.add(valueFactory.createIRI(EX, subjectName), valueFactory.createIRI(EX, predicateName), value);
+	}
+
+	private static Value quotedTripleTerm(ValueFactory valueFactory) {
+		return valueFactory.createTripleTerm(valueFactory.createIRI(EX, "quotedSubject"),
+				valueFactory.createIRI(EX, "quotedPredicate"), valueFactory.createLiteral("quoted object"));
 	}
 
 	@AfterEach
@@ -104,6 +180,80 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 		int generic = rows(query, false).size();
 		assertThat(rows(query, true).size()).as("native row count must match generic for:\n%s", query)
 				.isEqualTo(generic);
+	}
+
+	private List<BindingSet> rowsWithNativePlan(String query, boolean nativeEnabled) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			TupleQuery prepared = conn.prepareTupleQuery(query);
+			List<BindingSet> result = QueryResults.asList(prepared.evaluate());
+			String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
+			if (nativeEnabled) {
+				assertThat(telemetry)
+						.contains("plannedExecutionEngine=lmdb-native", "nativePhysicalPlan=NativeRows")
+						.contains("nativeExecutionPath=batch")
+						.containsPattern("nativeInvocationsActual=[1-9][0-9]*");
+				if (query.contains("FILTER(")) {
+					assertThat(telemetry).contains("nativePhysicalPlan=NativeRows(arg=Filter");
+				} else {
+					assertThat(telemetry).contains("nativePhysicalPlan=NativeRows(arg=Extension");
+				}
+			} else {
+				assertThat(telemetry).doesNotContain("nativeInvocationsActual=");
+			}
+			return result;
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
+	private void assertNativeParity(String query, List<BindingSet> expected) {
+		assertThat(rowsWithNativePlan(query, false)).as("generic result bag for:\n%s", query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rowsWithNativePlan(query, true)).as("native result bag for:\n%s", query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	private void assertResultParity(String query, List<BindingSet> expected) {
+		assertThat(rows(query, false)).as("generic result bag for:\n%s", query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(rows(query, true)).as("native result bag for:\n%s", query)
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	private String numericComparisonQuery(String operator) {
+		return "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s ex:numericLeft ?left ; ex:numericRight ?right . "
+				+ "FILTER(?left " + operator + " ?right) }";
+	}
+
+	private String numericValueQuery(String predicateName, String comparison) {
+		return "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s ex:" + predicateName + " ?value . FILTER(" + comparison + ") }";
+	}
+
+	private static List<BindingSet> subjectRows(String... localNames) {
+		return Arrays.stream(localNames)
+				.sorted()
+				.map(localName -> {
+					MapBindingSet row = new MapBindingSet();
+					row.addBinding("s", VALUE_FACTORY.createIRI(EX, localName));
+					return row;
+				})
+				.map(row -> (BindingSet) row)
+				.toList();
+	}
+
+	private static BindingSet subjectValueRow(String subjectName, String bindingName, Value value) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", VALUE_FACTORY.createIRI(EX, subjectName));
+		row.addBinding(bindingName, value);
+		return row;
 	}
 
 	@Test
@@ -207,5 +357,116 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 				+ "SELECT ?s WHERE { ?s ex:ref ?ref . FILTER(COALESCE(?ref) < ex:mmm) }";
 		assertThat(rows(query, false)).isEmpty();
 		assertSameRowCount(query);
+	}
+
+	@Test
+	public void numericComparisonsUseTheDatatypePromotionLattice() {
+		// This variable/constant comparison exercises float promotion in a native filter batch.
+		String floatEqualsInteger = numericValueQuery("floatRoundingValue", "?value = 16777217");
+		assertNativeParity(floatEqualsInteger, subjectRows("floatRounding"));
+		assertNativeParity(numericValueQuery("floatRoundingValue", "16777217 = ?value"),
+				subjectRows("floatRounding"));
+		assertNativeParity(numericValueQuery("floatRoundingValue", "?value != 16777217"), List.of());
+		assertNativeParity(numericValueQuery("floatRoundingValue", "?value < 16777217"), List.of());
+		assertNativeParity(numericValueQuery("floatRoundingValue", "16777217 > ?value"), List.of());
+		assertNativeParity(numericValueQuery("floatRoundingValue", "?value <= 16777217"),
+				subjectRows("floatRounding"));
+		assertNativeParity(numericValueQuery("floatRoundingValue", "?value >= 16777217"),
+				subjectRows("floatRounding"));
+		assertNativeParity(numericValueQuery("floatRoundingValue", "?value = 16777217.0"),
+				subjectRows("floatRounding"));
+
+		// Decimal and integer comparisons retain exact precision above the binary64 integer range.
+		assertNativeParity(numericValueQuery("decimalBoundaryValue", "?value < 9007199254740993"),
+				subjectRows("decimalBoundary"));
+		assertNativeParity(numericValueQuery("integerBoundaryValue", "?value < 9007199254740993"),
+				subjectRows("integerBoundary"));
+		assertNativeParity(numericValueQuery("integerBoundaryValue", "?value < 9007199254740993.0"),
+				subjectRows("integerBoundary"));
+		// A double is the one promotion case where rounding to binary64 is required.
+		assertNativeParity(numericValueQuery("doubleBoundaryValue", "?value = 9007199254740993"),
+				subjectRows("doubleBoundary"));
+
+		assertNativeParity(numericValueQuery("nanValue", "?value < 1"), List.of());
+		assertNativeParity(numericValueQuery("nanValue", "?value > 1"), List.of());
+		assertNativeParity(numericValueQuery("positiveInfinityValue", "?value > 1"),
+				subjectRows("positiveInfinity"));
+		assertNativeParity(numericValueQuery("negativeInfinityValue", "?value < 1"),
+				subjectRows("negativeInfinity"));
+		assertNativeParity(numericValueQuery("negativeZeroValue", "?value = 0"), subjectRows("negativeZero"));
+		assertNativeParity(numericValueQuery("negativeZeroValue", "?value < 0"), List.of());
+
+		// Both-variable comparisons remain controls for native/generic result parity without requiring this
+		// expression shape to use the accelerated native expression plan.
+		assertResultParity(numericComparisonQuery("="),
+				subjectRows("floatRoundedEqual", "floatDecimalRoundedEqual", "doubleRoundedEqual"));
+		assertResultParity(numericComparisonQuery("!="),
+				subjectRows("floatGreater", "decimalLess", "integerGreater"));
+		assertResultParity(numericComparisonQuery("<"), subjectRows("decimalLess"));
+		assertResultParity(numericComparisonQuery("<="),
+				subjectRows("decimalLess", "floatRoundedEqual", "floatDecimalRoundedEqual", "doubleRoundedEqual"));
+		assertResultParity(numericComparisonQuery(">"), subjectRows("floatGreater", "integerGreater"));
+		assertResultParity(numericComparisonQuery(">="),
+				subjectRows("floatGreater", "integerGreater", "floatRoundedEqual", "floatDecimalRoundedEqual",
+						"doubleRoundedEqual"));
+	}
+
+	@Test
+	public void strRejectsBlankNodesInValueAndStringExpressionPaths() {
+		String bindQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?value WHERE { ?s ex:stringTerm ?term . "
+				+ "BIND(STR(?term) AS ?value) FILTER(BOUND(?value)) }";
+		String storedTripleString = storedTripleTermString();
+		List<BindingSet> expectedValues = List.of(
+				subjectValueRow("iriTerm", "value", VALUE_FACTORY.createLiteral(EX + "validIri")),
+				subjectValueRow("literalTerm", "value", VALUE_FACTORY.createLiteral("valid literal")),
+				subjectValueRow("tripleTerm", "value", VALUE_FACTORY.createLiteral(storedTripleString)));
+		assertNativeParity(bindQuery, expectedValues);
+
+		String coalesceQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?value WHERE { ?s ex:stringTerm ?term . "
+				+ "BIND(COALESCE(STR(?term), \"fallback\") AS ?value) }";
+		List<BindingSet> expectedCoalescedValues = List.of(
+				subjectValueRow("bnodeTerm", "value", VALUE_FACTORY.createLiteral("fallback")),
+				subjectValueRow("iriTerm", "value", VALUE_FACTORY.createLiteral(EX + "validIri")),
+				subjectValueRow("literalTerm", "value", VALUE_FACTORY.createLiteral("valid literal")),
+				subjectValueRow("tripleTerm", "value", VALUE_FACTORY.createLiteral(storedTripleString)));
+		assertNativeParity(coalesceQuery, expectedCoalescedValues);
+
+		String stringExpressionQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s ex:stringTerm ?term . "
+				+ "FILTER(STRLEN(STR(?term)) >= 0) }";
+		assertNativeParity(stringExpressionQuery, subjectRows("iriTerm", "literalTerm", "tripleTerm"));
+	}
+
+	private String storedTripleTermString() {
+		IRI subject = VALUE_FACTORY.createIRI(EX, "tripleTerm");
+		IRI predicate = VALUE_FACTORY.createIRI(EX, "stringTerm");
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var statements = connection.getStatements(subject, predicate, null, false)) {
+			assertThat(statements.hasNext()).isTrue();
+			return statements.next().getObject().stringValue();
+		}
+	}
+
+	@Test
+	public void strlenCountsUnicodeCodePointsInNativePlans() {
+		String query = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s ?length WHERE { ?s ex:codePointString ?text . "
+				+ "BIND(STRLEN(?text) AS ?length) }";
+		List<BindingSet> expected = List.of(
+				subjectValueRow("codepointAscii", "length", VALUE_FACTORY.createLiteral("3", XSD.INTEGER)),
+				subjectValueRow("codepointBmp", "length", VALUE_FACTORY.createLiteral("1", XSD.INTEGER)),
+				subjectValueRow("codepointEmoji", "length", VALUE_FACTORY.createLiteral("1", XSD.INTEGER)),
+				subjectValueRow("codepointEmpty", "length", VALUE_FACTORY.createLiteral("0", XSD.INTEGER)),
+				subjectValueRow("codepointLanguage", "length", VALUE_FACTORY.createLiteral("1", XSD.INTEGER)),
+				subjectValueRow("codepointMixed", "length", VALUE_FACTORY.createLiteral("3", XSD.INTEGER)),
+				subjectValueRow("codepointTyped", "length", VALUE_FACTORY.createLiteral("1", XSD.INTEGER)));
+		assertNativeParity(query, expected);
+
+		String filterQuery = "PREFIX ex: <" + EX + ">\n"
+				+ "SELECT ?s WHERE { ?s ex:codePointString ?text . FILTER(STRLEN(?text) = 1) }";
+		assertNativeParity(filterQuery,
+				subjectRows("codepointBmp", "codepointEmoji", "codepointLanguage", "codepointTyped"));
 	}
 }

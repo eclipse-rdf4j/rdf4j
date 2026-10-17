@@ -39,6 +39,7 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private int activeCalls;
 	private boolean closeRequested;
 	private boolean timeoutCloseRequested;
+	private boolean cooperativeTimeoutClose;
 	private boolean delegateCloseStarted;
 	private boolean delegateCloseCompleted;
 	private Thread delegateCloseThread;
@@ -355,7 +356,8 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 	private boolean claimDelegateCloseIfIdle() {
 		// Timeout close is also a cancellation signal: an active source wait may require close to return.
 		// Sources that own native resources must protect their drain from concurrent consumption.
-		if (closeRequested && (activeCalls == 0 || timeoutCloseRequested || !deferCloseDuringActiveCall)
+		if (closeRequested && (activeCalls == 0
+				|| !cooperativeTimeoutClose && (timeoutCloseRequested || !deferCloseDuringActiveCall))
 				&& !delegateCloseStarted) {
 			delegateCloseStarted = true;
 			return true;
@@ -442,6 +444,11 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 			return;
 		}
 		// Timer-driven limits close synchronously unless the source accepts cooperative worker cancellation.
+		synchronized (lifecycleLock) {
+			// The active caller can observe the interruption while the cancellation callback is still returning.
+			// Reserve its ownership before publishing the signal, then release it if cancellation is declined.
+			cooperativeTimeoutClose = true;
+		}
 		isInterrupted.set(true);
 		boolean cancellationAccepted = false;
 		try {
@@ -449,7 +456,21 @@ public abstract class TimeLimitIteration<E> extends IterationWrapper<E> {
 		} catch (RuntimeException e) {
 			logger.warn("TimeLimitIteration timed out and cooperative cancellation failed: ", e);
 		}
+		boolean closeDelegate = false;
+		synchronized (lifecycleLock) {
+			cooperativeTimeoutClose = cancellationAccepted;
+			if (cancellationAccepted) {
+				closeRequested = true;
+				timeoutCloseRequested = true;
+				closeDelegate = claimDelegateCloseIfIdle();
+			}
+		}
 		if (cancellationAccepted) {
+			if (closeDelegate) {
+				// An idle source has no worker to unwind it. Keep potentially blocking cleanup off the global timer,
+				// and leave explicit close able to await completion and report its failure.
+				closeDelegateAsync();
+			}
 			return;
 		}
 		try {

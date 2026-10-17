@@ -315,6 +315,43 @@ class OptimizerBindingAnalysisTest {
 	}
 
 	@Test
+	void selectedJoinContractOverridesAnEarlierMergeCandidateFlag() {
+		for (String algorithm : List.of("ServiceJoinIterator", "JoinIterator")) {
+			Service service = new Service(Var.of("endpoint"),
+					new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")), "", Map.of(),
+					null, false);
+			Join join = new Join(values("endpoint", VF.createIRI("urn:service")), service);
+			join.setMergeJoin(true);
+			join.setAlgorithm(algorithm);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+					EmptyBindingSet.getInstance());
+			assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
+					.as("the prepared %s contract passes left rows despite the earlier merge candidate flag", algorithm)
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+
+			join.setAlgorithm("HashJoinIteration");
+			analysis = QueryAlgebraBindingAnalysis.withBindingValues(join, EmptyBindingSet.getInstance());
+			assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
+					.as("an independently evaluated right operand does not receive left rows")
+					.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.UNBOUND);
+		}
+	}
+
+	@Test
+	void directServiceJoinTakesPrecedenceOverAnUnpreparedMergeCandidate() {
+		Service service = new Service(Var.of("endpoint"),
+				new StatementPattern(Var.of("subject"), Var.of("predicate"), Var.of("object")), "", Map.of(), null,
+				false);
+		Join join = new Join(values("endpoint", VF.createIRI("urn:service")), service);
+		join.setMergeJoin(true);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(join,
+				EmptyBindingSet.getInstance());
+		assertThat(analysis.bindingState(service.getServiceRef(), analysis.contextAt(service)))
+				.as("physical preparation selects ServiceJoinIterator before considering merge joins")
+				.isEqualTo(QueryAlgebraBindingAnalysis.BindingState.BOUND);
+	}
+
+	@Test
 	void contextAtStopsAtItsDeclaredRootEvenWhenThatSubtreeHasAParent() {
 		Value one = VF.createIRI("urn:one");
 		BindingSetAssignment left = values("x", one);

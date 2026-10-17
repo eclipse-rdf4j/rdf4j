@@ -36,6 +36,13 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
 import java.util.zip.GZIPOutputStream;
@@ -158,6 +165,68 @@ class LmdbBulkLoaderContractTest {
 			}
 			first.close();
 		}
+	}
+
+	@Test
+	void rejectedLoaderCannotRewriteTheActiveOwnersResumableInputs() throws Exception {
+		Path target = temporaryDirectory.resolve("concurrent-resume-store");
+		Path firstInput = temporaryDirectory.resolve("owner.nt");
+		Path rejectedInput = temporaryDirectory.resolve("rejected.nt");
+		Files.writeString(firstInput, "<urn:owner> <urn:p> <urn:o> .\n");
+		Files.writeString(rejectedInput, "<urn:rejected> <urn:p> <urn:o> .\n");
+		CountDownLatch ownerStaging = new CountDownLatch(1);
+		CountDownLatch releaseOwner = new CountDownLatch(1);
+		AtomicBoolean cancelled = new AtomicBoolean();
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,psoc");
+		LmdbBulkLoader owner = LmdbBulkLoader.builder(target, config)
+				.partitionCount(2)
+				.workers(1)
+				.cancellationSignal(cancelled::get)
+				.progressListener(snapshot -> {
+					if (snapshot.phase() == BulkLoadPhase.STAGE_INPUTS && !snapshot.phaseComplete()) {
+						ownerStaging.countDown();
+						try {
+							if (!releaseOwner.await(10, TimeUnit.SECONDS)) {
+								throw new AssertionError("test must release the owner");
+							}
+						} catch (InterruptedException interrupted) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(interrupted);
+						}
+					}
+				})
+				.build();
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			Future<LmdbBulkLoader.Result> active = executor.submit(() -> owner.load(List.of(
+					new LmdbBulkLoader.PathInput(firstInput, RDFFormat.NTRIPLES, "urn:owner:"))));
+			try {
+				assertThat(ownerStaging.await(10, TimeUnit.SECONDS)).isTrue();
+				Path control = BulkLoadWorkspace.controlDirectory(target);
+				Properties original = BulkLoadWorkspace.inspect(control);
+				assertThat(original).containsEntry("input.source", "PATHS")
+						.containsEntry("input.0.path", firstInput.toAbsolutePath().normalize().toString());
+				assertThatThrownBy(() -> LmdbBulkLoader.builder(target, config)
+						.partitionCount(2)
+						.workers(1)
+						.build()
+						.load(List.of(new LmdbBulkLoader.PathInput(rejectedInput, RDFFormat.NTRIPLES,
+								"urn:rejected:"))))
+										.isInstanceOf(IOException.class)
+										.hasMessageContaining("locked");
+				assertThat(BulkLoadWorkspace.inspect(control))
+						.as("a rejected contender must not mutate any active resumable metadata")
+						.isEqualTo(original);
+			} finally {
+				cancelled.set(true);
+				releaseOwner.countDown();
+				assertThatThrownBy(() -> active.get(10, TimeUnit.SECONDS))
+						.isInstanceOf(ExecutionException.class)
+						.hasCauseInstanceOf(CancellationException.class);
+			}
+		}
+		LmdbBulkLoader.builder(target, config).partitionCount(2).workers(1).build().resume();
+		assertThat(readStatements(target)).extracting(statement -> statement.getSubject().stringValue())
+				.containsExactly("urn:owner");
 	}
 
 	@Test

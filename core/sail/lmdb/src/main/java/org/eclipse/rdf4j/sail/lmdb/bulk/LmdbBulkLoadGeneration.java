@@ -22,6 +22,8 @@ import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.FileSystem;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.InvalidPathException;
@@ -40,6 +42,9 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 final class LmdbBulkLoadGeneration implements AutoCloseable {
@@ -57,8 +62,10 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 	private final Path lockFile;
 	private final FileChannel lockChannel;
 	private final FileLock lock;
+	private final TargetOwnership ownership;
 	private final boolean targetCreated;
 	private final PromotionHook promotionHook;
+	private final AtomicBoolean closed = new AtomicBoolean();
 
 	private Path generation;
 	private RecoveryData recoveryData;
@@ -74,6 +81,21 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 		if (Files.isSymbolicLink(normalized)) {
 			throw new IOException("LMDB bulk-load target must not be a symbolic link: " + normalized);
 		}
+		TargetOwnership ownership = TargetOwnership.acquire(normalized);
+		try {
+			return create(normalized, promotionHook, ownership);
+		} catch (IOException | RuntimeException | Error failure) {
+			try {
+				ownership.close();
+			} catch (IOException cleanupFailure) {
+				failure.addSuppressed(cleanupFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private static LmdbBulkLoadGeneration create(Path normalized, PromotionHook promotionHook,
+			TargetOwnership ownership) throws IOException {
 		boolean targetCreated = createTargetDirectory(normalized);
 		Path lockFile = normalized.resolve(LOCK_FILE_NAME);
 		if (exists(lockFile)) {
@@ -85,7 +107,7 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 		try {
 			lock = acquireLock(normalized, lockChannel);
 			LmdbBulkLoadGeneration result = new LmdbBulkLoadGeneration(normalized, lockFile, lockChannel, lock,
-					targetCreated, promotionHook);
+					ownership, targetCreated, promotionHook);
 			result.openOrRecover();
 			return result;
 		} catch (IOException | RuntimeException | Error failure) {
@@ -102,13 +124,14 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 	}
 
 	private LmdbBulkLoadGeneration(Path target, Path lockFile, FileChannel lockChannel, FileLock lock,
-			boolean targetCreated, PromotionHook promotionHook) {
+			TargetOwnership ownership, boolean targetCreated, PromotionHook promotionHook) {
 		this.target = target;
 		marker = target.resolve(MARKER_FILE_NAME);
 		manifest = target.resolve(MANIFEST_FILE_NAME);
 		this.lockFile = lockFile;
 		this.lockChannel = lockChannel;
 		this.lock = lock;
+		this.ownership = ownership;
 		this.targetCreated = targetCreated;
 		this.promotionHook = promotionHook;
 	}
@@ -188,6 +211,15 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 
 	@Override
 	public void close() throws IOException {
+		if (!closed.compareAndSet(false, true)) {
+			return;
+		}
+		try (TargetOwnership ignored = ownership) {
+			closeGeneration();
+		}
+	}
+
+	private void closeGeneration() throws IOException {
 		IOException failure = null;
 		try {
 			if (!published && !promotionStarted && generation != null) {
@@ -763,6 +795,80 @@ final class LmdbBulkLoadGeneration implements AutoCloseable {
 		}
 		if (failure != null) {
 			throw failure;
+		}
+	}
+
+	/**
+	 * Stable store ownership outlives replaceable generation files and failed-target cleanup. Never unlink this file:
+	 * another contender can have opened its inode before attempting to acquire the lock.
+	 */
+	private static final class TargetOwnership implements AutoCloseable {
+		private static final ConcurrentMap<StableFileIdentity, Object> RESERVATIONS = new ConcurrentHashMap<>();
+
+		private final StableFileIdentity identity;
+		private final Object reservation;
+		private final FileChannel channel;
+		private final FileLock lock;
+
+		private TargetOwnership(StableFileIdentity identity, Object reservation, FileChannel channel, FileLock lock) {
+			this.identity = identity;
+			this.reservation = reservation;
+			this.channel = channel;
+			this.lock = lock;
+		}
+
+		private static TargetOwnership acquire(Path target) throws IOException {
+			Path parent = target.getParent();
+			if (parent == null) {
+				throw new IOException("LMDB bulk-load target must have a parent directory: " + target);
+			}
+			Files.createDirectories(parent);
+			Path path = parent.resolve("." + target.getFileName() + ".lmdb-bulk-load.lock");
+			if (!exists(path)) {
+				try {
+					Files.createFile(path);
+				} catch (FileAlreadyExistsException createdByContender) {
+					// Atomic CREATE_NEW failed without opening a descriptor on the contender's existing guard.
+				}
+			}
+			requireRegularFile(path);
+			Object fileKey = Files.readAttributes(path, BasicFileAttributes.class, NOFOLLOW_LINKS).fileKey();
+			StableFileIdentity identity = new StableFileIdentity(path.getFileSystem(),
+					fileKey == null ? path.toRealPath() : fileKey);
+			Object reservation = new Object();
+			if (RESERVATIONS.putIfAbsent(identity, reservation) != null) {
+				throw new IOException("LMDB bulk-load target is locked by another loader: " + target);
+			}
+			FileChannel channel = null;
+			try {
+				// Closing a second channel can release this JVM's native lock even if tryLock rejected that channel.
+				// Reserve the persistent file identity before opening, including when a parent path is an alias.
+				channel = FileChannel.open(path, StandardOpenOption.WRITE, NOFOLLOW_LINKS);
+				return new TargetOwnership(identity, reservation, channel, acquireLock(target, channel));
+			} catch (IOException | RuntimeException | Error failure) {
+				try {
+					if (channel != null) {
+						channel.close();
+					}
+				} catch (IOException cleanupFailure) {
+					failure.addSuppressed(cleanupFailure);
+				} finally {
+					RESERVATIONS.remove(identity, reservation);
+				}
+				throw failure;
+			}
+		}
+
+		@Override
+		public void close() throws IOException {
+			try {
+				releaseLock(lock, channel);
+			} finally {
+				RESERVATIONS.remove(identity, reservation);
+			}
+		}
+
+		private record StableFileIdentity(FileSystem fileSystem, Object fileKey) {
 		}
 	}
 

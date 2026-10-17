@@ -74,7 +74,7 @@ public interface CoreDatatype {
 	}
 
 	@Experimental
-	static CoreDatatype from(String datatype) {
+	static CoreDatatype fromString(String datatype) {
 		if (datatype == null) {
 			return CoreDatatype.NONE;
 		}

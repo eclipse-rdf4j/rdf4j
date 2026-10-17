@@ -80,7 +80,8 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 						joinAttributes, graphFrames);
 			}
 			// A never-opened right operand may not suppress an observable query-fatal error.
-			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(right, bs,
+			return bs -> JoinQueryEvaluationStep.withGuaranteedRightEvaluation(strategy, leftJoin.getRightArg(), right,
+					context, bs,
 					trackedRight -> ScopedLeftJoinIterator.withGraphFrames(left, trackedRight, isolatedCondition, bs,
 							context, joinAttributes, graphFrames));
 		}

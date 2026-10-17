@@ -70,10 +70,14 @@ final class LmdbBulkLoaderEngine {
 	private static LmdbBulkLoader.Result load(LmdbBulkLoader loader, StagingAction stagingAction,
 			BulkLoadInputs inputs, List<RDFFormat> formats) throws IOException {
 		long started = System.nanoTime();
+		// Own the target before opening resumable state, and retain it through failure and workspace cleanup.
 		// An existing workspace keeps the compression it recorded; this only chooses it for a new one.
-		try (BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
-				loader.progressListener(), loader.workers(), loader.queueBatches(), loader.compressionFor(formats),
-				BulkLoadSettings.of(loader));
+		try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
+				loader.publicationHook());
+				BulkLoadWorkspace workspace = BulkLoadWorkspace.open(loader.target(), loader.temporaryDirectory(),
+						loader.progressListener(), loader.workers(), loader.queueBatches(),
+						loader.compressionFor(formats),
+						BulkLoadSettings.of(loader));
 				BulkTaskScheduler scheduler = new BulkTaskScheduler(loader.workers(), loader.memoryBudgetBytes(),
 						Math.max(3, loader.maxOpenFiles()))) {
 			try {
@@ -84,142 +88,139 @@ final class LmdbBulkLoaderEngine {
 				}
 				workspace.startPhase(BulkLoadPhase.PREFLIGHT);
 				checkCancelled(loader);
-				try (LmdbBulkLoadGeneration generation = LmdbBulkLoadGeneration.create(loader.target(),
-						loader.publicationHook())) {
-					workspace.completePhase(BulkLoadPhase.PREFLIGHT);
-					if (generation.recoveredPublication()) {
-						LmdbBulkLoadGeneration.PublicationStatistics statistics = generation.recoveredStatistics();
-						checkCancelled(loader);
-						workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-						generation.finishRecoveredPublication();
-						workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-						LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(statistics.parsedStatements(),
-								statistics.storedStatements(), statistics.persistedValues(),
-								statistics.inlineValues(), statistics.temporaryBytes(), statistics.elapsedMillis(),
-								statistics.mapGrowthCount());
-						workspace.complete(result);
-						return result;
-					}
-
-					CanonicalStagedInput staged;
-					if (workspace.phaseComplete(BulkLoadPhase.STAGE_INPUTS)) {
-						staged = workspace.stagedInput(loader.partitionCount());
-					} else {
-						workspace.startPhase(BulkLoadPhase.STAGE_INPUTS);
-						staged = stagingAction.stage(workspace, scheduler);
-						workspace.recordStagedInput(staged);
-						workspace.completePhase(BulkLoadPhase.STAGE_INPUTS);
-					}
-
-					ResolvedIdQuadSpool statements;
-					ResolvedValueRecords resolvedValues = null;
-					if (workspace.phaseComplete(BulkLoadPhase.RESOLVE_IDS)) {
-						statements = workspace.resolvedStatements();
-						if (!workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
-							resolvedValues = workspace.resolvedValues(scheduler);
-						}
-					} else {
-						ValueDependencyBuckets dependencies = null;
-						if (!workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
-							if (workspace.phaseComplete(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES)) {
-								dependencies = workspace.dependencyBuckets(loader.partitionCount());
-							} else {
-								workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
-								dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
-										loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
-										loader.format(), workspace.compression(), loader.cancellationSignal(),
-										scheduler, loader.newPartitionConcurrencyController());
-								workspace.progress(staged.statements(), 0L);
-								workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
-							}
-						}
-
-						PartitionValueDictionary dictionary;
-						if (workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
-							dictionary = workspace.dictionary(loader.partitionCount());
-						} else {
-							PredicateIdPlan predicateIdPlan;
-							if (workspace.phaseComplete(BulkLoadPhase.PLAN_VALUE_IDS)) {
-								predicateIdPlan = workspace.predicateIdPlan();
-							} else {
-								workspace.startPhase(BulkLoadPhase.PLAN_VALUE_IDS);
-								predicateIdPlan = PredicateIdPlan.build(staged, workspace.directory(),
-										workspace.compression().codecFor(BulkArtifact.PREDICATE_ID_PLAN),
-										loader.cancellationSignal());
-								workspace.recordPredicateIdPlan(predicateIdPlan);
-								workspace.progress(staged.statements(), 0L);
-								workspace.completePhase(BulkLoadPhase.PLAN_VALUE_IDS);
-							}
-							workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
-							dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
-									workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
-									loader.maxOpenFiles(), loader.format(), workspace.compression(),
-									loader.cancellationSignal(), predicateIdPlan, scheduler,
-									loader.newPartitionConcurrencyController());
-							workspace.recordDictionary(dictionary);
-							workspace.progress(
-									Math.addExact(dictionary.persistedValues(), dictionary.inlineValues()), 0L);
-							workspace.completePhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
-						}
-						workspace.reclaimAfterDictionary();
-
-						workspace.startPhase(BulkLoadPhase.RESOLVE_IDS);
-						statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
-								loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
-								loader.cancellationSignal(), scheduler, loader.newPartitionConcurrencyController());
-						resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
-								loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.format(),
-								workspace.compression(), loader.cancellationSignal(), scheduler,
-								loader.newPartitionConcurrencyController());
-						workspace.recordResolved(statements, resolvedValues);
-						workspace.progress(Math.addExact(statements.statements(), resolvedValues.records()), 0L);
-						workspace.completePhase(BulkLoadPhase.RESOLVE_IDS);
-					}
-					workspace.reclaimAfterResolution();
-					long persistedValues = workspace.dictionaryPersistedValues();
-					long inlineValues = workspace.dictionaryInlineValues();
-
-					ValueStoreBulkRecords.Output nativeValueRecords;
-					if (workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
-						nativeValueRecords = workspace.nativeRecords();
-					} else {
-						workspace.startPhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
-						if (resolvedValues == null) {
-							throw new IOException("Resolved value records are unavailable for native-run construction");
-						}
-						nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
-								loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
-								loader.cancellationSignal(), scheduler, loader.format());
-						workspace.recordNativeRecords(nativeValueRecords);
-						workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
-						workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
-					}
-					workspace.reclaimAfterNativeRecords();
-
-					workspace.startPhase(BulkLoadPhase.WRITE_GENERATION);
-					NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
-							loader.config(), loader.format(),
-							nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
-							loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
-							loader.cancellationSignal(), scheduler);
-					workspace.progress(writeResult.storedStatements(), 0L);
-					workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
-
-					long storedStatements = writeResult.storedStatements();
-					long temporaryBytes = workspace.bytesWritten();
-					long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+				workspace.completePhase(BulkLoadPhase.PREFLIGHT);
+				if (generation.recoveredPublication()) {
+					LmdbBulkLoadGeneration.PublicationStatistics statistics = generation.recoveredStatistics();
+					checkCancelled(loader);
 					workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-					generation.publish(new LmdbBulkLoadGeneration.PublicationStatistics(staged.statements(),
-							storedStatements, persistedValues, inlineValues, temporaryBytes,
-							elapsedMillis, writeResult.mapGrowthCount()));
-					workspace.progress(1L, 0L);
+					generation.finishRecoveredPublication();
 					workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
-					LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(staged.statements(), storedStatements,
-							persistedValues, inlineValues, temporaryBytes, elapsedMillis,
-							writeResult.mapGrowthCount());
+					LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(statistics.parsedStatements(),
+							statistics.storedStatements(), statistics.persistedValues(),
+							statistics.inlineValues(), statistics.temporaryBytes(), statistics.elapsedMillis(),
+							statistics.mapGrowthCount());
 					workspace.complete(result);
 					return result;
 				}
+
+				CanonicalStagedInput staged;
+				if (workspace.phaseComplete(BulkLoadPhase.STAGE_INPUTS)) {
+					staged = workspace.stagedInput(loader.partitionCount());
+				} else {
+					workspace.startPhase(BulkLoadPhase.STAGE_INPUTS);
+					staged = stagingAction.stage(workspace, scheduler);
+					workspace.recordStagedInput(staged);
+					workspace.completePhase(BulkLoadPhase.STAGE_INPUTS);
+				}
+
+				ResolvedIdQuadSpool statements;
+				ResolvedValueRecords resolvedValues = null;
+				if (workspace.phaseComplete(BulkLoadPhase.RESOLVE_IDS)) {
+					statements = workspace.resolvedStatements();
+					if (!workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
+						resolvedValues = workspace.resolvedValues(scheduler);
+					}
+				} else {
+					ValueDependencyBuckets dependencies = null;
+					if (!workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
+						if (workspace.phaseComplete(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES)) {
+							dependencies = workspace.dependencyBuckets(loader.partitionCount());
+						} else {
+							workspace.startPhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
+							dependencies = ValueDependencyCollector.collect(staged, workspace.directory(),
+									loader.partitionCount(), loader.maxOpenFiles(), loader.memoryBudgetBytes(),
+									loader.format(), workspace.compression(), loader.cancellationSignal(),
+									scheduler, loader.newPartitionConcurrencyController());
+							workspace.progress(staged.statements(), 0L);
+							workspace.completePhase(BulkLoadPhase.DISTINCT_AND_ANALYZE_VALUES);
+						}
+					}
+
+					PartitionValueDictionary dictionary;
+					if (workspace.phaseComplete(BulkLoadPhase.BUILD_MAPPED_DICTIONARY)) {
+						dictionary = workspace.dictionary(loader.partitionCount());
+					} else {
+						PredicateIdPlan predicateIdPlan;
+						if (workspace.phaseComplete(BulkLoadPhase.PLAN_VALUE_IDS)) {
+							predicateIdPlan = workspace.predicateIdPlan();
+						} else {
+							workspace.startPhase(BulkLoadPhase.PLAN_VALUE_IDS);
+							predicateIdPlan = PredicateIdPlan.build(staged, workspace.directory(),
+									workspace.compression().codecFor(BulkArtifact.PREDICATE_ID_PLAN),
+									loader.cancellationSignal());
+							workspace.recordPredicateIdPlan(predicateIdPlan);
+							workspace.progress(staged.statements(), 0L);
+							workspace.completePhase(BulkLoadPhase.PLAN_VALUE_IDS);
+						}
+						workspace.startPhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
+						dictionary = PartitionValueDictionaryBuilder.build(staged, dependencies,
+								workspace.directory(), loader.partitionCount(), loader.memoryBudgetBytes(),
+								loader.maxOpenFiles(), loader.format(), workspace.compression(),
+								loader.cancellationSignal(), predicateIdPlan, scheduler,
+								loader.newPartitionConcurrencyController());
+						workspace.recordDictionary(dictionary);
+						workspace.progress(
+								Math.addExact(dictionary.persistedValues(), dictionary.inlineValues()), 0L);
+						workspace.completePhase(BulkLoadPhase.BUILD_MAPPED_DICTIONARY);
+					}
+					workspace.reclaimAfterDictionary();
+
+					workspace.startPhase(BulkLoadPhase.RESOLVE_IDS);
+					statements = ResolvedIdQuadSpool.build(staged, dictionary, workspace.directory(),
+							loader.maxOpenFiles(), loader.memoryBudgetBytes(), workspace.compression(),
+							loader.cancellationSignal(), scheduler, loader.newPartitionConcurrencyController());
+					resolvedValues = ResolvedValueRecords.build(dictionary, workspace.directory(),
+							loader.maxOpenFiles(), loader.memoryBudgetBytes(), loader.format(),
+							workspace.compression(), loader.cancellationSignal(), scheduler,
+							loader.newPartitionConcurrencyController());
+					workspace.recordResolved(statements, resolvedValues);
+					workspace.progress(Math.addExact(statements.statements(), resolvedValues.records()), 0L);
+					workspace.completePhase(BulkLoadPhase.RESOLVE_IDS);
+				}
+				workspace.reclaimAfterResolution();
+				long persistedValues = workspace.dictionaryPersistedValues();
+				long inlineValues = workspace.dictionaryInlineValues();
+
+				ValueStoreBulkRecords.Output nativeValueRecords;
+				if (workspace.phaseComplete(BulkLoadPhase.BUILD_NATIVE_RUNS)) {
+					nativeValueRecords = workspace.nativeRecords();
+				} else {
+					workspace.startPhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
+					if (resolvedValues == null) {
+						throw new IOException("Resolved value records are unavailable for native-run construction");
+					}
+					nativeValueRecords = ValueStoreBulkRecords.build(resolvedValues, workspace.directory(),
+							loader.memoryBudgetBytes(), loader.maxOpenFiles(), workspace.compression(),
+							loader.cancellationSignal(), scheduler, loader.format());
+					workspace.recordNativeRecords(nativeValueRecords);
+					workspace.progress(nativeRecordCount(nativeValueRecords), 0L);
+					workspace.completePhase(BulkLoadPhase.BUILD_NATIVE_RUNS);
+				}
+				workspace.reclaimAfterNativeRecords();
+
+				workspace.startPhase(BulkLoadPhase.WRITE_GENERATION);
+				NativeStoreWriter.WriteResult writeResult = NativeStoreWriter.write(generation.directory(),
+						loader.config(), loader.format(),
+						nativeValueRecords, statements, staged, loader.memoryBudgetBytes(), loader.maxOpenFiles(),
+						loader.writeTransactionRecords(), loader.writeTransactionBytes(), workspace.compression(),
+						loader.cancellationSignal(), scheduler);
+				workspace.progress(writeResult.storedStatements(), 0L);
+				workspace.completePhase(BulkLoadPhase.WRITE_GENERATION);
+
+				long storedStatements = writeResult.storedStatements();
+				long temporaryBytes = workspace.bytesWritten();
+				long elapsedMillis = (System.nanoTime() - started) / 1_000_000L;
+				workspace.startPhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+				generation.publish(new LmdbBulkLoadGeneration.PublicationStatistics(staged.statements(),
+						storedStatements, persistedValues, inlineValues, temporaryBytes,
+						elapsedMillis, writeResult.mapGrowthCount()));
+				workspace.progress(1L, 0L);
+				workspace.completePhase(BulkLoadPhase.PUBLISH_AND_CLEAN);
+				LmdbBulkLoader.Result result = new LmdbBulkLoader.Result(staged.statements(), storedStatements,
+						persistedValues, inlineValues, temporaryBytes, elapsedMillis,
+						writeResult.mapGrowthCount());
+				workspace.complete(result);
+				return result;
 			} catch (IOException | RuntimeException | Error failure) {
 				try {
 					workspace.markResumable(failure);

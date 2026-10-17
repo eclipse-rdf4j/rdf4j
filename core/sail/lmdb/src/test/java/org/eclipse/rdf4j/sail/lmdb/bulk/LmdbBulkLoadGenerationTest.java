@@ -13,17 +13,24 @@ package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.IOException;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.nio.file.DirectoryNotEmptyException;
+import java.nio.file.FileSystemException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.List;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.sail.lmdb.bulk.LmdbBulkLoadGeneration.PublicationStage;
 import org.junit.jupiter.api.Test;
@@ -39,6 +46,140 @@ class LmdbBulkLoadGenerationTest {
 
 	@TempDir
 	Path temporaryDirectory;
+
+	@Test
+	void rejectingAnInProcessContenderKeepsTheStableLockHeldAgainstOtherProcesses() throws Exception {
+		Path target = temporaryDirectory.resolve("cross-process-ownership");
+		Path stableLock = target.resolveSibling("." + target.getFileName() + ".lmdb-bulk-load.lock");
+		try (LmdbBulkLoadGeneration owner = LmdbBulkLoadGeneration.create(target)) {
+			assertEquals("BLOCKED", tryStableLockInChild(stableLock), "the live owner initially excludes a child");
+			IOException rejected = assertThrows(IOException.class, () -> LmdbBulkLoadGeneration.create(target));
+			assertTrue(rejected.getMessage().contains("locked"));
+			assertEquals("BLOCKED", tryStableLockInChild(stableLock),
+					"rejecting an in-process contender cannot release the owner's native stable lock");
+		}
+		assertEquals("ACQUIRED", tryStableLockInChild(stableLock), "closing the owner releases the stable lock");
+	}
+
+	@Test
+	void aParentAliasCannotOpenAndReleaseAnOwnedStableLock() throws Exception {
+		Path realParent = Files.createDirectory(temporaryDirectory.resolve("real-parent"));
+		Path aliasParent = temporaryDirectory.resolve("alias-parent");
+		try {
+			Files.createSymbolicLink(aliasParent, realParent);
+		} catch (UnsupportedOperationException | FileSystemException unsupported) {
+			assumeTrue(false, "the filesystem does not support the parent alias: " + unsupported);
+		}
+		Path target = realParent.resolve("owned-store");
+		Path stableLock = realParent.resolve(".owned-store.lmdb-bulk-load.lock");
+		try (LmdbBulkLoadGeneration owner = LmdbBulkLoadGeneration.create(target)) {
+			IOException rejected = assertThrows(IOException.class,
+					() -> LmdbBulkLoadGeneration.create(aliasParent.resolve("owned-store")));
+			assertTrue(rejected.getMessage().contains("locked"));
+			assertEquals("BLOCKED", tryStableLockInChild(stableLock),
+					"an alias contender cannot release the owner's native stable lock");
+		}
+		try (LmdbBulkLoadGeneration nextOwner = LmdbBulkLoadGeneration.create(aliasParent.resolve("owned-store"))) {
+			assertTrue(Files.isDirectory(nextOwner.directory()));
+		}
+	}
+
+	@Test
+	void unrelatedTargetsCanHoldTheirStableLocksAtTheSameTime() throws Exception {
+		Path firstTarget = temporaryDirectory.resolve("first-target");
+		Path secondTarget = temporaryDirectory.resolve("second-target");
+		try (LmdbBulkLoadGeneration first = LmdbBulkLoadGeneration.create(firstTarget);
+				LmdbBulkLoadGeneration second = LmdbBulkLoadGeneration.create(secondTarget)) {
+			assertEquals("BLOCKED",
+					tryStableLockInChild(firstTarget.resolveSibling(".first-target.lmdb-bulk-load.lock")));
+			assertEquals("BLOCKED",
+					tryStableLockInChild(secondTarget.resolveSibling(".second-target.lmdb-bulk-load.lock")));
+			assertTrue(Files.isDirectory(first.directory()));
+			assertTrue(Files.isDirectory(second.directory()));
+		}
+	}
+
+	private String tryStableLockInChild(Path stableLock) throws Exception {
+		String java = Path.of(System.getProperty("java.home"), "bin", "java").toString();
+		Process child = new ProcessBuilder(java, "-cp", System.getProperty("java.class.path"),
+				StableLockContender.class.getName(), stableLock.toString()).redirectErrorStream(true).start();
+		try {
+			assertTrue(child.waitFor(60, TimeUnit.SECONDS), "the owned lock-probe child must terminate");
+			String output = new String(child.getInputStream().readAllBytes(), UTF_8).trim();
+			assertEquals(0, child.exitValue(), output);
+			return output;
+		} finally {
+			if (child.isAlive()) {
+				child.destroyForcibly();
+				assertTrue(child.waitFor(10, TimeUnit.SECONDS),
+						"the owned lock-probe child must terminate after cleanup");
+			}
+		}
+	}
+
+	public static final class StableLockContender {
+		public static void main(String[] args) throws IOException {
+			try (FileChannel channel = FileChannel.open(Path.of(args[0]), StandardOpenOption.WRITE);
+					FileLock lock = channel.tryLock()) {
+				System.out.println(lock == null ? "BLOCKED" : "ACQUIRED");
+			}
+		}
+	}
+
+	@Test
+	void aClosedGenerationCannotCleanUpALaterOwnersMetadata() throws IOException {
+		for (boolean existingTarget : List.of(false, true)) {
+			Path target = temporaryDirectory.resolve("closed-owner-" + existingTarget);
+			if (existingTarget) {
+				Files.createDirectory(target);
+			}
+			LmdbBulkLoadGeneration formerOwner = LmdbBulkLoadGeneration.create(target);
+			formerOwner.close();
+			try (LmdbBulkLoadGeneration currentOwner = LmdbBulkLoadGeneration.create(target)) {
+				Path marker = target.resolve(LmdbBulkLoadGeneration.MARKER_FILE_NAME);
+				byte[] currentMarker = Files.readAllBytes(marker);
+				assertDoesNotThrow(formerOwner::close, "closing a released owner is idempotent");
+				assertArrayEquals(currentMarker, Files.readAllBytes(marker),
+						"a former owner cannot discard the current owner's marker");
+				assertTrue(Files.isDirectory(currentOwner.directory()));
+				IOException rejected = assertThrows(IOException.class, () -> LmdbBulkLoadGeneration.create(target));
+				assertTrue(rejected.getMessage().contains("locked"));
+			}
+			assertEquals(existingTarget, Files.exists(target));
+		}
+	}
+
+	@Test
+	void anOpenedContenderLockCannotBeReplacedDuringOwnerCleanup() throws IOException {
+		for (boolean existingTarget : List.of(false, true)) {
+			Path target = temporaryDirectory.resolve("ownership-" + existingTarget);
+			if (existingTarget) {
+				Files.createDirectory(target);
+			}
+			LmdbBulkLoadGeneration owner = LmdbBulkLoadGeneration.create(target);
+			Path stableLock = target.resolveSibling("." + target.getFileName() + ".lmdb-bulk-load.lock");
+			Path lockPath = Files.exists(stableLock) ? stableLock
+					: target.resolve(LmdbBulkLoadGeneration.LOCK_FILE_NAME);
+			try (FileChannel contender = FileChannel.open(lockPath, StandardOpenOption.WRITE)) {
+				owner.close();
+				try (FileLock retainedLock = contender.tryLock()) {
+					assertTrue(retainedLock != null, "the opened contender acquires the former owner's lock");
+					LmdbBulkLoadGeneration[] unexpected = new LmdbBulkLoadGeneration[1];
+					try {
+						IOException rejected = assertThrows(IOException.class,
+								() -> unexpected[0] = LmdbBulkLoadGeneration.create(target),
+								"cleanup must not let a third loader lock a replacement inode");
+						assertTrue(rejected.getMessage().contains("locked"));
+					} finally {
+						if (unexpected[0] != null) {
+							unexpected[0].close();
+						}
+					}
+				}
+			}
+			assertEquals(existingTarget, Files.exists(target), "failed created targets still clean up normally");
+		}
+	}
 
 	@Test
 	void retainsManifestWhenMarkerRemovalFails() throws IOException {

@@ -58,6 +58,25 @@ class TimeLimitMaterializedReplayJoinCancellationTest {
 	private static final long BLOCKED_ITERATION_TIMEOUT_SECONDS = 30L;
 
 	@Test
+	void legacyTimerClosesAnIdlePartiallyConsumedProductionReplay() throws Exception {
+		CountedRowIteration left = new CountedRowIteration();
+		CountedRowIteration right = new CountedRowIteration();
+		ObservedIdleReplay replay = new ObservedIdleReplay(left, right);
+		try (TestTimeLimitIteration timeout = new TestTimeLimitIteration(replay, DIRECT_TIMEOUT_MILLIS)) {
+			assertEquals(EmptyBindingSet.getInstance(), timeout.next());
+			assertFalse(replay.isClosed());
+			assertTrue(replay.cancellationRequested.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"the actual legacy timer must signal production replay cancellation");
+			assertTrue(left.closed.await(WAIT_SECONDS, TimeUnit.SECONDS), "idle timeout must release the left source");
+			assertTrue(right.closed.await(WAIT_SECONDS, TimeUnit.SECONDS),
+					"idle timeout must release the right source");
+			assertTrue(replay.isClosed());
+		}
+		assertEquals(1, left.closeCalls.get());
+		assertEquals(1, right.closeCalls.get());
+	}
+
+	@Test
 	void directTimeLimitSignalsButDoesNotCloseANonCooperativeReplayChild() throws Exception {
 		ReplayFixture fixture = new ReplayFixture();
 		ExecutorService executor = Executors.newSingleThreadExecutor();
@@ -184,6 +203,49 @@ class TimeLimitMaterializedReplayJoinCancellationTest {
 			};
 			replay = new ObservedReplayJoinIterator(leftStep, rightStep, new CountDownLatch(1),
 					EmptyBindingSet.getInstance());
+		}
+	}
+
+	private static final class ObservedIdleReplay extends MaterializedReplayJoinIterator {
+		private final CountDownLatch cancellationRequested = new CountDownLatch(1);
+
+		private ObservedIdleReplay(CountedRowIteration left, CountedRowIteration right) {
+			super(bindings -> left, bindings -> right, null, EmptyBindingSet.getInstance(), false, List.of(),
+					DefaultCollectionFactory::new, QueryExecutionPolicy.DEFAULT);
+		}
+
+		@Override
+		public boolean requestCancellation() {
+			boolean accepted = super.requestCancellation();
+			assertTrue(accepted);
+			cancellationRequested.countDown();
+			return accepted;
+		}
+	}
+
+	private static final class CountedRowIteration extends AbstractCloseableIteration<BindingSet> {
+		private final CountDownLatch closed = new CountDownLatch(1);
+		private final AtomicInteger closeCalls = new AtomicInteger();
+		private boolean sent;
+
+		@Override
+		public boolean hasNext() {
+			return !sent;
+		}
+
+		@Override
+		public BindingSet next() {
+			if (!hasNext()) {
+				throw new NoSuchElementException();
+			}
+			sent = true;
+			return EmptyBindingSet.getInstance();
+		}
+
+		@Override
+		protected void handleClose() {
+			closeCalls.incrementAndGet();
+			closed.countDown();
 		}
 	}
 

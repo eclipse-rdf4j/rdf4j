@@ -197,6 +197,13 @@ public final class SailDatasetSnapshot implements SailClosable {
 						release();
 					}
 				}
+
+				@Override
+				public void abandonUnobserved() {
+					// This borrower is private, but the physical dataset and its observations belong to every lease.
+					// Normal final cleanup preserves anything observed by a sibling or the snapshot owner.
+					close();
+				}
 			};
 		}
 

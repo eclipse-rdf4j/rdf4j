@@ -152,6 +152,9 @@ public class QueryEvaluationUtil {
 			return l == r; // null is equal to null, but not to anything else
 		}
 		if (l == r) {
+			if (l.isLiteral()) {
+				return doCompareLiteralsEQ((Literal) l, (Literal) r, strict);
+			}
 			return true;
 		}
 		if (l.isLiteral() && r.isLiteral()) {
@@ -178,6 +181,9 @@ public class QueryEvaluationUtil {
 			return l != r; // null is equal to null, but not to anything else
 		}
 		if (l == r) {
+			if (l.isLiteral()) {
+				return doCompareLiteralsNE((Literal) l, (Literal) r, strict);
+			}
 			return false;
 		}
 		if (l.isLiteral() && r.isLiteral()) {
@@ -224,7 +230,9 @@ public class QueryEvaluationUtil {
 			if (l == null || !l.isLiteral()) {
 				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 			}
-			return true;
+			QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(
+					(Literal) l, (Literal) r, CompareOp.LE);
+			return floating == null || floating.orElse(false);
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsLE((Literal) l, (Literal) r, strict);
@@ -264,7 +272,9 @@ public class QueryEvaluationUtil {
 			if (l == null || !l.isLiteral()) {
 				throw NOT_COMPATIBLE_AND_ORDERED_EXCEPTION;
 			}
-			return true;
+			QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(
+					(Literal) l, (Literal) r, CompareOp.GE);
+			return floating == null || floating.orElse(false);
 		}
 		if (l != null && l.isLiteral() && r != null && r.isLiteral()) {
 			return doCompareLiteralsGE((Literal) l, (Literal) r, strict);
@@ -429,6 +439,11 @@ public class QueryEvaluationUtil {
 
 	private static boolean doCompareLiteralsEQ(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.EQ);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		if (l == r) {
 			return true;
 		}
@@ -623,6 +638,11 @@ public class QueryEvaluationUtil {
 
 	private static boolean doCompareLiteralsNE(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.NE);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		if (l.equals(r)) {
 			return false;
 		}
@@ -631,6 +651,11 @@ public class QueryEvaluationUtil {
 
 	private static boolean doCompareLiteralsLT(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.LT);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		CoreDatatype.XSD ld = l.getCoreDatatype().asXSDDatatypeOrNull();
 		CoreDatatype.XSD rd = r.getCoreDatatype().asXSDDatatypeOrNull();
 		boolean lLang = Literals.isLanguageLiteral(l);
@@ -695,16 +720,31 @@ public class QueryEvaluationUtil {
 
 	private static boolean doCompareLiteralsLE(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.LE);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		return doCompareLiteralsLT(l, r, strict) || doCompareLiteralsEQ(l, r, strict);
 	}
 
 	private static boolean doCompareLiteralsGT(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.GT);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		return !doCompareLiteralsLE(l, r, strict);
 	}
 
 	private static boolean doCompareLiteralsGE(Literal l, Literal r, boolean strict)
 			throws ValueExprEvaluationException {
+		QueryEvaluationUtility.Result floating = QueryEvaluationUtility.compareFloatingPointLiterals(l, r,
+				CompareOp.GE);
+		if (floating != null) {
+			return floating.orElse(false);
+		}
 		return !doCompareLiteralsLT(l, r, strict);
 	}
 

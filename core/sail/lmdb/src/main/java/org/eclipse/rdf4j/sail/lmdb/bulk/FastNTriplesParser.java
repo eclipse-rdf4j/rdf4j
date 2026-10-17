@@ -39,6 +39,9 @@ final class FastNTriplesParser {
 	private static final int INITIAL_LINE_BYTES = 1024;
 	private static final int MAX_LINE_BYTES = 128 * 1024 * 1024;
 	private static final int MAX_RDF_STAR_DEPTH = 64;
+	private static final byte[] UTF8_BOM = { (byte) 0xef, (byte) 0xbb, (byte) 0xbf };
+	private static final byte[] VERSION_MARKER = "VERSION".getBytes(StandardCharsets.US_ASCII);
+	private static final int MIN_VERSION_DIRECTIVE_LENGTH = VERSION_MARKER.length + 4;
 
 	private static final byte[] XSD_STRING = XMLSchema.STRING.stringValue().getBytes(StandardCharsets.UTF_8);
 	private static final byte[] RDF_LANGSTRING = RDF.LANGSTRING.stringValue().getBytes(StandardCharsets.UTF_8);
@@ -86,6 +89,7 @@ final class FastNTriplesParser {
 	}
 
 	long parse(InputStream rawInput, StatementSink sink) throws IOException {
+		lineNumber = 0L;
 		InputStream input = decompressingInput(rawInput);
 		byte[] buffer = new byte[BUFFER_BYTES];
 		boolean skipLfAfterCr = false;
@@ -185,15 +189,24 @@ final class FastNTriplesParser {
 	private int parseLine(byte[] bytes, int start, int end, StatementSink sink) throws IOException {
 		checkCancelled();
 		activeLine = bytes;
+		lineNumber++;
+		if (lineNumber == 1L && end - start >= UTF8_BOM.length
+				&& bytes[start] == UTF8_BOM[0] && bytes[start + 1] == UTF8_BOM[1]
+				&& bytes[start + 2] == UTF8_BOM[2]) {
+			start += UTF8_BOM.length;
+		}
 		lineStart = start;
 		lineEnd = end;
-		lineNumber++;
 		if (end - start > MAX_LINE_BYTES) {
 			throw error("Line too long", end);
 		}
 
 		int cursor = skipHorizontalWhitespace(start);
-		if (cursor == end || bytes[cursor] == '#' || startsWithVersionDirective(cursor)) {
+		if (cursor == end || bytes[cursor] == '#') {
+			return 0;
+		}
+		if (startsWithVersionDirective(cursor)) {
+			parseVersionDirective(cursor);
 			return 0;
 		}
 		byte[] subject = parseSubject(cursor);
@@ -571,17 +584,35 @@ final class FastNTriplesParser {
 	}
 
 	private boolean startsWithVersionDirective(int cursor) {
-		byte[] marker = "VERSION".getBytes(StandardCharsets.US_ASCII);
-		if (cursor + marker.length >= lineEnd) {
+		if (lineEnd - cursor < MIN_VERSION_DIRECTIVE_LENGTH
+				|| cursor + VERSION_MARKER.length >= lineEnd) {
 			return false;
 		}
-		for (int i = 0; i < marker.length; i++) {
-			if (activeLine[cursor + i] != marker[i]) {
+		for (int i = 0; i < VERSION_MARKER.length; i++) {
+			if (activeLine[cursor + i] != VERSION_MARKER[i]) {
 				return false;
 			}
 		}
-		byte next = activeLine[cursor + marker.length];
+		byte next = activeLine[cursor + VERSION_MARKER.length];
 		return next == ' ' || next == '\t';
+	}
+
+	/** Validates the complete quoted directive using the same grammar accepted by Rio's N-Triples parser. */
+	private void parseVersionDirective(int cursor) {
+		cursor += VERSION_MARKER.length + 1;
+		if (cursor >= lineEnd || (activeLine[cursor] != '"' && activeLine[cursor] != '\'')) {
+			throw error("Expected opening quote for version string", cursor);
+		}
+		byte quote = activeLine[cursor++];
+		while (cursor < lineEnd && activeLine[cursor] != quote) {
+			cursor++;
+		}
+		if (cursor >= lineEnd) {
+			throw error("Unterminated version string", lineEnd);
+		}
+		if (cursor != lineEnd - 1) {
+			throw error("Unexpected content after version string", cursor);
+		}
 	}
 
 	private boolean isBNodeStart(int cursor) {

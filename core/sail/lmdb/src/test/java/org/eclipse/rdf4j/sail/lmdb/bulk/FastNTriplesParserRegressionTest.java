@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -39,6 +40,7 @@ class FastNTriplesParserRegressionTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI SUBJECT = VF.createIRI("urn:s");
 	private static final IRI PREDICATE = VF.createIRI("urn:p");
+	private static final String STATEMENT = "<urn:s> <urn:p> <urn:o> .\n";
 
 	@Test
 	void preservesEscapedLiteralLabelWithEscapedDatatype() throws IOException {
@@ -185,6 +187,60 @@ class FastNTriplesParserRegressionTest {
 		assertEquals(expected, parse(input, RDFFormat.NTRIPLES, true, null));
 	}
 
+	@Test
+	void acceptsUtf8BomOnlyAtTheDocumentStartAcrossStreamAndBlockPaths() throws IOException {
+		byte[] bytes = ("\uFEFF" + STATEMENT).getBytes(UTF_8);
+		List<Statement> expected = List.of(VF.createStatement(SUBJECT, PREDICATE, VF.createIRI("urn:o")));
+		List<Statement> streamed = new ArrayList<>();
+		InputStream splitBom = new ByteArrayInputStream(bytes) {
+			@Override
+			public synchronized int read(byte[] target, int offset, int length) {
+				return super.read(target, offset, Math.min(1, length));
+			}
+		};
+		new FastNTriplesParser(RDFFormat.NTRIPLES, () -> false).parse(splitBom, statementSink(streamed));
+
+		assertEquals(expected, streamed);
+		assertEquals(expected, parse(bytes, RDFFormat.NTRIPLES, true, null));
+		List<Statement> repeatedDocuments = new ArrayList<>();
+		FastNTriplesParser blockParser = new FastNTriplesParser(RDFFormat.NTRIPLES, () -> false);
+		blockParser.parseBlock(bytes, 0, bytes.length, 1L, statementSink(repeatedDocuments));
+		blockParser.parseBlock(bytes, 0, bytes.length, 1L, statementSink(repeatedDocuments));
+		assertEquals(List.of(expected.get(0), expected.get(0)), repeatedDocuments);
+
+		String embeddedBom = "\n\uFEFF" + STATEMENT;
+		assertThrows(RDFParseException.class,
+				() -> parse(embeddedBom, RDFFormat.NTRIPLES, false, null));
+		assertThrows(RDFParseException.class,
+				() -> parse(embeddedBom, RDFFormat.NTRIPLES, true, null));
+		assertThrows(RDFParseException.class,
+				() -> new FastNTriplesParser(RDFFormat.NTRIPLES, () -> false).parseBlock(bytes, 0, bytes.length,
+						2L, statementSink(new ArrayList<>())));
+	}
+
+	@Test
+	void acceptsCompleteVersionDirectivesAndRejectsMalformedOnesLikeRio() throws IOException {
+		List<String> validDirectives = List.of("VERSION \"1.2\"", "VERSION '1.2'", " \tVERSION \"1.2\"",
+				"VERSION\t'x'");
+		List<String> malformedDirectives = List.of("VERSION garbage", "VERSION \"1.2", "VERSION '1.2\"",
+				"VERSION \"1.2\" extra", "VERSION \"1.2\" ");
+		List<Statement> expected = List.of(VF.createStatement(SUBJECT, PREDICATE, VF.createIRI("urn:o")));
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			for (String directive : validDirectives) {
+				String input = directive + "\n" + STATEMENT;
+				assertEquals(expected, rio(input, format));
+				assertEquals(expected, parse(input, format, false, null));
+				assertEquals(expected, parse(input, format, true, null));
+			}
+			for (String directive : malformedDirectives) {
+				String input = directive + "\n" + STATEMENT;
+				assertThrows(RDFParseException.class, () -> rio(input, format), input);
+				assertThrows(RDFParseException.class, () -> parse(input, format, false, null), input);
+				assertThrows(RDFParseException.class, () -> parse(input, format, true, null), input);
+			}
+		}
+	}
+
 	private static List<Statement> parse(String input, RDFFormat format, boolean block, byte[] scope)
 			throws IOException {
 		return parse(input.getBytes(UTF_8), format, block, scope);
@@ -195,15 +251,19 @@ class FastNTriplesParserRegressionTest {
 		List<Statement> statements = new ArrayList<>();
 		FastNTriplesParser parser = new FastNTriplesParser(format, () -> false);
 		parser.blankNodeScope(scope);
-		FastNTriplesParser.StatementSink sink = (subject, predicate, object, context) -> statements.add(
-				VF.createStatement((Resource) CanonicalTermCodec.decode(subject),
-						(IRI) CanonicalTermCodec.decode(predicate),
-						CanonicalTermCodec.decode(object),
-						context == null ? null : (Resource) CanonicalTermCodec.decode(context)));
+		FastNTriplesParser.StatementSink sink = statementSink(statements);
 		long count = block ? parser.parseBlock(bytes, 0, bytes.length, 1L, sink)
 				: parser.parse(new ByteArrayInputStream(bytes), sink);
 		assertEquals(statements.size(), count);
 		return statements;
+	}
+
+	private static FastNTriplesParser.StatementSink statementSink(List<Statement> statements) {
+		return (subject, predicate, object, context) -> statements.add(
+				VF.createStatement((Resource) CanonicalTermCodec.decode(subject),
+						(IRI) CanonicalTermCodec.decode(predicate),
+						CanonicalTermCodec.decode(object),
+						context == null ? null : (Resource) CanonicalTermCodec.decode(context)));
 	}
 
 	private static List<Statement> rio(String input, RDFFormat format) throws IOException {
