@@ -447,7 +447,7 @@ var workbench;
             };
         }
         /** Send a form through the router when its action is a route the router shows; false otherwise. */
-        function route(form, submitter) {
+        function route(form, submitter, sent) {
             var request = formRequest(form, submitter);
             if (!routable(request.action)) {
                 return false;
@@ -457,12 +457,18 @@ var workbench;
                 // A search or filter sent on its own page keeps its field focused on the page shown (C22).
                 var active = window.document.activeElement;
                 var sameView = !!currentRoute && viewIdOf(request.action) === currentRoute.viewId;
-                navigate(request.action.href, { history: 'push',
+                var result_1 = navigate(request.action.href, { history: 'push',
                     focus: sameView && active && active.id && form.contains(active) ? active.id : undefined });
+                if (sent) {
+                    sent(result_1);
+                }
                 return true;
             }
-            navigate(request.action.href, { history: 'push',
+            var result = navigate(request.action.href, { history: 'push',
                 body: request.multipart ? request.data : new URLSearchParams(request.data) });
+            if (sent) {
+                sent(result);
+            }
             return true;
         }
         function onSubmit(event) {
@@ -488,11 +494,14 @@ var workbench;
             // A delayed confirmation may belong to a page that has already been replaced.
             // Connected helper forms in the document body or context bar remain valid.
             if (running && form.isConnected === false) {
-                return;
+                return Promise.resolve('abandoned');
             }
-            if (!running || !route(form, submitter)) {
+            var result = null;
+            if (!running || !route(form, submitter, function (sent) { result = sent; })) {
                 form.submit();
+                return Promise.resolve('fallback');
             }
+            return result;
         }
         router.submit = submit;
         /**

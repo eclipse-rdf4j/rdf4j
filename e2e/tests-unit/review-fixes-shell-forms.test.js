@@ -176,6 +176,104 @@ test('A9: the page that sent a refused form shows why above its own content', ()
     assert.match(markup.slice(failure, failure + 400), /role="alert"/);
 });
 
+test('protected Delete renders a blank masked field and keeps the password out of model state', () => {
+    const views = loadViews('?id=prod');
+    const model = { viewId: 'delete', vars: ['id', 'description', 'error-message'],
+        rows: [['prod', 'Production', 'Repository deletion requires a valid deletion password.']], rowCount: 1,
+        pickerRows: [['prod', 'Production', 'Repository deletion requires a valid deletion password.']], pickerPageSize: 50,
+        metadata: { 'repository-deletion-password-required': true, selectedRepositoryId: 'prod' } };
+    const template = quiet(() => views.wb.views.pageTemplate(model, ctx, runtime()));
+    const markup = flat(template);
+    assert.match(markup, /id="delete-password" name="delete-password" type="password" autocomplete="off" required/);
+    assert.match(markup, /valid deletion password/);
+    const input = handlers(template).find((entry) => /@input=$/.test(entry.before)
+        && /delete-password-help/.test(entry.before)).fn;
+    const action = { disabled: true };
+    const selected = { value: 'prod' };
+    const password = { form: null, value: '' };
+    const form = { querySelector: (selector) => selector === '#id' ? selected : selector === '#delete-password' ? password : action };
+    password.form = form;
+    input({ target: password });
+    assert.equal(action.disabled, true);
+    password.value = '  ';
+    input({ target: password });
+    assert.equal(action.disabled, false, 'whitespace is not trimmed');
+    selected.value = '';
+    input({ target: password });
+    assert.equal(action.disabled, true);
+    assert.equal(JSON.stringify(model).includes('  '), false, 'typing stores no password in the page model');
+});
+
+test('windowed Delete retains its error outside the picker rows so paging cannot hide the retry message', () => {
+    const views = loadViews('?id=prod');
+    const model = { viewId: 'delete', vars: ['id', 'description', 'error-message'], rows: [], rowCount: 1,
+        pickerRows: [['prod', 'Production', 'Repository deletion requires a valid deletion password.']], pickerPageSize: 50,
+        metadata: { 'repository-deletion-password-required': true, selectedRepositoryId: 'prod' } };
+    assert.match(flat(quiet(() => views.wb.views.pageTemplate(model, ctx, runtime()))), /valid deletion password/);
+    model.pickerRows = [['other', 'Another repository', null]];
+    assert.match(flat(quiet(() => views.wb.views.pageTemplate(model, ctx, runtime()))), /valid deletion password/);
+});
+
+test('rerendering Delete derives its enabled state from the live secret without storing that secret in the model', () => {
+    const views = loadViews('?id=prod');
+    const model = { viewId: 'delete', vars: ['id', 'description'], rows: [], rowCount: 1,
+        pickerRows: [['prod', 'Production']], pickerPageSize: 50,
+        metadata: { 'repository-deletion-password-required': true, selectedRepositoryId: 'prod' } };
+    const selected = { value: 'prod' };
+    const password = { value: 'live secret' };
+    const action = { disabled: true };
+    const form = { querySelector: (selector) => selector === '#id' ? selected : selector === '#delete-password' ? password : action };
+    const outlet = { querySelector: (selector) => selector === '#delete-form' ? form : null };
+    const lit = runtime();
+    lit.render = () => { action.disabled = true; };
+    quiet(() => views.wb.views.renderOutlet(outlet, model, ctx, lit));
+    assert.equal(action.disabled, false);
+    assert.equal(JSON.stringify(model).includes('live secret'), false);
+    password.value = '';
+    quiet(() => views.wb.views.renderOutlet(outlet, model, ctx, lit));
+    assert.equal(action.disabled, true);
+    password.value = 'live secret';
+    model.metadata['repository-deletion-policy-error'] = true;
+    quiet(() => views.wb.views.renderOutlet(outlet, model, ctx, lit));
+    assert.equal(action.disabled, true, 'a discovery failure blocks deletion despite a nonempty field');
+    model.metadata['repository-deletion-policy-error'] = false;
+    form.querySelector = (selector) => selector === '#id' ? selected : selector === '#delete-password' ? null : action;
+    quiet(() => views.wb.views.renderOutlet(outlet, model, ctx, lit));
+    assert.equal(action.disabled, true, 'required protection fails closed when the field is absent');
+});
+
+test('unprotected Delete has no password field and discovery failure visibly disables deletion', () => {
+    const views = loadViews('?id=prod');
+    const model = { viewId: 'delete', vars: ['id', 'description'], rows: [], rowCount: 0,
+        pickerRows: [['prod', 'Production']], pickerPageSize: 50,
+        metadata: { 'repository-deletion-password-required': false } };
+    assert.doesNotMatch(flat(quiet(() => views.wb.views.pageTemplate(model, ctx, runtime()))), /type="password"/);
+    model.metadata['repository-deletion-policy-error'] = true;
+    const markup = flat(quiet(() => views.wb.views.pageTemplate(model, ctx, runtime())));
+    assert.match(markup, /Unable to determine whether a deletion password is required/);
+    assert.match(markup, /workbench-action--danger-outline" \?disabled=true/);
+    model.metadata['error-message'] = 'Unable to determine whether a deletion password is required. Reload this page to try again.';
+    const failed = flat(quiet(() => views.wb.views.pageTemplate(model, ctx, runtime())));
+    assert.equal((failed.match(/Unable to determine whether a deletion password is required/g) || []).length, 1);
+});
+
+test('choosing another repository clears a live deletion password and retains only the selection', () => {
+    const views = loadViews('?id=prod');
+    const model = { viewId: 'delete', vars: ['id', 'description'], rows: [], rowCount: 0,
+        pickerRows: [['prod', 'Production'], ['test', 'Test']], pickerPageSize: 50,
+        metadata: { 'repository-deletion-password-required': true } };
+    const template = quiet(() => views.wb.views.pageTemplate(model, ctx, runtime()));
+    const change = handlers(template).find((entry) => /data-workbench-window-picker="repositories" @change=$/.test(entry.before)).fn;
+    const password = { value: 'live secret' };
+    const action = { disabled: false };
+    change({ target: { value: 'test', form: { querySelector: (selector) => selector === '#delete-password' ? password : action },
+        closest: () => null } });
+    assert.equal(password.value, '');
+    assert.equal(action.disabled, true, 'clearing the password disables Delete before any Lit rerender');
+    assert.equal(model.metadata.selectedRepositoryId, 'test');
+    assert.equal(JSON.stringify(model).includes('live secret'), false);
+});
+
 test('A20: the Add page says a target graph may be written with or without angle brackets', () => {
     const views = loadViews();
     const model = { viewId: 'add', vars: [], rows: [], rowCount: 0, metadata: {} };

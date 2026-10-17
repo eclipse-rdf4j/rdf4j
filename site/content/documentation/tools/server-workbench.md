@@ -334,6 +334,51 @@ Both RDF4J Server and RDF4J Workbench use the Logback logging framework. In its 
 
 The default log level is INFO, indicating that only important status messages, warnings and errors are logged. The log level and -behaviour can be adjusted by modifying the `[RDF4J_DATA]/Server/conf/logback.xml` file. This file will be generated when the server is first run. Please consult the logback manual for configuration instructions.
 
+## Optional repository deletion password
+
+To require a separate password before deleting an entire repository, configure `org.eclipse.rdf4j.repository.deletePassword` in RDF4J Server's JVM options. The recommended configuration stores a salted password verifier, so the original password does not appear in the JVM configuration. Generate one from the RDF4J source checkout using Python 3:
+
+```sh
+python3 scripts/generate-repository-delete-password.py
+```
+
+The script asks for the password twice without echoing it, then prints one verifier. It requires a terminal for interactive input. For automation, `--password-stdin` reads all standard input as exact UTF-8, including trailing spaces and newlines. It does not remove the newline added by `echo`. There is no password argument or environment option.
+
+Set the property to the printed verifier as one shell-quoted JVM option, replacing the salt and hash placeholders below with the generated base64 values:
+
+```sh
+'-Dorg.eclipse.rdf4j.repository.deletePassword={pbkdf2-sha256}600000:<base64-salt>:<base64-hash>'
+```
+
+The format is `{pbkdf2-sha256}<iterations>:<salt>:<hash>`. Both salt and hash use standard RFC 4648 base64 with canonical padding. The generator uses a fresh 16-byte random salt, PBKDF2-HMAC-SHA256 with 600,000 iterations, and a 32-byte derived hash. The policy accepts salts of at least 16 bytes, exactly 32-byte hashes, and iteration counts from 600,000 through 2,147,483,647. Use `--iterations 1200000`, for example, to generate a verifier with a higher work factor.
+
+These parameters follow the [OWASP PBKDF2 recommendation](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html#pbkdf2) and [NIST's salted password hashing and scheme/cost recording guidance](https://pages.nist.gov/800-63-4/sp800-63b.html). Argon2id is generally preferred; PBKDF2 uses the existing JDK and Python standard libraries without adding dependencies. This choice does not imply that a deployment is FIPS validated.
+
+Existing ordinary plaintext values remain supported:
+
+```text
+-Dorg.eclipse.rdf4j.repository.deletePassword=your-deletion-password
+```
+
+For a servlet container, add the `-D` option to its JVM options; Docker deployments can use `RDF4J_OPTS`. The setting is captured at application startup, so restart the application after changing it. An unset property preserves existing behavior. An explicitly empty value prevents startup. Values beginning with `{` are reserved for encoded configuration: unknown or malformed encodings prevent startup. Use `{plain}` before a literal password that begins with a brace, for example `'-Dorg.eclipse.rdf4j.repository.deletePassword={plain}{my-literal-password}'`. An empty `{plain}` value is invalid. Passwords match exactly, including leading/trailing whitespace, newlines, Unicode characters, and NUL; they are never trimmed or normalized.
+
+Users and HTTP clients still supply the **original password**, never the stored verifier. The verifier itself does not authorize deletion. Hashing removes the original password from JVM configuration; the request header continues to carry the original password using the transport encoding described below. Use HTTPS when transmitting it over an untrusted network.
+
+Workbench discovers the connected Server's requirement and displays a masked password field on the Delete repository page. It still requires confirmation of the repository ID. A remote Workbench does not need the Server's property or password configured in its own JVM. A Workbench JVM setting applies to local (`file:`) repository managers; the remote Server remains authoritative for HTTP(S) connections. Workbench clears the submitted password and does not save it in cookies, browser drafts, or the returned page model.
+
+This protects whole-repository removal, including removal of configuration through the legacy `SYSTEM` repository. Clearing statements, removing graphs/statements, and SPARQL data deletion in ordinary repositories keep their existing behavior. Embedded Java applications calling the original `LocalRepositoryManager.removeRepository(id)` API are unchanged. The password is separate from HTTP authentication and does not grant other permissions.
+
+HTTP clients discover the requirement using `HEAD /protocol` and the boolean response header `X-RDF4J-Repository-Delete-Password-Required`. A successful response from an older Server without that header means the feature is unavailable. A failed discovery request is an error. Supply `X-RDF4J-Repository-Delete-Password` on `DELETE /repositories/{id}`, containing base64 of the password's UTF-8 bytes. For example, the demonstration password `secret` is encoded as `c2VjcmV0`:
+
+```sh
+curl -X DELETE -H 'X-RDF4J-Repository-Delete-Password: c2VjcmV0' \
+  https://example.org/rdf4j-server/repositories/my-repository
+```
+
+Missing, incorrect, or malformed credentials receive HTTP `403` with the safe protocol error `REPOSITORY DELETION DENIED: Repository deletion requires a valid deletion password.` HTTP `401` continues to indicate HTTP authentication failure. Java clients can use `RemoteRepositoryManager.isRepositoryDeletionPasswordRequired()` and `removeRepository(id, deletionPassword)`; the original overload remains available for unprotected Servers. A refusal raises `RepositoryDeletionDeniedException`.
+
+For legacy `SYSTEM` transactions that remove repository configurations, send the header on the transaction **START** request. The transaction retains only that authorization decision. Adding a password only on COMMIT does not authorize deletion. Ordinary configuration creation and editing do not require this password. A mixed SYSTEM commit that would delete any repository without authorization is rejected before any of its configuration updates or deletions are applied.
+
 ## Access Rights and Security
 
 It is possible to set up your RDF4J Server to authenticate named users and restrict their permissions.  RDF4J Server is a servlet-based Web application deployed to any standard servlet container (for the remainder of this section it is assumed that Tomcat is being used).

@@ -13,11 +13,26 @@ package org.eclipse.rdf4j.http.server;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.concurrent.ExecutionException;
+
+import org.eclipse.rdf4j.common.webapp.views.SimpleResponseView;
+import org.eclipse.rdf4j.http.protocol.RepositoryDeletionDeniedException;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.ModelAndView;
 
 class ProtocolExceptionResolverTest {
+
+	@Test
+	void nestedTransactionDeletionDenialRemainsForbidden() throws Exception {
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		ModelAndView result = new ProtocolExceptionResolver().resolveException(null, response, null,
+				new ServerHTTPException("Transaction handling error",
+						new ExecutionException(new RepositoryDeletionDeniedException())));
+		assertThat(result.getModel().get(SimpleResponseView.SC_KEY)).isEqualTo(403);
+		assertThat(result.getModel().get(SimpleResponseView.CONTENT_KEY))
+				.isEqualTo("REPOSITORY DELETION DENIED: " + RepositoryDeletionDeniedException.MESSAGE);
+	}
 
 	@Test
 	void doesNotAppendAnErrorViewAfterTheResponseWasCommitted() throws Exception {

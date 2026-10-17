@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
+import org.eclipse.rdf4j.repository.manager.RepositoryDeletionPolicy;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.slf4j.Logger;
@@ -59,6 +60,7 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 	private volatile String repositoryID;
 	private volatile QueryParseOptions queryParseOptions = QueryParseOptions.DEFAULT;
+	private RepositoryDeletionPolicy deletionPolicy = RepositoryDeletionPolicy.disabled();
 
 	/*---------*
 	 * Methods *
@@ -66,6 +68,10 @@ public class RepositoryInterceptor extends ServerInterceptor {
 
 	public void setRepositoryManager(RepositoryManager repMan) {
 		repositoryManager = Objects.requireNonNull(repMan, "Repository manager was null");
+	}
+
+	public void setRepositoryDeletionPolicy(RepositoryDeletionPolicy policy) {
+		deletionPolicy = Objects.requireNonNull(policy);
 	}
 
 	/** Configures syntax policy for new requests; prepared operations retain their snapshot. */
@@ -127,7 +133,8 @@ public class RepositoryInterceptor extends ServerInterceptor {
 		String nextRepositoryID = repositoryID;
 		if (RepositoryConfigRepository.ID.equals(nextRepositoryID)) {
 			request.setAttribute(REPOSITORY_ID_KEY, nextRepositoryID);
-			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager));
+			request.setAttribute(REPOSITORY_KEY, new RepositoryConfigRepository(repositoryManager,
+					RepositoryDeletionAuthorization.isAuthorized(request, deletionPolicy)));
 		} else if (nextRepositoryID != null) {
 			try {
 				// For requests to delete a repository, we must not attempt to initialize the repository. Otherwise a
