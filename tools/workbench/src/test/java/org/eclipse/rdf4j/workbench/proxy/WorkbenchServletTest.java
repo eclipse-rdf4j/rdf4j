@@ -14,6 +14,7 @@
 package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -103,6 +104,7 @@ public class WorkbenchServletTest {
 				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server")))
 						.isInstanceOf(ServletException.class)
 						.hasCauseInstanceOf(RepositoryException.class);
+		assertThatCode(failing::destroy).doesNotThrowAnyException();
 
 		WorkbenchServlet real = new WorkbenchServlet();
 		assertThat(real.createRepositoryManager(tempDir.toURI().toString())).isInstanceOf(LocalRepositoryManager.class);

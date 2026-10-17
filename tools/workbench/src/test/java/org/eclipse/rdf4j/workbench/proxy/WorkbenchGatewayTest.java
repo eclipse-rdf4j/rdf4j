@@ -19,6 +19,8 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -30,17 +32,20 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
+import org.eclipse.rdf4j.workbench.security.WorkbenchSessionState;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -227,19 +232,26 @@ class WorkbenchGatewayTest {
 	@Test
 	void aRepositoryWhoseIdNamesAHiddenPageStillReachesItsLanding() throws Exception {
 		TestWorkbenchGateway gateway = policyGateway(policy("summary,query,repositories,server"), "/change");
+		MockHttpSession session = new MockHttpSession();
 
 		MockHttpServletResponse landing = new MockHttpServletResponse();
-		gateway.service(request("GET", "/workbench/export", "/export"), landing);
+		MockHttpServletRequest landingRequest = request("GET", "/workbench/export", "/export");
+		landingRequest.setSession(session);
+		gateway.service(landingRequest, landing);
 		assertThat(landing.getStatus()).isNotEqualTo(HttpServletResponse.SC_NOT_FOUND);
 		assertThat(gateway.createdServlets).hasSize(1);
 		assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(1);
 
 		MockHttpServletResponse slashLanding = new MockHttpServletResponse();
-		gateway.service(request("GET", "/workbench/export/", "/export/"), slashLanding);
+		MockHttpServletRequest slashLandingRequest = request("GET", "/workbench/export/", "/export/");
+		slashLandingRequest.setSession(session);
+		gateway.service(slashLandingRequest, slashLanding);
 		assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(2);
 
 		MockHttpServletResponse hiddenRoute = new MockHttpServletResponse();
-		gateway.service(request("GET", "/workbench/export/export", "/export/export"), hiddenRoute);
+		MockHttpServletRequest hiddenRouteRequest = request("GET", "/workbench/export/export", "/export/export");
+		hiddenRouteRequest.setSession(session);
+		gateway.service(hiddenRouteRequest, hiddenRoute);
 		assertThat(hiddenRoute.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
 		assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(2);
 	}
@@ -458,6 +470,8 @@ class WorkbenchGatewayTest {
 				"change-server-path", "/change",
 				LEGACY_TRANSFORMATIONS, "/transform"));
 		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		MockHttpSession session = new MockHttpSession();
+		request.setSession(session);
 
 		CapturedResponse firstResponse = new CapturedResponse();
 		gateway.service(request, firstResponse);
@@ -474,6 +488,7 @@ class WorkbenchGatewayTest {
 		assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(2);
 
 		MockHttpServletRequest changeRequest = request("POST", "/workbench/change", "/change");
+		changeRequest.setSession(session);
 		changeRequest.addParameter("workbench-server", "https://next.example/rdf4j-server");
 		changeRequest.addParameter("server-user-password", "encoded");
 		when(validator.isValidServer("https://next.example/rdf4j-server")).thenReturn(true);
@@ -482,10 +497,72 @@ class WorkbenchGatewayTest {
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://next.example/rdf4j-server")
 				.containsEntry("server-user-password", "encoded");
-		assertThat(gateway.createdServlets.get(0).resetCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(0).resetCount).isZero();
+		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
 
 		gateway.destroy();
 		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+	}
+
+	@Test
+	void credentialBearingServletsAreIsolatedAcrossHttpSessions() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("11");
+		cookies.cookies.put("workbench-server", "https://default.example/rdf4j-server");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://default.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+
+		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
+		alice.setSession(new MockHttpSession());
+		alice.setAttribute("test-cookie-server-user-password", "alice-credentials");
+		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
+		bob.setSession(new MockHttpSession());
+		bob.setAttribute("test-cookie-server-user-password", "bob-credentials");
+
+		gateway.service(alice, new CapturedResponse());
+		gateway.service(bob, new CapturedResponse());
+
+		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.serviceCount).isEqualTo(1));
+		gateway.destroy();
+		assertThat(gateway.createdServlets).allSatisfy(servlet -> assertThat(servlet.destroyCount).isEqualTo(1));
+	}
+
+	@Test
+	void credentialChangesAndLogoutReplaceOnlyTheCurrentSessionsServlet() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("11");
+		cookies.cookies.put("workbench-server", "https://default.example/rdf4j-server");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://default.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpSession session = new MockHttpSession();
+
+		MockHttpServletRequest alice = request("GET", "/workbench/repositories", "/repositories");
+		alice.setSession(session);
+		alice.setAttribute("test-cookie-server-user-password", "alice-credentials");
+		gateway.service(alice, new CapturedResponse());
+
+		MockHttpServletRequest bob = request("GET", "/workbench/repositories", "/repositories");
+		bob.setSession(session);
+		bob.setAttribute("test-cookie-server-user-password", "bob-credentials");
+		gateway.service(bob, new CapturedResponse());
+		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+
+		MockHttpServletRequest anonymous = request("GET", "/workbench/repositories", "/repositories");
+		anonymous.setSession(session);
+		gateway.service(anonymous, new CapturedResponse());
+		assertThat(gateway.createdServlets).hasSize(3);
+		assertThat(gateway.createdServlets.get(1).destroyCount).isEqualTo(1);
+		assertThat(gateway.createdServlets.get(2).destroyCount).isZero();
 	}
 
 	@Test
@@ -912,6 +989,8 @@ class WorkbenchGatewayTest {
 		when(sparseRequest.getRequestURI()).thenReturn("/workbench");
 		when(sparseRequest.getContextPath()).thenReturn("/workbench");
 		when(sparseRequest.getServletPath()).thenReturn(null);
+		MockHttpSession sparseSession = new MockHttpSession();
+		when(sparseRequest.getSession(true)).thenReturn(sparseSession);
 		sparseGateway.service(sparseRequest, new CapturedResponse());
 
 		assertThat(sparseGateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
@@ -923,6 +1002,7 @@ class WorkbenchGatewayTest {
 		when(servletOnlyRequest.getRequestURI()).thenReturn("/workbench");
 		when(servletOnlyRequest.getContextPath()).thenReturn(null);
 		when(servletOnlyRequest.getServletPath()).thenReturn("/workbench");
+		when(servletOnlyRequest.getSession(true)).thenReturn(sparseSession);
 		sparseGateway.service(servletOnlyRequest, new CapturedResponse());
 
 		assertThat(sparseGateway.lastServletConfigParams).containsEntry(WorkbenchServlet.SERVER_PARAM,
@@ -943,25 +1023,38 @@ class WorkbenchGatewayTest {
 				LEGACY_TRANSFORMATIONS, "/transform"));
 		gateway.blockFirstServletInit = new CountDownLatch(1);
 		gateway.allowFirstServletInit = new CountDownLatch(1);
+		MockHttpSession session = new MockHttpSession();
+		MockHttpServletRequest firstRequest = request("GET", "/workbench/repositories", "/repositories");
+		firstRequest.setSession(session);
+		MockHttpServletRequest secondRequest = request("GET", "/workbench/repositories", "/repositories");
+		secondRequest.setSession(session);
 
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
 			Future<?> first = executor.submit(() -> {
 				try {
-					gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+					gateway.service(firstRequest, new CapturedResponse());
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
 			});
 			assertThat(gateway.blockFirstServletInit.await(5, TimeUnit.SECONDS)).isTrue();
+			WorkbenchSessionState state = (WorkbenchSessionState) session
+					.getAttribute(WorkbenchGateway.SESSION_STATE_ATTRIBUTE);
+			AtomicReference<Thread> secondThread = new AtomicReference<>();
+			CountDownLatch secondTaskStarted = new CountDownLatch(1);
 
 			Future<?> second = executor.submit(() -> {
+				secondThread.set(Thread.currentThread());
+				secondTaskStarted.countDown();
 				try {
-					gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+					gateway.service(secondRequest, new CapturedResponse());
 				} catch (Exception e) {
 					throw new RuntimeException(e);
 				}
 			});
+			assertThat(secondTaskStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			assertThat(waitForThreadBlockedOn(secondThread.get(), state, 5, TimeUnit.SECONDS)).isTrue();
 			gateway.allowFirstServletInit.countDown();
 			first.get(5, TimeUnit.SECONDS);
 			second.get(5, TimeUnit.SECONDS);
@@ -969,8 +1062,25 @@ class WorkbenchGatewayTest {
 			assertThat(gateway.createdServlets).hasSize(1);
 			assertThat(gateway.createdServlets.get(0).serviceCount).isEqualTo(2);
 		} finally {
+			gateway.allowFirstServletInit.countDown();
 			executor.shutdownNow();
 		}
+	}
+
+	private static boolean waitForThreadBlockedOn(Thread thread, Object lock, long timeout, TimeUnit unit)
+			throws InterruptedException {
+		long deadline = System.nanoTime() + unit.toNanos(timeout);
+		int lockIdentity = System.identityHashCode(lock);
+		while (System.nanoTime() < deadline) {
+			ThreadInfo info = ManagementFactory.getThreadMXBean()
+					.getThreadInfo(new long[] { thread.threadId() }, true, true)[0];
+			if (info != null && info.getThreadState() == Thread.State.BLOCKED && info.getLockInfo() != null
+					&& info.getLockInfo().getIdentityHashCode() == lockIdentity) {
+				return true;
+			}
+			TimeUnit.MILLISECONDS.sleep(10);
+		}
+		return false;
 	}
 
 	@Test
@@ -979,17 +1089,24 @@ class WorkbenchGatewayTest {
 		cookies.cookies.put("workbench-server", "https://inserted.example/rdf4j-server");
 		ServerValidator validator = mock(ServerValidator.class);
 		RecordingWorkbenchServlet existing = new RecordingWorkbenchServlet(null, null);
+		MockHttpSession session = new MockHttpSession();
+		WorkbenchSessionState state = sessionState(session);
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
 		gateway.init(TestServletConfig.withParams("gateway",
 				"default-server", "https://default.example/rdf4j-server",
 				"change-server-path", "/change",
 				LEGACY_TRANSFORMATIONS, "/transform"));
 		when(validator.isValidServer("https://inserted.example/rdf4j-server")).thenAnswer(invocation -> {
-			servlets(gateway).put("https://inserted.example/rdf4j-server", existing);
+			try (WorkbenchSessionState.Lease ignored = state.acquire(
+					"https://inserted.example/rdf4j-server", null, () -> existing)) {
+				// Populate the state while server validation is in progress.
+			}
 			return true;
 		});
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setSession(session);
 
-		gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+		gateway.service(request, new CapturedResponse());
 
 		assertThat(gateway.createdServlets).isEmpty();
 		assertThat(existing.serviceCount).isEqualTo(1);
@@ -1000,17 +1117,24 @@ class WorkbenchGatewayTest {
 		TestCookieHandler cookies = new TestCookieHandler("10");
 		ServerValidator validator = mock(ServerValidator.class);
 		RecordingWorkbenchServlet existing = new RecordingWorkbenchServlet(null, null);
+		MockHttpSession session = new MockHttpSession();
+		WorkbenchSessionState state = sessionState(session);
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
 		gateway.init(TestServletConfig.withParams("gateway",
 				"default-server", "https://inserted.example/rdf4j-server",
 				"change-server-path", "/change",
 				LEGACY_TRANSFORMATIONS, "/transform"));
 		when(validator.isValidServer("https://inserted.example/rdf4j-server")).thenAnswer(invocation -> {
-			servlets(gateway).put("https://inserted.example/rdf4j-server", existing);
+			try (WorkbenchSessionState.Lease ignored = state.acquire(
+					"https://inserted.example/rdf4j-server", null, () -> existing)) {
+				// Populate the state while server validation is in progress.
+			}
 			return true;
 		});
+		MockHttpServletRequest request = request("GET", "/workbench/repositories", "/repositories");
+		request.setSession(session);
 
-		gateway.service(request("GET", "/workbench/repositories", "/repositories"), new CapturedResponse());
+		gateway.service(request, new CapturedResponse());
 
 		assertThat(gateway.createdServlets).isEmpty();
 		assertThat(existing.serviceCount).isEqualTo(1);
@@ -1028,15 +1152,10 @@ class WorkbenchGatewayTest {
 		return request;
 	}
 
-	@SuppressWarnings("unchecked")
-	private static Map<String, WorkbenchServlet> servlets(WorkbenchGateway gateway) {
-		try {
-			java.lang.reflect.Field field = WorkbenchGateway.class.getDeclaredField("servlets");
-			field.setAccessible(true);
-			return (Map<String, WorkbenchServlet>) field.get(gateway);
-		} catch (ReflectiveOperationException e) {
-			throw new AssertionError("Could not read servlet cache", e);
-		}
+	private static WorkbenchSessionState sessionState(MockHttpSession session) {
+		WorkbenchSessionState state = new WorkbenchSessionState();
+		session.setAttribute(WorkbenchGateway.SESSION_STATE_ATTRIBUTE, state);
+		return state;
 	}
 
 	private static final class TestWorkbenchGateway extends WorkbenchGateway {
@@ -1147,6 +1266,10 @@ class WorkbenchGatewayTest {
 
 		@Override
 		protected String getCookie(HttpServletRequest req, HttpServletResponse resp, String name) {
+			Object requestCookie = req.getAttribute("test-cookie-" + name);
+			if (requestCookie instanceof String) {
+				return (String) requestCookie;
+			}
 			return cookies.get(name);
 		}
 
