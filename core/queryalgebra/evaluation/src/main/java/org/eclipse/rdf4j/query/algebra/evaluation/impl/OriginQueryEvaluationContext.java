@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import java.util.Comparator;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -34,6 +35,21 @@ final class OriginQueryEvaluationContext implements QueryEvaluationContext {
 
 	OriginQueryEvaluationContext(QueryEvaluationContext delegate) {
 		this.delegate = delegate;
+	}
+
+	@Override
+	public ActiveGraph getActiveGraph() {
+		return delegate.getActiveGraph();
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return delegate.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public boolean hasEnclosingProjection() {
+		return delegate.hasEnclosingProjection();
 	}
 
 	@Override

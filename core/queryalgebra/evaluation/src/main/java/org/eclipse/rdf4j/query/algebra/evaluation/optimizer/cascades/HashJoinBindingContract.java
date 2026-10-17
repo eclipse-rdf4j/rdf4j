@@ -66,6 +66,29 @@ public final class HashJoinBindingContract {
 				provedProducedBindings(left), provedProducedBindings(right));
 	}
 
+	/** The accumulated output relation of an n-ary join, without cloning or reparenting any original operand. */
+	public static HashJoinBindingContract from(List<TupleExpr> leftPrefix, TupleExpr right) {
+		Set<String> possible = new TreeSet<>();
+		Set<String> assured = new TreeSet<>();
+		Set<String> produced = new TreeSet<>();
+		boolean complete = true;
+		for (TupleExpr operand : leftPrefix) {
+			StreamBindingSchema schema = StreamBindingSchema.from(operand);
+			possible.addAll(schema.possible());
+			assured.addAll(schema.assured());
+			Set<String> domain = provedProducedBindings(operand);
+			if (domain == null) {
+				complete = false;
+			} else {
+				produced.addAll(domain);
+			}
+		}
+		HashJoinBindingContract keys = from(new StreamBindingSchema(possible, assured),
+				StreamBindingSchema.from(right));
+		return new HashJoinBindingContract(keys.lookupBindings, keys.compatibilityBindings,
+				complete ? produced : null, provedProducedBindings(right));
+	}
+
 	private static Set<String> provedProducedBindings(TupleExpr expression) {
 		if (expression == null) {
 			return null;

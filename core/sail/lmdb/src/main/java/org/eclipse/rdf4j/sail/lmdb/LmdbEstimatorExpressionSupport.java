@@ -13,10 +13,13 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.List;
 
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 
 /** Shared immutable expression construction and unwrapping helpers for LMDB estimator adapters. */
 final class LmdbEstimatorExpressionSupport {
@@ -29,15 +32,18 @@ final class LmdbEstimatorExpressionSupport {
 			return null;
 		}
 		TupleExpr result = factors.get(0).clone();
+		PlanningGraphDomain domain = PlanningGraphDomains.domain(factors.get(0));
 		for (int index = 1; index < factors.size(); index++) {
 			result = new Join(result, factors.get(index).clone());
+			domain = PlanningGraphDomain.common(List.of(domain, PlanningGraphDomains.domain(factors.get(index))));
+			PlanningGraphDomains.attach(result, domain);
 		}
 		return result;
 	}
 
 	static StatementPattern basePattern(TupleExpr expression) {
 		TupleExpr current = expression;
-		while (current instanceof UnaryTupleOperator unary && !(current instanceof StatementPattern)) {
+		while (current instanceof UnaryTupleOperator unary && !(current instanceof Graph)) {
 			current = unary.getArg();
 		}
 		return current instanceof StatementPattern pattern ? pattern : null;

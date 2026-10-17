@@ -62,6 +62,9 @@ class LmdbPipelinePlanCacheTest {
 
 		assertFalse(cold.cacheHit());
 		assertTrue(hot.cacheHit());
+		assertEquals("USE", hot.plan().getStringMetricPlanned("optimizer.planCacheLookupOutcome"));
+		assertEquals("CONFIDENT", hot.plan().getStringMetricPlanned("optimizer.planCacheQualityState"));
+		assertEquals("WITHIN", hot.plan().getStringMetricPlanned("optimizer.planCacheStabilityEnvelopeResult"));
 		assertEquals(1, computations.get());
 		assertNotSame(cold.plan(), hot.plan());
 		assertEquals(1L, cache.hits());

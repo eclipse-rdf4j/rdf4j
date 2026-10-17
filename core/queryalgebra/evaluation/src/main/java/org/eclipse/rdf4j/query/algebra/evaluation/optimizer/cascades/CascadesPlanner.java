@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostModel;
@@ -23,12 +24,27 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPredicateRangeProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRuleProofs;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStatementPatternSemanticsCodec;
 
 /** Public TupleExpr boundary for the single packed Cascades implementation. */
 @Experimental
 public final class CascadesPlanner {
+	private final PackedStatementPatternSemanticsCodec semanticsCodec;
 
 	public CascadesPlanner() {
+		semanticsCodec = null;
+	}
+
+	@InternalUseOnly
+	public CascadesPlanner(PackedStatementPatternSemanticsCodec semanticsCodec) {
+		this.semanticsCodec = Objects.requireNonNull(semanticsCodec, "statement semantics codec");
+	}
+
+	private PackedStatementPatternSemanticsCodec semanticsCodec(PackedCostModel costModel) {
+		return semanticsCodec != null ? semanticsCodec
+				: costModel == null
+						? PackedStatementPatternSemanticsCodec.NONE
+						: costModel.statementPatternSemanticsCodec();
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal) {
@@ -43,7 +59,8 @@ public final class CascadesPlanner {
 			PackedPredicateRangeProvider rangeProvider) {
 		TupleExpr source = Objects.requireNonNull(root, "Cascades root");
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(source, PhysicalProperties.ANY) : goal;
-		return plan(request, PackedCascadesPlanner.optimize(source, request, costModel, rangeProvider));
+		return plan(request, PackedCascadesPlanner.optimize(source, request, costModel, rangeProvider,
+				semanticsCodec(costModel)));
 	}
 
 	public CascadesPlan optimize(TupleExpr root, OptimizationGoal goal, PackedPlanCache cache,
@@ -53,7 +70,8 @@ public final class CascadesPlanner {
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(source, PhysicalProperties.ANY) : goal;
 		PackedPlanningResult result = PackedCascadesPlanner.optimize(source, request,
 				Objects.requireNonNull(cache, "packed plan cache"),
-				Objects.requireNonNull(cacheContext, "packed plan cache context"), costModel, rangeProvider);
+				Objects.requireNonNull(cacheContext, "packed plan cache context"), costModel, rangeProvider,
+				semanticsCodec(costModel));
 		return plan(request, result);
 	}
 

@@ -16,10 +16,14 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
@@ -34,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /**
@@ -45,6 +50,7 @@ final class LmdbMappedFrontierLearningSession {
 
 	private static final double PREDICTIVE_UPPER_Z_999 = 3.2905267314919255d;
 	private static final String EXECUTION_MODE = "mapped-statistics-v2";
+	private static final long SEMANTIC_POPULATION_MODEL_EPOCH = 2L;
 
 	private final LmdbEstimatorRuntime runtime;
 	private final PackedQueryView query;
@@ -52,11 +58,13 @@ final class LmdbMappedFrontierLearningSession {
 	private final LmdbEstimatorRuntime.PlanningRevisions revisions;
 	private final LmdbPhysicalCostObjective physicalCostObjective;
 	private final LogicalBasis[] logicalBases;
+	private final LeoOperatorKey[] learningKeys;
+	private final boolean[] learningKeysComputed;
 	private final String[] relationTopologies;
 	private final LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin[] relationOrigins;
-	private final int[] contextualCanonicalGroups;
 	private final BitSet[] operatorRelationGroups;
 	private final HashMap<String, Object> pinnedPosteriors = new HashMap<>();
+	private final Map<Integer, List<SemanticBinding>> semanticBindings = new HashMap<>();
 
 	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
 			boolean datasetUsesStoreDefaults) {
@@ -69,14 +77,19 @@ final class LmdbMappedFrontierLearningSession {
 				: captured;
 		this.physicalCostObjective = new LmdbPhysicalCostObjective(runtime);
 		this.logicalBases = new LogicalBasis[query.relationCount() + 1];
+		this.learningKeys = new LeoOperatorKey[logicalBases.length];
+		this.learningKeysComputed = new boolean[logicalBases.length];
 		this.relationTopologies = new String[query.relationCount() + 1];
 		this.relationOrigins = new LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin[query.relationCount() + 1];
-		this.contextualCanonicalGroups = buildContextualCanonicalGroups();
 		this.operatorRelationGroups = new BitSet[query.relationCount() + 1];
 	}
 
 	void applyLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		apply(relationId, new int[] { relationId }, context, output, true, true, true);
+	}
+
+	void applyLeaf(int relationId, PackedCostContext context, PackedCostEstimate output, boolean qualified) {
+		apply(relationId, new int[] { relationId }, context, output, qualified, qualified, qualified);
 	}
 
 	void applyAppend(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output) {
@@ -89,7 +102,16 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	void applyOperator(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output) {
-		boolean ownInput = operatorContainsPrefix(contextualCanonicalGroup(relationId), context);
+		// This compatibility entry has no supplied semantic-state certificate. A nonempty inherited prefix
+		// cannot be authenticated merely because a scheduled copy's whole memo group happens to contain it.
+		applyOperator(relationId, relations, context, output,
+				context == null || context.prefixRelationCount() == 0);
+	}
+
+	void applyOperator(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
+			boolean suppliedPopulationQualified) {
+		boolean ownInput = suppliedPopulationQualified && (context == null || context.prefixRelationsDescribeRows())
+				&& operatorContainsPrefix(contextualCanonicalGroup(relationId), context);
 		// A contextual operator carries the entire inherited prefix in its row field. Its one-invocation
 		// logical posterior is not that cardinality; retain physical feedback without replacing those rows.
 		apply(relationId, relations, context, output, ownInput, ownInput, ownInput);
@@ -131,6 +153,11 @@ final class LmdbMappedFrontierLearningSession {
 		apply(0, relations, context, output, true, false, true);
 	}
 
+	void applyIntermediateJoin(int[] relations, PackedCostContext context, PackedCostEstimate output,
+			Map<Integer, Long> semanticAtoms, boolean populationQualified) {
+		apply(0, relations, context, output, populationQualified, false, populationQualified, semanticAtoms);
+	}
+
 	void applyPhysicalIntermediateJoin(int[] relations, PackedCostContext context, PackedCostEstimate output) {
 		/*
 		 * A physical join event consumes the immutable logical estimate that immediately precedes it. Retain the same
@@ -140,24 +167,51 @@ final class LmdbMappedFrontierLearningSession {
 		apply(0, relations, context, output, true, false, false);
 	}
 
+	void applyPhysicalIntermediateJoin(int[] relations, PackedCostContext context, PackedCostEstimate output,
+			Map<Integer, Long> semanticAtoms, boolean populationQualified) {
+		apply(0, relations, context, output, populationQualified, false, false, semanticAtoms, populationQualified);
+	}
+
 	void refresh(PackedCostEstimate output) {
 		if (output == null || !(output.runtimeFeedbackContract() != null
 				&& output.runtimeFeedbackContract().descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return;
 		}
-		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output));
+		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output,
+				output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LOGICAL)));
 	}
 
 	private void apply(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
 			boolean ownInput, boolean exactFactEligible, boolean logicalOutputMatchesIdentity) {
-		if (output == null || relations == null || relations.length == 0 || !finiteNonNegative(output.outputRows())) {
+		apply(relationId, relations, context, output, ownInput, exactFactEligible, logicalOutputMatchesIdentity, null);
+	}
+
+	private void apply(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
+			boolean ownInput, boolean exactFactEligible, boolean logicalOutputMatchesIdentity,
+			Map<Integer, Long> semanticAtoms) {
+		apply(relationId, relations, context, output, ownInput, exactFactEligible, logicalOutputMatchesIdentity,
+				semanticAtoms, logicalOutputMatchesIdentity);
+	}
+
+	private void apply(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
+			boolean ownInput, boolean exactFactEligible, boolean logicalOutputMatchesIdentity,
+			Map<Integer, Long> semanticAtoms, boolean logicalPopulationQualified) {
+		if (output == null) {
 			return;
 		}
-		Identity identity = identity(relationId, relations, context, output, ownInput);
+		output.removePlannedStringMetric("optimizer.frontierLogicalGroupKey");
+		output.setRuntimeFeedbackContract(null);
+		output.putPlannedStringMetric(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS, "unavailable");
+		if (relations == null || relations.length == 0 || !finiteNonNegative(output.outputRows())) {
+			return;
+		}
+		Identity identity = identity(relationId, relations, context, output, ownInput, semanticAtoms);
 		if (identity == null || !identity.origin().certified()) {
 			return;
 		}
-		stamp(relationId, identity, output, exactFactEligible && unconditioned(identity));
+		output.putPlannedStringMetric(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS,
+				logicalPopulationQualified ? "qualified" : "unavailable");
+		stamp(relationId, identity, output, exactFactEligible && unconditioned(identity), logicalPopulationQualified);
 		LmdbOperatorFeedbackStats feedback = runtime.feedback();
 		if (feedback == null || output.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT) {
 			refresh(output);
@@ -165,13 +219,15 @@ final class LmdbMappedFrontierLearningSession {
 		}
 		if (!logicalOutputMatchesIdentity) {
 			output.putPlannedStringMetric("optimizer.frontierLeo.output_rows.admission",
-					"rejected-logical-origin-mismatch");
+					logicalPopulationQualified ? "retained-logical-estimate" : "rejected-logical-origin-mismatch");
 			int physicalCorrections = applyPhysicalCorrections(identity, output, feedback);
 			if (physicalCorrections > 0) {
 				output.putPlannedStringMetric("optimizer.frontierLeoModel", "hierarchical-nig");
 				output.putPlannedDoubleMetric("optimizer.frontierLeoPhysicalDimensionCount", physicalCorrections);
 			}
-			applyLifecycle(identity, output, feedback);
+			if (logicalPopulationQualified) {
+				applyLifecycle(identity, output, feedback);
+			}
 			refresh(output);
 			return;
 		}
@@ -209,18 +265,23 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	private Identity identity(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
-			boolean ownInput) {
+			boolean ownInput, Map<Integer, Long> semanticAtoms) {
 		LogicalBasis basis = relationId > 0 && relationId <= query.relationCount()
 				? logicalBasis(contextualCanonicalGroup(relationId))
-				: joinBasis(relations);
+				: semanticAtoms == null || semanticAtoms.isEmpty() ? joinBasis(relations) : joinBasis(semanticAtoms);
 		if (basis == null) {
 			return null;
 		}
 		long correlationFingerprint = ownInput || context == null ? 0L : context.correlationMaskId();
 		Collection<String> inputNames = ownInput ? List.of() : inputBindingNames(context);
-		String inputShape = inputNames.isEmpty()
-				? "unbound"
-				: LeoOperatorKey.alphaNormalizedInputBindingShape(basis.expression(), inputNames);
+		String inputShape;
+		try {
+			inputShape = inputNames.isEmpty()
+					? "unbound"
+					: LeoOperatorKey.alphaNormalizedInputBindingShape(basis.expression(), inputNames);
+		} catch (UnkeyableOperatorException unsupported) {
+			return null;
+		}
 		String requiredOuter = correlationFingerprint == 0L
 				? "none"
 				: "alpha-correlation:" + LearningKeyCodec.digest(inputShape);
@@ -244,7 +305,8 @@ final class LmdbMappedFrontierLearningSession {
 				+ (features.hasKnownRangeWidth() ? "|range:known" : "|range:unknown")
 				+ "|guarantee:" + guarantee.name().toLowerCase(Locale.ROOT);
 		LearningApplicability applicability = new LearningApplicability(bindingShape, correlationContract, bucket,
-				Math.max(0L, revisions.dataRevision()), Math.max(0L, revisions.frontierRevision()), 1L);
+				Math.max(0L, revisions.dataRevision()), Math.max(0L, revisions.frontierRevision()),
+				SEMANTIC_POPULATION_MODEL_EPOCH);
 
 		String algorithm = firstNonBlank(output.plannedStringMetric("optimizer.semiAntiAlgorithm"),
 				output.plannedStringMetric("optimizer.physicalJoinImplementation"),
@@ -272,7 +334,8 @@ final class LmdbMappedFrontierLearningSession {
 				features, basis.expression());
 	}
 
-	private void stamp(int relationId, Identity identity, PackedCostEstimate output, boolean exactFactEligible) {
+	private void stamp(int relationId, Identity identity, PackedCostEstimate output, boolean exactFactEligible,
+			boolean logicalPopulationQualified) {
 		output.putPlannedStringMetric("optimizer.frontierLearningKey", identity.legacyKey().externalForm());
 		output.putPlannedStringMetric("optimizer.logicalLearningKey", identity.logicalKey().externalForm());
 		output.putPlannedStringMetric("optimizer.logicalLearningKeyDigest", identity.logicalKey().digest());
@@ -293,7 +356,7 @@ final class LmdbMappedFrontierLearningSession {
 		LmdbRuntimeFeedbackDescriptor descriptor = new LmdbRuntimeFeedbackDescriptor(
 				identity.legacyKey(), identity.legacyKey(), identity.logicalKey(), identity.applicability(),
 				identity.physicalKey(), identity.origin(), identity.features(), exactFilter, generalizedFilter);
-		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output));
+		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output, logicalPopulationQualified));
 	}
 
 	private FrontierLearningModel.DimensionEstimate logicalEstimate(LmdbOperatorFeedbackStats feedback,
@@ -411,7 +474,7 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	private RuntimeFeedbackContract runtimeFeedbackContract(LmdbRuntimeFeedbackDescriptor descriptor,
-			PackedCostEstimate output) {
+			PackedCostEstimate output, boolean logicalPopulationQualified) {
 		double rawLogical = predictionDimension(output, FrontierCostDimension.OUTPUT_ROWS, output.outputRows(), true);
 		double appliedLogical = predictionDimension(output, FrontierCostDimension.OUTPUT_ROWS, output.outputRows(),
 				false);
@@ -429,18 +492,20 @@ final class LmdbMappedFrontierLearningSession {
 			regressionLimit = Double.POSITIVE_INFINITY;
 		}
 		RuntimeFeedbackContract.SemanticKind semantic = semanticKind(descriptor, output);
-		int flags = RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_PHYSICAL
-				| RuntimeFeedbackContract.ADMIT_LIFECYCLE | RuntimeFeedbackContract.ORIGIN_CERTIFIED;
-		if (semantic == RuntimeFeedbackContract.SemanticKind.FILTER) {
+		int flags = RuntimeFeedbackContract.ADMIT_PHYSICAL | RuntimeFeedbackContract.ORIGIN_CERTIFIED;
+		if (logicalPopulationQualified) {
+			flags |= RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_LIFECYCLE;
+		}
+		if (logicalPopulationQualified && semantic == RuntimeFeedbackContract.SemanticKind.FILTER) {
 			flags |= RuntimeFeedbackContract.ADMIT_FILTER;
-		} else if (semantic == RuntimeFeedbackContract.SemanticKind.EXISTS
-				|| semantic == RuntimeFeedbackContract.SemanticKind.NOT_EXISTS) {
+		} else if (logicalPopulationQualified && (semantic == RuntimeFeedbackContract.SemanticKind.EXISTS
+				|| semantic == RuntimeFeedbackContract.SemanticKind.NOT_EXISTS)) {
 			flags |= RuntimeFeedbackContract.ADMIT_FILTER | RuntimeFeedbackContract.ADMIT_SEMI_ANTI;
 		}
 		if (output.evidenceGuarantee() == EvidenceGuarantee.DATABASE_EXACT) {
 			flags |= RuntimeFeedbackContract.DATABASE_EXACT;
 		}
-		if (output.plannedStringMetric("optimizer.frontierLogicalGroupKey") != null) {
+		if (logicalPopulationQualified && output.plannedStringMetric("optimizer.frontierLogicalGroupKey") != null) {
 			flags |= RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE;
 		}
 		long dataEpoch = Math.max(0L, revisions.dataRevision());
@@ -523,15 +588,21 @@ final class LmdbMappedFrontierLearningSession {
 			return cached;
 		}
 		TupleExpr expression = query.materializeRelation(relationId);
-		LeoOperatorKey leo = LeoOperatorKey.from(expression, "", LeoOperatorKey.ConstantMode.EXACT);
+		LeoOperatorKey leo = canonicalLearningKey(relationId, expression);
+		if (leo == null) {
+			return null;
+		}
 		String topology = leo.structuralFingerprint();
-		relationTopologies[relationId] = topology;
 		StringBuilder children = new StringBuilder();
 		for (int child = 0; child < query.childCount(relationId); child++) {
 			if (child > 0) {
 				children.append('|');
 			}
-			children.append(relationTopology(contextualCanonicalGroup(query.childRelationId(relationId, child))));
+			String childTopology = relationTopology(contextualCanonicalGroup(query.childRelationId(relationId, child)));
+			if (childTopology == null) {
+				return null;
+			}
+			children.append(childTopology);
 		}
 		String operator = operatorFamily(expression);
 		String visible = alphaMask(leo.outputMask());
@@ -539,6 +610,7 @@ final class LmdbMappedFrontierLearningSession {
 		String scope = datasetScope(expression);
 		LogicalLearningKey key = logicalKey(operator, topology, children.toString(), visible, semantics, scope);
 		cached = new LogicalBasis(expression, operator, topology, children.toString(), visible, semantics, scope, key);
+		relationTopologies[relationId] = topology;
 		logicalBases[relationId] = cached;
 		return cached;
 	}
@@ -550,7 +622,11 @@ final class LmdbMappedFrontierLearningSession {
 			if (relationId <= 0 || relationId > query.relationCount()) {
 				continue;
 			}
-			factors.add(relationTopology(contextualCanonicalGroup(relationId)));
+			String topology = relationTopology(contextualCanonicalGroup(relationId));
+			if (topology == null) {
+				return null;
+			}
+			factors.add(topology);
 			names.addAll(query.outputBindingNames(relationId));
 		}
 		if (factors.isEmpty()) {
@@ -567,14 +643,104 @@ final class LmdbMappedFrontierLearningSession {
 				semantics, scope, key);
 	}
 
+	private LogicalBasis joinBasis(Map<Integer, Long> semanticAtoms) {
+		List<SemanticFactor> factors = new ArrayList<>(semanticAtoms.size());
+		LinkedHashSet<String> names = new LinkedHashSet<>();
+		int first = 0;
+		for (var entry : semanticAtoms.entrySet()) {
+			if (entry.getValue() <= 0L) {
+				continue;
+			}
+			int relation = entry.getKey();
+			LogicalBasis basis = logicalBasis(relation);
+			if (basis == null) {
+				return null;
+			}
+			if (first == 0) {
+				first = relation;
+			}
+			List<SemanticBinding> bindings = semanticBindings.get(relation);
+			if (bindings == null) {
+				return null;
+			}
+			String tieOrder = bindings.stream()
+					.map(SemanticBinding::name)
+					.map(LearningKeyCodec::encode)
+					.collect(Collectors.joining("|"));
+			factors.add(new SemanticFactor(basis.canonicalExpression(), entry.getValue(), bindings, tieOrder));
+		}
+		if (first == 0) {
+			return null;
+		}
+		factors.sort(Comparator.comparing(SemanticFactor::topology).thenComparing(SemanticFactor::tieOrder));
+		Map<String, Integer> variables = new HashMap<>();
+		Map<String, Long> occurrences = new TreeMap<>();
+		try {
+			for (SemanticFactor factor : factors) {
+				StringBuilder content = new StringBuilder(factor.topology()).append("|bindings:");
+				for (SemanticBinding binding : factor.bindings()) {
+					int variable = variables.computeIfAbsent(binding.name(), ignored -> variables.size());
+					content.append(LearningKeyCodec.encode(binding.role())).append(":v").append(variable).append(';');
+					names.add(binding.name());
+				}
+				occurrences.merge(content.toString(), factor.occurrences(), Math::addExact);
+			}
+		} catch (ArithmeticException multiplicityOverflow) {
+			return null;
+		}
+		String content = occurrences.entrySet()
+				.stream()
+				.map(entry -> entry.getValue() + "*" + entry.getKey())
+				.collect(Collectors.joining(";"));
+		String children = LearningKeyCodec.digest(content);
+		String topology = "certified-bag-join|" + children;
+		String visible = alphaVariables(names.size());
+		String semantics = "bag|duplicate-sensitive|sparql-unbound";
+		String scope = datasetScope(null);
+		return new LogicalBasis(query.materializeRelation(first), "join", topology, children, visible,
+				semantics, scope, logicalKey("join", topology, children, visible, semantics, scope));
+	}
+
+	private record SemanticBinding(String name, String role) {
+	}
+
+	private record SemanticFactor(String topology, long occurrences, List<SemanticBinding> bindings, String tieOrder) {
+	}
+
 	private String relationTopology(int relationId) {
 		String topology = relationTopologies[relationId];
 		if (topology == null) {
-			topology = LeoOperatorKey.from(query.materializeRelation(relationId), "", LeoOperatorKey.ConstantMode.EXACT)
-					.structuralFingerprint();
-			relationTopologies[relationId] = topology;
+			LeoOperatorKey key = canonicalLearningKey(relationId, query.materializeRelation(relationId));
+			return key == null ? null : key.structuralFingerprint();
 		}
 		return topology;
+	}
+
+	private LeoOperatorKey canonicalLearningKey(int relation, TupleExpr expression) {
+		if (learningKeysComputed[relation]) {
+			return learningKeys[relation];
+		}
+		try {
+			// One temporary projection supplies both canonical ancestry and alpha binding roles. No copied tree is
+			// retained per state or in this cache; original materializations keep their runtime semantics.
+			TupleExpr projection = LmdbValueIdFilter.learningKeyExpression(expression);
+			LeoOperatorKey key = LmdbValueIdFilter.learningKeyOfProjection(projection, "",
+					LeoOperatorKey.ConstantMode.EXACT);
+			List<SemanticBinding> roles = new ArrayList<>();
+			for (String name : query.outputBindingNames(relation)) {
+				roles.add(new SemanticBinding(name,
+						LeoOperatorKey.alphaNormalizedInputBindingShape(projection, List.of(name))));
+			}
+			roles.sort(Comparator.comparing(SemanticBinding::role).thenComparing(SemanticBinding::name));
+			semanticBindings.put(relation, List.copyOf(roles));
+			learningKeys[relation] = key;
+			relationTopologies[relation] = key.structuralFingerprint();
+			learningKeysComputed[relation] = true;
+			return key;
+		} catch (UnkeyableOperatorException unsupported) {
+			learningKeysComputed[relation] = true;
+			return null;
+		}
 	}
 
 	private LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin logicalOrigin(int relationId, int[] relations) {
@@ -626,43 +792,15 @@ final class LmdbMappedFrontierLearningSession {
 						avalanche(mix(high, factors.length)), avalanche(mix(low, count)), count);
 	}
 
-	private int[] buildContextualCanonicalGroups() {
-		int[] roots = new int[query.relationCount() + 1];
-		for (int relation = 0; relation < roots.length; relation++) {
-			roots[relation] = relation;
-		}
-		for (int relation = 1; relation <= query.relationCount(); relation++) {
-			int canonical = query.canonicalContextualOperatorRelationId(relation);
-			if (canonical <= 0 || canonical > query.relationCount()) {
-				continue;
-			}
-			int left = root(roots, memberGroup(relation));
-			int right = root(roots, memberGroup(canonical));
-			if (left != right) {
-				roots[Math.max(left, right)] = Math.min(left, right);
-			}
-		}
-		for (int relation = 1; relation < roots.length; relation++) {
-			roots[relation] = root(roots, relation);
-		}
-		return roots;
-	}
-
 	private int contextualCanonicalGroup(int relationId) {
-		return contextualCanonicalGroups[memberGroup(relationId)];
+		// Contextual cost copies identify a scheduled predicate, not its complete input/output population.
+		// Only the memo's actual semantic equivalence class can supply a logical learning identity.
+		return memberGroup(relationId);
 	}
 
 	private int memberGroup(int relationId) {
 		int group = query.relGroup(relationId);
 		return group > 0 && group <= query.relationCount() ? group : relationId;
-	}
-
-	private static int root(int[] roots, int group) {
-		int current = group;
-		while (roots[current] != current) {
-			current = roots[current];
-		}
-		return current;
 	}
 
 	private Collection<String> inputBindingNames(PackedCostContext context) {

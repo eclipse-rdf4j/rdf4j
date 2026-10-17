@@ -33,6 +33,11 @@ final class PackedMemo implements AutoCloseable {
 	private static final int[] EMPTY_IDS = new int[0];
 
 	private final PackedQuery query;
+
+	PackedStatementPatternSemanticsCodec semanticsCodec() {
+		return query.semanticsCodec();
+	}
+
 	private final int baseLogicalExpressionCount;
 	private final int expectedLogicalAlternatives;
 	private final int expectedLogicalChildLinks;
@@ -129,7 +134,7 @@ final class PackedMemo implements AutoCloseable {
 				Math.max(8, expectedProperties * 4));
 		properties = new PackedPhysicalPropertyInterner(masks, sequences, expectedProperties);
 		winners = new PackedWinnerTable(baseLogicalExpressionCount, expectedWinners, expectedChildLinks,
-				properties.anyId());
+				properties.anyId(), budget);
 		physicalMetadata = recyclePhysicalMetadata
 				? PackedPhysicalMetadataArena.borrow(expectedWinners, budget)
 				: new PackedPhysicalMetadataArena(expectedWinners, budget);
@@ -229,6 +234,12 @@ final class PackedMemo implements AutoCloseable {
 				: logicalOverlay.occurrenceId(logicalExpressionId - baseLogicalExpressionCount);
 	}
 
+	int logicalGraphDomainId(int logicalExpressionId) {
+		checkLogicalExpressionId(logicalExpressionId);
+		return logicalExpressionId <= baseLogicalExpressionCount ? query.relGraphDomainId(logicalExpressionId)
+				: logicalOverlay.graphDomainId(logicalExpressionId - baseLogicalExpressionCount);
+	}
+
 	int logicalChildGroupId(int logicalExpressionId, int childOrdinal) {
 		checkLogicalExpressionId(logicalExpressionId);
 		return logicalExpressionId <= baseLogicalExpressionCount
@@ -251,9 +262,18 @@ final class PackedMemo implements AutoCloseable {
 	int addLogicalAlternative(int targetGroupId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
 		checkGroupId(targetGroupId);
+		int source = firstLogicalByGroup[targetGroupId];
+		return addLogicalAlternative(targetGroupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				occurrenceId, source == 0 ? 0 : logicalGraphDomainId(source), childGroupIds, childOffset, childCount);
+	}
+
+	int addLogicalAlternative(int targetGroupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset,
+			int childCount) {
+		checkGroupId(targetGroupId);
 		checkChildGroups(childGroupIds, childOffset, childCount);
 		int existing = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds,
+				graphDomainId, childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
 			if (query.relGroup(existing) != targetGroupId) {
@@ -267,7 +287,7 @@ final class PackedMemo implements AutoCloseable {
 		PackedExpressionInterner overlay = ensureLogicalOverlay();
 		int overlaySize = overlay.size();
 		int overlayId = overlay.internLogicalIfSameGroup(targetGroupId, operatorTag, payloadId, semanticScopeId,
-				executionDomainId, occurrenceId, childGroupIds, childOffset, childCount);
+				executionDomainId, occurrenceId, graphDomainId, childGroupIds, childOffset, childCount);
 		if (overlayId == 0) {
 			return 0;
 		}
@@ -321,9 +341,15 @@ final class PackedMemo implements AutoCloseable {
 
 	int addCanonicalLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return addCanonicalLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				commonChildGraphDomain(childGroupIds, childOffset, childCount), childGroupIds, childOffset, childCount);
+	}
+
+	int addCanonicalLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		checkChildGroups(childGroupIds, childOffset, childCount);
 		int existing = findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds,
+				graphDomainId, childGroupIds,
 				childOffset, childCount);
 		if (existing != 0) {
 			return existing;
@@ -331,7 +357,7 @@ final class PackedMemo implements AutoCloseable {
 		int newGroupId = groupCount + 1;
 		ensureGroupCapacity(newGroupId);
 		int overlayId = ensureLogicalOverlay().internLogical(newGroupId, operatorTag, payloadId, semanticScopeId,
-				executionDomainId, occurrenceId, childGroupIds, childOffset, childCount);
+				executionDomainId, occurrenceId, graphDomainId, childGroupIds, childOffset, childCount);
 		groupCount = newGroupId;
 		int logicalExpressionId = baseLogicalExpressionCount + overlayId;
 		linkLogical(newGroupId, logicalExpressionId);
@@ -721,6 +747,7 @@ final class PackedMemo implements AutoCloseable {
 							seed.structuralLogicalSemanticScopeId(ordinal),
 							seed.structuralLogicalExecutionDomainId(ordinal),
 							seed.structuralLogicalOccurrenceId(ordinal),
+							seed.structuralLogicalGraphDomainId(ordinal),
 							childGroupIds, 0, childCount);
 				} else if (targetGroupId == groupCount + 1) {
 					logicalExpressionId = addCanonicalLogical(seed.structuralLogicalOperatorTag(ordinal),
@@ -728,6 +755,7 @@ final class PackedMemo implements AutoCloseable {
 							seed.structuralLogicalSemanticScopeId(ordinal),
 							seed.structuralLogicalExecutionDomainId(ordinal),
 							seed.structuralLogicalOccurrenceId(ordinal),
+							seed.structuralLogicalGraphDomainId(ordinal),
 							childGroupIds, 0, childCount);
 				} else {
 					throw new PackedMemoInvariantException(
@@ -759,6 +787,7 @@ final class PackedMemo implements AutoCloseable {
 				|| logicalSemanticScopeId(logicalExpressionId) != seed.structuralLogicalSemanticScopeId(ordinal)
 				|| logicalExecutionDomainId(logicalExpressionId) != seed.structuralLogicalExecutionDomainId(ordinal)
 				|| logicalOccurrenceId(logicalExpressionId) != seed.structuralLogicalOccurrenceId(ordinal)
+				|| logicalGraphDomainId(logicalExpressionId) != seed.structuralLogicalGraphDomainId(ordinal)
 				|| logicalChildCount(logicalExpressionId) != seed.structuralLogicalChildCount(ordinal)
 				|| logicalRuleMask(logicalExpressionId) != seed.structuralLogicalRuleMask(ordinal)) {
 			return false;
@@ -778,6 +807,7 @@ final class PackedMemo implements AutoCloseable {
 				|| logicalSemanticScopeId(logicalExpressionId) != seed.logicalSemanticScopeId(recipeId)
 				|| logicalExecutionDomainId(logicalExpressionId) != seed.logicalExecutionDomainId(recipeId)
 				|| logicalOccurrenceId(logicalExpressionId) != seed.logicalOccurrenceId(recipeId)
+				|| logicalGraphDomainId(logicalExpressionId) != seed.logicalGraphDomainId(recipeId)
 				|| logicalChildCount(logicalExpressionId) != seed.logicalChildCount(recipeId)
 				|| logicalRuleMask(logicalExpressionId) != seed.logicalRuleMask(recipeId)) {
 			return false;
@@ -1787,11 +1817,9 @@ final class PackedMemo implements AutoCloseable {
 		}
 		int[] decisionRepresentatives = new int[decisionTrace.size()];
 		int decisionCount = 0;
-		for (int index = 0; index < decisionTrace.size(); index++) {
-			if (decisionTrace.eventId(index) != 0 && decisionMatchesWinner(index, rootWinnerId)) {
-				decisionRepresentatives[decisionCount++] = index;
-				break;
-			}
+		int rootTrace = selectedTraceForWinner(rootWinnerId);
+		if (rootTrace >= 0) {
+			decisionRepresentatives[decisionCount++] = rootTrace;
 		}
 		for (int decision = 0; decision < decisionCount; decision++) {
 			int representative = decisionRepresentatives[decision];
@@ -1944,12 +1972,15 @@ final class PackedMemo implements AutoCloseable {
 	}
 
 	private int selectedTraceForWinner(int winnerId) {
-		for (int index = 0; index < decisionTrace.size(); index++) {
-			if (decisionTrace.eventId(index) != 0 && decisionMatchesWinner(index, winnerId)) {
-				return index;
+		int selected = -1;
+		for (int index = decisionTrace.firstCandidateForEvent(
+				selectedEventForWinner(winnerId)); index >= 0; index = decisionTrace.previousCandidateForEvent(index)) {
+			if (decisionMatchesWinner(index, winnerId)) {
+				// Event links run newest-to-oldest; the final exact match preserves the original forward scan's tie.
+				selected = index;
 			}
 		}
-		return -1;
+		return selected;
 	}
 
 	private boolean isFinalParetoCandidate(int candidateId) {
@@ -2504,9 +2535,9 @@ final class PackedMemo implements AutoCloseable {
 	}
 
 	private int findLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
-			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		int baseExpressionId = query.findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId,
+				occurrenceId, graphDomainId,
 				childGroupIds, childOffset, childCount);
 		if (baseExpressionId != 0) {
 			return baseExpressionId;
@@ -2515,8 +2546,22 @@ final class PackedMemo implements AutoCloseable {
 			return 0;
 		}
 		int overlayId = logicalOverlay.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount);
 		return overlayId == 0 ? 0 : baseLogicalExpressionCount + overlayId;
+	}
+
+	private int commonChildGraphDomain(int[] childGroups, int offset, int count) {
+		int domain = -1;
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			checkGroupId(childGroups[offset + ordinal]);
+			int source = firstLogicalByGroup[childGroups[offset + ordinal]];
+			int candidate = source == 0 ? 0 : logicalGraphDomainId(source);
+			if (domain >= 0 && domain != candidate) {
+				return 0;
+			}
+			domain = candidate;
+		}
+		return Math.max(0, domain);
 	}
 
 	private PackedExpressionInterner ensureLogicalOverlay() {

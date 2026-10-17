@@ -117,6 +117,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+		if (!context.nativeEvidenceAllowed()) {
+			return List.of();
+		}
 		if (expression instanceof StatementPattern pattern) {
 			return statementCandidates(pattern, context);
 		}
@@ -225,7 +228,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public Optional<JoinEvidence> joinEvidence(TupleExpr left, TupleExpr right, EstimateContext context) {
-		if (statistics == null || statisticsMode == FrontierEstimatorMode.OFF
+		if (!context.nativeEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(left)
+				|| !LmdbPlanningGraphEvidence.allows(right)
+				|| statistics == null || statisticsMode == FrontierEstimatorMode.OFF
 				|| !(left instanceof StatementPattern leftPattern)
 				|| !(right instanceof StatementPattern rightPattern)
 				|| Math.max(context.invocationCount(), context.prefixEstimate().rows()) > 1.0d) {
@@ -271,7 +276,8 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	@Override
 	public Optional<EstimateCandidate> exactCandidate(TupleExpr expression, EstimateContext context) {
-		if (!(expression instanceof StatementPattern pattern) || cardinalities == null
+		if (!context.nativeEvidenceAllowed() || !(expression instanceof StatementPattern pattern)
+				|| cardinalities == null
 				|| frontierLeafAnswered(pattern)) {
 			return Optional.empty();
 		}
@@ -287,6 +293,9 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 	@Override
 	public Optional<FilterEvidence> filterEvidence(TupleExpr input, ValueExpr condition, BagEstimate inputEstimate,
 			EstimateContext context) {
+		if (!context.nativeEvidenceAllowed()) {
+			return Optional.empty();
+		}
 		Optional<FilterEvidence> missingIriEvidence = exactMissingIriComparison(input, condition, context);
 		if (missingIriEvidence.isPresent()) {
 			return missingIriEvidence;

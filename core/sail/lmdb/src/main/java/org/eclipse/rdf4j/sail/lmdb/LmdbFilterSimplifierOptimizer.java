@@ -450,7 +450,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			BindingSetAssignment queryTermAnchor, Set<String> assuredBindings) {
 		// The stored-term enumeration is COMPLETE only for the committed snapshot; an uncommitted matching term
 		// would fall outside the anchor and its row would be lost.
-		if (!committedEvidenceUsable) {
+		if (!committedEvidenceUsable || !LmdbPlanningGraphEvidence.allows(filter)) {
 			return null;
 		}
 		if (queryTermAnchor == null || queryTermAnchor.getBindingNames().size() != 1

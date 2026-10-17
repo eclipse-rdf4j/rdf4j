@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 /** Primitive winner table keyed by group, requirement, semantic goal, input context, and cost policy. */
 @PackedHotPath
@@ -21,6 +22,12 @@ final class PackedWinnerTable {
 	static final int EXECUTABLE_FALLBACK = 1;
 
 	private final int defaultPropertyId;
+	private final PackedSearchBudget budget;
+	private int[] continuationHeads = new int[0];
+	private int[] continuationTails = new int[0];
+	private int[] nextGoalContinuationIds = new int[0];
+	private int continuationGoalCount;
+	private boolean continuationIndexComplete = true;
 	private int[] defaultWinnerByGroup;
 	private int[] firstContinuationByGroup;
 	private int[] lastContinuationByGroup;
@@ -56,10 +63,17 @@ final class PackedWinnerTable {
 	private int size;
 
 	PackedWinnerTable(int expectedGroups, int expectedAdditionalGoals, int expectedChildLinks, int defaultPropertyId) {
+		this(expectedGroups, expectedAdditionalGoals, expectedChildLinks, defaultPropertyId,
+				new PackedSearchBudget(PackedPlannerLimits.unbounded()));
+	}
+
+	PackedWinnerTable(int expectedGroups, int expectedAdditionalGoals, int expectedChildLinks, int defaultPropertyId,
+			PackedSearchBudget budget) {
 		if (expectedGroups < 0 || expectedAdditionalGoals < 0 || expectedChildLinks < 0 || defaultPropertyId <= 0) {
 			throw new IllegalArgumentException("invalid expected winner-table sizes or default property");
 		}
 		this.defaultPropertyId = defaultPropertyId;
+		this.budget = Objects.requireNonNull(budget);
 		defaultWinnerByGroup = new int[Math.max(2, expectedGroups + 1)];
 		firstContinuationByGroup = new int[defaultWinnerByGroup.length];
 		lastContinuationByGroup = new int[defaultWinnerByGroup.length];
@@ -285,6 +299,10 @@ final class PackedWinnerTable {
 	int firstContinuation(int groupId, int requiredPropertyId, int semanticRowGoalId, int inputContextId,
 			int costPolicyId) {
 		checkGoal(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		if (continuationIndexComplete && continuationHeads.length != 0) {
+			return continuationHeads[findContinuationSlot(continuationHeads, groupId, requiredPropertyId,
+					semanticRowGoalId, inputContextId, costPolicyId)];
+		}
 		int winnerId = groupId < firstContinuationByGroup.length ? firstContinuationByGroup[groupId] : 0;
 		while (winnerId != 0 && !keyEquals(winnerId, groupId, requiredPropertyId, semanticRowGoalId,
 				inputContextId, costPolicyId)) {
@@ -295,6 +313,9 @@ final class PackedWinnerTable {
 
 	int nextContinuation(int winnerId) {
 		checkWinnerId(winnerId);
+		if (continuationIndexComplete && winnerId < nextGoalContinuationIds.length) {
+			return nextGoalContinuationIds[winnerId];
+		}
 		int nextWinnerId = nextContinuationIds[winnerId];
 		while (nextWinnerId != 0 && !keyEquals(nextWinnerId, groupIds[winnerId], requiredPropertyIds[winnerId],
 				semanticRowGoalIds[winnerId], inputContextIds[winnerId], costPolicyIds[winnerId])) {
@@ -448,8 +469,75 @@ final class PackedWinnerTable {
 			nextContinuationIds[previousWinnerId] = winnerId;
 		}
 		lastContinuationByGroup[groupId] = winnerId;
+		indexContinuation(winnerId);
 		recordGroupChange(groupId);
 		return true;
+	}
+
+	/** The original group chain remains complete even when a bounded search cannot retain the optional index. */
+	private void indexContinuation(int winnerId) {
+		if (!continuationIndexComplete) {
+			return;
+		}
+		int nextRowCapacity = Math.max(2, nextGoalContinuationIds.length);
+		while (nextRowCapacity <= winnerId) {
+			nextRowCapacity = Math.multiplyExact(nextRowCapacity, 2);
+		}
+		int nextTableCapacity = continuationHeads.length == 0 ? PackedPrimitiveHash.tableCapacity(1)
+				: continuationHeads.length;
+		boolean newGoal = continuationHeads.length == 0 || continuationHeads[findContinuationSlot(continuationHeads,
+				groupIds[winnerId], requiredPropertyIds[winnerId], semanticRowGoalIds[winnerId],
+				inputContextIds[winnerId],
+				costPolicyIds[winnerId])] == 0;
+		if (newGoal && continuationGoalCount + 1 > PackedPrimitiveHash.maximumFill(nextTableCapacity)) {
+			nextTableCapacity = Math.multiplyExact(nextTableCapacity, 2);
+		}
+		long additionalBytes = (long) Integer.BYTES * (nextRowCapacity - nextGoalContinuationIds.length)
+				+ 2L * Integer.BYTES * (nextTableCapacity - continuationHeads.length);
+		if (!budget.canReserveBytes(additionalBytes) || !budget.tryReserveBytes(additionalBytes)) {
+			// No partial index is ever queried. Keep charged arrays retained and fall back to the authoritative chain.
+			continuationIndexComplete = false;
+			return;
+		}
+		if (nextRowCapacity != nextGoalContinuationIds.length) {
+			nextGoalContinuationIds = Arrays.copyOf(nextGoalContinuationIds, nextRowCapacity);
+		}
+		if (nextTableCapacity != continuationHeads.length) {
+			int[] heads = new int[nextTableCapacity];
+			int[] tails = new int[nextTableCapacity];
+			for (int slot = 0; slot < continuationHeads.length; slot++) {
+				int first = continuationHeads[slot];
+				if (first != 0) {
+					int replacement = findContinuationSlot(heads, groupIds[first], requiredPropertyIds[first],
+							semanticRowGoalIds[first], inputContextIds[first], costPolicyIds[first]);
+					heads[replacement] = first;
+					tails[replacement] = continuationTails[slot];
+				}
+			}
+			continuationHeads = heads;
+			continuationTails = tails;
+		}
+		int slot = findContinuationSlot(continuationHeads, groupIds[winnerId], requiredPropertyIds[winnerId],
+				semanticRowGoalIds[winnerId], inputContextIds[winnerId], costPolicyIds[winnerId]);
+		int previous = continuationTails[slot];
+		if (previous == 0) {
+			continuationHeads[slot] = winnerId;
+			continuationGoalCount++;
+		} else {
+			nextGoalContinuationIds[previous] = winnerId;
+		}
+		continuationTails[slot] = winnerId;
+	}
+
+	private int findContinuationSlot(int[] heads, int groupId, int requiredPropertyId, int semanticRowGoalId,
+			int inputContextId, int costPolicyId) {
+		int slot = PackedPrimitiveHash.slot(hash(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+				costPolicyId), heads.length);
+		while (heads[slot] != 0 && !keyEquals(heads[slot], groupId, requiredPropertyId, semanticRowGoalId,
+				inputContextId, costPolicyId)) {
+			slot = slot + 1 & heads.length - 1;
+		}
+		return slot;
 	}
 
 	int changeCount() {

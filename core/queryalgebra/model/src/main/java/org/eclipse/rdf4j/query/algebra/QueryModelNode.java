@@ -19,12 +19,27 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 
 /**
  * Main interface for all query model nodes.
  */
 public interface QueryModelNode extends Cloneable, Serializable {
+
+	/** Whether this physical representation retains an original independent invocation-input boundary. */
+	@InternalUseOnly
+	default boolean isIndependentInputScope() {
+		return false;
+	}
+
+	/** Internal provenance, distinct from BIND/FILTER variable visibility and storage graph selection. */
+	@InternalUseOnly
+	default void setIndependentInputScope(boolean independent) {
+		if (independent) {
+			throw new UnsupportedOperationException("This query model node cannot retain independent input scope");
+		}
+	}
 
 	/**
 	 * Visits this node. The node reports itself to the visitor with the proper runtime type.

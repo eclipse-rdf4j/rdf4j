@@ -316,7 +316,7 @@ public final class BindingScopeAnalysis {
 	 * bindings selections on variables that are fresh inside {@code expr}.
 	 */
 	public static boolean isOutOfScopeForCorrelation(TupleExpr expr) {
-		return TupleExprs.isVariableScopeChange(expr) || isOutOfScopeForOptionalCorrelation(expr);
+		return TupleExprs.requiresIndependentEvaluation(expr) || isOutOfScopeForOptionalCorrelation(expr);
 	}
 
 	/**
@@ -327,7 +327,8 @@ public final class BindingScopeAnalysis {
 	 * implementations stay sound for it.
 	 */
 	public static boolean isOutOfScopeForOptionalCorrelation(TupleExpr optionalPart) {
-		return TupleExprs.containsSubquery(optionalPart) || containsDifferenceInCurrentScope(optionalPart);
+		return TupleExprs.containsSubquery(optionalPart) || TupleExprs.containsGraphBoundary(optionalPart)
+				|| containsDifferenceInCurrentScope(optionalPart);
 	}
 
 	/**

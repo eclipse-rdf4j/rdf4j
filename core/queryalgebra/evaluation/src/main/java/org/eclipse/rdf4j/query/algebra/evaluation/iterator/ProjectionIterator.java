@@ -15,6 +15,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.model.Value;
@@ -24,6 +25,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
@@ -70,7 +72,7 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			BindingSet parentBindings, QueryEvaluationContext context) throws QueryEvaluationException {
 		super(iter);
 		ProjectionElemList projectionElemList = projection.getProjectionElemList();
-		boolean includeAllParentBindings = TupleExprs.projectionIncludesParentBindings(projection);
+		boolean includeAllParentBindings = hasEnclosingProjection(projection, context);
 		this.parentBindings = parentBindings;
 		this.includeParentBindings = includeAllParentBindings;
 		this.sourceNames = projectionElemList.getElements()
@@ -127,6 +129,14 @@ public class ProjectionIterator extends ConvertingIteration<BindingSet, BindingS
 			this.maker = context::createBindingSet;
 		}
 		this.projector = consumer;
+	}
+
+	/**
+	 * Combines live algebra ancestry with enclosing projection scope retained when an evaluation subtree was detached.
+	 */
+	@InternalUseOnly
+	public static boolean hasEnclosingProjection(QueryModelNode ancestor, QueryEvaluationContext context) {
+		return TupleExprs.hasEnclosingProjection(ancestor, context != null && context.hasEnclosingProjection());
 	}
 
 	/*---------*

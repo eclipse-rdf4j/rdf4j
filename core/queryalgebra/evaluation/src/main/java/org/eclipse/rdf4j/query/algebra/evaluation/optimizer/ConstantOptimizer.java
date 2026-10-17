@@ -31,6 +31,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.If;
+import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
@@ -47,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
@@ -159,6 +161,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 		public void meet(Or or) {
 			or.visitChildren(this);
 
+			// Double negation preserves EBV conversion when an identity removes a logical operand.
 			try {
 				if (isConstant(or.getLeftArg()) && isConstant(or.getRightArg())) {
 					boolean value = isTrueWithKnownValues(or);
@@ -170,7 +173,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 						bindingAnalysis.invalidate();
 					} else {
-						or.replaceWith(or.getRightArg().clone());
+						or.replaceWith(new Not(new Not(or.getRightArg().clone())));
 						bindingAnalysis.invalidate();
 					}
 				} else if (isConstant(or.getRightArg())) {
@@ -179,7 +182,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 						or.replaceWith(new ValueConstant(BooleanLiteral.TRUE));
 						bindingAnalysis.invalidate();
 					} else {
-						or.replaceWith(or.getLeftArg().clone());
+						or.replaceWith(new Not(new Not(or.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
 					}
 				}
@@ -204,7 +207,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 				} else if (isConstant(and.getLeftArg())) {
 					boolean leftIsTrue = isTrueWithKnownValues(and.getLeftArg());
 					if (leftIsTrue) {
-						and.replaceWith(and.getRightArg().clone());
+						and.replaceWith(new Not(new Not(and.getRightArg().clone())));
 						bindingAnalysis.invalidate();
 					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
@@ -213,7 +216,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 				} else if (isConstant(and.getRightArg())) {
 					boolean rightIsTrue = isTrueWithKnownValues(and.getRightArg());
 					if (rightIsTrue) {
-						and.replaceWith(and.getLeftArg().clone());
+						and.replaceWith(new Not(new Not(and.getLeftArg().clone())));
 						bindingAnalysis.invalidate();
 					} else {
 						and.replaceWith(new ValueConstant(BooleanLiteral.FALSE));
@@ -418,7 +421,7 @@ public class ConstantOptimizer implements QueryOptimizer {
 			if (!canEvaluateWithKnownValues(expression)) {
 				throw new ValueExprEvaluationException("Cannot fold an expression with unknown evaluation effects");
 			}
-			return strategy.isTrue(resolveKnownValues(expression), EmptyBindingSet.getInstance());
+			return QueryEvaluationUtil.getEffectiveBooleanValue(evaluateWithKnownValues(expression));
 		}
 
 		private Value evaluateWithKnownValues(ValueExpr expression) throws ValueExprEvaluationException {

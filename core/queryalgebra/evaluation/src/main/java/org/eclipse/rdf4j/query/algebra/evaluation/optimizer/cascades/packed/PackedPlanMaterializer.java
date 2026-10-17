@@ -49,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -111,11 +112,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 
 /** Materializes only the selected packed relational recipe back into RDF4J query algebra. */
@@ -177,6 +180,8 @@ final class PackedPlanMaterializer {
 				scalar(query, recipe, nodeId, payloadId));
 		case PackedRelOp.QUERY_ROOT -> new QueryRoot(
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)));
+		case PackedRelOp.GRAPH -> new Graph(term(query, query.payloadChild(payloadId, 0)),
+				relation(query, recipe, relChild(query, recipe, nodeId, 0)));
 		case PackedRelOp.DESCRIBE -> new DescribeOperator(
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)));
 		case PackedRelOp.SLICE -> slice(query, recipe, nodeId);
@@ -218,12 +223,29 @@ final class PackedPlanMaterializer {
 		};
 		if (sourceRelId > 0 && sourceRelId <= query.relationCount()) {
 			applyRelationMetadata(query, sourceRelId, result);
+		} else {
+			PlanningGraphDomains.compose(result);
+		}
+		if (recipe != null) {
+			int sourceFlags = recipe.continuationSeed().logicalSemanticScopeId(nodeId);
+			result.setIndependentInputScope((sourceFlags & PackedNodeMetadataArena.INDEPENDENT_INPUT_SCOPE) != 0);
+			if (result instanceof StatementPattern statement) {
+				statement.setContextBindingOriginInherited(
+						(sourceFlags & PackedNodeMetadataArena.CONTEXT_BINDING_ORIGIN_INHERITED) != 0);
+			}
 		}
 		if (recipe != null && recipe.hasPhysicalMetadata(nodeId)) {
 			applyPhysicalMetadata(recipe, nodeId, result);
 			applyOriginatingCostingEvent(recipe, nodeId, result);
 			applyInvocationFeedbackContract(result);
 			verifyDependentJoinCostingContext(recipe, nodeId);
+		}
+		if (result instanceof StatementPattern statement) {
+			int options = query.payloadSecondary(payloadId);
+			query.semanticsCodec()
+					.restore(statement,
+							(PackedStatementPatternSemanticsCodec.Content) query
+									.objectValue(query.payloadFlags(options)));
 		}
 		return result;
 	}
@@ -434,16 +456,27 @@ final class PackedPlanMaterializer {
 			return assignment;
 		}
 		if ((query.payloadFlags(payloadId) & 1) != 0) {
+			boolean stableRows = sourceRelId > 0 && sourceRelId <= query.relationCount()
+					&& query.relationReplayIsSafe(sourceRelId);
 			List<BindingSet> rows = new ArrayList<>(query.payloadChildCount(payloadId));
 			for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
-				rows.add(bindingRow(query, query.payloadChild(payloadId, ordinal)));
+				rows.add(bindingRow(query, query.payloadChild(payloadId, ordinal), stableRows));
 			}
-			assignment.setBindingSets(rows);
+			assignment.setBindingSets(stableRows ? List.copyOf(rows) : rows);
 		}
 		return assignment;
 	}
 
-	private static BindingSet bindingRow(PackedQuery query, int rowId) {
+	private static BindingSet bindingRow(PackedQuery query, int rowId, boolean stable) {
+		if (stable) {
+			List<String> names = new ArrayList<>(query.bindingCount(rowId));
+			Value[] values = new Value[query.bindingCount(rowId)];
+			for (int ordinal = 0; ordinal < values.length; ordinal++) {
+				names.add((String) query.objectValue(query.bindingNameId(rowId, ordinal)));
+				values[ordinal] = (Value) query.objectValue(query.bindingValueId(rowId, ordinal));
+			}
+			return new ListBindingSet(List.copyOf(names), values);
+		}
 		MapBindingSet row = new MapBindingSet(query.bindingCount(rowId));
 		for (int ordinal = 0; ordinal < query.bindingCount(rowId); ordinal++) {
 			row.setBinding((String) query.objectValue(query.bindingNameId(rowId, ordinal)),
@@ -495,7 +528,9 @@ final class PackedPlanMaterializer {
 		StatementPattern pattern = new StatementPattern(scope, term(query, query.payloadChild(payloadId, 0)),
 				term(query, query.payloadChild(payloadId, 1)), term(query, query.payloadChild(payloadId, 2)),
 				term(query, query.payloadChild(payloadId, 3)));
-		Object statementOrder = query.objectValue(query.payloadSecondary(payloadId));
+		int options = query.payloadSecondary(payloadId);
+		requirePayload(query, options, PackedPayloadOp.STATEMENT_PATTERN_OPTIONS);
+		Object statementOrder = query.objectValue(query.payloadPrimary(options));
 		if (statementOrder != null) {
 			pattern.setOrder(switch ((StatementOrder) statementOrder) {
 			case S -> pattern.getSubjectVar();
@@ -504,7 +539,7 @@ final class PackedPlanMaterializer {
 			case C -> pattern.getContextVar();
 			});
 		}
-		Object indexName = query.objectValue(query.payloadFlags(payloadId));
+		Object indexName = query.objectValue(query.payloadSecondary(options));
 		if (indexName != null) {
 			pattern.setIndexName((String) indexName);
 		}
@@ -715,9 +750,18 @@ final class PackedPlanMaterializer {
 	}
 
 	private static void applyRelationMetadata(PackedQuery query, int relId, TupleExpr node) {
+		PlanningGraphDomains.attach(node, query.relGraphDomain(relId));
 		int flags = query.relMetadataFlags(relId);
+		node.setIndependentInputScope((flags & PackedNodeMetadataArena.INDEPENDENT_INPUT_SCOPE) != 0);
+		if (node instanceof StatementPattern statement) {
+			statement.setContextBindingOriginInherited(
+					(flags & PackedNodeMetadataArena.CONTEXT_BINDING_ORIGIN_INHERITED) != 0);
+		}
 		applyCommonMetadata(query, node, flags, query.relResultSizeEstimate(relId), query.relCostEstimate(relId),
 				query.relMetricSetId(relId));
+		if (node instanceof Graph graph) {
+			graph.setVariableScopeChange((flags & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0);
+		}
 		if (node instanceof BinaryTupleOperator binary) {
 			int algorithmNameId = query.relAlgorithmNameId(relId);
 			if (algorithmNameId != 0) {

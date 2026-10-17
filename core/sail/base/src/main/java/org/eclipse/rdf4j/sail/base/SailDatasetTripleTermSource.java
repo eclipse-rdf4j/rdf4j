@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -50,6 +51,10 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 		this.dataset = dataset;
 	}
 
+	final SailDataset readCompositionDataset() {
+		return dataset;
+	}
+
 	@Override
 	public String toString() {
 		return dataset.toString();
@@ -68,6 +73,51 @@ public class SailDatasetTripleTermSource implements NativeTripleTermSource {
 	 */
 	public <T> Optional<T> unwrapDataset(Class<T> type) {
 		return dataset.unwrap(type);
+	}
+
+	@Override
+	public CloseableIteration<? extends Resource> getContextIDs() throws QueryEvaluationException {
+		Function<Value, Value> capturer = getValueCapturer();
+		CloseableIteration<? extends Resource> contextIDs;
+		try {
+			contextIDs = new TripleSourceIterationWrapper<>(dataset.getContextIDs());
+		} catch (SailException e) {
+			throw new QueryEvaluationException(e);
+		}
+		return new LookAheadIteration<Resource>() {
+			private final Set<Resource> seen = new HashSet<>();
+
+			@Override
+			protected Resource getNextElement() {
+				try {
+					while (contextIDs.hasNext()) {
+						Resource context = contextIDs.next();
+						if (context != null) {
+							Resource capturedContext = capturer == null ? context : (Resource) capturer.apply(context);
+							if (capturedContext != null && seen.add(capturedContext)) {
+								return capturedContext;
+							}
+						}
+					}
+					return null;
+				} catch (RuntimeException | Error failure) {
+					try {
+						close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+					throw failure;
+				}
+			}
+
+			@Override
+			protected void handleClose() {
+				seen.clear();
+				contextIDs.close();
+			}
+		};
 	}
 
 	@Override

@@ -62,6 +62,20 @@ final class LmdbPhysicalCostObjective {
 			randomSeekMultiplier = profile.randomSeekWork();
 		}
 
+		return project(sequentialMultiplier, randomSeekMultiplier, sequentialRows, randomSeeks, iteratorOpens,
+				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
+				peakMemoryRows);
+	}
+
+	double score(TripleStore.IndexCostProfile profile, double sequentialRows, double randomSeeks,
+			double iteratorOpens, double resultRows, double hashRows) {
+		return project(profile.sequentialWorkPerRow(), profile.randomSeekWork(), sequentialRows, randomSeeks,
+				iteratorOpens, 0.0d, hashRows, 0.0d, 0.0d, resultRows, 0.0d, 0.0d);
+	}
+
+	private static double project(double sequentialMultiplier, double randomSeekMultiplier, double sequentialRows,
+			double randomSeeks, double iteratorOpens, double expressionEvaluations, double hashBuildRows,
+			double hashProbeRows, double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows) {
 		double objective = saturatedMultiply(sequentialRows, sequentialMultiplier);
 		objective = saturatedAdd(objective, saturatedMultiply(randomSeeks, randomSeekMultiplier));
 		objective = saturatedAdd(objective, iteratorOpens);

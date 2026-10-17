@@ -35,6 +35,9 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
@@ -227,17 +230,18 @@ class LmdbExactFilterProbeCacheTest {
 		String query = "SELECT * WHERE { ?" + subjectName + " <urn:test:predicate> ?" + objectName
 				+ " . FILTER(?" + objectName + " = \"" + expected + "\") }";
 		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
-				.getTupleExpr()
-				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// This complete fixture query has the store's default input; retain that proof before extracting its FILTER.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
 		return found[0];
 	}
 

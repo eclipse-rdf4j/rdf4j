@@ -22,6 +22,8 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 
 /** Test-only construction bridge for directly exercising packed cost-provider calls. */
 public final class PackedCostTestSupport {
@@ -29,10 +31,28 @@ public final class PackedCostTestSupport {
 	private PackedCostTestSupport() {
 	}
 
+	/** The caller supplies its fixture's source proof; missing facts are never promoted by the construction bridge. */
+	private static PackedQuery encodeInDomain(TupleExpr expression, PlanningGraphDomain inputDomain) {
+		return encodeInDomain(expression, inputDomain, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	private static PackedQuery encodeInDomain(TupleExpr expression, PlanningGraphDomain inputDomain,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		PlanningGraphDomains.capture(expression, inputDomain);
+		return PackedQueryCodec.encodeForPlanning(expression, null, semanticsCodec);
+	}
+
 	public static PackedCostContext prefixContext(
 			int[] relationIds, int relationCount, double prefixRows, int evidenceStateId) {
 		PackedCostContext context = new PackedCostContext();
 		context.reset(relationIds, 0, relationCount, prefixRows, evidenceStateId);
+		return context;
+	}
+
+	public static PackedCostContext prefixContext(int[] relationIds, int relationCount, double prefixRows,
+			int evidenceStateId, double unrelatedPrefixRows) {
+		PackedCostContext context = prefixContext(relationIds, relationCount, prefixRows, evidenceStateId);
+		context.setUnrelatedPrefixRows(unrelatedPrefixRows);
 		return context;
 	}
 
@@ -48,11 +68,20 @@ public final class PackedCostTestSupport {
 	}
 
 	public static CostCall disconnectedFilter(StatementPattern prefix, Filter filter, double prefixRows) {
-		return disconnectedFilter(null, prefix, filter, prefixRows);
+		return disconnectedFilter(PlanningGraphDomain.unknown(), null, prefix, filter, prefixRows);
+	}
+
+	public static CostCall disconnectedFilter(PlanningGraphDomain inputDomain, StatementPattern prefix, Filter filter,
+			double prefixRows) {
+		return disconnectedFilter(inputDomain, null, prefix, filter, prefixRows);
 	}
 
 	public static OperatorCostCall filterOperator(Filter filter, double inputRows) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(filter);
+		return filterOperator(PlanningGraphDomains.ambientDomain(filter), filter, inputRows);
+	}
+
+	public static OperatorCostCall filterOperator(PlanningGraphDomain inputDomain, Filter filter, double inputRows) {
+		PackedQuery query = encodeInDomain(filter, inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		int filterRelationId = 0;
 		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
@@ -106,7 +135,16 @@ public final class PackedCostTestSupport {
 	}
 
 	public static UnaryCostCall unaryOperator(TupleExpr operator) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(operator);
+		return unaryOperator(PlanningGraphDomains.ambientDomain(operator), operator);
+	}
+
+	public static UnaryCostCall unaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator) {
+		return unaryOperator(inputDomain, operator, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	public static UnaryCostCall unaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		PackedQuery query = encodeInDomain(operator, inputDomain, semanticsCodec);
 		PackedQueryView view = new PackedQueryView(query);
 		int operatorRelationId = query.rootRelId();
 		if (view.materializeRelation(operatorRelationId).getClass() != operator.getClass()
@@ -118,7 +156,28 @@ public final class PackedCostTestSupport {
 	}
 
 	public static BinaryCostCall binaryOperator(TupleExpr operator) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(operator);
+		return binaryOperator(PlanningGraphDomains.ambientDomain(operator), operator);
+	}
+
+	public static BinaryCostCall binaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator) {
+		return binaryOperator(inputDomain, operator, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	public static BinaryCostCall binaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		return binaryOperator(inputDomain, operator, semanticsCodec, false);
+	}
+
+	public static BinaryCostCall detachedBinaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator) {
+		return binaryOperator(inputDomain, operator, PackedStatementPatternSemanticsCodec.NONE, true);
+	}
+
+	private static BinaryCostCall binaryOperator(PlanningGraphDomain inputDomain, TupleExpr operator,
+			PackedStatementPatternSemanticsCodec semanticsCodec, boolean detached) {
+		PackedQuery query = encodeInDomain(operator, inputDomain, semanticsCodec);
+		if (detached) {
+			query = query.withoutOriginalBindingSets();
+		}
 		PackedQueryView view = new PackedQueryView(query);
 		int operatorRelationId = query.rootRelId();
 		if (view.materializeRelation(operatorRelationId).getClass() != operator.getClass()
@@ -139,8 +198,13 @@ public final class PackedCostTestSupport {
 
 	public static CostCall disconnectedFilter(BindingSetAssignment bindings, StatementPattern prefix, Filter filter,
 			double prefixRows) {
+		return disconnectedFilter(PlanningGraphDomain.unknown(), bindings, prefix, filter, prefixRows);
+	}
+
+	public static CostCall disconnectedFilter(PlanningGraphDomain inputDomain, BindingSetAssignment bindings,
+			StatementPattern prefix, Filter filter, double prefixRows) {
 		TupleExpr prefixExpression = bindings == null ? prefix : new Join(bindings, prefix);
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefixExpression, filter));
+		PackedQuery query = encodeInDomain(new Join(prefixExpression, filter), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefix.getPredicateVar().getValue();
 		int bindingRelationId = 0;
@@ -168,7 +232,13 @@ public final class PackedCostTestSupport {
 	}
 
 	public static CostCall disconnectedFactor(StatementPattern prefix, TupleExpr factor, double prefixRows) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		return disconnectedFactor(PlanningGraphDomain.unknown(), prefix, factor, prefixRows);
+	}
+
+	public static CostCall disconnectedFactor(PlanningGraphDomain inputDomain, StatementPattern prefix,
+			TupleExpr factor,
+			double prefixRows) {
+		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefix.getPredicateVar().getValue();
 		int prefixRelationId = 0;
@@ -191,7 +261,11 @@ public final class PackedCostTestSupport {
 	}
 
 	public static DifferenceCostCall difference(TupleExpr left, TupleExpr right) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Difference(left, right));
+		return difference(PlanningGraphDomain.unknown(), left, right);
+	}
+
+	public static DifferenceCostCall difference(PlanningGraphDomain inputDomain, TupleExpr left, TupleExpr right) {
+		PackedQuery query = encodeInDomain(new Difference(left, right), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		int differenceRelationId = 0;
 		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
@@ -208,7 +282,11 @@ public final class PackedCostTestSupport {
 	}
 
 	public static OptionalCostCall optional(TupleExpr left, TupleExpr right) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new LeftJoin(left, right));
+		return optional(PlanningGraphDomain.unknown(), left, right);
+	}
+
+	public static OptionalCostCall optional(PlanningGraphDomain inputDomain, TupleExpr left, TupleExpr right) {
+		PackedQuery query = encodeInDomain(new LeftJoin(left, right), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		int optionalRelationId = 0;
 		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
@@ -225,7 +303,12 @@ public final class PackedCostTestSupport {
 	}
 
 	public static PairCostCall connectedStatementFactors(StatementPattern prefix, StatementPattern factor) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		return connectedStatementFactors(PlanningGraphDomain.unknown(), prefix, factor);
+	}
+
+	public static PairCostCall connectedStatementFactors(PlanningGraphDomain inputDomain, StatementPattern prefix,
+			StatementPattern factor) {
+		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefix.getPredicateVar().getValue();
 		Value factorPredicate = factor.getPredicateVar().getValue();
@@ -249,7 +332,11 @@ public final class PackedCostTestSupport {
 	}
 
 	public static LeafCostCall statementLeaf(StatementPattern statement) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(statement);
+		return statementLeaf(PlanningGraphDomains.ambientDomain(statement), statement);
+	}
+
+	public static LeafCostCall statementLeaf(PlanningGraphDomain inputDomain, StatementPattern statement) {
+		PackedQuery query = encodeInDomain(statement, inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		int relationId = 0;
 		for (int candidate = 1; candidate <= view.relationCount(); candidate++) {
@@ -265,10 +352,15 @@ public final class PackedCostTestSupport {
 	}
 
 	public static PairCostCall connectedAliasStatementFactor(StatementPattern prefix, Extension factor) {
+		return connectedAliasStatementFactor(PlanningGraphDomain.unknown(), prefix, factor);
+	}
+
+	public static PairCostCall connectedAliasStatementFactor(PlanningGraphDomain inputDomain, StatementPattern prefix,
+			Extension factor) {
 		if (!(factor.getArg() instanceof StatementPattern)) {
 			throw new IllegalArgumentException("Packed alias factor must wrap one statement pattern");
 		}
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefix.getPredicateVar().getValue();
 		int prefixRelationId = 0;
@@ -290,11 +382,18 @@ public final class PackedCostTestSupport {
 
 	public static AliasStatementChainCostCall finiteAliasStatementChain(BindingSetAssignment prefix,
 			StatementPattern scanBudgetConsumer, Extension aliasFactor, StatementPattern continuation) {
+		return finiteAliasStatementChain(PlanningGraphDomain.unknown(), prefix, scanBudgetConsumer, aliasFactor,
+				continuation);
+	}
+
+	public static AliasStatementChainCostCall finiteAliasStatementChain(PlanningGraphDomain inputDomain,
+			BindingSetAssignment prefix, StatementPattern scanBudgetConsumer, Extension aliasFactor,
+			StatementPattern continuation) {
 		if (!(aliasFactor.getArg()instanceof StatementPattern aliasStatement)) {
 			throw new IllegalArgumentException("Packed alias factor must wrap one statement pattern");
 		}
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(
-				new Join(new Join(new Join(prefix, scanBudgetConsumer), aliasFactor), continuation));
+		PackedQuery query = encodeInDomain(
+				new Join(new Join(new Join(prefix, scanBudgetConsumer), aliasFactor), continuation), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value consumerPredicate = scanBudgetConsumer.getPredicateVar().getValue();
 		Value aliasPredicate = aliasStatement.getPredicateVar().getValue();
@@ -330,7 +429,12 @@ public final class PackedCostTestSupport {
 	}
 
 	public static PairCostCall connectedFiniteFactor(StatementPattern prefix, BindingSetAssignment factor) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		return connectedFiniteFactor(PlanningGraphDomain.unknown(), prefix, factor);
+	}
+
+	public static PairCostCall connectedFiniteFactor(PlanningGraphDomain inputDomain, StatementPattern prefix,
+			BindingSetAssignment factor) {
+		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefix.getPredicateVar().getValue();
 		int prefixRelationId = 0;
@@ -374,10 +478,15 @@ public final class PackedCostTestSupport {
 	}
 
 	public static FilteredPairCostCall filteredConnectedStatementFactors(Filter prefix, StatementPattern factor) {
+		return filteredConnectedStatementFactors(PlanningGraphDomain.unknown(), prefix, factor);
+	}
+
+	public static FilteredPairCostCall filteredConnectedStatementFactors(PlanningGraphDomain inputDomain, Filter prefix,
+			StatementPattern factor) {
 		if (!(prefix.getArg()instanceof StatementPattern prefixStatement)) {
 			throw new IllegalArgumentException("Filtered packed test prefix must wrap one statement pattern");
 		}
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Join(prefix, factor));
+		PackedQuery query = encodeInDomain(new Join(prefix, factor), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value prefixPredicate = prefixStatement.getPredicateVar().getValue();
 		Value factorPredicate = factor.getPredicateVar().getValue();
@@ -404,7 +513,12 @@ public final class PackedCostTestSupport {
 
 	public static FilterPrefixCostCall connectedFilterPrefix(StatementPattern provider, StatementPattern connected,
 			ValueExpr condition) {
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(new Filter(new Join(provider, connected), condition));
+		return connectedFilterPrefix(PlanningGraphDomain.unknown(), provider, connected, condition);
+	}
+
+	public static FilterPrefixCostCall connectedFilterPrefix(PlanningGraphDomain inputDomain, StatementPattern provider,
+			StatementPattern connected, ValueExpr condition) {
+		PackedQuery query = encodeInDomain(new Filter(new Join(provider, connected), condition), inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		Value providerPredicate = provider.getPredicateVar().getValue();
 		Value connectedPredicate = connected.getPredicateVar().getValue();
@@ -431,6 +545,11 @@ public final class PackedCostTestSupport {
 
 	public static StatementFactorChainCostCall statementFactorChain(BindingSetAssignment bindings,
 			StatementPattern... factors) {
+		return statementFactorChain(PlanningGraphDomain.unknown(), bindings, factors);
+	}
+
+	public static StatementFactorChainCostCall statementFactorChain(PlanningGraphDomain inputDomain,
+			BindingSetAssignment bindings, StatementPattern... factors) {
 		if (factors.length == 0) {
 			throw new IllegalArgumentException("Packed statement-factor chain requires at least one factor");
 		}
@@ -438,7 +557,7 @@ public final class PackedCostTestSupport {
 		for (StatementPattern factor : factors) {
 			expression = new Join(expression, factor);
 		}
-		PackedQuery query = PackedQueryCodec.encodeForPlanning(expression);
+		PackedQuery query = encodeInDomain(expression, inputDomain);
 		PackedQueryView view = new PackedQueryView(query);
 		int bindingRelationId = 0;
 		int[] factorRelationIds = new int[factors.length];
@@ -472,6 +591,11 @@ public final class PackedCostTestSupport {
 	}
 
 	public static StatementOnlyChainCostCall statementOnlyFactorChain(StatementPattern... factors) {
+		return statementOnlyFactorChain(PlanningGraphDomain.unknown(), factors);
+	}
+
+	public static StatementOnlyChainCostCall statementOnlyFactorChain(PlanningGraphDomain inputDomain,
+			StatementPattern... factors) {
 		if (factors.length < 2) {
 			throw new IllegalArgumentException("Packed statement-only chain requires at least two factors");
 		}
@@ -479,7 +603,7 @@ public final class PackedCostTestSupport {
 		for (int index = 1; index < factors.length; index++) {
 			expression = new Join(expression, factors[index]);
 		}
-		PackedQueryView view = new PackedQueryView(PackedQueryCodec.encodeForPlanning(expression));
+		PackedQueryView view = new PackedQueryView(encodeInDomain(expression, inputDomain));
 		int[] relationIds = new int[factors.length];
 		for (int relationId = 1; relationId <= view.relationCount(); relationId++) {
 			if (!view.isStatementPattern(relationId)) {

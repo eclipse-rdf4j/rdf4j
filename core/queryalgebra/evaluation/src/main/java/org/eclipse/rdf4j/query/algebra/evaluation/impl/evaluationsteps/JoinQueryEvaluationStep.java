@@ -95,7 +95,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 					contract, context, buildSide, join);
 			join.setAlgorithm(HashJoinIteration.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)
-				|| rightLocallyProducesSharedBinding(join)) {
+				|| rightLocallyProducesSharedBinding(join, context)) {
 			HashJoinBindingContract contract = HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg());
 			HashJoinIteration.BuildSide buildSide = plannedBuildSide(join);
 			eval = bindings -> new HashJoinIteration(leftPrepared, rightPrepared, bindings, false,
@@ -200,14 +200,14 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		return BindingScopeAnalysis.isOutOfScopeForCorrelation(expr);
 	}
 
-	private static boolean rightLocallyProducesSharedBinding(Join join) {
-		return TupleExprs.requiresIndependentProjectionInput(join.getRightArg(), join.getLeftArg().getBindingNames());
+	private static boolean rightLocallyProducesSharedBinding(Join join, QueryEvaluationContext context) {
+		return TupleExprs.requiresIndependentProjectionInput(join.getRightArg(), join.getLeftArg().getBindingNames(),
+				context.hasEnclosingProjection());
 	}
 
 	private static boolean isOutOfScopeForLeftArgBindings(TupleExpr expr,
 			QueryAlgebraBindingAnalysis bindingAnalysis) {
-		return BindingScopeAnalysis.isOutOfScopeForCorrelation(expr) || TupleExprs.isVariableScopeChange(expr)
-				|| TupleExprs.containsSubquery(expr)
+		return BindingScopeAnalysis.isOutOfScopeForCorrelation(expr) || TupleExprs.requiresIndependentEvaluation(expr)
 				|| TupleExprs.containsResultSetModifier(expr, bindingAnalysis)
 				|| containsDifferenceInCurrentScope(expr);
 	}
@@ -225,7 +225,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		if (join.getRightArg() instanceof Service) {
 			return "SERVICE join";
 		}
-		if (isHashJoinHint(join) || rightLocallyProducesSharedBinding(join)
+		if (isHashJoinHint(join) || rightLocallyProducesSharedBinding(join, context)
 				|| isOutOfScopeForLeftArgBindings(join.getRightArg(), analysis)) {
 			return "independently evaluated hash join";
 		}

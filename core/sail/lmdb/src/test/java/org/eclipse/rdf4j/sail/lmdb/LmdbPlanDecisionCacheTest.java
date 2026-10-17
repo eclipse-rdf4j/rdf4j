@@ -40,6 +40,26 @@ import org.junit.jupiter.api.Test;
 class LmdbPlanDecisionCacheTest {
 
 	@Test
+	void directlyPublishedRecipeCapturesVariableOverrideBeforeItsImmutableCopy() {
+		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
+		Fixture fixture = fixture(1L);
+		StatementPattern source = (StatementPattern) fixture.template();
+		source.setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, "object:IRI");
+		source.getObjectVar().setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, "object:LITERAL");
+		assertTrue(cache.publishBuild(fixture.publication(fixture.evidence())));
+		var selected = assertInstanceOf(LmdbPlanDecisionCache.Use.class,
+				cache.lookupExact(fixture.exactKey(), fixture.request(fixture.evidence())));
+		for (int invocation = 0; invocation < 2; invocation++) {
+			StatementPattern copy = (StatementPattern) selected.plan().materialize();
+			assertEquals(LmdbValueIdFilter.fromStatementPattern(source).semanticKindWord(),
+					LmdbValueIdFilter.fromStatementPattern(copy).semanticKindWord());
+		}
+		assertEquals("object:IRI", source.getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
+		assertEquals("object:LITERAL",
+				source.getObjectVar().getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
+	}
+
+	@Test
 	void confidentExactAndFamilyLookupsUseImmutableChampion() {
 		LmdbPlanDecisionCache cache = new LmdbPlanDecisionCache(8, 1024 * 1024L);
 		Fixture fixture = fixture(1L);

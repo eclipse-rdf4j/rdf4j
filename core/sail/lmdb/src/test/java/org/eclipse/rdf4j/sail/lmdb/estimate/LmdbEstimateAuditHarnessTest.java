@@ -30,6 +30,7 @@ import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -37,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -52,6 +54,8 @@ import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbEstimateAuditHarnessTest {
 
@@ -1060,6 +1064,31 @@ class LmdbEstimateAuditHarnessTest {
 		}
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "audit-q24,7", "audit-q14,312" })
+	void truncatedBushyAuditPiecesKeepFiniteIncumbentEstimates(String queryId, long expectedRows,
+			@TempDir File dataDir) {
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
+		repository.init();
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				loadMixedAuditData(connection);
+				LmdbEstimateAuditQueryCorpus.AuditQuery query = generatedQuery(queryId);
+				List<LmdbEstimateAuditHarness.AuditRow> rows = LmdbEstimateAuditHarness
+						.auditQuery(connection, query.id(), query.sparql());
+				assertEquals(expectedRows, rows.getFirst().actualRows());
+				for (LmdbEstimateAuditHarness.AuditRow row : rows) {
+					assertTrue(Double.isFinite(row.plannedRows()) && row.plannedRows() >= 0.0d,
+							() -> "a limited search must preserve a finite incumbent for " + row.pieceId() + ": "
+									+ row);
+				}
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
+		}
+	}
+
 	@Test
 	void nonExactZeroLookupDoesNotCollapseValidJoin(@TempDir File dataDir) {
 		SailRepository repository = new SailRepository(new LmdbStore(dataDir, scalarAuditConfig()));
@@ -1492,6 +1521,67 @@ class LmdbEstimateAuditHarnessTest {
 			cascadesRepository.shutDown();
 			LmdbTestUtil.deleteDir(defaultDir);
 			LmdbTestUtil.deleteDir(cascadesDir);
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false", "true" })
+	void thresholdRejectsPrefixesBeforeNativePathExpansion(boolean cascades, @TempDir File dataDir) {
+		SailRepository repository = aasBenchmarkRepository(dataDir, cascades);
+		repository.init();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			IRI value = VF.createIRI("urn:path-work:value");
+			IRI child = VF.createIRI("urn:path-work:child");
+			for (String name : List.of("accepted", "rejected")) {
+				IRI endpoint = VF.createIRI("urn:path-work:" + name);
+				IRI first = VF.createIRI("urn:path-work:" + name + "-parent1");
+				IRI second = VF.createIRI("urn:path-work:" + name + "-parent2");
+				connection.add(endpoint, value, VF.createLiteral("accepted".equals(name) ? 20 : 0));
+				connection.add(first, child, endpoint);
+				connection.add(second, child, first);
+			}
+			String sparql = """
+					SELECT ?root ?p WHERE {
+					  ?p <urn:path-work:value> ?value .
+					  ?root <urn:path-work:child>+ ?p .
+					  FILTER(?value > ?minimum)
+					}
+					""";
+			for (int minimum : new int[] { 15, -1 }) {
+				SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(sparql);
+				query.setBinding("minimum", VF.createLiteral(minimum));
+				Set<String> expected = new HashSet<>();
+				for (String name : minimum == 15 ? List.of("accepted") : List.of("accepted", "rejected")) {
+					expected.add("urn:path-work:" + name + "-parent1->urn:path-work:" + name);
+					expected.add("urn:path-work:" + name + "-parent2->urn:path-work:" + name);
+				}
+				List<String> actual = new ArrayList<>();
+				try (var rows = query.evaluate()) {
+					while (rows.hasNext()) {
+						BindingSet row = rows.next();
+						actual.add(row.getValue("root").stringValue() + "->" + row.getValue("p").stringValue());
+					}
+				}
+				assertEquals(expected, new HashSet<>(actual));
+				assertEquals(expected.size(), actual.size(), "the exact result bag must not gain duplicates");
+				TupleExpr executed = (TupleExpr) query.explain(Explanation.Level.Telemetry).tupleExpr();
+				List<ArbitraryLengthPath> paths = new ArrayList<>();
+				executed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(ArbitraryLengthPath path) {
+						paths.add(path);
+					}
+				});
+				assertEquals(1, paths.size(), "the real native path must remain present for measured work");
+				long expansions = paths.getFirst()
+						.getLongMetricActual(PathIteration.PATH_EXPANSION_ITERATIONS_ACTUAL);
+				assertTrue(expansions > 0L, "actual LONG path telemetry is the runtime Hit Proof");
+				assertEquals(minimum == 15 ? 3L : 6L, expansions,
+						"only accepted endpoints may open initial/second/terminal expansion cursors");
+			}
+		} finally {
+			repository.shutDown();
+			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
 

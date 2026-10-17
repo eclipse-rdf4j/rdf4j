@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
@@ -54,7 +55,13 @@ public final class PackedInputFrameNormalizer {
 	}
 
 	public static Prepared prepare(TupleExpr source, Function<QueryModelNode, RuntimeException> failures) {
-		TupleExpr root = new PackedInputFrameNormalizer(failures).normalizeTree(source);
+		return prepare(source, failures, TupleExpr::clone);
+	}
+
+	@InternalUseOnly
+	public static Prepared prepare(TupleExpr source, Function<QueryModelNode, RuntimeException> failures,
+			UnaryOperator<TupleExpr> copier) {
+		TupleExpr root = new PackedInputFrameNormalizer(failures).normalizeTree(source, copier);
 		Map<TupleExpr, Boolean> replaySafety = new IdentityHashMap<>();
 		Map<TupleExpr, SourceOrder> sourceOrder = new IdentityHashMap<>();
 		AlgebraEvaluationSafety.Proof proof = new AlgebraEvaluationSafety.Proof();
@@ -79,8 +86,8 @@ public final class PackedInputFrameNormalizer {
 	private record GatePlan(Filter filter, TupleExpr destination) {
 	}
 
-	private TupleExpr normalizeTree(TupleExpr source) {
-		TupleExpr copy = source.clone();
+	private TupleExpr normalizeTree(TupleExpr source, UnaryOperator<TupleExpr> copier) {
+		TupleExpr copy = copier.apply(source);
 		QueryRoot root = copy instanceof QueryRoot queryRoot ? queryRoot : new QueryRoot(copy);
 		List<Filter> parameterized = new ArrayList<>();
 		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {

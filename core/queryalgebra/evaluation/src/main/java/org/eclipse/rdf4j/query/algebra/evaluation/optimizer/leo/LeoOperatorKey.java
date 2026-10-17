@@ -70,6 +70,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingShape;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
@@ -104,6 +105,16 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		PREDICATE_AND_CONTEXT_EXACT
 	}
 
+	/** A structural learning key cannot inspect an input that belongs to evaluation. */
+	public static final class UnkeyableOperatorException extends IllegalArgumentException {
+
+		private static final long serialVersionUID = 1L;
+
+		private UnkeyableOperatorException(Class<?> operatorType) {
+			super("No audited stable-row proof for learning key of " + operatorType.getName());
+		}
+	}
+
 	public LeoOperatorKey {
 		operatorType = operatorType == null ? "" : operatorType;
 		structuralFingerprint = structuralFingerprint == null ? "" : structuralFingerprint;
@@ -122,11 +133,16 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		return from(tupleExpr, executionMode, ConstantMode.EXACT);
 	}
 
+	/**
+	 * @throws UnkeyableOperatorException when a VALUES source has no audited stable-row proof; learning consumers must
+	 *                                    decline evidence without substituting an opaque key
+	 */
 	public static LeoOperatorKey from(TupleExpr tupleExpr, String executionMode, ConstantMode constantMode) {
 		if (tupleExpr == null) {
 			return new LeoOperatorKey("", "", BindingMask.EMPTY, BindingMask.EMPTY, BindingMask.EMPTY,
 					BindingMask.EMPTY, executionMode);
 		}
+		requireKeyableBindingAssignments(tupleExpr);
 		BindingUniverse universe = BindingUniverse.from(tupleExpr, PhysicalProperties.ANY);
 		BindingShape shape = BindingShape.from(tupleExpr, universe);
 		BindingMask leftMask = BindingMask.EMPTY;
@@ -159,10 +175,15 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 	 * @param tupleExpr         expression receiving the bindings
 	 * @param inputBindingNames names bound before the expression is evaluated
 	 * @return {@code unbound} when no referenced variable is bound, otherwise a canonical binding-shape fingerprint
+	 * @throws UnkeyableOperatorException when a VALUES source cannot be inspected for a structural key
 	 */
 	public static String alphaNormalizedInputBindingShape(TupleExpr tupleExpr,
 			Collection<String> inputBindingNames) {
-		if (tupleExpr == null || inputBindingNames == null || inputBindingNames.isEmpty()) {
+		if (tupleExpr == null) {
+			return "unbound";
+		}
+		requireKeyableBindingAssignments(tupleExpr);
+		if (inputBindingNames == null || inputBindingNames.isEmpty()) {
 			return "unbound";
 		}
 		Set<String> normalizedNames = new LinkedHashSet<>();
@@ -177,6 +198,19 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 		String unbound = new Canonicalizer(ConstantMode.EXACT).fingerprint(tupleExpr);
 		String conditional = new Canonicalizer(ConstantMode.EXACT, true, normalizedNames).fingerprint(tupleExpr);
 		return conditional.equals(unbound) ? "unbound" : conditional;
+	}
+
+	private static void requireKeyableBindingAssignments(TupleExpr tupleExpr) {
+		// Audit the complete tree before binding analysis can infer a VALUES header or canonicalization can consume
+		// rows. Scalar subqueries are visited too. This proof is independent of scalar volatility classifications.
+		tupleExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				if (!BindingSetAssignmentKeyability.canInspect(assignment)) {
+					throw new UnkeyableOperatorException(assignment.getClass());
+				}
+			}
+		});
 	}
 
 	private enum VarRole {
@@ -583,13 +617,13 @@ public record LeoOperatorKey(String operatorType, String structuralFingerprint, 
 			if (rowCount > MAX_EXACT_VALUES_ROWS || cellCount > MAX_EXACT_VALUES_CELLS) {
 				// Large tables are keyed by a 128-bit digest of the sorted rows: row order stays irrelevant while
 				// different contents cannot collide by construction of a 32-bit hash.
-				rowsKey = "digest128=" + digest128(rows) + "|rowCount=" + rowCount + "|cellCount=" + cellCount;
+				rowsKey = "digest128=" + digest128(rows) + "|cellCount=" + cellCount;
 			} else {
 				rowsKey = String.join(";", rows);
 			}
 			return "BSA" + scope + "|arity=" + bindingNames.size()
 					+ "|columns=" + String.join(",", columns)
-					+ "|rows=" + rowsKey;
+					+ "|rowCount=" + rowCount + "|rows=" + rowsKey;
 		}
 
 		private String valueExprKey(ValueExpr valueExpr) {

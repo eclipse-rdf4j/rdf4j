@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.LmdbQuadSynopsisService;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
@@ -56,6 +57,7 @@ final class LmdbEstimateContextBuilder {
 			EstimateContext context = scope == null
 					? EstimateContext.root(expression, identity, snapshotVersion, leoRevision)
 					: EstimateContext.root(scope.bindingUniverse(expression), identity, snapshotVersion, leoRevision);
+			context = context.withGraphDomain(PlanningGraphDomains.domain(expression));
 			return adaptiveEvidenceAllowed ? context
 					: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
 		}
@@ -63,6 +65,7 @@ final class LmdbEstimateContextBuilder {
 				? EstimateContext.root(expression, synopsis.snapshotIdentity(), synopsis.snapshotVersion(), leoRevision)
 				: EstimateContext.root(scope.bindingUniverse(expression), synopsis.snapshotIdentity(),
 						synopsis.snapshotVersion(), leoRevision);
+		context = context.withGraphDomain(PlanningGraphDomains.domain(expression));
 		return adaptiveEvidenceAllowed && synopsis.adaptiveEvidenceAllowed() ? context
 				: context.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
 	}

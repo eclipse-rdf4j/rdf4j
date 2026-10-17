@@ -239,6 +239,15 @@ final class PackedDecisionTraceArena {
 		return closest;
 	}
 
+	int firstCandidateForEvent(int eventId) {
+		return eventId <= 0 || eventId >= eventHeads.length ? -1 : eventHeads[eventId] - 1;
+	}
+
+	int previousCandidateForEvent(int index) {
+		checkIndex(index);
+		return previousEventLinks[index] - 1;
+	}
+
 	int candidateId(int index) {
 		checkIndex(index);
 		return candidateIds[index];

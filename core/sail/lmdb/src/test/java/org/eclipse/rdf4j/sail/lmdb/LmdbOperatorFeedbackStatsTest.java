@@ -57,10 +57,13 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.DistinctBindingFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -308,7 +311,7 @@ class LmdbOperatorFeedbackStatsTest {
 				37L, 0L, "input:unbound|range:unknown|guarantee:measure_unbiased", 19L, 23L, 1L);
 		PhysicalResidualKey stalePhysical = PhysicalResidualKey.of("dependent-iteration", "statement-pattern",
 				"none:none", "single-open", "none", "none", "none", "bound");
-		LeftJoin observed = new LeftJoin(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		LeftJoin observed = defaultGraphOptional(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeCostFeedback(observed, 300L, 100.0d, 200.0d, 300.0d);
 		observed.setStringMetricPlanned("optimizer.frontierLearningKey", frontierKey.externalForm());
 		observed.setStringMetricPlanned("optimizer.logicalLearningKey", staleLogical.externalForm());
@@ -473,7 +476,7 @@ class LmdbOperatorFeedbackStatsTest {
 	void versionSixteenRawTransactionStampSidecarIsDiscardedOnLoad(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
-		Union survivor = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		Union survivor = defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeBinary(survivor, 144_000, 7, 7, 72_000, 72_000);
 		stats.recordOperatorOutcome(survivor);
 		FrontierLearningKey key = FrontierLearningKey.of(
@@ -496,7 +499,7 @@ class LmdbOperatorFeedbackStatsTest {
 		Files.write(sidecar, versionSixteen);
 
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-		assertNull(reloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+		assertNull(reloaded.estimate(defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"The v16 raw transaction stamp cannot establish freshness under statement-mutation semantics");
 		assertTrue(frontierCorrectionMissing(reloaded, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
 				"A version-16 frontier model pairs cumulative actuals with per-invocation predictions for"
@@ -1038,7 +1041,7 @@ class LmdbOperatorFeedbackStatsTest {
 		complete(nested, 3_000, 100_000, 100_000);
 		nested.setJoinLeftBindingsConsumedActual(100);
 		nested.setJoinRightBindingsConsumedActual(3_000);
-		LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+		LeftJoin root = defaultGraphOptional(nested, sp("o", P3, "review"));
 		complete(root, 3_000, 100_000, 100_000);
 		root.setLongMetricActual(TelemetryMetricNames.CANCELLED_COUNT_ACTUAL, 1);
 
@@ -1056,7 +1059,7 @@ class LmdbOperatorFeedbackStatsTest {
 		complete(child, 1_000, 10, 20);
 		child.setJoinLeftBindingsConsumedActual(100);
 		child.setJoinRightBindingsConsumedActual(1_000);
-		LeftJoin parent = new LeftJoin(child, sp("o", P3, "review"));
+		LeftJoin parent = defaultGraphOptional(child, sp("o", P3, "review"));
 		parent.setLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL, 1);
 
 		stats.recordOperatorOutcome(child);
@@ -1076,7 +1079,7 @@ class LmdbOperatorFeedbackStatsTest {
 			complete(child, 1_000, 10, 20);
 			child.setJoinLeftBindingsConsumedActual(100);
 			child.setJoinRightBindingsConsumedActual(1_000);
-			LeftJoin parent = new LeftJoin(child, sp("o", P3, "review"));
+			LeftJoin parent = defaultGraphOptional(child, sp("o", P3, "review"));
 			parent.setLongMetricActual(TelemetryMetricNames.ABORTED_COUNT_ACTUAL, 1);
 
 			stats.recordOperatorOutcome(child);
@@ -1167,7 +1170,7 @@ class LmdbOperatorFeedbackStatsTest {
 
 			StatementPattern arg = sp("s", P1, "o");
 			complete(arg, 42, 10, 10);
-			Filter root = new Filter(arg, new Exists(inner));
+			Filter root = defaultGraphFilter(arg, new Exists(inner));
 			complete(root, 42, 10, 10);
 
 			stats.recordCompletedQuery(root);
@@ -1204,7 +1207,7 @@ class LmdbOperatorFeedbackStatsTest {
 			nested.setStringMetricPlanned("optimizer.frontierStateDigest", "state-unconsumed");
 			nested.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
 			nested.setDoubleMetricPlanned("optimizer.costEventRows", 100.0d);
-			LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+			LeftJoin root = defaultGraphOptional(nested, sp("o", P3, "review"));
 			complete(root, 3, 3, 3);
 
 			stats.recordCompletedQuery(root);
@@ -1269,7 +1272,7 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		FrontierLearningKey key = FrontierLearningKey.of(
 				"left-join", "LEFT_JOIN", 54L, 11L, "spoc-prefix", "spoc", "prefix");
-		LeftJoin observed = new LeftJoin(sp("s", P1, "o"), sp("s", P2, "value"));
+		LeftJoin observed = defaultGraphOptional(sp("s", P1, "o"), sp("s", P2, "value"));
 		completeCostFeedback(observed, 400, 100, 1_100, 650);
 		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
 		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-memoized-optional-drift");
@@ -1401,7 +1404,7 @@ class LmdbOperatorFeedbackStatsTest {
 				"filter", "SEMI_ANTI", 55L, 0L, "lmdb-frontier", "posc", "prefixscan");
 		StatementPattern rhsPattern = sp("person", P2, "blocker");
 		rhsPattern.setIndexName("spoc");
-		Filter filter = new Filter(sp("person", P1, "org"), new Exists(rhsPattern));
+		Filter filter = defaultGraphFilter(sp("person", P1, "org"), new Exists(rhsPattern));
 		filter.setRuntimeTelemetryEnabled(true);
 		filter.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
 		filter.setStringMetricPlanned("optimizer.frontierPhysicalLearningKey", key.externalForm());
@@ -1631,7 +1634,7 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void equivalentLeftJoinSurfaceReusesFeedbackAcrossInnerJoinOrientation(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		LeftJoin observed = new LeftJoin(leftDeepThreeWayPath(), sp("o", P1, "review"));
+		LeftJoin observed = defaultGraphOptional(leftDeepThreeWayPath(), sp("o", P1, "review"));
 		complete(observed, 240_000, 7, 7);
 		observed.setJoinLeftBindingsConsumedActual(8_000);
 		observed.setJoinRightBindingsConsumedActual(240_000);
@@ -1641,7 +1644,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new LeftJoin(rightDeepThreeWayPath(), sp("o", P1, "review")), 8_000, 240_000, 7, 7);
+				defaultGraphOptional(rightDeepThreeWayPath(), sp("o", P1, "review")), 8_000, 240_000, 7, 7);
 		assertNotNull(estimate,
 				"LeftJoin feedback should be keyed by the logical left/RHS surface, not the left BGP nesting");
 		assertTrue(estimate.rows() > 1_000.0d,
@@ -1658,7 +1661,7 @@ class LmdbOperatorFeedbackStatsTest {
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNull(stats.estimate(new Join(sp("s", P1, "x"), sp("y", P2, "o")), 200, 100, 10, 20),
+		assertNull(stats.estimate(defaultGraphJoin(sp("s", P1, "x"), sp("y", P2, "o")), 200, 100, 10, 20),
 				"Disconnected join context must not reuse connected-join operator feedback");
 	}
 
@@ -1667,7 +1670,7 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		CountingBindingSetAssignment values = countingValues("kind", "a", "b", "c");
 
-		assertNull(stats.estimate(new Join(values, sp("kind", P1, "o")), 3, 10, 30, 30));
+		assertNull(stats.estimate(defaultGraphJoin(values, sp("kind", P1, "o")), 3, 10, 30, 30));
 		assertEquals(0, values.bindingSetsReads,
 				"An empty feedback store cannot produce an estimate and should not build expensive operator keys");
 	}
@@ -1682,7 +1685,7 @@ class LmdbOperatorFeedbackStatsTest {
 			completeWithoutTerminalFalse(nested, 480_000, 8_000, 204_000);
 			nested.setJoinLeftBindingsConsumedActual(480_000);
 			nested.setJoinRightBindingsConsumedActual(480_000);
-			LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+			LeftJoin root = defaultGraphOptional(nested, sp("o", P3, "review"));
 			complete(root, 480_000, 8_000, 204_000);
 
 			stats.recordCompletedQuery(root);
@@ -1708,7 +1711,7 @@ class LmdbOperatorFeedbackStatsTest {
 			nested.setJoinRightBindingsConsumedActual(1_000);
 			stats.recordOperatorOutcome(nested);
 
-			LeftJoin root = new LeftJoin(nested, sp("o", P3, "review"));
+			LeftJoin root = defaultGraphOptional(nested, sp("o", P3, "review"));
 			complete(root, 1_000, 10, 20);
 			stats.recordCompletedQuery(root);
 
@@ -1728,7 +1731,7 @@ class LmdbOperatorFeedbackStatsTest {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
 		try {
 			StatementPattern pattern = sp("s", P1, "o");
-			Filter root = new Filter(pattern, new ValueConstant(VF.createLiteral(true)));
+			Filter root = defaultGraphFilter(pattern, new ValueConstant(VF.createLiteral(true)));
 			complete(pattern, 42, 10, 10);
 			complete(root, 42, 10, 10);
 
@@ -1761,19 +1764,20 @@ class LmdbOperatorFeedbackStatsTest {
 	void persistsAndResetsWithEstimatorRevision(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
-		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		Union observed = defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeBinary(observed, 144_000, 7, 7, 72_000, 72_000);
 		stats.recordOperatorOutcome(observed);
 		stats.persistIfDirty();
 
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-		assertNotNull(reloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+		assertNotNull(reloaded.estimate(defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"Persisted operator feedback should reload for same estimator revision");
 
 		reloaded.reset();
 		reloaded.persistIfDirty();
 		LmdbOperatorFeedbackStats resetReloaded = persistentStats(estimatorPath);
-		assertNull(resetReloaded.estimate(new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+		assertNull(
+				resetReloaded.estimate(defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 				"Reset feedback should persist as empty");
 	}
 
@@ -1781,7 +1785,7 @@ class LmdbOperatorFeedbackStatsTest {
 	void rejectsGenuineVersionTwelveThroughFourteenOperatorSidecars(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
-		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		Union observed = defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeBinary(observed, 144_000, 7, 7, 72_000, 72_000);
 		stats.recordOperatorOutcome(observed);
 		stats.persistIfDirty();
@@ -1792,7 +1796,7 @@ class LmdbOperatorFeedbackStatsTest {
 			Files.write(sidecar, emptyFrontierTailRemoved(versionSeventeen, version));
 			LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 			assertNull(reloaded.estimate(
-					new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
+					defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2")), 72_000, 72_000, 7, 7),
 					"Version " + version + " lacks an unambiguous statement-mutation coordinate");
 		}
 	}
@@ -1834,13 +1838,13 @@ class LmdbOperatorFeedbackStatsTest {
 	void operatorFeedbackRecordsQErrorSummary(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(observed, 1_000, 10, 100, 600, 400);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
 		assertNotNull(estimate);
 		assertEquals(100.0d, metric(estimate, "rowQErrorMean"), 0.001d);
 		assertEquals(100.0d, metric(estimate, "rowQErrorMax"), 0.001d);
@@ -1852,7 +1856,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.persistIfDirty();
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		LmdbOperatorFeedbackStats.OperatorEstimate reloadedEstimate = reloaded.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
 		assertNotNull(reloadedEstimate);
 		assertEquals(100.0d, metric(reloadedEstimate, "rowQErrorMean"), 0.001d);
 		assertEquals(10.0d, metric(reloadedEstimate, "workQErrorMean"), 0.001d);
@@ -1862,21 +1866,21 @@ class LmdbOperatorFeedbackStatsTest {
 	void persistedFeedbackRestoresConfidenceModel(@TempDir Path tempDir) throws Exception {
 		Path estimatorPath = estimatorPath(tempDir);
 		LmdbOperatorFeedbackStats stats = persistentStats(estimatorPath);
-		Union first = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union first = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(first, 100, 100, 100, 60, 40);
 		stats.recordOperatorOutcome(first);
-		Union noisy = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union noisy = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(noisy, 10_000, 100, 100, 6_000, 4_000);
 		stats.recordOperatorOutcome(noisy);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate before = stats.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
 		assertNotNull(before);
 		stats.persistIfDirty();
 
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
 		LmdbOperatorFeedbackStats.OperatorEstimate after = reloaded.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 100, 100);
 		assertNotNull(after);
 		assertEquals(before.confidence(), after.confidence(), 0.000001d,
 				"Persisted feedback must keep the conservative confidence/variance state");
@@ -1887,11 +1891,11 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void operatorFeedbackExposesLeoMemoEvidence(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
 		stats.recordOperatorOutcome(observed);
 
-		var feedback = stats.memoFeedback(new Union(sp("page", P1, "review"), sp("person", P2, "award")), null,
+		var feedback = stats.memoFeedback(defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), null,
 				null);
 		assertTrue(!feedback.isEmpty(), "Cascades memo groups should receive learned operator evidence");
 		assertTrue(feedback.bestEvidence().isPresent(), "The LEO surface should expose a best cardinality candidate");
@@ -1905,7 +1909,7 @@ class LmdbOperatorFeedbackStatsTest {
 				LmdbOperatorFeedbackStats.operatorLearningPolicy(join("s", "x", "o")));
 		assertEquals(LeoOperatorLearningPolicy.LEARN_AS_CHILD_MULTIPLIER,
 				LmdbOperatorFeedbackStats.operatorLearningPolicy(
-						new Filter(sp("s", P1, "o"), new ValueConstant(VF.createLiteral(true)))));
+						defaultGraphFilter(sp("s", P1, "o"), new ValueConstant(VF.createLiteral(true)))));
 		assertEquals(LeoOperatorLearningPolicy.SHADOW_ONLY,
 				LmdbOperatorFeedbackStats.operatorLearningPolicy(sp("s", P1, "o")));
 		assertEquals(LeoOperatorLearningPolicy.DO_NOT_LEARN,
@@ -1915,32 +1919,32 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void generalizedPredicateContextKeyReusesMultipleConstantSpecificSamples(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Join first = new Join(spConstSubject("urn:person:a", P1, "x"), sp("x", P2, "o"));
+		Join first = defaultGraphJoin(spConstSubject("urn:person:a", P1, "x"), sp("x", P2, "o"));
 		complete(first, 1_000, 10, 20);
 		first.setJoinLeftBindingsConsumedActual(100);
 		first.setJoinRightBindingsConsumedActual(1_000);
 		stats.recordOperatorOutcome(first);
 
-		Join second = new Join(spConstSubject("urn:person:b", P1, "x"), sp("x", P2, "o"));
+		Join second = defaultGraphJoin(spConstSubject("urn:person:b", P1, "x"), sp("x", P2, "o"));
 		complete(second, 1_200, 10, 20);
 		second.setJoinLeftBindingsConsumedActual(120);
 		second.setJoinRightBindingsConsumedActual(1_200);
 		stats.recordOperatorOutcome(second);
 
-		Join third = new Join(spConstSubject("urn:person:d", P1, "x"), sp("x", P2, "o"));
+		Join third = defaultGraphJoin(spConstSubject("urn:person:d", P1, "x"), sp("x", P2, "o"));
 		complete(third, 900, 10, 20);
 		third.setJoinLeftBindingsConsumedActual(90);
 		third.setJoinRightBindingsConsumedActual(900);
 		stats.recordOperatorOutcome(third);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate reused = stats.estimate(
-				new Join(spConstSubject("urn:person:c", P1, "x"), sp("x", P2, "o")),
+				defaultGraphJoin(spConstSubject("urn:person:c", P1, "x"), sp("x", P2, "o")),
 				100, 1_000, 10, 20);
 		assertNotNull(reused,
 				"Three diverse constant-specific observations should train the bounded generalized fallback key");
 		assertTrue(reused.feedbackKey().contains("predicate-context"));
 
-		assertNull(stats.estimate(new Join(spConstSubject("urn:person:c", P3, "x"), sp("x", P2, "o")),
+		assertNull(stats.estimate(defaultGraphJoin(spConstSubject("urn:person:c", P3, "x"), sp("x", P2, "o")),
 				100, 1_000, 10, 20),
 				"Predicate constants stay exact so feedback does not cross unrelated predicates");
 	}
@@ -1961,7 +1965,7 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void leftJoinUsesMatchRateAndMatchedFanout(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		LeftJoin observed = new LeftJoin(join("s", "x", "o"), sp("o", P3, "review"));
+		LeftJoin observed = defaultGraphOptional(join("s", "x", "o"), sp("o", P3, "review"));
 		complete(observed, 380, 10_000, 10_000);
 		observed.setJoinLeftBindingsConsumedActual(100);
 		observed.setJoinRightBindingsConsumedActual(300);
@@ -1971,7 +1975,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new LeftJoin(join("s", "x", "o"), sp("o", P3, "review")), 100, 300, 10_000, 10_000);
+				defaultGraphOptional(join("s", "x", "o"), sp("o", P3, "review")), 100, 300, 10_000, 10_000);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() >= 100.0d, "LeftJoin feedback must preserve null-extension floor");
 		assertTrue(estimate.rows() < 5_000.0d, "LeftJoin feedback should pull saturated estimates down");
@@ -1980,13 +1984,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void unionCorrectsSingleDigitBranchEstimate(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeBinary(observed, 144_000, 7, 7, 143_000, 1_000);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 143_000, 1_000, 7, 7);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 143_000, 1_000, 7, 7);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() > 1_000.0d, "Union feedback should remove single-digit optional-union estimates");
 	}
@@ -1994,13 +1998,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void minusCorrectsAntiMatchOutputRate(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Difference observed = new Difference(sp("s", P1, "o"), sp("s", P2, "reject"));
+		Difference observed = defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject"));
 		completeBinary(observed, 25, 90, 100, 100, 75);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Difference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 90, 100);
+				defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 90, 100);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() > 40.0d, "MINUS feedback should scale by learned output-per-left");
 		assertTrue(estimate.rows() < 90.0d, "MINUS feedback should reduce overestimates");
@@ -2009,13 +2013,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void learnedWorkRatioUsesActualConsumedWorkRows(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Difference observed = new Difference(sp("s", P1, "o"), sp("s", P2, "reject"));
+		Difference observed = defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject"));
 		completeBinary(observed, 25, 90, 100, 100, 75);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Difference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 90, 100);
+				defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 90, 100);
 		assertNotNull(estimate);
 		assertTrue(estimate.workRows() > 120.0d,
 				"LEO work feedback must scale by observed work rows, not by output rows or the RHS row proxy");
@@ -2040,6 +2044,7 @@ class LmdbOperatorFeedbackStatsTest {
 			assertTrue(evaluationStatistics.supportsOperatorFeedbackTracking(join));
 
 			StatementPattern shadowOnly = sp("s", P1, "o");
+			PlanningGraphDomains.capture(shadowOnly, PlanningGraphDomain.defaultGraph());
 			shadowOnly.setCostFeedbackTrackingEnabled(true);
 			assertTrue(evaluationStatistics.shouldTrackCostFeedback(shadowOnly),
 					"Statement patterns should be tracked in shadow mode for live fanout learning");
@@ -2106,13 +2111,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void costFeedbackRecordsWithoutFullRuntimeTelemetry(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
+				defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400, 10, 100);
 		assertNotNull(estimate, "Lightweight cost feedback should not require runtime telemetry counters");
 		assertTrue(estimate.rows() > 100.0d, "Feedback should correct a large row estimate miss");
 	}
@@ -2121,13 +2126,13 @@ class LmdbOperatorFeedbackStatsTest {
 	void planChangingCostFeedbackThresholdRecordsModerateWinnerChangingMiss(@TempDir Path tempDir)
 			throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 260, 100, 100, 260);
 		observed.setDoubleMetricPlanned("plannedPlanChangingFeedbackQErrorThreshold", 1.5d);
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+		assertNotNull(stats.estimate(defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600,
 				400, 100, 100),
 				"Plan-changing estimates should be able to report below the default anti-noise threshold");
 	}
@@ -2135,13 +2140,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void costFeedbackBelowThresholdRecordsCalibrationSample(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 125, 100, 100, 125);
 		observed.setCostFeedbackReportQErrorThreshold(2.0d);
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+		assertNotNull(stats.estimate(defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600,
 				400, 100, 100),
 				"Close estimates should still calibrate the LEO surface instead of learning only from misses");
 	}
@@ -2149,32 +2154,32 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void costFeedbackWaitsForPlannedOperatorRepeatedInvocations(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("page", P1, "review"), sp("person", P2, "award"));
+		Union observed = defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award"));
 		completeCostFeedback(observed, 1_000, 10, 100, 1_000);
 		observed.setDoubleMetricPlanned("plannedOperatorRepeatedInvocations", 2.0d);
 
 		stats.recordOperatorOutcome(observed);
 
-		assertNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400,
+		assertNull(stats.estimate(defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600, 400,
 				10, 100), "A repeated subplan should report only after the planned invocation count completes");
 
 		observed.setCostFeedbackCloseCountActual(2L);
 		observed.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 2);
 		stats.recordOperatorOutcome(observed);
-		assertNotNull(stats.estimate(new Union(sp("page", P1, "review"), sp("person", P2, "award")), 600,
+		assertNotNull(stats.estimate(defaultGraphUnion(sp("page", P1, "review"), sp("person", P2, "award")), 600,
 				400, 10, 100));
 	}
 
 	@Test
 	void costFeedbackWorkThresholdUsesActualWorkRows(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Difference observed = new Difference(sp("s", P1, "o"), sp("s", P2, "reject"));
+		Difference observed = defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject"));
 		completeCostFeedback(observed, 100, 100, 10, 1_000);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Difference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 100, 10);
+				defaultGraphDifference(sp("s", P1, "o"), sp("s", P2, "reject")), 200, 150, 100, 10);
 		assertNotNull(estimate, "A large work miss should report even when row count is correct");
 		assertTrue(estimate.workRows() > 500.0d,
 				"Work correction must use the feedback actual-work counter, not actual output rows");
@@ -2183,7 +2188,7 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void costFeedbackLeftJoinUsesPrimitiveMatchCounters(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		LeftJoin observed = new LeftJoin(join("s", "x", "o"), sp("o", P3, "review"));
+		LeftJoin observed = defaultGraphOptional(join("s", "x", "o"), sp("o", P3, "review"));
 		completeCostFeedback(observed, 380, 10_000, 10_000, 400);
 		observed.setJoinLeftBindingsConsumedActual(100);
 		observed.setJoinRightBindingsConsumedActual(300);
@@ -2193,7 +2198,7 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new LeftJoin(join("s", "x", "o"), sp("o", P3, "review")), 100, 300, 10_000, 10_000);
+				defaultGraphOptional(join("s", "x", "o"), sp("o", P3, "review")), 100, 300, 10_000, 10_000);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() >= 100.0d, "Primitive feedback counters must preserve the optional floor");
 		assertTrue(estimate.rows() < 5_000.0d, "Primitive feedback counters should correct saturated OPTIONAL plans");
@@ -2234,13 +2239,13 @@ class LmdbOperatorFeedbackStatsTest {
 	@Test
 	void clampLimitsOneBadRun(@TempDir Path tempDir) throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
-		Union observed = new Union(sp("s", P1, "o1"), sp("s", P2, "o2"));
+		Union observed = defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2"));
 		completeBinary(observed, 1_000_000_000, 1, 1, 500_000_000, 500_000_000);
 
 		stats.recordOperatorOutcome(observed);
 
 		LmdbOperatorFeedbackStats.OperatorEstimate estimate = stats.estimate(
-				new Union(sp("s", P1, "o1"), sp("s", P2, "o2")), 1, 1, 1, 1);
+				defaultGraphUnion(sp("s", P1, "o1"), sp("s", P2, "o2")), 1, 1, 1, 1);
 		assertNotNull(estimate);
 		assertTrue(estimate.rows() > 1.0d, "Feedback should still move the estimate");
 		assertTrue(estimate.rows() < 100_000.0d, "One extreme run must not dominate without a clamp");
@@ -2470,20 +2475,57 @@ class LmdbOperatorFeedbackStatsTest {
 		return new LmdbOperatorFeedbackStats(estimatorPath, () -> TEST_SNAPSHOT_IDENTITY);
 	}
 
+	/** These factories own complete synthetic invocations over the fixture's default physical source. */
+	private static Join defaultGraphJoin(TupleExpr left, TupleExpr right) {
+		Join root = new Join(left, right);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
+	}
+
+	private static LeftJoin defaultGraphOptional(TupleExpr left, TupleExpr right) {
+		LeftJoin root = new LeftJoin(left, right);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
+	}
+
+	private static Union defaultGraphUnion(TupleExpr left, TupleExpr right) {
+		Union root = new Union(left, right);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
+	}
+
+	private static Difference defaultGraphDifference(TupleExpr left, TupleExpr right) {
+		Difference root = new Difference(left, right);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
+	}
+
+	private static Filter defaultGraphFilter(TupleExpr arg, ValueExpr condition) {
+		Filter root = new Filter(arg, condition);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
+	}
+
 	private static Join join(String leftSubject, String sharedName, String rightObject) {
-		return new Join(sp(leftSubject, P1, sharedName), sp(sharedName, P2, rightObject));
+		Join root = new Join(sp(leftSubject, P1, sharedName), sp(sharedName, P2, rightObject));
+		// This factory constructs the entire default-input two-pattern feedback fixture.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
 	}
 
 	private static Join leftDeepThreeWayPath() {
-		return new Join(new Join(sp("s", P1, "x"), sp("x", P2, "y")), sp("y", P3, "o"));
+		return defaultGraphJoin(defaultGraphJoin(sp("s", P1, "x"), sp("x", P2, "y")), sp("y", P3, "o"));
 	}
 
 	private static Join rightDeepThreeWayPath() {
-		return new Join(sp("s", P1, "x"), new Join(sp("x", P2, "y"), sp("y", P3, "o")));
+		return defaultGraphJoin(sp("s", P1, "x"), defaultGraphJoin(sp("x", P2, "y"), sp("y", P3, "o")));
 	}
 
 	private static ArbitraryLengthPath alp(String subjectName, String objectName) {
-		return new ArbitraryLengthPath(Var.of(subjectName), sp(subjectName, P1, objectName), Var.of(objectName), 1);
+		ArbitraryLengthPath root = new ArbitraryLengthPath(Var.of(subjectName), sp(subjectName, P1, objectName),
+				Var.of(objectName), 1);
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
 	}
 
 	private static StatementPattern spConstSubject(String subjectIri, IRI predicate, String objectName) {

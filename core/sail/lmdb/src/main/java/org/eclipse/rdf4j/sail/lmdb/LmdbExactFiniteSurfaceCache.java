@@ -255,7 +255,7 @@ final class LmdbExactFiniteSurfaceCache {
 			}
 		}
 
-		TupleExpr canonicalAccess = accessKernel.clone();
+		TupleExpr canonicalAccess = LmdbValueIdFilter.semanticClone(accessKernel);
 		CanonicalizingVisitor canonicalizer = new CanonicalizingVisitor(canonicalNames);
 		canonicalAccess.visit(canonicalizer);
 		if (!canonicalizer.valid) {

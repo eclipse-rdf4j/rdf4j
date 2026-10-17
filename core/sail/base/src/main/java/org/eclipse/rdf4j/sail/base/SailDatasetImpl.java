@@ -464,6 +464,21 @@ class SailDatasetImpl implements SailDataset, TreeOwnedDataset {
 		public long getSourceRowsFilteredActual() {
 			return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
 		}
+
+		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return reporter == null ? -1 : reporter.getDistinctCursorSkipCountActual();
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return reporter == null ? -1 : reporter.getDistinctCursorSkipSeekCountActual();
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
+			return reporter == null ? -1 : reporter.getSkipAheadSeekCountActual();
+		}
 	}
 
 	@Override

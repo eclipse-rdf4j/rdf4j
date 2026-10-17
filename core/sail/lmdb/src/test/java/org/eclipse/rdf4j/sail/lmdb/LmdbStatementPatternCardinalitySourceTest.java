@@ -147,6 +147,8 @@ class LmdbStatementPatternCardinalitySourceTest {
 		java.util.concurrent.atomic.AtomicInteger computes = new java.util.concurrent.atomic.AtomicInteger();
 		TripleStore tripleStore = mock(TripleStore.class);
 		when(tripleStore.getDataRevision()).thenAnswer(invocation -> revision.get());
+		// This isolated source has no admitted older snapshot; its planning revision follows this committed view.
+		when(tripleStore.planningDataRevision()).thenAnswer(invocation -> revision.get());
 		// The first count races with a commit: the revision moves to 8 mid-computation and the returned count
 		// reflects the post-commit data. The true revision-7 count is 42.
 		when(tripleStore.planningCardinalityEstimate(anyLong(), anyLong(), anyLong(), anyLong()))

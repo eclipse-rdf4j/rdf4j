@@ -17,11 +17,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 
-import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 /**
- * Planner-side proof that a DISTINCT requirement may be satisfied below a statement pattern.
+ * Planner-side proof that a DISTINCT requirement may be satisfied below an observed tuple operator.
  */
 record LmdbDistinctRequirement(Set<String> distinctVars, Set<String> requiredVarsAbove, Set<String> blockedVars,
 		String source) {
@@ -35,7 +35,7 @@ record LmdbDistinctRequirement(Set<String> distinctVars, Set<String> requiredVar
 		source = source == null ? "unknown" : source;
 	}
 
-	static Optional<LmdbDistinctRequirement> from(StatementPattern pattern) {
+	static Optional<LmdbDistinctRequirement> from(TupleExpr pattern) {
 		if (pattern == null) {
 			return Optional.empty();
 		}
@@ -55,7 +55,7 @@ record LmdbDistinctRequirement(Set<String> distinctVars, Set<String> requiredVar
 		return Optional.of(new LmdbDistinctRequirement(distinctVars, requiredVars, blockedVars, source));
 	}
 
-	void annotate(StatementPattern pattern) {
+	void annotate(TupleExpr pattern) {
 		pattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
 				metricValue(distinctVars));
 		pattern.setStringMetricPlanned(TelemetryMetricNames.PLANNED_DISTINCT_REQUIRED_VARS_ABOVE,

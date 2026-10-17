@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
@@ -248,7 +249,12 @@ class LeoOperatorKeyTest {
 
 	private static BindingSetAssignment values(List<? extends BindingSet> rows) {
 		BindingSetAssignment assignment = new BindingSetAssignment();
-		assignment.setBindingSets(new ArrayList<>(rows));
+		List<BindingSet> stableRows = new ArrayList<>();
+		for (BindingSet row : rows) {
+			List<String> names = List.copyOf(row.getBindingNames());
+			stableRows.add(new ListBindingSet(names, names.stream().map(row::getValue).toList()));
+		}
+		assignment.setBindingSets(stableRows);
 		return assignment;
 	}
 

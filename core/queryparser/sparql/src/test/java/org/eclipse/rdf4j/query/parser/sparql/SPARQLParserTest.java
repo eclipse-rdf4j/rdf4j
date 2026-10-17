@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.DeleteData;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.InsertData;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -94,6 +95,35 @@ import org.junit.jupiter.api.Test;
  * @author jeen
  */
 public class SPARQLParserTest {
+
+	@Test
+	public void acceptsZeroArgumentConcat() {
+		assertDoesNotThrow(() -> new SPARQLParser().parseQuery("SELECT (CONCAT() AS ?result) WHERE {}", null));
+	}
+
+	@Test
+	public void acceptsEmptyVariadicExpressionsInNestedContexts() {
+		for (String expression : List.of("COALESCE()", "CONCAT()", "IF(true, COALESCE(), CONCAT())",
+				"COALESCE(COALESCE(), CONCAT())", "COALESCE(1 / 0, TRIPLE(<urn:s>, <urn:p>, CONCAT()))")) {
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT (" + expression + " AS ?result) WHERE {}", null), expression);
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(
+					"SELECT ?result WHERE { BIND(" + expression + " AS ?result) }", null), expression);
+		}
+	}
+
+	@Test
+	public void acceptsMultipleHavingConstraintsInAllQueryForms() {
+		for (String query : List.of(
+				"SELECT ?s WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(*) > 1) (COUNT(*) < 3)",
+				"SELECT (COUNT(*) AS ?n) WHERE {} HAVING (COUNT(*) > 0) (SUM(1) = 1) (true)",
+				"SELECT ?n WHERE { { SELECT (COUNT(*) AS ?n) WHERE {} HAVING (COUNT(*) > 0) (true) } }",
+				"ASK WHERE {} HAVING (COUNT(*) > 0) (true)",
+				"CONSTRUCT { <urn:s> <urn:p> ?n } WHERE { BIND(1 AS ?n) } GROUP BY ?n HAVING (true) (true)",
+				"DESCRIBE ?s WHERE { ?s ?p ?o } GROUP BY ?s HAVING (COUNT(*) > 0) (true)")) {
+			assertDoesNotThrow(() -> new SPARQLParser().parseQuery(query, null), query);
+		}
+	}
 
 	private SPARQLParser parser;
 
@@ -200,7 +230,7 @@ public class SPARQLParserTest {
 	}
 
 	@Test
-	public void testRepeatedGraphScopesLowerToStatementPatternContexts() {
+	public void testRepeatedGraphScopesRetainExplicitGraphBoundaries() {
 		ParsedQuery query = parser.parseQuery("""
 				PREFIX ex: <urn:>
 				SELECT * WHERE {
@@ -209,15 +239,32 @@ public class SPARQLParserTest {
 				}
 				""", null);
 
-		List<StatementPattern> patterns = StatementPatternCollector.process(query.getTupleExpr());
-
-		assertThat(patterns).hasSize(2);
-		for (StatementPattern pattern : patterns) {
-			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.NAMED_CONTEXTS);
-			assertThat(pattern.getContextVar()).isNotNull();
-			assertThat(pattern.getContextVar().hasValue()).isTrue();
-			assertThat(pattern.getContextVar().getValue()).isEqualTo(Values.iri("urn:g"));
+		List<Graph> graphs = new ArrayList<>();
+		query.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Graph graph) {
+				graphs.add(graph);
+				super.meet(graph);
+			}
+		});
+		// The parser retains lexical GRAPH boundaries; fixed positive patterns are lowered by the later evaluator
+		// optimizer. Keep this phase independent of evaluation-module implementations and dependencies.
+		assertThat(graphs).hasSize(2);
+		assertThat(graphs.get(0)).isNotSameAs(graphs.get(1));
+		for (Graph graph : graphs) {
+			assertThat(graph.getGraphName().hasValue()).isTrue();
+			assertThat(graph.getGraphName().getValue()).isEqualTo(Values.iri("urn:g"));
+			StatementPattern pattern = assertInstanceOf(StatementPattern.class, graph.getArg());
+			assertThat(pattern.getParentNode()).isSameAs(graph);
+			assertThat(pattern.getScope()).isEqualTo(StatementPattern.Scope.DEFAULT_CONTEXTS);
+			assertThat(pattern.getContextVar()).isNull();
+			assertThat(pattern.getSubjectVar().getName()).isEqualTo("s");
 		}
+		assertThat(StatementPatternCollector.process(query.getTupleExpr()))
+				.extracting(pattern -> pattern.getPredicateVar().getValue())
+				.containsExactlyInAnyOrder(Values.iri("urn:p"), Values.iri("urn:q"));
+		assertThat(graphs).extracting(graph -> ((StatementPattern) graph.getArg()).getObjectVar().getName())
+				.containsExactlyInAnyOrder("o", "v");
 	}
 
 	@Test

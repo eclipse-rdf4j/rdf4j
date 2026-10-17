@@ -33,8 +33,11 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoSurfaceKey;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -283,24 +286,28 @@ class LmdbLearnedSidecarJournalStampTest {
 
 	private static Filter filter(String constant) {
 		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, FILTER_QUERY.formatted(constant), null)
-				.getTupleExpr()
-				.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, FILTER_QUERY.formatted(constant), null)
+				.getTupleExpr();
+		// Both persisted observations and later estimates describe the complete default-graph query.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		root.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
 		return found[0];
 	}
 
 	private static Join join() {
-		return new Join(
+		Join query = new Join(
 				new StatementPattern(Var.of("s"), Var.of("_p1", P1, true, true), Var.of("x")),
 				new StatementPattern(Var.of("x"), Var.of("_p2", P2, true, true), Var.of("o")));
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 
 	private static void complete(Join node, long actualRows, double plannedRows, double plannedWorkRows) {

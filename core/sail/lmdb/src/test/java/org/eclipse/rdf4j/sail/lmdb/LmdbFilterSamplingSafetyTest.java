@@ -27,15 +27,19 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -72,6 +76,7 @@ class LmdbFilterSamplingSafetyTest {
 					? new Compare(call, new ValueConstant(VF.createLiteral(true)))
 					: call;
 			Filter filter = new Filter(pattern.clone(), condition);
+			capturePhysicalStoreFilter(filter, pattern);
 
 			PatternFilterSampleEstimate live = store.stats.estimateLiveFilterPass(filter, pattern);
 			PatternFilterSampleEstimate cached = store.stats.estimateCachedFilterPass(filter, pattern);
@@ -103,6 +108,7 @@ class LmdbFilterSamplingSafetyTest {
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
 			Filter filter = new Filter(pattern.clone(), new FunctionCall(function.getURI(), new Var("value")));
+			capturePhysicalStoreFilter(filter, pattern);
 
 			assertEquals(1.0d, store.stats.estimateLiveFilterPass(filter, pattern).passRatio());
 			assertTrue(function.invocations.get() > 0, "the registered callback must actually be sampled");
@@ -114,6 +120,71 @@ class LmdbFilterSamplingSafetyTest {
 			assertEquals(1, store.stats.runBackgroundSamplingCycle(20_000L));
 			assertEquals(2, admissions.get());
 			assertTrue(function.invocations.get() > foregroundInvocations);
+		} finally {
+			registry.remove(function);
+			store.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(ActiveGraphSelector.class)
+	void activeGraphConditionsNeverUseUnscopedNativeSampling(ActiveGraphSelector selector,
+			@TempDir Path directory) throws Exception {
+		SamplingFunction function = new SamplingFunction(false);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		SamplingStore store = new SamplingStore(directory);
+		try {
+			registry.add(function);
+			store.init();
+			seed(store);
+			AtomicInteger admissions = observeAdmissions(store);
+			StatementPattern pattern = pattern();
+			Filter filter = new Filter(pattern, new FunctionCall(function.getURI(), new Var("value")));
+			Graph graph = selector.wrap(filter);
+			assertTrue(graph.getBindingNames().contains("value"));
+
+			PatternFilterSampleEstimate live = store.stats.estimateLiveFilterPass(filter, pattern);
+			PatternFilterSampleEstimate cached = store.stats.estimateCachedFilterPass(filter, pattern);
+			int pending = store.stats.pendingBackgroundSamplingRequests();
+			int sampled = store.stats.runBackgroundSamplingCycle(20_000L);
+
+			assertAll(
+					() -> assertEquals(-1.0d, live.passRatio(), "Unscoped quads cannot certify an active GRAPH filter"),
+					() -> assertEquals(-1.0d, cached.passRatio(), "Active GRAPH cannot reuse an unscoped filter cell"),
+					() -> assertEquals(0, function.invocations.get(), "No callback may run against the wrong graph"),
+					() -> assertEquals(0, admissions.get(), "Unscoped sampling must decline before native admission"),
+					() -> assertEquals(0, pending, "The missing graph-domain proof cannot enqueue detached work"),
+					() -> assertEquals(0, sampled));
+		} finally {
+			registry.remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void cachedUnscopedFilterEvidenceDoesNotCrossIntoActiveGraph(@TempDir Path directory) throws Exception {
+		SamplingFunction function = new SamplingFunction(false);
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		SamplingStore store = new SamplingStore(directory);
+		try {
+			registry.add(function);
+			store.init();
+			seed(store);
+			AtomicInteger admissions = observeAdmissions(store);
+			StatementPattern pattern = pattern();
+			Filter filter = new Filter(pattern, new FunctionCall(function.getURI(), new Var("value")));
+			capturePhysicalStoreFilter(filter, pattern);
+			assertEquals(1.0d, store.stats.estimateLiveFilterPass(filter, pattern).passRatio());
+			int previousCalls = function.invocations.get();
+			int previousAdmissions = admissions.get();
+			Graph graph = ActiveGraphSelector.FIXED.wrap(filter);
+			PlanningGraphDomains.refresh(graph, PlanningGraphDomain.defaultGraph());
+			assertTrue(graph.getBindingNames().contains("value"));
+
+			assertEquals(-1.0d, store.stats.estimateCachedFilterPass(filter, pattern).passRatio(),
+					"A context-free child pattern is not the same evidence domain after GRAPH installs its selector");
+			assertEquals(previousCalls, function.invocations.get());
+			assertEquals(previousAdmissions, admissions.get());
 		} finally {
 			registry.remove(function);
 			store.shutDown();
@@ -132,6 +203,7 @@ class LmdbFilterSamplingSafetyTest {
 			AtomicInteger admissions = observeAdmissions(store);
 			StatementPattern pattern = pattern();
 			Filter filter = new Filter(pattern.clone(), new FunctionCall(function.getURI(), new Var("value")));
+			capturePhysicalStoreFilter(filter, pattern);
 			assertEquals(1.0d, store.stats.estimateLiveFilterPass(filter, pattern).passRatio());
 			assertEquals(1, store.stats.pendingBackgroundSamplingRequests());
 			int safeInvocations = function.invocations.get();
@@ -161,6 +233,13 @@ class LmdbFilterSamplingSafetyTest {
 		return new StatementPattern(new Var("subject"), Var.of("predicate", PREDICATE), new Var("value"));
 	}
 
+	private static void capturePhysicalStoreFilter(Filter filter, StatementPattern pattern) {
+		// These standalone fixtures explicitly request the unrestricted physical quad pattern seeded below.
+		// The separate argument may be a clone of the filter's child; both belong to this documented fixture input.
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
+		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
+	}
+
 	private static void seed(SamplingStore store) throws Exception {
 		try (SailConnection connection = store.getConnection()) {
 			connection.begin(IsolationLevels.SNAPSHOT);
@@ -185,6 +264,23 @@ class LmdbFilterSamplingSafetyTest {
 		VOLATILE,
 		NESTED_VOLATILE,
 		QUERY_STABLE_NO_ARGUMENTS
+	}
+
+	private enum ActiveGraphSelector {
+		FIXED,
+		VARIABLE,
+		DEFAULT_ALIAS,
+		NESTED;
+
+		Graph wrap(Filter filter) {
+			return switch (this) {
+			case FIXED -> new Graph(Var.of("graph", VF.createIRI("urn:filter-sampling-safety:graph")), filter);
+			case VARIABLE -> new Graph(Var.of("graph"), filter);
+			case DEFAULT_ALIAS -> new Graph(Var.of("graph", RDF4J.NIL), filter);
+			case NESTED -> new Graph(Var.of("outer", VF.createIRI("urn:filter-sampling-safety:outer")),
+					new Graph(Var.of("inner"), filter));
+			};
+		}
 	}
 
 	private static final class SamplingFunction implements Function {

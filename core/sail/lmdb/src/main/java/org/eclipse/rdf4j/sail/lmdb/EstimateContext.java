@@ -19,6 +19,8 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
@@ -32,7 +34,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		Optional<FiniteRelationEstimate> finiteBindings, BagEstimate prefixEstimate, double invocationCount,
 		EvidencePolicy evidencePolicy, JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
-		MetricsPreference metricsPreference, boolean exactProbePermitted) {
+		MetricsPreference metricsPreference, boolean exactProbePermitted, PlanningGraphDomain graphDomain) {
 
 	enum EvidencePolicy {
 		SNAPSHOT_ONLY,
@@ -56,6 +58,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		snapshotIdentity = Objects.requireNonNull(snapshotIdentity, "snapshotIdentity");
 		snapshotVersion = Math.max(0L, snapshotVersion);
 		metricsPreference = metricsPreference == null ? MetricsPreference.SUMMARY : metricsPreference;
+		graphDomain = graphDomain == null ? PlanningGraphDomain.unknown() : graphDomain;
 	}
 
 	static EstimateContext root(TupleExpr expression, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion) {
@@ -66,7 +69,8 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			long learnedRevision) {
 		BindingUniverse universe = BindingUniverse.from(Objects.requireNonNull(expression, "expression"),
 				PhysicalProperties.ANY);
-		return root(universe, snapshotIdentity, snapshotVersion, learnedRevision);
+		return root(universe, snapshotIdentity, snapshotVersion, learnedRevision)
+				.withGraphDomain(PlanningGraphDomains.domain(expression));
 	}
 
 	static EstimateContext root(BindingUniverse universe, QuadSnapshotIdentity snapshotIdentity, long snapshotVersion,
@@ -74,7 +78,18 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 		return new EstimateContext(universe, BindingMask.EMPTY, Optional.empty(),
 				BagEstimate.exact(1.0d, "root-prefix"), 1.0d, EvidencePolicy.ADAPTIVE,
 				JoinFactorCostModel.EstimationTier.STANDARD, snapshotIdentity, snapshotVersion, learnedRevision,
-				MetricsPreference.SUMMARY, false);
+				MetricsPreference.SUMMARY, false, PlanningGraphDomain.unknown());
+	}
+
+	boolean nativeEvidenceAllowed() {
+		return graphDomain.allowsNativeEvidence();
+	}
+
+	EstimateContext withGraphDomain(PlanningGraphDomain domain) {
+		return new EstimateContext(universe, boundMask, finiteBindings, prefixEstimate, invocationCount, evidencePolicy,
+				estimationTier, snapshotIdentity, snapshotVersion, learnedRevision, metricsPreference,
+				exactProbePermitted,
+				domain);
 	}
 
 	Set<String> boundNames() {
@@ -150,7 +165,7 @@ record EstimateContext(BindingUniverse universe, BindingMask boundMask,
 			double invocations, EvidencePolicy policy, JoinFactorCostModel.EstimationTier tier,
 			MetricsPreference preference, boolean exactPermission) {
 		return new EstimateContext(universe, mask, bindings, prefix, invocations, policy, tier, snapshotIdentity,
-				snapshotVersion, learnedRevision, preference, exactPermission);
+				snapshotVersion, learnedRevision, preference, exactPermission, graphDomain);
 	}
 
 	private static double finiteNonNegative(double value, double fallback) {

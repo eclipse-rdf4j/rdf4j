@@ -383,14 +383,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 				// get all extensions (BIND clause)
 				List<TupleExpr> orderedExtensions = getExtensionTupleExprs(joinArgs);
-				optimizeInNewScope(orderedExtensions);
-				joinArgs.removeAll(orderedExtensions);
+				removePriorityOperands(joinArgs, orderedExtensions);
+				orderedExtensions = optimizeInNewScope(orderedExtensions);
 
 				// get all subselects and order them
 				List<TupleExpr> subSelects = getSubSelects(joinArgs);
-				optimizeInNewScope(subSelects);
+				removePriorityOperands(joinArgs, subSelects);
+				subSelects = optimizeInNewScope(subSelects);
 				List<TupleExpr> orderedSubselects = reorderSubselects(subSelects);
-				joinArgs.removeAll(orderedSubselects);
 
 				// Reorder the subselects and extensions to a more optimal sequence
 				List<TupleExpr> priorityArgs;
@@ -424,12 +424,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					Map<TupleExpr, List<Var>> varsMap = new HashMap<>();
 
 					for (TupleExpr tupleExpr : joinArgs) {
-						if (tupleExpr instanceof Join) {
-							// we can skip calculating the cardinality for instances of Join since we will anyway "meet"
-							// these nodes
-							continue;
-						}
-
+						// A nested scoped join is one selectable operand, so it needs the same cost inputs as a leaf.
 						double cardinality = statistics.getCardinality(tupleExpr);
 
 						tupleExpr.setResultSizeEstimate(Math.max(cardinality, tupleExpr.getResultSizeEstimate()));
@@ -458,10 +453,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						this.currentHighestCost = Math.max(currentHighestCost, tupleExpr.getCostEstimate());
 
 						joinArgs.remove(tupleExpr);
-						orderedJoinArgs.addLast(tupleExpr);
 
 						// Recursively optimize join arguments
+						Join parent = (Join) tupleExpr.getParentNode();
+						boolean leftArgument = parent.getLeftArg() == tupleExpr;
 						tupleExpr.visit(this);
+						// Optimizing a nested join can replace its root. Retain the actual optimized operand.
+						tupleExpr = leftArgument ? parent.getLeftArg() : parent.getRightArg();
+						orderedJoinArgs.addLast(tupleExpr);
 
 						boundVars.addAll(getBindingInfo(tupleExpr).guaranteedOutput);
 					}
@@ -575,6 +574,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			if (node.isVariableScopeChange() && replacement instanceof VariableScopeChange scopeChange) {
 				scopeChange.setVariableScopeChange(true);
 			}
+			replacement
+					.setIndependentInputScope(node.isIndependentInputScope() || replacement.isIndependentInputScope());
 			node.replaceWith(replacement);
 		}
 
@@ -618,6 +619,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 						.outputFacts(leftJoin.getRightArg(), rightInput);
 				boolean scopedOperand = TupleExprs.containsSubquery(leftJoin.getLeftArg())
 						|| TupleExprs.containsSubquery(leftJoin.getRightArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getLeftArg())
+						|| TupleExprs.containsGraphBoundary(leftJoin.getRightArg())
 						|| TupleExprs.containsResultSetModifier(leftJoin.getLeftArg(), optionalAnalysis)
 						|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), optionalAnalysis);
 
@@ -1066,8 +1069,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			return Double.isNaN(cost) ? Double.POSITIVE_INFINITY : cost;
 		}
 
-		private void optimizeInNewScope(List<TupleExpr> subSelects) {
+		private List<TupleExpr> optimizeInNewScope(List<TupleExpr> subSelects) {
+			if (subSelects.isEmpty()) {
+				return subSelects;
+			}
+			List<TupleExpr> optimized = new ArrayList<>(subSelects.size());
 			for (TupleExpr subSelect : subSelects) {
+				Join parent = (Join) subSelect.getParentNode();
+				boolean leftArgument = parent.getLeftArg() == subSelect;
 				QueryAlgebraBindingAnalysis.ReadOnlyContext originalContext = currentContext;
 				PhysicalCostPrefix originalBoundVars = boundVars;
 				double originalHighestCost = currentHighestCost;
@@ -1077,11 +1086,25 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 							currentContext.guaranteedNames());
 					currentHighestCost = 1;
 					subSelect.visit(this);
+					// A boundary operand can itself be a join whose optimizer replaces its root. Reusing the old
+					// root would reinstall children already owned by the replacement hierarchy.
+					optimized.add(leftArgument ? parent.getLeftArg() : parent.getRightArg());
 				} finally {
 					currentContext = originalContext;
 					boundVars = originalBoundVars;
 					currentHighestCost = originalHighestCost;
 				}
+			}
+			return optimized;
+		}
+
+		private void removePriorityOperands(List<TupleExpr> joinArgs, List<TupleExpr> priorityArgs) {
+			if (!priorityArgs.isEmpty()) {
+				Set<TupleExpr> occurrences = Collections.newSetFromMap(new IdentityHashMap<>());
+				occurrences.addAll(priorityArgs);
+				// Public algebra equality deliberately excludes independent-input authority. Remove precisely the
+				// selected occurrences, retaining equal ordinary operands and their bag multiplicity.
+				joinArgs.removeIf(occurrences::contains);
 			}
 		}
 
@@ -1118,10 +1141,15 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
-			if (tupleExpr instanceof Join join
+			return getJoinArgs(tupleExpr, joinArgs, true);
+		}
+
+		private <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs, boolean rootJoin) {
+			if (tupleExpr instanceof Join join && (rootJoin || !join.isVariableScopeChange())
 					&& bindingAnalysis.requiredInputBindingNames(join.getRightArg()).isEmpty()) {
-				getJoinArgs(join.getLeftArg(), joinArgs);
-				getJoinArgs(join.getRightArg(), joinArgs);
+				// Optimize this join's children together, while retaining a nested operand's independent input frame.
+				getJoinArgs(join.getLeftArg(), joinArgs, false);
+				getJoinArgs(join.getRightArg(), joinArgs, false);
 			} else {
 				joinArgs.add(tupleExpr);
 			}
@@ -1192,7 +1220,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 			List<TupleExpr> subselects = List.of();
 			for (TupleExpr expr : expressions) {
-				if (TupleExprs.containsSubquery(expr)) {
+				if (TupleExprs.containsSubquery(expr) || TupleExprs.containsGraphBoundary(expr)) {
 					if (subselects.isEmpty()) {
 						subselects = List.of(expr);
 					} else {

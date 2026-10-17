@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.lang.management.ManagementFactory;
 
@@ -33,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryLimitException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryPurpose;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
@@ -40,8 +43,147 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PackedCostSessionLifecycleTest {
+
+	@ParameterizedTest
+	@CsvSource({ "false,snapshot", "true,snapshot", "false,project", "true,project", "false,detach", "true,detach" })
+	void replayPreservesCallerDeclaredPrefixBagFact(boolean describesRows, String route) {
+		PackedCostContext original = new PackedCostContext();
+		original.reset(new int[] { 1 }, 0, 1, 7.0d);
+		original.setPrefixRelationsDescribeRows(describesRows);
+		PackedCostingTrace trace = protocolTrace(original);
+		if (route.equals("project")) {
+			trace = trace.project(new int[] { 1 }).trace();
+		} else if (route.equals("detach")) {
+			trace = trace.withDetachedStateOrdinals(FrontierEvidenceBundle.empty(trace.stateReferenceCount()), 0);
+		}
+		assertEquals(describesRows ? 1.0d : 0.0d, protocolObservation(trace, "test.receivedPrefixFact"));
+		PackedCostingTrace replayed = replayProtocolTrace(trace);
+		assertEquals(describesRows ? 1.0d : 0.0d, protocolObservation(replayed, "test.receivedPrefixFact"),
+				"replay must preserve the original caller's fact through " + route);
+		assertEquals(describesRows, original.prefixRelationsDescribeRows(), "recording never mutates the caller");
+	}
+
+	@Test
+	void replayPreservesCallerUnrelatedPrefixRows() {
+		PackedCostContext original = new PackedCostContext();
+		original.reset(new int[] { 1 }, 0, 1, 21.0d);
+		original.setUnrelatedPrefixRows(7.0d);
+		PackedCostingTrace trace = protocolTrace(original);
+		assertEquals(7.0d, protocolObservation(trace, "test.receivedUnrelatedRows"));
+		assertEquals(7.0d, protocolObservation(replayProtocolTrace(trace), "test.receivedUnrelatedRows"));
+		assertEquals(7.0d, original.unrelatedPrefixRows());
+	}
+
+	@ParameterizedTest
+	@EnumSource(value = PackedCostingPhase.class, names = { "LEAF", "PREFIX_EXTENSION", "OPERATOR",
+			"INTERMEDIATE_JOIN", "PHYSICAL_JOIN" })
+	void everyCostingEntryRetainsItsReceivedPrefixFacts(PackedCostingPhase phase) {
+		var original = new PackedCostContext();
+		original.reset(new int[] { 1 }, 0, phase == PackedCostingPhase.LEAF ? 0 : 1, 7.0d);
+		original.setPrefixRelationsDescribeRows(false);
+		original.setUnrelatedPrefixRows(7.0d);
+		PackedCostingTrace trace;
+		try (var recording = new EventSourcingPackedCostSession(prefixProtocolProvider())) {
+			var output = new PackedCostEstimate();
+			switch (phase) {
+			case LEAF -> recording.estimateLeaf(2, original, output);
+			case PREFIX_EXTENSION -> recording.appendFactor(2, original, output);
+			case OPERATOR -> recording.refineOperator(2, original, output);
+			case INTERMEDIATE_JOIN -> recording.refineIntermediateJoin(original, output);
+			case PHYSICAL_JOIN -> recording.refinePhysicalJoin(2, original, output);
+			}
+			trace = recording.snapshotTrace();
+		}
+		assertEquals(phase, trace.phase(1));
+		PackedCostingTrace replayed = replayProtocolTrace(trace);
+		assertEquals(0.0d, protocolObservation(replayed, "test.receivedPrefixFact"));
+		assertEquals(7.0d, protocolObservation(replayed, "test.receivedUnrelatedRows"));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void recycledTraceStorageOverwritesBothPrefixFacts(boolean firstComplete) {
+		var context = new PackedCostContext();
+		context.reset(new int[] { 1 }, 0, 1, 7.0d);
+		context.setPrefixRelationsDescribeRows(firstComplete);
+		context.setUnrelatedPrefixRows(firstComplete ? Double.NaN : 7.0d);
+		PackedCostingTrace first = protocolTrace(context);
+		context.setPrefixRelationsDescribeRows(!firstComplete);
+		context.setUnrelatedPrefixRows(firstComplete ? 7.0d : Double.NaN);
+		PackedCostingTrace second = protocolTrace(context);
+		assertEquals(firstComplete ? 1.0d : 0.0d,
+				protocolObservation(replayProtocolTrace(first), "test.receivedPrefixFact"));
+		assertEquals(firstComplete ? 0.0d : 1.0d,
+				protocolObservation(replayProtocolTrace(second), "test.receivedPrefixFact"));
+		assertEquals(firstComplete ? Double.NaN : 7.0d,
+				protocolObservation(replayProtocolTrace(first), "test.receivedUnrelatedRows"));
+		assertEquals(firstComplete ? 7.0d : Double.NaN,
+				protocolObservation(replayProtocolTrace(second), "test.receivedUnrelatedRows"));
+	}
+
+	private static PackedCostingTrace protocolTrace(PackedCostContext original) {
+		try (var recording = new EventSourcingPackedCostSession(prefixProtocolProvider())) {
+			recording.appendFactor(2, original, new PackedCostEstimate());
+			return recording.snapshotTrace();
+		}
+	}
+
+	private static PackedCostSession prefixProtocolProvider() {
+		return new PackedCostSession() {
+			@Override
+			public void estimateLeaf(int relation, PackedCostContext context, PackedCostEstimate output) {
+				record(context, output);
+			}
+
+			@Override
+			public void appendFactor(int relation, PackedCostContext context, PackedCostEstimate output) {
+				record(context, output);
+			}
+
+			private void record(PackedCostContext context, PackedCostEstimate output) {
+				output.setContextualRows(7.0d, 11.0d);
+				output.putPlannedDoubleMetric("test.receivedPrefixFact",
+						context.prefixRelationsDescribeRows() ? 1.0d : 0.0d);
+				output.putPlannedDoubleMetric("test.receivedUnrelatedRows", context.unrelatedPrefixRows());
+			}
+
+			@Override
+			public void refineOperator(int relation, PackedCostContext context, PackedCostEstimate output) {
+				record(context, output);
+			}
+
+			@Override
+			public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+				record(context, output);
+			}
+		};
+	}
+
+	private static PackedCostingTrace replayProtocolTrace(PackedCostingTrace trace) {
+		// This protocol fixture supplies a genuine recorded trace; it has no plan candidates or native leases.
+		PackedPlanValidationRequest request = mock(PackedPlanValidationRequest.class);
+		when(request.costingTrace()).thenReturn(trace);
+		when(request.evidenceBundle()).thenReturn(FrontierEvidenceBundle.empty(trace.stateReferenceCount()));
+		try (PackedCostSession provider = prefixProtocolProvider()) {
+			return PackedCostingReplay.replay(request, provider).replayedTrace();
+		}
+	}
+
+	private static double protocolObservation(PackedCostingTrace trace, String name) {
+		assertEquals(1, trace.eventCount());
+		for (int metric = 0; metric < trace.doubleMetricCount(1); metric++) {
+			if (name.equals(trace.doubleMetricName(1, metric))) {
+				return trace.doubleMetricValue(1, metric);
+			}
+		}
+		throw new AssertionError("recorded provider observation missing: " + name);
+	}
 
 	@Test
 	void sequentialCostSessionsReuseClearedTraceStorage() {

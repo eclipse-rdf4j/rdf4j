@@ -31,6 +31,7 @@ import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadInfo;
 import java.lang.management.ThreadMXBean;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -50,15 +51,17 @@ class TxnManagerShutdownTest {
 			@TempDir Path dataDir) throws Exception {
 		// A monitor deadlock cannot be interrupted safely. Isolate the native environment and
 		// threads in a child JVM so the failing case cannot leave the test runner deadlocked.
+		Path outputFile = dataDir.resolve("shutdown-probe.log");
 		Process process = new ProcessBuilder(
 				Path.of(System.getProperty("java.home"), "bin", "java").toString(),
 				"--enable-native-access=ALL-UNNAMED", "-cp", System.getProperty("java.class.path"),
 				ShutdownProbe.class.getName(), dataDir.toString(), mode.name(), Boolean.toString(untracked))
 						.redirectErrorStream(true)
+						.redirectOutput(outputFile.toFile())
 						.start();
 		try {
 			assertTrue(process.waitFor(30, TimeUnit.SECONDS), "Concurrent shutdown probe did not finish");
-			String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			String output = Files.readString(outputFile, StandardCharsets.UTF_8);
 			assertEquals(0, process.exitValue(), output);
 		} finally {
 			if (process.isAlive()) {

@@ -125,7 +125,8 @@ final class LmdbPipelinePlanCache {
 			return new Result(compute(computer).plan(), false);
 		}
 
-		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source);
+		PackedPlanCache.StructuralKey query = PackedPlanCache.structuralKey(source,
+				LmdbStatementPatternSemanticsCodec.INSTANCE);
 		if (query == null) {
 			return new Result(compute(computer).plan(), false);
 		}

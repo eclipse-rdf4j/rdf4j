@@ -304,6 +304,7 @@ final class PackedBindingFacts {
 			case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
 					query.relPayload(relationId));
 			case PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(query.relPayload(relationId));
+			case PackedRelOp.GRAPH -> addGraphName(query.relPayload(relationId));
 			case PackedRelOp.PROJECTION -> addProjectionList(
 					query.payloadPrimary(query.relPayload(relationId)));
 			case PackedRelOp.MULTI_PROJECTION -> addMultiProjection(query.relPayload(relationId));
@@ -336,6 +337,10 @@ final class PackedBindingFacts {
 			case PackedRelOp.ARBITRARY_LENGTH_PATH -> {
 				addAssuredChild(relationId, 0);
 				addPayloadTerms(query.relPayload(relationId));
+			}
+			case PackedRelOp.GRAPH -> {
+				addAssuredChild(relationId, 0);
+				addGraphName(query.relPayload(relationId));
 			}
 			case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(
 					query.payloadSecondary(query.relPayload(relationId)));
@@ -485,6 +490,13 @@ final class PackedBindingFacts {
 	private void addPayloadTerms(int payloadId) {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
 			addTerm(query.payloadChild(payloadId, ordinal));
+		}
+	}
+
+	private void addGraphName(int payloadId) {
+		int term = query.payloadChild(payloadId, 0);
+		if ((query.payloadFlags(term) & PackedQuery.TERM_CONSTANT) == 0) {
+			addNameObject(query.payloadPrimary(term));
 		}
 	}
 

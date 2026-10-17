@@ -1423,6 +1423,11 @@ final class TxnManager {
 			return owned && !closed && !idle && lease == leaseId;
 		}
 
+		/** Manager identity for borrowed capabilities; this does not acquire or renew the transaction. */
+		boolean belongsTo(TxnManager expected) {
+			return TxnManager.this == expected;
+		}
+
 		/** Whether this lease is renewed onto the newest snapshot on every write commit (tracked reader). */
 		boolean isTracked() {
 			return owned && resetOnWrite;

@@ -50,6 +50,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -119,7 +121,7 @@ class PackedPredicateRangePlanningTest {
 	void finiteStoredDomainWithoutFilterAddsAnchorAlternative() {
 		TupleExpr root = projection(statementPattern(), "s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), INT_SEVEN_PROVIDER);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()), INT_SEVEN_PROVIDER);
 		TupleExpr selected = optimize(root, INT_SEVEN_PROVIDER);
 
 		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_ANCHOR) != 0L,
@@ -139,7 +141,8 @@ class PackedPredicateRangePlanningTest {
 				new Compare(Var.of("alias"), new ValueConstant(VF.createLiteral(60)), Compare.CompareOp.LT));
 		TupleExpr root = filtered;
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), INT_FIFTY_TO_NINETY_NINE_PROVIDER);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()),
+				INT_FIFTY_TO_NINETY_NINE_PROVIDER);
 		TupleExpr selected = optimize(root, INT_FIFTY_TO_NINETY_NINE_PROVIDER);
 
 		long generatedRules = generatedRuleMask(packed);
@@ -172,7 +175,7 @@ class PackedPredicateRangePlanningTest {
 				"?s <http://example.com/intValued> ?o .", Map.of(), null, false);
 		TupleExpr root = projection(remote, "s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), localEmptyProvider);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()), localEmptyProvider);
 		TupleExpr selected = optimize(root, localEmptyProvider);
 
 		assertEquals(0L, generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_EMPTY,
@@ -565,7 +568,7 @@ class PackedPredicateRangePlanningTest {
 					: new Join(disconnected, impossible);
 			TupleExpr root = projection(joined, "s");
 
-			PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(),
+			PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()),
 					INT_FIFTY_TO_NINETY_NINE_PROVIDER);
 
 			assertEquals(2, predicateRangeEmptyGroups(packed).size(),
@@ -596,7 +599,7 @@ class PackedPredicateRangePlanningTest {
 				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(33)), Compare.CompareOp.LT)),
 				"s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), mixedProvider);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()), mixedProvider);
 		TupleExpr selected = optimize(root, mixedProvider);
 
 		assertTrue(containsNode(selected, Filter.class),
@@ -617,7 +620,7 @@ class PackedPredicateRangePlanningTest {
 				new Compare(new Var("o"), new ValueConstant(VF.createLiteral(32)), Compare.CompareOp.LT)),
 				"s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root.clone(), mixedProvider);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root.clone()), mixedProvider);
 
 		assertEquals(
 				List.of(integerValues(0L, 31L, CoreDatatype.XSD.INT, CoreDatatype.XSD.INTEGER)),
@@ -697,7 +700,7 @@ class PackedPredicateRangePlanningTest {
 						new ValueConstant(CoreDatatype.XSD.INT.getIri()), Compare.CompareOp.EQ)),
 				"s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root,
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root),
 				datatypeOnlyProvider(CoreDatatype.XSD.INT, PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER));
 
 		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
@@ -724,7 +727,7 @@ class PackedPredicateRangePlanningTest {
 				new Compare(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("")), Compare.CompareOp.EQ)),
 				"s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root,
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root),
 				datatypeOnlyProvider(CoreDatatype.XSD.STRING, 0));
 
 		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
@@ -777,7 +780,7 @@ class PackedPredicateRangePlanningTest {
 		TupleExpr root = projection(new Filter(statementPattern(),
 				new LangMatches(new Lang(new Var("o")), new ValueConstant(VF.createLiteral("*")))), "s");
 
-		PackedQuery packed = PackedQueryCodec.encodeForPlanning(root, languageProvider);
+		PackedQuery packed = PackedQueryCodec.encodeForPlanning(localQuery(root), languageProvider);
 
 		assertTrue((generatedRuleMask(packed) & PackedRuleProofs.PREDICATE_RANGE_TAUTOLOGY) != 0L,
 				"LANGMATCHES(lang, '*') is true for every proven language-tagged literal");
@@ -839,7 +842,7 @@ class PackedPredicateRangePlanningTest {
 		TupleExpr root = projection(new Join(anchor, statementPattern()), "s");
 
 		TupleExpr selected = PackedCascadesPlanner
-				.optimize(root.clone(), OptimizationGoal.root(root, null), costModel, INT_SEVEN_PROVIDER)
+				.optimize(localQuery(root.clone()), OptimizationGoal.root(root, null), costModel, INT_SEVEN_PROVIDER)
 				.selectedPlan();
 
 		assertTrue(containsNode(selected, EmptySet.class),
@@ -857,8 +860,16 @@ class PackedPredicateRangePlanningTest {
 
 	private static TupleExpr optimize(TupleExpr root, PackedPredicateRangeProvider provider) {
 		return PackedCascadesPlanner
-				.optimize(root.clone(), OptimizationGoal.root(root, null), BOUND_OBJECT_LOOKUP_COSTS, provider)
+				.optimize(localQuery(root.clone()), OptimizationGoal.root(root, null), BOUND_OBJECT_LOOKUP_COSTS,
+						provider)
 				.selectedPlan();
+	}
+
+	private static TupleExpr localQuery(TupleExpr root) {
+		// Every planning call in this class owns a complete synthetic local-store query, rather than an attached or
+		// detached fragment from an unknown caller. SERVICE remains remote during this explicit entry capture.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		return root;
 	}
 
 	private static PackedPredicateRangeProvider integerRangeProvider(long minInclusive, long maxInclusive,

@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.TimeUnit;
@@ -25,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BooleanSupplier;
 import java.util.function.LongSupplier;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.sail.lmdb.DerivedStateBuildExecutor;
@@ -131,6 +133,30 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 
 	public QuadEvidence probe(QuadProbe probe) {
 		return synopsis.probe(probe);
+	}
+
+	/** Returns only an unchanged, fully published snapshot; never waits for refresh or opens another read view. */
+	@InternalUseOnly
+	public Optional<QuadEvidence> probePublishedCurrent(QuadProbe probe) {
+		Objects.requireNonNull(probe, "probe");
+		QuadSynopsisSnapshot snapshot = publishedSnapshot;
+		QuadSnapshotIdentity capturedIdentity = identity;
+		long mutation = mutationSequence.get();
+		long publication = publishedMutationSequence;
+		if (closed.get() || rebuildRequested.get() || mutation != publication
+				|| !snapshot.identity().equals(capturedIdentity)
+				|| !capturedIdentity.equals(probe.snapshotIdentity())) {
+			return Optional.empty();
+		}
+		QuadEvidence evidence = snapshot.probe(probe);
+		if (!evidence.usable() || !snapshot.identity().equals(evidence.rows().snapshotIdentity())
+				|| snapshot.snapshotVersion() != evidence.rows().snapshotVersion()
+				|| closed.get() || rebuildRequested.get() || publishedSnapshot != snapshot
+				|| identity != capturedIdentity || mutationSequence.get() != mutation
+				|| publishedMutationSequence != publication) {
+			return Optional.empty();
+		}
+		return Optional.of(evidence);
 	}
 
 	public QuadSnapshotIdentity snapshotIdentity() {
@@ -582,11 +608,12 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 	}
 
 	private void refreshLoop(int initialDelaySeconds) {
+		Thread worker = Thread.currentThread();
 		try {
 			if (initialDelaySeconds > 0) {
 				TimeUnit.SECONDS.sleep(initialDelaySeconds);
 			}
-			while (!closed.get()) {
+			while (!closed.get() && refreshThread == worker) {
 				try {
 					if (rebuildRequested.get() && rebuildAllowed.getAsBoolean()) {
 						rebuild();
@@ -596,7 +623,10 @@ public final class LmdbQuadSynopsisService implements AutoCloseable {
 					logger.warn("Quad synopsis background rebuild failed; the previous snapshot remains active", e);
 				}
 				synchronized (lifecycleMonitor) {
-					lifecycleMonitor.wait(1_000L);
+					// The callback may consume interruption. The retained worker identity is the durable stop signal.
+					if (!closed.get() && refreshThread == worker) {
+						lifecycleMonitor.wait(1_000L);
+					}
 				}
 			}
 		} catch (InterruptedException e) {

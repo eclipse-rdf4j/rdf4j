@@ -166,6 +166,23 @@ final class DatasetLifetime {
 		}
 
 		@Override
+		public long getDistinctCursorSkipCountActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getDistinctCursorSkipCountActual()
+					: -1;
+		}
+
+		@Override
+		public long getDistinctCursorSkipSeekCountActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getDistinctCursorSkipSeekCountActual()
+					: -1;
+		}
+
+		@Override
+		public long getSkipAheadSeekCountActual() {
+			return delegate instanceof IndexReportingIterator reporter ? reporter.getSkipAheadSeekCountActual() : -1;
+		}
+
+		@Override
 		public boolean hasNext() {
 			if (isClosed()) {
 				return false;

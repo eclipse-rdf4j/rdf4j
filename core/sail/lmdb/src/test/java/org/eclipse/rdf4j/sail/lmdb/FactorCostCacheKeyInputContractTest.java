@@ -20,14 +20,25 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class FactorCostCacheKeyInputContractTest {
 
@@ -51,6 +62,138 @@ class FactorCostCacheKeyInputContractTest {
 		LmdbEstimatorOptimizationScope scope = new LmdbEstimatorOptimizationScope(
 				mock(LmdbFiniteJoinSurfaceEstimator.class));
 		assertContracts(filter -> FactorCostCacheKey.factorFingerprint(new Distinct(filter), scope));
+	}
+
+	@ParameterizedTest
+	@MethodSource("independentScopeContracts")
+	void independentInvocationScopesHaveSeparatePhysicalKeys(KeyRoute route, ScopePlacement placement) {
+		ScopeFixture ordinary = placement.create();
+		ScopeFixture independent = placement.create();
+		ScopeFixture equivalent = placement.create();
+		independent.marker().setIndependentInputScope(true);
+		equivalent.marker().setIndependentInputScope(true);
+		for (ScopeFixture fixture : List.of(ordinary, independent, equivalent)) {
+			PlanningGraphDomains.capture(fixture.root(), PlanningGraphDomain.defaultGraph());
+			assertThat(PlanningGraphDomains.domain(fixture.root()).allowsNativeEvidence())
+					.as("A physical named-context lookup retains its explicit storage-domain proof")
+					.isTrue();
+		}
+		assertThat(independent.root()).as("Invocation provenance does not change mapping/algebra equality")
+				.isEqualTo(ordinary.root())
+				.hasSameHashCodeAs(ordinary.root());
+		LmdbEstimatorOptimizationScope scope = new LmdbEstimatorOptimizationScope(
+				mock(LmdbFiniteJoinSurfaceEstimator.class));
+		Function<TupleExpr, Object> key = expression -> route.key(expression, scope);
+		Object ordinaryKey = key.apply(ordinary.root());
+		Object independentKey = key.apply(independent.root());
+		assertThat(independentKey).as("%s %s must retain independent invocation-input authority", route, placement)
+				.isNotEqualTo(ordinaryKey);
+		assertThat(key.apply(independent.root().clone())).as("Cloning preserves the same invocation contract")
+				.isEqualTo(independentKey)
+				.hasSameHashCodeAs(independentKey);
+		assertThat(key.apply(equivalent.root())).as("Equivalent sources with the same marker reuse work estimates")
+				.isEqualTo(independentKey)
+				.hasSameHashCodeAs(independentKey);
+		independent.marker().setIndependentInputScope(false);
+		assertThat(key.apply(equivalent.root())).as("The retained key snapshots invocation provenance")
+				.isEqualTo(independentKey)
+				.hasSameHashCodeAs(independentKey);
+	}
+
+	@ParameterizedTest
+	@MethodSource("independentScopeContracts")
+	void inheritedContextOriginsHaveSeparatePhysicalKeys(KeyRoute route, ScopePlacement placement) {
+		ScopeFixture ordinary = placement.create();
+		ScopeFixture inherited = placement.create();
+		ScopeFixture equivalent = placement.create();
+		statementPattern(inherited.root()).setContextBindingOriginInherited(true);
+		statementPattern(equivalent.root()).setContextBindingOriginInherited(true);
+		for (ScopeFixture fixture : List.of(ordinary, inherited, equivalent)) {
+			PlanningGraphDomains.capture(fixture.root(), PlanningGraphDomain.defaultGraph());
+			assertThat(PlanningGraphDomains.domain(fixture.root()).allowsNativeEvidence()).isTrue();
+		}
+		assertThat(inherited.root()).as("Artificial context output provenance preserves algebra/mapping equality")
+				.isEqualTo(ordinary.root())
+				.hasSameHashCodeAs(ordinary.root());
+		LmdbEstimatorOptimizationScope scope = new LmdbEstimatorOptimizationScope(
+				mock(LmdbFiniteJoinSurfaceEstimator.class));
+		Function<TupleExpr, Object> key = expression -> route.key(expression, scope);
+		Object ordinaryKey = key.apply(ordinary.root());
+		Object inheritedKey = key.apply(inherited.root());
+		assertThat(inheritedKey).as("%s %s must retain inherited context-output origin", route, placement)
+				.isNotEqualTo(ordinaryKey);
+		assertThat(key.apply(inherited.root().clone())).as("Cloning preserves inherited context-output origin")
+				.isEqualTo(inheritedKey)
+				.hasSameHashCodeAs(inheritedKey);
+		assertThat(key.apply(equivalent.root())).as("Equivalent inherited-context sources reuse work estimates")
+				.isEqualTo(inheritedKey)
+				.hasSameHashCodeAs(inheritedKey);
+		statementPattern(inherited.root()).setContextBindingOriginInherited(false);
+		assertThat(key.apply(equivalent.root())).as("The retained key snapshots context-output provenance")
+				.isEqualTo(inheritedKey)
+				.hasSameHashCodeAs(inheritedKey);
+	}
+
+	private static StatementPattern statementPattern(TupleExpr root) {
+		List<StatementPattern> statements = new ArrayList<>();
+		root.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern statement) {
+				statements.add(statement);
+			}
+		});
+		assertThat(statements).hasSize(1);
+		return statements.getFirst();
+	}
+
+	private static Stream<Arguments> independentScopeContracts() {
+		return Stream.of(KeyRoute.values())
+				.flatMap(route -> Stream.of(ScopePlacement.values()).map(placement -> Arguments.of(route, placement)));
+	}
+
+	private enum KeyRoute {
+		DIRECT,
+		DETACHED,
+		UNSCOPED_FALLBACK,
+		SCOPED_STRUCTURAL;
+
+		Object key(TupleExpr expression, LmdbEstimatorOptimizationScope scope) {
+			return switch (this) {
+			case DIRECT -> FactorCostCacheKey.factorFingerprint(expression);
+			case DETACHED -> FactorCostCacheKey.detachedFactorFingerprint(new Distinct(expression)).identity();
+			case UNSCOPED_FALLBACK -> FactorCostCacheKey.factorFingerprint(new Distinct(expression));
+			case SCOPED_STRUCTURAL -> FactorCostCacheKey.factorFingerprint(new Distinct(expression), scope);
+			};
+		}
+	}
+
+	private enum ScopePlacement {
+		PATTERN_ROOT,
+		FILTER_ROOT,
+		NESTED_PATTERN,
+		NESTED_FILTER,
+		JOIN_ROOT;
+
+		ScopeFixture create() {
+			SimpleValueFactory vf = SimpleValueFactory.getInstance();
+			StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
+					Var.of("p", vf.createIRI("urn:input-contract:predicate")), Var.of("o"),
+					Var.of("graph", vf.createIRI("urn:input-contract:graph")));
+			Filter filtered = new Filter(pattern, new Bound(Var.of("o")));
+			return switch (this) {
+			case PATTERN_ROOT -> new ScopeFixture(pattern, pattern);
+			case FILTER_ROOT -> new ScopeFixture(filtered, filtered);
+			case NESTED_PATTERN -> new ScopeFixture(new Distinct(pattern), pattern);
+			case NESTED_FILTER -> new ScopeFixture(new Distinct(filtered), filtered);
+			case JOIN_ROOT -> {
+				Join join = new Join(pattern, new SingletonSet());
+				yield new ScopeFixture(join, join);
+			}
+			};
+		}
+	}
+
+	private record ScopeFixture(TupleExpr root, TupleExpr marker) {
 	}
 
 	private static void assertContracts(Function<Filter, Object> key) {

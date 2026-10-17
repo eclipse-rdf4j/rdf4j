@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
@@ -70,11 +71,18 @@ record SemiAntiSurfaceKey(int schemaVersion, String semanticKind, String physica
 		if (rhs == null || containsUnsafeEvidenceSource(rhs)) {
 			return null;
 		}
+		LeoOperatorKey rhsKey;
+		try {
+			// Correlation metadata also observes the outer input, so authenticate the complete filter first.
+			LmdbValueIdFilter.learningKey(filter, physicalAlgorithm, constantMode);
+			rhsKey = LmdbValueIdFilter.learningKey(rhs, physicalAlgorithm, constantMode);
+		} catch (UnkeyableOperatorException unsupported) {
+			return null;
+		}
 		Set<String> correlated = new HashSet<>(filter.getArg().getBindingNames());
 		correlated.retainAll(rhs.getBindingNames());
 		Set<String> nullable = new HashSet<>(correlated);
 		nullable.removeAll(filter.getArg().getAssuredBindingNames());
-		LeoOperatorKey rhsKey = LeoOperatorKey.from(rhs, physicalAlgorithm, constantMode);
 		return new SemiAntiSurfaceKey(
 				SCHEMA_VERSION,
 				semanticKind,

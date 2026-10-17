@@ -2734,6 +2734,52 @@ class ValueStore extends AbstractValueFactory {
 		return pin == null ? null : pin.snapshot;
 	}
 
+	/** Installs the dictionary of one complete query, restoring the entire previous authority on close. */
+	SailClosable pinQueryPlanningReads(ReadSnapshot snapshot) {
+		if (snapshot == null || snapshot.valueStore() != this) {
+			throw new IllegalArgumentException("Query planning dictionary belongs to another ValueStore");
+		}
+		return enterQueryPlanningDictionary(new PlanningDictionaryPin(snapshot));
+	}
+
+	/** Installs an absent dictionary capability without exposing an outer query's dictionary. */
+	SailClosable maskQueryPlanningReads() {
+		return enterQueryPlanningDictionary(new PlanningDictionaryPin(null));
+	}
+
+	private SailClosable enterQueryPlanningDictionary(PlanningDictionaryPin installed) {
+		PlanningDictionaryPin previous = planningValueSnapshot.get();
+		Thread owner = Thread.currentThread();
+		planningValueSnapshot.set(installed);
+		return new SailClosable() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException("Query dictionary scopes must close on their owning thread");
+				}
+				if (closed) {
+					return;
+				}
+				if (planningValueSnapshot.get() != installed) {
+					throw new IllegalStateException("Query dictionary scopes must close in nesting order");
+				}
+				closed = true;
+				if (previous == null) {
+					planningValueSnapshot.remove();
+				} else {
+					planningValueSnapshot.set(previous);
+				}
+			}
+		};
+	}
+
+	/** Borrows the existing outermost planning dictionary capability; no additional reader or lease is retained. */
+	ReadSnapshot borrowedPlanningSnapshot() {
+		return planningValueSnapshot();
+	}
+
 	/**
 	 * Gets the value for the specified ID.
 	 *
@@ -5271,6 +5317,12 @@ class ValueStore extends AbstractValueFactory {
 
 		boolean hasStableIds() {
 			return stableTripleTxn != null;
+		}
+
+		/** Exact admitted pair identity; valid logical dictionary detachment keeps its stable triple authority. */
+		boolean isPairedWith(Txn tripleTxn) {
+			return tripleTxn != null && !closed && retiredKind == null && stableTripleTxn == tripleTxn
+					&& tripleTxn.snapshotRevision() >= 0L && tripleTxn.isNativeActive();
 		}
 
 		PreparedLmdbValue.Generation preparationGeneration() {

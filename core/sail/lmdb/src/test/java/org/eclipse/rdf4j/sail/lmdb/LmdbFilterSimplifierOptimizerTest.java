@@ -1669,8 +1669,9 @@ class LmdbFilterSimplifierOptimizerTest {
 		Filter outer = new Filter(new Join(input, statementPattern("entity", "tail", "item")),
 				new Not(new Exists(nameCondition)));
 		QueryRoot root = new QueryRoot(outer);
-		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null,
-				EmptyBindingSet.getInstance());
+		new LmdbFilterSimplifierOptimizer(new FixedGuaranteeFilterPassStatistics(0.5d,
+				RdfTermDomain.classify(VF.createLiteral("A")))).optimize(root, null,
+						EmptyBindingSet.getInstance());
 		Exists exists = assertInstanceOf(Exists.class, ((Not) outer.getCondition()).getArg());
 		Join anchored = assertInstanceOf(Join.class, exists.getSubQuery());
 		BindingSetAssignment generated = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());

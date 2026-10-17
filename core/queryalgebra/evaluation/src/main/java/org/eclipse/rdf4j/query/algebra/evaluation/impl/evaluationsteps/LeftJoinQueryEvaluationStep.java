@@ -46,7 +46,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Sc
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OptionalConditionEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.HashJoinBindingContract;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
@@ -121,7 +120,6 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		}
 
 		if (BindingScopeAnalysis.isOutOfScopeForOptionalCorrelation(leftJoin.getRightArg())
-				|| TupleExprs.containsSubquery(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)) {
 			// A sub-select or MINUS in the optional part is a bottom-up scope boundary: it is evaluated exactly once
 			// with this OPTIONAL's own input and hash-joined by compatibility, and the OPTIONAL condition becomes a

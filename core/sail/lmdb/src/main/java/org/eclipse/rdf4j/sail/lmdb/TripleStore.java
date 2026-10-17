@@ -101,6 +101,7 @@ import org.eclipse.collections.impl.map.mutable.primitive.LongIntHashMap;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.concurrent.locks.StampedLongAdderLockManager;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
@@ -507,7 +508,7 @@ class TripleStore implements Closeable {
 		return txnManager;
 	}
 
-	/** Releases a planning pin; {@link #close()} never throws. */
+	/** Releases a planning pin. Complete-query scopes require the owning thread and proper nesting order. */
 	interface PlanningReadPin extends AutoCloseable {
 
 		PlanningReadPin NONE = () -> {
@@ -542,7 +543,8 @@ class TripleStore implements Closeable {
 	 * </p>
 	 */
 	PlanningReadPin pinPlanningTxn(Txn txn) {
-		if (txn == null || txn.isView() || !txn.isTracked() && txn.snapshotRevision() < 0L) {
+		if (txn == null || !txn.belongsTo(txnManager) || txn.isView()
+				|| !txn.isTracked() && txn.snapshotRevision() < 0L) {
 			return PlanningReadPin.NONE;
 		}
 		long lease = txn.leaseId();
@@ -568,18 +570,73 @@ class TripleStore implements Closeable {
 		}
 	}
 
+	/** A complete query invocation owns its exact dataset pair, independently of legacy borrowed nesting. */
+	PlanningReadPin pinQueryPlanningTxn(Txn txn) {
+		if (txn == null || !txn.belongsTo(txnManager) || txn.isView() || txn.snapshotRevision() < 0L) {
+			throw new IllegalArgumentException("A query planning transaction must belong to this TripleStore");
+		}
+		long lease = txn.leaseId();
+		txn.ensureSnapshotValid(lease);
+		return enterQueryPlanningPin(new PlanningPin(txn, lease));
+	}
+
+	/** Masks an outer query's authority while a live, unproved complete source is planned heuristically. */
+	PlanningReadPin maskQueryPlanningReads() {
+		return enterQueryPlanningPin(new PlanningPin(null, 0L));
+	}
+
+	private PlanningReadPin enterQueryPlanningPin(PlanningPin installed) {
+		PlanningPin previous = planningPin.get();
+		Thread owner = Thread.currentThread();
+		planningPin.set(installed);
+		return new PlanningReadPin() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException("Query planning scopes must close on their owning thread");
+				}
+				if (closed) {
+					return;
+				}
+				if (planningPin.get() != installed) {
+					throw new IllegalStateException("Query planning scopes must close in nesting order");
+				}
+				closed = true;
+				if (previous == null) {
+					planningPin.remove();
+				} else {
+					planningPin.set(previous);
+				}
+			}
+		};
+	}
+
+	boolean ownsPlanningTxn(Txn txn) {
+		return txn != null && txn.belongsTo(txnManager) && !txn.isView()
+				&& txn.snapshotRevision() >= 0L && txn.isLive(txn.leaseId());
+	}
+
 	/**
 	 * The pinned transaction when it is still the lease that was pinned, otherwise {@code null}. A pin whose dataset
 	 * was closed (and whose transaction may already be recycled for another caller) is ignored, never used.
 	 */
 	private Txn livePinnedPlanningTxn() {
 		PlanningPin pin = planningPin.get();
-		return pin != null && pin.txn.isLive(pin.lease) ? pin.txn : null;
+		return pin != null && pin.txn != null && pin.txn.isLive(pin.lease) ? pin.txn : null;
 	}
 
 	/** Whether planner-time reads on the calling thread currently reuse a live pinned transaction. */
 	boolean planningReadsPinned() {
 		return livePinnedPlanningTxn() != null;
+	}
+
+	/** Borrows the actual outermost live planning authority without retaining or renewing it. */
+	Txn borrowedPlanningTxn() {
+		Txn pinned = livePinnedPlanningTxn();
+		return pinned != null && pinned.belongsTo(txnManager) && pinned.snapshotRevision() >= 0L
+				&& pinned.isNativeActive() ? pinned : null;
 	}
 
 	/**
@@ -3032,10 +3089,17 @@ class TripleStore implements Closeable {
 		}
 		int covered = lookupMask & prefixMask;
 		int missing = lookupMask & ~prefixMask;
-		boolean direct = missing == 0 && accessRows <= 1.0d;
-		String accessMode = bestPrefixLength == 0 ? "fullScan" : direct ? "directLookup" : "prefixScan";
+		String accessMode = physicalAccessMode(lookupMask, prefixMask, bestPrefixLength);
 		output.setAccess(covered, missing, bestPrefixLength, accessRows, invocations, new String(fieldSequence),
 				estimateSource, accessMode);
+	}
+
+	/** A native key is a quad; an estimated singleton does not make a partial key a point lookup. */
+	static String physicalAccessMode(int lookupMask, int prefixMask, int prefixLength) {
+		if (prefixLength == 0) {
+			return "fullScan";
+		}
+		return lookupMask == 0b1111 && prefixMask == 0b1111 ? "directLookup" : "prefixScan";
 	}
 
 	/**
@@ -3077,6 +3141,135 @@ class TripleStore implements Closeable {
 					: 1.0d + (double) leafPages / entries;
 			return new IndexCostProfile(sequentialWorkPerRow, randomSeekWork, databaseCount);
 		});
+	}
+
+	/** Physical metadata on the requested plane and retained transaction, never a logical GRAPH row certificate. */
+	record GraphRangeWork(LmdbGraphDistinctAccess.PhysicalRows raw,
+			LmdbGraphDistinctAccess.PhysicalRows matching, IndexCostProfile profile, boolean repeatsPerContext,
+			double terminalKeyUpper) {
+	}
+
+	record GraphContextWork(long namedContexts, long rawContexts, IndexCostProfile profile) {
+	}
+
+	GraphContextWork graphContextWork(Txn transaction) throws IOException {
+		return planningRead(transaction, (stack, handle) -> {
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(handle, contextsDbi, stat));
+			MDBVal key = MDBVal.malloc(stack);
+			MDBVal value = MDBVal.malloc(stack);
+			ByteBuffer encoded = stack.malloc(1);
+			Varint.writeUnsigned(encoded, 0L);
+			key.mv_data(encoded.flip());
+			int result = mdb_get(handle, contextsDbi, key, value);
+			if (result != MDB_SUCCESS && result != MDB_NOTFOUND) {
+				E(result);
+			}
+			long total = stat.ms_entries();
+			return new GraphContextWork(total - (result == MDB_SUCCESS ? 1L : 0L), total,
+					planeIndexCostProfile(stat));
+		});
+	}
+
+	Optional<GraphRangeWork> graphRangeWork(Txn transaction, String indexName, boolean explicit,
+			long subject, long predicate, long object, long context, Set<Long> selectedContexts,
+			LmdbValueIdFilter filter, boolean ordinaryNamedUnion) throws IOException {
+		LmdbPageCardinalityEstimator estimator = pageEstimator;
+		TripleIndex index = getIndex(indexName);
+		if (estimator == null || index == null) {
+			return Optional.empty();
+		}
+		int bindingMask = (subject >= 0L ? 1 : 0) | (predicate >= 0L ? 2 : 0)
+				| (object >= 0L ? 4 : 0) | (context >= 0L ? 8 : 0);
+		IndexShape shape = estimator.indexShape(indexes.indexOf(index), bindingMask);
+		int rangeMask = shape.prefixComponentMask();
+		int ordinaryPrefix = rangeMask;
+		boolean repeat = ordinaryNamedUnion && (rangeMask & 8) == 0;
+		if (ordinaryNamedUnion && !repeat) {
+			rangeMask = 0;
+			for (char field : index.getFieldSeq()) {
+				if (field == 'c') {
+					break;
+				}
+				rangeMask |= 1 << toEstimatorComponent(field).ordinal();
+			}
+		}
+		int outerMask = rangeMask;
+		int rawResidualMask = ordinaryNamedUnion && !repeat ? ordinaryPrefix & ~outerMask : 0;
+		return planningRead(transaction, (stack, handle) -> {
+			QueryExecutionContext.checkpointReplaySafepoint();
+			ByteBuffer min = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			ByteBuffer max = stack.malloc(TripleIndex.MAX_KEY_LENGTH);
+			index.getMinKey(min, (outerMask & 1) != 0 ? subject : -1L,
+					(outerMask & 2) != 0 ? predicate : -1L, (outerMask & 4) != 0 ? object : -1L,
+					(outerMask & 8) != 0 ? context : -1L);
+			index.getMaxKey(max, (outerMask & 1) != 0 ? subject : -1L,
+					(outerMask & 2) != 0 ? predicate : -1L, (outerMask & 4) != 0 ? object : -1L,
+					(outerMask & 8) != 0 ? context : -1L);
+			byte[] lower = toArray(min.flip());
+			byte[] upper = toArray(max.flip());
+			GroupMatcher rawMatcher = rawResidualMask == 0 ? null
+					: graphPhysicalMatcher(index,
+							(ordinaryPrefix & 1) != 0 ? subject : -1L,
+							(ordinaryPrefix & 2) != 0 ? predicate : -1L,
+							(ordinaryPrefix & 4) != 0 ? object : -1L, -1L,
+							LmdbValueIdFilter.namedGraphsOnly());
+			LmdbValueIdFilter selectedFilter = filter.inNamedDomain(selectedContexts);
+			GroupMatcher matching = graphPhysicalMatcher(index, subject, predicate, object,
+					ordinaryNamedUnion ? -1L : context, selectedFilter);
+			MDBStat stat = MDBStat.malloc(stack);
+			E(mdb_stat(handle, index.getDB(explicit), stat));
+			try (LmdbPageCardinalityEstimator.ReadView view = estimator.readTransaction(handle,
+					mappingGeneration.get())) {
+				String database = index.getName(explicit);
+				var raw = view.estimateEntriesWithQuality(database, lower, lower.length, upper, upper.length,
+						rawMatcher, Integer.bitCount(rawResidualMask));
+				QueryExecutionContext.checkpointReplaySafepoint();
+				var selected = view.estimateEntriesWithQuality(database, lower, lower.length, upper, upper.length,
+						matching, Integer.bitCount((bindingMask & ~outerMask)
+								| selectedFilter.requiredComponentMask()));
+				QueryExecutionContext.checkpointReplaySafepoint();
+				return Optional.of(new GraphRangeWork(graphPhysicalRows(raw), graphPhysicalRows(selected),
+						planeIndexCostProfile(stat), repeat, stat.ms_entries() == 0L ? 0.0d : 1.0d));
+			}
+		});
+	}
+
+	private static LmdbGraphDistinctAccess.PhysicalRows graphPhysicalRows(LmdbPageCardinalityEstimator.Estimate value) {
+		return new LmdbGraphDistinctAccess.PhysicalRows(value.entries(), value.hardLowerBound(),
+				value.hardUpperBound(), value.exact());
+	}
+
+	private static IndexCostProfile planeIndexCostProfile(MDBStat stat) {
+		return new IndexCostProfile(stat.ms_entries() == 0L ? 1.0d
+				: 1.0d + (double) stat.ms_leaf_pages() / stat.ms_entries(), indexSearchWork(stat), 1);
+	}
+
+	private static GroupMatcher graphPhysicalMatcher(TripleIndex index, long subject, long predicate,
+			long object, long context, LmdbValueIdFilter filter) {
+		return new GroupMatcher(new byte[4], new boolean[4]) {
+			@Override
+			public boolean matches(ByteBuffer key) {
+				long[] quad = new long[4];
+				index.keyToQuad(key.duplicate(), quad);
+				return (subject < 0L || subject == quad[SUBJ_IDX])
+						&& (predicate < 0L || predicate == quad[PRED_IDX])
+						&& (object < 0L || object == quad[OBJ_IDX])
+						&& (context < 0L || context == quad[CONTEXT_IDX])
+						&& filter.accept(quad[SUBJ_IDX], quad[PRED_IDX], quad[OBJ_IDX], quad[CONTEXT_IDX]);
+			}
+		};
+	}
+
+	/** Only an invocation-bound carrier may request selected-domain filtering before retaining a prefix. */
+	RecordIterator getTriplesWithGraphDistinctAccess(Txn transaction, LmdbDistinctCursorSkipSupport.Plan plan,
+			long subject, long predicate, long object, boolean explicit, LmdbValueIdFilter filter) throws IOException {
+		TripleIndex index = getIndex(plan.indexFieldSequence());
+		if (index == null) {
+			throw new IOException("The selected LMDB graph access index is unavailable");
+		}
+		return new LmdbRecordIterator(index, index.getPatternScore(subject, predicate, object, -1L) > 0,
+				subject, predicate, object, -1L, explicit, transaction, filter, plan.prefixLength());
 	}
 
 	private static double indexSearchWork(MDBStat stat) {

@@ -58,7 +58,7 @@ final class LmdbMappedSemiAntiCosting {
 	}
 
 	boolean refine(int relationId, int[] inputRelations, EvidenceStateSummary inputSummary,
-			PackedCostContext context, PackedCostEstimate output) {
+			PackedCostContext context, PackedCostEstimate output, boolean populationQualified) {
 		if (relationId <= 0 || relationId > query.relationCount() || !finiteNonNegative(output.outputRows())) {
 			return false;
 		}
@@ -70,7 +70,7 @@ final class LmdbMappedSemiAntiCosting {
 		if (!query.isSemiJoin(relationId) && !query.isAntiJoin(relationId)) {
 			return false;
 		}
-		refineTyped(relationId, inputRelations, inputSummary, context, output);
+		refineTyped(relationId, inputRelations, inputSummary, context, output, populationQualified);
 		return true;
 	}
 
@@ -111,7 +111,7 @@ final class LmdbMappedSemiAntiCosting {
 	}
 
 	private void refineTyped(int relationId, int[] inputRelations, EvidenceStateSummary inputSummary,
-			PackedCostContext context, PackedCostEstimate output) {
+			PackedCostContext context, PackedCostEstimate output, boolean populationQualified) {
 		int semanticKind = query.semiAntiKind(relationId);
 		int algorithm = query.semiAntiAlgorithm(relationId);
 		int rightRelationId = query.semiAntiRightRelationId(relationId);
@@ -142,7 +142,9 @@ final class LmdbMappedSemiAntiCosting {
 		double probeWorkRows = dependentRhs.required()
 				? Math.max(boundAccessWorkRows, dependentRhs.workRows())
 				: boundAccessWorkRows;
-		SurfaceSelectivity surface = frontierSurfaceSelectivity(query.materializeRelation(relationId), semanticKind);
+		SurfaceSelectivity surface = populationQualified
+				? frontierSurfaceSelectivity(query.materializeRelation(relationId), semanticKind)
+				: null;
 		LmdbPackedCostModel.MappedSemiAntiEstimate mapped = surface == null
 				? mappedSelectivity(semanticKind, rightRelationId, inputRelations, rhs, correlationNames,
 						outerRows, rhsRows, rhsDistinctKeys)

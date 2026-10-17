@@ -18,6 +18,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -26,6 +28,7 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -42,6 +45,34 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
  * evaluation.
  */
 public interface QueryEvaluationContext {
+
+	/** A selected graph's public name and storage context; null physical graph denotes the default graph. */
+	record ActiveGraph(Resource logicalGraph, Resource physicalGraph) {
+		public ActiveGraph {
+			Objects.requireNonNull(logicalGraph, "logicalGraph");
+		}
+	}
+
+	/** Returns null when no GRAPH operator overrides the active default graph. */
+	default ActiveGraph getActiveGraph() {
+		return null;
+	}
+
+	/**
+	 * Variables substituted by the current EXISTS invocation. The immutable domain is captured at invocation entry;
+	 * bindings subsequently produced inside the body are ordinary variables rather than substituted query terms.
+	 */
+	default Set<String> getSubstitutionBindingNames() {
+		return Set.of();
+	}
+
+	/**
+	 * Whether the evaluated subtree was detached from an enclosing projection. Projections in that subtree must retain
+	 * parent bindings just as they did before detachment; their own live algebra ancestry still applies as well.
+	 */
+	default boolean hasEnclosingProjection() {
+		return false;
+	}
 
 	@Experimental
 	default Comparator<Value> getComparator() {

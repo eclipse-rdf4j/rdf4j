@@ -29,7 +29,9 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -105,9 +107,25 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 				return;
 			}
 
+			// Preserve an existing stable producer contract; materialization itself must not create that proof.
+			boolean stableSource = BindingSetAssignmentKeyability.canInspect(node);
 			List<BindingSet> bindingSets = new ArrayList<>();
 			boolean changed = false;
 			for (BindingSet bindingSet : node.getBindingSets()) {
+				if (stableSource) {
+					List<String> names = List.copyOf(bindingSet.getBindingNames());
+					Value[] captured = new Value[names.size()];
+					for (int column = 0; column < names.size(); column++) {
+						Value value = bindingSet.getValue(names.get(column));
+						Value normalized = value == null || value instanceof LmdbValue
+								? value
+								: lookup(value, false).value;
+						captured[column] = normalized;
+						changed |= normalized != value;
+					}
+					bindingSets.add(new ListBindingSet(names, captured));
+					continue;
+				}
 				MapBindingSet normalized = new MapBindingSet(bindingSet.size());
 				boolean rowChanged = false;
 				for (Binding binding : bindingSet) {

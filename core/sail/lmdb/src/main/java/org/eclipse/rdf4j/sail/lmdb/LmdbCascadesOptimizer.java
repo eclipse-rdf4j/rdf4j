@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -119,6 +120,24 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
 			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource) {
+		this(statistics, trackResultSize, preserveSerializableObservationOrder, strategy, tripleSource,
+				tripleSource instanceof SailDatasetTripleTermSource source
+						? source.getSnapshotEpoch()
+						: OptionalLong.empty(),
+				tripleSource == null);
+	}
+
+	/** Complete invocations supply their qualified execution stamp; absence never enables native proofs. */
+	LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
+			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
+			OptionalLong qualifiedExecutionSnapshotEpoch) {
+		this(statistics, trackResultSize, preserveSerializableObservationOrder, strategy, tripleSource,
+				qualifiedExecutionSnapshotEpoch, false);
+	}
+
+	private LmdbCascadesOptimizer(EvaluationStatistics statistics, boolean trackResultSize,
+			boolean preserveSerializableObservationOrder, EvaluationStrategy strategy, TripleSource tripleSource,
+			OptionalLong qualifiedExecutionSnapshotEpoch, boolean legacyDetachedPlanning) {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.preserveSerializableObservationOrder = preserveSerializableObservationOrder;
@@ -126,15 +145,14 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		this.runtime = statistics instanceof LmdbEstimatorRuntimeProvider provider
 				? provider.estimatorRuntime()
 				: null;
-		this.packedPlanCache = runtime == null ? null : runtime.cascadesPlanCache();
 		this.frontierStatementSource = tripleSource instanceof SailDatasetTripleTermSource source ? source : null;
-		this.executionSnapshotEpoch = frontierStatementSource == null
-				? OptionalLong.empty()
-				: frontierStatementSource.getSnapshotEpoch();
+		this.executionSnapshotEpoch = Objects.requireNonNull(qualifiedExecutionSnapshotEpoch,
+				"qualifiedExecutionSnapshotEpoch");
 		// Predicate-range guarantees describe committed data only. A triple source without a snapshot epoch reads
 		// through an uncommitted changeset overlay (or an unknown wrapper), where guarantee-seeded proof rewrites
 		// (filter drops, empty-set alternatives) would be unsound for the rows the query actually sees.
-		boolean committedSnapshotOnly = tripleSource == null || executionSnapshotEpoch.isPresent();
+		boolean committedSnapshotOnly = legacyDetachedPlanning || executionSnapshotEpoch.isPresent();
+		this.packedPlanCache = runtime == null || !committedSnapshotOnly ? null : runtime.cascadesPlanCache();
 		this.distinctCursorSkipAllowed = committedSnapshotOnly;
 		this.rangeProvider = runtime == null || !committedSnapshotOnly
 				? null
@@ -164,6 +182,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			return new PlanningOutcome(null, null, null, null, null);
 		}
+		LmdbValueIdFilter.preserveEffectiveKinds(tupleExpr);
 		TupleExpr installedRoot = tupleExpr;
 		boolean runtimeTelemetry = trackResultSize || tupleExpr.isRuntimeTelemetryEnabled();
 		Mode mode = configuredMode();
@@ -300,6 +319,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (tupleExpr == null) {
 			throw new CascadesPlanningException("Packed Cascades requires a non-null TupleExpr");
 		}
+		LmdbValueIdFilter.preserveEffectiveKinds(tupleExpr);
 		OptimizationGoal request = withExplicitConfiguredDeadline(
 				goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
@@ -322,6 +342,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		if (runtime == null) {
 			throw new CascadesPlanningException("LMDB plan-quality audit requires store-backed estimator runtime");
 		}
+		LmdbValueIdFilter.preserveEffectiveKinds(tupleExpr);
 		OptimizationGoal request = withExplicitConfiguredDeadline(
 				goal == null ? OptimizationGoal.root(tupleExpr, PhysicalProperties.ANY) : goal);
 		try (QueryOptimizationScopeProvider.QueryOptimizationScope ignored = beginQueryOptimizationScope()) {
@@ -333,12 +354,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 					: request.taskBudget();
 			return PackedCascadesPlanner.auditPlanQuality(tupleExpr, request, costModel, rangeProvider,
 					dominatedSamplesPerStratum,
-					new PackedPlannerLimits(workLimit, request.deadlineNanos(), maxRetainedBytes));
+					new PackedPlannerLimits(workLimit, request.deadlineNanos(), maxRetainedBytes),
+					LmdbStatementPatternSemanticsCodec.INSTANCE);
 		}
 	}
 
 	private CascadesPlan plan(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings, OptimizationGoal goal) {
-		CascadesPlanner planner = new CascadesPlanner();
+		CascadesPlanner planner = new CascadesPlanner(LmdbStatementPatternSemanticsCodec.INSTANCE);
 		LmdbPackedCostModel packedCostModel = runtime == null
 				? null
 				: new LmdbPackedCostModel(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults(dataset),
@@ -742,6 +764,12 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				node.removeStringMetricsPlannedIf(name -> name.startsWith("plannedDistinct")
 						|| cursorSkip && TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE.equals(name));
 			}
+
+			@Override
+			public void meet(Graph node) {
+				node.removeStringMetricsPlannedIf(name -> name.startsWith("plannedDistinct"));
+				super.meet(node);
+			}
 		});
 		if (!distinctCursorSkipAllowed) {
 			return;
@@ -795,6 +823,13 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 		}
 		if (tupleExpr instanceof StatementPattern statementPattern) {
 			annotateDistinctStatementPattern(statementPattern, distinctVars, blockedVars, source);
+		} else if (tupleExpr instanceof Graph graph && graph.getArg()instanceof StatementPattern body) {
+			Set<String> required = union(distinctVars, intersect(graph.getBindingNames(), blockedVars));
+			LmdbDistinctRequirement requirement = new LmdbDistinctRequirement(distinctVars, required, blockedVars,
+					source + "|retainedGraph");
+			if (LmdbGraphDistinctQueryEvaluationStep.supports(graph, body, requirement)) {
+				requirement.annotate(graph);
+			}
 		} else if (tupleExpr instanceof Projection projection) {
 			if (!isIdentityProjection(projection) || !identityProjectionNames(projection).containsAll(distinctVars)) {
 				return;

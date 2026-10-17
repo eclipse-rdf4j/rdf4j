@@ -174,7 +174,7 @@ class AASQueriesBenchmarkTest {
 	}
 
 	@Test
-	void cascadesQuery3UsesPackedDirectLookupPlan() throws Exception {
+	void cascadesQuery3UsesPackedBoundTriplePrefixPlan() throws Exception {
 		AASQueriesBenchmark benchmark = new AASQueriesBenchmark();
 		configureBenchmark(benchmark);
 		setField(benchmark, "productionLineCount", 3);
@@ -201,7 +201,12 @@ class AASQueriesBenchmarkTest {
 			assertTrue(output.contains("plannedEstimateSource=frontier-v2-")
 					|| output.contains("plannedEstimateSource=lmdb-frontier")
 					|| output.contains("plannedEstimateSource=lmdb-packed-cardinality"), output);
-			assertTrue(output.contains("plannedIndexAccessMode=directLookup"), output);
+			assertTrue(output.lines()
+					.anyMatch(line -> line.contains("StatementPattern")
+							&& line.contains("plannedLookupComponents=[S, P, O]")
+							&& line.contains("plannedIndexPrefixLength=3.00")
+							&& line.contains("plannedIndexAccessMode=prefixScan")),
+					output);
 			assertTrue(output.contains("plannedLookupComponents=[S, P, O]"), output);
 		} finally {
 			System.setOut(previousOut);

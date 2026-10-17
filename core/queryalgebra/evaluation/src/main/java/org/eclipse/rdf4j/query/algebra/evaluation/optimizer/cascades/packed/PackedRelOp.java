@@ -46,6 +46,7 @@ final class PackedRelOp {
 	static final int SEMI_JOIN = 30;
 	static final int ANTI_JOIN = 31;
 	static final int UNSUPPORTED = 32;
+	static final int GRAPH = 33;
 
 	private PackedRelOp() {
 	}

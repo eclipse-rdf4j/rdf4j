@@ -117,8 +117,12 @@ final class LmdbJoinPlanSupport {
 			return containsEquivalentRequiredPattern(union.getLeftArg(), expectedPattern)
 					&& containsEquivalentRequiredPattern(union.getRightArg(), expectedPattern);
 		}
-		if (tupleExpr instanceof Filter || tupleExpr instanceof QueryRoot || tupleExpr instanceof Distinct
-				|| tupleExpr instanceof Reduced || tupleExpr instanceof Order || tupleExpr instanceof Slice) {
+		// Only cross operators whose output rows retain the input's graph scope and binding identities.
+		// GRAPH changes the active graph of its context-free child, while projections, groups, extensions,
+		// and SERVICE may hide/replace bindings or change the data source. Finding a child pattern there
+		// is not proof that the corresponding probe is true for the enclosing output row.
+		if (tupleExpr instanceof Filter || tupleExpr instanceof Distinct || tupleExpr instanceof Reduced
+				|| tupleExpr instanceof Order || tupleExpr instanceof Slice || tupleExpr instanceof QueryRoot) {
 			return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
 		}
 		return false;

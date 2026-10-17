@@ -27,6 +27,7 @@ import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
@@ -49,20 +50,27 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.util.RDFInserter;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.benchmark.BenchmarkJoinEstimatorSupport;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -177,13 +185,8 @@ class LmdbSketchAwareFilterPlacementIT {
 
 					try {
 						loadLibraryData(repository);
-						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						assertCriteriaEventually("local branch-name filter selectivity", () -> {
-							assertTrue(statistics.supportsFilterSelectivityCosting(),
-									"Expected LMDB to expose local filter selectivity costing before sketches are ready");
-
 							Filter filter = new Filter(
 									new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME),
 											Var.of("branchName")),
@@ -194,14 +197,20 @@ class LmdbSketchAwareFilterPlacementIT {
 											new Compare(Var.of("branchName"),
 													new ValueConstant(VF.createLiteral("Branch 1")),
 													Compare.CompareOp.EQ)));
-							double passRatio = statistics.estimateFilterPassRatio(filter);
-							double baseRows = statistics.getCardinality(filter.getArg());
-							double filteredRows = statistics.getCardinality(filter);
+							withAdmittedFilterStatistics(store, new QueryRoot(filter),
+									PlanningGraphDomain.defaultGraph(),
+									statistics -> {
+										assertTrue(statistics.supportsFilterSelectivityCosting(),
+												"Expected LMDB to expose local filter selectivity costing before sketches are ready");
+										double passRatio = statistics.estimateFilterPassRatio(filter);
+										double baseRows = statistics.getCardinality(filter.getArg());
+										double filteredRows = statistics.getCardinality(filter);
 
-							assertTrue(passRatio > 0.0d && passRatio < 1.0d,
-									"Expected a selective pass ratio for the branch-name filter");
-							assertTrue(filteredRows < baseRows,
-									"Expected filter cardinality to honor local selectivity without requiring sketch-ready join estimation");
+										assertTrue(passRatio > 0.0d && passRatio < 1.0d,
+												"Expected a selective pass ratio for the branch-name filter");
+										assertTrue(filteredRows < baseRows,
+												"Expected filter cardinality to honor local selectivity without requiring sketch-ready join estimation");
+									});
 						});
 					} finally {
 						repository.shutDown();
@@ -219,15 +228,14 @@ class LmdbSketchAwareFilterPlacementIT {
 
 					try {
 						loadLibraryData(repository);
-						EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
-						((LmdbEvaluationStatistics) statistics).bindExecutionSnapshot(OptionalLong.of(0L));
 
 						Filter observed = new Filter(
 								new StatementPattern(Var.of("branch"), Var.of("namePredicate", NAME),
 										Var.of("branchName")),
 								new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 0")),
 										Compare.CompareOp.EQ));
-						statistics.recordFilterOutcome(observed, 1L, 99L);
+						withAdmittedFilterStatistics(store, new QueryRoot(observed), PlanningGraphDomain.defaultGraph(),
+								statistics -> statistics.recordFilterOutcome(observed, 1L, 99L));
 
 						assertCriteriaEventually("template learned selectivity", () -> {
 							Filter equivalentShape = new Filter(
@@ -235,18 +243,41 @@ class LmdbSketchAwareFilterPlacementIT {
 											Var.of("label")),
 									new Compare(Var.of("label"), new ValueConstant(VF.createLiteral("Branch 12")),
 											Compare.CompareOp.EQ));
-							EvaluationStatistics.FilterPassEstimate estimate = statistics
-									.estimateFilterPass(equivalentShape);
+							withAdmittedFilterStatistics(store, new QueryRoot(equivalentShape),
+									PlanningGraphDomain.defaultGraph(), statistics -> {
+										EvaluationStatistics.FilterPassEstimate estimate = statistics
+												.estimateFilterPass(equivalentShape);
 
-							assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
-									estimate.getSource());
-							assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.05d,
-									"Expected template learned selectivity to generalize across variable names and constants");
+										assertEquals(EvaluationStatistics.FilterPassEstimate.Source.LEARNED_TEMPLATE,
+												estimate.getSource());
+										assertTrue(estimate.getPassRatio() > 0.0d && estimate.getPassRatio() < 0.05d,
+												"Expected template learned selectivity to generalize across variable names and constants");
+									});
 						});
 					} finally {
 						repository.shutDown();
 					}
 				});
+	}
+
+	private static void withAdmittedFilterStatistics(LmdbStore store, QueryRoot completeQuery,
+			PlanningGraphDomain sourceDomain, Consumer<EvaluationStatistics> assertion) {
+		// These complete fixture inputs read the explicitly identified source. Preserve their pre-rewrite shape for
+		// direct statistics assertions while preparing the same query under its actual paired dataset admission.
+		PlanningGraphDomains.capture(completeQuery, sourceDomain);
+		try (SailDataset dataset = store.getBackingStore()
+				.getExplicitSailSource()
+				.dataset(IsolationLevels.SNAPSHOT_READ)) {
+			var source = new SailDatasetTripleTermSource(store.getValueFactory(), dataset);
+			var statistics = store.getBackingStore().getEvaluationStatistics();
+			var strategy = new DefaultEvaluationStrategy(source, null, null);
+			var pipeline = new LmdbQueryOptimizerPipeline(strategy, source, statistics);
+			pipeline.withPreparedQueryEntry(completeQuery.clone(), null, EmptyBindingSet.getInstance(),
+					(prepared, cascades) -> {
+						assertion.accept(statistics);
+						return null;
+					});
+		}
 	}
 
 	@RetriedWithinTimeout

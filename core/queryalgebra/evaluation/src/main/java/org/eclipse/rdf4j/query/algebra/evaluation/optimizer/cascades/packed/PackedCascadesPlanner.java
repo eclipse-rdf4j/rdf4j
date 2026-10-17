@@ -42,16 +42,27 @@ public final class PackedCascadesPlanner {
 	private PackedCascadesPlanner() {
 	}
 
+	private static PackedStatementPatternSemanticsCodec semanticsCodec(PackedCostModel model) {
+		return model == null ? PackedStatementPatternSemanticsCodec.NONE
+				: Objects.requireNonNull(model.statementPatternSemanticsCodec(), "statement semantics codec");
+	}
+
 	/**
 	 * Captures immutable input for a later store-owned refresh. The returned work does not retain this planning call's
 	 * cache, cost model, provider session, or checkpoint.
 	 */
 	public static Optional<PackedPlanRefreshWork> detachedRefreshWork(TupleExpr preparedSource,
 			OptimizationGoal goal, PackedPlanDecisionSummary incumbent) {
+		return detachedRefreshWork(preparedSource, goal, incumbent, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	public static Optional<PackedPlanRefreshWork> detachedRefreshWork(TupleExpr preparedSource,
+			OptimizationGoal goal, PackedPlanDecisionSummary incumbent,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		if (preparedSource == null || incumbent == null) {
 			return Optional.empty();
 		}
-		PackedPlanCache.StructuralKey locator = PackedPlanCache.structuralKey(preparedSource);
+		PackedPlanCache.StructuralKey locator = PackedPlanCache.structuralKey(preparedSource, semanticsCodec);
 		if (locator == null) {
 			return Optional.empty();
 		}
@@ -62,7 +73,7 @@ public final class PackedCascadesPlanner {
 		PackedPlannerLimits limits = new PackedPlannerLimits(workLimit, Long.MAX_VALUE,
 				PackedPlannerLimits.DEFAULT_MAX_RETAINED_BYTES);
 		return Optional.of(new PackedPlanRefreshWork(preparedSource, request, limits, locator,
-				incumbent.physicalFingerprint()));
+				incumbent.physicalFingerprint(), semanticsCodec));
 	}
 
 	/**
@@ -79,7 +90,7 @@ public final class PackedCascadesPlanner {
 		}
 		PackedPlanningResult refreshed = optimizeWithCache(source, request.limits(),
 				exploreReorderings(request.optimizationGoal()), Objects.requireNonNull(cache, "cache"),
-				Objects.requireNonNull(context, "context"), costModel, rangeProvider, true);
+				Objects.requireNonNull(context, "context"), costModel, rangeProvider, true, request.semanticsCodec());
 		PackedPlanDecisionSummary summary = Objects.requireNonNull(refreshed.decisionSummary(),
 				"packed detached refresh decision summary");
 		return new PackedPlanRefreshResult(refreshed, summary,
@@ -109,12 +120,18 @@ public final class PackedCascadesPlanner {
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal,
 			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
+		return optimize(tupleExpr, goal, costModel, rangeProvider, semanticsCodec(costModel));
+	}
+
+	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal,
+			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
 		long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
 				? Long.MAX_VALUE
 				: request.taskBudget();
-		return optimize(tupleExpr, workLimit, request.deadlineNanos(), exploreReorderings(request), costModel,
-				rangeProvider);
+		return optimize(tupleExpr, new PackedPlannerLimits(workLimit, request.deadlineNanos()),
+				exploreReorderings(request), costModel, rangeProvider, semanticsCodec);
 	}
 
 	static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlannerLimits limits,
@@ -142,6 +159,13 @@ public final class PackedCascadesPlanner {
 	public static PackedPlanQualityAuditResult auditPlanQuality(TupleExpr tupleExpr, OptimizationGoal goal,
 			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider, int dominatedSamplesPerStratum,
 			PackedPlannerLimits limits) {
+		return auditPlanQuality(tupleExpr, goal, costModel, rangeProvider, dominatedSamplesPerStratum, limits,
+				semanticsCodec(costModel));
+	}
+
+	public static PackedPlanQualityAuditResult auditPlanQuality(TupleExpr tupleExpr, OptimizationGoal goal,
+			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider, int dominatedSamplesPerStratum,
+			PackedPlannerLimits limits, PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(costModel, "plan-quality audit cost model");
 		Objects.requireNonNull(limits, "plan-quality audit limits");
 		if (dominatedSamplesPerStratum < 0) {
@@ -149,7 +173,7 @@ public final class PackedCascadesPlanner {
 		}
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
 		long encodeStart = System.nanoTime();
-		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider);
+		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec);
 		long encodeNanos = System.nanoTime() - encodeStart;
 		Computation computation = optimize(query, limits,
 				exploreReorderings(request), costModel, encodeNanos, 0L, false, dominatedSamplesPerStratum);
@@ -168,12 +192,18 @@ public final class PackedCascadesPlanner {
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlanCache cache,
 			PackedPlanCache.Context context, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
+		return optimize(tupleExpr, goal, cache, context, costModel, rangeProvider, semanticsCodec(costModel));
+	}
+
+	public static PackedPlanningResult optimize(TupleExpr tupleExpr, OptimizationGoal goal, PackedPlanCache cache,
+			PackedPlanCache.Context context, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		OptimizationGoal request = goal == null ? OptimizationGoal.root(tupleExpr, null) : goal;
 		long workLimit = request.searchMode() == OptimizationGoal.SearchMode.EXACT
 				? Long.MAX_VALUE
 				: request.taskBudget();
 		return optimizeWithCache(tupleExpr, new PackedPlannerLimits(workLimit, request.deadlineNanos()),
-				exploreReorderings(request), cache, context, costModel, rangeProvider);
+				exploreReorderings(request), cache, context, costModel, rangeProvider, false, semanticsCodec);
 	}
 
 	public static PackedPlanningResult optimize(TupleExpr tupleExpr, PackedPlannerLimits limits,
@@ -191,19 +221,29 @@ public final class PackedCascadesPlanner {
 	private static PackedPlanningResult optimizeWithCache(TupleExpr tupleExpr, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedPlanCache cache, PackedPlanCache.Context context,
 			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider, boolean detachedRefresh) {
+		return optimizeWithCache(tupleExpr, limits, exploreReorderings, cache, context, costModel, rangeProvider,
+				detachedRefresh, semanticsCodec(costModel));
+	}
+
+	private static PackedPlanningResult optimizeWithCache(TupleExpr tupleExpr, PackedPlannerLimits limits,
+			boolean exploreReorderings, PackedPlanCache cache, PackedPlanCache.Context context,
+			PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider, boolean detachedRefresh,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		if (cache == null || context == null) {
-			return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider);
+			return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider, semanticsCodec);
 		}
 		long cacheStart = System.nanoTime();
 		// The plan identity is never null for codec-supported algebra (it keeps exact names when alpha-normalization
 		// is unsafe), so every cache hit is authenticated by the collision-proof packed identity, not by equals.
-		PackedQueryCacheIdentity sourceIdentity = PackedQueryCacheIdentity.createPlanIdentity(tupleExpr);
+		PackedQueryCacheIdentity sourceIdentity = PackedQueryCacheIdentity.createPlanIdentity(tupleExpr, rangeProvider,
+				semanticsCodec);
 		PackedPlanCache.Fingerprint fingerprint = cache.fingerprint(tupleExpr, sourceIdentity);
 		PackedPlanCache.PlanEntry hit = cache.findPlan(fingerprint, context, tupleExpr, sourceIdentity, limits);
 		if (hit != null) {
 			return cachedResult(hit, tupleExpr, System.nanoTime() - cacheStart);
 		}
-		PackedQueryFamilyIdentity familyIdentity = PackedQueryFamilyIdentity.create(tupleExpr, rangeProvider);
+		PackedQueryFamilyIdentity familyIdentity = PackedQueryFamilyIdentity.create(tupleExpr, rangeProvider,
+				semanticsCodec);
 		PackedPlanCache.PlanEntry familyHit = cache.findFamilyPlan(fingerprint, context, familyIdentity, limits);
 		if (familyHit != null) {
 			return cachedResult(familyHit, familyIdentity.concreteQuery(), System.nanoTime() - cacheStart, false);
@@ -246,7 +286,7 @@ public final class PackedCascadesPlanner {
 			PackedQuery query = familyIdentity != null
 					? familyIdentity.concreteQuery()
 					: queryEntry == null
-							? encodeSupportedForPlanning(tupleExpr, rangeProvider)
+							? encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec)
 							: PackedQueryCodec.rebindOriginalBindingSets(queryEntry.query(), tupleExpr);
 			long encodeNanos = queryEntry == null && familyIdentity == null ? System.nanoTime() - encodeStart : 0L;
 			PackedPlanCache.PlanEntry structural = cache.findStructuralPlan(fingerprint, context, tupleExpr,
@@ -436,8 +476,14 @@ public final class PackedCascadesPlanner {
 
 	private static PackedPlanningResult optimize(TupleExpr tupleExpr, PackedPlannerLimits limits,
 			boolean exploreReorderings, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider) {
+		return optimize(tupleExpr, limits, exploreReorderings, costModel, rangeProvider, semanticsCodec(costModel));
+	}
+
+	private static PackedPlanningResult optimize(TupleExpr tupleExpr, PackedPlannerLimits limits,
+			boolean exploreReorderings, PackedCostModel costModel, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		long encodeStart = System.nanoTime();
-		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider);
+		PackedQuery query = encodeSupportedForPlanning(tupleExpr, rangeProvider, semanticsCodec);
 		long encodeNanos = System.nanoTime() - encodeStart;
 		return optimize(query, limits, exploreReorderings, costModel, encodeNanos, 0L, false)
 				.result();
@@ -451,7 +497,12 @@ public final class PackedCascadesPlanner {
 	 */
 	private static PackedQuery encodeSupportedForPlanning(TupleExpr tupleExpr,
 			PackedPredicateRangeProvider rangeProvider) {
-		return requireSupported(PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider));
+		return encodeSupportedForPlanning(tupleExpr, rangeProvider, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	private static PackedQuery encodeSupportedForPlanning(TupleExpr tupleExpr,
+			PackedPredicateRangeProvider rangeProvider, PackedStatementPatternSemanticsCodec semanticsCodec) {
+		return requireSupported(PackedQueryCodec.encodeForPlanning(tupleExpr, rangeProvider, semanticsCodec));
 	}
 
 	static PackedQuery requireSupported(PackedQuery query) {

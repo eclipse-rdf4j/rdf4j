@@ -19,6 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.util.Iterator;
 import java.util.List;
 import java.util.NoSuchElementException;
@@ -293,5 +297,68 @@ public class ArrayBindingSetTest {
 		private static int equalsCalls() {
 			return equalsCalls;
 		}
+	}
+
+	@Test
+	public void serializationRoundTripWithoutSharedSortedNamesCachePreservesBindings() throws Exception {
+		ArrayBindingSet bindings = populatedBindingSet(new ArrayBindingSet("z", "a", "unbound"));
+
+		assertSerializationRoundTripPreservesBindings(bindings);
+	}
+
+	@Test
+	public void serializationRoundTripWithNonSerializableSharedCachePreservesBindings() throws Exception {
+		ArrayBindingSet.SortedBindingNamesCache cache = mask -> switch ((int) mask) {
+		case 3 -> List.of("a", "z");
+		case 7 -> List.of("a", "unbound", "z");
+		default -> List.of();
+		};
+		ArrayBindingSet bindings = populatedBindingSet(new ArrayBindingSet(
+				new String[] { "z", "a", "unbound" }, cache));
+
+		assertSerializationRoundTripPreservesBindings(bindings);
+	}
+
+	@Test
+	public void serializationRoundTripWithEvaluationContextCachePreservesBindings() throws Exception {
+		ArrayBindingBasedQueryEvaluationContext context = new ArrayBindingBasedQueryEvaluationContext(
+				new QueryEvaluationContext.Minimal(vf.createLiteral("now"), null, null),
+				new String[] { "z", "a", "unbound" }, null);
+		ArrayBindingSet bindings = populatedBindingSet(context.createBindingSet());
+
+		assertSerializationRoundTripPreservesBindings(bindings);
+	}
+
+	private ArrayBindingSet populatedBindingSet(ArrayBindingSet bindings) {
+		bindings.setBinding("z", RDF.ALT);
+		bindings.setBinding("a", vf.createLiteral("value"));
+		return bindings;
+	}
+
+	private void assertSerializationRoundTripPreservesBindings(ArrayBindingSet original) throws Exception {
+		ArrayBindingSet restored;
+		try (ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+				ObjectOutputStream output = new ObjectOutputStream(bytes)) {
+			output.writeObject(original);
+			output.flush();
+			try (ObjectInputStream input = new ObjectInputStream(new ByteArrayInputStream(bytes.toByteArray()))) {
+				restored = (ArrayBindingSet) input.readObject();
+			}
+		}
+
+		assertEquals(original, restored);
+		assertEquals(original.hashCode(), restored.hashCode());
+		assertEquals(2, restored.size());
+		assertEquals(RDF.ALT, restored.getValue("z"));
+		assertEquals(vf.createLiteral("value"), restored.getValue("a"));
+		assertNull(restored.getValue("unbound"));
+		assertEquals(List.of("a", "z"), restored.getSortedBindingNames());
+		assertEquals(Set.of("a", "z"), restored.getBindingNames());
+
+		restored.setBinding("unbound", vf.createLiteral("later"));
+		assertEquals(3, restored.size());
+		assertEquals(vf.createLiteral("later"), restored.getValue("unbound"));
+		assertEquals(List.of("a", "unbound", "z"), restored.getSortedBindingNames());
+		assertEquals(Set.of("a", "unbound", "z"), restored.getBindingNames());
 	}
 }

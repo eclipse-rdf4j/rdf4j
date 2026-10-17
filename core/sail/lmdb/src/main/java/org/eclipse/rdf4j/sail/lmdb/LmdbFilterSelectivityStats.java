@@ -68,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinStatsProvider;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -301,7 +302,7 @@ class LmdbFilterSelectivityStats
 	}
 
 	synchronized ResolvedFilterCells resolveRuntimeFeedbackTarget(Filter filter) {
-		if (!adaptiveEvidenceAllowed() || filter == null || filter.getCondition() == null) {
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null) {
 			return null;
 		}
 		FilterSurfaceKey exactKey = exactSurfaceKey(filter);
@@ -416,7 +417,7 @@ class LmdbFilterSelectivityStats
 
 	synchronized void recordFilterOutcome(Filter filter, StatementPattern legacyPattern, long passedCount,
 			long filteredCount) {
-		if (!adaptiveEvidenceAllowed() || filter == null || filter.getCondition() == null
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null
 				|| (passedCount <= 0L && filteredCount <= 0L)) {
 			return;
 		}
@@ -499,6 +500,9 @@ class LmdbFilterSelectivityStats
 	}
 
 	private static FilterSurfaceKey exactSurfaceKey(Filter filter) {
+		if (!LmdbPlanningGraphEvidence.allows(filter)) {
+			return null;
+		}
 		LmdbRuntimeFeedbackDescriptor descriptor = runtimeFeedbackDescriptor(filter);
 		return descriptor != null && descriptor.exactFilterSurfaceKey() != null
 				? descriptor.exactFilterSurfaceKey()
@@ -506,6 +510,9 @@ class LmdbFilterSelectivityStats
 	}
 
 	private static FilterSurfaceKey generalizedSurfaceKey(Filter filter) {
+		if (!LmdbPlanningGraphEvidence.allows(filter)) {
+			return null;
+		}
 		LmdbRuntimeFeedbackDescriptor descriptor = runtimeFeedbackDescriptor(filter);
 		return descriptor != null && descriptor.generalizedFilterSurfaceKey() != null
 				? descriptor.generalizedFilterSurfaceKey()
@@ -672,9 +679,11 @@ class LmdbFilterSelectivityStats
 
 	private synchronized void cacheSampleIfCurrent(PatternFilterKey key, SampledPassRatio sampled, long revision) {
 		if (sampled.cacheableSnapshot && statisticsRevision == revision) {
-			sampledByFilter.put(key, sampled);
+			SampledPassRatio previous = sampledByFilter.put(key, sampled);
 			dirty = true;
-			planningRevision++;
+			if (!sampled.equals(previous)) {
+				planningRevision++;
+			}
 		}
 	}
 
@@ -733,6 +742,7 @@ class LmdbFilterSelectivityStats
 			return false;
 		}
 		Filter probeFilter = new Filter(pattern.clone(), filter.getCondition().clone());
+		PlanningGraphDomains.copy(filter, probeFilter);
 		FilterSurfaceKey surface = exactSurfaceKey(probeFilter);
 		try (LmdbSailStore.DatasetAdmission admission = samplingViewSupplier.get()) {
 			LmdbSailStore.ReadView view = admission.view();
@@ -818,7 +828,8 @@ class LmdbFilterSelectivityStats
 	 */
 	DistinctFilterValues exactMatchingDistinctValues(StatementPattern pattern, ValueExpr condition,
 			String bindingName, int maximumDistinctValues) {
-		if (pattern == null || condition == null || bindingName == null || bindingName.isBlank()
+		if (!LmdbPlanningGraphEvidence.allows(pattern) || condition == null || bindingName == null
+				|| bindingName.isBlank()
 				|| samplingViewSupplier == null
 				|| maximumDistinctValues < 1
 				|| !VarNameCollector.process(condition).equals(Set.of(bindingName))
@@ -833,6 +844,7 @@ class LmdbFilterSelectivityStats
 		}
 
 		Filter synthetic = new Filter(pattern.clone(), condition.clone());
+		PlanningGraphDomains.copy(pattern, synthetic);
 		if (!supportsColdSynopsis(synthetic, pattern)) {
 			return DistinctFilterValues.unavailable();
 		}
@@ -1389,7 +1401,7 @@ class LmdbFilterSelectivityStats
 
 	private SampledPassRatio sampleFilterPassRatio(SamplingCandidate candidate, boolean foregroundSampling,
 			long deadlineNanos) {
-		if (candidate == null || samplingViewSupplier == null
+		if (candidate == null || !LmdbPlanningGraphEvidence.allows(candidate.pattern) || samplingViewSupplier == null
 				|| ScalarEvaluationEffects.effectOf(candidate.condition) != ScalarEvaluationEffects.Effect.REPEATABLE) {
 			return null;
 		}
@@ -1902,7 +1914,8 @@ class LmdbFilterSelectivityStats
 	}
 
 	private boolean supportsSampling(Filter filter, StatementPattern pattern) {
-		if (filter == null || filter.getCondition() == null || pattern == null
+		if (!LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null
+				|| !LmdbPlanningGraphEvidence.allows(pattern)
 				|| ScalarEvaluationEffects
 						.effectOf(filter.getCondition()) != ScalarEvaluationEffects.Effect.REPEATABLE) {
 			return false;
@@ -1946,7 +1959,8 @@ class LmdbFilterSelectivityStats
 	}
 
 	private boolean supportsColdSynopsis(Filter filter, StatementPattern pattern) {
-		if (filter == null || filter.getCondition() == null || pattern == null
+		if (!LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null
+				|| !LmdbPlanningGraphEvidence.allows(pattern)
 				|| pattern.getBindingNames().isEmpty()
 				|| ScalarEvaluationEffects
 						.effectOf(filter.getCondition()) != ScalarEvaluationEffects.Effect.REPEATABLE) {
@@ -1998,7 +2012,8 @@ class LmdbFilterSelectivityStats
 	}
 
 	private PatternFilterKey samplingKey(Filter filter, StatementPattern pattern) {
-		if (filter == null || filter.getCondition() == null || pattern == null) {
+		if (!LmdbPlanningGraphEvidence.allows(filter) || filter.getCondition() == null
+				|| !LmdbPlanningGraphEvidence.allows(pattern)) {
 			return null;
 		}
 		PatternKey patternKey = FilterSelectivityKeys.patternKeyFor(pattern);

@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniv
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.PhysicalProperties;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -83,9 +84,19 @@ record FilterSurfaceKey(int schemaVersion, Kind kind, String inputTopology, Stri
 			return null;
 		}
 		TupleExpr input = filter.getArg();
+		LeoOperatorKey inputKey;
+		try {
+			inputKey = LmdbValueIdFilter.learningKey(input, "", constantMode);
+		} catch (UnkeyableOperatorException unsupported) {
+			return null;
+		}
 		Filter learningFilter = scopeInvariant(filter, input) ? withoutFilterScopeBoundary(filter) : filter;
-		LeoOperatorKey inputKey = LeoOperatorKey.from(input, "", constantMode);
-		LeoOperatorKey fullKey = LeoOperatorKey.from(learningFilter, "", constantMode);
+		LeoOperatorKey fullKey;
+		try {
+			fullKey = LmdbValueIdFilter.learningKey(learningFilter, "", constantMode);
+		} catch (UnkeyableOperatorException unsupported) {
+			return null;
+		}
 		BindingUniverse universe = BindingUniverse.from(input, PhysicalProperties.ANY);
 		BindingShape shape = BindingShape.from(input, universe);
 		String shapeKey = "possible=" + shape.possible()
@@ -108,7 +119,7 @@ record FilterSurfaceKey(int schemaVersion, Kind kind, String inputTopology, Stri
 	}
 
 	private static Filter withoutFilterScopeBoundary(Filter filter) {
-		Filter normalized = filter.clone();
+		Filter normalized = (Filter) LmdbValueIdFilter.semanticClone(filter);
 		normalized.setVariableScopeChange(false);
 		return normalized;
 	}

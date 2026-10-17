@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Optional;
 
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 
 /**
@@ -30,4 +31,12 @@ interface LmdbPinnedReadTxnSource {
 	default Optional<ValueStore.ReadSnapshot> pinnedValueSnapshot() {
 		return Optional.empty();
 	}
+
+	/** Whether this actual owner can match currently published physical metadata, without acquiring another view. */
+	default boolean isCurrentForPhysicalCost() {
+		return false;
+	}
+
+	/** Borrows the dataset's admitted paired view for foreground planning; the owning dataset must remain open. */
+	Optional<SailClosable> enterPlanningReadView();
 }

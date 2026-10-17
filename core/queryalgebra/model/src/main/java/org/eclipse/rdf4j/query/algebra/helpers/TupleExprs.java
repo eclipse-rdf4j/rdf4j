@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -66,6 +67,34 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 public class TupleExprs {
 
 	/**
+	 * Whether a local operand contains a GRAPH boundary, including persistent input authority retained by a physical
+	 * lowering, and therefore must receive invocation input rather than a sibling's produced bindings. Remote SERVICE
+	 * bodies have their own scope and are not inspected.
+	 */
+	public static boolean containsGraphBoundary(TupleExpr expression) {
+		if (expression instanceof Graph || expression.isIndependentInputScope()) {
+			return true;
+		}
+		if (expression instanceof Service) {
+			return false;
+		}
+		for (TupleExpr child : getChildren(expression)) {
+			if (containsGraphBoundary(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Identifies operands whose own scope must not receive bindings produced by an ordinary join sibling. */
+	public static boolean requiresIndependentEvaluation(TupleExpr expression) {
+		// SERVICE is a parameterized remote call. Its endpoint input remains in the caller's evaluator frame.
+		return !(expression instanceof Service)
+				&& (isVariableScopeChange(expression) || containsSubquery(expression)
+						|| containsGraphBoundary(expression));
+	}
+
+	/**
 	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
 	 * Group and are skipped by the evaluator. This does not change the Extension's declared bindings or classify the
 	 * expression's repeatability.
@@ -82,7 +111,15 @@ public class TupleExprs {
 	 * such ancestor emits a new result frame, regardless of the parser's subquery flag.
 	 */
 	public static boolean projectionIncludesParentBindings(Projection projection) {
-		for (QueryModelNode ancestor = projection.getParentNode(); ancestor != null; ancestor = ancestor
+		return hasEnclosingProjection(projection, false);
+	}
+
+	/** Shared live or detached projection provenance, independent of the evaluation-context implementation. */
+	public static boolean hasEnclosingProjection(QueryModelNode node, boolean detachedEnclosingProjection) {
+		if (detachedEnclosingProjection) {
+			return true;
+		}
+		for (QueryModelNode ancestor = node.getParentNode(); ancestor != null; ancestor = ancestor
 				.getParentNode()) {
 			if (ancestor instanceof Projection || ancestor instanceof MultiProjection) {
 				return true;
@@ -99,15 +136,28 @@ public class TupleExprs {
 	 * source below a closing projection cannot prove that parameterizing the projection is safe.
 	 */
 	public static boolean requiresIndependentProjectionInput(TupleExpr expression, Set<String> siblingNames) {
+		return requiresIndependentProjectionInput(expression, siblingNames, false);
+	}
+
+	/** The same output-frame proof when an enclosing projection was detached for evaluation. */
+	public static boolean requiresIndependentProjectionInput(TupleExpr expression, Set<String> siblingNames,
+			boolean detachedEnclosingProjection) {
 		if (siblingNames.isEmpty()) {
 			return false;
 		}
-		return independentlyProducedProjectionBindingNames(expression).stream().anyMatch(siblingNames::contains);
+		return independentlyProducedProjectionBindingNames(expression, detachedEnclosingProjection).stream()
+				.anyMatch(siblingNames::contains);
 	}
 
 	/** Locally produced closing-projection outputs, with aliases and transparent wrappers preserved. */
 	public static Set<String> independentlyProducedProjectionBindingNames(TupleExpr expression) {
-		if (expression instanceof Projection projection && !projectionIncludesParentBindings(projection)) {
+		return independentlyProducedProjectionBindingNames(expression, false);
+	}
+
+	private static Set<String> independentlyProducedProjectionBindingNames(TupleExpr expression,
+			boolean detachedEnclosingProjection) {
+		if (expression instanceof Projection projection && !hasEnclosingProjection(projection,
+				detachedEnclosingProjection)) {
 			Set<String> local = locallyProducedNames(projection.getArg());
 			Set<String> result = new HashSet<>();
 			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
@@ -123,7 +173,7 @@ public class TupleExprs {
 		}
 		Set<String> result = new HashSet<>();
 		for (TupleExpr child : getChildren(expression)) {
-			result.addAll(independentlyProducedProjectionBindingNames(child));
+			result.addAll(independentlyProducedProjectionBindingNames(child, detachedEnclosingProjection));
 		}
 		return Set.copyOf(result);
 	}

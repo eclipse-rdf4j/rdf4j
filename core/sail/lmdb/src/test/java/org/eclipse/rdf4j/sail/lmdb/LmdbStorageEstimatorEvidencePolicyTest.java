@@ -36,6 +36,8 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
@@ -115,6 +117,7 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		StatementPattern right = new StatementPattern(new Var("join"), new Var("rightPredicate", PREDICATE),
 				new Var("right"));
 		Join join = new Join(left, right);
+		PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		when(statistics.estimateJoinCurrent(any(FrontierJoinProbe.class)))
 				.thenReturn(new FrontierJoinEstimate(900.0d, 700.0d, 1_100.0d, 0.8d,
@@ -135,6 +138,7 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		StatementPattern right = new StatementPattern(new Var("join"), new Var("rightPredicate", PREDICATE),
 				new Var("rightObject", RIGHT_OBJECT));
 		Join join = new Join(left, right);
+		PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		when(valueStore.getId(LEFT_OBJECT)).thenReturn(11L);
 		when(valueStore.getId(RIGHT_OBJECT)).thenReturn(12L);
@@ -157,6 +161,7 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		StatementPattern right = new StatementPattern(new Var("subject"), new Var("rightPredicate", PREDICATE),
 				new Var("object"));
 		Join join = new Join(left, right);
+		PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		when(statistics.estimateJoinCurrent(any(FrontierJoinProbe.class)))
 				.thenReturn(new FrontierJoinEstimate(80.0d, 70.0d, 95.0d, 0.9d,
@@ -190,6 +195,7 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 		StatementPattern left = pattern("s", "value");
 		StatementPattern right = pattern("s", "other");
 		Join input = new Join(left, right);
+		PlanningGraphDomains.capture(input, PlanningGraphDomain.defaultGraph());
 
 		var result = evidence().filterEvidence(input, equalsLiteral("value"), BagEstimate.heuristic(64.0d, "input"),
 				snapshotOnlyContext(input));
@@ -308,7 +314,11 @@ class LmdbStorageEstimatorEvidencePolicyTest {
 	}
 
 	private static StatementPattern pattern(String subject, String object) {
-		return new StatementPattern(new Var(subject), new Var("predicate", PREDICATE), new Var(object));
+		StatementPattern query = new StatementPattern(new Var(subject), new Var("predicate", PREDICATE),
+				new Var(object));
+		// Every caller describes a complete scan of this fixture's local default-graph source.
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 
 	private static Compare equalsLiteral(String variable) {

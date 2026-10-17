@@ -18,6 +18,11 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
 @FunctionalInterface
 public interface PackedCostModel {
 
+	/** Internal pure scan semantics, available before any identity lookup or estimator session is opened. */
+	default PackedStatementPatternSemanticsCodec statementPatternSemanticsCodec() {
+		return PackedStatementPatternSemanticsCodec.NONE;
+	}
+
 	/** Returns a non-negative row estimate, or {@link Double#NaN} when the provider has no estimate. */
 	double estimateRows(PackedQueryView query, int relationId);
 

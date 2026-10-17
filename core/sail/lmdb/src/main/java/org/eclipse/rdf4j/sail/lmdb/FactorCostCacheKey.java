@@ -31,6 +31,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 final class FactorCostCacheKey {
@@ -60,7 +62,8 @@ final class FactorCostCacheKey {
 		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor();
 		detached.visit(retainedBytes);
 		return new DetachedFactorFingerprint(
-				StructuralQueryModelFingerprint.of(detached), retainedBytes.retainedBytes());
+				graphFingerprint(factor, StructuralQueryModelFingerprint.of(detached, factor)),
+				retainedBytes.retainedBytes());
 	}
 
 	static long estimatedRetainedBytes(TupleExpr factor) {
@@ -73,6 +76,21 @@ final class FactorCostCacheKey {
 	}
 
 	static Object uncachedFactorFingerprint(TupleExpr factor, LmdbEstimatorOptimizationScope scope) {
+		return graphFingerprint(factor, uncachedShapeFingerprint(factor, scope));
+	}
+
+	private static GraphFactorFingerprint graphFingerprint(TupleExpr factor, Object shape) {
+		return new GraphFactorFingerprint(
+				factor == null ? PlanningGraphDomain.unknown() : PlanningGraphDomains.domain(factor),
+				factor != null && factor.isIndependentInputScope(),
+				factor instanceof StatementPattern statement && statement.isContextBindingOriginInherited(), shape);
+	}
+
+	private record GraphFactorFingerprint(PlanningGraphDomain graphDomain, boolean independentInputScope,
+			boolean inheritedContextOrigin, Object shape) {
+	}
+
+	private static Object uncachedShapeFingerprint(TupleExpr factor, LmdbEstimatorOptimizationScope scope) {
 		if (factor instanceof StatementPattern statementPattern) {
 			return StatementPatternFactorFingerprint.of(statementPattern);
 		}
@@ -159,7 +177,7 @@ final class FactorCostCacheKey {
 	}
 
 	private record StatementPatternFactorFingerprint(int hash, StatementPattern.Scope scope, VarFingerprint subject,
-			VarFingerprint predicate, VarFingerprint object, VarFingerprint context) {
+			VarFingerprint predicate, VarFingerprint object, VarFingerprint context, long rawKinds) {
 
 		private static StatementPatternFactorFingerprint of(StatementPattern statementPattern) {
 			StatementPattern.Scope scope = statementPattern.getScope();
@@ -172,7 +190,9 @@ final class FactorCostCacheKey {
 			hash = hashStep(hash, predicate);
 			hash = hashStep(hash, object);
 			hash = hashStep(hash, context);
-			return new StatementPatternFactorFingerprint(hash, scope, subject, predicate, object, context);
+			long rawKinds = LmdbValueIdFilter.fromStatementPattern(statementPattern).semanticKindWord();
+			hash = hashStep(hash, rawKinds);
+			return new StatementPatternFactorFingerprint(hash, scope, subject, predicate, object, context, rawKinds);
 		}
 
 		@Override
@@ -325,13 +345,18 @@ final class FactorCostCacheKey {
 	 * {@link Value#hashCode()} storage-dependent. Structural equality disambiguates every hash collision.
 	 */
 	private record StructuralQueryModelFingerprint(int hash, QueryModelNode node,
-			List<FilterInputContract> requiredInputs) {
+			List<PhysicalInputContract> physicalInputs) {
 
 		private static Object of(QueryModelNode node) {
+			return of(node, node);
+		}
+
+		private static Object of(QueryModelNode node, QueryModelNode inputContractSource) {
 			StructuralHashVisitor visitor = new StructuralHashVisitor();
-			node.visit(visitor);
+			inputContractSource.visit(visitor);
 			// Algebra equality delegates to source equality; opaque source implementations may inspect their rows.
-			return visitor.hasUnknownBindingSource ? new IdentityFingerprint(node)
+			return visitor.hasUnknownBindingSource ? new OpaqueStructuralFingerprint(
+					new IdentityFingerprint(node), visitor.snapshot())
 					: new StructuralQueryModelFingerprint(visitor.hash(), node, visitor.snapshot());
 		}
 
@@ -344,27 +369,38 @@ final class FactorCostCacheKey {
 		public boolean equals(Object other) {
 			return this == other || other instanceof StructuralQueryModelFingerprint that
 					&& hash == that.hash
-					&& requiredInputs.equals(that.requiredInputs)
+					&& physicalInputs.equals(that.physicalInputs)
 					&& node.equals(that.node);
 		}
 	}
 
-	/** Physical work identities supplement logical equality without changing the public algebra contract. */
-	private record FilterInputContract(int position, Set<String> names) {
+	private record OpaqueStructuralFingerprint(IdentityFingerprint source, List<PhysicalInputContract> physicalInputs) {
 	}
 
-	private static class RequiredInputVisitor extends AbstractQueryModelVisitor<RuntimeException> {
+	/** Physical work identities supplement logical equality without changing the public algebra contract. */
+	private record PhysicalInputContract(int position, Set<String> names, boolean independentInputScope,
+			boolean inheritedContextOrigin, long rawKinds) {
+	}
+
+	private static class PhysicalInputVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
 		private int position;
-		private List<FilterInputContract> contracts = List.of();
+		private List<PhysicalInputContract> contracts = List.of();
 
 		protected final void captureNode(QueryModelNode node) {
 			int ordinal = position++;
-			if (node instanceof Filter filter && !filter.getRequiredInputBindingNames().isEmpty()) {
+			Set<String> names = node instanceof Filter filter ? filter.getRequiredInputBindingNames() : Set.of();
+			boolean independent = node.isIndependentInputScope();
+			boolean inherited = node instanceof StatementPattern statement
+					&& statement.isContextBindingOriginInherited();
+			long rawKinds = node instanceof StatementPattern statement
+					? LmdbValueIdFilter.fromStatementPattern(statement).semanticKindWord()
+					: 0L;
+			if (!names.isEmpty() || independent || inherited || rawKinds != 0L) {
 				if (contracts.isEmpty()) {
 					contracts = new ArrayList<>();
 				}
-				contracts.add(new FilterInputContract(ordinal, Set.copyOf(filter.getRequiredInputBindingNames())));
+				contracts.add(new PhysicalInputContract(ordinal, Set.copyOf(names), independent, inherited, rawKinds));
 			}
 		}
 
@@ -374,12 +410,12 @@ final class FactorCostCacheKey {
 			super.meetNode(node);
 		}
 
-		final List<FilterInputContract> snapshot() {
+		final List<PhysicalInputContract> snapshot() {
 			return List.copyOf(contracts);
 		}
 	}
 
-	private static final class StructuralHashVisitor extends RequiredInputVisitor {
+	private static final class StructuralHashVisitor extends PhysicalInputVisitor {
 
 		private int hash = 1;
 		private boolean hasUnknownBindingSource;
@@ -388,6 +424,11 @@ final class FactorCostCacheKey {
 		protected void meetNode(QueryModelNode node) {
 			captureNode(node);
 			hash = hashStep(hash, node.getClass().getName());
+			hash = hashStep(hash, node.isIndependentInputScope());
+			if (node instanceof StatementPattern statement) {
+				hash = hashStep(hash, statement.isContextBindingOriginInherited());
+				hash = hashStep(hash, LmdbValueIdFilter.fromStatementPattern(statement).semanticKindWord());
+			}
 			if (node instanceof Var var) {
 				hash = hashStep(hash, var.getName());
 				hash = hashStep(hash, var.isAnonymous());
@@ -457,16 +498,16 @@ final class FactorCostCacheKey {
 	}
 
 	private record FallbackFactorFingerprint(int hash, String type, String tree,
-			List<FilterInputContract> requiredInputs) {
+			List<PhysicalInputContract> physicalInputs) {
 
 		private static FallbackFactorFingerprint of(QueryModelNode node) {
 			String type = node == null ? "null" : node.getClass().getName();
 			String tree = node == null ? "" : node.toString();
-			RequiredInputVisitor visitor = new RequiredInputVisitor();
+			PhysicalInputVisitor visitor = new PhysicalInputVisitor();
 			if (node != null) {
 				node.visit(visitor);
 			}
-			List<FilterInputContract> inputs = visitor.snapshot();
+			List<PhysicalInputContract> inputs = visitor.snapshot();
 			int hash = nullableHash(type);
 			hash = hashStep(hash, tree);
 			hash = hashStep(hash, inputs);

@@ -59,6 +59,8 @@ public class LmdbIRI implements LmdbResource, IRI {
 	private transient volatile long semanticVersion;
 
 	private volatile boolean initialized = false;
+	/** Guarded by this value's monitor; a copied payload is not published until its resolver returns. */
+	private transient boolean resolutionInProgress;
 	private transient volatile boolean externallyOwned;
 
 	@Override
@@ -156,7 +158,9 @@ public class LmdbIRI implements LmdbResource, IRI {
 			payloadChanged();
 			this.iriString = initializedIRI.iriString;
 			this.localNameIdx = initializedIRI.localNameIdx;
-			this.initialized = true;
+			if (!resolutionInProgress) {
+				this.initialized = true;
+			}
 		} else {
 			throw new SailException("Trying to initialize LmdbIRI from non-IRI value");
 		}
@@ -210,15 +214,20 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
-					if (!resolved) {
-						log.warn("Could not resolve value");
-					}
-					// Publish payload and any revision rebinding before sharing this value with other readers.
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+						if (!resolved) {
+							log.warn("Could not resolve value");
+						}
+						// Publish payload and any revision rebinding after the complete resolver callback.
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}
@@ -230,11 +239,16 @@ public class LmdbIRI implements LmdbResource, IRI {
 		if (!initialized) {
 			synchronized (this) {
 				if (!initialized) {
-					InternalIdentity resolving = identity;
-					boolean resolved = resolver.resolve(resolving.id(), this);
-					initialized = resolved;
-					if (resolved) {
-						resolving.revision().valueInitialized(resolving.id(), this);
+					resolutionInProgress = true;
+					try {
+						InternalIdentity resolving = identity;
+						boolean resolved = resolver.resolve(resolving.id(), this);
+						initialized = resolved;
+						if (resolved) {
+							resolving.revision().valueInitialized(resolving.id(), this);
+						}
+					} finally {
+						resolutionInProgress = false;
 					}
 				}
 			}

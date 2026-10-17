@@ -85,6 +85,8 @@ public final class PackedCostingReplay {
 				double leftRows = currentRows(leftOrdinal, currentRowsByCachedOrdinal, trace.leftInputRows(eventId));
 				double rightRows = currentRows(rightOrdinal, currentRowsByCachedOrdinal, trace.rightInputRows(eventId));
 				context.reset(prefixRelations, 0, prefixCount, prefixRows, inputStateId);
+				context.setPrefixRelationsDescribeRows(trace.prefixRelationsDescribeRows(eventId));
+				context.setUnrelatedPrefixRows(trace.unrelatedPrefixRows(eventId));
 				context.setAssuredBindingRelationId(trace.assuredBindingRelationId(eventId));
 				context.setEvidenceIdentity(trace.bindingLayoutId(eventId), trace.correlationMaskId(eventId),
 						trace.semanticScopeMaskId(eventId));

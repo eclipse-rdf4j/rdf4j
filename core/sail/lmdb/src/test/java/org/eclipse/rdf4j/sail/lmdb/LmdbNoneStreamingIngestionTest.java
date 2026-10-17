@@ -3621,6 +3621,7 @@ class LmdbNoneStreamingIngestionTest {
 		CountDownLatch releaseInitialFactory = new CountDownLatch(1);
 		CountDownLatch replacementFactoryEntered = new CountDownLatch(1);
 		CountDownLatch releaseReplacementFactory = new CountDownLatch(1);
+		AtomicReference<Thread> readFactoryOwner = new AtomicReference<>();
 		ExecutorService readerExecutor = Executors.newSingleThreadExecutor();
 		ExecutorService growthExecutor = Executors.newSingleThreadExecutor();
 		try {
@@ -3638,9 +3639,10 @@ class LmdbNoneStreamingIngestionTest {
 			MapGrowthMetrics.Snapshot before = backing.growthMetricsSnapshot();
 			Set<Statement> expected = new HashSet<>();
 			expected.add(seed);
-			ReadFactoryGate initialFactoryGate = triples.holdNextReadFactory(initialFactoryEntered,
+			ReadFactoryGate initialFactoryGate = triples.holdNextReadFactory(readFactoryOwner, initialFactoryEntered,
 					releaseInitialFactory);
 			Future<List<Statement>> readResult = readerExecutor.submit(() -> {
+				readFactoryOwner.set(Thread.currentThread());
 				try (RepositoryConnection reader = repository.getConnection()) {
 					reader.begin(IsolationLevels.READ_COMMITTED);
 					List<Statement> statements;
@@ -3654,7 +3656,8 @@ class LmdbNoneStreamingIngestionTest {
 
 			assertTrue(initialFactoryEntered.await(10, TimeUnit.SECONDS),
 					"the first read factory must pause after opening its native read view");
-			ReadFactoryGate replacementFactoryGate = triples.holdNextReadFactory(replacementFactoryEntered,
+			ReadFactoryGate replacementFactoryGate = triples.holdNextReadFactory(readFactoryOwner,
+					replacementFactoryEntered,
 					releaseReplacementFactory);
 			Future<Set<Statement>> growth = growthExecutor.submit(
 					() -> publishReplayGrowth(repository, "acquisition", replayGrowthNamespaceBytes(triples)));
@@ -6525,8 +6528,9 @@ class LmdbNoneStreamingIngestionTest {
 			}
 		}
 
-		private ReadFactoryGate holdNextReadFactory(CountDownLatch entered, CountDownLatch release) {
-			ReadFactoryGate gate = new ReadFactoryGate(entered, release, new AtomicReference<>());
+		private ReadFactoryGate holdNextReadFactory(AtomicReference<Thread> owner, CountDownLatch entered,
+				CountDownLatch release) {
+			ReadFactoryGate gate = new ReadFactoryGate(owner, entered, release, new AtomicReference<>());
 			if (!nextReadFactoryGate.compareAndSet(null, gate)) {
 				throw new IllegalStateException("a read factory gate is already armed");
 			}
@@ -6540,8 +6544,15 @@ class LmdbNoneStreamingIngestionTest {
 		@Override
 		public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit)
 				throws IOException {
-			ReadFactoryGate gate = nextReadFactoryGate.getAndSet(null);
-			if (gate != null) {
+			return getTriples(txn, subj, pred, obj, context, explicit, null);
+		}
+
+		@Override
+		public RecordIterator getTriples(Txn txn, long subj, long pred, long obj, long context, boolean explicit,
+				LmdbValueIdFilter idFilter) throws IOException {
+			ReadFactoryGate gate = nextReadFactoryGate.get();
+			if (gate != null && gate.owner().get() == Thread.currentThread()
+					&& nextReadFactoryGate.compareAndSet(gate, null)) {
 				gate.capturedBy().set(Thread.currentThread());
 				gate.entered.countDown();
 				try {
@@ -6553,7 +6564,7 @@ class LmdbNoneStreamingIngestionTest {
 					throw new IOException("interrupted while holding the captured native read factory", interrupted);
 				}
 			}
-			return super.getTriples(txn, subj, pred, obj, context, explicit);
+			return super.getTriples(txn, subj, pred, obj, context, explicit, idFilter);
 		}
 
 		private synchronized void observePairedCommits(ObservingValueStore values) {
@@ -7045,7 +7056,8 @@ class LmdbNoneStreamingIngestionTest {
 			int contextCapacity, boolean explicit) {
 	}
 
-	private record ReadFactoryGate(CountDownLatch entered, CountDownLatch release, AtomicReference<Thread> capturedBy) {
+	private record ReadFactoryGate(AtomicReference<Thread> owner, CountDownLatch entered, CountDownLatch release,
+			AtomicReference<Thread> capturedBy) {
 	}
 
 	private record BufferReferenceProbe(LmdbSailStore.CircularBuffer<LmdbSailStore.Operation> buffer,

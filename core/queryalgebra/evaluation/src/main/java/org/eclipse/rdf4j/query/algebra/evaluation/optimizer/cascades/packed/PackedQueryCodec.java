@@ -48,6 +48,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -112,6 +113,8 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PackedInputFrameNormalizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.MaterializeTupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.ScalarEvaluationEffects;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -135,18 +138,38 @@ final class PackedQueryCodec {
 		return encode(root, true, rangeProvider);
 	}
 
+	static PackedQuery encodeForPlanning(TupleExpr root, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		return encode(root, true, rangeProvider, Map.of(), true, false, semanticsCodec);
+	}
+
 	static PackedQuery encodeForCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames) {
+		return encodeForCacheIdentity(root, anonymousNames, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQuery encodeForCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(anonymousNames, "anonymousNames");
-		return encode(root, false, null, anonymousNames, false, false).withoutOriginalBindingSets();
+		return encode(root, false, null, anonymousNames, false, false, semanticsCodec).withoutOriginalBindingSets();
 	}
 
 	static PackedQuery encodeForParameterizedCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames) {
+		return encodeForParameterizedCacheIdentity(root, anonymousNames, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQuery encodeForParameterizedCacheIdentity(TupleExpr root, Map<String, Integer> anonymousNames,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(anonymousNames, "anonymousNames");
-		return encode(root, false, null, anonymousNames, false, true).withoutOriginalBindingSets();
+		return encode(root, false, null, anonymousNames, false, true, semanticsCodec).withoutOriginalBindingSets();
 	}
 
 	static PackedQuery encodeForParameterizedPlanning(TupleExpr root, PackedPredicateRangeProvider rangeProvider) {
-		return encode(root, true, rangeProvider, Map.of(), true, true);
+		return encodeForParameterizedPlanning(root, rangeProvider, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQuery encodeForParameterizedPlanning(TupleExpr root, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		return encode(root, true, rangeProvider, Map.of(), true, true, semanticsCodec);
 	}
 
 	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
@@ -157,14 +180,25 @@ final class PackedQueryCodec {
 	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
 			PackedPredicateRangeProvider rangeProvider, Map<String, Integer> anonymousNames,
 			boolean retainAnnotations, boolean parameterizeValues) {
+		return encode(root, normalizeFiniteFilters, rangeProvider, anonymousNames, retainAnnotations,
+				parameterizeValues, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	private static PackedQuery encode(TupleExpr root, boolean normalizeFiniteFilters,
+			PackedPredicateRangeProvider rangeProvider, Map<String, Integer> anonymousNames,
+			boolean retainAnnotations, boolean parameterizeValues,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(root, "root");
+		PlanningGraphDomain initialDomain = PlanningGraphDomains.ambientDomain(root);
 		PackedInputFrameNormalizer.Prepared prepared = PackedInputFrameNormalizer.prepare(root,
-				node -> new UnsupportedCascadesOperatorException(node.getClass(), "root.requiredInputFrame"));
+				node -> new UnsupportedCascadesOperatorException(node.getClass(), "root.requiredInputFrame"),
+				semanticsCodec::cloneWithSemantics);
 		root = prepared.root();
+		PlanningGraphDomains.Snapshot graphDomains = PlanningGraphDomains.snapshot(root, initialDomain);
 		EncodingShape shape = EncodingShape.measure(root);
 		Builder builder = new Builder(normalizeFiniteFilters, rangeProvider, shape, anonymousNames,
 				retainAnnotations, parameterizeValues, new PackedInputFrameContracts(root), prepared.replaySafety(),
-				prepared.sourceOrder());
+				prepared.sourceOrder(), graphDomains, semanticsCodec);
 		int rootRelId = builder.relation(root, "root");
 		builder.finishParameterization();
 		builder.deriveFactsAndSaturateRules(rootRelId);
@@ -172,7 +206,7 @@ final class PackedQueryCodec {
 				builder.metadata, builder.objects, builder.symbols,
 				Arrays.copyOf(builder.originalBindingSetRelations, builder.relations.size() + 1),
 				Arrays.copyOf(builder.originalBindingSets, builder.relations.size() + 1),
-				builder.parameterSchema, builder.parameterVector);
+				builder.parameterSchema, builder.parameterVector, builder.rangeApplicability, semanticsCodec);
 	}
 
 	static PackedQuery rebindOriginalBindingSets(PackedQuery template, TupleExpr source) {
@@ -300,6 +334,7 @@ final class PackedQueryCodec {
 		private final PackedSymbolTable symbols = new PackedSymbolTable();
 		private final PackedLogicalRuleProgram logicalRules;
 		private final PackedPredicateRangeProvider rangeProvider;
+		private final PackedPredicateRangeProvider.RangeApplicability rangeApplicability;
 		private final PackedPredicateRange rangeSlot;
 		private final PackedPredicateRangeArena rangeArena;
 		private final PackedDomainFacts domainFacts;
@@ -321,15 +356,20 @@ final class PackedQueryCodec {
 		private final PackedInputFrameContracts inputFrames;
 		private final Map<TupleExpr, Boolean> replaySafety;
 		private final Map<TupleExpr, PackedInputFrameNormalizer.SourceOrder> sourceOrder;
+		private final PlanningGraphDomains.Snapshot graphDomains;
+		private final PackedStatementPatternSemanticsCodec semanticsCodec;
 
 		private Builder(boolean normalizeFiniteFilters, PackedPredicateRangeProvider rangeProvider,
 				EncodingShape shape, Map<String, Integer> anonymousNames, boolean retainAnnotations,
 				boolean parameterizeValues, PackedInputFrameContracts inputFrames,
 				Map<TupleExpr, Boolean> replaySafety,
-				Map<TupleExpr, PackedInputFrameNormalizer.SourceOrder> sourceOrder) {
+				Map<TupleExpr, PackedInputFrameNormalizer.SourceOrder> sourceOrder,
+				PlanningGraphDomains.Snapshot graphDomains, PackedStatementPatternSemanticsCodec semanticsCodec) {
+			this.semanticsCodec = Objects.requireNonNull(semanticsCodec, "statement semantics codec");
 			this.inputFrames = inputFrames;
 			this.replaySafety = replaySafety;
 			this.sourceOrder = sourceOrder;
+			this.graphDomains = graphDomains;
 			relations = new PackedExpressionInterner(shape.relationNodes, shape.relationNodes);
 			scalars = new PackedExpressionInterner(shape.valueNodes, shape.valueNodes);
 			metadata = new PackedNodeMetadataArena(shape.relationNodes, shape.valueNodes, shape.termNodes);
@@ -337,6 +377,8 @@ final class PackedQueryCodec {
 			this.retainAnnotations = retainAnnotations;
 			parameters = parameterizeValues ? new PackedParameterSchema.Builder() : null;
 			this.rangeProvider = normalizeFiniteFilters ? rangeProvider : null;
+			rangeApplicability = this.rangeProvider == null ? null
+					: Objects.requireNonNull(this.rangeProvider.predicateRangeApplicability(), "range applicability");
 			rangeSlot = this.rangeProvider == null ? null : new PackedPredicateRange();
 			rangeArena = this.rangeProvider == null ? null : new PackedPredicateRangeArena();
 			domainFacts = this.rangeProvider == null ? null : new PackedDomainFacts(rangeArena, objects);
@@ -357,6 +399,9 @@ final class PackedQueryCodec {
 			objects.setParameterVector(parameterVector);
 		}
 
+		private PlanningGraphDomain sourceGraphDomain = PlanningGraphDomain.unknown();
+		private int sourceGraphDomainId;
+
 		private int relation(TupleExpr expression, String path) {
 			int flags = nodeFlags(expression);
 			PackedInputFrameContracts.Contract contract = inputFrames.at(expression);
@@ -367,6 +412,12 @@ final class PackedQueryCodec {
 				flags |= PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN;
 			}
 			int enclosingOccurrenceId = sourceOccurrenceId;
+			PlanningGraphDomain enclosingGraphDomain = sourceGraphDomain;
+			int enclosingGraphDomainId = sourceGraphDomainId;
+			sourceGraphDomain = graphDomains.domain(expression);
+			sourceGraphDomainId = sourceGraphDomain.kind() == PlanningGraphDomain.Kind.ACTIVE
+					? objects.intern(sourceGraphDomain)
+					: 0;
 			// Structural equality alone cannot merge caller-owned inputs or effectful evaluation occurrences.
 			// The ordinal is invocation-local and stable across cache-equivalent clones, unlike object identity.
 			sourceOccurrenceId = replaySafety.getOrDefault(expression, false) ? 0 : sourceOrder.get(expression).first();
@@ -375,6 +426,8 @@ final class PackedQueryCodec {
 				relationId = relationStructure(expression, path, flags);
 			} finally {
 				sourceOccurrenceId = enclosingOccurrenceId;
+				sourceGraphDomain = enclosingGraphDomain;
+				sourceGraphDomainId = enclosingGraphDomainId;
 			}
 			int algorithmNameId = retainAnnotations && expression instanceof BinaryTupleOperator binary
 					? objects.intern(binary.getAlgorithmName())
@@ -391,6 +444,7 @@ final class PackedQueryCodec {
 				throw new UnsupportedCascadesOperatorException(expression.getClass(), path + ".ambiguousInputFrame");
 			}
 			metadata.attachRelationReplaySafety(relationId, replaySafety.getOrDefault(expression, false));
+			metadata.attachRelationGraphDomain(relationId, graphDomains.domain(expression));
 			PackedInputFrameNormalizer.SourceOrder order = sourceOrder.get(expression);
 			if (order != null) {
 				metadata.attachRelationSourceOrder(relationId, order.first(), order.last());
@@ -400,7 +454,8 @@ final class PackedQueryCodec {
 
 		private int internRelation(int operator, int payload, int scope, int domain, int[] children, int offset,
 				int count) {
-			return relations.internCanonical(operator, payload, scope, domain, sourceOccurrenceId, children, offset,
+			return relations.internCanonical(operator, payload, scope, domain, sourceOccurrenceId, sourceGraphDomainId,
+					children, offset,
 					count);
 		}
 
@@ -411,9 +466,15 @@ final class PackedQueryCodec {
 		 * on the single-pattern branch's StatementPattern while its twin in the other branch is unmarked.
 		 */
 		private static int nodeFlags(TupleExpr expression) {
-			int flags = expression instanceof VariableScopeChange scopeChange && scopeChange.isVariableScopeChange()
-					? PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
-					: 0;
+			int inputScope = expression.isIndependentInputScope() ? PackedNodeMetadataArena.INDEPENDENT_INPUT_SCOPE : 0;
+			int flags = (expression instanceof VariableScopeChange scopeChange && scopeChange.isVariableScopeChange()
+					|| expression instanceof Graph graph && graph.isVariableScopeChange())
+							? PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE
+							: 0;
+			flags |= inputScope;
+			if (expression instanceof StatementPattern statement && statement.isContextBindingOriginInherited()) {
+				flags |= PackedNodeMetadataArena.CONTEXT_BINDING_ORIGIN_INHERITED;
+			}
 			if (expression instanceof Join join) {
 				flags |= join.isMergeJoin() ? PackedNodeMetadataArena.MERGE_JOIN : 0;
 				flags |= join.isCacheable() ? PackedNodeMetadataArena.CACHEABLE_JOIN : 0;
@@ -638,6 +699,16 @@ final class PackedQueryCodec {
 		}
 
 		private int relationStructure(TupleExpr expression, String path, int nodeFlags) {
+			if (expression instanceof Graph graph) {
+				int input = relation(graph.getArg(), path + ".arg");
+				int selector = term(graph.getGraphName());
+				if (!graph.getGraphName().isConstant()) {
+					symbols.intern(objects.intern(cacheIdentityName(graph.getGraphName().getName())));
+				}
+				unary[0] = selector;
+				int payload = payloads.internCanonical(PackedPayloadOp.GRAPH, 0, 0, 0, unary, 0, 1);
+				return unaryRelation(PackedRelOp.GRAPH, payload, input, nodeFlags);
+			}
 			if (expression instanceof StatementPattern pattern) {
 				return statementPattern(pattern, nodeFlags);
 			}
@@ -793,14 +864,19 @@ final class PackedQueryCodec {
 		}
 
 		private int statementPattern(StatementPattern pattern, int nodeFlags) {
+			// Capture the original occurrence BEFORE term pooling can substitute advisory Var metadata.
+			PackedStatementPatternSemanticsCodec.Content semanticContent = Objects.requireNonNull(
+					semanticsCodec.capture(pattern), "statement semantic content");
 			statementTerms[0] = term(pattern.getSubjectVar());
 			statementTerms[1] = term(pattern.getPredicateVar());
 			statementTerms[2] = term(pattern.getObjectVar());
 			statementTerms[3] = term(pattern.getContextVar());
 			int statementOrderId = objects.intern(pattern.getStatementOrder());
 			int indexNameId = objects.intern(pattern.getIndexName());
+			int options = payloads.internCanonical(PackedPayloadOp.STATEMENT_PATTERN_OPTIONS,
+					statementOrderId, indexNameId, objects.intern(semanticContent), NO_CHILDREN, 0, 0);
 			int payload = payloads.internCanonical(PackedPayloadOp.STATEMENT_PATTERN,
-					pattern.getScope().ordinal() + 1, statementOrderId, indexNameId, statementTerms, 0, 4);
+					pattern.getScope().ordinal() + 1, options, 0, statementTerms, 0, 4);
 			int relationId = internRelation(PackedRelOp.STATEMENT_PATTERN, payload, nodeFlags, 0,
 					NO_CHILDREN, 0,
 					0);
@@ -809,7 +885,7 @@ final class PackedQueryCodec {
 		}
 
 		private void seedStatementPatternFact(StatementPattern pattern, int relationId) {
-			if (rangeProvider == null || serviceDepth != 0) {
+			if (rangeProvider == null || serviceDepth != 0 || !rangeApplicability.permits(sourceGraphDomain)) {
 				return;
 			}
 			Var predicateVar = pattern.getPredicateVar();

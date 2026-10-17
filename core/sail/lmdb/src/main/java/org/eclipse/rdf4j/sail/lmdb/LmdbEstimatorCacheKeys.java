@@ -20,6 +20,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -28,7 +29,7 @@ import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 		FiniteRelationEstimate finiteBindings, EvidenceProfile prefixEvidence,
 		EvidenceStateSummary prefixState, long invocationCountBits,
-		EstimateContext.EvidencePolicy evidencePolicy,
+		EstimateContext.EvidencePolicy evidencePolicy, PlanningGraphDomain graphDomain,
 		JoinFactorCostModel.EstimationTier estimationTier,
 		QuadSnapshotIdentity snapshotIdentity, long snapshotVersion, long learnedRevision,
 		EstimateContext.MetricsPreference metricsPreference, boolean exactProbePermitted) {
@@ -43,6 +44,7 @@ record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
 				context.prefixEstimate().evidenceState().map(reference -> reference.summary()).orElse(null),
 				Double.doubleToLongBits(context.invocationCount()),
 				context.evidencePolicy(),
+				context.graphDomain(),
 				context.estimationTier(),
 				context.snapshotIdentity(),
 				context.snapshotVersion(),

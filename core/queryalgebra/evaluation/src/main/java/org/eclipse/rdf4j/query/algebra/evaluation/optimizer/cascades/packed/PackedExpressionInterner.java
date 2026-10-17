@@ -30,6 +30,7 @@ final class PackedExpressionInterner {
 	private int[] semanticScopeIds;
 	private int[] executionDomainIds;
 	private int[] occurrenceIds;
+	private int[] graphDomainIds;
 	private int[] childZeroIds;
 	private int[] childOneIds;
 	private int[] extraChildStarts;
@@ -55,6 +56,7 @@ final class PackedExpressionInterner {
 		semanticScopeIds = new int[rowCapacity];
 		executionDomainIds = new int[rowCapacity];
 		occurrenceIds = new int[rowCapacity];
+		graphDomainIds = new int[rowCapacity];
 		childZeroIds = new int[rowCapacity];
 		childOneIds = new int[rowCapacity];
 		extraChildStarts = new int[rowCapacity];
@@ -78,11 +80,17 @@ final class PackedExpressionInterner {
 
 	int internLogical(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return internLogical(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0,
+				childGroupIds, childOffset, childCount);
+	}
+
+	int internLogical(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		long hash = logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds, childOffset,
+				graphDomainId, childGroupIds, childOffset,
 				childCount);
 		return internLogicalHashed(hash, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount, THROW_CROSS_GROUP);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount, THROW_CROSS_GROUP);
 	}
 
 	int internLogicalIfSameGroup(int groupId, int operatorTag, int payloadId, int semanticScopeId,
@@ -93,11 +101,18 @@ final class PackedExpressionInterner {
 
 	int internLogicalIfSameGroup(int groupId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return internLogicalIfSameGroup(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				occurrenceId, 0, childGroupIds, childOffset, childCount);
+	}
+
+	int internLogicalIfSameGroup(int groupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset,
+			int childCount) {
 		long hash = logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds, childOffset,
+				graphDomainId, childGroupIds, childOffset,
 				childCount);
 		return internLogicalHashed(hash, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount, REJECT_CROSS_GROUP);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount, REJECT_CROSS_GROUP);
 	}
 
 	int findLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int[] childGroupIds,
@@ -108,11 +123,17 @@ final class PackedExpressionInterner {
 
 	int findLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int occurrenceId,
 			int[] childGroupIds, int childOffset, int childCount) {
+		return findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0,
+				childGroupIds, childOffset, childCount);
+	}
+
+	int findLogical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int occurrenceId,
+			int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		long hash = logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds, childOffset,
+				graphDomainId, childGroupIds, childOffset,
 				childCount);
 		return findLogicalHashed(hash, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds,
+				graphDomainId, childGroupIds,
 				childOffset, childCount);
 	}
 
@@ -124,6 +145,12 @@ final class PackedExpressionInterner {
 
 	private int findLogicalHashed(long hash, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return findLogicalHashed(hash, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0,
+				childGroupIds, childOffset, childCount);
+	}
+
+	private int findLogicalHashed(long hash, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		checkArguments(1, operatorTag, childGroupIds, childOffset, childCount);
 		int slot = tableSlot(hash, tableSlots.length);
 		while (true) {
@@ -133,7 +160,7 @@ final class PackedExpressionInterner {
 			}
 			if (hashes[expressionId] == hash
 					&& structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-							occurrenceId, childGroupIds, childOffset, childCount)) {
+							occurrenceId, graphDomainId, childGroupIds, childOffset, childCount)) {
 				return expressionId;
 			}
 			slot = (slot + 1) & (tableSlots.length - 1);
@@ -149,11 +176,17 @@ final class PackedExpressionInterner {
 	/** Zero denotes audited reusable structure; nonzero identity retains an original evaluation occurrence. */
 	int internCanonical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return internCanonical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0,
+				childGroupIds, childOffset, childCount);
+	}
+
+	int internCanonical(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		long hash = logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds, childOffset,
+				graphDomainId, childGroupIds, childOffset,
 				childCount);
 		return internLogicalHashed(hash, size + 1, operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount, ACCEPT_CROSS_GROUP);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount, ACCEPT_CROSS_GROUP);
 	}
 
 	int internLogicalHashed(long hash, int groupId, int operatorTag, int payloadId, int semanticScopeId,
@@ -171,6 +204,13 @@ final class PackedExpressionInterner {
 	private int internLogicalHashed(long hash, int groupId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount,
 			int crossGroupAction) {
+		return internLogicalHashed(hash, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				occurrenceId, 0, childGroupIds, childOffset, childCount, crossGroupAction);
+	}
+
+	private int internLogicalHashed(long hash, int groupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset,
+			int childCount, int crossGroupAction) {
 		if (frozen) {
 			throw new IllegalStateException("packed expression interner is frozen");
 		}
@@ -183,7 +223,7 @@ final class PackedExpressionInterner {
 			}
 			if (hashes[expressionId] == hash
 					&& structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-							occurrenceId, childGroupIds, childOffset, childCount)) {
+							occurrenceId, graphDomainId, childGroupIds, childOffset, childCount)) {
 				if (groupIds[expressionId] != groupId) {
 					if (crossGroupAction == REJECT_CROSS_GROUP) {
 						return 0;
@@ -204,11 +244,18 @@ final class PackedExpressionInterner {
 			slot = findEmptySlot(hash);
 		}
 		return insertRow(hash, slot, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount);
 	}
 
 	private int insertRow(long hash, int slot, int groupId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return insertRow(hash, slot, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				0, childGroupIds, childOffset, childCount);
+	}
+
+	private int insertRow(long hash, int slot, int groupId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset,
+			int childCount) {
 		int expressionId = ++size;
 		ensureRowCapacity(expressionId);
 		operatorTags[expressionId] = (short) operatorTag;
@@ -217,6 +264,7 @@ final class PackedExpressionInterner {
 		semanticScopeIds[expressionId] = semanticScopeId;
 		executionDomainIds[expressionId] = executionDomainId;
 		occurrenceIds[expressionId] = occurrenceId;
+		graphDomainIds[expressionId] = graphDomainId;
 		childCounts[expressionId] = (short) childCount;
 		hashes[expressionId] = hash;
 		if (childCount > 0) {
@@ -250,13 +298,20 @@ final class PackedExpressionInterner {
 
 	int internGroupScoped(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return internGroupScoped(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
+				0, childGroupIds, childOffset, childCount);
+	}
+
+	int internGroupScoped(int groupId, int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		if (frozen) {
 			throw new IllegalStateException("packed expression interner is frozen");
 		}
 		checkArguments(groupId, operatorTag, childGroupIds, childOffset, childCount);
-		long hash = groupScopedHash(groupId, operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds,
-				childOffset, childCount);
+		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(logicalHash(operatorTag, payloadId,
+				semanticScopeId, executionDomainId, occurrenceId, graphDomainId, childGroupIds, childOffset,
+				childCount),
+				groupId));
 		int slot = tableSlot(hash, tableSlots.length);
 		while (true) {
 			int expressionId = tableSlots[slot];
@@ -265,7 +320,7 @@ final class PackedExpressionInterner {
 			}
 			if (hashes[expressionId] == hash && groupIds[expressionId] == groupId
 					&& structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-							occurrenceId, childGroupIds, childOffset, childCount)) {
+							occurrenceId, graphDomainId, childGroupIds, childOffset, childCount)) {
 				return expressionId;
 			}
 			slot = slot + 1 & tableSlots.length - 1;
@@ -275,7 +330,7 @@ final class PackedExpressionInterner {
 			slot = findEmptySlot(hash);
 		}
 		return insertRow(hash, slot, groupId, operatorTag, payloadId, semanticScopeId, executionDomainId,
-				occurrenceId, childGroupIds, childOffset, childCount);
+				occurrenceId, graphDomainId, childGroupIds, childOffset, childCount);
 	}
 
 	private static long groupScopedHash(int groupId, int operatorTag, int payloadId, int semanticScopeId,
@@ -302,6 +357,7 @@ final class PackedExpressionInterner {
 					|| semanticScopeId(expressionId) != other.semanticScopeId(expressionId)
 					|| executionDomainId(expressionId) != other.executionDomainId(expressionId)
 					|| occurrenceId(expressionId) != other.occurrenceId(expressionId)
+					|| graphDomainId(expressionId) != other.graphDomainId(expressionId)
 					|| childCount(expressionId) != other.childCount(expressionId)) {
 				return false;
 			}
@@ -367,6 +423,13 @@ final class PackedExpressionInterner {
 		return occurrenceIds[expressionId];
 	}
 
+	int graphDomainId(int expressionId) {
+		if (expressionId <= 0 || expressionId > size) {
+			throw unknownExpression(expressionId);
+		}
+		return graphDomainIds[expressionId];
+	}
+
 	int childGroupId(int expressionId, int childOrdinal) {
 		int count = childCount(expressionId);
 		if (childOrdinal < 0 || childOrdinal >= count) {
@@ -381,10 +444,19 @@ final class PackedExpressionInterner {
 
 	private boolean structurallyEquals(int expressionId, int operatorTag, int payloadId, int semanticScopeId,
 			int executionDomainId, int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return structurallyEquals(expressionId, operatorTag, payloadId, semanticScopeId, executionDomainId,
+				occurrenceId,
+				0, childGroupIds, childOffset, childCount);
+	}
+
+	private boolean structurallyEquals(int expressionId, int operatorTag, int payloadId, int semanticScopeId,
+			int executionDomainId, int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset,
+			int childCount) {
 		if ((operatorTags[expressionId] & 0xffff) != operatorTag || payloadIds[expressionId] != payloadId
 				|| semanticScopeIds[expressionId] != semanticScopeId
 				|| executionDomainIds[expressionId] != executionDomainId
 				|| occurrenceIds[expressionId] != occurrenceId
+				|| graphDomainIds[expressionId] != graphDomainId
 				|| (childCounts[expressionId] & 0xffff) != childCount) {
 			return false;
 		}
@@ -412,6 +484,12 @@ final class PackedExpressionInterner {
 
 	private static long logicalHash(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
 			int occurrenceId, int[] childGroupIds, int childOffset, int childCount) {
+		return logicalHash(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0, childGroupIds,
+				childOffset, childCount);
+	}
+
+	private static long logicalHash(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId,
+			int occurrenceId, int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		checkChildSlice(childGroupIds, childOffset, childCount);
 		long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, operatorTag);
 		hash = PackedPrimitiveHash.step(hash, payloadId);
@@ -419,6 +497,9 @@ final class PackedExpressionInterner {
 		hash = PackedPrimitiveHash.step(hash, executionDomainId);
 		if (occurrenceId != 0) {
 			hash = PackedPrimitiveHash.step(hash, occurrenceId);
+		}
+		if (graphDomainId != 0) {
+			hash = PackedPrimitiveHash.step(hash, graphDomainId);
 		}
 		hash = PackedPrimitiveHash.step(hash, childCount);
 		for (int i = 0; i < childCount; i++) {
@@ -459,6 +540,7 @@ final class PackedExpressionInterner {
 		semanticScopeIds = Arrays.copyOf(semanticScopeIds, newCapacity);
 		executionDomainIds = Arrays.copyOf(executionDomainIds, newCapacity);
 		occurrenceIds = Arrays.copyOf(occurrenceIds, newCapacity);
+		graphDomainIds = Arrays.copyOf(graphDomainIds, newCapacity);
 		childZeroIds = Arrays.copyOf(childZeroIds, newCapacity);
 		childOneIds = Arrays.copyOf(childOneIds, newCapacity);
 		extraChildStarts = Arrays.copyOf(extraChildStarts, newCapacity);

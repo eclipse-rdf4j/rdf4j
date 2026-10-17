@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
+import java.util.Objects;
+
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 
 /** Immutable-key side columns for boundary metadata that is not expression identity. */
 @PackedHotPath
@@ -23,6 +26,8 @@ final class PackedNodeMetadataArena {
 	static final int SCALAR_REORDERING_SAFE = 1 << 3;
 	static final int INPUT_FRAME_SENSITIVE = 1 << 4;
 	static final int UNKNOWN_OUTPUT_DOMAIN = 1 << 5;
+	static final int INDEPENDENT_INPUT_SCOPE = 1 << 6;
+	static final int CONTEXT_BINDING_ORIGIN_INHERITED = 1 << 7;
 	static final int SEMANTIC_ASSURED_SHARED_MINUS_FILTER = 1;
 
 	private final Columns relations;
@@ -46,6 +51,22 @@ final class PackedNodeMetadataArena {
 			return;
 		}
 		relations.copy(sourceRelationId, targetRelationId);
+	}
+
+	void attachRelationGraphDomain(int id, PlanningGraphDomain domain) {
+		if (frozen) {
+			throw new IllegalStateException("packed node metadata is frozen");
+		}
+		relations.checkId(id);
+		PlanningGraphDomain previous = relations.graphDomains[id];
+		relations.graphDomains[id] = previous == null || previous.equals(domain) ? domain
+				: PlanningGraphDomain.unknown();
+	}
+
+	PlanningGraphDomain relationGraphDomain(int id) {
+		relations.checkId(id);
+		PlanningGraphDomain domain = relations.graphDomains[id];
+		return domain == null ? PlanningGraphDomain.unknown() : domain;
 	}
 
 	boolean attachRelationInputContract(int id, int requiredNames, int protectedNames, int nullableNames,
@@ -289,6 +310,7 @@ final class PackedNodeMetadataArena {
 		private byte[] replaySafety;
 		private int[] sourceFirst;
 		private int[] sourceLast;
+		private PlanningGraphDomain[] graphDomains;
 
 		private boolean hasSameFlags(Columns other) {
 			int rowLimit = Math.max(present.length, other.present.length);
@@ -303,7 +325,8 @@ final class PackedNodeMetadataArena {
 								|| independentOutputNames[id] != other.independentOutputNames[id]
 								|| replaySafety[id] != other.replaySafety[id]
 								|| sourceFirst[id] != other.sourceFirst[id]
-								|| sourceLast[id] != other.sourceLast[id])) {
+								|| sourceLast[id] != other.sourceLast[id]
+								|| !Objects.equals(graphDomains[id], other.graphDomains[id]))) {
 					return false;
 				}
 			}
@@ -329,6 +352,7 @@ final class PackedNodeMetadataArena {
 			replaySafety = new byte[capacity];
 			sourceFirst = new int[capacity];
 			sourceLast = new int[capacity];
+			graphDomains = new PlanningGraphDomain[capacity];
 		}
 
 		private void attach(int id, int metricSetId, int nodeFlags, double resultSizeEstimate, double costEstimate,
@@ -382,6 +406,7 @@ final class PackedNodeMetadataArena {
 			replaySafety[targetId] = replaySafety[sourceId];
 			sourceFirst[targetId] = sourceFirst[sourceId];
 			sourceLast[targetId] = sourceLast[sourceId];
+			graphDomains[targetId] = graphDomains[sourceId];
 		}
 
 		private void addRuleMask(int id, long ruleMask) {
@@ -465,6 +490,7 @@ final class PackedNodeMetadataArena {
 			replaySafety = Arrays.copyOf(replaySafety, capacity);
 			sourceFirst = Arrays.copyOf(sourceFirst, capacity);
 			sourceLast = Arrays.copyOf(sourceLast, capacity);
+			graphDomains = Arrays.copyOf(graphDomains, capacity);
 		}
 	}
 }

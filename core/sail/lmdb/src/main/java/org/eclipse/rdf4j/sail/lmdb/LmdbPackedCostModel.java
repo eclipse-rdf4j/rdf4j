@@ -16,6 +16,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -33,20 +34,25 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
@@ -59,10 +65,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRootCardinalityCertifier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidation;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStalePlanValidator;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStatementPatternSemanticsCodec;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis.ReadOnlyContext;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
@@ -81,7 +92,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 final class LmdbPackedCostModel
 		implements PackedCostModel, PackedStalePlanValidator, PackedRootCardinalityCertifier {
 
-	static final long VERSION = 35L;
+	static final long VERSION = 36L;
 
 	private static final String[] DISTINCT_REQUIREMENT_METRICS = {
 			TelemetryMetricNames.PLANNED_DISTINCT_REQUIREMENT_VARS,
@@ -151,7 +162,8 @@ final class LmdbPackedCostModel
 
 	@Override
 	public PackedCostSession openSession(PackedQueryView query) {
-		if (!frontierPlanningAllowed || runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
+		if (!frontierPlanningAllowed || !allNativeGraphDomains(query)
+				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
 			/* Preserve the established scalar planning observation footprint for ineligible transactions. */
 			return PackedCostSession.scalar(this, query);
 		}
@@ -175,6 +187,27 @@ final class LmdbPackedCostModel
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
 				null, false);
 		return PackedCostSession.scalar(conventional, query);
+	}
+
+	private static boolean allNativeGraphDomains(PackedQueryView query) {
+		for (int relation = 1; relation <= query.relationCount(); relation++) {
+			if (!query.graphDomain(relation).allowsNativeEvidence()) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	private static boolean nativeGraphDomain(PackedQueryView query, int relation, PackedCostContext context) {
+		if (!query.graphDomain(relation).allowsNativeEvidence()) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < context.prefixRelationCount(); ordinal++) {
+			if (!query.graphDomain(context.prefixRelationId(ordinal)).allowsNativeEvidence()) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static int statementPatternCount(PackedQueryView query) {
@@ -205,6 +238,11 @@ final class LmdbPackedCostModel
 		return mixVersion(version, runtime.mayHaveInferred() ? 1L : 0L);
 	}
 
+	@Override
+	public PackedStatementPatternSemanticsCodec statementPatternSemanticsCodec() {
+		return LmdbStatementPatternSemanticsCodec.INSTANCE;
+	}
+
 	private static long mixVersion(long left, long right) {
 		long mixed = left ^ Long.rotateLeft(right + 0x9e3779b97f4a7c15L, 27);
 		mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
@@ -214,7 +252,7 @@ final class LmdbPackedCostModel
 
 	@Override
 	public double estimateRows(PackedQueryView query, int relationId) {
-		if (!query.isStatementPattern(relationId)) {
+		if (!query.isStatementPattern(relationId) || !query.graphDomain(relationId).allowsNativeEvidence()) {
 			return Double.NaN;
 		}
 		FrontierLeafEstimate mapped = mappedLeafEstimate(query, relationId);
@@ -259,18 +297,27 @@ final class LmdbPackedCostModel
 
 	@Override
 	public double certifyRootRows(TupleExpr selectedPlan, double packedRows) {
+		if (!LmdbPlanningGraphEvidence.allows(selectedPlan)) {
+			return Double.NaN;
+		}
 		BagEstimate semantic = runtime.estimate(selectedPlan);
 		return semantic.rows() == 0.0d ? 0.0d : Double.NaN;
 	}
 
 	@Override
 	public double estimateLocalWork(PackedQueryView query, int relationId, double outputRows) {
-		return query.isStatementPattern(relationId) ? outputRows : Double.NaN;
+		return query.isStatementPattern(relationId) && query.graphDomain(relationId).allowsNativeEvidence()
+				? outputRows
+				: Double.NaN;
 	}
 
 	@Override
 	public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
 			PackedCostEstimate output) {
+		if (!query.isBindingSetAssignment(relationId) && !nativeGraphDomain(query, relationId, context)) {
+			output.setRows(Double.NaN, Double.NaN);
+			return;
+		}
 		if (!query.isStatementPattern(relationId)) {
 			if (query.isBindingSetAssignment(relationId)
 					&& estimateBindingSetAssignment(materializeRelation(query, relationId), query, context, output)) {
@@ -461,6 +508,9 @@ final class LmdbPackedCostModel
 	}
 
 	private FrontierLeafEstimate mappedLeafEstimate(PackedQueryView query, int relationId) {
+		if (!query.graphDomain(relationId).allowsNativeEvidence()) {
+			return null;
+		}
 		LmdbStatisticsService statistics = runtime.statisticsService();
 		if (statistics == null || runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE
 				|| !datasetUsesStoreDefaults || statisticsView == null && !unpinnedMappedStatisticsAllowed) {
@@ -530,20 +580,16 @@ final class LmdbPackedCostModel
 		if (query == null || relationIds == null || relationIds.length == 0) {
 			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-no-prefix");
 		}
-		List<TupleExpr> factors = new ArrayList<>(relationIds.length);
-		List<BindingSetAssignment> assignments = new ArrayList<>();
+		List<TupleExpr> domainRoots = new ArrayList<>();
 		for (int relationId : relationIds) {
 			if (relationId <= 0 || relationId > query.relationCount()) {
 				continue;
 			}
 			TupleExpr expression = query.materializeRelation(relationId);
-			if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
-				factors.add(expression);
-			}
-			collectBindingAssignments(expression, assignments);
+			domainRoots.add(expression);
 		}
 		return mappedProjectedDistinctProfile(
-				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
+				domainRoots, bindingNames, pointRows, lowerRows, upperRows);
 	}
 
 	double mappedProjectedDistinct(TupleExpr expression, String[] bindingNames, double upperRows) {
@@ -558,10 +604,10 @@ final class LmdbPackedCostModel
 		if (!collectMappedConjunctiveFactors(expression, factors)) {
 			return MappedDistinctProfile.unavailable(lowerRows, upperRows, "mapped-distinct-unsupported-expression");
 		}
-		List<BindingSetAssignment> assignments = new ArrayList<>();
-		collectBindingAssignments(expression, assignments);
+		List<TupleExpr> domainRoots = new ArrayList<>();
+		domainRoots.add(expression);
 		return mappedProjectedDistinctProfile(
-				factors, assignments, bindingNames, pointRows, lowerRows, upperRows);
+				domainRoots, bindingNames, pointRows, lowerRows, upperRows);
 	}
 
 	MappedSemiAntiEstimate mappedSemiAntiEstimate(PackedQueryView query, int[] outerRelationIds,
@@ -644,8 +690,7 @@ final class LmdbPackedCostModel
 		return Math.max(0.0d, Math.min(1.0d, joinedRows / rhsMultiplicity / outerRows));
 	}
 
-	private MappedDistinctProfile mappedProjectedDistinctProfile(List<TupleExpr> factors,
-			List<BindingSetAssignment> assignments, String[] bindingNames,
+	private MappedDistinctProfile mappedProjectedDistinctProfile(List<TupleExpr> domainRoots, String[] bindingNames,
 			double pointRows, double lowerRows, double upperRows) {
 		double structuralUpper = normalizedDistinctUpper(pointRows, upperRows);
 		double structuralLower = finiteNonNegative(lowerRows) && lowerRows > 0.0d && structuralUpper > 0.0d
@@ -661,12 +706,14 @@ final class LmdbPackedCostModel
 		boolean pointAvailable = statisticsView != null;
 		boolean leafBoundApplied = false;
 		boolean finiteDomainApplied = false;
+		MappedOutputDomains outputDomains = new MappedOutputDomains(domainRoots);
 		Set<String> distinctBindings = new LinkedHashSet<>(Arrays.asList(bindingNames));
 		for (String bindingName : distinctBindings) {
 			double bindingPoint = Double.POSITIVE_INFINITY;
 			double bindingUpper = structuralUpper;
-			for (TupleExpr factor : factors) {
-				int component = LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName);
+			for (OutputSource source : outputDomains.sources(bindingName)) {
+				TupleExpr factor = source.expression();
+				int component = LmdbFrontierProbeFactory.componentIndexForLineage(factor, source.bindingName());
 				if (component < 0) {
 					continue;
 				}
@@ -688,7 +735,7 @@ final class LmdbPackedCostModel
 					bindingPoint = Math.min(bindingPoint, estimate);
 				}
 			}
-			double finiteDomainUpper = exactAssignmentDomainUpper(assignments, bindingName);
+			double finiteDomainUpper = outputDomains.upper(bindingName);
 			if (finiteDomainUpper >= 0.0d) {
 				bindingUpper = Math.min(bindingUpper, finiteDomainUpper);
 				finiteDomainApplied = true;
@@ -718,59 +765,246 @@ final class LmdbPackedCostModel
 		return finiteNonNegative(pointRows) ? pointRows : Double.MAX_VALUE;
 	}
 
-	private static double exactAssignmentDomainUpper(List<BindingSetAssignment> assignments, String bindingName) {
-		double upper = Double.POSITIVE_INFINITY;
-		for (BindingSetAssignment assignment : assignments) {
-			Set<Value> values = new LinkedHashSet<>();
-			boolean complete = true;
-			for (BindingSet bindingSet : assignment.getBindingSets()) {
-				Value value = bindingSet.getValue(bindingName);
-				if (value == null) {
-					complete = false;
-					break;
-				}
-				values.add(value);
-			}
-			if (complete) {
-				upper = Math.min(upper, values.size());
-			}
-		}
-		return Double.isFinite(upper) ? upper : -1.0d;
+	private record OutputSource(TupleExpr expression, String bindingName) {
 	}
 
-	private static void collectBindingAssignments(TupleExpr expression,
-			List<BindingSetAssignment> assignments) {
-		if (expression == null) {
-			return;
+	/** Finite and native bounds follow demanded public outputs in the shared analyzed evaluator frames. */
+	private static final class MappedOutputDomains {
+		private final List<TupleExpr> roots;
+		private final QueryAlgebraBindingAnalysis analysis;
+		private final Map<String, List<TupleExpr>> admittedRoots = new HashMap<>();
+		private final Map<TupleExpr, Map<ReadOnlyContext, Map<String, Boolean>>> preserved = new IdentityHashMap<>();
+
+		private MappedOutputDomains(List<TupleExpr> roots) {
+			this.roots = roots;
+			boolean[] stable = { true };
+			for (TupleExpr root : roots) {
+				root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment assignment) {
+						stable[0] &= BindingSetAssignmentKeyability.canInspect(assignment);
+					}
+				});
+			}
+			// Preflight runs before analysis can infer a VALUES header or inspect any rows.
+			analysis = stable[0] ? QueryAlgebraBindingAnalysis.withGuaranteedInputNames(null, Set.of()) : null;
 		}
-		if (expression instanceof BindingSetAssignment assignment) {
-			assignments.add(assignment);
-			return;
+
+		private List<TupleExpr> rootsFor(String name) {
+			if (analysis == null) {
+				return List.of();
+			}
+			return admittedRoots.computeIfAbsent(name, ignored -> {
+				boolean[] preserving = new boolean[roots.size()];
+				int replacements = 0;
+				for (int i = 0; i < roots.size(); i++) {
+					preserving[i] = preservesIncoming(roots.get(i), name, analysis.rootContext());
+					if (!preserving[i]) {
+						replacements++;
+					}
+				}
+				List<TupleExpr> admitted = new ArrayList<>();
+				for (int i = 0; i < roots.size(); i++) {
+					// Each candidate must survive every OTHER factor, in either forest evaluation order.
+					if (replacements == 0 || replacements == 1 && !preserving[i]) {
+						admitted.add(roots.get(i));
+					}
+				}
+				return List.copyOf(admitted);
+			});
 		}
-		if (expression instanceof Join join) {
-			collectBindingAssignments(join.getLeftArg(), assignments);
-			collectBindingAssignments(join.getRightArg(), assignments);
-			return;
+
+		private double upper(String name) {
+			double result = Double.POSITIVE_INFINITY;
+			for (TupleExpr root : rootsFor(name)) {
+				result = Math.min(result, upper(root, name, analysis.rootContext()));
+			}
+			return Double.isFinite(result) ? result : -1.0d;
 		}
-		if (expression instanceof Filter filter) {
-			collectBindingAssignments(filter.getArg(), assignments);
-		} else if (expression instanceof Extension extension) {
-			collectBindingAssignments(extension.getArg(), assignments);
-		} else if (expression instanceof Projection projection) {
-			collectBindingAssignments(projection.getArg(), assignments);
-		} else if (expression instanceof Distinct distinct) {
-			collectBindingAssignments(distinct.getArg(), assignments);
-		} else if (expression instanceof Reduced reduced) {
-			collectBindingAssignments(reduced.getArg(), assignments);
-		} else if (expression instanceof Slice slice) {
-			collectBindingAssignments(slice.getArg(), assignments);
-		} else if (expression instanceof Group group) {
-			collectBindingAssignments(group.getArg(), assignments);
-		} else if (expression instanceof Order order) {
-			collectBindingAssignments(order.getArg(), assignments);
-		} else if (expression instanceof QueryRoot root) {
-			collectBindingAssignments(root.getArg(), assignments);
+
+		private List<OutputSource> sources(String name) {
+			List<OutputSource> result = new ArrayList<>();
+			for (TupleExpr root : rootsFor(name)) {
+				collectSources(root, name, analysis.rootContext(), result);
+			}
+			return result;
 		}
+
+		private double upper(TupleExpr expression, String name, ReadOnlyContext input) {
+			var facts = analysis.outputFacts(expression, input);
+			if (facts.isKnownEmpty()) {
+				return 0.0d;
+			}
+			if (!facts.possibleOutputsKnown() || !facts.possibleOutputs().contains(name)) {
+				return Double.POSITIVE_INFINITY;
+			}
+			if (expression.getClass() == BindingSetAssignment.class) {
+				if (!facts.guaranteedOutputsKnown() || !facts.guaranteedOutputs().contains(name)) {
+					return Double.POSITIVE_INFINITY;
+				}
+				Set<Value> values = new LinkedHashSet<>();
+				for (BindingSet row : ((BindingSetAssignment) expression).getBindingSets()) {
+					Value value = row.getValue(name);
+					if (value == null) {
+						return Double.POSITIVE_INFINITY;
+					}
+					values.add(value);
+				}
+				return values.size();
+			}
+			if (expression.getClass() == Join.class) {
+				Join join = (Join) expression;
+				ReadOnlyContext rightInput = analysis.childInput(join, join.getRightArg(), input);
+				var rightFacts = analysis.outputFacts(join.getRightArg(), rightInput);
+				if (!rightFacts.possibleOutputsKnown()) {
+					return Double.POSITIVE_INFINITY;
+				}
+				double left = !preservesIncoming(join.getRightArg(), name, rightInput) ? Double.POSITIVE_INFINITY
+						: upper(join.getLeftArg(), name, analysis.childInput(join, join.getLeftArg(), input));
+				return Math.min(left, upper(join.getRightArg(), name, rightInput));
+			}
+			if (expression.getClass() == Projection.class || expression.getClass() == Extension.class) {
+				UnaryTupleOperator wrapper = (UnaryTupleOperator) expression;
+				String source = sourceName(expression, name);
+				return source == null ? Double.POSITIVE_INFINITY
+						: upper(wrapper.getArg(), source,
+								analysis.childInput(wrapper, wrapper.getArg(), input));
+			}
+			if (expression.getClass() == Group.class
+					&& (!((Group) expression).getGroupBindingNames().contains(name)
+							|| ((Group) expression).getAggregateBindingNames().contains(name))) {
+				return Double.POSITIVE_INFINITY;
+			}
+			if (expression.getClass() == Filter.class || expression.getClass() == Extension.class
+					|| expression.getClass() == Group.class || expression.getClass() == Distinct.class
+					|| expression.getClass() == Reduced.class || expression.getClass() == Slice.class
+					|| expression.getClass() == Order.class || expression.getClass() == QueryRoot.class) {
+				UnaryTupleOperator wrapper = (UnaryTupleOperator) expression;
+				return upper(wrapper.getArg(), name, analysis.childInput(wrapper, wrapper.getArg(), input));
+			}
+			return Double.POSITIVE_INFINITY;
+		}
+
+		private void collectSources(TupleExpr expression, String name, ReadOnlyContext input,
+				List<OutputSource> result) {
+			var facts = analysis.outputFacts(expression, input);
+			if (!facts.possibleOutputsKnown() || !facts.possibleOutputs().contains(name) || facts.isKnownEmpty()) {
+				return;
+			}
+			if (expression.getClass() == StatementPattern.class) {
+				result.add(new OutputSource(expression, name));
+			} else if (expression.getClass() == Join.class) {
+				Join join = (Join) expression;
+				ReadOnlyContext rightInput = analysis.childInput(join, join.getRightArg(), input);
+				if (preservesIncoming(join.getRightArg(), name, rightInput)) {
+					collectSources(join.getLeftArg(), name, analysis.childInput(join, join.getLeftArg(), input),
+							result);
+				}
+				collectSources(join.getRightArg(), name, rightInput, result);
+			} else if (expression.getClass() == Projection.class || expression.getClass() == Extension.class) {
+				String source = sourceName(expression, name);
+				if (source != null) {
+					UnaryTupleOperator wrapper = (UnaryTupleOperator) expression;
+					collectSources(wrapper.getArg(), source, analysis.childInput(wrapper, wrapper.getArg(), input),
+							result);
+				}
+			} else if (unchangedWrapper(expression, name)) {
+				UnaryTupleOperator wrapper = (UnaryTupleOperator) expression;
+				collectSources(wrapper.getArg(), name, analysis.childInput(wrapper, wrapper.getArg(), input), result);
+			}
+		}
+
+		/** Whether existing values can only be retained, restricted or dropped, rather than reassigned. */
+		private boolean preservesIncoming(TupleExpr expression, String name, ReadOnlyContext input) {
+			Map<String, Boolean> names = preserved.computeIfAbsent(expression, ignored -> new IdentityHashMap<>())
+					.computeIfAbsent(input, ignored -> new HashMap<>());
+			Boolean known = names.get(name);
+			if (known != null) {
+				return known;
+			}
+			boolean result = computePreservesIncoming(expression, name, input);
+			names.put(name, result);
+			return result;
+		}
+
+		private boolean computePreservesIncoming(TupleExpr expression, String name, ReadOnlyContext input) {
+			var facts = analysis.outputFacts(expression, input);
+			if (!facts.possibleOutputsKnown()) {
+				return false;
+			}
+			if (facts.isKnownEmpty() || expression.getClass() == BindingSetAssignment.class
+					|| expression.getClass() == StatementPattern.class || expression.getClass() == SingletonSet.class) {
+				return true;
+			}
+			if (expression.getClass() == Join.class) {
+				Join join = (Join) expression;
+				return preservesIncoming(join.getLeftArg(), name, analysis.childInput(join, join.getLeftArg(), input))
+						&& preservesIncoming(join.getRightArg(), name,
+								analysis.childInput(join, join.getRightArg(), input));
+			}
+			if (expression.getClass() == Projection.class || expression.getClass() == Extension.class) {
+				String source = sourceName(expression, name);
+				if (source == null && expression.getClass() == Projection.class
+						&& !facts.possibleOutputs().contains(name)) {
+					return true;
+				}
+				if (!name.equals(source)) {
+					return false;
+				}
+			} else if (expression.getClass() == Group.class) {
+				Group group = (Group) expression;
+				if (group.getAggregateBindingNames().contains(name)) {
+					return false;
+				}
+				if (!group.getGroupBindingNames().contains(name)) {
+					return true;
+				}
+			} else if (!unchangedWrapper(expression, name)) {
+				return false;
+			}
+			UnaryTupleOperator wrapper = (UnaryTupleOperator) expression;
+			return preservesIncoming(wrapper.getArg(), name, analysis.childInput(wrapper, wrapper.getArg(), input));
+		}
+
+		private static boolean unchangedWrapper(TupleExpr expression, String name) {
+			return expression.getClass() == Filter.class || expression.getClass() == Distinct.class
+					|| expression.getClass() == Reduced.class || expression.getClass() == Slice.class
+					|| expression.getClass() == Order.class || expression.getClass() == QueryRoot.class
+					|| expression.getClass() == Group.class
+							&& ((Group) expression).getGroupBindingNames().contains(name)
+							&& !((Group) expression).getAggregateBindingNames().contains(name);
+		}
+
+		private static String sourceName(TupleExpr expression, String name) {
+			if (expression.getClass() == Projection.class) {
+				String source = null;
+				for (ProjectionElem element : ((Projection) expression).getProjectionElemList().getElements()) {
+					if (name.equals(element.getProjectionAlias().orElse(element.getName()))) {
+						if (source != null) {
+							return null;
+						}
+						source = element.getName();
+					}
+				}
+				return source;
+			}
+			List<ExtensionElem> elements = ((Extension) expression).getElements();
+			String source = name;
+			for (int i = elements.size() - 1; i >= 0; i--) {
+				ExtensionElem element = elements.get(i);
+				if (source.equals(element.getName()) && TupleExprs.isEvaluatedExtensionElement(element)) {
+					if (element.getExpr().getClass() != Var.class || ((Var) element.getExpr()).hasValue()) {
+						return null;
+					}
+					source = ((Var) element.getExpr()).getName();
+					if (source == null) {
+						return null;
+					}
+				}
+			}
+			return source;
+		}
+
 	}
 
 	private double mappedConjunctiveRows(TupleExpr expression) {
@@ -1583,7 +1817,11 @@ final class LmdbPackedCostModel
 			if (relationId <= 0 || relationId > 63) {
 				return 0L;
 			}
-			key |= 1L << relationId - 1;
+			long bit = 1L << relationId - 1;
+			if ((key & bit) != 0L) {
+				return 0L; // A SET cache key cannot represent repeated bag occurrences.
+			}
+			key |= bit;
 		}
 		return key;
 	}
@@ -1594,7 +1832,11 @@ final class LmdbPackedCostModel
 			if (relationId <= 0 || relationId > 63) {
 				return 0L;
 			}
-			key |= 1L << relationId - 1;
+			long bit = 1L << relationId - 1;
+			if ((key & bit) != 0L) {
+				return 0L; // A SET cache key cannot represent repeated bag occurrences.
+			}
+			key |= bit;
 		}
 		return key;
 	}
@@ -1796,6 +2038,9 @@ final class LmdbPackedCostModel
 	@Override
 	public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 			PackedCostEstimate output) {
+		if (!nativeGraphDomain(query, relationId, context)) {
+			return;
+		}
 		refineLogicalOperator(query, relationId, context, output);
 		if (statisticsView == null && relationId > 0 && relationId <= query.relationCount()
 				&& (query.isSemiJoin(relationId) || query.isAntiJoin(relationId))) {
@@ -2721,14 +2966,13 @@ final class LmdbPackedCostModel
 		if (!finiteNonNegative(rows) || !finiteNonNegative(workRows)) {
 			return false;
 		}
-		if (connected && prefixFullyConnectedTo(query, expression, prefixFactors)) {
+		if (connected && (mappedPath == null || prefixFullyConnectedTo(query, expression, prefixFactors))) {
+			// Scalar paths already include every full-prefix invocation, including unrelated multiplicity.
 			output.setContextualRows(rows, workRows);
 		} else if (connected) {
 			/*
-			 * A bound endpoint chooses the path direction, but resolvedLeaf deliberately leaves the path bag local to
-			 * its connected component. Prefixes can contain independent components whose multiplicities are therefore
-			 * absent from this estimate. Mark the rows as component-scoped so packed composition preserves each
-			 * unrelated component exactly once.
+			 * Mapped paths use connectedComponentRows for their invocation domain. Their rows exclude independent
+			 * prefix components, which packed composition must still multiply exactly once.
 			 */
 			output.setComponentRows(rows, workRows);
 		} else {
@@ -2801,8 +3045,10 @@ final class LmdbPackedCostModel
 		}
 		List<TupleExpr> prefixComponent = LmdbFrontierProbeFactory.connectedLineageComponent(statementFactors,
 				anchorOrdinal);
-		MappedRowsEstimate mappedPrefix = mappedLineageEstimate(prefixComponent, 0L);
-		if (mappedPrefix == null || !(mappedPrefix.pointRows() > 0.0d)) {
+		// Conditional path programs share the bounded reserve used by correlated semi/anti costing. General join
+		// refinement can exhaust its own channel before this invocation, without exhausting that conditional reserve.
+		MappedRowsEstimate mappedPrefix = mappedCorrelatedLineageEstimate(prefixComponent);
+		if (mappedPrefix == null || !(mappedPrefix.pointRows() > 0.0d) || !(mappedPrefix.confidence() > 0.0d)) {
 			return null;
 		}
 		double componentPrefixRows = connectedComponentRows(context, completePrefixComponent);
@@ -2834,13 +3080,13 @@ final class LmdbPackedCostModel
 			String nextName = uniquePathVariable(occupiedNames, depth, -1);
 			pathProgram.add(pathStep(step, inputName, outputName, currentName, nextName, depth, occupiedNames));
 			occupiedNames.add(nextName);
-			MappedRowsEstimate mappedDepth = mappedLineageEstimate(pathProgram, 0L);
-			if (mappedDepth == null) {
+			MappedRowsEstimate mappedDepth = mappedCorrelatedLineageEstimate(pathProgram);
+			if (mappedDepth == null || !(mappedDepth.confidence() > 0.0d)) {
 				break;
 			}
 			FrontierJoinEstimate conditional = conditionalMixedPrefixEstimate(componentPrefixRows, mappedPrefix,
 					mappedDepth);
-			if (conditional == null) {
+			if (conditional == null || !(conditional.confidence() > 0.0d)) {
 				break;
 			}
 			observedDepths++;

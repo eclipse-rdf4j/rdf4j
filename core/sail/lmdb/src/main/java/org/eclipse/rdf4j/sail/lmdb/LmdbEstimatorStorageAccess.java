@@ -64,6 +64,10 @@ final class LmdbEstimatorStorageAccess {
 		return valueStore;
 	}
 
+	TripleStore physicalTripleStore() {
+		return tripleStore;
+	}
+
 	LmdbFrontierSnapshotSource openFrontierSnapshotSource() throws IOException {
 		if (tripleStore == null) {
 			throw new IOException("LMDB triple store is unavailable");
@@ -125,6 +129,78 @@ final class LmdbEstimatorStorageAccess {
 				dictionary.close();
 			}
 		};
+	}
+
+	/** Authenticates the complete invocation's own triple/dictionary authority. */
+	void validateQueryPlanningPair(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		if (!ownsQueryPlanningPair(txn, values)) {
+			throw new IllegalArgumentException("Query planning requires its own live same-store paired snapshot");
+		}
+		txn.ensureSnapshotValid(txn.leaseId());
+	}
+
+	boolean ownsQueryPlanningPair(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		return tripleStore != null && valueStore != null && tripleStore.ownsPlanningTxn(txn)
+				&& values != null && values.valueStore() == valueStore && values.isPairedWith(txn);
+	}
+
+	TripleStore.PlanningReadPin maskQueryPlanningReads() {
+		TripleStore.PlanningReadPin triples = tripleStore == null
+				? TripleStore.PlanningReadPin.NONE
+				: tripleStore.maskQueryPlanningReads();
+		SailClosable dictionary;
+		try {
+			dictionary = valueStore == null ? () -> {
+			} : valueStore.maskQueryPlanningReads();
+		} catch (RuntimeException | Error failure) {
+			try {
+				triples.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+		return () -> {
+			try (triples) {
+				dictionary.close();
+			}
+		};
+	}
+
+	TripleStore.PlanningReadPin pinQueryPlanningReads(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		// Authenticate both owners and the exact admitted pairing before mutating either thread-local stack.
+		validateQueryPlanningPair(txn, values);
+		TripleStore.PlanningReadPin triples = tripleStore.pinQueryPlanningTxn(txn);
+		SailClosable dictionary;
+		try {
+			dictionary = valueStore.pinQueryPlanningReads(values);
+		} catch (RuntimeException | Error failure) {
+			try {
+				triples.close();
+			} catch (RuntimeException | Error cleanup) {
+				if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+			throw failure;
+		}
+		return () -> {
+			try (triples) {
+				dictionary.close();
+			}
+		};
+	}
+
+	/** Only the actual same-store admitted pair can certify universal snapshot facts. */
+	boolean hasPairedPlanningAuthority() {
+		if (tripleStore == null || valueStore == null) {
+			return false;
+		}
+		TxnManager.Txn triples = tripleStore.borrowedPlanningTxn();
+		ValueStore.ReadSnapshot dictionary = valueStore.borrowedPlanningSnapshot();
+		return dictionary != null && dictionary.valueStore() == valueStore && dictionary.isPairedWith(triples);
 	}
 
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,

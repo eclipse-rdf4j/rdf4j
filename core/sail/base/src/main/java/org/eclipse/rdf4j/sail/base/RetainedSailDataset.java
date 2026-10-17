@@ -16,6 +16,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
@@ -31,12 +32,15 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.sail.SailException;
 
 /** Keeps a dataset alive until its owner and all cursors opened from it have released their references. */
-final class RetainedSailDataset extends DelegatingSailDataset implements TreeOwnedDataset {
+final class RetainedSailDataset extends DelegatingSailDataset
+		implements TreeOwnedDataset, SailDatasetReadComposition.Transparent {
 
 	private final DatasetLifetime lifetime;
+	private final SailDataset compositionDelegate;
 
 	RetainedSailDataset(SailDataset delegate) {
 		super(Objects.requireNonNull(delegate, "delegate"));
+		compositionDelegate = delegate;
 		lifetime = new DatasetLifetime(abandon -> {
 			if (abandon) {
 				delegate.abandonUnobserved();
@@ -44,6 +48,13 @@ final class RetainedSailDataset extends DelegatingSailDataset implements TreeOwn
 				delegate.close();
 			}
 		});
+	}
+
+	@Override
+	public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+			BiFunction<T, T, Optional<T>> unionCombiner) {
+		return lifetime.call(() -> SailDatasetReadComposition.resolveDataset(compositionDelegate, leafCapability,
+				unionCombiner));
 	}
 
 	/** Publishes logical observations before the final physical reader can unregister or trigger automatic flush. */

@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -68,6 +69,20 @@ public class QueryModelNormalizerTest extends QueryOptimizerTest {
 	@BeforeEach
 	public void setup() {
 		subject = getOptimizer();
+	}
+
+	@Test
+	public void repeatedLogicalOperandStillProducesABoolean() throws Exception {
+		for (String expression : List.of("?a && ?a", "?a || ?a")) {
+			TupleExpr original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT ?x WHERE { VALUES ?a { 7 } BIND(" + expression + " AS ?x) }", null).getTupleExpr();
+			assertThat(evaluate(original.clone())).singleElement()
+					.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(BooleanLiteral.TRUE));
+			subject.optimize(original, null, EmptyBindingSet.getInstance());
+			assertThat(evaluate(original)).as(expression)
+					.singleElement()
+					.satisfies(row -> assertThat(row.getValue("x")).isEqualTo(BooleanLiteral.TRUE));
+		}
 	}
 
 	@Test

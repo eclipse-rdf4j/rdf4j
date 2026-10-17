@@ -24,12 +24,14 @@ final class PackedCostingTrace {
 	private static final PackedCostingTrace EMPTY = emptyTrace();
 
 	private final byte[] phases;
+	private final byte[] contextFlags;
 	private final int[] relationIds;
 	private final long[] contextFingerprints;
 	private final int[] prefixStarts;
 	private final int[] prefixCounts;
 	private final int[] prefixRelationIds;
 	private final double[] prefixRows;
+	private final double[] unrelatedPrefixRows;
 	private final int[] assuredBindingRelationIds;
 	private final int[] inputStateIds;
 	private final int[] leftStateIds;
@@ -108,8 +110,9 @@ final class PackedCostingTrace {
 	private final double[] doubleMetricValues;
 	private final Object[] objects;
 
-	PackedCostingTrace(byte[] phases, int[] relationIds, long[] contextFingerprints,
+	PackedCostingTrace(byte[] phases, byte[] contextFlags, int[] relationIds, long[] contextFingerprints,
 			int[] prefixStarts, int[] prefixCounts, int[] prefixRelationIds, double[] prefixRows,
+			double[] unrelatedPrefixRows,
 			int[] assuredBindingRelationIds, int[] inputStateIds, int[] leftStateIds, int[] rightStateIds,
 			int[] inputSourceStateIds, int[] leftSourceStateIds, int[] rightSourceStateIds,
 			int[] outputStateIds, int[] bindingLayoutIds, int[] correlationMaskIds, int[] semanticScopeMaskIds,
@@ -141,12 +144,14 @@ final class PackedCostingTrace {
 			int[] stringMetricNameIds, int[] stringMetricValueIds, int[] doubleMetricNameIds,
 			double[] doubleMetricValues, Object[] objects) {
 		this.phases = phases;
+		this.contextFlags = contextFlags;
 		this.relationIds = relationIds;
 		this.contextFingerprints = contextFingerprints;
 		this.prefixStarts = prefixStarts;
 		this.prefixCounts = prefixCounts;
 		this.prefixRelationIds = prefixRelationIds;
 		this.prefixRows = prefixRows;
+		this.unrelatedPrefixRows = unrelatedPrefixRows;
 		this.assuredBindingRelationIds = assuredBindingRelationIds;
 		this.inputStateIds = inputStateIds;
 		this.leftStateIds = leftStateIds;
@@ -236,8 +241,8 @@ final class PackedCostingTrace {
 		byte[] eventBytes = new byte[1];
 		long[] eventLongs = new long[1];
 		return new PackedCostingTrace(
-				eventBytes, eventInts, eventLongs,
-				eventInts, eventInts, new int[0], eventDoubles,
+				eventBytes, eventBytes, eventInts, eventLongs,
+				eventInts, eventInts, new int[0], eventDoubles, eventDoubles,
 				eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts, eventInts,
 				eventInts, eventInts, eventInts, eventInts,
 				eventDoubles, eventDoubles,
@@ -356,9 +361,11 @@ final class PackedCostingTrace {
 			projectedProviderInputCostEventIds[eventId] = eventMapping[projectedProviderInputCostEventIds[eventId]];
 		}
 		PackedCostingTrace projected = new PackedCostingTrace(
-				select(phases, eventMapping, length), select(relationIds, eventMapping, length),
+				select(phases, eventMapping, length), select(contextFlags, eventMapping, length),
+				select(relationIds, eventMapping, length),
 				select(contextFingerprints, eventMapping, length), projectedPrefixStarts, projectedPrefixCounts,
 				projectedPrefixRelationIds, select(prefixRows, eventMapping, length),
+				select(unrelatedPrefixRows, eventMapping, length),
 				select(assuredBindingRelationIds, eventMapping, length), select(inputStateIds, eventMapping, length),
 				select(leftStateIds, eventMapping, length), select(rightStateIds, eventMapping, length),
 				select(inputSourceStateIds, eventMapping, length), select(leftSourceStateIds, eventMapping, length),
@@ -571,6 +578,16 @@ final class PackedCostingTrace {
 			throw new IndexOutOfBoundsException("costing-event prefix relation " + ordinal);
 		}
 		return prefixRelationIds[prefixStarts[eventId] + ordinal];
+	}
+
+	boolean prefixRelationsDescribeRows(int eventId) {
+		checkEventId(eventId);
+		return contextFlags[eventId] != 0;
+	}
+
+	double unrelatedPrefixRows(int eventId) {
+		checkEventId(eventId);
+		return unrelatedPrefixRows[eventId];
 	}
 
 	double prefixRows(int eventId) {
@@ -1039,8 +1056,10 @@ final class PackedCostingTrace {
 	private PackedCostingTrace copyWithStates(int[] inputStates, int[] inputSourceStates, int[] leftStates,
 			int[] leftSourceStates, int[] rightStates, int[] rightSourceStates, int[] outputStates,
 			int[] providerInputStates, int[] providerInputSourceStates) {
-		return new PackedCostingTrace(phases, relationIds, contextFingerprints, prefixStarts, prefixCounts,
-				prefixRelationIds, prefixRows, assuredBindingRelationIds, inputStates, leftStates, rightStates,
+		return new PackedCostingTrace(phases, contextFlags, relationIds, contextFingerprints, prefixStarts,
+				prefixCounts,
+				prefixRelationIds, prefixRows, unrelatedPrefixRows, assuredBindingRelationIds, inputStates, leftStates,
+				rightStates,
 				inputSourceStates, leftSourceStates, rightSourceStates,
 				outputStates, bindingLayoutIds, correlationMaskIds, semanticScopeMaskIds, hashLookupMaskIds,
 				hashCompatibilityMaskIds, leftInputRows, rightInputRows,
@@ -1081,7 +1100,7 @@ final class PackedCostingTrace {
 	}
 
 	long retainedBytes() {
-		return (long) phases.length * Byte.BYTES
+		return (long) (phases.length + contextFlags.length) * Byte.BYTES
 				+ (long) providerInputCostScopes.length * Byte.BYTES
 				+ (long) providerInputFlags.length * Byte.BYTES
 				+ (long) providerInputGuarantees.length * Byte.BYTES
@@ -1108,7 +1127,7 @@ final class PackedCostingTrace {
 						+ stringMetricValueIds.length + doubleMetricNameIds.length)
 						* Integer.BYTES
 				+ (long) (contextFingerprints.length + digestHigh.length + digestLow.length) * Long.BYTES
-				+ (long) (prefixRows.length + leftInputRows.length + rightInputRows.length
+				+ (long) (prefixRows.length + unrelatedPrefixRows.length + leftInputRows.length + rightInputRows.length
 						+ providerInputRows.length + providerInputWorkRows.length
 						+ providerInputSequentialRows.length + providerInputRandomSeeks.length
 						+ providerInputIteratorOpens.length + providerInputExpressionEvaluations.length

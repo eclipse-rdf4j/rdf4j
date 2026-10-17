@@ -12,13 +12,131 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
 class PackedWinnerTableTest {
+
+	@Test
+	void collidingContinuationBucketsRetainEveryExactGoalAcrossResize() {
+		List<Integer> contexts = new ArrayList<>();
+		for (int context = 0; contexts.size() < 32; context++) {
+			// Build adversarial keys using the existing primitive key hash, without changing table state or exposing
+			// it.
+			long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, 1);
+			hash = PackedPrimitiveHash.step(hash, 2);
+			hash = PackedPrimitiveHash.step(hash, 3);
+			hash = PackedPrimitiveHash.step(hash, context);
+			hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(hash, 5));
+			if (PackedPrimitiveHash.slot(hash, 128) == 0) {
+				contexts.add(context);
+			}
+		}
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		int[][] expected = new int[contexts.size()][3];
+		for (int round = 0; round < 3; round++) {
+			for (int ordinal = 0; ordinal < contexts.size(); ordinal++) {
+				expected[ordinal][round] = appendContinuation(winners, contexts.get(ordinal));
+			}
+		}
+		for (int ordinal = 0; ordinal < contexts.size(); ordinal++) {
+			int winner = winners.firstContinuation(1, 2, 3, contexts.get(ordinal), 5);
+			for (int round = 0; round < 3; round++) {
+				assertEquals(expected[ordinal][round], winner, "Hash-bucket equality cannot authenticate another goal");
+				winner = winners.nextContinuation(winner);
+			}
+			assertEquals(0, winner);
+		}
+	}
+
+	@Test
+	void optionalContinuationIndexKeepsAuthoritativeFallbackAtEveryBudgetBoundary() {
+		PackedSearchBudget probe = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedWinnerTable sized = new PackedWinnerTable(1, 1, 0, 1, probe);
+		appendContinuation(sized, 7);
+		long exactInitialBytes = probe.retainedBytes();
+		assertTrue(exactInitialBytes > 0L, "Actual optional index capacity is charged");
+		for (long limit : new long[] { 0L, exactInitialBytes - 1L, exactInitialBytes }) {
+			PackedSearchBudget budget = new PackedSearchBudget(
+					new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE, limit));
+			PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1, budget);
+			int first = appendContinuation(winners, 7);
+			assertEquals(limit == exactInitialBytes ? exactInitialBytes : 0L, budget.retainedBytes());
+			int unrelated = appendContinuation(winners, 8);
+			int second = appendContinuation(winners, 7);
+			assertEquals(first, winners.firstContinuation(1, 2, 3, 7, 5));
+			assertEquals(second, winners.nextContinuation(first));
+			assertEquals(0, winners.nextContinuation(second));
+			assertEquals(unrelated, winners.firstContinuation(1, 2, 3, 8, 5));
+			assertEquals(0, winners.nextContinuation(unrelated));
+			assertFalse(budget.resourceLimitReached(), "A refused optional index cannot stop the original search");
+			assertEquals(limit == exactInitialBytes ? exactInitialBytes : 0L, budget.retainedBytes(),
+					"Denied growth retains and continues charging the admitted arrays without publishing a partial index");
+		}
+		PackedSearchBudget stopped = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		stopped.markResourceLimitReached();
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1, stopped);
+		int first = appendContinuation(winners, 7);
+		assertEquals(first, winners.firstContinuation(1, 2, 3, 7, 5));
+		assertEquals(0L, stopped.retainedBytes());
+		assertTrue(stopped.resourceLimitReached());
+	}
+
+	private static int appendContinuation(PackedWinnerTable winners, int context) {
+		int winner = winners.appendContinuationWithMetadata(1, 2, 3, context, 5,
+				PackedWinnerTable.COSTED, 10, 0, 0, 0.0d, 10.0d, 10.0d, 0.0d, false, new int[0], 0, 0);
+		assertTrue(winners.markContinuation(winner));
+		return winner;
+	}
+
+	@Test
+	void interleavedContinuationGoalsPreserveMembershipOrderAndScalarIncumbents() {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		List<int[]> goals = new ArrayList<>(List.of(new int[] { 3, 1, 0, 0, 0 }, new int[] { 4, 1, 0, 0, 0 },
+				new int[] { 3, 2, 0, 0, 0 }, new int[] { 3, 1, 1, 0, 0 }, new int[] { 3, 1, 0, 1, 0 },
+				new int[] { 3, 1, 0, 0, 1 }));
+		for (int context = 2; context < 66; context++) {
+			goals.add(new int[] { 3, 2, 3, context, 5 });
+		}
+		int[][] expected = new int[goals.size()][3];
+		int[] none = new int[0];
+		for (int round = 0; round < 3; round++) {
+			for (int ordinal = 0; ordinal < goals.size(); ordinal++) {
+				int[] goal = goals.get(ordinal);
+				int winner = winners.appendContinuationWithMetadata(goal[0], goal[1], goal[2], goal[3], goal[4],
+						PackedWinnerTable.COSTED, 10 + round, 0, 0, 0.0d, 10.0d + round, 10.0d + round, 0.0d,
+						false, none, 0, 0);
+				assertTrue(winners.markContinuation(winner));
+				assertFalse(winners.markContinuation(winner), "Duplicate membership never duplicates one occurrence");
+				expected[ordinal][round] = winner;
+				assertEquals(0, winners.find(goal[0], goal[1], goal[2], goal[3], goal[4]),
+						"Exact continuations are not scalar-policy incumbents");
+			}
+		}
+		for (int ordinal = 0; ordinal < goals.size(); ordinal++) {
+			int[] goal = goals.get(ordinal);
+			int winner = winners.firstContinuation(goal[0], goal[1], goal[2], goal[3], goal[4]);
+			for (int round = 0; round < 3; round++) {
+				assertEquals(expected[ordinal][round], winner);
+				assertEquals(10 + round, winners.physicalExpressionId(winner));
+				winner = winners.nextContinuation(winner);
+			}
+			assertEquals(0, winner);
+			int incumbent = winners.offer(goal[0], goal[1], goal[2], goal[3], goal[4], 1,
+					0.0d, 1.0d, 1.0d, none, 0, 0);
+			assertEquals(incumbent, winners.find(goal[0], goal[1], goal[2], goal[3], goal[4]));
+			assertEquals(expected[ordinal][0],
+					winners.firstContinuation(goal[0], goal[1], goal[2], goal[3], goal[4]));
+		}
+		assertEquals(0, winners.firstContinuation(3, 2, 3, 999, 5));
+	}
 
 	@Test
 	void improvedWinnerAppendsAnImmutableCandidateRecord() {

@@ -39,6 +39,8 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -61,9 +63,110 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.junit.jupiter.api.Test;
 
 class PackedPlanCacheTest {
+
+	@Test
+	void replayPreservesPrefixBagDescriptionAfterScheduledFilter() {
+		var values = SimpleValueFactory.getInstance();
+		StatementPattern first = new StatementPattern(Var.of("firstProvider"),
+				Var.of("firstPredicate", values.createIRI("urn:scheduled-provider-a")), Var.of("firstGate"));
+		StatementPattern second = new StatementPattern(Var.of("secondProvider"),
+				Var.of("secondPredicate", values.createIRI("urn:scheduled-provider-b")), Var.of("secondGate"));
+		StatementPattern unrelated = new StatementPattern(Var.of("left"),
+				Var.of("unrelatedPredicate", values.createIRI("urn:scheduled-unrelated")), Var.of("leftValue"));
+		StatementPattern component = new StatementPattern(Var.of("right"),
+				Var.of("componentPredicate", values.createIRI("urn:scheduled-component")), Var.of("key"));
+		StatementPattern continuation = new StatementPattern(Var.of("right"),
+				Var.of("continuationPredicate", values.createIRI("urn:scheduled-continuation")), Var.of("tail"));
+		StatementPattern probe = new StatementPattern(Var.of("firstGate"),
+				Var.of("probePredicate", values.createIRI("urn:scheduled-probe")), Var.of("secondGate"));
+		BindingSet row = new ListBindingSet(List.of("key"), values.createLiteral("key"));
+		BindingSetAssignment keys = new BindingSetAssignment();
+		keys.setBindingNames(Set.of("key"));
+		keys.setBindingSets(List.of(row));
+		TupleExpr source = new Filter(new Join(new Join(new Join(new Join(new Join(first, second), unrelated),
+				keys), component), continuation), new Exists(probe));
+		String observation = "test.receivedPrefixBagDescription";
+		PackedCostModel costs = new PackedCostModel() {
+			@Override
+			public double estimateRows(PackedQueryView query, int relationId) {
+				return query.isStatementPattern(relationId) ? 10.0d : Double.NaN;
+			}
+
+			@Override
+			public PackedCostSession openSession(PackedQueryView query) {
+				return new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setRows(10.0d, 10.0d);
+						record(context, output);
+					}
+
+					@Override
+					public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						output.setRows(10.0d, 10.0d);
+						record(context, output);
+					}
+
+					@Override
+					public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
+						if (query.isFilter(relationId)) {
+							output.setContextualRows(context.leftInputRows() * 0.1d, 1.0d);
+						}
+						record(context, output);
+					}
+
+					@Override
+					public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
+						record(context, output);
+					}
+
+					private void record(PackedCostContext context, PackedCostEstimate output) {
+						output.putPlannedDoubleMetric(observation, context.prefixRelationsDescribeRows() ? 1.0d : 0.0d);
+					}
+				};
+			}
+		};
+		PackedPlanCache cache = new PackedPlanCache(8, 1);
+		PackedPlanCache.Context original = context(11L);
+		PackedPlanningResult planned = PackedCascadesPlanner.optimize(source, OptimizationGoal.root(), cache, original,
+				costs);
+		PackedPlanCache.PlanEntry entry = cache.findPlan(cache.fingerprint(source), original, source);
+		assertNotNull(entry, "the normal planner must retain a real executable recipe: " + planned.completionStatus());
+		PackedPlanValidationRequest request = new PackedPlanValidationRequest(
+				new PackedQueryView(entry.query()), entry.recipe(), original, context(12L));
+		PackedCostingTrace cold = request.costingTrace();
+		boolean retainedFalse = false;
+		boolean retainedTrue = false;
+		for (int event = 1; event <= cold.eventCount(); event++) {
+			double received = traceObservation(cold, event, observation);
+			retainedFalse |= received == 0.0d;
+			retainedTrue |= received == 1.0d;
+		}
+		assertTrue(retainedFalse, "the retained recipe must contain a real post-filter false context");
+		assertTrue(retainedTrue, "the same trace must retain its complete-prefix controls");
+		try (PackedCostSession current = costs.openSession(new PackedQueryView(entry.query()))) {
+			PackedCostingTrace replayed = PackedCostingReplay.replay(request, current).replayedTrace();
+			assertEquals(cold.eventCount(), replayed.eventCount());
+			for (int event = 1; event <= cold.eventCount(); event++) {
+				assertEquals(traceObservation(cold, event, observation), traceObservation(replayed, event, observation),
+						"replay must supply the original bag-description fact at event " + event + " "
+								+ cold.phase(event));
+			}
+		}
+	}
+
+	private static double traceObservation(PackedCostingTrace trace, int event, String name) {
+		for (int metric = 0; metric < trace.doubleMetricCount(event); metric++) {
+			if (name.equals(trace.doubleMetricName(event, metric))) {
+				return trace.doubleMetricValue(event, metric);
+			}
+		}
+		throw new AssertionError("provider observation missing from real retained event " + event);
+	}
 
 	@Test
 	void cachedPlanRetainsColdRootCardinalityCertificate() {
@@ -1140,6 +1243,7 @@ class PackedPlanCacheTest {
 				new Class<?>[] { PackedCostModel.class, validatorType }, (ignored, method, arguments) -> {
 					return switch (method.getName()) {
 					case "estimateRows" -> 1.0d;
+					case "statementPatternSemanticsCodec" -> PackedStatementPatternSemanticsCodec.NONE;
 					case "openSession" -> {
 						sessions.incrementAndGet();
 						yield frontier.openSession((PackedQueryView) arguments[0]);
@@ -1178,6 +1282,7 @@ class PackedPlanCacheTest {
 				new Class<?>[] { PackedCostModel.class, PackedStalePlanValidator.class },
 				(ignored, method, arguments) -> switch (method.getName()) {
 				case "estimateRows" -> 1.0d;
+				case "statementPatternSemanticsCodec" -> PackedStatementPatternSemanticsCodec.NONE;
 				case "openSession" -> {
 				sessions.incrementAndGet();
 				yield frontier.openSession((PackedQueryView) arguments[0]);
@@ -1222,6 +1327,7 @@ class PackedPlanCacheTest {
 				new Class<?>[] { PackedCostModel.class, validatorType }, (ignored, method, arguments) -> {
 					return switch (method.getName()) {
 					case "estimateRows" -> 1.0d;
+					case "statementPatternSemanticsCodec" -> PackedStatementPatternSemanticsCodec.NONE;
 					case "openSession" -> frontier.openSession((PackedQueryView) arguments[0]);
 					case "validateStalePlan" -> {
 						validations.incrementAndGet();
@@ -1261,6 +1367,7 @@ class PackedPlanCacheTest {
 				(ignored, method, arguments) -> {
 					return switch (method.getName()) {
 					case "estimateRows" -> 1.0d;
+					case "statementPatternSemanticsCodec" -> PackedStatementPatternSemanticsCodec.NONE;
 					case "openSession" -> {
 						sessions.incrementAndGet();
 						yield frontier.openSession((PackedQueryView) arguments[0]);

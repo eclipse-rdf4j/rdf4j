@@ -16,14 +16,24 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -249,6 +259,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 	@Test
 	@Timeout(180)
 	void medicalQ9UsesFiniteConditionCodeAnchorWithCompleteCascadesPlan() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 9;
@@ -280,14 +291,19 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 									+ "the broad observation JoinIterator\n"
 									+ plan));
 		} finally {
-			state.disableTelemetryTeardown();
-			state.tearDown();
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
 		}
 	}
 
 	@Test
 	@Timeout(180)
 	void medicalQ9CompleteStoreMaterializesAntiJoinAndCompletes() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "exact");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = Theme.MEDICAL_RECORDS.name();
 		state.z_queryIndex = 9;
@@ -311,8 +327,31 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 			assertEquals(1, semiAntiNodes.size(),
 					"MEDICAL q9 must expose one selected semi/anti implementation\n" + plan);
 			TupleExpr semiAnti = semiAntiNodes.getFirst();
-			assertTrue(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeys") > 4_096.0d,
-					"the correlation point must retain the encounter domain\n" + plan);
+			assertTrue(semiAnti.getDoubleMetricsPlanned().containsKey("plannedCorrelationDistinctKeys"),
+					"the correlation point must retain its declared present-or-unavailable representation");
+			double distinctPoint = semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeys");
+			if (!Double.isNaN(distinctPoint)) {
+				assertTrue(Double.isFinite(distinctPoint) && distinctPoint > 4_096.0d,
+						"the correlation point must retain the encounter domain\n" + plan);
+			} else {
+				assertEquals("mapped-distinct-no-prefix",
+						semiAnti.getStringMetricPlanned("plannedCorrelationDistinctProvenance"),
+						"an unqualified input must explicitly decline its correlation point");
+				assertEquals("unavailable", semiAnti.getStringMetricPlanned("optimizer.frontierSemanticPopulation"));
+				assertEquals("rejected-logical-origin-mismatch",
+						semiAnti.getStringMetricPlanned("optimizer.frontierLeo.output_rows.admission"));
+				assertEquals(0.0d, semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyLowerBound"), 0.0d);
+				assertEquals(Double.MAX_VALUE,
+						semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound"), 0.0d);
+			}
+			double distinctLower = semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyLowerBound");
+			double distinctUpper = semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound");
+			assertTrue(Double.isFinite(distinctLower) && distinctLower >= 0.0d && distinctLower <= distinctUpper,
+					"correlation bounds must remain ordered\n" + plan);
+			if (!Double.isNaN(distinctPoint)) {
+				assertTrue(distinctLower <= distinctPoint && distinctPoint <= distinctUpper,
+						"a published correlation point must remain inside its declared interval\n" + plan);
+			}
 			assertTrue(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound") > 4_096.0d,
 					"the correlation upper bound must reject the bounded memo cache\n" + plan);
 			assertEquals(semiAnti.getDoubleMetricPlanned("plannedCorrelationDistinctKeyUpperBound"),
@@ -335,8 +374,50 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 					() -> "materialized RHS scanning must remain proportional to the RHS: actual="
 							+ rhsRowsScanned + ", planned=" + plannedRhsRows);
 		} finally {
-			state.disableTelemetryTeardown();
-			state.tearDown();
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
+		}
+	}
+
+	@Test
+	@Timeout(180)
+	void medicalQ9AutoDeclaresItsLimitAndRetainsTheMaterializedResult() throws Exception {
+		String previousMode = System.setProperty(CASCADES_MODE_PROPERTY, "auto");
+		RunQueryPlanState state = new RunQueryPlanState();
+		state.themeName = Theme.MEDICAL_RECORDS.name();
+		state.z_queryIndex = 9;
+		state.sketchEstimatorEnabled = true;
+		state.loadSelectedThemeOnly = true;
+		state.rebuildStoreBeforeSetup = true;
+		try {
+			state.setup();
+			ExplainedPlanSnapshot snapshot = state.explainedPlanSnapshot();
+			assertCompleteOrDeclaredBoundedAuto(snapshot, "MEDICAL q9 AUTO");
+			assertConditionCodeAlternativeOrCheaperBoundLookup(snapshot);
+			assertExactFiniteDomain(snapshot.optimized(), "value",
+					Set.of("50", "51", "52", "53", "54", "55", "56", "57", "58", "59"));
+			assertFalse(reopensFiniteLookupPerObservation(snapshot.optimized(), "value",
+					"http://example.com/theme/medical/hasObservation", "http://example.com/theme/medical/value"),
+					"bounded AUTO must retain the finite lookup outside the repeatedly opened broad RHS");
+			List<TupleExpr> planned = semiAntiNodes(snapshot.optimized());
+			assertEquals(1, planned.size());
+			assertEquals("materialized-hash", planned.getFirst().getStringMetricPlanned("optimizer.semiAntiAlgorithm"));
+			assertEquals(16_352L, state.evaluateCurrentQueryAndAssertExpectedResult());
+			List<TupleExpr> actual = semiAntiNodes(state.telemetryPlan());
+			assertEquals(1, actual.size());
+			assertEquals("materialized-hash", actual.getFirst().getStringMetricActual("actualSemiAntiAlgorithm"));
+			assertEquals(1L, actual.getFirst().getLongMetricActual("actualSemiAntiIteratorOpens"));
+		} finally {
+			try {
+				state.disableTelemetryTeardown();
+				state.tearDown();
+			} finally {
+				restoreProperty(CASCADES_MODE_PROPERTY, previousMode);
+			}
 		}
 	}
 
@@ -389,7 +470,196 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 		}
 
 		private long evaluateCurrentQueryAndAssertExpectedResult() {
+			String diagnosticDirectory = System.getProperty("rdf4j.test.q9.samePreparedPlanDirectory");
+			if (diagnosticDirectory != null) {
+				try (LmdbBenchmarkQueryPlan plan = preparePlan(true)) {
+					writeSamePreparedPlanDiagnostic(plan, Path.of(diagnosticDirectory), "before");
+					Throwable failure = null;
+					try {
+						var result = evaluate(plan);
+						assertExpectedResult(result);
+						return benchmarkResult(result);
+					} catch (RuntimeException | Error e) {
+						failure = e;
+						throw e;
+					} finally {
+						try {
+							writeSamePreparedPlanDiagnostic(plan, Path.of(diagnosticDirectory), "after-result-close");
+						} catch (RuntimeException diagnosticFailure) {
+							if (failure != null) {
+								failure.addSuppressed(diagnosticFailure);
+							} else {
+								throw diagnosticFailure;
+							}
+						}
+					}
+				}
+			}
 			return evaluateQueryAndAssertExpectedResult();
+		}
+
+		private void writeSamePreparedPlanDiagnostic(LmdbBenchmarkQueryPlan plan, Path directory, String phase) {
+			try {
+				Files.createDirectories(directory);
+				var snapshot = plan.preparedPlanSnapshot();
+				Files.writeString(directory.resolve("same-plan-" + phase + ".txt"), snapshot.optimizedPlan());
+				Files.writeString(directory.resolve("same-diagnostics-" + phase + ".txt"),
+						snapshot.optimizedDiagnostics());
+				Files.writeString(directory.resolve("same-rendered-" + phase + ".sparql"), snapshot.renderedSparql());
+				StringBuilder metrics = new StringBuilder("phase=" + phase + "\nfingerprint="
+						+ snapshot.planFingerprint() + "\nestimatorRevision=" + snapshot.estimatorRevision()
+						+ "\ntupleExprIdentity=" + snapshot.tupleExprIdentity() + "\nruntimeTelemetryMode="
+						+ runtimeTelemetryMode + "\n");
+				plan.inspectCapturedOptimizedExpression(
+						root -> root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+							private int ordinal;
+
+							@Override
+							protected void meetNode(QueryModelNode node) {
+								if (node instanceof TupleExpr) {
+									metrics.append("\nnode=")
+											.append(ordinal++)
+											.append(" identity=")
+											.append(System.identityHashCode(node))
+											.append(" parentIdentity=")
+											.append(System.identityHashCode(node.getParentNode()))
+											.append(" type=")
+											.append(node.getClass().getName())
+											.append(" signature=")
+											.append(node.getSignature())
+											.append("\nplannedStrings=")
+											.append(node.getStringMetricsPlanned())
+											.append("\nplannedDoubles=")
+											.append(node.getDoubleMetricsPlanned())
+											.append("\nactualLongs=")
+											.append(node.getLongMetricsActual())
+											.append("\nactualDoubles=")
+											.append(node.getDoubleMetricsActual())
+											.append("\nactualStrings=")
+											.append(node.getStringMetricsActual())
+											.append('\n');
+									if (node instanceof BinaryTupleOperator binary) {
+										metrics.append("preparedAlgorithm=")
+												.append(binary.getAlgorithmName())
+												.append('\n');
+									}
+									if (node instanceof StatementPattern statement) {
+										metrics.append("SPOC=").append(statement.getVarList()).append('\n');
+									}
+								}
+								super.meetNode(node);
+							}
+						}));
+				Files.writeString(directory.resolve("same-metrics-" + phase + ".txt"), metrics);
+				if ("before".equals(phase)) {
+					writeCapturedInputBagDiagnostic(plan, directory);
+				}
+			} catch (IOException e) {
+				throw new UncheckedIOException(e);
+			}
+		}
+
+		private void writeCapturedInputBagDiagnostic(LmdbBenchmarkQueryPlan plan, Path directory) throws IOException {
+			Map<Value, Long> conditionCodeDomain = new HashMap<>();
+			long[] unusedCodeRows = { 0L };
+			plan.inspectCapturedOptimizedExpression(
+					root -> root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(BindingSetAssignment assignment) {
+							if (assignment.getBindingNames().equals(Set.of("condCode"))) {
+								for (BindingSet row : assignment.getBindingSets()) {
+									conditionCodeDomain.merge(row.getValue("condCode"), 1L, Math::addExact);
+								}
+							} else if (assignment.getBindingNames().equals(Set.of("code"))) {
+								for (BindingSet row : assignment.getBindingSets()) {
+									unusedCodeRows[0]++;
+								}
+							}
+						}
+					}));
+			assertFalse(conditionCodeDomain.isEmpty());
+			assertTrue(unusedCodeRows[0] > 0L);
+			StringBuilder bag = new StringBuilder("classification=SAME_DATASET_BOUNDED_INPUT_BAG_DIAGNOSTIC\n")
+					.append("preparedTupleIdentity=")
+					.append(plan.preparedPlanSnapshot().tupleExprIdentity())
+					.append('\n')
+					.append("fingerprint=")
+					.append(plan.preparedPlanSnapshot().planFingerprint())
+					.append('\n')
+					.append("readsBeforeEvaluationWarmNativePages=true\n")
+					.append("conditionCodeDomain=")
+					.append(conditionCodeDomain)
+					.append('\n')
+					.append("unusedCodeRows=")
+					.append(unusedCodeRows[0])
+					.append('\n');
+			plan.inspectCapturedDataset(dataset -> {
+				bag.append("datasetClass=")
+						.append(dataset.getClass().getName())
+						.append('\n')
+						.append("datasetIdentity=")
+						.append(System.identityHashCode(dataset))
+						.append('\n')
+						.append("snapshotEpoch=")
+						.append(dataset.getSnapshotEpoch())
+						.append('\n');
+				Map<Resource, Long> encounterBag = new HashMap<>();
+				Map<Resource, Long> conditionBag = new HashMap<>();
+				var vf = connection.getValueFactory();
+				var encounterType = vf.createIRI("http://example.com/theme/medical/Encounter");
+				try (var statements = dataset.getStatements(null, RDF.TYPE, encounterType)) {
+					while (statements.hasNext()) {
+						encounterBag.merge(statements.next().getSubject(), 1L, Math::addExact);
+					}
+				}
+				var codePredicate = vf.createIRI("http://example.com/theme/medical/code");
+				for (var domainEntry : conditionCodeDomain.entrySet()) {
+					try (var statements = dataset.getStatements(null, codePredicate, domainEntry.getKey())) {
+						while (statements.hasNext()) {
+							conditionBag.merge(statements.next().getSubject(), domainEntry.getValue(), Math::addExact);
+						}
+					}
+				}
+				long encounterRows = encounterBag.values().stream().mapToLong(Long::longValue).sum();
+				long conditionRows = conditionBag.values().stream().mapToLong(Long::longValue).sum();
+				long cartesianRows = Math.multiplyExact(encounterRows,
+						Math.multiplyExact(unusedCodeRows[0], conditionRows));
+				long connectedRows = 0L;
+				long connectionStatements = 0L;
+				try (var statements = dataset.getStatements(null,
+						vf.createIRI("http://example.com/theme/medical/hasCondition"), null)) {
+					while (statements.hasNext()) {
+						var statement = statements.next();
+						connectionStatements++;
+						long left = encounterBag.getOrDefault(statement.getSubject(), 0L);
+						long right = conditionBag.getOrDefault(statement.getObject(), 0L);
+						connectedRows = Math.addExact(connectedRows,
+								Math.multiplyExact(unusedCodeRows[0], Math.multiplyExact(left, right)));
+					}
+				}
+				bag.append("encounterRows=")
+						.append(encounterRows)
+						.append('\n')
+						.append("encounterDistinctSubjects=")
+						.append(encounterBag.size())
+						.append('\n')
+						.append("conditionRows=")
+						.append(conditionRows)
+						.append('\n')
+						.append("conditionDistinctSubjects=")
+						.append(conditionBag.size())
+						.append('\n')
+						.append("cartesianBagRowsDerivedFromActualIndependentInputs=")
+						.append(cartesianRows)
+						.append('\n')
+						.append("hasConditionStatementsRead=")
+						.append(connectionStatements)
+						.append('\n')
+						.append("connectedBagRowsReference=")
+						.append(connectedRows)
+						.append('\n');
+			});
+			Files.writeString(directory.resolve("same-dataset-input-bags.txt"), bag);
 		}
 
 		private TupleExpr telemetryPlan() {
@@ -494,8 +764,10 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 						"The original scalar predicate must remain executable when its lookup wins\n" + rendered),
 				() -> assertTrue(plan.contains("rule=packed-finite-filter-values"),
 						"The exact finite alternative must still be generated and costed\n" + plan),
-				() -> assertEquals("directLookup", codePattern.getStringMetricPlanned("plannedIndexAccessMode"),
-						"The cheaper original must probe code from each already-bound condition\n" + plan),
+				() -> assertEquals("prefixScan", codePattern.getStringMetricPlanned("plannedIndexAccessMode"),
+						"The cheaper original must scan code under the bound condition/predicate prefix\n" + plan),
+				() -> assertEquals(2.0d, codePattern.getDoubleMetricPlanned("plannedIndexPrefixLength"), 0.0d,
+						"The retained scalar code access must use exactly the subject/predicate prefix\n" + plan),
 				() -> assertEquals("[S, P]", codePattern.getStringMetricPlanned("plannedLookupComponents"),
 						"The retained lookup must bind condition and predicate\n" + plan),
 				() -> assertTrue(codePattern.getDoubleMetricPlanned("plannedAccessRows") <= 1.0d,
@@ -529,6 +801,8 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				? (StatementPattern) join.getLeftArg()
 				: (StatementPattern) join.getRightArg();
 		String estimateSource = codePattern.getStringMetricPlanned("plannedEstimateSource");
+		boolean mappedFiniteDomainSelected = "frontier_v2_omni_finite_domain"
+				.equals(codePattern.getStringMetricPlanned("plannedEstimateFusion"));
 		assertAll(
 				() -> assertTrue(isFiniteCodeRelation(join.getLeftArg(), variable),
 						"The finite code relation must be the selected-prefix input\n" + plan),
@@ -538,7 +812,7 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 						"The finite relation and code access must not use a full-scan hash join\n" + plan),
 				() -> assertTrue(Set.of("lmdb-finite-binding-lookup", "lmdb-frontier-correlated-surface",
 						"frontier-v2-omni-finite-domain")
-						.contains(estimateSource),
+						.contains(estimateSource) || mappedFiniteDomainSelected,
 						"The code access must retain finite bound-lookup provenance, but was " + estimateSource
 								+ "\n" + plan),
 				() -> assertEquals((double) valueCount,
@@ -547,6 +821,13 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				() -> assertEquals((double) valueCount,
 						codePattern.getDoubleMetricPlanned("plannedRepeatedInvocations"), 0.0d,
 						"The code access must open once for each exact code value\n" + plan));
+		if (mappedFiniteDomainSelected) {
+			assertAll(
+					() -> assertEquals("ready", codePattern.getStringMetricPlanned("plannedFrontierStatus")),
+					() -> assertEquals("mapped_statistics",
+							codePattern.getStringMetricPlanned("plannedFrontierDisposition")),
+					() -> assertEquals("none", codePattern.getStringMetricPlanned("plannedFrontierFallbackReason")));
+		}
 	}
 
 	private static boolean isFiniteCodeRelation(TupleExpr tupleExpr, String variable) {

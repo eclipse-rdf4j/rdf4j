@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -31,6 +33,35 @@ class LmdbExactFiniteSurfaceCacheTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:test:surface-cache:predicate");
+
+	@Test
+	void requestCapturesEffectiveVariableKindsBeforeCanonicalizingItsCopy() {
+		FiniteRelationEstimate input = FiniteRelationEstimate.fromRows(
+				List.of("subject"), List.of(List.of(VF.createIRI("urn:test:subject"))), "frontier-correlation");
+		StatementPattern unrestricted = new StatementPattern(Var.of("subject"),
+				Var.of("predicate", PREDICATE), Var.of("object"));
+		StatementPattern body = unrestricted.clone();
+		body.setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, "object:LITERAL");
+		StatementPattern overridden = unrestricted.clone();
+		overridden.setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, "object:IRI");
+		overridden.getObjectVar().setStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER, "object:LITERAL");
+		var plainRequest = LmdbExactFiniteSurfaceCache.request(unrestricted, input, EstimationTier.DECISION_EXACT);
+		var bodyRequest = LmdbExactFiniteSurfaceCache.request(body, input, EstimationTier.DECISION_EXACT);
+		var overrideRequest = LmdbExactFiniteSurfaceCache.request(overridden, input, EstimationTier.DECISION_EXACT);
+		List<LmdbExactFiniteSurfaceCache.RequestKey> keys = new ArrayList<>();
+		var cache = new LmdbExactFiniteSurfaceCache(8, 1, 1024 * 1024L, (revision, key) -> {
+			keys.add(key);
+			return 7L;
+		});
+		for (var request : List.of(plainRequest, bodyRequest, overrideRequest)) {
+			cache.getOrCompute(17L, request, () -> 17L, Optional::empty);
+		}
+		assertNotEquals(keys.get(0), keys.get(2));
+		assertEquals(keys.get(1), keys.get(2));
+		assertEquals("object:IRI", overridden.getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
+		assertEquals("object:LITERAL",
+				overridden.getObjectVar().getStringMetricPlanned(LmdbValueIdFilter.PLANNED_ID_FILTER));
+	}
 
 	@Test
 	void forcedFingerprintCollisionStillComparesTheCompleteRequest() {

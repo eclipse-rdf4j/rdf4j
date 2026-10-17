@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb.estimation;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
@@ -24,6 +26,9 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
@@ -37,6 +42,8 @@ import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchStatementSource;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbQuadSynopsisServiceTest {
 
@@ -45,6 +52,182 @@ class LmdbQuadSynopsisServiceTest {
 
 	@TempDir
 	Path directory;
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void stopSurvivesARebuildCallbackThatConsumesItsInterrupt(boolean callbackFails) throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		CountDownLatch interrupted = new CountDownLatch(1);
+		CountDownLatch awaitStop = new CountDownLatch(1);
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			entered.countDown();
+			try {
+				awaitStop.await();
+			} catch (InterruptedException consumed) {
+				// An otherwise valid source callback need not preserve the refresh worker's interrupt flag.
+				interrupted.countDown();
+			}
+			if (callbackFails) {
+				throw new IllegalStateException("rebuild callback failed after consuming stop interrupt");
+			}
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		long originalVersion = service.snapshotIdentity().mutationVersion();
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.requestRebuild();
+				service.startBackgroundRefresh(0);
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				Future<?> stopped = executor.submit(service::stopBackgroundRefresh);
+				assertTrue(interrupted.await(5, TimeUnit.SECONDS),
+						"the pending stop must interrupt the actual callback");
+				assertDoesNotThrow(() -> stopped.get(5, TimeUnit.SECONDS),
+						"a consumed interrupt cannot keep a stopped, open service's worker alive");
+				assertEquals(callbackFails ? originalVersion : originalVersion + 1,
+						service.snapshotIdentity().mutationVersion(), "a completed rebuild keeps its publication");
+				assertEquals(!callbackFails, service.isReadyNonBlocking());
+				service.stopBackgroundRefresh();
+			} finally {
+				awaitStop.countDown();
+				service.close();
+			}
+		}
+	}
+
+	@Test
+	void replacementWorkerSurvivesThePreviousWorkersStop() throws Exception {
+		CountDownLatch firstEntered = new CountDownLatch(1);
+		CountDownLatch firstInterrupted = new CountDownLatch(1);
+		CountDownLatch finishFirst = new CountDownLatch(1);
+		CountDownLatch secondEntered = new CountDownLatch(1);
+		CountDownLatch replacementReady = new CountDownLatch(1);
+		AtomicInteger calls = new AtomicInteger();
+		AtomicReference<Thread> firstWorker = new AtomicReference<>();
+		AtomicReference<Thread> secondWorker = new AtomicReference<>();
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			if (calls.incrementAndGet() == 1) {
+				firstWorker.set(Thread.currentThread());
+				firstEntered.countDown();
+				try {
+					finishFirst.await();
+				} catch (InterruptedException consumed) {
+					firstInterrupted.countDown();
+					try {
+						finishFirst.await();
+					} catch (InterruptedException unexpected) {
+						Thread.currentThread().interrupt();
+						throw new IllegalStateException(unexpected);
+					}
+				}
+			} else {
+				secondWorker.set(Thread.currentThread());
+				secondEntered.countDown();
+			}
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		service.setRebuildAllowedSupplier(() -> {
+			if (firstWorker.get() != null && Thread.currentThread() != firstWorker.get()) {
+				replacementReady.countDown();
+			}
+			return true;
+		});
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.requestRebuild();
+				service.startBackgroundRefresh(0);
+				assertTrue(firstEntered.await(5, TimeUnit.SECONDS));
+				Future<?> oldStopped = executor.submit(service::stopBackgroundRefresh);
+				assertTrue(firstInterrupted.await(5, TimeUnit.SECONDS));
+				service.startBackgroundRefresh(0);
+				assertTrue(replacementReady.await(5, TimeUnit.SECONDS),
+						"the replacement must enter its admitted rebuild before the prior callback completes");
+				finishFirst.countDown();
+				assertDoesNotThrow(() -> oldStopped.get(5, TimeUnit.SECONDS));
+				assertTrue(secondEntered.await(5, TimeUnit.SECONDS));
+				assertNotSame(firstWorker.get(), secondWorker.get());
+				assertFalse(firstWorker.get().isAlive());
+				service.stopBackgroundRefresh();
+				secondWorker.get().join(5_000L);
+				assertFalse(secondWorker.get().isAlive(),
+						"stopping the prior worker must preserve its replacement owner");
+				service.stopBackgroundRefresh();
+			} finally {
+				finishFirst.countDown();
+				service.close();
+			}
+		}
+	}
+
+	@Test
+	void refreshCallbackCanStopItsOwnWorker() throws Exception {
+		AtomicReference<LmdbQuadSynopsisService> owner = new AtomicReference<>();
+		AtomicReference<Thread> worker = new AtomicReference<>();
+		CountDownLatch callbackReturned = new CountDownLatch(1);
+		SketchStatementSource source = (subject, predicate, object, contexts) -> {
+			worker.set(Thread.currentThread());
+			owner.get().stopBackgroundRefresh();
+			// A source may consume the flag even when stop is called reentrantly from this worker.
+			Thread.interrupted();
+			callbackReturned.countDown();
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		};
+		LmdbQuadSynopsisService service = service(source);
+		owner.set(service);
+		try {
+			service.requestRebuild();
+			service.startBackgroundRefresh(0);
+			assertTrue(callbackReturned.await(5, TimeUnit.SECONDS));
+			worker.get().join(5_000L);
+			assertFalse(worker.get().isAlive(), "a self-stopped worker cannot return to its lifecycle wait");
+			assertTrue(service.isReadyNonBlocking());
+		} finally {
+			service.close();
+		}
+	}
+
+	@Test
+	void stopDuringInitialDelayAndRepeatedStopAllowRestart() throws Exception {
+		CountDownLatch entered = new CountDownLatch(1);
+		LmdbQuadSynopsisService service = service((subject, predicate, object, contexts) -> {
+			entered.countDown();
+			return new CloseableIteratorIteration<>(List.<Statement>of().iterator());
+		});
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.requestRebuild();
+				service.startBackgroundRefresh(Integer.MAX_VALUE);
+				assertDoesNotThrow(() -> executor.submit(service::stopBackgroundRefresh).get(5, TimeUnit.SECONDS));
+				assertEquals(1L, entered.getCount(), "the delayed worker cannot enter a rebuild after it is stopped");
+				service.stopBackgroundRefresh();
+				service.startBackgroundRefresh(0);
+				assertTrue(entered.await(5, TimeUnit.SECONDS));
+				assertDoesNotThrow(() -> executor.submit(service::stopBackgroundRefresh).get(5, TimeUnit.SECONDS));
+				service.stopBackgroundRefresh();
+			} finally {
+				service.close();
+			}
+		}
+	}
+
+	@Test
+	void stoppingPreservesAnAlreadyInterruptedCaller() throws Exception {
+		LmdbQuadSynopsisService service = service(new MutableStatementSource());
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			try {
+				service.startBackgroundRefresh(Integer.MAX_VALUE);
+				Future<Boolean> stopped = executor.submit(() -> {
+					Thread.currentThread().interrupt();
+					service.stopBackgroundRefresh();
+					return Thread.currentThread().isInterrupted();
+				});
+				assertTrue(stopped.get(5, TimeUnit.SECONDS), "stop must preserve its caller's interrupt status");
+			} finally {
+				service.close();
+			}
+		}
+	}
 
 	@Test
 	void rebuildDeltaDeletionAndRestartUseOneLifecycle() {

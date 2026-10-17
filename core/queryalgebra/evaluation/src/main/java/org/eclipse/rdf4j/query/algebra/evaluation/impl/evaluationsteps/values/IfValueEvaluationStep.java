@@ -52,16 +52,8 @@ public final class IfValueEvaluationStep implements QueryValueEvaluationStep {
 
 	@Override
 	public Value evaluate(BindingSet bindings) throws ValueExprEvaluationException, QueryEvaluationException {
-		boolean conditionIsTrue;
-
-		try {
-			Value value = condition.evaluate(bindings);
-			conditionIsTrue = QueryEvaluationUtil.getEffectiveBooleanValue(value);
-		} catch (ValueExprEvaluationException e) {
-			// in case of type error, if-construction should result in empty
-			// binding.
-			return null;
-		}
+		Value value = condition.evaluate(bindings);
+		boolean conditionIsTrue = QueryEvaluationUtil.getEffectiveBooleanValue(value);
 
 		if (conditionIsTrue) {
 			incrementShortCircuitCount();

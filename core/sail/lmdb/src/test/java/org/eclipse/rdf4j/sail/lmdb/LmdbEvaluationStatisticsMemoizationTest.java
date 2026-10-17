@@ -50,6 +50,8 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingUniverse;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
@@ -88,6 +90,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern first = pattern("s", FIRST, "x");
 		StatementPattern second = pattern("x", SECOND, "y");
 		Join joined = new Join(first.clone(), second.clone());
+		PlanningGraphDomains.capture(joined, PlanningGraphDomain.defaultGraph());
 
 		StatisticsEstimate firstEstimate = statistics.statementPattern(first, Set.of()).orElseThrow();
 		StatisticsEstimate joinEstimate = statistics.multiPatternJoin(List.of(first, second), Set.of()).orElseThrow();
@@ -183,6 +186,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		LmdbEvaluationStatistics statistics = new LmdbEvaluationStatistics(
 				null, null, null, null, null, cardinalities);
 		Filter filter = new Filter(pattern("s", FIRST, "x"), new ValueConstant(VF.createLiteral(true)));
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 
 		statistics.estimateFilterPass(filter);
 
@@ -199,6 +203,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		LmdbEvaluationStatistics first = statistics(cardinalities, settings);
 		LmdbEvaluationStatistics second = statistics(cardinalities, settings);
 		Filter filter = new Filter(pattern("s", FIRST, "x"), new ValueConstant(VF.createLiteral(true)));
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 
 		var firstEstimate = first.estimateFilterPass(filter);
 		var repeatedEstimate = second.estimateFilterPass(filter.clone());
@@ -259,6 +264,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	void optimizationScopeReusesStructurallyEquivalentSemanticEstimates() {
 		LmdbEvaluationStatistics statistics = statistics();
 		Filter filter = new Filter(pattern("s", FIRST, "x"), new ValueConstant(VF.createLiteral(true)));
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 
 		try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			BagEstimate first = statistics.estimatorRuntime().estimate(filter);
@@ -278,6 +284,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		StatementPattern shared = pattern("s", FIRST, "x");
 		TupleExpr joinedRoot = new Join(shared.clone(), new SingletonSet());
 		TupleExpr unionRoot = new Union(shared.clone(), new EmptySet());
+		PlanningGraphDomains.capture(joinedRoot, PlanningGraphDomain.defaultGraph());
+		PlanningGraphDomains.capture(unionRoot, PlanningGraphDomain.defaultGraph());
 
 		try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 			statistics.estimatorRuntime().estimate(joinedRoot);
@@ -293,6 +301,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 		LmdbEvaluationStatistics statistics = statistics();
 		CountingValueConstant condition = new CountingValueConstant();
 		Filter filter = new Filter(pattern("s", FIRST, "x"), condition);
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 		CostContext context = CostContext.of(Set.of(), 1.0d, 1.0d, false);
 
 		int visitsAfterFirstScope;
@@ -399,6 +408,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 					VF.createIRI("urn:completed-relation:subject:0"),
 					VF.createIRI("urn:completed-relation:subject:1"),
 					VF.createIRI("urn:completed-relation:subject:3"));
+			PlanningGraphDomains.capture(selectedSubjects, PlanningGraphDomain.defaultGraph());
 
 			try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 				var secondThenThird = runtime
@@ -449,6 +459,7 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			BindingSetAssignment selectedSubjects = new BindingSetAssignment();
 			selectedSubjects.setBindingNames(Set.of("subject", "object"));
 			selectedSubjects.setBindingSets(List.of(selectedSubject));
+			PlanningGraphDomains.capture(selectedSubjects, PlanningGraphDomain.defaultGraph());
 			StatementPattern first = pattern("subject", firstPredicate, "middle");
 			StatementPattern third = pattern("subject", thirdPredicate, "object");
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
@@ -507,6 +518,8 @@ class LmdbEvaluationStatisticsMemoizationTest {
 			TupleExpr secondAlternative = new Union(
 					pattern("subject", secondLeft, "object"),
 					pattern("subject", secondRight, "object"));
+			PlanningGraphDomains.capture(firstAlternative, PlanningGraphDomain.defaultGraph());
+			PlanningGraphDomains.capture(secondAlternative, PlanningGraphDomain.defaultGraph());
 
 			try (QueryOptimizationScope ignored = statistics.beginQueryOptimizationScope()) {
 				var first = runtime.exactAlternativeSurface(firstAlternative);
@@ -562,7 +575,11 @@ class LmdbEvaluationStatisticsMemoizationTest {
 	}
 
 	private static StatementPattern pattern(String subject, IRI predicate, String object) {
-		return new StatementPattern(new Var(subject), new Var("predicate", predicate), new Var(object));
+		StatementPattern query = new StatementPattern(new Var(subject), new Var("predicate", predicate),
+				new Var(object));
+		// The ordinary fixture scans all describe complete local default-dataset inputs.
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 
 	private static StatisticsEstimate selectedInputEstimate(double rows) {

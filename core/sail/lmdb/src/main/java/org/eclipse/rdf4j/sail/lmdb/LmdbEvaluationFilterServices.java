@@ -57,6 +57,9 @@ final class LmdbEvaluationFilterServices {
 		}
 		StatementPattern pattern = LmdbEstimatorExpressionSupport.basePattern(filter.getArg());
 		EvaluationStatistics.FilterPassEstimate heuristic = heuristicFilterPass(filter);
+		if (!LmdbPlanningGraphEvidence.allows(filter)) {
+			return heuristic;
+		}
 		boolean adaptiveEvidenceAllowed = adaptiveEvidenceAllowed()
 				&& (estimator == null || estimator.adaptiveEvidenceAllowed());
 		return LmdbFilterPassSelection.bestAvailable(filterStatistics, filter, pattern, heuristic,
@@ -89,7 +92,9 @@ final class LmdbEvaluationFilterServices {
 	}
 
 	void recordFilterOutcome(Filter filter, EvaluationStatistics.FilterOutcomeObservation observation) {
-		if (adaptiveEvidenceAllowed() && filterStatistics != null && filter != null && observation != null
+		if (adaptiveEvidenceAllowed() && filterStatistics != null && LmdbPlanningGraphEvidence.allows(filter)
+				&& LmdbRuntimeFeedbackDescriptor.allowsFeedback(filter, RuntimeFeedbackContract.ADMIT_FILTER)
+				&& observation != null
 				&& observation.completed()
 				&& observation.poisonReason().isEmpty()
 				&& LmdbReinvocablePositions.filterOutcomeRecordable(filter)) {
@@ -99,7 +104,8 @@ final class LmdbEvaluationFilterServices {
 
 	RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(QueryModelNode node, RuntimeFeedbackContract contract) {
 		LmdbOperatorFeedbackStats feedback = runtime.feedback();
-		if (!(node instanceof TupleExpr) || feedback == null || contract == null
+		if (!(node instanceof TupleExpr expression) || !LmdbPlanningGraphEvidence.allows(expression)
+				|| feedback == null || contract == null
 				|| contract.dataEpoch() != runtime.snapshotVersion()
 				|| contract.catalogEpoch() != runtime.snapshotVersion()) {
 			traceRejectedRuntimeTarget(node, feedback, contract);

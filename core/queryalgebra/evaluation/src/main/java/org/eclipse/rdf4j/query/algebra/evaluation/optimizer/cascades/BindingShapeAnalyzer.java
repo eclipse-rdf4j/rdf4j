@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Difference;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -151,6 +152,12 @@ final class BindingShapeAnalyzer {
 			BindingMask aggregateBindings = universe.maskOf(group.getAggregateBindingNames());
 			return new BindingShape(groupBindings.union(aggregateBindings), groupBindings.intersect(argument.assured()),
 					null, aggregateBindings);
+		}
+		if (tupleExpr instanceof Graph graph) {
+			BindingShape body = analyze(graph.getArg());
+			BindingMask name = namedBinding(graph.getGraphName());
+			return shape(body.possible().union(name), body.assured().union(name),
+					body.localBindOutputs().union(name));
 		}
 		if (tupleExpr instanceof UnaryTupleOperator unary) {
 			return analyze(unary.getArg());

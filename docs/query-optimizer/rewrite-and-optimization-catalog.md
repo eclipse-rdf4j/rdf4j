@@ -139,6 +139,7 @@ This is the closed-world production manifest. Runtime guards, proof lineage, del
 | RELATIONAL_OPERATOR | rel:TUPLE_FUNCTION | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRelOp | lossless packed relational opcode TUPLE_FUNCTION |
 | RELATIONAL_OPERATOR | rel:SEMI_JOIN | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRelOp | lossless packed relational opcode SEMI_JOIN |
 | RELATIONAL_OPERATOR | rel:ANTI_JOIN | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRelOp | lossless packed relational opcode ANTI_JOIN |
+| RELATIONAL_OPERATOR | rel:GRAPH | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRelOp | lossless packed relational opcode GRAPH |
 | RELATIONAL_OPERATOR | rel:UNSUPPORTED | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedRelOp | lossless packed relational opcode UNSUPPORTED |
 | SCALAR_OPERATOR | scalar:VARIABLE | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedScalarOp | lossless packed scalar opcode VARIABLE |
 | SCALAR_OPERATOR | scalar:VALUE_CONSTANT | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedScalarOp | lossless packed scalar opcode VALUE_CONSTANT |
@@ -189,6 +190,7 @@ This is the closed-world production manifest. Runtime guards, proof lineage, del
 | SCALAR_OPERATOR | scalar:AGGREGATE_FUNCTION_CALL | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedScalarOp | lossless packed scalar opcode AGGREGATE_FUNCTION_CALL |
 | PAYLOAD_OPERATOR | payload:TERM | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode TERM |
 | PAYLOAD_OPERATOR | payload:STATEMENT_PATTERN | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode STATEMENT_PATTERN |
+| PAYLOAD_OPERATOR | payload:STATEMENT_PATTERN_OPTIONS | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode STATEMENT_PATTERN_OPTIONS |
 | PAYLOAD_OPERATOR | payload:SLICE | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SLICE |
 | PAYLOAD_OPERATOR | payload:PROJECTION_ELEMENT | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode PROJECTION_ELEMENT |
 | PAYLOAD_OPERATOR | payload:PROJECTION_LIST | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode PROJECTION_LIST |
@@ -218,6 +220,7 @@ This is the closed-world production manifest. Runtime guards, proof lineage, del
 | PAYLOAD_OPERATOR | payload:DOUBLE_METRIC | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode DOUBLE_METRIC |
 | PAYLOAD_OPERATOR | payload:STRING_METRIC | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode STRING_METRIC |
 | PAYLOAD_OPERATOR | payload:SEMI_ANTI_JOIN | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SEMI_ANTI_JOIN |
+| PAYLOAD_OPERATOR | payload:GRAPH | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode GRAPH |
 | PAYLOAD_OPERATOR | payload:UNSUPPORTED | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode UNSUPPORTED |
 | LOGICAL_RULE_REGISTRATION | rules:packed-logical-program | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedLogicalRuleProgram | all packed logical alternatives |
 | PHYSICAL_IMPLEMENTATION | physical:dependent-index-join | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedJoinEnumerator | parameterized dependent join |

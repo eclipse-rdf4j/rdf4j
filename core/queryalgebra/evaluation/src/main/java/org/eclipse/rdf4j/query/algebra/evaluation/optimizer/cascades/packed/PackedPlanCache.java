@@ -53,8 +53,12 @@ public final class PackedPlanCache {
 	 * {@code null} so callers can conservatively bypass reuse.
 	 */
 	public static StructuralKey structuralKey(TupleExpr source) {
+		return structuralKey(source, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	public static StructuralKey structuralKey(TupleExpr source, PackedStatementPatternSemanticsCodec semanticsCodec) {
 		TupleExpr checkedSource = Objects.requireNonNull(source, "source");
-		PackedQueryCacheIdentity identity = PackedQueryCacheIdentity.createComplete(checkedSource);
+		PackedQueryCacheIdentity identity = PackedQueryCacheIdentity.createComplete(checkedSource, semanticsCodec);
 		return identity == null ? null : new StructuralKey(defaultFingerprint(checkedSource, identity), identity);
 	}
 

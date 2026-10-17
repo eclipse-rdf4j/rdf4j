@@ -25,6 +25,7 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreePrinter;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -48,6 +49,8 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	private QueryModelNode parent;
 
 	private boolean isVariableScopeChange;
+	@JsonIgnore
+	private boolean independentInputScope;
 
 	private double resultSizeEstimate = -1;
 	private long resultSizeActual = -1;
@@ -108,6 +111,19 @@ public abstract class AbstractQueryModelNode implements QueryModelNode, Variable
 	@Override
 	public boolean isVariableScopeChange() {
 		return isVariableScopeChange;
+	}
+
+	@Override
+	@InternalUseOnly
+	@JsonIgnore
+	public boolean isIndependentInputScope() {
+		return independentInputScope;
+	}
+
+	@Override
+	@InternalUseOnly
+	public void setIndependentInputScope(boolean independent) {
+		independentInputScope = independent;
 	}
 
 	@Override

@@ -129,6 +129,12 @@ final class PackedSearchBudget {
 		return workUnits;
 	}
 
+	/** Inspects optional retained capacity without stopping search when a dispensable accelerator cannot fit. */
+	boolean canReserveBytes(long bytes) {
+		return !resourceLimitReached && !unsupportedSemantics && bytes >= 0L
+				&& bytes <= retainedByteLimit - retainedBytes;
+	}
+
 	/** Reserves logical primitive-array bytes before an arena allocates or publishes any part of its next capacity. */
 	boolean tryReserveBytes(long bytes) {
 		if (resourceLimitReached || unsupportedSemantics || bytes < 0L) {
@@ -190,6 +196,16 @@ final class PackedSearchBudget {
 
 	long remainingWorkUnits() {
 		return deadlineReached || resourceLimitReached || unsupportedSemantics ? 0L : workLimit - workUnits;
+	}
+
+	/**
+	 * Records an actual traversal truncation at the exhausted work boundary. Merely admitting the final complete block
+	 * does not make a search incomplete, and other hard-stop causes retain their own classification.
+	 */
+	void recordExhaustedWorkStop() {
+		if (!deadlineReached && !resourceLimitReached && !unsupportedSemantics && workUnits >= workLimit) {
+			workLimitReached = true;
+		}
 	}
 
 	/**

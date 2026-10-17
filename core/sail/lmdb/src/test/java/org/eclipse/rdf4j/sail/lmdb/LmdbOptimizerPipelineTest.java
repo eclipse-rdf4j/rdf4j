@@ -100,13 +100,18 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentInlinerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
@@ -303,7 +308,11 @@ class LmdbOptimizerPipelineTest {
 		int filterIndex = indexOf(optimizers, FilterOptimizer.class);
 		int filterSimplifierIndex = indexOf(optimizers, LmdbFilterSimplifierOptimizer.class);
 		int cascadesIndex = indexOf(optimizers, LmdbCascadesOptimizer.class);
+		int graphScopeIndex = indexOf(optimizers, GraphScopeOptimizer.class);
 
+		assertTrue(graphScopeIndex > indexOf(optimizers, BindingAssignerOptimizer.class));
+		assertTrue(graphScopeIndex < indexOf(optimizers, ConstantOptimizer.class));
+		assertEquals(1L, optimizers.stream().filter(GraphScopeOptimizer.class::isInstance).count());
 		assertTrue(filterIndex >= 0);
 		assertTrue(filterSimplifierIndex >= 0);
 		assertTrue(cascadesIndex >= 0);
@@ -488,8 +497,17 @@ class LmdbOptimizerPipelineTest {
 
 	@Test
 	void lmdbPipelineAttachesReadOnlyLmdbLookupMetadataBeforeCompare(@TempDir File dataDir) throws Exception {
-		ValueStore valueStore = new ValueStore(new File(dataDir, "values"), new LmdbStoreConfig());
-		try {
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) backing.getEvaluationStatistics();
+		ValueStore valueStore = statistics.estimatorRuntime().valueStore();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null);
+				SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ);
+				TripleStore.PlanningReadPin pin = statistics.estimatorRuntime()
+						.pinQueryPlanningReads(
+								admission.view().tripleTxn(), admission.view().valueSnapshot())) {
 			ValueFactory vf = SimpleValueFactory.getInstance();
 			IRI missingSubject = vf.createIRI("urn:lmdb-normalize:missing-subject");
 			IRI missingPredicate = vf.createIRI("urn:lmdb-normalize:missing-predicate");
@@ -511,11 +529,12 @@ class LmdbOptimizerPipelineTest {
 			Compare literalFilter = new Compare(Var.of("o"), new ValueConstant(filterLiteral), Compare.CompareOp.EQ);
 			Compare varFilter = new Compare(Var.of("fixed", missingFilterIri), Var.of("o"), Compare.CompareOp.NE);
 			Filter query = new Filter(new Join(statementPattern, values), new And(literalFilter, varFilter));
+			PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
 
-			TripleSource tripleSource = new EmptyTripleSource();
+			TripleSource tripleSource = new SailDatasetTripleTermSource(backing.getValueFactory(), dataset);
 			StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 			for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
-					new LmdbEvaluationStatistics(valueStore, null, null)).getOptimizers()) {
+					statistics).getOptimizers()) {
 				if (optimizer instanceof CompareOptimizer) {
 					break;
 				}
@@ -538,7 +557,7 @@ class LmdbOptimizerPipelineTest {
 			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(missingFilterIri));
 			assertEquals(LmdbValue.UNKNOWN_ID, valueStore.getId(normalizedRow.getValue("choice")));
 		} finally {
-			valueStore.close();
+			store.shutDown();
 			LmdbTestUtil.deleteDir(dataDir);
 		}
 	}
@@ -1126,6 +1145,9 @@ class LmdbOptimizerPipelineTest {
 				assertEquals(1, expected.size());
 				assertEquals("4", expected.get(0).getValue("count").stringValue());
 
+				// This manual optimizer traversal starts with the complete DEFAULT-domain fixture query,
+				// bypassing the native connection's usual pipeline entry adapter.
+				PlanningGraphDomains.capture(tupleExpr, PlanningGraphDomain.defaultGraph());
 				for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource,
 						store.getBackingStore().getEvaluationStatistics())
 								.getOptimizers()) {
@@ -2300,17 +2322,30 @@ class LmdbOptimizerPipelineTest {
 		assertSame(projection, order.getArg());
 	}
 
-	// REINFORCE: committed-store evidence may drive constraining rewrites only when the triple source exposes a
-	// committed snapshot epoch; an uncommitted overlay or an unknown wrapper plans without it.
+	// REINFORCE: committed-store evidence requires the complete source's actual admitted triple/dictionary pair;
+	// a raw epoch, uncommitted overlay, or unknown wrapper plans without it.
 	@Test
-	void committedEvidenceRewritesFollowTheTripleSourceSnapshotEpoch() throws Exception {
+	void committedEvidenceRewritesFollowTheTripleSourceSnapshotEpoch(@TempDir File dataDir) throws Exception {
 		assertFalse(committedEvidenceUsable(new EmptyTripleSource()),
 				"An unknown triple source wrapper cannot prove it reads committed data only");
 
+		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig());
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		try (LmdbSailStore.DatasetAdmission admission = backing.beginDatasetAdmission(IsolationLevels.SNAPSHOT_READ,
+				null);
+				SailDataset dataset = backing.getExplicitSailSource().dataset(IsolationLevels.SNAPSHOT_READ)) {
+			assertTrue(committedEvidenceUsable(new SailDatasetTripleTermSource(backing.getValueFactory(), dataset),
+					backing.getEvaluationStatistics()));
+		} finally {
+			store.shutDown();
+		}
+
 		SailDataset committedDataset = mock(SailDataset.class);
 		when(committedDataset.getSnapshotEpoch()).thenReturn(OptionalLong.of(7L));
-		assertTrue(committedEvidenceUsable(
-				new SailDatasetTripleTermSource(SimpleValueFactory.getInstance(), committedDataset)));
+		assertFalse(committedEvidenceUsable(
+				new SailDatasetTripleTermSource(SimpleValueFactory.getInstance(), committedDataset)),
+				"A raw epoch without an actual native pair cannot enable committed-evidence rewrites");
 
 		SailDataset uncommittedDataset = mock(SailDataset.class);
 		when(uncommittedDataset.getSnapshotEpoch()).thenReturn(OptionalLong.empty());
@@ -2320,9 +2355,14 @@ class LmdbOptimizerPipelineTest {
 	}
 
 	private static boolean committedEvidenceUsable(TripleSource tripleSource) throws Exception {
+		return committedEvidenceUsable(tripleSource, new EvaluationStatistics());
+	}
+
+	private static boolean committedEvidenceUsable(TripleSource tripleSource, EvaluationStatistics statistics)
+			throws Exception {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(tripleSource, null);
 		LmdbQueryOptimizerPipeline pipeline = new LmdbQueryOptimizerPipeline(strategy, tripleSource,
-				new EvaluationStatistics());
+				statistics);
 		LmdbFilterSimplifierOptimizer simplifier = optimizers(pipeline.getOptimizers()).stream()
 				.filter(LmdbFilterSimplifierOptimizer.class::isInstance)
 				.map(LmdbFilterSimplifierOptimizer.class::cast)

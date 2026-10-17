@@ -630,13 +630,13 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		private final long retainedBytes;
 
 		private ExactTupleRecipe(TupleExpr template, long retainedBytes) {
-			this.template = Objects.requireNonNull(template, "template").clone();
+			this.template = LmdbValueIdFilter.semanticClone(Objects.requireNonNull(template, "template"));
 			this.retainedBytes = retainedBytes;
 		}
 
 		@Override
 		public TupleExpr materialize() {
-			return template.clone();
+			return LmdbValueIdFilter.semanticClone(template);
 		}
 
 		@Override

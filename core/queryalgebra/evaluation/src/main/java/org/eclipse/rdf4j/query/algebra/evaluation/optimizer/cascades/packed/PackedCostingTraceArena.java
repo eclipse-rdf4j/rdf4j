@@ -48,8 +48,8 @@ final class PackedCostingTraceArena {
 	private static final int OBJECTIVE_UPPER = 17;
 	private static final int EVENT_INT_COLUMNS = 41;
 	private static final int EVENT_LONG_COLUMNS = 4;
-	private static final int EVENT_DOUBLE_COLUMNS = 32;
-	private static final int EVENT_BYTE_COLUMNS = 10;
+	private static final int EVENT_DOUBLE_COLUMNS = 33;
+	private static final int EVENT_BYTE_COLUMNS = 11;
 	private static final int INITIAL_INVOCATION_CAPACITY = PackedPrimitiveHash.tableCapacity(INITIAL_CAPACITY);
 	private static final int INITIAL_METRIC_BUNDLE_CAPACITY = INITIAL_CAPACITY;
 	private static final int INITIAL_METRIC_BUNDLE_TABLE_CAPACITY = PackedPrimitiveHash
@@ -62,6 +62,7 @@ final class PackedCostingTraceArena {
 	private boolean initialCapacityReserved;
 	private boolean released;
 	private byte[] phases = new byte[INITIAL_CAPACITY];
+	private byte[] contextFlags = new byte[INITIAL_CAPACITY];
 	private int[] relationIds = new int[INITIAL_CAPACITY];
 	private long[] contextFingerprints = new long[INITIAL_CAPACITY];
 	private int[] prefixStarts = new int[INITIAL_CAPACITY];
@@ -69,6 +70,7 @@ final class PackedCostingTraceArena {
 	private int[] prefixRelationIds = new int[INITIAL_CAPACITY];
 	private int prefixRelationSize;
 	private double[] prefixRows = new double[INITIAL_CAPACITY];
+	private double[] unrelatedPrefixRows = new double[INITIAL_CAPACITY];
 	private int[] assuredBindingRelationIds = new int[INITIAL_CAPACITY];
 	private int[] inputStateIds = new int[INITIAL_CAPACITY];
 	private int[] leftStateIds = new int[INITIAL_CAPACITY];
@@ -282,6 +284,7 @@ final class PackedCostingTraceArena {
 		}
 		size = eventId;
 		phases[eventId] = (byte) phase.ordinal();
+		contextFlags[eventId] = context.prefixRelationsDescribeRows() ? (byte) 1 : (byte) 0;
 		relationIds[eventId] = relationId;
 		long contextFingerprint = contextFingerprint(context);
 		contextFingerprints[eventId] = contextFingerprint;
@@ -291,6 +294,7 @@ final class PackedCostingTraceArena {
 			prefixRelationIds[prefixRelationSize++] = context.prefixRelationId(ordinal);
 		}
 		prefixRows[eventId] = context.prefixRows();
+		unrelatedPrefixRows[eventId] = context.unrelatedPrefixRows();
 		assuredBindingRelationIds[eventId] = context.assuredBindingRelationId();
 		inputStateIds[eventId] = context.evidenceStateId();
 		leftStateIds[eventId] = context.leftInputEvidenceStateId();
@@ -667,6 +671,8 @@ final class PackedCostingTraceArena {
 				|| contextFingerprints[eventId] != contextFingerprint(context)
 				|| !exactExtensional && prefixCounts[eventId] != context.prefixRelationCount()
 				|| !sameDouble(prefixRows[eventId], context.prefixRows())
+				|| (contextFlags[eventId] != 0) != context.prefixRelationsDescribeRows()
+				|| !sameDouble(unrelatedPrefixRows[eventId], context.unrelatedPrefixRows())
 				|| assuredBindingRelationIds[eventId] != context.assuredBindingRelationId()
 				|| inputStateIds[eventId] != context.evidenceStateId()
 				|| bindingLayoutIds[eventId] != context.bindingLayoutId()
@@ -1012,10 +1018,12 @@ final class PackedCostingTraceArena {
 
 	private PackedCostingTrace trace(boolean detached) {
 		int length = size + 1;
-		return new PackedCostingTrace(Arrays.copyOf(phases, length), copy(detached, relationIds, length),
+		return new PackedCostingTrace(Arrays.copyOf(phases, length), copy(detached, contextFlags, length),
+				copy(detached, relationIds, length),
 				copy(detached, contextFingerprints, length), copy(detached, prefixStarts, length),
 				copy(detached, prefixCounts, length), copy(detached, prefixRelationIds, prefixRelationSize),
-				copy(detached, prefixRows, length), copy(detached, assuredBindingRelationIds, length),
+				copy(detached, prefixRows, length), copy(detached, unrelatedPrefixRows, length),
+				copy(detached, assuredBindingRelationIds, length),
 				copy(detached, inputStateIds, length), copy(detached, leftStateIds, length),
 				copy(detached, rightStateIds, length), copy(detached, inputSourceStateIds, length),
 				copy(detached, leftSourceStateIds, length), copy(detached, rightSourceStateIds, length),
@@ -1251,6 +1259,8 @@ final class PackedCostingTraceArena {
 
 	private long eventHash(long seed, int eventId) {
 		long hash = mix(seed, phases[eventId]);
+		hash = mix(hash, contextFlags[eventId]);
+		hash = mix(hash, Double.doubleToLongBits(unrelatedPrefixRows[eventId]));
 		hash = mix(hash, relationIds[eventId]);
 		hash = mix(hash, contextFingerprints[eventId]);
 		hash = mix(hash, assuredBindingRelationIds[eventId]);
@@ -1504,11 +1514,13 @@ final class PackedCostingTraceArena {
 
 	private void resizeEventCapacity(int capacity) {
 		phases = Arrays.copyOf(phases, capacity);
+		contextFlags = Arrays.copyOf(contextFlags, capacity);
 		relationIds = Arrays.copyOf(relationIds, capacity);
 		contextFingerprints = Arrays.copyOf(contextFingerprints, capacity);
 		prefixStarts = Arrays.copyOf(prefixStarts, capacity);
 		prefixCounts = Arrays.copyOf(prefixCounts, capacity);
 		prefixRows = Arrays.copyOf(prefixRows, capacity);
+		unrelatedPrefixRows = Arrays.copyOf(unrelatedPrefixRows, capacity);
 		assuredBindingRelationIds = Arrays.copyOf(assuredBindingRelationIds, capacity);
 		inputStateIds = Arrays.copyOf(inputStateIds, capacity);
 		leftStateIds = Arrays.copyOf(leftStateIds, capacity);

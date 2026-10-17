@@ -173,7 +173,7 @@ final class LmdbFactorCostAssembler {
 				? access.totalWorkRows()
 				: Math.max(access.totalWorkRows(), semantic.workRows());
 		int lookupMask = lookupMask(accessPattern, context.boundNames());
-		AccessPathSelection accessPath = selectAccessPath(lookupMask, access.accessRowsPerInvocation());
+		AccessPathSelection accessPath = selectAccessPath(lookupMask);
 		Map<String, String> strings = new LinkedHashMap<>();
 		strings.put(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE,
 				estimateSource(expression, context, semantic));
@@ -270,7 +270,7 @@ final class LmdbFactorCostAssembler {
 		return semantic.source();
 	}
 
-	private AccessPathSelection selectAccessPath(int lookupMask, double rowsPerInvocation) {
+	private AccessPathSelection selectAccessPath(int lookupMask) {
 		if (tripleStore == null) {
 			return AccessPathSelection.none(lookupMask);
 		}
@@ -286,8 +286,8 @@ final class LmdbFactorCostAssembler {
 		}
 		int covered = lookupMask & best.prefixComponentMask();
 		int missing = lookupMask & ~best.prefixComponentMask();
-		boolean direct = missing == 0 && rowsPerInvocation <= 1.0d;
-		String accessMode = best.prefixLength() == 0 ? "fullScan" : direct ? "directLookup" : "prefixScan";
+		String accessMode = TripleStore.physicalAccessMode(lookupMask, best.prefixComponentMask(), best.prefixLength());
+		boolean direct = "directLookup".equals(accessMode);
 		return new AccessPathSelection(best.indexFieldSequence(), best.prefixLength(), covered, missing, direct,
 				candidates.size(), accessMode);
 	}

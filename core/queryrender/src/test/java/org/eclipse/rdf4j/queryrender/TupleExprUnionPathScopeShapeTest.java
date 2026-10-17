@@ -36,6 +36,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraphScope;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrMinus;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrOptional;
@@ -143,6 +144,8 @@ public class TupleExprUnionPathScopeShapeTest {
 						dq.add(ln);
 					}
 				}
+			} else if (n instanceof IrGraphScope graph) {
+				dq.add(graph.getWhere());
 			} else if (n instanceof IrGraph) {
 				IrBGP w = ((IrGraph) n).getWhere();
 				if (w != null) {

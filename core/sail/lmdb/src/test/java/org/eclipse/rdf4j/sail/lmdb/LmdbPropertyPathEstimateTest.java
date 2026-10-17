@@ -33,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -110,6 +112,8 @@ class LmdbPropertyPathEstimateTest {
 						.getEvaluationStatistics();
 				ArbitraryLengthPath path = new ArbitraryLengthPath(new Var("s"),
 						new StatementPattern(new Var("s"), new Var("p", p), new Var("o")), new Var("o"), 0L);
+				// The complete path query reads the default-context edges loaded above.
+				PlanningGraphDomains.capture(path, PlanningGraphDomain.defaultGraph());
 
 				double unboundWork = propertyPathWork(costModel, path, Set.of());
 				double subjectBoundWork = propertyPathWork(costModel, path, Set.of("s"));
@@ -150,6 +154,9 @@ class LmdbPropertyPathEstimateTest {
 			ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("start"),
 					new StatementPattern(Var.of("start"), Var.of("pathValue", AAS_VALUE), Var.of("p1")),
 					Var.of("p1"), 0L);
+			// These complete local inputs describe the generated default-graph AAS query.
+			PlanningGraphDomains.capture(prefix, PlanningGraphDomain.defaultGraph());
+			PlanningGraphDomains.capture(path, PlanningGraphDomain.defaultGraph());
 			JoinFactorCostModel costModel = (JoinFactorCostModel) store.getBackingStore().getEvaluationStatistics();
 			double prefixRows = store.getBackingStore().getEvaluationStatistics().getCardinality(prefix);
 

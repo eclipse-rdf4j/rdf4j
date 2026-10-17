@@ -17,8 +17,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 import java.util.StringJoiner;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -29,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -39,6 +44,8 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 @Timeout(120)
 class LmdbIndependentFiniteAnchorJoinPlanningTest {
@@ -143,20 +150,28 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 						.orElse(0.0d) >= 4.0d,
 						"Expected the later repeated-predicate hop to retain the VALUES leaf and all three predicate "
 								+ "factors in one Frontier state. plan=" + optimized);
-				assertTrue(frontierJoins.stream()
-						.map(Join::getRightArg)
-						.allMatch(StatementPattern.class::isInstance),
-						"Expected each selected Frontier join to retain its statement-pattern input. plan="
-								+ optimized);
-				assertTrue(frontierJoins.stream()
-						.map(Join::getRightArg)
-						.map(StatementPattern.class::cast)
+				Set<StatementPattern> actualLeaves = physicalStatementInputs(frontierJoins);
+				assertTrue(!actualLeaves.isEmpty(), "Selected Frontier joins must retain physical statement inputs");
+				assertEquals(3, actualLeaves.size(), "Each repeated-predicate occurrence must remain a distinct leaf");
+				assertTrue(actualLeaves.stream()
+						.allMatch(leaf -> SOCIAL_FOLLOWS.equals(leaf.getPredicateVar().getValue())));
+				assertEquals(Set.of("u->v", "v->w", "w->x"), actualLeaves.stream()
+						.map(leaf -> leaf.getSubjectVar().getName() + "->" + leaf.getObjectVar().getName())
+						.collect(Collectors.toSet()));
+				List<BindingSetAssignment> finiteLeaves = new ArrayList<>();
+				optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+					@Override
+					public void meet(BindingSetAssignment leaf) {
+						finiteLeaves.add(leaf);
+					}
+				});
+				assertEquals(1, finiteLeaves.size());
+				assertEquals(Set.of("u"), finiteLeaves.getFirst().getBindingNames());
+				assertTrue(actualLeaves.stream()
 						.allMatch(pattern -> pattern.getDoubleMetricPlanned("plannedFrontierStateId") > 0.0d),
 						"Each statement-pattern input must retain its query-local Frontier state. plan="
 								+ optimized);
-				assertTrue(frontierJoins.stream()
-						.map(Join::getRightArg)
-						.map(StatementPattern.class::cast)
+				assertTrue(actualLeaves.stream()
 						.map(pattern -> pattern
 								.getStringMetricPlanned(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE))
 						.allMatch(source -> source != null && source.startsWith("frontier-v2-")
@@ -168,6 +183,32 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 		} finally {
 			repository.shutDown();
 		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void physicalLeafObservationVisitsLeftDeepAndBushyEvidenceTreesExactlyOnce(boolean bushy) {
+		StatementPattern first = new StatementPattern(Var.of("u"), Var.of("p", SOCIAL_FOLLOWS), Var.of("v"));
+		StatementPattern second = new StatementPattern(Var.of("v"), Var.of("p", SOCIAL_FOLLOWS), Var.of("w"));
+		StatementPattern third = new StatementPattern(Var.of("w"), Var.of("p", SOCIAL_FOLLOWS), Var.of("x"));
+		Join nested = bushy ? new Join(second, third) : new Join(first, second);
+		Join root = bushy ? new Join(first, nested) : new Join(nested, third);
+		Set<StatementPattern> leaves = physicalStatementInputs(List.of(root, nested));
+		assertEquals(3, leaves.size());
+		assertTrue(leaves.containsAll(List.of(first, second, third)));
+	}
+
+	private static Set<StatementPattern> physicalStatementInputs(List<Join> evidenceJoins) {
+		Set<StatementPattern> leaves = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Join join : evidenceJoins) {
+			join.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(StatementPattern leaf) {
+					leaves.add(leaf);
+				}
+			});
+		}
+		return leaves;
 	}
 
 	private static boolean isFollowsBridge(StatementPattern node) {

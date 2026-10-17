@@ -16,6 +16,7 @@ import java.util.Arrays;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizerRuleCatalog;
@@ -76,6 +77,7 @@ final class PackedPlanRecipe {
 	private final int[] costEventIds;
 	private final Object[] providerObjects;
 	private final long ruleProofMask;
+	private final PackedStatementPatternSemanticsCodec semanticsCodec;
 
 	private PackedPlanRecipe(int rootRecipeId, short[] operatorTags, int[] payloadIds, int[] deliveredPropertyIds,
 			int[] implementationForms, int[] sourcePhysicalExpressionIds, int[] sourceLogicalExpressionIds,
@@ -93,7 +95,8 @@ final class PackedPlanRecipe {
 			PackedCacheValidationEvent cacheValidationEvent, PackedPlanContinuationSeed continuationSeed,
 			int[] frontierBundleOrdinals, byte[] evidenceGuarantees,
 			byte[] evidenceDispositions, int[] costEventIds, Object[] providerObjects,
-			long ruleProofMask) {
+			long ruleProofMask, PackedStatementPatternSemanticsCodec semanticsCodec) {
+		this.semanticsCodec = semanticsCodec;
 		this.rootRecipeId = rootRecipeId;
 		this.operatorTags = operatorTags;
 		this.payloadIds = payloadIds;
@@ -263,9 +266,10 @@ final class PackedPlanRecipe {
 		return result;
 	}
 
-	private static PhysicalIdentity semanticIdentity(TupleExpr materializedPlan) {
+	private PhysicalIdentity semanticIdentity(TupleExpr materializedPlan) {
 		PhysicalIdentityBuilder identity = new PhysicalIdentityBuilder(0xbb67ae8584caa73bL);
-		PackedQueryCacheIdentity packedIdentity = PackedQueryCacheIdentity.createPlanIdentity(materializedPlan);
+		PackedQueryCacheIdentity packedIdentity = PackedQueryCacheIdentity.createPlanIdentity(materializedPlan, null,
+				semanticsCodec);
 		if (packedIdentity != null) {
 			identity.append(0x5041434b45445f49L);
 			packedIdentity.appendTo(identity);
@@ -277,13 +281,22 @@ final class PackedPlanRecipe {
 		return identity.build();
 	}
 
-	private static void appendRawSemanticIdentity(PhysicalIdentityBuilder identity, TupleExpr materializedPlan) {
+	private void appendRawSemanticIdentity(PhysicalIdentityBuilder identity, TupleExpr materializedPlan) {
+		identity.append(semanticsCodec.schemaId());
+		identity.append(semanticsCodec.schemaVersion());
 		materializedPlan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
 				identity.append(0x4e4f44455f424547L);
 				identity.append(node.getClass().getName());
 				identity.append(node.getSignature());
+				if (node instanceof StatementPattern statement) {
+					var content = semanticsCodec.capture(statement);
+					identity.append(content.size());
+					for (int index = 0; index < content.size(); index++) {
+						identity.append(content.word(index));
+					}
+				}
 				super.meetNode(node);
 				identity.append(0x4e4f44455f454e44L);
 			}
@@ -878,7 +891,7 @@ final class PackedPlanRecipe {
 				dependentSubqueryPayloadIds, dependentRootRecipeIds, validation.evidenceBundle(), validatedTrace,
 				certificateUpdate.certificate(), event, continuationSeed, validatedStateOrdinals,
 				validatedGuarantees,
-				validatedDispositions, costEventIds, providerObjects, ruleProofMask);
+				validatedDispositions, costEventIds, providerObjects, ruleProofMask, semanticsCodec);
 	}
 
 	long detachedEvidenceBytes() {
@@ -921,7 +934,7 @@ final class PackedPlanRecipe {
 				continuationSeed,
 				new int[frontierBundleOrdinals.length], evidenceGuarantees, evidenceDispositions,
 				new int[costEventIds.length],
-				providerObjects, ruleProofMask);
+				providerObjects, ruleProofMask, semanticsCodec);
 	}
 
 	int evidenceStateOrdinal(int recipeId) {
@@ -1282,6 +1295,7 @@ final class PackedPlanRecipe {
 		private int[] continuationLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalOccurrenceIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationLogicalGraphDomainIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
@@ -1292,6 +1306,7 @@ final class PackedPlanRecipe {
 		private int[] continuationStructuralLogicalSemanticScopeIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalExecutionDomainIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalOccurrenceIds = new int[INITIAL_ROW_CAPACITY];
+		private int[] continuationStructuralLogicalGraphDomainIds = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildStarts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildCounts = new int[INITIAL_ROW_CAPACITY];
 		private int[] continuationStructuralLogicalChildGroupIds = new int[INITIAL_ROW_CAPACITY];
@@ -1439,6 +1454,7 @@ final class PackedPlanRecipe {
 					take(continuationLogicalSemanticScopeIds, rowCount),
 					take(continuationLogicalExecutionDomainIds, rowCount),
 					take(continuationLogicalOccurrenceIds, rowCount),
+					take(continuationLogicalGraphDomainIds, rowCount),
 					take(continuationLogicalChildStarts, rowCount),
 					take(continuationLogicalChildCounts, rowCount),
 					take(continuationLogicalChildGroupIds, continuationLogicalChildSize),
@@ -1449,6 +1465,7 @@ final class PackedPlanRecipe {
 					take(continuationStructuralLogicalSemanticScopeIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalExecutionDomainIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalOccurrenceIds, structuralLogicalRowCount),
+					take(continuationStructuralLogicalGraphDomainIds, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildStarts, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildCounts, structuralLogicalRowCount),
 					take(continuationStructuralLogicalChildGroupIds, continuationStructuralLogicalChildSize),
@@ -1479,7 +1496,7 @@ final class PackedPlanRecipe {
 					continuationSeed,
 					take(frontierBundleOrdinals, rowCount), take(evidenceGuarantees, rowCount),
 					take(evidenceDispositions, rowCount), take(costEventIds, rowCount), snapshotProviderObjects(),
-					ruleProofMask);
+					ruleProofMask, memo.semanticsCodec());
 		}
 
 		private void captureContinuationStructuralLogicalState() {
@@ -1493,6 +1510,7 @@ final class PackedPlanRecipe {
 				continuationStructuralLogicalSemanticScopeIds[ordinal] = memo.logicalSemanticScopeId(expressionId);
 				continuationStructuralLogicalExecutionDomainIds[ordinal] = memo.logicalExecutionDomainId(expressionId);
 				continuationStructuralLogicalOccurrenceIds[ordinal] = memo.logicalOccurrenceId(expressionId);
+				continuationStructuralLogicalGraphDomainIds[ordinal] = memo.logicalGraphDomainId(expressionId);
 				int childCount = memo.logicalChildCount(expressionId);
 				continuationStructuralLogicalChildStarts[ordinal] = continuationStructuralLogicalChildSize;
 				continuationStructuralLogicalChildCounts[ordinal] = childCount;
@@ -1683,6 +1701,7 @@ final class PackedPlanRecipe {
 				continuationLogicalExecutionDomainIds[recipeId] = memo
 						.logicalExecutionDomainId(sourceLogicalExpressionId);
 				continuationLogicalOccurrenceIds[recipeId] = memo.logicalOccurrenceId(sourceLogicalExpressionId);
+				continuationLogicalGraphDomainIds[recipeId] = memo.logicalGraphDomainId(sourceLogicalExpressionId);
 				int logicalChildCount = memo.logicalChildCount(sourceLogicalExpressionId);
 				continuationLogicalChildStarts[recipeId] = continuationLogicalChildSize;
 				continuationLogicalChildCounts[recipeId] = logicalChildCount;
@@ -1887,6 +1906,7 @@ final class PackedPlanRecipe {
 			continuationLogicalSemanticScopeIds = Arrays.copyOf(continuationLogicalSemanticScopeIds, newCapacity);
 			continuationLogicalExecutionDomainIds = Arrays.copyOf(continuationLogicalExecutionDomainIds, newCapacity);
 			continuationLogicalOccurrenceIds = Arrays.copyOf(continuationLogicalOccurrenceIds, newCapacity);
+			continuationLogicalGraphDomainIds = Arrays.copyOf(continuationLogicalGraphDomainIds, newCapacity);
 			continuationLogicalChildStarts = Arrays.copyOf(continuationLogicalChildStarts, newCapacity);
 			continuationLogicalChildCounts = Arrays.copyOf(continuationLogicalChildCounts, newCapacity);
 			continuationLogicalRuleMasks = Arrays.copyOf(continuationLogicalRuleMasks, newCapacity);
@@ -1959,6 +1979,8 @@ final class PackedPlanRecipe {
 			continuationStructuralLogicalExecutionDomainIds = Arrays.copyOf(
 					continuationStructuralLogicalExecutionDomainIds, newCapacity);
 			continuationStructuralLogicalOccurrenceIds = Arrays.copyOf(continuationStructuralLogicalOccurrenceIds,
+					newCapacity);
+			continuationStructuralLogicalGraphDomainIds = Arrays.copyOf(continuationStructuralLogicalGraphDomainIds,
 					newCapacity);
 			continuationStructuralLogicalChildStarts = Arrays.copyOf(continuationStructuralLogicalChildStarts,
 					newCapacity);

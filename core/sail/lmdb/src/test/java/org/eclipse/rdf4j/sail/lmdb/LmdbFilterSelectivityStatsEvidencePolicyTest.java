@@ -41,6 +41,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchRebuildObserver;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchSnapshotIdentity;
 import org.junit.jupiter.api.Test;
@@ -162,7 +164,10 @@ class LmdbFilterSelectivityStatsEvidencePolicyTest {
 		when(tripleStore.cardinality(anyLong(), anyLong(), anyLong(), anyLong())).thenReturn(100.0d);
 		LmdbFilterSelectivityStats stats = stats(dataDir, tripleStore, adaptiveEvidenceAllowed);
 		StatementPattern pattern = new StatementPattern(new Var("subject"), new Var("predicate"), new Var("value"));
+		// This queue fixture describes a complete local default-graph scan.
+		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
 		Filter filter = new Filter(pattern.clone(), new Bound(new Var("value")));
+		PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 
 		stats.estimateLiveFilterPass(filter, pattern);
 		assertEquals(1, stats.pendingBackgroundSamplingRequests());
@@ -180,6 +185,8 @@ class LmdbFilterSelectivityStatsEvidencePolicyTest {
 		for (int index = 0; index < 4_095; index++) {
 			Filter filter = new Filter(pattern.clone(), new Compare(new Var("value"),
 					new ValueConstant(SimpleValueFactory.getInstance().createLiteral(index))));
+			// Each leased cell represents a complete default-graph FILTER query.
+			PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 			LmdbFilterSelectivityStats.ResolvedFilterCells cells = stats.resolveRuntimeFeedbackTarget(filter);
 			assertNotNull(cells, "The configured surface capacity should admit every cell through its limit");
 			leases.add(cells);
@@ -187,6 +194,7 @@ class LmdbFilterSelectivityStatsEvidencePolicyTest {
 
 		Filter overflow = new Filter(pattern.clone(), new Compare(new Var("value"),
 				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(4_096))));
+		PlanningGraphDomains.capture(overflow, PlanningGraphDomain.defaultGraph());
 		assertNull(stats.resolveRuntimeFeedbackTarget(overflow),
 				"A fully leased store must compile a no-op target instead of growing past its bound");
 

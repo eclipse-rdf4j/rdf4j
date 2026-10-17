@@ -53,6 +53,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -120,6 +121,7 @@ final class LmdbEstimationEngine {
 		}
 
 		private BagEstimate estimate(TupleExpr expression, EstimateContext context) {
+			context = context.withGraphDomain(PlanningGraphDomains.domain(expression));
 			ContextKey key = ContextKey.from(context);
 			Map<ContextKey, BagEstimate> byContext = estimates.computeIfAbsent(expression,
 					ignored -> new LinkedHashMap<>());
@@ -326,6 +328,8 @@ final class LmdbEstimationEngine {
 			// for how many quoted triples can match.
 			StatementPattern proxy = new StatementPattern(tripleRef.getSubjectVar().clone(),
 					tripleRef.getPredicateVar().clone(), tripleRef.getObjectVar().clone());
+			PlanningGraphDomains.copy(tripleRef, proxy);
+			proxy.setIndependentInputScope(tripleRef.isIndependentInputScope());
 			return withMissingVariables(estimate(proxy, context), tripleRef);
 		}
 
@@ -660,13 +664,15 @@ final class LmdbEstimationEngine {
 
 	private record ContextKey(Object boundMask, Object finiteBindings, PrefixEvidenceKey prefixEvidence,
 			double invocations,
-			Object evidencePolicy, Object estimationTier, Object snapshotIdentity, long snapshotVersion,
+			Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
+			long snapshotVersion,
 			boolean exactProbePermitted) {
 
 		private static ContextKey from(EstimateContext context) {
 			return new ContextKey(context.boundMask(), context.finiteBindings(),
 					PrefixEvidenceKey.from(context.prefixEstimate()),
-					context.invocationCount(), context.evidencePolicy(), context.estimationTier(),
+					context.invocationCount(), context.evidencePolicy(), context.graphDomain(),
+					context.estimationTier(),
 					context.snapshotIdentity(),
 					context.snapshotVersion(), context.exactProbePermitted());
 		}

@@ -180,33 +180,53 @@ final class PackedDomainFacts {
 		int leftLanguages = arena.languageBits(leftRangeId);
 		int rightLanguages = arena.languageBits(rightRangeId);
 		int languages = meetBits(leftLanguages, rightLanguages);
+		boolean noLiterals = excludesLiterals(leftRangeId) || excludesLiterals(rightRangeId);
 		if (languages == 0 && leftLanguages != 0 && rightLanguages != 0) {
-			// Both sides know the language class of their literals and the classes are disjoint, so no literal is
-			// admitted by both; IRIs and blank nodes (if any) still are.
+			noLiterals = true;
+		}
+		long leftDatatypes = arena.datatypeBits(leftRangeId);
+		long rightDatatypes = arena.datatypeBits(rightRangeId);
+		long datatypes = leftDatatypes == 0L ? rightDatatypes
+				: rightDatatypes == 0L ? leftDatatypes : leftDatatypes & rightDatatypes;
+		if (!noLiterals && datatypes == 0L && leftDatatypes != 0L && rightDatatypes != 0L) {
+			// Datatypes describe language-free literals only. A disjoint known intersection excludes that class;
+			// it must never become the zero/unknown mask and be restored by the next propagation pass.
+			if (languages != 0 && (languages & PackedPredicateRange.LANGUAGE_WITH) == 0) {
+				noLiterals = true;
+			} else {
+				languages = PackedPredicateRange.LANGUAGE_WITH;
+			}
+		}
+		if (noLiterals) {
 			if (kind == PackedPredicateRange.KIND_LITERAL) {
 				scratch.setState(PackedPredicateRange.STATE_EMPTY);
 				return arena.intern(scratch, objects);
 			}
-			kind = kind == 0
-					? PackedPredicateRange.KIND_IRI | PackedPredicateRange.KIND_BNODE
-					: kind & ~PackedPredicateRange.KIND_LITERAL;
+			if (kind != 0) {
+				kind &= ~PackedPredicateRange.KIND_LITERAL;
+			}
+			languages = 0;
+			datatypes = 0L;
+		} else if (languages != 0 && (languages & PackedPredicateRange.LANGUAGE_WITHOUT) == 0) {
+			// No language-free literal survives, so its datatype details are vacuous, not unknown new facts.
+			datatypes = 0L;
 		}
 		scratch.setState(PackedPredicateRange.STATE_KNOWN);
 		scratch.setKindBits(kind);
 		scratch.setLanguageBits(languages);
 		scratch.setUniversalBits(arena.universalBits(leftRangeId) | arena.universalBits(rightRangeId));
-		mergeDatatypesIntersect(leftRangeId, rightRangeId);
+		addDatatypeBits(datatypes);
 		if (!mergeIntegerBoundsIntersect(leftRangeId, rightRangeId)) {
 			scratch.reset();
 			scratch.setState(PackedPredicateRange.STATE_EMPTY);
 			return arena.intern(scratch, objects);
 		}
-		if (!mergeFiniteValuesIntersect(leftRangeId, rightRangeId)) {
+		if (!mergeFiniteValuesIntersect(leftRangeId, rightRangeId, noLiterals)) {
 			scratch.reset();
 			scratch.setState(PackedPredicateRange.STATE_EMPTY);
 			return arena.intern(scratch, objects);
 		}
-		return arena.intern(scratch, objects);
+		return arena.intern(scratch, objects, noLiterals && kind == 0);
 	}
 
 	/** Lattice join: the returned range admits every value admitted by either input, or 0 when nothing sound. */
@@ -229,7 +249,13 @@ final class PackedDomainFacts {
 		scratch.setUniversalBits(arena.universalBits(leftRangeId) & arena.universalBits(rightRangeId));
 		long leftDatatypes = arena.datatypeBits(leftRangeId);
 		long rightDatatypes = arena.datatypeBits(rightRangeId);
-		if (leftDatatypes != 0L && rightDatatypes != 0L) {
+		if (excludesLanguageFreeLiterals(leftRangeId)) {
+			if (!excludesLanguageFreeLiterals(rightRangeId)) {
+				addDatatypeBits(rightDatatypes);
+			}
+		} else if (excludesLanguageFreeLiterals(rightRangeId)) {
+			addDatatypeBits(leftDatatypes);
+		} else if (leftDatatypes != 0L && rightDatatypes != 0L) {
 			addDatatypeBits(leftDatatypes | rightDatatypes);
 		}
 		if (arena.hasIntegerBounds(leftRangeId) && arena.hasIntegerBounds(rightRangeId)) {
@@ -252,7 +278,8 @@ final class PackedDomainFacts {
 				}
 			}
 		}
-		return arena.intern(scratch, objects);
+		boolean noLiterals = excludesLiterals(leftRangeId) && excludesLiterals(rightRangeId);
+		return arena.intern(scratch, objects, noLiterals && scratch.kindBits() == 0);
 	}
 
 	/**
@@ -333,23 +360,22 @@ final class PackedDomainFacts {
 	 * literals to make a language claim about, so it vacuously agrees with the other side.
 	 */
 	private int literalLanguageBits(int rangeId, int otherLanguageBits) {
-		int kinds = arena.kindBits(rangeId);
-		if (kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0) {
+		if (excludesLiterals(rangeId)) {
 			return otherLanguageBits;
 		}
 		return arena.languageBits(rangeId);
 	}
 
-	private void mergeDatatypesIntersect(int leftRangeId, int rightRangeId) {
-		long left = arena.datatypeBits(leftRangeId);
-		long right = arena.datatypeBits(rightRangeId);
-		if (left == 0L) {
-			addDatatypeBits(right);
-		} else if (right == 0L) {
-			addDatatypeBits(left);
-		} else {
-			addDatatypeBits(left & right);
-		}
+	private boolean excludesLiterals(int rangeId) {
+		int kinds = arena.kindBits(rangeId);
+		return arena.excludesLiterals(rangeId)
+				|| kinds != 0 && (kinds & PackedPredicateRange.KIND_LITERAL) == 0;
+	}
+
+	private boolean excludesLanguageFreeLiterals(int rangeId) {
+		int languages = arena.languageBits(rangeId);
+		return excludesLiterals(rangeId)
+				|| languages != 0 && (languages & PackedPredicateRange.LANGUAGE_WITHOUT) == 0;
 	}
 
 	private boolean mergeIntegerBoundsIntersect(int leftRangeId, int rightRangeId) {
@@ -371,7 +397,7 @@ final class PackedDomainFacts {
 		return true;
 	}
 
-	private boolean mergeFiniteValuesIntersect(int leftRangeId, int rightRangeId) {
+	private boolean mergeFiniteValuesIntersect(int leftRangeId, int rightRangeId, boolean noLiterals) {
 		boolean leftFinite = arena.isFinite(leftRangeId);
 		boolean rightFinite = arena.isFinite(rightRangeId);
 		if (!leftFinite && !rightFinite) {
@@ -382,20 +408,20 @@ final class PackedDomainFacts {
 			for (int ordinal = 0; ordinal < arena.finiteValueCount(leftRangeId); ordinal++) {
 				int objectId = arena.finiteValueObjectId(leftRangeId, ordinal);
 				if (containsFiniteObject(rightRangeId, objectId)) {
-					addAdmittedFiniteValue(objectId);
+					addAdmittedFiniteValue(objectId, noLiterals);
 				}
 			}
 		} else {
 			int finiteRangeId = leftFinite ? leftRangeId : rightRangeId;
 			for (int ordinal = 0; ordinal < arena.finiteValueCount(finiteRangeId); ordinal++) {
-				addAdmittedFiniteValue(arena.finiteValueObjectId(finiteRangeId, ordinal));
+				addAdmittedFiniteValue(arena.finiteValueObjectId(finiteRangeId, ordinal), noLiterals);
 			}
 		}
 		return scratch.finiteValueCount() > 0;
 	}
 
-	/** Adds a finite candidate only when it satisfies the already-merged kind, canonical, and bounds constraints. */
-	private void addAdmittedFiniteValue(int objectId) {
+	/** Adds a finite candidate only when it satisfies every already-merged range constraint. */
+	private void addAdmittedFiniteValue(int objectId, boolean noLiterals) {
 		Object candidate = objects.value(objectId);
 		if (!(candidate instanceof Value value)) {
 			return;
@@ -403,9 +429,26 @@ final class PackedDomainFacts {
 		int kinds = scratch.kindBits();
 		if (kinds != 0) {
 			int kind = value.isIRI() ? PackedPredicateRange.KIND_IRI
-					: value.isBNode() ? PackedPredicateRange.KIND_BNODE : PackedPredicateRange.KIND_LITERAL;
+					: value.isBNode() ? PackedPredicateRange.KIND_BNODE
+							: value.isLiteral() ? PackedPredicateRange.KIND_LITERAL : 0;
 			if ((kinds & kind) == 0) {
 				return;
+			}
+		}
+		if (value instanceof Literal literal) {
+			if (noLiterals) {
+				return;
+			}
+			boolean tagged = literal.getLanguage().isPresent();
+			int language = tagged ? PackedPredicateRange.LANGUAGE_WITH : PackedPredicateRange.LANGUAGE_WITHOUT;
+			if (scratch.languageBits() != 0 && (scratch.languageBits() & language) == 0) {
+				return;
+			}
+			if (!tagged && scratch.datatypeBits() != 0L) {
+				CoreDatatype datatype = literal.getCoreDatatype();
+				if (!datatype.isXSDDatatype() || !scratch.hasDatatype((CoreDatatype.XSD) datatype)) {
+					return;
+				}
 			}
 		}
 		if ((scratch.universalBits() & PackedPredicateRange.UNIVERSAL_CANONICAL_INTEGER) != 0

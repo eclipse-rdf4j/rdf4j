@@ -57,32 +57,40 @@ final class PackedQueryFamilyIdentity {
 
 	private final AuthenticationToken[] canonicalPackedIdentity;
 	private final PackedParameterSchema parameterSchema;
-	private final boolean rangeFactsSeeded;
+	private final PackedPredicateRangeProvider.RangeApplicability rangeApplicability;
 	private final PackedQuery parameterizedQueryTemplate;
 	private final PackedParameterVector parameterVector;
 	private final PackedQuery concreteQuery;
 
 	private PackedQueryFamilyIdentity(AuthenticationToken[] canonicalPackedIdentity,
-			PackedParameterSchema parameterSchema, boolean rangeFactsSeeded, PackedQuery parameterizedQueryTemplate,
+			PackedParameterSchema parameterSchema, PackedPredicateRangeProvider.RangeApplicability rangeApplicability,
+			PackedQuery parameterizedQueryTemplate,
 			PackedParameterVector parameterVector,
 			PackedQuery concreteQuery) {
 		this.canonicalPackedIdentity = canonicalPackedIdentity;
 		this.parameterSchema = parameterSchema;
-		this.rangeFactsSeeded = rangeFactsSeeded;
+		this.rangeApplicability = rangeApplicability;
 		this.parameterizedQueryTemplate = parameterizedQueryTemplate;
 		this.parameterVector = parameterVector;
 		this.concreteQuery = concreteQuery;
 	}
 
 	static PackedQueryFamilyIdentity create(TupleExpr source, PackedPredicateRangeProvider rangeProvider) {
+		return create(source, rangeProvider, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQueryFamilyIdentity create(TupleExpr source, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		Objects.requireNonNull(source, "source");
 		Map<String, Integer> canonicalNames = PackedQueryCacheIdentity.canonicalNamesForFamily(source);
 		if (canonicalNames == null) {
 			return null;
 		}
 		try {
-			PackedQuery identityQuery = PackedQueryCodec.encodeForParameterizedCacheIdentity(source, canonicalNames);
-			PackedQuery concreteQuery = PackedQueryCodec.encodeForParameterizedPlanning(source, rangeProvider);
+			PackedQuery identityQuery = PackedQueryCodec.encodeForParameterizedCacheIdentity(source, canonicalNames,
+					semanticsCodec);
+			PackedQuery concreteQuery = PackedQueryCodec.encodeForParameterizedPlanning(source, rangeProvider,
+					semanticsCodec);
 			if (!identityQuery.supportsCacheIdentity() || !concreteQuery.supportsCacheIdentity()
 					|| !identityQuery.parameterSchema().equals(concreteQuery.parameterSchema())) {
 				return null;
@@ -90,7 +98,8 @@ final class PackedQueryFamilyIdentity {
 			AuthenticationSink sink = new AuthenticationSink();
 			PackedQueryCacheIdentity.appendPackedIdentity(identityQuery, sink);
 			return new PackedQueryFamilyIdentity(sink.snapshot(), identityQuery.parameterSchema(),
-					rangeProvider != null, concreteQuery.withoutOriginalBindingSets().withoutInvocationParameters(),
+					concreteQuery.rangeApplicability(),
+					concreteQuery.withoutOriginalBindingSets().withoutInvocationParameters(),
 					concreteQuery.parameterVector(), concreteQuery);
 		} catch (UnsupportedCascadesOperatorException | PackedMemoInvariantException unsupported) {
 			return null;
@@ -100,20 +109,19 @@ final class PackedQueryFamilyIdentity {
 	PackedQueryFamilyIdentity detached() {
 		return concreteQuery == null
 				? this
-				: new PackedQueryFamilyIdentity(canonicalPackedIdentity, parameterSchema, rangeFactsSeeded,
+				: new PackedQueryFamilyIdentity(canonicalPackedIdentity, parameterSchema, rangeApplicability,
 						parameterizedQueryTemplate, null, null);
 	}
 
 	/**
-	 * Same normalized family: parameter schema, canonical packed identity (computed without range facts) and whether
-	 * the concrete queries were encoded with a predicate-range provider. Two invocations of one family may still differ
-	 * in the domain facts the codec seeded for their constants (a constant outside a proven range marks its group
-	 * proven-empty), so a family match alone never authorizes reusing another invocation's recipe; see
-	 * {@link #sameConcreteInvocation}.
+	 * Same normalized family: parameter schema, canonical packed identity (computed without range facts) and the
+	 * predicate-range applicability capability. Two invocations of one family may still differ in the domain facts the
+	 * codec seeded for their constants (a constant outside a proven range marks its group proven-empty), so a family
+	 * match alone never authorizes reusing another invocation's recipe; see {@link #sameConcreteInvocation}.
 	 */
 	boolean matches(PackedQueryFamilyIdentity other) {
 		return other != null
-				&& rangeFactsSeeded == other.rangeFactsSeeded
+				&& rangeApplicability == other.rangeApplicability
 				&& parameterSchema.equals(other.parameterSchema)
 				&& Arrays.equals(canonicalPackedIdentity, other.canonicalPackedIdentity);
 	}
@@ -139,7 +147,7 @@ final class PackedQueryFamilyIdentity {
 
 	/** Whether the concrete queries of this family were encoded with a predicate-range provider. */
 	boolean rangeFactsSeeded() {
-		return rangeFactsSeeded;
+		return rangeApplicability != null;
 	}
 
 	PackedParameterSchema parameterSchema() {

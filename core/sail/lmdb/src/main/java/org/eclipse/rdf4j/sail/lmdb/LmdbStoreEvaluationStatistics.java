@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 import java.util.function.BooleanSupplier;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
+import org.eclipse.rdf4j.sail.base.SailClosable;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.eclipse.rdf4j.sail.lmdb.sketch.SketchBasedJoinEstimator;
 
@@ -23,6 +25,7 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 		implements LmdbDetachedPlanningSnapshotProvider {
 
 	private final LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots;
+	private final Supplier<SailClosable> planningViewMask;
 
 	LmdbStoreEvaluationStatistics(ValueStore valueStore, TripleStore tripleStore,
 			SketchBasedJoinEstimator estimator, LmdbFilterSelectivityStats filters,
@@ -30,11 +33,16 @@ final class LmdbStoreEvaluationStatistics extends LmdbEvaluationStatistics
 			PackedPlanCache cascadesPlanCache,
 			LmdbFrontierPlannerSettings frontierSettings, BooleanSupplier mayHaveInferred,
 			BooleanSupplier adaptiveEvidenceAllowedSupplier, LmdbStatisticsService statistics,
-			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots) {
+			LmdbDetachedPlanningSnapshotProvider detachedPlanningSnapshots, Supplier<SailClosable> planningViewMask) {
 		super(valueStore, tripleStore, estimator, filters, feedback, cardinalities, cascadesPlanCache,
 				frontierSettings, mayHaveInferred, adaptiveEvidenceAllowedSupplier, statistics);
 		this.detachedPlanningSnapshots = Objects.requireNonNull(detachedPlanningSnapshots,
 				"detachedPlanningSnapshots");
+		this.planningViewMask = Objects.requireNonNull(planningViewMask, "planningViewMask");
+	}
+
+	SailClosable maskPlanningReadView() {
+		return planningViewMask.get();
 	}
 
 	@Override

@@ -14,8 +14,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 
 /** Immutable owner of one query's canonical primitive relational and scalar rows. */
 @PackedHotPath
@@ -39,12 +41,27 @@ final class PackedQuery {
 	private final boolean originalBindingSetsAttached;
 	private final PackedParameterSchema parameterSchema;
 	private final PackedParameterVector parameterVector;
+	private final PackedPredicateRangeProvider.RangeApplicability rangeApplicability;
+	private final PackedStatementPatternSemanticsCodec semanticsCodec;
+	private final String semanticsSchema;
+	private final int semanticsVersion;
 
 	PackedQuery(int rootRelId, PackedExpressionInterner relations, PackedExpressionInterner scalars,
 			PackedExpressionInterner payloads, PackedBindingSetArena bindingSets, PackedNodeMetadataArena metadata,
 			PackedObjectPool objects, PackedSymbolTable symbols, byte[] originalBindingSetRelations,
 			Object[] originalBindingSets, PackedParameterSchema parameterSchema,
-			PackedParameterVector parameterVector) {
+			PackedParameterVector parameterVector, PackedPredicateRangeProvider.RangeApplicability rangeApplicability) {
+		this(rootRelId, relations, scalars, payloads, bindingSets, metadata, objects, symbols,
+				originalBindingSetRelations, originalBindingSets, parameterSchema, parameterVector, rangeApplicability,
+				PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	PackedQuery(int rootRelId, PackedExpressionInterner relations, PackedExpressionInterner scalars,
+			PackedExpressionInterner payloads, PackedBindingSetArena bindingSets, PackedNodeMetadataArena metadata,
+			PackedObjectPool objects, PackedSymbolTable symbols, byte[] originalBindingSetRelations,
+			Object[] originalBindingSets, PackedParameterSchema parameterSchema,
+			PackedParameterVector parameterVector, PackedPredicateRangeProvider.RangeApplicability rangeApplicability,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		if (rootRelId <= 0 || rootRelId > relations.size()) {
 			throw new IllegalArgumentException("root relation does not exist: " + rootRelId);
 		}
@@ -64,6 +81,13 @@ final class PackedQuery {
 		this.originalBindingSets = originalBindingSets;
 		this.parameterSchema = parameterSchema;
 		this.parameterVector = parameterVector;
+		this.rangeApplicability = rangeApplicability;
+		this.semanticsCodec = Objects.requireNonNull(semanticsCodec, "statement semantics codec");
+		semanticsSchema = Objects.requireNonNull(semanticsCodec.schemaId(), "statement semantics schema");
+		semanticsVersion = semanticsCodec.schemaVersion();
+		if (semanticsSchema.isEmpty() || semanticsVersion <= 0) {
+			throw new IllegalArgumentException("statement semantics require a nonempty schema and positive version");
+		}
 		originalBindingSetsAttached = true;
 		bindingFacts = new PackedBindingFacts(this);
 		relations.freeze();
@@ -90,6 +114,10 @@ final class PackedQuery {
 		this.originalBindingSetsAttached = originalBindingSetsAttached;
 		parameterSchema = template.parameterSchema;
 		parameterVector = template.parameterVector;
+		rangeApplicability = template.rangeApplicability;
+		semanticsCodec = template.semanticsCodec;
+		semanticsSchema = template.semanticsSchema;
+		semanticsVersion = template.semanticsVersion;
 	}
 
 	private PackedQuery(PackedQuery template, PackedParameterVector parameterVector) {
@@ -107,6 +135,39 @@ final class PackedQuery {
 		originalBindingSetsAttached = false;
 		parameterSchema = template.parameterSchema;
 		this.parameterVector = parameterVector;
+		rangeApplicability = template.rangeApplicability;
+		semanticsCodec = template.semanticsCodec;
+		semanticsSchema = template.semanticsSchema;
+		semanticsVersion = template.semanticsVersion;
+	}
+
+	private PackedQuery(PackedQuery template, PackedPredicateRangeProvider.RangeApplicability rangeApplicability) {
+		rootRelId = template.rootRelId;
+		relations = template.relations;
+		scalars = template.scalars;
+		payloads = template.payloads;
+		bindingSets = template.bindingSets;
+		metadata = template.metadata;
+		objects = template.objects;
+		symbols = template.symbols;
+		bindingFacts = template.bindingFacts;
+		originalBindingSetRelations = template.originalBindingSetRelations;
+		originalBindingSets = template.originalBindingSets;
+		originalBindingSetsAttached = template.originalBindingSetsAttached;
+		parameterSchema = template.parameterSchema;
+		parameterVector = template.parameterVector;
+		this.rangeApplicability = rangeApplicability;
+		semanticsCodec = template.semanticsCodec;
+		semanticsSchema = template.semanticsSchema;
+		semanticsVersion = template.semanticsVersion;
+	}
+
+	PackedQuery withRangeApplicability(PackedPredicateRangeProvider.RangeApplicability applicability) {
+		return rangeApplicability == applicability ? this : new PackedQuery(this, applicability);
+	}
+
+	PackedPredicateRangeProvider.RangeApplicability rangeApplicability() {
+		return rangeApplicability;
 	}
 
 	PackedQuery withoutOriginalBindingSets() {
@@ -148,6 +209,8 @@ final class PackedQuery {
 
 	boolean hasSameCacheIdentity(PackedQuery other) {
 		return other != null
+				&& semanticsSchema.equals(other.semanticsSchema) && semanticsVersion == other.semanticsVersion
+				&& rangeApplicability == other.rangeApplicability
 				&& rootRelId == other.rootRelId
 				&& relations.hasSameRows(other.relations)
 				&& scalars.hasSameRows(other.scalars)
@@ -157,6 +220,18 @@ final class PackedQuery {
 				&& symbols.hasSameRows(other.symbols)
 				&& metadata.hasSameStructuralFlags(other.metadata)
 				&& Arrays.equals(originalBindingSetRelations, other.originalBindingSetRelations);
+	}
+
+	PackedStatementPatternSemanticsCodec semanticsCodec() {
+		return semanticsCodec;
+	}
+
+	String semanticsSchema() {
+		return semanticsSchema;
+	}
+
+	int semanticsVersion() {
+		return semanticsVersion;
 	}
 
 	boolean supportsCacheIdentity() {
@@ -217,6 +292,10 @@ final class PackedQuery {
 
 	int relOutputMaskId(int relId) {
 		return bindingFacts.relationOutputMaskId(relId);
+	}
+
+	PlanningGraphDomain relGraphDomain(int relationId) {
+		return metadata.relationGraphDomain(relationId);
 	}
 
 	int relRequiredInputMaskId(int relId) {
@@ -582,6 +661,8 @@ final class PackedQuery {
 				&& relSemanticScope(first) == relSemanticScope(second)
 				&& relExecutionDomain(first) == relExecutionDomain(second)
 				&& relOccurrence(first) == relOccurrence(second)
+				&& relGraphDomainId(first) == relGraphDomainId(second)
+				&& relGraphDomain(first).equals(relGraphDomain(second))
 				&& relSemanticFlags(first) == relSemanticFlags(second)
 				&& relMetadataFlags(first) == relMetadataFlags(second)
 				&& relRequiredInputNames(first) == relRequiredInputNames(second)
@@ -646,6 +727,10 @@ final class PackedQuery {
 		return relations.occurrenceId(relId);
 	}
 
+	int relGraphDomainId(int relId) {
+		return relations.graphDomainId(relId);
+	}
+
 	int relChildCount(int relId) {
 		return relations.childCount(relId);
 	}
@@ -662,8 +747,14 @@ final class PackedQuery {
 
 	int findRelation(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int occurrenceId,
 			int[] childGroupIds, int childOffset, int childCount) {
+		return findRelation(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId, 0,
+				childGroupIds, childOffset, childCount);
+	}
+
+	int findRelation(int operatorTag, int payloadId, int semanticScopeId, int executionDomainId, int occurrenceId,
+			int graphDomainId, int[] childGroupIds, int childOffset, int childCount) {
 		return relations.findLogical(operatorTag, payloadId, semanticScopeId, executionDomainId, occurrenceId,
-				childGroupIds,
+				graphDomainId, childGroupIds,
 				childOffset, childCount);
 	}
 

@@ -34,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -60,6 +62,8 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 		StatementPattern accessKernel = new StatementPattern(
 				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		// The mock cardinality source describes this complete local default-graph access query.
+		PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 		LmdbFiniteJoinSurfaceEstimator.ScanBudget queryBudget = LmdbFiniteJoinSurfaceEstimator.newScanBudget();
 
 		assertTrue(estimator.estimate(relation, accessKernel, queryBudget).isPresent());
@@ -78,6 +82,8 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 		when(valueStore.getId(subject)).thenReturn(101L);
 		when(tripleStore.instanceId()).thenReturn(storeIdentity);
 		when(tripleStore.getDataRevision()).thenReturn(17L);
+		// This mock has no pinned reader: planning uses the same committed revision as its count source.
+		when(tripleStore.planningDataRevision()).thenReturn(17L);
 		when(tripleStore.planningCardinalityEstimate(
 				101L, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID, LmdbValue.UNKNOWN_ID))
 						.thenReturn(CardinalityEstimate.exact(5_000.0d), CardinalityEstimate.exact(50_000.0d));
@@ -85,6 +91,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 				List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 		StatementPattern accessKernel = new StatementPattern(
 				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 
 		try {
 			LmdbStatementPatternCardinalitySource statementCardinalities = new LmdbStatementPatternCardinalitySource(
@@ -122,6 +129,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 				List.of("subject"), List.of(List.of(subject)), "learned-correlation");
 		StatementPattern accessKernel = new StatementPattern(
 				Var.of("subject"), Var.of("predicate"), Var.of("object"));
+		PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 
 		var first = cache.estimateCorrelated("first-state", relation, accessKernel, EstimationTier.DECISION_EXACT);
 		var equivalent = cache.estimateCorrelated(
@@ -147,6 +155,8 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 			StatementPattern accessKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			// The repository loaded this complete access query's rows without a named context.
+			PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
 
@@ -186,6 +196,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject"), List.of(List.of(subject)), "storage-correlation");
 			StatementPattern accessKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
 
@@ -223,6 +234,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 
 			StatementPattern pattern = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("value"));
+			PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
 			Compare condition = new Compare(Var.of("value"), new ValueConstant(retained), Compare.CompareOp.EQ);
 			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
@@ -264,10 +276,12 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 			StatementPattern firstKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PlanningGraphDomains.capture(firstKernel, PlanningGraphDomain.defaultGraph());
 			FiniteRelationEstimate renamedRelation = FiniteRelationEstimate.fromRows(
 					List.of("renamedSubject"), List.of(List.of(subject)), "renamed-correlation");
 			StatementPattern renamedKernel = new StatementPattern(
 					Var.of("renamedSubject"), Var.of("renamedPredicate", predicate), Var.of("renamedObject"));
+			PlanningGraphDomains.capture(renamedKernel, PlanningGraphDomain.defaultGraph());
 
 			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
 			try (var ignored = runtime.beginScope()) {
@@ -307,6 +321,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject"), List.of(List.of(subject)), "frontier-correlation");
 			StatementPattern accessKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 			LmdbEstimatorRuntime runtime = ((LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
 			LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate first;
@@ -359,6 +374,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject", "predicate"), pairs, "frontier-correlation");
 			StatementPattern accessKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate"), Var.of("object"));
+			PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 
 			Object runtime = ((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics())
 					.estimatorRuntime();
@@ -401,6 +417,7 @@ class LmdbCorrelatedFiniteSurfaceEstimatorTest {
 					List.of("subject"), frequencies, "frontier-correlation");
 			StatementPattern accessKernel = new StatementPattern(
 					Var.of("subject"), Var.of("predicate", predicate), Var.of("object"));
+			PlanningGraphDomains.capture(accessKernel, PlanningGraphDomain.defaultGraph());
 
 			Object runtime = ((LmdbEvaluationStatistics) store.getBackingStore().getEvaluationStatistics())
 					.estimatorRuntime();

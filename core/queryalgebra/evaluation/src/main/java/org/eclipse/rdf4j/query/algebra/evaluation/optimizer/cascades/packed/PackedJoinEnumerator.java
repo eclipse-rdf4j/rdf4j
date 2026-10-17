@@ -5719,6 +5719,9 @@ final class PackedJoinEnumerator {
 										semanticScopeMaskId, rightRelations, rightContributionRows, workUnits);
 					}
 				});
+		if (stopped) {
+			budget.recordExhaustedWorkStop();
+		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached()
 				&& !budget.deadlineReached()) {
 			throw new PackedMemoInvariantException(
@@ -5789,7 +5792,9 @@ final class PackedJoinEnumerator {
 				int prefixCount = inheritedCount + leftCount;
 				int rightCount = populateDenseCandidatePrefix(factors, rightStateId, states, rightRelations,
 						rightContributionRows);
-				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId], true);
+				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId],
+						sharedOutputBindings(prefixRelations, inheritedCount, leftCount, rightRelations, 0,
+								rightCount));
 				joinEstimate.clear();
 				joinEstimate.setContextualRows(fallbackRows, fallbackRows);
 				double candidateRows = refineIntermediateJoinCandidate(prefixRelations, prefixCount,
@@ -6224,6 +6229,9 @@ final class PackedJoinEnumerator {
 								rightRelations, rightContributionRows, workUnits);
 					}
 				});
+		if (stopped) {
+			budget.recordExhaustedWorkStop();
+		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached()
 				&& !budget.deadlineReached()) {
 			throw new PackedMemoInvariantException(
@@ -6297,7 +6305,9 @@ final class PackedJoinEnumerator {
 				int prefixCount = inheritedCount + leftCount;
 				int rightCount = populateWideContextualPrefix(factors, states, rightStateId, rightRelations,
 						rightContributionRows, 0);
-				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId], true);
+				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId],
+						sharedOutputBindings(prefixRelations, inheritedCount, leftCount, rightRelations, 0,
+								rightCount));
 				joinEstimate.clear();
 				joinEstimate.setContextualRows(fallbackRows, fallbackRows);
 				double candidateRows = refineIntermediateJoinCandidate(prefixRelations, prefixCount,
@@ -6502,6 +6512,9 @@ final class PackedJoinEnumerator {
 										rightRelations, rightContributionRows, workUnits, maximumWorkUnits);
 					}
 				});
+		if (stopped && workUnits[0] < maximumWorkUnits) {
+			budget.recordExhaustedWorkStop();
+		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached()
 				&& !budget.deadlineReached() && workUnits[0] < maximumWorkUnits) {
 			throw new PackedMemoInvariantException("dense bushy DPhyp traversal stopped without a search limit");
@@ -6575,7 +6588,8 @@ final class PackedJoinEnumerator {
 						leftContributionRows);
 				int rightCount = populateDenseCandidatePrefix(factors, rightStateId, states, rightRelations,
 						rightContributionRows);
-				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId], true);
+				double fallbackRows = joinRows(states.rows[leftStateId], states.rows[rightStateId],
+						sharedOutputBindings(leftRelations, 0, prefixCount, rightRelations, 0, rightCount));
 				if (maximumWorkUnits == Long.MAX_VALUE || standaloneChildrenWithinIncumbent) {
 					joinEstimate.clear();
 					joinEstimate.setContextualRows(fallbackRows, fallbackRows);
@@ -6589,18 +6603,17 @@ final class PackedJoinEnumerator {
 								states.evidenceStateIds[leftStateId], states.evidenceStateIds[rightStateId],
 								joinEstimate);
 					}
-					double dependentCost = refinePhysicalJoinCandidate(
-							PackedPhysicalJoinCosting.DEPENDENT_ITERATION, leftRelations, prefixCount,
-							states.rows[leftStateId], states.costs[leftStateId], states.rows[rightStateId],
-							states.costs[rightStateId], candidateRows, states.evidenceStateIds[leftStateId],
-							states.evidenceStateIds[rightStateId], 0.0d, joinEstimate,
-							Math.max(1.0d, states.rows[leftStateId]));
-					if (!PackedInputFrameScheduling.dependent(query, leftRelations, prefixCount, rightRelations, 0,
-							rightCount)) {
-						dependentCost = Double.POSITIVE_INFINITY;
-					}
-					copyEstimate(physicalJoinEstimate, alternativePhysicalJoinEstimate);
-					if (dependentCost <= incumbentCost) {
+					double dependentCost = PackedInputFrameScheduling.dependent(query, leftRelations, prefixCount,
+							rightRelations, 0, rightCount)
+									? refinePhysicalJoinCandidate(PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
+											leftRelations, prefixCount, states.rows[leftStateId],
+											states.costs[leftStateId],
+											states.rows[rightStateId], states.costs[rightStateId], candidateRows,
+											states.evidenceStateIds[leftStateId], states.evidenceStateIds[rightStateId],
+											0.0d, joinEstimate, Math.max(1.0d, states.rows[leftStateId]))
+									: Double.POSITIVE_INFINITY;
+					if (finiteNonNegative(dependentCost) && dependentCost <= incumbentCost) {
+						copyEstimate(physicalJoinEstimate, alternativePhysicalJoinEstimate);
 						int dependentMetadataId = memo.addPhysicalMetadata(alternativePhysicalJoinEstimate,
 								candidateRows, dependentCost);
 						if (dependentMetadataId == 0 && budget.resourceLimitReached()) {
@@ -6634,16 +6647,16 @@ final class PackedJoinEnumerator {
 							states.rows[rightStateId], states.costs[rightStateId], candidateRows,
 							states.evidenceStateIds[leftStateId], states.evidenceStateIds[rightStateId], 0.0d,
 							joinEstimate);
-					double hashRows = finiteNonNegative(physicalJoinEstimate.outputRows())
-							? physicalJoinEstimate.outputRows()
-							: candidateRows;
-					int hashEvidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
-							? physicalJoinEstimate.evidenceStateId()
-							: joinEstimate.evidenceStateId();
-					int hashExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-					int hashCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-							states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
-					if (hashCost <= incumbentCost) {
+					if (finiteNonNegative(hashCost) && hashCost <= incumbentCost) {
+						double hashRows = finiteNonNegative(physicalJoinEstimate.outputRows())
+								? physicalJoinEstimate.outputRows()
+								: candidateRows;
+						int hashEvidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
+								? physicalJoinEstimate.evidenceStateId()
+								: joinEstimate.evidenceStateId();
+						int hashExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
+						int hashCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
+								states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
 						int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, hashRows, hashCost);
 						if (hashMetadataId == 0 && budget.resourceLimitReached()) {
 							return false;
@@ -6694,21 +6707,21 @@ final class PackedJoinEnumerator {
 							states.evidenceStateIds[leftStateId], winnerEvidenceStateId(contextualRightWinnerId),
 							joinEstimate);
 				}
-				double contextualCost = refinePhysicalJoinCandidate(
-						PackedPhysicalJoinCosting.DEPENDENT_ITERATION, leftRelations, prefixCount,
-						states.rows[leftStateId], states.costs[leftStateId], contextualRightRows,
-						memo.winnerTotalCost(contextualRightWinnerId), contextualRows,
-						states.evidenceStateIds[leftStateId], winnerEvidenceStateId(contextualRightWinnerId), 0.0d,
-						joinEstimate, costEstimate);
-				if (!PackedInputFrameScheduling.dependent(query, leftRelations, prefixCount, rightRelations, 0,
-						rightCount)) {
-					contextualCost = Double.POSITIVE_INFINITY;
-				}
+				double contextualCost = PackedInputFrameScheduling.dependent(query, leftRelations, prefixCount,
+						rightRelations, 0, rightCount)
+								? refinePhysicalJoinCandidate(PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
+										leftRelations, prefixCount, states.rows[leftStateId], states.costs[leftStateId],
+										contextualRightRows, memo.winnerTotalCost(contextualRightWinnerId),
+										contextualRows,
+										states.evidenceStateIds[leftStateId],
+										winnerEvidenceStateId(contextualRightWinnerId),
+										0.0d, joinEstimate, costEstimate)
+								: Double.POSITIVE_INFINITY;
 				incumbentStateId = states.bestStateIds[states.fullSet];
 				incumbentCost = incumbentStateId == 0
 						? Double.POSITIVE_INFINITY
 						: states.costs[incumbentStateId];
-				if (contextualCost <= incumbentCost) {
+				if (finiteNonNegative(contextualCost) && contextualCost <= incumbentCost) {
 					int contextualMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, contextualRows,
 							contextualCost);
 					if (contextualMetadataId == 0 && budget.resourceLimitReached()) {
@@ -6846,6 +6859,15 @@ final class PackedJoinEnumerator {
 					leftCount);
 		}
 		int joinPrefixCount = contextCount + leftCount;
+		boolean inputFrameAllowed = implementation == JOIN_IMPLEMENTATION
+				? PackedInputFrameScheduling.dependent(query, contextRelations, joinPrefixCount,
+						recipeRelations, recipeOffset + leftCount, rightCount)
+				: PackedInputFrameScheduling.independent(query, contextRelations, joinPrefixCount,
+						recipeRelations, recipeOffset + leftCount, rightCount);
+		if (!inputFrameAllowed) {
+			// This retained recipe is unavailable in the caller's frame; other physical orientations remain legal.
+			return 0;
+		}
 		double leftRows = memo.winnerOutputRows(leftWinnerId);
 		/*
 		 * A dependent right continuation was costed with the contextual left winner as its input, so rightRows is
@@ -6854,7 +6876,8 @@ final class PackedJoinEnumerator {
 		 */
 		double fallbackRows = implementation == JOIN_IMPLEMENTATION
 				? rightRows
-				: joinRows(leftRows, rightRows, true);
+				: joinRows(leftRows, rightRows, sharedOutputBindings(contextRelations, contextCount, leftCount,
+						recipeRelations, recipeOffset + leftCount, rightCount));
 		joinEstimate.clear();
 		joinEstimate.setContextualRows(fallbackRows, fallbackRows);
 		restoreWinnerEstimate(rightWinnerId, costEstimate);
@@ -6874,11 +6897,6 @@ final class PackedJoinEnumerator {
 						joinPrefixCount, leftRows, memo.winnerTotalCost(leftWinnerId), rightRows,
 						memo.winnerTotalCost(rightWinnerId), outputRows, winnerEvidenceStateId(leftWinnerId),
 						winnerEvidenceStateId(rightWinnerId), 0.0d, joinEstimate, costEstimate);
-		if (implementation == JOIN_IMPLEMENTATION
-				&& !PackedInputFrameScheduling.dependent(query, contextRelations, joinPrefixCount,
-						recipeRelations, recipeOffset + leftCount, rightCount)) {
-			totalCost = Double.POSITIVE_INFINITY;
-		}
 		physicalJoinEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
 		certifyCompleteContextualInvocationDomain(physicalJoinEstimate, contextRows);
 		int metadataId = memo.addPhysicalMetadata(physicalJoinEstimate, outputRows, totalCost);
@@ -7864,15 +7882,15 @@ final class PackedJoinEnumerator {
 			int tieBreakRank = rootJoin ? (Long.bitCount(rootRuleMask) << 1) | 1 : 0;
 			int dependentPhysicalExpressionId = 0;
 			boolean retainedEmittedCandidate = false;
-			if (!requiresHash) {
+			currentWinnerId = 0;
+			boolean dependentAllowed = !requiresHash
+					&& PackedInputFrameScheduling.dependent(query, prefixRelations, prefixCount, factorRelationId);
+			if (dependentAllowed) {
 				if (costSession != null) {
 					totalCost = refinePhysicalJoinCandidate(PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
 							prefixRelations, prefixCount, currentRows, currentCost, factorRows, factorWork,
 							outputRows, currentEvidenceStateId, winnerEvidenceStateId(independentFactorWinnerId),
 							iteratorProbeWork, joinEstimate, costEstimate);
-					if (!PackedInputFrameScheduling.dependent(query, prefixRelations, prefixCount, factorRelationId)) {
-						totalCost = Double.POSITIVE_INFINITY;
-					}
 				} else {
 					joinEstimate.setRows(outputRows, totalCost);
 				}
@@ -7902,7 +7920,7 @@ final class PackedJoinEnumerator {
 					joinEstimate.setRows(outputRows, hashCost);
 				}
 			}
-			if (finiteNonNegative(hashCost) && (requiresHash || hashCost < totalCost)) {
+			if (finiteNonNegative(hashCost) && (currentWinnerId == 0 || hashCost < totalCost)) {
 				int hashPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
 						anyPropertyId, HASH_JOIN_IMPLEMENTATION, logicalExpressionId, childGroups, 0, 2);
 				childWinners[0] = prefixWinnerId;
@@ -7919,6 +7937,10 @@ final class PackedJoinEnumerator {
 				int retainedPhysicalExpressionId = memo.winnerPhysicalExpressionId(currentWinnerId);
 				retainedEmittedCandidate = retainedPhysicalExpressionId == dependentPhysicalExpressionId
 						|| retainedPhysicalExpressionId == hashPhysicalExpressionId;
+			}
+			if (currentWinnerId == 0) {
+				// No legal implementation was emitted; do not mistake the preceding subset for this target group.
+				return factors.length;
 			}
 			currentGroupId = targetGroupId;
 			currentRows = memo.winnerOutputRows(currentWinnerId);
@@ -8633,6 +8655,9 @@ final class PackedJoinEnumerator {
 										rightRelations, rightContributionRows, workUnits);
 					}
 				});
+		if (stopped) {
+			budget.recordExhaustedWorkStop();
+		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached()
 				&& !budget.deadlineReached()) {
 			throw new PackedMemoInvariantException("sparse bushy DPhyp traversal stopped without a search limit");
@@ -8667,6 +8692,9 @@ final class PackedJoinEnumerator {
 							return false;
 						}
 					});
+		}
+		if (stopped) {
+			budget.recordExhaustedWorkStop();
 		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached()
 				&& !budget.deadlineReached()) {
@@ -8729,7 +8757,8 @@ final class PackedJoinEnumerator {
 						leftContributionRows, 0);
 				int rightCount = populateSparseCandidatePrefix(factors, states, rightStateId, rightRelations,
 						rightContributionRows, 0);
-				double fallbackRows = joinRows(states.rows(leftStateId), states.rows(rightStateId), true);
+				double fallbackRows = joinRows(states.rows(leftStateId), states.rows(rightStateId),
+						sharedOutputBindings(leftRelations, 0, prefixCount, rightRelations, 0, rightCount));
 				joinEstimate.clear();
 				joinEstimate.setContextualRows(fallbackRows, fallbackRows);
 				double candidateRows = refineIntermediateJoinCandidate(leftRelations, prefixCount,
@@ -9110,6 +9139,9 @@ final class PackedJoinEnumerator {
 			}
 		});
 		workUnits += dphypWorkUnits[0];
+		if (stopped) {
+			budget.recordExhaustedWorkStop();
+		}
 		if (stopped && !budget.resourceLimitReached() && !budget.workLimitReached() && !budget.deadlineReached()) {
 			throw new PackedMemoInvariantException("wide DPhyp traversal stopped without a search limit");
 		}
@@ -9159,7 +9191,12 @@ final class PackedJoinEnumerator {
 				if (!budget.tryConsume()) {
 					return false;
 				}
-				double candidateRows = joinRows(states.rows[leftStateId], states.rows[rightStateId], true);
+				int prefixCount = populateWideCandidatePrefix(factors, states, leftStateId, prefixRelations,
+						prefixContributionRows, 0);
+				int rightCount = populateWideCandidatePrefix(factors, states, rightStateId, rightRelations,
+						rightContributionRows, 0);
+				double candidateRows = joinRows(states.rows[leftStateId], states.rows[rightStateId],
+						sharedOutputBindings(prefixRelations, 0, prefixCount, rightRelations, 0, rightCount));
 				double candidateCost = saturatedAdd(states.costs[leftStateId], states.costs[rightStateId],
 						candidateRows);
 				int evidenceStateId = 0;
@@ -9174,10 +9211,6 @@ final class PackedJoinEnumerator {
 					joinEstimate.setRows(candidateRows, candidateCost);
 					operatorMetadataId = memo.addPhysicalMetadata(joinEstimate, candidateRows, candidateCost);
 				} else {
-					int prefixCount = populateWideCandidatePrefix(factors, states, leftStateId, prefixRelations,
-							prefixContributionRows, 0);
-					int rightCount = populateWideCandidatePrefix(factors, states, rightStateId, rightRelations,
-							rightContributionRows, 0);
 					joinEstimate.clear();
 					joinEstimate.setContextualRows(candidateRows, candidateRows);
 					candidateRows = refineIntermediateJoinCandidate(prefixRelations, prefixCount,
@@ -9897,19 +9930,19 @@ final class PackedJoinEnumerator {
 			int runtimeImplementation = runtimeJoinImplementation(query, costPrefix, costPrefixCount,
 					factorRelationId);
 			boolean requiresHash = runtimeImplementation == PackedPhysicalJoinCosting.INDEPENDENT_HASH;
-			if (!requiresHash) {
+			currentWinnerId = 0;
+			boolean dependentAllowed = !requiresHash
+					&& PackedInputFrameScheduling.dependent(query, costPrefix, costPrefixCount, factorRelationId);
+			if (dependentAllowed) {
 				totalCost = refinePhysicalJoinCandidate(PackedPhysicalJoinCosting.DEPENDENT_ITERATION,
 						costPrefix, costPrefixCount, currentRows, currentCost,
 						selectedRowsByGroup[factorGroupId], factorWork, outputRows,
 						currentEvidenceStateId, winnerEvidenceStateId(factorWinnerId), iteratorProbeWork,
 						joinEstimate, costEstimate);
-				if (!PackedInputFrameScheduling.dependent(query, costPrefix, costPrefixCount, factorRelationId)) {
-					totalCost = Double.POSITIVE_INFINITY;
-				}
 				int physicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
 						anyPropertyId, JOIN_IMPLEMENTATION,
 						rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
-				childWinners[0] = currentWinnerId;
+				childWinners[0] = emittedPrefixWinnerId;
 				childWinners[1] = factorWinnerId;
 				int joinMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, outputRows, totalCost);
 				currentWinnerId = rootJoin
@@ -9921,7 +9954,7 @@ final class PackedJoinEnumerator {
 								childWinners, 0, 2);
 			}
 			int hashPhysicalExpressionId = 0;
-			if (finiteNonNegative(hashCost) && (requiresHash || hashCost < totalCost)) {
+			if (finiteNonNegative(hashCost) && (currentWinnerId == 0 || hashCost < totalCost)) {
 				hashPhysicalExpressionId = memo.addPhysicalAlternative(targetGroupId, PackedRelOp.JOIN, 0,
 						anyPropertyId, HASH_JOIN_IMPLEMENTATION,
 						rootJoin ? rootRelationId : logicalExpressionId, childGroups, 0, 2);
@@ -9936,6 +9969,9 @@ final class PackedJoinEnumerator {
 						: memo.offerWinnerWithMetadata(targetGroupId, anyPropertyId, 0, 0, 0,
 								hashPhysicalExpressionId, hashMetadataId, tieBreakRank, hashOutputRows, hashCost,
 								hashCost, childWinners, 0, 2);
+			}
+			if (currentWinnerId == 0) {
+				return saturatedInt(reservedWorkUnits + nestedContextWorkUnits);
 			}
 			currentGroupId = targetGroupId;
 			currentRows = memo.winnerOutputRows(currentWinnerId);
@@ -11194,6 +11230,21 @@ final class PackedJoinEnumerator {
 		return false;
 	}
 
+	/** Enumeration edges also admit Cartesian transitions; only actual child outputs imply join selectivity. */
+	private boolean sharedOutputBindings(int[] left, int leftOffset, int leftCount,
+			int[] right, int rightOffset, int rightCount) {
+		int leftOutputs = 0;
+		for (int ordinal = 0; ordinal < leftCount; ordinal++) {
+			leftOutputs = query.unionMasks(leftOutputs, query.relOutputMaskId(left[leftOffset + ordinal]));
+		}
+		for (int ordinal = 0; ordinal < rightCount; ordinal++) {
+			if (query.masksIntersect(leftOutputs, query.relOutputMaskId(right[rightOffset + ordinal]))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private boolean connectedToSubset(int[] factors, int subset, int factorOrdinal) {
 		int factorOutputMaskId = query.relOutputMaskId(factors[factorOrdinal]);
 		for (int remaining = subset; remaining != 0; remaining &= remaining - 1) {
@@ -11293,7 +11344,8 @@ final class PackedJoinEnumerator {
 	}
 
 	private static boolean containsVariableScopeChange(PackedQuery query, int relationId) {
-		if ((query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
+		if (query.relOperator(relationId) == PackedRelOp.GRAPH
+				|| (query.relMetadataFlags(relationId) & PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 			return true;
 		}
 		for (int ordinal = 0; ordinal < query.relChildCount(relationId); ordinal++) {

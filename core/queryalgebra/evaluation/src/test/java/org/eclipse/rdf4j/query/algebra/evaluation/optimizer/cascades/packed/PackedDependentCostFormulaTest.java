@@ -12,11 +12,26 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
 class PackedDependentCostFormulaTest {
+
+	@Test
+	void finiteMaximumWorkRemainsDistinctFromUnavailableDependentComponents() {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		estimate.setDependentCostComponents(0.0d, 2.0d, 0.0d, Double.MAX_VALUE, Double.MAX_VALUE,
+				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		assertEquals(Double.MAX_VALUE, estimate.firstMatchWork());
+		for (double unavailable : new double[] { Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, Double.NaN,
+				-1.0d }) {
+			assertThrows(IllegalArgumentException.class,
+					() -> estimate.setDependentCostComponents(0.0d, 2.0d, 0.0d, unavailable, 1.0d,
+							0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d));
+		}
+	}
 
 	@Test
 	void d3_01DoublingInvocationsDoublesOnlyPerInvocationWork() {

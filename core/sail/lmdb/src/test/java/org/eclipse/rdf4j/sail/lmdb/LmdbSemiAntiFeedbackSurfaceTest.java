@@ -30,6 +30,8 @@ import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -355,17 +357,18 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 
 	private static Filter firstFilter(String query) {
 		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
-				.getTupleExpr()
-				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
+		TupleExpr sourceQuery = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// Feedback observations below are completed invocations of this full default-domain source query.
+		PlanningGraphDomains.capture(sourceQuery, PlanningGraphDomain.defaultGraph());
+		sourceQuery.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
 		return found[0];
 	}
 
@@ -463,19 +466,7 @@ class LmdbSemiAntiFeedbackSurfaceTest {
 	}
 
 	private static Filter filter() {
-		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, QUERY, null)
-				.getTupleExpr()
-				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
-		return found[0];
+		return firstFilter(QUERY);
 	}
 
 	private static Filter findFilter(TupleExpr expression) {

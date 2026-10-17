@@ -215,34 +215,51 @@ public class ThemeQueryBenchmark {
 //			previousJoinOrderStrategy = null;
 //		}
 
-		if (!Boolean.getBoolean(PROFILING_PROPERTY)) {
-			try (SailRepositoryConnection connection = repository.getConnection()) {
-				if (queryExplanationLevel == null || queryExplanationLevel.isBlank()) {
-					queryExplanationLevel = "Telemetry";
+		Throwable explanationFailure = null;
+		try {
+			if (repository != null && !Boolean.getBoolean(PROFILING_PROPERTY)) {
+				try (SailRepositoryConnection connection = repository.getConnection()) {
+					if (queryExplanationLevel == null || queryExplanationLevel.isBlank()) {
+						queryExplanationLevel = "Telemetry";
+					}
+					System.out.println("\n### " + queryExplanationLevel + " Query ###");
+					Explanation explain = connection.prepareTupleQuery(query)
+							.explain(Explanation.Level.valueOf(queryExplanationLevel));
+					System.out.println(explain);
+					TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+					System.out.println(new TupleExprIRRenderer().render(tupleExpr));
+					System.out.println();
 				}
-				System.out.println("\n### " + queryExplanationLevel + " Query ###");
-				Explanation explain = connection.prepareTupleQuery(query)
-						.explain(Explanation.Level.valueOf(queryExplanationLevel));
-				System.out.println(explain);
-				TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
-				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-				System.out.println();
-			}
-			// try (SailRepositoryConnection connection = repository.getConnection()) {
-			// System.out.println("### Telemetry Query ###");
-			// Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
-			// System.out.println(explain);
-			// TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
+				// try (SailRepositoryConnection connection = repository.getConnection()) {
+				// System.out.println("### Telemetry Query ###");
+				// Explanation explain = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry);
+				// System.out.println(explain);
+				// TupleExpr tupleExpr = (TupleExpr) explain.tupleExpr();
 //				System.out.println(new TupleExprIRRenderer().render(tupleExpr));
-			// System.out.println();
-			// }
+				// System.out.println();
+				// }
+			}
+		} catch (RuntimeException | Error failure) {
+			explanationFailure = failure;
+			throw failure;
+		} finally {
+			try {
+				if (repository != null) {
+					repository.shutDown();
+				}
+			} catch (RuntimeException | Error closeFailure) {
+				if (explanationFailure == null) {
+					throw closeFailure;
+				}
+				if (closeFailure != explanationFailure) {
+					explanationFailure.addSuppressed(closeFailure);
+				}
+			} finally {
+				repository = null;
+				store = null;
+				storeConfig = null;
+			}
 		}
-		if (repository != null) {
-			repository.shutDown();
-			repository = null;
-		}
-		store = null;
-		storeConfig = null;
 //		restoreBenchmarkEstimatorProperties();
 	}
 

@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 
 /** Typed LMDB planning identity. Mutable posterior and lifecycle cells are deliberately resolved later. */
@@ -23,6 +25,19 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 		FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey,
 		LmdbPlanDecisionCache.PlanExecutionToken planExecutionToken)
 		implements RuntimeFeedbackDescriptor {
+
+	static final String SEMANTIC_POPULATION_STATUS = "optimizer.frontierSemanticPopulation";
+
+	/**
+	 * The immutable contract owns admission. The serialized status is only an absent-contract decline barrier: a
+	 * display string can never recover the qualification lost when a modern contract is unavailable. Unmarked legacy
+	 * producers retain their independently audited policy.
+	 */
+	static boolean allowsFeedback(QueryModelNode node, int channel) {
+		RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+		return contract != null ? contract.admits(channel)
+				: node.getStringMetricPlanned(SEMANTIC_POPULATION_STATUS) == null;
+	}
 
 	LmdbRuntimeFeedbackDescriptor {
 		Objects.requireNonNull(logicalKey, "logical key");

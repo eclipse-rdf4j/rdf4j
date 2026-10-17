@@ -21,11 +21,13 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -67,6 +69,11 @@ public final class PackedQueryView {
 
 	public int relationCount() {
 		return query.relationCount();
+	}
+
+	/** Immutable authority for every storage-contributing fact in the relation. */
+	public PlanningGraphDomain graphDomain(int relationId) {
+		return query.relGraphDomain(relationId);
 	}
 
 	/**
@@ -234,12 +241,15 @@ public final class PackedQueryView {
 		List<TupleExpr> factors = new ArrayList<>(count);
 		Set<String> bindingNames = new LinkedHashSet<>();
 		Map<String, Set<Value>> mutableFiniteValues = new LinkedHashMap<>();
+		List<PlanningGraphDomain> domains = new ArrayList<>(count);
 		for (int ordinal = 0; ordinal < count; ordinal++) {
 			int relationId = context.prefixRelationId(ordinal);
 			relationIds[ordinal] = relationId;
 			if (relationId <= 0 || relationId > query.relationCount()) {
+				domains.add(PlanningGraphDomain.unknown());
 				continue;
 			}
+			domains.add(graphDomain(relationId));
 			TupleExpr factor = materializeRelation(relationId);
 			factors.add(factor);
 			bindingNames.addAll(bindingNames(factor));
@@ -267,7 +277,8 @@ public final class PackedQueryView {
 			mutableFiniteValues.forEach((name, values) -> immutable.put(name, Set.copyOf(values)));
 			finiteValues = Map.copyOf(immutable);
 		}
-		return new PrefixMaterialization(relationIds, List.copyOf(factors), Set.copyOf(bindingNames), finiteValues);
+		return new PrefixMaterialization(relationIds, List.copyOf(factors), Set.copyOf(bindingNames), finiteValues,
+				PlanningGraphDomain.common(domains));
 	}
 
 	private void resizeMaterializedPrefixTable(int capacity) {
@@ -287,19 +298,21 @@ public final class PackedQueryView {
 	/** Immutable provider-facing facts derived from one exact ordered packed prefix. */
 	public static final class PrefixMaterialization {
 		private static final PrefixMaterialization EMPTY = new PrefixMaterialization(
-				new int[0], List.of(), Set.of(), Map.of());
+				new int[0], List.of(), Set.of(), Map.of(), PlanningGraphDomain.unknown());
 
 		private final int[] relationIds;
 		private final List<TupleExpr> factors;
 		private final Set<String> bindingNames;
 		private final Map<String, Set<Value>> finiteBindingValues;
+		private final PlanningGraphDomain graphDomain;
 
 		private PrefixMaterialization(int[] relationIds, List<TupleExpr> factors, Set<String> bindingNames,
-				Map<String, Set<Value>> finiteBindingValues) {
+				Map<String, Set<Value>> finiteBindingValues, PlanningGraphDomain graphDomain) {
 			this.relationIds = relationIds;
 			this.factors = factors;
 			this.bindingNames = bindingNames;
 			this.finiteBindingValues = finiteBindingValues;
+			this.graphDomain = graphDomain;
 		}
 
 		private boolean matches(PackedCostContext context) {
@@ -324,6 +337,10 @@ public final class PackedQueryView {
 
 		public Map<String, Set<Value>> finiteBindingValues() {
 			return finiteBindingValues;
+		}
+
+		public PlanningGraphDomain graphDomain() {
+			return graphDomain;
 		}
 	}
 
@@ -395,6 +412,11 @@ public final class PackedQueryView {
 		return operator == PackedRelOp.FILTER
 				|| operator == PackedRelOp.SEMI_JOIN
 				|| operator == PackedRelOp.ANTI_JOIN;
+	}
+
+	/** Ordinary inner JOIN, excluding optional, lateral and semi/anti operators. */
+	public boolean isInnerJoin(int relationId) {
+		return query.relOperator(relationId) == PackedRelOp.JOIN;
 	}
 
 	public boolean isSemiJoin(int relationId) {
@@ -575,6 +597,12 @@ public final class PackedQueryView {
 		}
 		int symbolId = query.symbolIdForObject(query.payloadPrimary(termId));
 		return symbolId != 0 && query.relationBindsSymbol(bindingRelationId, symbolId);
+	}
+
+	/** Existing captured source audit, or its compositional proof for a query-owned generated relation. */
+	@InternalUseOnly
+	public boolean isReplaySafe(int relationId) {
+		return query.relationReplayIsSafe(relationId);
 	}
 
 	public boolean isBindingSetAssignment(int relationId) {

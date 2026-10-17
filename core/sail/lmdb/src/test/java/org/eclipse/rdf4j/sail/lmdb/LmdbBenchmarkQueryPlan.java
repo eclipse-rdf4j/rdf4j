@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -30,7 +31,6 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -61,10 +61,12 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private final String optimizedPlan;
 	private final String optimizedDiagnostics;
 	private final PreparedPlanSnapshot preparedPlanSnapshot;
+	private final TupleExpr capturedOptimizedExpression;
 
 	private LmdbBenchmarkQueryPlan(SailSource branch, SailDataset dataset, QueryEvaluationStep evaluationStep,
 			List<String> bindingNames, int maxExecutionTimeSeconds, String optimizedPlan,
-			String optimizedDiagnostics, PreparedPlanSnapshot preparedPlanSnapshot) {
+			String optimizedDiagnostics, PreparedPlanSnapshot preparedPlanSnapshot,
+			TupleExpr capturedOptimizedExpression) {
 		this.branch = branch;
 		this.dataset = dataset;
 		this.evaluationStep = evaluationStep;
@@ -73,6 +75,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 		this.optimizedPlan = optimizedPlan;
 		this.optimizedDiagnostics = optimizedDiagnostics == null ? "" : optimizedDiagnostics;
 		this.preparedPlanSnapshot = preparedPlanSnapshot;
+		this.capturedOptimizedExpression = capturedOptimizedExpression;
 	}
 
 	public static LmdbBenchmarkQueryPlan prepare(LmdbStore store, SailRepositoryConnection connection, String query) {
@@ -171,7 +174,7 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 			}
 			return new LmdbBenchmarkQueryPlan(branch, dataset, evaluationStep,
 					new ArrayList<>(optimized.getBindingNames()), maxExecutionTimeSeconds, optimizedPlan,
-					optimizedDiagnostics, preparedPlanSnapshot);
+					optimizedDiagnostics, preparedPlanSnapshot, captureOptimizedPlan ? optimized : null);
 		} catch (RuntimeException e) {
 			closeQuietly(dataset);
 			closeQuietly(branch);
@@ -193,20 +196,18 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 	private static TupleExpr optimizeExactSequence(EvaluationStrategy strategy,
 			SailDatasetTripleTermSource tripleSource,
 			EvaluationStatistics statistics, TupleExpr tupleExpr, SailTupleQuery tupleQuery) {
-		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
-				.getOptimizers()) {
-			if (optimizer instanceof LmdbCascadesOptimizer cascades) {
-				PhysicalProperties required = PhysicalProperties.builder()
-						.boundVars(tupleQuery.getBindings().getBindingNames())
-						.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
-						.build();
-				OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required)
-						.withInputBindingContext(InputBindingContext.fromBindingSet(tupleQuery.getBindings()));
-				return cascades.planPreparedInput(tupleExpr, goal).tupleExpr();
-			}
-			optimizer.optimize(tupleExpr, tupleQuery.getActiveDataset(), tupleQuery.getBindings());
-		}
-		throw new IllegalStateException("LMDB optimizer pipeline did not contain the Cascades optimizer");
+		return new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
+				.withPreparedQueryEntry(tupleExpr, tupleQuery.getActiveDataset(), tupleQuery.getBindings(),
+						(prepared, cascades) -> {
+							PhysicalProperties required = PhysicalProperties.builder()
+									.boundVars(tupleQuery.getBindings().getBindingNames())
+									.observationOrder(PhysicalProperties.ObservationOrder.EXACT_SEQUENCE)
+									.build();
+							OptimizationGoal goal = OptimizationGoal.root(prepared, required)
+									.withInputBindingContext(
+											InputBindingContext.fromBindingSet(tupleQuery.getBindings()));
+							return cascades.planPreparedInput(prepared, goal).tupleExpr();
+						});
 	}
 
 	public static <T> T withCascadesOptimizationTimeout(int maxExecutionTimeSeconds, Supplier<T> supplier) {
@@ -266,6 +267,22 @@ public final class LmdbBenchmarkQueryPlan implements AutoCloseable {
 
 	public PreparedPlanSnapshot preparedPlanSnapshot() {
 		return preparedPlanSnapshot;
+	}
+
+	/** Visits the same prepared tree for test diagnostics without preparing or executing another query. */
+	public void inspectCapturedOptimizedExpression(Consumer<TupleExpr> inspector) {
+		if (capturedOptimizedExpression == null) {
+			throw new IllegalStateException("The prepared plan was not captured");
+		}
+		inspector.accept(capturedOptimizedExpression);
+	}
+
+	/** Borrows this prepared query's actual dataset during a test diagnostic callback. */
+	public void inspectCapturedDataset(Consumer<SailDataset> inspector) {
+		if (capturedOptimizedExpression == null) {
+			throw new IllegalStateException("The prepared plan was not captured");
+		}
+		inspector.accept(dataset);
 	}
 
 	public static String structuralPlanFingerprint(TupleExpr tupleExpr) {

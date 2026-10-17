@@ -14,6 +14,8 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 import java.io.File;
 import java.util.List;
@@ -23,6 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Count;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -30,6 +33,8 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -93,11 +98,14 @@ class LmdbOpaqueOperatorCardinalityTest {
 	@Test
 	void keyedGroupByCollapsesBelowItsInput() {
 		StatementPattern names = new StatementPattern(new Var("s"), new Var("p", NAME), new Var("n"));
+		// setUp loads the complete local name-scan input in the default graph.
+		PlanningGraphDomains.capture(names, PlanningGraphDomain.defaultGraph());
 		double inputRows = statistics.getCardinality(names);
 		assertTrue(inputRows > 10.0d, "Sanity: the name scan should be estimated well above ten rows: " + inputRows);
 
 		Group group = new Group(names.clone(), List.of("n"),
 				List.of(new GroupElem("c", new Count(new Var("s")))));
+		PlanningGraphDomains.capture(group, PlanningGraphDomain.defaultGraph());
 		double groupRows = statistics.getCardinality(group);
 
 		assertTrue(groupRows < inputRows,
@@ -109,6 +117,7 @@ class LmdbOpaqueOperatorCardinalityTest {
 	void keylessGroupByProducesOneRow() {
 		StatementPattern names = new StatementPattern(new Var("s"), new Var("p", NAME), new Var("n"));
 		Group group = new Group(names, List.of(), List.of(new GroupElem("c", new Count(new Var("s")))));
+		PlanningGraphDomains.capture(group, PlanningGraphDomain.defaultGraph());
 
 		assertEquals(1.0d, statistics.getCardinality(group),
 				"Aggregation without GROUP BY always yields exactly one row");
@@ -120,9 +129,26 @@ class LmdbOpaqueOperatorCardinalityTest {
 				new Var("o", VF.createLiteral("name1")), new Var("t"));
 		StatementPattern proxy = new StatementPattern(new Var("s"), new Var("p", NAME),
 				new Var("o", VF.createLiteral("name1")));
+		PlanningGraphDomains.capture(tripleRef, PlanningGraphDomain.defaultGraph());
+		PlanningGraphDomains.capture(proxy, PlanningGraphDomain.defaultGraph());
 
 		assertEquals(statistics.getCardinality(proxy), statistics.getCardinality(tripleRef),
 				"Without a dedicated triple-term index, the matching statement count is the store-backed proxy "
 						+ "for a triple reference");
+	}
+
+	@Test
+	void tripleReferenceProxyCannotPromoteUnknownOrActiveGraphAuthority() {
+		LmdbStatementPatternCardinalitySource cardinalities = mock(LmdbStatementPatternCardinalitySource.class);
+		LmdbEstimatorRuntime runtime = new LmdbEstimatorRuntime(null, null, null, null, null, cardinalities, null);
+		TripleRef unknown = new TripleRef(new Var("s"), new Var("p", NAME),
+				new Var("o", VF.createLiteral("name1")), new Var("t"));
+		runtime.estimate(unknown);
+		TripleRef active = unknown.clone();
+		Graph selected = new Graph(new Var("g", VF.createIRI("urn:test:triple-reference:graph")), active);
+		PlanningGraphDomains.capture(selected, PlanningGraphDomain.defaultGraph());
+		runtime.estimate(active.clone());
+
+		verifyNoInteractions(cardinalities);
 	}
 }

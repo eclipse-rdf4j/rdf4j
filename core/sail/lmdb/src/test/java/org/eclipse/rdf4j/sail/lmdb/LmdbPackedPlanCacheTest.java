@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
@@ -400,26 +402,33 @@ class LmdbPackedPlanCacheTest {
 
 	private static TupleExpr connectedJoin() {
 		var values = SimpleValueFactory.getInstance();
-		return new Join(
+		Join query = new Join(
 				new StatementPattern(Var.of("subject"), Var.of("leftPredicate", values.createIRI("urn:left")),
 						Var.of("shared")),
 				new StatementPattern(Var.of("shared"), Var.of("rightPredicate", values.createIRI("urn:right")),
 						Var.of("object")));
+		// This complete synthetic query reads the local default dataset loaded by its callers.
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 
 	private static TupleExpr threeWayConnectedJoin() {
 		var values = SimpleValueFactory.getInstance();
-		return new Join(connectedJoin(),
+		Join query = new Join(connectedJoin(),
 				new StatementPattern(Var.of("object"), Var.of("thirdPredicate", values.createIRI("urn:third")),
 						Var.of("tail")));
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 
 	private static Filter filteredPattern() {
 		var values = SimpleValueFactory.getInstance();
-		return new Filter(
+		Filter query = new Filter(
 				new StatementPattern(Var.of("subject"), Var.of("predicate", values.createIRI("urn:predicate")),
 						Var.of("object")),
 				new Compare(Var.of("object"), new ValueConstant(values.createLiteral("selected")),
 						Compare.CompareOp.EQ));
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
+		return query;
 	}
 }

@@ -38,6 +38,8 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.StatisticsEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -88,6 +90,8 @@ class LmdbTemporalFiniteFilterCostingTest {
 			selectedTimes.addArgument(Var.of("time"));
 			selectedTimes.addArgument(new ValueConstant(eight));
 			selectedTimes.addArgument(new ValueConstant(nine));
+			// This complete input scan reads the default-context rows loaded above.
+			PlanningGraphDomains.capture(scheduled, PlanningGraphDomain.defaultGraph());
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
@@ -146,6 +150,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 			selectedTimes.addArgument(Var.of("time"));
 			selectedTimes.addArgument(new ValueConstant(queryEight));
 			selectedTimes.addArgument(new ValueConstant(queryNine));
+			PlanningGraphDomains.capture(scheduled, PlanningGraphDomain.defaultGraph());
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
@@ -202,6 +207,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 			selectedTimes.addArgument(Var.of("time"));
 			selectedTimes.addArgument(new ValueConstant(queryEight));
 			selectedTimes.addArgument(new ValueConstant(queryNine));
+			PlanningGraphDomains.capture(scheduled, PlanningGraphDomain.defaultGraph());
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
@@ -255,6 +261,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 			selectedTimes.addArgument(new ValueConstant(queryEight));
 			selectedTimes.addArgument(new ValueConstant(queryNine));
 			QueryRoot root = new QueryRoot(new Filter(scheduled, selectedTimes));
+			PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
@@ -316,6 +323,7 @@ class LmdbTemporalFiniteFilterCostingTest {
 			selectedTimes.addArgument(Var.of("time"));
 			selectedTimes.addArgument(new ValueConstant(queryEight));
 			QueryRoot root = new QueryRoot(new Filter(scheduled, selectedTimes));
+			PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
 
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();

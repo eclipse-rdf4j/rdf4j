@@ -20,15 +20,26 @@ import java.io.File;
 import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -356,6 +367,8 @@ class LmdbColdFilterSelectivityStatsTest {
 					connection.add(subject, edge, (i & 1) == 0 ? subject : vf.createIRI("urn:test:other:" + i));
 					connection.add(subject, contextual, vf.createLiteral("value"), (i & 1) == 0 ? graphOne : graphTwo);
 				}
+				// A default-context distractor must be excluded from the physical NAMED_CONTEXTS population.
+				connection.add(vf.createIRI("urn:test:default-only"), contextual, vf.createLiteral("value"));
 				connection.commit();
 			}
 			rebuildAndPersist(store);
@@ -373,12 +386,49 @@ class LmdbColdFilterSelectivityStatsTest {
 							""");
 			assertExactHalf(store,
 					"SELECT * WHERE { ?s <urn:test:edge> ?o . FILTER(?s = ?o) }");
-			assertExactHalf(store, """
+			String graphQuery = """
 					SELECT * WHERE {
 						GRAPH ?g { ?s <urn:test:contextual> ?value }
 						FILTER(?g = <urn:test:graph:one>)
 					}
-					""");
+					""";
+			// Exercise the native provider's physical single-pattern contract without an ambient GRAPH wrapper.
+			StatementPattern named = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
+					Var.of("s"), Var.of("p", contextual), Var.of("value"), Var.of("g"));
+			Filter physical = new Filter(named,
+					new Compare(Var.of("g"), new ValueConstant(graphOne), Compare.CompareOp.EQ));
+			PlanningGraphDomains.capture(physical, PlanningGraphDomain.defaultGraph());
+			assertExactHalf(store, physical, graphQuery);
+
+			// The original parsed GRAPH remains ACTIVE and cannot borrow this physical provider's certainty.
+			Filter active = firstFilter(graphQuery);
+			assertEquals(PlanningGraphDomain.Kind.ACTIVE, PlanningGraphDomains.domain(active).kind());
+			EvaluationStatistics.FilterPassEstimate activeEstimate = store.getBackingStore()
+					.getEvaluationStatistics()
+					.estimateFilterPass(active);
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT, activeEstimate.getSource());
+			assertNotEquals(EvaluationStatistics.FilterPassEstimate.Source.SAMPLED, activeEstimate.getSource());
+
+			Map<BindingSet, Integer> expectedBag = new HashMap<>();
+			for (int index = 0; index < 64; index += 2) {
+				MapBindingSet row = new MapBindingSet();
+				row.addBinding("s", vf.createIRI("urn:test:semantic:" + index));
+				row.addBinding("g", graphOne);
+				row.addBinding("value", vf.createLiteral("value"));
+				expectedBag.put(row, 1);
+			}
+			Map<BindingSet, Integer> actualBag = new HashMap<>();
+			try (var connection = repository.getConnection();
+					var rows = connection.prepareTupleQuery(graphQuery).evaluate()) {
+				while (rows.hasNext()) {
+					MapBindingSet ownedRow = new MapBindingSet();
+					rows.next().forEach(ownedRow::addBinding);
+					actualBag.merge(ownedRow, 1, Integer::sum);
+				}
+			}
+			assertEquals(32, expectedBag.size());
+			assertEquals(expectedBag, actualBag,
+					"GRAPH must preserve the selected 32-row bag despite other-graph and default-context distractors");
 		} finally {
 			repository.shutDown();
 		}
@@ -408,7 +458,13 @@ class LmdbColdFilterSelectivityStatsTest {
 	}
 
 	private static void assertExactHalf(LmdbStore store, String query) {
-		EvaluationStatistics.FilterPassEstimate estimate = estimate(store, query);
+		assertExactHalf(store, firstFilter(query), query);
+	}
+
+	private static void assertExactHalf(LmdbStore store, Filter filter, String query) {
+		EvaluationStatistics.FilterPassEstimate estimate = store.getBackingStore()
+				.getEvaluationStatistics()
+				.estimateFilterPass(filter);
 		assertEquals(EvaluationStatistics.FilterPassEstimate.Source.EXACT, estimate.getSource(), query);
 		assertEquals(0.5d, estimate.getPassRatio(), 0.000_001d, query);
 		assertEquals(64L, estimate.getEvidenceCount(), query);
@@ -429,17 +485,18 @@ class LmdbColdFilterSelectivityStatsTest {
 
 	private static Filter firstFilter(String query) {
 		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
-				.getTupleExpr()
-				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// These owned complete queries use the local default dataset; explicit GRAPH nodes retain ACTIVE scope.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
 		return found[0];
 	}
 }

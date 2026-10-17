@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -34,10 +36,15 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
@@ -123,6 +130,141 @@ class LmdbValueLookupOptimizerTest {
 			assertEquals(0, starts.get());
 			assertSame(source, assignment.getBindingSets());
 		}
+	}
+
+	@Test
+	void parserOwnedValuesKeepAuditedReplayAfterCapture(@TempDir Path directory) throws Exception {
+		try (CountingValues values = new CountingValues(directory.toFile())) {
+			TupleExpr root = new SPARQLParser().parseQuery("""
+					SELECT * WHERE {
+					  VALUES (?x ?optional) { ("same" UNDEF) ("same" UNDEF) (UNDEF "last") }
+					}
+					""", null).getTupleExpr();
+			List<BindingSetAssignment> assignments = new ArrayList<>();
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(BindingSetAssignment assignment) {
+					assignments.add(assignment);
+				}
+			});
+			assertEquals(1, assignments.size());
+			BindingSetAssignment assignment = assignments.getFirst();
+			assertTrue(BindingSetAssignmentKeyability.canInspect(assignment));
+			List<BindingSet> original = rows(assignment);
+			new LmdbValueLookupOptimizer(values).optimize(root, null, EmptyBindingSet.getInstance());
+			assertTrue(BindingSetAssignmentKeyability.canInspect(assignment),
+					"native value capture must retain the parser's audited finite-row replay contract");
+			assertEquals(original, rows(assignment));
+			assertEquals(Set.of("x", "optional"), assignment.getDeclaredBindingNames());
+			assertEquals(Set.of("x", "optional"), assignment.getPossibleBindingNames());
+			assertEquals(Set.of(), assignment.getAssuredBindingNames());
+			assertEquals(0, values.lookups);
+			Iterable<BindingSet> captured = assignment.getBindingSets();
+			new LmdbValueLookupOptimizer(values).optimize(root, null, EmptyBindingSet.getInstance());
+			assertSame(captured, assignment.getBindingSets());
+			assertEquals(0, values.lookups);
+		}
+	}
+
+	@Test
+	void capturedStableRowsOwnNullableNamesAndValues(@TempDir Path directory) throws Exception {
+		try (CountingValues values = new CountingValues(directory.toFile())) {
+			List<String> names = new ArrayList<>(List.of("x", "optional"));
+			List<Value> inputValues = new ArrayList<>();
+			Value original = VF.createLiteral("owned value");
+			inputValues.add(original);
+			inputValues.add(null);
+			BindingSetAssignment assignment = assignment(List.of(new ListBindingSet(names, inputValues)));
+			new LmdbValueLookupOptimizer(values).optimize(assignment, null, EmptyBindingSet.getInstance());
+			BindingSet captured = rows(assignment).getFirst();
+			assertEquals(Set.of("x", "optional"), captured.getBindingNames(),
+					"nullable row headers must survive capture, including an UNDEF column");
+			assertTrue(BindingSetAssignmentKeyability.canInspect(assignment));
+			names.set(0, "changed-after-transfer");
+			inputValues.set(0, VF.createLiteral("changed-after-transfer"));
+			assertEquals(original, captured.getValue("x"));
+			assertEquals(null, captured.getValue("optional"));
+			assertEquals(Set.of("x", "optional"), captured.getBindingNames());
+			assertEquals(0, values.lookups);
+		}
+	}
+
+	@Test
+	void explicitReplaySourceRetainsProofAcrossMixedRows(@TempDir Path directory) throws Exception {
+		try (CountingValues values = new CountingValues(directory.toFile())) {
+			Value shared = VF.createLiteral("shared captured value");
+			Value nativeValue = values.getLmdbValue(VF.createLiteral("already native"));
+			MapBindingSet first = new MapBindingSet();
+			first.addBinding("x", shared);
+			MapBindingSet second = new MapBindingSet();
+			second.addBinding("x", shared);
+			BindingSet nativeRow = new ListBindingSet(List.of("x", "optional"), nativeValue, null);
+			List<BindingSet> input = List.of(first, second, nativeRow, EmptyBindingSet.getInstance());
+			BindingSetAssignment.RepeatableBindingSetSource source = input::iterator;
+			BindingSetAssignment assignment = assignment(source);
+			assertTrue(BindingSetAssignmentKeyability.canInspect(assignment));
+			new LmdbValueLookupOptimizer(values).optimize(assignment, null, EmptyBindingSet.getInstance());
+			assertTrue(BindingSetAssignmentKeyability.canInspect(assignment),
+					"an explicit replay-safe source must retain that contract after native capture");
+			List<BindingSet> captured = rows(assignment);
+			assertEquals(input, captured);
+			assertSame(captured.get(0).getValue("x"), captured.get(1).getValue("x"));
+			assertSame(nativeValue, captured.get(2).getValue("x"));
+			assertEquals(Set.of("x", "optional"), captured.get(2).getBindingNames());
+			assertEquals(0, values.lookups);
+		}
+	}
+
+	@Test
+	void mutableCustomAndNonListRowsAreNeverPromoted(@TempDir Path directory) throws Exception {
+		try (CountingValues values = new CountingValues(directory.toFile())) {
+			Value value = VF.createLiteral("unaudited source value");
+			MapBindingSet mutable = new MapBindingSet();
+			mutable.addBinding("x", value);
+			BindingSet custom = new ListBindingSet(List.of("x"), value) {
+			};
+			List<Iterable<BindingSet>> sources = List.of(List.of(mutable), List.of(custom),
+					new LinkedHashSet<>(List.of(new ListBindingSet(List.of("x"), value))));
+			for (Iterable<BindingSet> source : sources) {
+				BindingSetAssignment assignment = assignment(source);
+				assertFalse(BindingSetAssignmentKeyability.canInspect(assignment));
+				new LmdbValueLookupOptimizer(values).optimize(assignment, null, EmptyBindingSet.getInstance());
+				assertFalse(BindingSetAssignmentKeyability.canInspect(assignment),
+						"materializing a collection must not invent the original source's replay authority");
+				assertEquals(value, rows(assignment).getFirst().getValue("x"));
+			}
+			assertEquals(0, values.lookups);
+		}
+	}
+
+	@Test
+	void emptyUndefAndAlreadyNativeStableRowsRemainIdempotent(@TempDir Path directory) throws Exception {
+		try (CountingValues values = new CountingValues(directory.toFile())) {
+			Value nativeValue = values.getLmdbValue(VF.createLiteral("native"));
+			List<BindingSet> input = List.of(new ListBindingSet(List.of("x", "optional"), (Value) null, null),
+					EmptyBindingSet.getInstance(), new ListBindingSet(List.of("x", "optional"), nativeValue, null));
+			for (List<BindingSet> source : List.of(input, List.<BindingSet>of())) {
+				BindingSetAssignment assignment = assignment(source);
+				new LmdbValueLookupOptimizer(values).optimize(assignment, null, EmptyBindingSet.getInstance());
+				assertTrue(BindingSetAssignmentKeyability.canInspect(assignment));
+				assertSame(source, assignment.getBindingSets());
+				assertEquals(source, rows(assignment));
+			}
+			assertEquals(0, values.lookups);
+		}
+	}
+
+	private static BindingSetAssignment assignment(Iterable<BindingSet> source) {
+		BindingSetAssignment assignment = new BindingSetAssignment();
+		assignment.setDeclaredBindingNames(Set.of("x", "optional"));
+		assignment.setBindingSets(source);
+		return assignment;
+	}
+
+	private static List<BindingSet> rows(BindingSetAssignment assignment) {
+		List<BindingSet> rows = new ArrayList<>();
+		assignment.getBindingSets().forEach(rows::add);
+		return rows;
 	}
 
 	private static final class CountingValues extends ValueStore implements AutoCloseable {

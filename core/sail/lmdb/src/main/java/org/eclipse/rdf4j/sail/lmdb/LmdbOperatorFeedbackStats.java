@@ -77,6 +77,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoLearnedEvidenceService;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoMemoFeedback;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -773,7 +774,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	void observe(TupleExpr tupleExpr, boolean completedRoot, InvocationAggregateObservation observation) {
-		if (!adaptiveEvidenceAllowed()) {
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(tupleExpr)) {
 			return;
 		}
 		if (completedRoot) {
@@ -1027,7 +1028,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	synchronized void recordSemiAntiOutcome(Filter filter, SemiAntiOutcomeObservation observation) {
-		if (!adaptiveEvidenceAllowed() || filter == null || observation == null || !observation.completed()
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter) || observation == null
+				|| !LmdbRuntimeFeedbackDescriptor.allowsFeedback(filter, RuntimeFeedbackContract.ADMIT_SEMI_ANTI)
+				|| !observation.completed()
 				|| !observation.rootCompleted() || !observation.exclusionReason().isBlank()
 				|| observation
 						.terminationClassification() != EvaluationStatistics.TerminationClassification.EXHAUSTED) {
@@ -1223,7 +1226,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private SemiAntiEstimate semiAntiEstimate(Filter filter, String semanticKind, String physicalAlgorithm,
 			boolean requireFrontierOrigin) {
-		if (!adaptiveEvidenceAllowed() || filter == null) {
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(filter)) {
 			return null;
 		}
 		SemiAntiSurfaceKey key = SemiAntiSurfaceKey.from(filter, semanticKind, physicalAlgorithm);
@@ -1350,6 +1353,17 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		LearningApplicability applicability = identity.applicability();
 		PhysicalResidualKey residualKey = identity.physicalKey();
 		boolean productionKeysValid = logicalKey != null && applicability != null && residualKey != null;
+		boolean logicalAllowed = LmdbRuntimeFeedbackDescriptor.allowsFeedback(node,
+				RuntimeFeedbackContract.ADMIT_LOGICAL);
+		boolean physicalAllowed = LmdbRuntimeFeedbackDescriptor.allowsFeedback(node,
+				RuntimeFeedbackContract.ADMIT_PHYSICAL);
+		boolean exactAllowed = LmdbRuntimeFeedbackDescriptor.allowsFeedback(node,
+				RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE);
+		boolean lifecycleAllowed = LmdbRuntimeFeedbackDescriptor.allowsFeedback(node,
+				RuntimeFeedbackContract.ADMIT_LIFECYCLE);
+		if (!logicalAllowed && !physicalAllowed && !exactAllowed && !lifecycleAllowed) {
+			return false;
+		}
 		String eventDigest = node.getStringMetricPlanned(FRONTIER_COST_EVENT_DIGEST);
 		String stateDigest = node.getStringMetricPlanned(FRONTIER_STATE_DIGEST);
 		InvocationAggregateObservation aggregate = invocationObservation;
@@ -1378,7 +1392,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				&& !"none".equals(physicalKey.indexName())
 				&& !physicalKey.indexName().equalsIgnoreCase(runtimeIndexName.trim());
 		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
-		if (rowLearningAllowed && !databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())
+		if (logicalAllowed && rowLearningAllowed && !databaseExact && !(accessDrift && outputRowsDriftSkipEnabled())
 				&& aggregate.exactLogicalCardinality()) {
 			double predictedRows = aggregate.rawPredictedRowsSum();
 			if (productionKeysValid) {
@@ -1416,6 +1430,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				: logicalGroupKey;
 		boolean singleInvocationBasis = aggregate.opens() == 1L;
 		if (exactCardinalityFactsEnabled()
+				&& exactAllowed
 				&& exactFactKey != null && !exactFactKey.isBlank()
 				&& singleInvocationBasis
 				&& aggregate.exactLogicalCardinality()
@@ -1445,6 +1460,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		if (productionKeysValid) {
 			recordPlanLifecycleOutcome(node, logicalKey, residualKey, applicability,
 					observation.actualWorkRows(), epoch);
+		}
+		if (!physicalAllowed) {
+			dirty = true;
+			return true;
 		}
 		if (rowLearningAllowed && aggregate.admissiblePhysicalWork()) {
 			observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
@@ -1497,7 +1516,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	private void recordPlanLifecycleOutcome(TupleExpr node, LogicalLearningKey logicalKey,
 			PhysicalResidualKey physicalKey, LearningApplicability applicability, double actualObjective, long epoch) {
-		if (node.getLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL) > 0L) {
+		if (!LmdbRuntimeFeedbackDescriptor.allowsFeedback(node, RuntimeFeedbackContract.ADMIT_LIFECYCLE)
+				|| node.getLongMetricActual(LEO_RECORDED_LIFECYCLE_ACTUAL) > 0L) {
 			return;
 		}
 		PlanLifecycleStore.ObjectiveEnvelope planned = lifecycleEnvelope(node);
@@ -2023,7 +2043,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 
 	synchronized OperatorEstimate estimate(TupleExpr node, double leftRows, double rightRows, double baseRows,
 			double baseWorkRows, String executionMode, String planningContext) {
-		if (!adaptiveEvidenceAllowed()) {
+		if (!adaptiveEvidenceAllowed() || !LmdbPlanningGraphEvidence.allows(node)) {
 			return null;
 		}
 		OperatorEstimate frontierEstimate = frontierOperatorEstimate(node, baseRows, baseWorkRows);
@@ -2777,22 +2797,25 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	}
 
 	public boolean shouldTrackRuntimeFeedback(TupleExpr tupleExpr) {
-		return runtimeFeedbackTrackingEnabled()
+		return LmdbPlanningGraphEvidence.allows(tupleExpr) && runtimeFeedbackTrackingEnabled()
 				&& adaptiveEvidenceAllowed() && rollout().observationEnabled()
 				&& operatorLearningPolicy(tupleExpr).runtimeObservable();
 	}
 
 	public boolean shouldRecordDirectEvidence(TupleExpr tupleExpr) {
-		return adaptiveEvidenceAllowed() && rollout().observationEnabled() && supportsOperatorFeedback(tupleExpr);
+		return LmdbPlanningGraphEvidence.allows(tupleExpr) && adaptiveEvidenceAllowed()
+				&& rollout().observationEnabled() && supportsOperatorFeedback(tupleExpr);
 	}
 
 	public boolean shouldExposePlanningEvidence(TupleExpr tupleExpr) {
-		return adaptiveEvidenceAllowed() && rollout().cardinalityCorrectionEnabled()
+		return LmdbPlanningGraphEvidence.allows(tupleExpr) && adaptiveEvidenceAllowed()
+				&& rollout().cardinalityCorrectionEnabled()
 				&& supportsOperatorFeedback(tupleExpr);
 	}
 
 	boolean shouldExposeMultiplierPlanningEvidence(TupleExpr tupleExpr) {
-		return adaptiveEvidenceAllowed() && rollout().cardinalityCorrectionEnabled()
+		return LmdbPlanningGraphEvidence.allows(tupleExpr) && adaptiveEvidenceAllowed()
+				&& rollout().cardinalityCorrectionEnabled()
 				&& operatorLearningPolicy(tupleExpr) == LeoOperatorLearningPolicy.LEARN_AS_CHILD_MULTIPLIER;
 	}
 
@@ -3115,7 +3138,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return null;
 		}
 		String effectiveExecutionMode = physicalExecutionMode(node, executionMode);
-		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode, constantMode);
+		LeoOperatorKey leoKey = inspectableLeoKey(node, effectiveExecutionMode, constantMode);
+		if (leoKey == null) {
+			return null;
+		}
 		String specificity = generalized ? "predicate-context" : "exact";
 		return new OperatorKey("leo:" + specificity + ':' + leoKey.operatorType(),
 				leoKey.structuralFingerprint(), "", "",
@@ -3136,7 +3162,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		String effectiveExecutionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
 				? pathEndpointMode(node, executionMode)
 				: executionMode;
-		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode);
+		LeoOperatorKey leoKey = inspectableLeoKey(node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		if (leoKey == null) {
+			return null;
+		}
 		OperatorKey key = new OperatorKey("leo:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 		if (executionMode == null) {
@@ -3466,13 +3495,16 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return null;
 		}
 		LeoOperatorKey leoKey = planningLeoKey(node, "", planningStable);
+		if (leoKey == null) {
+			return null;
+		}
 		return new OperatorKey("leo:plan:" + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 	}
 
 	private LeoOperatorKey planningLeoKey(TupleExpr node, String executionMode, boolean planningStable) {
 		if (!planningStable) {
-			return LeoOperatorKey.from(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
+			return inspectableLeoKey(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
 		}
 		Map<String, LeoOperatorKey> byMode = planningLeoKeyCache.get(node);
 		if (byMode != null) {
@@ -3481,7 +3513,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				return cached;
 			}
 		}
-		LeoOperatorKey key = LeoOperatorKey.from(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
+		LeoOperatorKey key = inspectableLeoKey(node, executionMode, LeoOperatorKey.ConstantMode.EXACT);
+		if (key == null) {
+			return null;
+		}
 		if (byMode == null) {
 			if (planningLeoKeyCache.size() > KEY_CACHE_MAX_SIZE) {
 				planningLeoKeyCache.clear();
@@ -3491,6 +3526,15 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		byMode.put(executionMode, key);
 		return key;
+	}
+
+	private static LeoOperatorKey inspectableLeoKey(TupleExpr node, String executionMode,
+			LeoOperatorKey.ConstantMode constantMode) {
+		try {
+			return LmdbValueIdFilter.learningKey(node, executionMode, constantMode);
+		} catch (UnkeyableOperatorException unsupported) {
+			return null;
+		}
 	}
 
 	private void recordPlanCandidateOutcome(TupleExpr root, OperatorObservation observation, long epoch) {
@@ -3542,6 +3586,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		String mode = physicalExecutionMode(node, null);
 		LeoOperatorKey leoKey = planningLeoKey(node, mode, planningStable);
+		if (leoKey == null) {
+			return null;
+		}
 		String rule = normalize(ruleId);
 		String plannedOperatorType = node.getStringMetricPlanned(PLANNED_LEO_CANDIDATE_OPERATOR_TYPE);
 		String operatorType = plannedOperatorType == null || plannedOperatorType.isBlank()
@@ -3569,7 +3616,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		String effectiveExecutionMode = node instanceof ArbitraryLengthPath || node instanceof ZeroLengthPath
 				? pathEndpointMode(node, null)
 				: null;
-		LeoOperatorKey leoKey = LeoOperatorKey.from(node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		LeoOperatorKey leoKey = inspectableLeoKey(node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		if (leoKey == null) {
+			return null;
+		}
 		return new OperatorKey(prefix + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 	}
@@ -3579,8 +3629,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			return null;
 		}
 		String effectiveExecutionMode = physicalExecutionMode(node, executionMode);
-		LeoOperatorKey leoKey = LeoOperatorKey.from(
+		LeoOperatorKey leoKey = inspectableLeoKey(
 				node, effectiveExecutionMode, LeoOperatorKey.ConstantMode.EXACT);
+		if (leoKey == null) {
+			return null;
+		}
 		return new OperatorKey(prefix + leoKey.operatorType(), leoKey.structuralFingerprint(), "", "",
 				"mode=" + leoKey.executionMode(), displayBindings(node), "");
 	}

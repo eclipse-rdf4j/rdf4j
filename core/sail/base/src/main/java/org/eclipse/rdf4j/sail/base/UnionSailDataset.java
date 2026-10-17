@@ -17,6 +17,7 @@ import java.util.EnumSet;
 import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
+import java.util.function.BiFunction;
 import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -36,7 +37,7 @@ import org.eclipse.rdf4j.sail.SailException;
  *
  * @author Håvard M. Ottestad
  */
-class UnionSailDataset implements SailDataset, TreeOwnedDataset {
+class UnionSailDataset implements SailDataset, TreeOwnedDataset, SailDatasetReadComposition.Transparent {
 
 	private final SailDataset dataset1;
 	private final SailDataset dataset2;
@@ -51,6 +52,20 @@ class UnionSailDataset implements SailDataset, TreeOwnedDataset {
 	 */
 	public static SailDataset getInstance(SailDataset dataset1, SailDataset dataset2) {
 		return new UnionSailDataset(dataset1, dataset2);
+	}
+
+	@Override
+	public <T> Optional<T> resolveReadComposition(Class<T> leafCapability,
+			BiFunction<T, T, Optional<T>> unionCombiner) {
+		if (getClass() != UnionSailDataset.class) {
+			return Optional.empty();
+		}
+		Optional<T> first = SailDatasetReadComposition.resolveDataset(dataset1, leafCapability, unionCombiner);
+		if (first.isEmpty()) {
+			return Optional.empty();
+		}
+		Optional<T> second = SailDatasetReadComposition.resolveDataset(dataset2, leafCapability, unionCombiner);
+		return second.isEmpty() ? Optional.empty() : unionCombiner.apply(first.orElseThrow(), second.orElseThrow());
 	}
 
 	@Override

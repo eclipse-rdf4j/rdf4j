@@ -859,7 +859,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 	protected CloseableIteration<? extends BindingSet> evaluateInternal(TupleExpr tupleExpr,
 			Dataset dataset,
 			BindingSet bindings, boolean includeInferred) throws SailException {
-		TupleExpr expression = (TupleExpr) tupleExpr.clone();
+		TupleExpr expression = LmdbValueIdFilter.semanticClone(tupleExpr);
 		detachTupleValues(expression);
 		Dataset queryDataset = copyDataset(dataset);
 		BindingSet queryBindings = copyBindings(bindings);

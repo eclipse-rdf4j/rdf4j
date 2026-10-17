@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -92,6 +93,8 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 
 	private volatile Map<DirectLookupKey, DirectLookupCacheEntry> directLookupCache;
 	private final Set<String> producedNames;
+	private final Set<String> producedNamesWithInheritedContext;
+	private final String inheritedContextName;
 	private Boolean requestEntry;
 
 	@Override
@@ -106,6 +109,16 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		super();
 		this.statementPatternForMetrics = statementPattern;
 		this.producedNames = Set.copyOf(statementPattern.getBindingNames());
+		this.inheritedContextName = statementPattern.isContextBindingOriginInherited()
+				? statementPattern.getContextVar().getName()
+				: null;
+		if (inheritedContextName == null) {
+			this.producedNamesWithInheritedContext = producedNames;
+		} else {
+			Set<String> localNames = new HashSet<>(producedNames);
+			localNames.remove(inheritedContextName);
+			this.producedNamesWithInheritedContext = Set.copyOf(localNames);
+		}
 		this.order = statementPattern.getStatementOrder();
 		this.context = context;
 		this.tripleSource = tripleSource;
@@ -114,7 +127,11 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 		// If the graph part is empty we do not need to check this
 		// in the conversion etc.
 		Dataset dataset = context.getDataset();
-		if (dataset != null) {
+		QueryEvaluationContext.ActiveGraph activeGraph = context.getActiveGraph();
+		boolean activeDefault = activeGraph != null && statementPattern.getScope() == Scope.DEFAULT_CONTEXTS;
+		if (activeDefault) {
+			emptyGraph = false;
+		} else if (dataset != null) {
 			if (statementPattern.getScope() == Scope.DEFAULT_CONTEXTS) {
 				graphs = dataset.getDefaultGraphs();
 				emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
@@ -146,10 +163,21 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			}
 			graphs = preparedGraphs;
 		}
-		contextSup = extractContextsFromDatasets(conVar, emptyGraph, graphs);
+		if (activeDefault) {
+			Resource physical = activeGraph.physicalGraph();
+			if (physical != null && valuePreparer != null) {
+				physical = (Resource) valuePreparer.apply(physical);
+			}
+			Resource[] selectedContexts = { physical };
+			contextSup = ignored -> selectedContexts;
+		} else {
+			contextSup = extractContextsFromDatasets(conVar, emptyGraph, graphs);
+		}
 
 		this.statementPattern = new StatementPattern(statementPattern.getScope(), subjVar, predVar, objVar, conVar);
 		this.statementPattern.setVariableScopeChange(statementPattern.isVariableScopeChange());
+		this.statementPattern.setIndependentInputScope(statementPattern.isIndependentInputScope());
+		this.statementPattern.setContextBindingOriginInherited(statementPattern.isContextBindingOriginInherited());
 
 		// First create the getters before removing duplicate vars since we need the getters when creating
 		// JoinStatementWithBindingSetIterator. If there are duplicate vars, for instance ?v1 as both subject and
@@ -298,7 +326,24 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	BindingSet producedBindings(BindingSet bindings) {
-		return BindingSetOrigin.produced(bindings, producedNames);
+		return BindingSetOrigin.produced(bindings, producedNames(bindings));
+	}
+
+	private Set<String> producedNames(BindingSet input) {
+		// Physical lookup selection is unchanged. Only an explicitly certified, already supplied GRAPH selector is
+		// inherited; an unbound selector and every original body output are still newly LOCAL.
+		return inheritedContextName != null && input.getValue(inheritedContextName) != null
+				? producedNamesWithInheritedContext
+				: producedNames;
+	}
+
+	private boolean hasCompatibleInheritedContext(BindingSet input) {
+		if (inheritedContextName == null) {
+			return true;
+		}
+		Value supplied = input.getValue(inheritedContextName);
+		Value selected = statementPattern.getContextVar().getValue();
+		return supplied == null || selected == null || supplied.equals(selected);
 	}
 
 	// test if the variable must remain unbound for this solution see
@@ -373,14 +418,14 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			bindings = requestEntry ? BindingSetOrigin.requestInput(bindings)
 					: BindingSetOrigin.with(bindings, BindingSetOrigin.of(bindings));
 		}
-		if (emptyGraph) {
+		if (emptyGraph || !hasCompatibleInheritedContext(bindings)) {
 			return QueryEvaluationStep.EMPTY_ITERATION;
 		} else if (bindings.isEmpty()) {
 			ConvertStatementToBindingSetIterator iteration = getIteration();
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return BindingSetOrigin.produced(iteration, producedNames, bindings);
+			return BindingSetOrigin.produced(iteration, producedNames(bindings), bindings);
 
 		} else if (unboundTest.test(bindings)) {
 			// the variable must remain unbound for this solution see
@@ -391,8 +436,18 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 			if (iteration == null) {
 				return QueryEvaluationStep.EMPTY_ITERATION;
 			}
-			return BindingSetOrigin.produced(iteration, producedNames, bindings);
+			return BindingSetOrigin.produced(iteration, producedNames(bindings), bindings);
 		}
+	}
+
+	/**
+	 * These final conversion iterators create a fresh mutable result for every statement. A caller may therefore extend
+	 * the returned row without copying it. In particular, the fully bound lookup iterator is excluded because it
+	 * returns the caller's input bindings, and wrappers must retain their own ownership contract.
+	 */
+	static boolean ownsBindingSets(CloseableIteration<BindingSet> iteration) {
+		return iteration instanceof ConvertStatementToBindingSetIterator
+				|| iteration instanceof JoinStatementWithBindingSetIterator;
 	}
 
 	private CloseableIteration<BindingSet> getIteration(BindingSet bindings) {
@@ -485,7 +540,7 @@ public class StatementPatternQueryEvaluationStep implements QueryEvaluationStep,
 	}
 
 	long getFullyBoundStatementCount(BindingSet bindings) {
-		if (emptyGraph) {
+		if (emptyGraph || !hasCompatibleInheritedContext(bindings)) {
 			return 0;
 		}
 		if (bindings.isEmpty()) {

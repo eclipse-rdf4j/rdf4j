@@ -115,10 +115,13 @@ final class PackedLogicalRuleProgram {
 		this.rootExpressionId = rootExpressionId;
 	}
 
+	private int applyingExpressionId;
+
 	void apply(int expressionId, int factRevision) {
 		if (!markApplied(expressionId, factRevision)) {
 			return;
 		}
+		applyingExpressionId = expressionId;
 		switch (relations.operatorTag(expressionId)) {
 		case PackedRelOp.FILTER -> {
 			if (relations.childCount(expressionId) == 1
@@ -244,7 +247,7 @@ final class PackedLogicalRuleProgram {
 		int before = relations.size();
 		int rewrittenFilterId = relations.internCanonical(PackedRelOp.FILTER, rewrittenConditionId,
 				relations.semanticScopeId(filterExpressionId), relations.executionDomainId(filterExpressionId),
-				relations.occurrenceId(filterExpressionId), unary,
+				relations.occurrenceId(filterExpressionId), relations.graphDomainId(filterExpressionId), unary,
 				0, 1);
 		if (rewrittenFilterId > before) {
 			metadata.copyRelation(filterExpressionId, rewrittenFilterId);
@@ -585,10 +588,11 @@ final class PackedLogicalRuleProgram {
 		int before = relations.size();
 		int commutedInnerId = relations.internCanonical(PackedRelOp.FILTER, outerConditionId, 0,
 				relations.executionDomainId(outerFilterExpressionId), relations.occurrenceId(outerFilterExpressionId),
-				unary, 0, 1);
+				relations.graphDomainId(outerFilterExpressionId), unary, 0, 1);
 		if (commutedInnerId > before) {
 			metadata.attachRelation(commutedInnerId, 0, relations.semanticScopeId(outerFilterExpressionId),
 					Double.NaN, Double.NaN, 0);
+			metadata.attachRelationGraphDomain(commutedInnerId, metadata.relationGraphDomain(outerFilterExpressionId));
 		}
 		if ((metadata.relationSemanticFlags(outerFilterExpressionId)
 				& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
@@ -602,13 +606,14 @@ final class PackedLogicalRuleProgram {
 		int commutedOuterId = relations.internLogicalIfSameGroup(targetGroupId,
 				PackedRelOp.FILTER, innerConditionId, 0,
 				relations.executionDomainId(innerFilterExpressionId), relations.occurrenceId(innerFilterExpressionId),
-				unary, 0, 1);
+				relations.graphDomainId(innerFilterExpressionId), unary, 0, 1);
 		if (commutedOuterId == 0) {
 			return 0;
 		}
 		if (commutedOuterId > before) {
 			metadata.attachRelation(commutedOuterId, 0, relations.semanticScopeId(outerFilterExpressionId),
 					metadata.relationResultSizeEstimate(outerFilterExpressionId), Double.NaN, 0);
+			metadata.attachRelationGraphDomain(commutedOuterId, metadata.relationGraphDomain(outerFilterExpressionId));
 		}
 		if ((metadata.relationSemanticFlags(innerFilterExpressionId)
 				& PackedNodeMetadataArena.SEMANTIC_ASSURED_SHARED_MINUS_FILTER) != 0) {
@@ -1248,8 +1253,9 @@ final class PackedLogicalRuleProgram {
 				payloads.payloadId(oldPayloadId), payloads.semanticScopeId(oldPayloadId),
 				payloads.executionDomainId(oldPayloadId), terms, 0, terms.length);
 		int before = relations.size();
-		int result = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, newPayloadId, 0, 0,
-				relations.occurrenceId(statementPatternId), unary, 0, 0);
+		int result = relations.internCanonical(PackedRelOp.STATEMENT_PATTERN, newPayloadId,
+				relations.semanticScopeId(statementPatternId), relations.executionDomainId(statementPatternId),
+				relations.occurrenceId(statementPatternId), relations.graphDomainId(statementPatternId), unary, 0, 0);
 		if (result > before) {
 			metadata.copyRelation(statementPatternId, result);
 		}
@@ -1269,17 +1275,19 @@ final class PackedLogicalRuleProgram {
 				namesPayloadId, 1, finiteRowIds, 0, count);
 		int before = relations.size();
 		int result = relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, assignmentPayloadId, 0, 0,
-				finiteRowIds, 0, 0);
+				0, relations.graphDomainId(applyingExpressionId), finiteRowIds, 0, 0);
 		if (result > before) {
 			metadata.attachRelation(result, 0, 0, count, count, 0);
+			metadata.attachRelationGraphDomain(result, metadata.relationGraphDomain(applyingExpressionId));
 		}
 		return result;
 	}
 
 	private int canonicalRelation(int operator, int payloadId, int[] children, int childCount, int metadataSourceId) {
 		int before = relations.size();
-		int result = relations.internCanonical(operator, payloadId, 0, 0, relations.occurrenceId(metadataSourceId),
-				children, 0, childCount);
+		int result = relations.internCanonical(operator, payloadId, relations.semanticScopeId(metadataSourceId),
+				relations.executionDomainId(metadataSourceId), relations.occurrenceId(metadataSourceId),
+				relations.graphDomainId(metadataSourceId), children, 0, childCount);
 		if (result > before) {
 			metadata.copyRelation(metadataSourceId, result);
 		}
@@ -2405,11 +2413,12 @@ final class PackedLogicalRuleProgram {
 		 */
 		int alternativeId = relations.internGroupScoped(targetGroupId, PackedRelOp.EMPTY_SET, 0,
 				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
-				relations.occurrenceId(sourceExpressionId),
+				relations.occurrenceId(sourceExpressionId), relations.graphDomainId(sourceExpressionId),
 				NO_CHILDREN, 0, 0);
 		if (alternativeId > before) {
 			// A proven-empty expression must carry zero-row estimates of its own, not the source's estimates.
 			metadata.attachRelation(alternativeId, 0, 0, 0.0d, 0.0d, 0);
+			metadata.attachRelationGraphDomain(alternativeId, metadata.relationGraphDomain(sourceExpressionId));
 		}
 		addAlternativeRuleMask(alternativeId, proofBit);
 	}
@@ -3545,6 +3554,7 @@ final class PackedLogicalRuleProgram {
 		int result = relations.internCanonical(relations.operatorTag(sourceExpressionId),
 				relations.payloadId(sourceExpressionId), relations.semanticScopeId(sourceExpressionId),
 				relations.executionDomainId(sourceExpressionId), relations.occurrenceId(sourceExpressionId),
+				relations.graphDomainId(sourceExpressionId),
 				childGroupIds, 0, childCount);
 		if (result > before) {
 			metadata.copyRelation(sourceExpressionId, result);
@@ -3563,7 +3573,7 @@ final class PackedLogicalRuleProgram {
 		int before = relations.size();
 		int result = relations.internLogicalIfSameGroup(targetGroupId, operator, payloadId,
 				relations.semanticScopeId(sourceExpressionId), relations.executionDomainId(sourceExpressionId),
-				relations.occurrenceId(sourceExpressionId),
+				relations.occurrenceId(sourceExpressionId), relations.graphDomainId(sourceExpressionId),
 				childGroupIds, childOffset, childCount);
 		if (result != 0 && result > before) {
 			metadata.copyRelation(sourceExpressionId, result);
@@ -3607,9 +3617,10 @@ final class PackedLogicalRuleProgram {
 				namesPayloadId, 1, finiteRowIds, 0, finiteValueCount);
 		int before = relations.size();
 		int result = relations.internCanonical(PackedRelOp.BINDING_SET_ASSIGNMENT, assignmentPayloadId, 0, 0,
-				finiteRowIds, 0, 0);
+				0, relations.graphDomainId(applyingExpressionId), finiteRowIds, 0, 0);
 		if (result > before) {
 			metadata.attachRelation(result, 0, 0, finiteValueCount, finiteValueCount, 0);
+			metadata.attachRelationGraphDomain(result, metadata.relationGraphDomain(applyingExpressionId));
 		}
 		return result;
 	}
@@ -3831,6 +3842,8 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.MULTI_PROJECTION -> multiProjectionAssuresSymbol(expressionId, symbolId);
 		case PackedRelOp.EXTENSION -> extensionAssuresSymbol(expressionId, symbolId);
 		case PackedRelOp.GROUP -> groupKeyAssuresSymbol(expressionId, symbolId);
+		case PackedRelOp.GRAPH -> graphNameContainsSymbol(relations.payloadId(expressionId), symbolId)
+				|| relationAssuresSymbol(relations.childGroupId(expressionId, 0), symbolId);
 		default -> false;
 		};
 	}
@@ -3848,6 +3861,12 @@ final class PackedLogicalRuleProgram {
 			}
 		}
 		return false;
+	}
+
+	private boolean graphNameContainsSymbol(int payloadId, int symbolId) {
+		int term = payloads.childGroupId(payloadId, 0);
+		return (payloads.executionDomainId(term) & PackedQuery.TERM_CONSTANT) == 0
+				&& symbols.symbolId(payloads.payloadId(term)) == symbolId;
 	}
 
 	private boolean multiProjectionAssuresSymbol(int expressionId, int symbolId) {
@@ -3938,6 +3957,12 @@ final class PackedLogicalRuleProgram {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF, PackedRelOp.ARBITRARY_LENGTH_PATH -> addPayloadTerms(
 				payloadId, output);
 		case PackedRelOp.PROJECTION -> addProjectionOutputs(payloads.payloadId(payloadId), output);
+		case PackedRelOp.GRAPH -> {
+			int term = payloads.childGroupId(payloadId, 0);
+			if ((payloads.executionDomainId(term) & PackedQuery.TERM_CONSTANT) == 0) {
+				addObject(output, payloads.payloadId(term));
+			}
+		}
 		case PackedRelOp.MULTI_PROJECTION -> {
 			for (int ordinal = 0; ordinal < payloads.childCount(payloadId); ordinal++) {
 				addProjectionOutputs(payloads.childGroupId(payloadId, ordinal), output);
@@ -4083,6 +4108,7 @@ final class PackedLogicalRuleProgram {
 		switch (operator) {
 		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH, PackedRelOp.TRIPLE_REF, PackedRelOp.REIFIED_TRIPLE_REF, PackedRelOp.ANNOTATION_TRIPLE_REF -> addPayloadTerms(
 				payloadId, output);
+		case PackedRelOp.GRAPH -> addPayloadTerms(payloadId, output);
 		case PackedRelOp.BINDING_SET_ASSIGNMENT -> addNameSet(payloads.payloadId(payloadId), output);
 		case PackedRelOp.FILTER, PackedRelOp.LEFT_JOIN -> addScalarDependencies(payloadId, output);
 		case PackedRelOp.EXTENSION -> {

@@ -45,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Intersection;
@@ -609,6 +610,9 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		if (parent instanceof Graph) {
+			return input;
+		}
 		if (parent instanceof Filter filter) {
 			if (child == filter.getCondition()) {
 				ReadOnlyContext conditionInput = withOutput(input, outputFacts(filter.getArg(), input));
@@ -645,7 +649,8 @@ public final class QueryAlgebraBindingAnalysis {
 				if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 					return input.enterScope(nextScopeId(leftJoin.getRightArg()));
 				}
-				if (containsResultSetModifier(leftJoin.getRightArg(), input)) {
+				if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
+						|| containsResultSetModifier(leftJoin.getRightArg(), input)) {
 					return input;
 				}
 				return withOutput(leftJoinInput, outputFacts(leftJoin.getLeftArg(), leftJoinInput));
@@ -819,7 +824,7 @@ public final class QueryAlgebraBindingAnalysis {
 	 * evaluator restores those inherited values after the optional has been evaluated.
 	 */
 	private ReadOnlyContext leftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
+		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())) {
 			return input;
 		}
 		Set<String> optionalInputNames = new HashSet<>(VarNameCollector.process(leftJoin.getRightArg()));
@@ -914,7 +919,7 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private boolean isOutOfScopeForLeftBindings(TupleExpr expression, ReadOnlyContext input) {
-		return TupleExprs.isVariableScopeChange(expression) || TupleExprs.containsSubquery(expression)
+		return TupleExprs.requiresIndependentEvaluation(expression)
 				|| containsResultSetModifier(expression, input)
 				|| containsDifferenceInScope(expression);
 	}
@@ -983,6 +988,28 @@ public final class QueryAlgebraBindingAnalysis {
 	}
 
 	private OutputFacts transfer(TupleExpr expression, ReadOnlyContext input) {
+		if (expression instanceof Graph graph) {
+			OutputFacts child = outputFacts(graph.getArg(), input);
+			if (!child.possibleOutputsKnown || !child.guaranteedOutputsKnown) {
+				return OutputFacts.unknown(input);
+			}
+			Set<String> possible = new HashSet<>(child.possibleOutputs);
+			Set<String> guaranteed = new HashSet<>(child.guaranteedOutputs);
+			Map<String, Value> fixed = new HashMap<>(child.fixedValues);
+			Map<String, Set<ValueKind>> kinds = new HashMap<>(child.valueKinds);
+			Var name = graph.getGraphName();
+			if (!name.isConstant()) {
+				possible.add(name.getName());
+				guaranteed.add(name.getName());
+				Value value = name.hasValue() ? name.getValue() : input.fixedValues.get(name.getName());
+				if (value != null) {
+					fixed.put(name.getName(), value);
+				}
+				kinds.put(name.getName(), Set.of(ValueKind.IRI, ValueKind.BNODE));
+			}
+			return OutputFacts.known(possible, guaranteed, fixed, kinds, input, child.canProduceRows)
+					.withOverwrittenInputs(child.overwrittenInputNames);
+		}
 		if (expression instanceof EmptySet) {
 			return OutputFacts.knownEmpty(input);
 		}

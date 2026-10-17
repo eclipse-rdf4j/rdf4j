@@ -16,8 +16,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.lang.reflect.RecordComponent;
 import java.util.Arrays;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanDecisionSummary;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedStatementPatternSemanticsCodec;
 import org.junit.jupiter.api.Test;
 
 class PackedPlannerBoundaryTest {
@@ -49,8 +51,12 @@ class PackedPlannerBoundaryTest {
 
 	@Test
 	void legacyObjectPlannerConstructorsAreAbsent() {
-		assertThat(CascadesPlanner.class.getConstructors())
-				.allSatisfy(constructor -> assertThat(constructor.getParameterCount()).isZero());
+		assertThat(CascadesPlanner.class.getConstructors()).hasSize(2).allSatisfy(constructor -> {
+			if (constructor.getParameterCount() != 0) {
+				assertThat(constructor.getParameterTypes()).containsExactly(PackedStatementPatternSemanticsCodec.class);
+				assertThat(constructor.isAnnotationPresent(InternalUseOnly.class)).isTrue();
+			}
+		});
 	}
 
 	@Test

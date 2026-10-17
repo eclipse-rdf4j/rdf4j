@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 /** Collision-proof packed identity for alpha-equivalent, query-internal anonymous variables. */
@@ -43,11 +45,16 @@ final class PackedQueryCacheIdentity {
 	}
 
 	static PackedQueryCacheIdentity createComplete(TupleExpr source) {
+		return createComplete(source, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQueryCacheIdentity createComplete(TupleExpr source,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		IdentitySurface surface = IdentitySurface.collect(source);
 		if (!surface.safeToCanonicalize(source)) {
 			return null;
 		}
-		return encode(source, surface.anonymousNames);
+		return encode(source, surface.anonymousNames, semanticsCodec);
 	}
 
 	/**
@@ -56,11 +63,24 @@ final class PackedQueryCacheIdentity {
 	 * names remain part of the identity.
 	 */
 	static PackedQueryCacheIdentity createPlanIdentity(TupleExpr source) {
+		return createPlanIdentity(source, null);
+	}
+
+	static PackedQueryCacheIdentity createPlanIdentity(TupleExpr source, PackedPredicateRangeProvider rangeProvider) {
+		return createPlanIdentity(source, rangeProvider, PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	static PackedQueryCacheIdentity createPlanIdentity(TupleExpr source, PackedPredicateRangeProvider rangeProvider,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		IdentitySurface surface = IdentitySurface.collect(source);
 		Map<String, Integer> canonicalNames = surface.safeToCanonicalize(source)
 				? surface.anonymousNames
 				: Map.of();
-		return encode(source, canonicalNames);
+		PackedQueryCacheIdentity identity = encode(source, canonicalNames, semanticsCodec);
+		return identity == null || rangeProvider == null ? identity
+				: new PackedQueryCacheIdentity(identity.query.withRangeApplicability(
+						Objects.requireNonNull(rangeProvider.predicateRangeApplicability(), "range applicability")),
+						identity.canonicalNames);
 	}
 
 	static Map<String, Integer> canonicalNamesForFamily(TupleExpr source) {
@@ -72,9 +92,10 @@ final class PackedQueryCacheIdentity {
 		new PackedQueryCacheIdentity(query, Map.of()).appendTo(sink);
 	}
 
-	private static PackedQueryCacheIdentity encode(TupleExpr source, Map<String, Integer> canonicalNames) {
+	private static PackedQueryCacheIdentity encode(TupleExpr source, Map<String, Integer> canonicalNames,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
 		try {
-			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, canonicalNames);
+			PackedQuery query = PackedQueryCodec.encodeForCacheIdentity(source, canonicalNames, semanticsCodec);
 			return query.supportsCacheIdentity()
 					? new PackedQueryCacheIdentity(query, Map.copyOf(canonicalNames))
 					: null;
@@ -93,7 +114,10 @@ final class PackedQueryCacheIdentity {
 	}
 
 	void appendTo(IdentitySink sink) {
-		sink.append("packed-query-cache-identity-v1");
+		sink.append("packed-query-cache-identity-v2");
+		sink.append(query.semanticsSchema());
+		sink.append(query.semanticsVersion());
+		sink.append(query.rangeApplicability() == null ? 0L : query.rangeApplicability().ordinal() + 1L);
 		sink.append(query.rootRelId());
 
 		sink.append(0x52454c4154494f4eL);
@@ -105,6 +129,8 @@ final class PackedQueryCacheIdentity {
 			sink.append(query.relSemanticScope(relationId));
 			sink.append(query.relExecutionDomain(relationId));
 			sink.append(query.relOccurrence(relationId));
+			sink.append(query.relGraphDomainId(relationId));
+			appendGraphDomain(sink, query.relGraphDomain(relationId));
 			appendChildren(sink, query, relationId, IdentityRowKind.RELATION);
 			sink.append(query.relMetadataFlags(relationId));
 			sink.append(query.relRequiredInputNames(relationId));
@@ -186,7 +212,15 @@ final class PackedQueryCacheIdentity {
 	}
 
 	private static void appendObject(IdentitySink sink, Object object) {
-		if (object instanceof PackedParameterReference parameter) {
+		if (object instanceof PackedStatementPatternSemanticsCodec.Content content) {
+			sink.append("statement-semantic-content");
+			sink.append(content.size());
+			for (int index = 0; index < content.size(); index++) {
+				sink.append(content.word(index));
+			}
+		} else if (object instanceof PlanningGraphDomain domain) {
+			appendGraphDomain(sink, domain);
+		} else if (object instanceof PackedParameterReference parameter) {
 			sink.append("parameter");
 			sink.append(parameter.ordinal());
 		} else if (object instanceof CanonicalAnonymousName canonical) {
@@ -222,6 +256,24 @@ final class PackedQueryCacheIdentity {
 		} else {
 			throw new PackedMemoInvariantException("unsupported object in packed query identity: "
 					+ object.getClass().getName());
+		}
+	}
+
+	private static void appendGraphDomain(IdentitySink sink, PlanningGraphDomain domain) {
+		sink.append("graph-domain");
+		sink.append(domain.kind().name());
+		sink.append(domain.scopePath());
+		sink.append(domain.variableScopeChange() ? 1L : 0L);
+		if (domain.selector() != null) {
+			PlanningGraphDomain.Selector selector = domain.selector();
+			sink.append(selector.name());
+			sink.append(selector.anonymous() ? 1L : 0L);
+			sink.append(selector.constant() ? 1L : 0L);
+			sink.append(selector.blankNode() ? 1L : 0L);
+			sink.append(selector.value() == null ? 0L : 1L);
+			if (selector.value() != null) {
+				appendObject(sink, selector.value());
+			}
 		}
 	}
 

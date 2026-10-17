@@ -20,7 +20,10 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -125,17 +128,18 @@ class LmdbFilterSamplingBiasTest {
 
 	private static Filter firstFilter(String query) {
 		Filter[] found = new Filter[1];
-		QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
-				.getTupleExpr()
-				.visit(new AbstractQueryModelVisitor<RuntimeException>() {
-					@Override
-					public void meet(Filter node) {
-						if (found[0] == null) {
-							found[0] = node;
-						}
-						super.meet(node);
-					}
-				});
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// loadOrderedRows writes the complete query input into the default graph.
+		PlanningGraphDomains.capture(root, PlanningGraphDomain.defaultGraph());
+		root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter node) {
+				if (found[0] == null) {
+					found[0] = node;
+				}
+				super.meet(node);
+			}
+		});
 		return found[0];
 	}
 }

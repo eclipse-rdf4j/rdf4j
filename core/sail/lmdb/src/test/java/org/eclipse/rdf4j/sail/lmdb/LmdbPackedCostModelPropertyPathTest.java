@@ -19,6 +19,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
 import org.junit.jupiter.api.Test;
@@ -34,7 +35,9 @@ class LmdbPackedCostModelPropertyPathTest {
 		StatementPattern prefix = new StatementPattern(Var.of("seed"), Var.of("seedPredicate", SEED), Var.of("s"));
 		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("stepPredicate", STEP), Var.of("o"));
 		ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step, Var.of("o"), 1L);
-		PackedCostTestSupport.CostCall call = PackedCostTestSupport.disconnectedFactor(prefix, path, 7.0d);
+		// This complete synthetic path query uses local default-context step lookups.
+		PackedCostTestSupport.CostCall call = PackedCostTestSupport.disconnectedFactor(
+				PlanningGraphDomain.defaultGraph(), prefix, path, 7.0d);
 		PackedCostEstimate estimate = new PackedCostEstimate();
 
 		new LmdbPackedCostModel(storageUnavailableRuntime()).estimate(

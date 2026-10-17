@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Objects;
@@ -26,9 +27,13 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
+import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
@@ -39,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
@@ -72,12 +78,14 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	/** Evaluation strategy remains necessary for the one-off zero-length branch. */
 	private final EvaluationStrategy strategy;
+	private final QueryEvaluationContext context;
 
 	private long currentLength;
 
 	private long currentIterationLength;
 
-	private CloseableIteration<BindingSet> currentIter;
+	private volatile CloseableIteration<BindingSet> currentIter;
+	private final Object iterationMonitor = new Object();
 
 	private final BindingSet bindings;
 
@@ -131,7 +139,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private final QueryEvaluationStep initialEvaluationStep;
 
-	private final QueryEvaluationStep expansionEvaluationStep;
+	private QueryEvaluationStep expansionEvaluationStep;
+	private final Function<TupleExpr, QueryEvaluationStep> stepCompiler;
 
 	private final Value fixedStartValue;
 
@@ -168,7 +177,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings)
 			throws QueryEvaluationException {
-		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, null);
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, (QueryModelNode) null);
 	}
 
 	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
@@ -176,7 +185,13 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			QueryModelNode pathNode)
 			throws QueryEvaluationException {
 		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, pathNode,
-				strategy::precompile);
+				strategy::precompile, null);
+	}
+
+	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryEvaluationContext context) throws QueryEvaluationException {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, null, null, context);
 	}
 
 	@InternalUseOnly
@@ -184,7 +199,60 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
 			QueryModelNode pathNode, Function<TupleExpr, QueryEvaluationStep> stepCompiler)
 			throws QueryEvaluationException {
+		this(strategy, scope, startVar, pathExpression, endVar, contextVar, minLength, bindings, pathNode,
+				stepCompiler, null);
+	}
+
+	@InternalUseOnly
+	public PathIteration(EvaluationStrategy strategy, Scope scope, Var startVar,
+			TupleExpr pathExpression, Var endVar, Var contextVar, long minLength, BindingSet bindings,
+			QueryModelNode pathNode, Function<TupleExpr, QueryEvaluationStep> stepCompiler,
+			QueryEvaluationContext context) throws QueryEvaluationException {
 		this.strategy = strategy;
+		boolean enclosingProjection = ProjectionIterator.hasEnclosingProjection(pathExpression, context);
+		this.context = context == null ? null : new QueryEvaluationContext() {
+			// Expansion introduces private variables absent from the original array layout.
+			// Share query state and ownership while retaining flexible bindings for cloned path expressions.
+			@Override
+			public Literal getNow() {
+				return context.getNow();
+			}
+
+			@Override
+			public Dataset getDataset() {
+				return context.getDataset();
+			}
+
+			@Override
+			public ActiveGraph getActiveGraph() {
+				return context.getActiveGraph();
+			}
+
+			@Override
+			public Set<String> getSubstitutionBindingNames() {
+				return context.getSubstitutionBindingNames();
+			}
+
+			@Override
+			public boolean hasEnclosingProjection() {
+				return enclosingProjection;
+			}
+
+			@Override
+			public Comparator<Value> getComparator() {
+				return context.getComparator();
+			}
+
+			@Override
+			public BNode getOrCreateBNode(String label, BindingSet bindings, ValueFactory factory) {
+				return context.getOrCreateBNode(label, bindings, factory);
+			}
+
+			@Override
+			public Value captureConstant(Value value, Function<Value, Value> capturer) {
+				return context.captureConstant(value, capturer);
+			}
+		};
 		this.scope = scope;
 		this.startVar = startVar;
 		this.endVar = endVar;
@@ -202,8 +270,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		this.contextVar = contextVar;
 		this.pathNode = pathNode;
 		this.runtimeTelemetryEnabled = pathNode != null;
-		this.initialEvaluationStep = prepareInitialEvaluationStep(Objects.requireNonNull(stepCompiler));
-		this.expansionEvaluationStep = prepareExpansionEvaluationStep(stepCompiler);
+		this.stepCompiler = stepCompiler != null ? stepCompiler
+				: expression -> this.context == null ? strategy.precompile(expression)
+						: strategy.precompileRuntimeSubtree(expression, this.context);
 
 		this.currentLength = minLength;
 		this.bindings = bindings;
@@ -212,15 +281,21 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		// This is all necessary for optimized collections to be usable. This only becomes important on very large
 		// stores with large intermediary results.
-		this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
-				PathIteration::getGet, PathIteration::getSet);
-		this.unreportedValues = startVarFixed && endVarFixed
-				? collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
-						PathIteration::getGet, PathIteration::getSet)
-				: null;
-		this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
-				PathIteration::getGet, PathIteration::getSet);
-		createIteration();
+		try {
+			this.initialEvaluationStep = prepareInitialEvaluationStep(this.stepCompiler);
+			this.reportedValues = collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
+					PathIteration::getGet, PathIteration::getSet);
+			this.unreportedValues = startVarFixed && endVarFixed
+					? collectionFactory.createSetOfBindingSets(ValuePair::new, PathIteration::getHas,
+							PathIteration::getGet, PathIteration::getSet)
+					: null;
+			this.valueQueue = collectionFactory.createBindingSetQueue(ValuePair::new, PathIteration::getHas,
+					PathIteration::getGet, PathIteration::getSet);
+			createIteration();
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw failure;
+		}
 	}
 
 	private QueryEvaluationStep prepareInitialEvaluationStep(Function<TupleExpr, QueryEvaluationStep> stepCompiler) {
@@ -246,6 +321,33 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			expansionExpression.visit(new VarReplacer(endpoint, replacement, 0, false));
 		}
 		return stepCompiler.apply(expansionExpression);
+	}
+
+	private QueryEvaluationStep expansionEvaluationStep() {
+		if (isClosed()) {
+			return null;
+		}
+		QueryEvaluationStep prepared = expansionEvaluationStep;
+		if (prepared == null) {
+			prepared = prepareExpansionEvaluationStep(stepCompiler);
+			if (isClosed()) {
+				return null;
+			}
+			expansionEvaluationStep = prepared;
+		}
+		return prepared;
+	}
+
+	private void publishCurrentIteration(CloseableIteration<BindingSet> iteration) {
+		synchronized (iterationMonitor) {
+			if (!isClosed()) {
+				currentIter = iteration;
+				return;
+			}
+		}
+		if (iteration != null) {
+			iteration.close();
+		}
 	}
 
 	private static Value fixedValue(Var var, String varName, BindingSet bindings) {
@@ -313,13 +415,21 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	@Override
 	protected BindingSet getNextElement() throws QueryEvaluationException {
-		if (done) {
+		try {
+			return nextElement();
+		} catch (RuntimeException | Error failure) {
+			closeAfterFailure(failure);
+			throw failure;
+		}
+	}
+
+	private BindingSet nextElement() {
+		if (done || isClosed()) {
 			return null;
 		}
-
 		while (true) {
 			while (currentIter != null && !currentIter.hasNext()) {
-				currentIter.close();
+				closeCurrentIteration();
 				createIteration();
 				// stop condition: if the iter is an EmptyIteration
 				if (currentIter == null) {
@@ -454,13 +564,20 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	@Override
 	protected void handleClose() throws QueryEvaluationException {
 		try {
-			if (currentIter != null) {
-				currentIter.close();
+			closeCurrentIteration();
+		} catch (RuntimeException | Error failure) {
+			try {
+				collectionFactory.close();
+			} catch (RuntimeException | Error closeFailure) {
+				if (failure != closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
 			}
+			throw failure;
 		} finally {
 			recordRuntimeTelemetry();
-			collectionFactory.close();
 		}
+		collectionFactory.close();
 	}
 
 	private void recordRuntimeTelemetry() {
@@ -498,6 +615,27 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		}
 	}
 
+	private void closeCurrentIteration() {
+		CloseableIteration<BindingSet> previous;
+		synchronized (iterationMonitor) {
+			previous = currentIter;
+			currentIter = null;
+		}
+		if (previous != null) {
+			previous.close();
+		}
+	}
+
+	private void closeAfterFailure(Throwable failure) {
+		try {
+			close();
+		} catch (RuntimeException | Error closeFailure) {
+			if (failure != closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+		}
+	}
+
 	/**
 	 * @param valueQueue2
 	 * @param vp
@@ -526,6 +664,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private void createIteration() throws QueryEvaluationException {
+		if (isClosed()) {
+			return;
+		}
 		resetCurrentJoinVars();
 		currentIterationLength = currentLength;
 		pathMaxLengthActual = Math.max(pathMaxLengthActual, currentLength);
@@ -536,14 +677,14 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		} else if (currentLength == 0L) {
 			ZeroLengthPath zlp = new ZeroLengthPath(scope, startVar.clone(), endVar.clone(),
 					contextVar != null ? contextVar.clone() : null);
-			currentIter = this.strategy.evaluate(zlp, bindings);
+			publishCurrentIteration(evaluatePath(zlp));
 			pathExpansionIterationsActual++;
 			currentLength++;
 		} else if (currentLength == 1) {
 			if (startVarFixed && endVarFixed) {
 				rememberCurrentJoinVar(internalEndVarName);
 			}
-			currentIter = initialEvaluationStep.evaluate(bindings);
+			publishCurrentIteration(initialEvaluationStep.evaluate(bindings));
 			pathExpansionIterationsActual++;
 			currentLength++;
 		} else {
@@ -562,8 +703,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				if (startVarFixed && endVarFixed) {
 					rememberCurrentJoinVar(internalEndVarName);
 				}
-				currentIter = expansionEvaluationStep.evaluate(expansionBindings);
-				pathExpansionIterationsActual++;
+				QueryEvaluationStep expansion = expansionEvaluationStep();
+				if (expansion != null && !isClosed()) {
+					publishCurrentIteration(expansion.evaluate(expansionBindings));
+					pathExpansionIterationsActual++;
+				}
 			} else {
 				currentIter = null;
 			}
@@ -590,6 +734,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 		} else {
 			throw new IllegalStateException("Unexpected number of generated path join variables");
 		}
+	}
+
+	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression) {
+		return context == null ? strategy.evaluate(expression, bindings)
+				: strategy.precompile(expression, context).evaluate(bindings);
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {

@@ -40,10 +40,20 @@ public final class PackedPlanRefreshWork {
 	private final PackedPlanCache.StructuralKey structuralLocator;
 	private final String incumbentPhysicalFingerprint;
 	private final long retainedBytes;
+	private final PackedStatementPatternSemanticsCodec semanticsCodec;
 
 	PackedPlanRefreshWork(TupleExpr preparedSource, OptimizationGoal goal, PackedPlannerLimits limits,
 			PackedPlanCache.StructuralKey structuralLocator, String incumbentPhysicalFingerprint) {
-		this.preparedSource = Objects.requireNonNull(preparedSource, "preparedSource").clone();
+		this(preparedSource, goal, limits, structuralLocator, incumbentPhysicalFingerprint,
+				PackedStatementPatternSemanticsCodec.NONE);
+	}
+
+	PackedPlanRefreshWork(TupleExpr preparedSource, OptimizationGoal goal, PackedPlannerLimits limits,
+			PackedPlanCache.StructuralKey structuralLocator, String incumbentPhysicalFingerprint,
+			PackedStatementPatternSemanticsCodec semanticsCodec) {
+		this.semanticsCodec = Objects.requireNonNull(semanticsCodec, "statement semantics codec");
+		this.preparedSource = semanticsCodec
+				.cloneWithSemantics(Objects.requireNonNull(preparedSource, "preparedSource"));
 		this.goal = Objects.requireNonNull(goal, "goal");
 		this.limits = Objects.requireNonNull(limits, "limits");
 		this.structuralLocator = Objects.requireNonNull(structuralLocator, "structuralLocator");
@@ -59,11 +69,11 @@ public final class PackedPlanRefreshWork {
 	/** Returns equivalent detached input whose next incumbent is the supplied selected physical decision. */
 	public PackedPlanRefreshWork forIncumbent(PackedPlanDecisionSummary incumbent) {
 		return new PackedPlanRefreshWork(preparedSource, goal, limits, structuralLocator,
-				Objects.requireNonNull(incumbent, "incumbent").physicalFingerprint());
+				Objects.requireNonNull(incumbent, "incumbent").physicalFingerprint(), semanticsCodec);
 	}
 
 	TupleExpr preparedSource() {
-		return preparedSource.clone();
+		return semanticsCodec.cloneWithSemantics(preparedSource);
 	}
 
 	public OptimizationGoal optimizationGoal() {
@@ -79,8 +89,12 @@ public final class PackedPlanRefreshWork {
 	}
 
 	boolean authenticates(TupleExpr source) {
-		PackedPlanCache.StructuralKey current = PackedPlanCache.structuralKey(source);
+		PackedPlanCache.StructuralKey current = PackedPlanCache.structuralKey(source, semanticsCodec);
 		return structuralLocator.equals(current);
+	}
+
+	PackedStatementPatternSemanticsCodec semanticsCodec() {
+		return semanticsCodec;
 	}
 
 	private static long estimateRetainedBytes(TupleExpr source) {

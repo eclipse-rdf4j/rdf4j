@@ -31,12 +31,20 @@ import java.util.Random;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
 
@@ -59,6 +67,109 @@ public class TripleStoreTest {
 			count++;
 		}
 		return count;
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "3,0.0,3", "3,0.5,3", "3,1.0,3", "6,0.0,3", "6,0.5,3", "6,1.0,3",
+			"7,0.0,2", "7,0.5,2", "7,1.0,2" })
+	void estimatedSingletonCannotTurnAnActualPartialKeyRangeIntoADirectLookup(int mask, double estimate,
+			int expectedRows) throws Exception {
+		seedAccessDescriptorRows();
+		PackedCostEstimate access = new PackedCostEstimate();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator records = tripleStore.getTriples(txn, (mask & 1) != 0 ? 11 : -1,
+						(mask & 2) != 0 ? 22 : -1, (mask & 4) != 0 ? 33 : -1, -1, true)) {
+			assertEquals(expectedRows, count(records));
+			assertTrue("the physical range has more than one compatible quad", expectedRows > 1);
+			tripleStore.describePackedAccessPath(mask, estimate, 7.0d, "controlled-estimate", access);
+			assertEquals(records.getIndexName(), access.indexName());
+			assertEquals("an expected singleton is not a complete native key", "prefixScan", access.accessMode());
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0.0", "0,1.0", "0,2.0", "0,100.0", "55,0.0", "55,1.0", "55,2.0", "55,100.0" })
+	void completeQuadLookupRetainsDirectModeForDefaultAndNamedContext(long context, double estimate) throws Exception {
+		seedAccessDescriptorRows();
+		PackedCostEstimate access = new PackedCostEstimate();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator records = tripleStore.getTriples(txn, 11, 22, 33, context, true)) {
+			assertEquals(1, count(records));
+			tripleStore.describePackedAccessPath(15, estimate, 1.0d, "fully-bound-key", access);
+			assertEquals(records.getIndexName(), access.indexName());
+			assertEquals("directLookup", access.accessMode());
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "3,0.0,3", "3,0.5,3", "3,1.0,3", "6,0.0,3", "6,0.5,3", "6,1.0,3",
+			"7,0.0,2", "7,0.5,2", "7,1.0,2", "15,0.0,1", "15,1.0,1", "15,2.0,1", "15,100.0,1" })
+	void factorAccessDescriptorUsesActualKeyShapeRatherThanEstimatedPopulation(int mask, double estimate,
+			int expectedRows) throws Exception {
+		seedAccessDescriptorRows();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator records = tripleStore.getTriples(txn, (mask & 1) != 0 ? 11 : -1,
+						(mask & 2) != 0 ? 22 : -1, (mask & 4) != 0 ? 33 : -1, (mask & 8) != 0 ? 0 : -1, true)) {
+			assertEquals(expectedRows, count(records));
+			StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"), Var.of("g"));
+			Set<String> boundNames = new HashSet<>();
+			String[] names = { "s", "p", "o", "g" };
+			for (int component = 0; component < names.length; component++) {
+				if ((mask & (1 << component)) != 0) {
+					boundNames.add(names[component]);
+				}
+			}
+			// This controlled heuristic carries no native evidence or graph-domain certificate.
+			EstimateContext context = EstimateContext.root(pattern, new QuadSnapshotIdentity(1L, 2L, 0L), 0L)
+					.withBoundNames(boundNames);
+			var access = new LmdbFactorCostAssembler(null, tripleStore).assemble(pattern, context,
+					BagEstimate.heuristic(estimate, "controlled-estimate"), false);
+			assertEquals(records.getIndexName(),
+					access.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME));
+			assertEquals(mask == 15 ? "directLookup" : "prefixScan",
+					access.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+		}
+	}
+
+	@Test
+	void emptyExpectedWorkDoesNotChangeAnUnboundPhysicalFullScan() throws Exception {
+		seedAccessDescriptorRows();
+		PackedCostEstimate access = new PackedCostEstimate();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator records = tripleStore.getTriples(txn, -1, -1, -1, -1, true)) {
+			assertEquals(4, count(records));
+			tripleStore.describePackedAccessPath(0, 0.0d, 1.0d, "controlled-estimate", access);
+			assertEquals("fullScan", access.accessMode());
+		}
+	}
+
+	private void seedAccessDescriptorRows() throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 0, true);
+		tripleStore.storeTriple(11, 22, 44, 0, true);
+		tripleStore.storeTriple(11, 22, 33, 55, true);
+		tripleStore.storeTriple(66, 22, 33, 0, true);
+		tripleStore.commit();
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "true", "false" })
+	void physicalQuadClassificationIsIndependentOfTheStatementPlane(boolean explicit) throws Exception {
+		tripleStore.startTransaction();
+		tripleStore.storeTriple(11, 22, 33, 0, explicit);
+		tripleStore.storeTriple(11, 22, 33, 55, explicit);
+		tripleStore.commit();
+		try (Txn txn = tripleStore.getTxnManager().createReadTxn();
+				RecordIterator range = tripleStore.getTriples(txn, 11, 22, 33, -1, explicit);
+				RecordIterator point = tripleStore.getTriples(txn, 11, 22, 33, 55, explicit)) {
+			assertEquals(2, count(range));
+			assertEquals(1, count(point));
+			PackedCostEstimate access = new PackedCostEstimate();
+			tripleStore.describePackedAccessPath(7, 0.5d, 1.0d, "controlled-estimate", access);
+			assertEquals("prefixScan", access.accessMode());
+			tripleStore.describePackedAccessPath(15, 2.0d, 1.0d, "controlled-estimate", access);
+			assertEquals("directLookup", access.accessMode());
+		}
 	}
 
 	@Test

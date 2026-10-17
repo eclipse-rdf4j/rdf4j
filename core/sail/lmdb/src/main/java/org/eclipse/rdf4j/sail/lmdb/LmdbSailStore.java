@@ -3735,17 +3735,21 @@ class LmdbSailStore implements SailStore {
 	final class ReadResourceContext implements SailClosable {
 		private final ReadResourceContext previous;
 		private final Supplier<? extends Iterable<ReadViewLease>> ownedViews;
+		private final boolean inheritPrevious;
 		private boolean closed;
 
 		private ReadResourceContext(ReadResourceContext previous,
-				Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+				Supplier<? extends Iterable<ReadViewLease>> ownedViews, boolean inheritPrevious) {
 			this.previous = previous;
 			this.ownedViews = ownedViews;
+			this.inheritPrevious = inheritPrevious;
 		}
 
 		private List<ReadViewLease> readViews() {
 			Set<ReadViewLease> unique = Collections.newSetFromMap(new IdentityHashMap<>());
-			for (ReadResourceContext context = this; context != null; context = context.previous) {
+			for (ReadResourceContext context = this; context != null; context = context.inheritPrevious
+					? context.previous
+					: null) {
 				for (ReadViewLease lease : Objects.requireNonNull(context.ownedViews.get(), "owned read views")) {
 					if (lease != null) {
 						unique.add(lease);
@@ -3773,8 +3777,13 @@ class LmdbSailStore implements SailStore {
 	}
 
 	SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews) {
+		return enterReadResourceContext(ownedViews, true);
+	}
+
+	private SailClosable enterReadResourceContext(Supplier<? extends Iterable<ReadViewLease>> ownedViews,
+			boolean inheritPrevious) {
 		ReadResourceContext installed = new ReadResourceContext(activeReadResourceContext.get(),
-				Objects.requireNonNull(ownedViews, "ownedViews"));
+				Objects.requireNonNull(ownedViews, "ownedViews"), inheritPrevious);
 		activeReadResourceContext.set(installed);
 		return installed;
 	}
@@ -3828,6 +3837,53 @@ class LmdbSailStore implements SailStore {
 
 	SailClosable enterCapturedReadViews(ReadAttemptLease attempt, long generation, List<ReadViewLease> capturedViews,
 			ReadViewLease preferredView) {
+		return enterRetainedReadViews(attempt, generation, capturedViews, preferredView, true);
+	}
+
+	private SailClosable enterPlanningReadView(ReadView requested) {
+		ReadViewLease lease = requested.growthLease;
+		ReadAttemptLease attempt = lease.attempt;
+		SailClosable retained = enterRetainedReadViews(attempt, attempt == null ? 0L : attempt.generation,
+				List.of(lease), lease, false);
+		Thread owner = Thread.currentThread();
+		return () -> {
+			if (Thread.currentThread() != owner) {
+				throw new IllegalStateException("A query planning view must close on its owning thread");
+			}
+			retained.close();
+		};
+	}
+
+	/** A live unproved complete source must not borrow an enclosing query's view or resource candidates. */
+	private SailClosable maskPlanningReadView() {
+		ReadView previous = activeReadView.get();
+		Thread owner = Thread.currentThread();
+		SailClosable resources = enterReadResourceContext(List::of, false);
+		activeReadView.remove();
+		return new SailClosable() {
+			private boolean closed;
+
+			@Override
+			public void close() {
+				if (Thread.currentThread() != owner) {
+					throw new IllegalStateException("A query planning view must close on its owning thread");
+				}
+				if (closed) {
+					return;
+				}
+				resources.close();
+				closed = true;
+				if (previous == null) {
+					activeReadView.remove();
+				} else {
+					activeReadView.set(previous);
+				}
+			}
+		};
+	}
+
+	private SailClosable enterRetainedReadViews(ReadAttemptLease attempt, long generation,
+			List<ReadViewLease> capturedViews, ReadViewLease preferredView, boolean requireAttempt) {
 		List<ReadView> retained = new ArrayList<>(capturedViews.size());
 		ReadView previous = activeReadView.get();
 		ReadView bound = null;
@@ -3836,9 +3892,9 @@ class LmdbSailStore implements SailStore {
 			mapGrowthCoordinator.lock.lock();
 			try {
 				mapGrowthCoordinator.checkAdmission(QueryExecutionDeadline.current());
-				if (attempt == null || attempt.generation != generation
+				if (requireAttempt && (attempt == null || attempt.generation != generation
 						|| capturedViews.isEmpty()
-								&& (attempt.closed || !mapGrowthCoordinator.attempts.containsKey(attempt))) {
+								&& (attempt.closed || !mapGrowthCoordinator.attempts.containsKey(attempt)))) {
 					throw new SailConflictException(
 							"The dispatched LMDB read attempt has already finished; retry the read");
 				}
@@ -4321,7 +4377,14 @@ class LmdbSailStore implements SailStore {
 		if (deadline != null) {
 			operation = new DeadlineOperation(operation, deadline);
 		}
-		while (!opQueue.offer(operation)) {
+		while (true) {
+			// A reopened queue slot does not renew the absolute deadline captured for this operation.
+			if (deadline != null && deadline.isExpired()) {
+				throw new QueryInterruptedException("Query evaluation took too long");
+			}
+			if (opQueue.offer(operation)) {
+				break;
+			}
 			// Growth service can suspend or nest producer work; each capacity wait retains its registration.
 			asyncCapacityWaiters.incrementAndGet();
 			try {
@@ -7417,7 +7480,7 @@ class LmdbSailStore implements SailStore {
 				filterSelectivityStats,
 				operatorFeedbackStats, statementPatternCardinalitySource, cascadesPlanCache,
 				frontierPlannerSettings, () -> mayHaveInferred, () -> adaptiveEvidenceAllowed, statisticsService,
-				this::openDetachedPlanningSnapshot);
+				this::openDetachedPlanningSnapshot, this::maskPlanningReadView);
 	}
 
 	private LmdbDetachedPlanningSnapshot openDetachedPlanningSnapshot() {
@@ -8982,11 +9045,6 @@ class LmdbSailStore implements SailStore {
 						+ " reset and the Frontier synopsis refreshed instead", e);
 				degradeLearnedServices();
 				return;
-			}
-			try {
-				logLmdbStats(Level.TRACE, "after commit");
-			} catch (RuntimeException e) {
-				logger.debug("Failed to log LMDB statistics after commit", e);
 			}
 			LmdbFilterSelectivityStats filterStats = filterSelectivityStats;
 			if (filterStats != null) {
@@ -10840,7 +10898,7 @@ class LmdbSailStore implements SailStore {
 		throw new IllegalArgumentException("Unsupported RDF value: " + type.getName());
 	}
 
-	private final class LmdbSailDataset implements SailDataset, LmdbPinnedReadTxnSource {
+	private final class LmdbSailDataset implements SailDataset, LmdbPinnedReadTxnSource, LmdbPhysicalReadComposition {
 
 		private final boolean explicit;
 		private final ReadView readView;
@@ -10869,6 +10927,24 @@ class LmdbSailStore implements SailStore {
 		}
 
 		@Override
+		public List<LmdbPhysicalReadComposition.PlaneOccurrence> planeOccurrences() {
+			if (closed) {
+				throw new SailException("The owning LMDB dataset is closed");
+			}
+			readView.ensureNativeSnapshotsValid();
+			return List.of(new LmdbPhysicalReadComposition.PlaneOccurrence(this, explicit));
+		}
+
+		@Override
+		public boolean isCurrentForPhysicalCost() {
+			if (closed) {
+				throw new SailException("The owning LMDB dataset is closed");
+			}
+			readView.ensureNativeSnapshotsValid();
+			return readView.isCurrentForStatistics();
+		}
+
+		@Override
 		public Function<Value, Value> getValueCapturer() {
 			return readView.valueCapturer;
 		}
@@ -10893,6 +10969,11 @@ class LmdbSailStore implements SailStore {
 		@Override
 		public Optional<ValueStore.ReadSnapshot> pinnedValueSnapshot() {
 			return closed ? Optional.empty() : Optional.of(readView.valueSnapshot());
+		}
+
+		@Override
+		public Optional<SailClosable> enterPlanningReadView() {
+			return closed ? Optional.empty() : Optional.of(LmdbSailStore.this.enterPlanningReadView(readView));
 		}
 
 		@Override
@@ -10974,9 +11055,10 @@ class LmdbSailStore implements SailStore {
 			while (true) {
 				long cacheTxnVersion = refreshSnapshotState();
 				try {
-					return withReplaySafepoints(createStatementIterator(readView, statementPattern,
-							exactStatementLookupCache, cacheTxnVersion,
-							subj, pred, obj, explicit, contexts));
+					return withReplaySafepoints(statementPattern instanceof LmdbGraphDistinctAccess.Carrier carrier
+							? createGraphDistinctIterator(carrier, subj, pred, obj, contexts)
+							: createStatementIterator(readView, statementPattern,
+									exactStatementLookupCache, cacheTxnVersion, subj, pred, obj, explicit, contexts));
 				} catch (SnapshotVersionChangedException e) {
 					// A concurrent commit renewed the tracked txn. Refresh and restart without consuming the IO retry.
 				} catch (IOException e) {
@@ -10987,6 +11069,22 @@ class LmdbSailStore implements SailStore {
 					Thread.yield();
 				}
 			}
+		}
+
+		private CloseableIteration<? extends Statement> createGraphDistinctIterator(
+				LmdbGraphDistinctAccess.Carrier carrier, Resource subject, IRI predicate, Value object,
+				Resource[] contexts) throws IOException {
+			carrier.access().validateOwner(this, explicit);
+			carrier.access().validateContextArguments(contexts);
+			if (!explicit && !mayHaveInferred) {
+				return IterationConstants.EMPTY_STATEMENT_ITERATION;
+			}
+			ValueStore.ReadSnapshot values = readView.valueSnapshot();
+			long subjectId = subject == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, subject);
+			long predicateId = predicate == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, predicate);
+			long objectId = object == null ? LmdbValue.UNKNOWN_ID : valueStore.getStatementId(values, object);
+			RecordIterator records = carrier.access().open(this, explicit, subjectId, predicateId, objectId);
+			return new LmdbStatementIterator(records, valueStore, values, subject, predicate, object, null);
 		}
 
 		@Override
@@ -11097,6 +11195,21 @@ class LmdbSailStore implements SailStore {
 			@Override
 			public long getSourceRowsFilteredActual() {
 				return indexReporter.getSourceRowsFilteredActual();
+			}
+
+			@Override
+			public long getDistinctCursorSkipCountActual() {
+				return indexReporter.getDistinctCursorSkipCountActual();
+			}
+
+			@Override
+			public long getDistinctCursorSkipSeekCountActual() {
+				return indexReporter.getDistinctCursorSkipSeekCountActual();
+			}
+
+			@Override
+			public long getSkipAheadSeekCountActual() {
+				return indexReporter.getSkipAheadSeekCountActual();
 			}
 		}
 

@@ -61,6 +61,8 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PatternKey;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
@@ -95,6 +97,85 @@ class LmdbForegroundFilterSamplingEpochTest {
 			}
 			""";
 	private final ConcurrentCleaner revisionCleaner = new ConcurrentCleaner();
+
+	@ParameterizedTest
+	@ValueSource(ints = { 3, 32 })
+	void repeatedEquivalentLiveSamplesKeepThePublishedEvidenceRevision(int rowCount, @TempDir File directory)
+			throws Exception {
+		String previousMode = System.getProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
+		System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, "prefix");
+		ProbeLmdbStore sail = new ProbeLmdbStore(directory,
+				samplingConfig().setOptimizerSamplingMaxRows(8).setSketchEstimatorColdSynopsisCapacity(0),
+				new SamplingPause());
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			sail.getBackingStore().getSketchBasedJoinEstimator().stop();
+			seedMatchedRows(repository, sail, rowCount);
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			long beforeFirst = stats.planningRevision();
+			PatternFilterSampleEstimate first = stats.estimateLiveFilterPass(filter, pattern);
+			long published = stats.planningRevision();
+			assertEquals(1.0d, first.passRatio(), 0.0d);
+			assertEquals(rowCount == 3 ? 3 : 2, first.sampleSize(),
+					"a truncated eight-row prefix retains its existing quarter-weight evidence");
+			assertTrue(published > beforeFirst, "new sampled evidence must advance its publication revision");
+			for (int attempt = 0; attempt < 3; attempt++) {
+				Filter equivalent = filter.clone();
+				PatternFilterSampleEstimate repeated = stats.estimateLiveFilterPass(equivalent,
+						(StatementPattern) equivalent.getArg());
+				assertEquals(first.passRatio(), repeated.passRatio(), 0.0d);
+				assertEquals(first.sampleSize(), repeated.sampleSize());
+				assertEquals(published, stats.planningRevision(),
+						"republishing identical complete or truncated evidence must not invalidate its own plan");
+			}
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				if (previousMode == null) {
+					System.clearProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY);
+				} else {
+					System.setProperty(LmdbFilterSelectivityStats.FILTER_SAMPLING_MODE_PROPERTY, previousMode);
+				}
+			}
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void changedCompleteLiveSampleAdvancesThePublishedEvidenceRevision(boolean changedRatio, @TempDir File directory)
+			throws Exception {
+		ProbeLmdbStore sail = new ProbeLmdbStore(directory,
+				samplingConfig().setSketchEstimatorColdSynopsisCapacity(0), new SamplingPause());
+		SailRepository repository = new SailRepository(sail);
+		repository.init();
+		try {
+			sail.getBackingStore().getSketchBasedJoinEstimator().stop();
+			seedMatchedRows(repository, sail, 2);
+			Filter filter = filter(FILTER_QUERY);
+			StatementPattern pattern = (StatementPattern) filter.getArg();
+			LmdbFilterSelectivityStats stats = sail.filterStats();
+			PatternFilterSampleEstimate first = stats.estimateLiveFilterPass(filter, pattern);
+			assertEquals(1.0d, first.passRatio(), 0.0d);
+			assertEquals(2, first.sampleSize());
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				connection.add(SimpleValueFactory.getInstance().createIRI("urn:test:unmatched"), NAME,
+						SimpleValueFactory.getInstance()
+								.createLiteral(changedRatio ? "excluded" : "matched-value-new"));
+			}
+			long beforeChanged = stats.planningRevision();
+			PatternFilterSampleEstimate changed = stats.estimateLiveFilterPass(filter, pattern);
+			assertEquals(changedRatio ? 2.0d / 3.0d : 1.0d, changed.passRatio(), 0.0d);
+			assertEquals(3, changed.sampleSize());
+			assertTrue(stats.planningRevision() > beforeChanged,
+					"a changed ratio or evidence population must still advance its publication revision");
+		} finally {
+			repository.shutDown();
+		}
+	}
 
 	@ParameterizedTest
 	@ValueSource(ints = { 0, 1, 2, 3 })
@@ -133,6 +214,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 			Filter parsed = filter("SELECT * WHERE { ?s <urn:test:name> ?o"
 					+ " FILTER(STRSTARTS(STR(?s), \"urn:test:match:\")) }");
 			Filter filter = new Filter(pattern, parsed.getCondition().clone());
+			// The fixture owns this complete native query, including its explicit physical context constraints.
+			PlanningGraphDomains.capture(filter, PlanningGraphDomain.defaultGraph());
 			PatternFilterSampleEstimate estimate = sail.filterStats()
 					.estimateFilterPass(filter, pattern);
 			long predicateId = sail.valueStore().getId(NAME);
@@ -1547,6 +1630,8 @@ class LmdbForegroundFilterSamplingEpochTest {
 
 	private static Filter filter(String query) {
 		ParsedTupleQuery parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null);
+		// All callers own complete local name/replacement-name queries over their seeded default dataset.
+		PlanningGraphDomains.capture(parsed.getTupleExpr(), PlanningGraphDomain.defaultGraph());
 		Filter[] found = new Filter[1];
 		parsed.getTupleExpr().visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override

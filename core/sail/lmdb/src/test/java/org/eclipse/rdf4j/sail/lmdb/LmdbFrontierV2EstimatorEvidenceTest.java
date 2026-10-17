@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanCache;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -70,6 +72,8 @@ class LmdbFrontierV2EstimatorEvidenceTest {
 		});
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p", PREDICATE), new Var("o"));
+		// This fixture's leaf statistics and projected distinct values describe this complete DEFAULT source query.
+		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
 
 		Constructor<LmdbStorageEstimatorEvidence> constructor = LmdbStorageEstimatorEvidence.class
 				.getDeclaredConstructor(ValueStore.class, LmdbStatementPatternCardinalitySource.class,
@@ -98,6 +102,7 @@ class LmdbFrontierV2EstimatorEvidenceTest {
 		LmdbStatisticsService statistics = mappedStatisticsMock(new AtomicInteger());
 		when(valueStore.getId(PREDICATE)).thenReturn(7L);
 		StatementPattern pattern = new StatementPattern(new Var("s"), new Var("p", PREDICATE), new Var("o"));
+		PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
 		Constructor<LmdbEvaluationStatistics> constructor = LmdbEvaluationStatistics.class
 				.getDeclaredConstructor(ValueStore.class, TripleStore.class, SketchBasedJoinEstimator.class,
 						LmdbFilterSelectivityStats.class, LmdbOperatorFeedbackStats.class,
@@ -153,8 +158,10 @@ class LmdbFrontierV2EstimatorEvidenceTest {
 				(BooleanSupplier) () -> false,
 				(BooleanSupplier) () -> true, statistics);
 
+		Join query = new Join(left, right);
+		PlanningGraphDomains.capture(query, PlanningGraphDomain.defaultGraph());
 		var estimate = evaluation.estimatorRuntime()
-				.estimate(new Join(left, right), Set.of(), JoinFactorCostModel.EstimationTier.STANDARD, false);
+				.estimate(query, Set.of(), JoinFactorCostModel.EstimationTier.STANDARD, false);
 
 		assertEquals(240_000.0d, estimate.rows(), 0.0d);
 		assertEquals("frontier-v2-fast-agms", estimate.source());

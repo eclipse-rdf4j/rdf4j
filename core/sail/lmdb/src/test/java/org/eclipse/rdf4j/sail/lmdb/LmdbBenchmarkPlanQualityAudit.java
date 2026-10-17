@@ -23,7 +23,6 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.InputBindingContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -152,20 +151,19 @@ public final class LmdbBenchmarkPlanQualityAudit implements AutoCloseable {
 	private static PackedPlanQualityAuditResult audit(EvaluationStrategy strategy,
 			SailDatasetTripleTermSource tripleSource, EvaluationStatistics statistics, TupleExpr tupleExpr,
 			SailTupleQuery tupleQuery, int dominatedSamplesPerStratum, long maxRetainedBytes) {
-		for (QueryOptimizer optimizer : new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
-				.getOptimizers()) {
-			if (optimizer instanceof LmdbCascadesOptimizer cascades) {
-				PhysicalProperties required = PhysicalProperties.builder()
-						.boundVars(tupleQuery.getBindings().getBindingNames())
-						.observationOrder(PhysicalProperties.ObservationOrder.ANY)
-						.build();
-				OptimizationGoal goal = OptimizationGoal.root(tupleExpr, required)
-						.withInputBindingContext(InputBindingContext.fromBindingSet(tupleQuery.getBindings()));
-				return cascades.auditPreparedInput(tupleExpr, goal, dominatedSamplesPerStratum, maxRetainedBytes);
-			}
-			optimizer.optimize(tupleExpr, tupleQuery.getActiveDataset(), tupleQuery.getBindings());
-		}
-		throw new IllegalStateException("LMDB optimizer pipeline did not contain the Cascades optimizer");
+		return new LmdbQueryOptimizerPipeline(strategy, tripleSource, statistics)
+				.withPreparedQueryEntry(tupleExpr, tupleQuery.getActiveDataset(), tupleQuery.getBindings(),
+						(prepared, cascades) -> {
+							PhysicalProperties required = PhysicalProperties.builder()
+									.boundVars(tupleQuery.getBindings().getBindingNames())
+									.observationOrder(PhysicalProperties.ObservationOrder.ANY)
+									.build();
+							OptimizationGoal goal = OptimizationGoal.root(prepared, required)
+									.withInputBindingContext(
+											InputBindingContext.fromBindingSet(tupleQuery.getBindings()));
+							return cascades.auditPreparedInput(prepared, goal, dominatedSamplesPerStratum,
+									maxRetainedBytes);
+						});
 	}
 
 	private static void closeQuietly(AutoCloseable closeable) {

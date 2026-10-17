@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.CostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.EstimationTier;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryOptimizationScopeProvider.QueryOptimizationScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
@@ -122,6 +123,18 @@ final class LmdbEstimatorRuntime {
 		return storageAccess.valueStore();
 	}
 
+	TripleStore physicalTripleStore() {
+		return storageAccess.physicalTripleStore();
+	}
+
+	LmdbQuadSynopsisService publishedSynopsisForPhysicalCost() {
+		return synopsis;
+	}
+
+	boolean physicalInferredCursorIsShortCircuited() {
+		return !storageAccess.mayHaveInferred();
+	}
+
 	LmdbFrontierSnapshotSource openFrontierSnapshotSource() throws IOException {
 		return storageAccess.openFrontierSnapshotSource();
 	}
@@ -157,24 +170,26 @@ final class LmdbEstimatorRuntime {
 	}
 
 	void recordSemiAntiOutcome(Filter filter, EvaluationStatistics.SemiAntiOutcomeObservation observation) {
-		if (feedback != null) {
+		if (feedback != null && LmdbPlanningGraphEvidence.allows(filter)) {
 			feedback.recordSemiAntiOutcome(filter, observation);
 		}
 	}
 
 	LmdbOperatorFeedbackStats.SemiAntiEstimate semiAntiFeedback(
 			Filter filter, String semanticKind, String physicalAlgorithm) {
-		return feedback == null ? null : feedback.semiAntiEstimate(filter, semanticKind, physicalAlgorithm);
+		return feedback == null || !LmdbPlanningGraphEvidence.allows(filter) ? null
+				: feedback.semiAntiEstimate(filter, semanticKind, physicalAlgorithm);
 	}
 
 	LmdbOperatorFeedbackStats.SemiAntiEstimate frontierSemiAntiFeedback(
 			Filter filter, String semanticKind, String physicalAlgorithm) {
-		return feedback == null ? null : feedback.frontierSemiAntiEstimate(filter, semanticKind, physicalAlgorithm);
+		return feedback == null || !LmdbPlanningGraphEvidence.allows(filter) ? null
+				: feedback.frontierSemiAntiEstimate(filter, semanticKind, physicalAlgorithm);
 	}
 
 	Optional<BindingSetAssignment> exactStoredTermFilterAnchor(StatementPattern pattern, ValueExpr condition,
 			String bindingName) {
-		if (filters == null || pattern == null || condition == null || bindingName == null
+		if (filters == null || !LmdbPlanningGraphEvidence.allows(pattern) || condition == null || bindingName == null
 				|| !pattern.getAssuredBindingNames().contains(bindingName)) {
 			return Optional.empty();
 		}
@@ -189,7 +204,7 @@ final class LmdbEstimatorRuntime {
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactAlternativeSurface(TupleExpr expression) {
-		if (expression == null) {
+		if (!LmdbPlanningGraphEvidence.allows(expression)) {
 			return Optional.empty();
 		}
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
@@ -199,7 +214,7 @@ final class LmdbEstimatorRuntime {
 	}
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactConnectedSurface(TupleExpr expression) {
-		if (expression == null) {
+		if (!LmdbPlanningGraphEvidence.allows(expression)) {
 			return Optional.empty();
 		}
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
@@ -210,6 +225,9 @@ final class LmdbEstimatorRuntime {
 
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
 			FiniteRelationEstimate relation, TupleExpr accessKernel) {
+		if (!LmdbPlanningGraphEvidence.allows(accessKernel)) {
+			return Optional.empty();
+		}
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null
 				? finiteJoinSurfaceEstimator.estimate(relation, accessKernel)
@@ -220,7 +238,7 @@ final class LmdbEstimatorRuntime {
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactCorrelatedSurface(
 			Object frontierStateKey, FiniteRelationEstimate correlatedRelation, TupleExpr accessKernel,
 			EstimationTier tier) {
-		if (correlatedRelation == null || accessKernel == null) {
+		if (correlatedRelation == null || !LmdbPlanningGraphEvidence.allows(accessKernel)) {
 			return Optional.empty();
 		}
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
@@ -233,6 +251,9 @@ final class LmdbEstimatorRuntime {
 	Optional<LmdbFiniteJoinSurfaceEstimator.SurfaceEstimate> exactDerivedSurface(
 			List<TupleExpr> prefixFactors, TupleExpr accessKernel,
 			Map<String, Set<Value>> finiteBindingValues) {
+		if (!LmdbPlanningGraphEvidence.allows(accessKernel) || !LmdbPlanningGraphEvidence.allowsAll(prefixFactors)) {
+			return Optional.empty();
+		}
 		LmdbEstimatorOptimizationScope scope = optimizationScope.get();
 		return scope == null
 				? finiteJoinSurfaceEstimator.estimate(prefixFactors, accessKernel, finiteBindingValues)
@@ -273,6 +294,10 @@ final class LmdbEstimatorRuntime {
 
 	private Optional<FactorCostEstimate> finiteDerivedFactorCost(TupleExpr expression, CostContext cost,
 			BagEstimate semantic, FactorCostEstimate base, LmdbEstimatorOptimizationScope scope) {
+		if (!LmdbPlanningGraphEvidence.allows(expression)
+				|| !LmdbPlanningGraphEvidence.allowsAll(cost.getPrefixFactors())) {
+			return Optional.empty();
+		}
 		if (cost == null || base == null || !cost.isNestedIteratorInvocation()
 				|| !cost.prefixFactorsDescribeCurrentRows()
 				|| (cost.getPrefixFactors().isEmpty() && cost.getFiniteBindingValues().size() != 1)) {
@@ -460,6 +485,26 @@ final class LmdbEstimatorRuntime {
 		return storageAccess.pinPlanningReads(txn, values);
 	}
 
+	void validateQueryPlanningPair(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		storageAccess.validateQueryPlanningPair(txn, values);
+	}
+
+	TripleStore.PlanningReadPin pinQueryPlanningReads(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		return storageAccess.pinQueryPlanningReads(txn, values);
+	}
+
+	boolean ownsQueryPlanningPair(TxnManager.Txn txn, ValueStore.ReadSnapshot values) {
+		return storageAccess.ownsQueryPlanningPair(txn, values);
+	}
+
+	TripleStore.PlanningReadPin maskQueryPlanningReads() {
+		return storageAccess.maskQueryPlanningReads();
+	}
+
+	boolean hasPairedPlanningAuthority() {
+		return storageAccess.hasPairedPlanningAuthority();
+	}
+
 	double packedStatementPatternRows(Resource subject, IRI predicate, Value object, Resource context,
 			int repeatedComponentPairMask) {
 		return storageAccess.packedStatementPatternRows(subject, predicate, object, context, repeatedComponentPairMask);
@@ -508,10 +553,11 @@ final class LmdbEstimatorRuntime {
 
 	Optional<EvaluationStatistics.FilterPassEstimate> patternFilterPass(ValueExpr condition,
 			StatementPattern pattern) {
-		if (condition == null || pattern == null) {
+		if (condition == null || !LmdbPlanningGraphEvidence.allows(pattern)) {
 			return Optional.empty();
 		}
 		Filter synthetic = new Filter(pattern.clone(), condition.clone());
+		PlanningGraphDomains.copy(pattern, synthetic);
 		BagEstimate input = estimate(pattern);
 		BagEstimate output = estimateFilter(pattern, condition, input, Set.of(), EstimationTier.STANDARD, false);
 		double ratio = input.rows() <= 0.0d ? (output.rows() == 0.0d ? 1.0d : Double.NaN)

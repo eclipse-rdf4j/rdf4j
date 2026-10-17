@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
@@ -114,7 +115,7 @@ class LmdbFrontierPlanningIntegrationTest {
 			StatementPattern third = new StatementPattern(
 					Var.of("subject"), Var.of("thirdPredicate", thirdPredicate), Var.of("thirdValue"));
 			PackedCostTestSupport.BinaryCostCall call = PackedCostTestSupport.binaryOperator(
-					new Join(new Join(first, second), third));
+					PlanningGraphDomain.defaultGraph(), new Join(new Join(first, second), third));
 
 			SailStore sailStore = store.getSailStore();
 			try (SailSource branch = sailStore.getExplicitSailSource().fork();

@@ -13,12 +13,18 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.GraphQueryEvaluationStep;
 
 public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	private QueryOptimizerPipeline optimizerPipeline;
@@ -37,9 +43,40 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		LmdbValueIdFilter.preserveEffectiveKinds(expr);
 		return optimizerPipeline instanceof LmdbQueryOptimizerPipeline lmdbPipeline
 				? lmdbPipeline.optimize(expr, dataset, bindings)
 				: super.optimize(expr, evaluationStatistics, bindings);
+	}
+
+	@Override
+	public QueryEvaluationStep precompile(TupleExpr expr) {
+		LmdbValueIdFilter.preserveEffectiveKinds(expr);
+		return super.precompile(expr);
+	}
+
+	@Override
+	protected QueryEvaluationStep prepare(UnaryTupleOperator expression, QueryEvaluationContext context) {
+		if (expression.getClass() == Graph.class && expression instanceof Graph graph
+				&& graph.getArg().getClass() == StatementPattern.class
+				&& graph.getArg()instanceof StatementPattern body) {
+			LmdbGraphDistinctQueryEvaluationStep.recordOrdinary(body);
+			var decorator = preparedStepDecorator(body);
+			QueryEvaluationStep ordinary = GraphQueryEvaluationStep.supply(graph, tripleSource, context,
+					(ignored, activeContext) -> decorator.apply(super.prepare(body, activeContext)));
+			var requirement = LmdbDistinctRequirement.from(graph);
+			if (optimizerPipeline instanceof LmdbQueryOptimizerPipeline pipeline && requirement.isPresent()
+					&& LmdbGraphDistinctQueryEvaluationStep.supports(graph, body, requirement.orElseThrow())) {
+				return new LmdbGraphDistinctQueryEvaluationStep(graph, body, requirement.orElseThrow(),
+						context, pipeline,
+						(pattern, activeContext) -> decorator.apply(super.prepare(pattern, activeContext)), ordinary);
+			}
+			return bindings -> {
+				LmdbGraphDistinctQueryEvaluationStep.recordOrdinary(body);
+				return ordinary.evaluate(bindings);
+			};
+		}
+		return super.prepare(expression, context);
 	}
 
 }

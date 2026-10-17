@@ -28,7 +28,9 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
@@ -40,13 +42,21 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.base.SailClosable;
+import org.eclipse.rdf4j.sail.base.SailDataset;
+import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbIRI;
@@ -176,23 +186,42 @@ class LmdbStatementPatternIdNormalizationTest {
 	}
 
 	@Test
-	void computedOuterValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+	void computedSiblingValueStaysOutsideGraphUnionInputs(@TempDir File directory) {
 		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
-			assertEquals(4, fixture.evaluate(computedUnionQuery(), null, null));
+			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
+			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
+			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
+			String query = "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
+					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
 			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(null);
+			fixture.assertPayloadLookupCount("native payload", 0);
+			fixture.assertPayloadLookupCount("unused", 0);
+		}
+	}
+
+	@Test
+	void computedGraphLocalValueIsResolvedOnceAcrossUnion(@TempDir File directory) {
+		try (Fixture fixture = new Fixture(directory, LiteralShape.CUSTOM.value())) {
+			String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
+			String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
+			String branch = "{ ?target <" + PREDICATE + "> ?computed }";
+			String query = "SELECT ?s WHERE { GRAPH <" + GRAPH + "> { " + computed + unused + "?s <"
+					+ LINK + "> ?target . " + branch + " UNION " + branch + " } }";
+			assertUnionRows(fixture.evaluateBindings(query, null, null));
+			fixture.assertBoundNativeInputs();
+			fixture.assertObjectInputs(LiteralShape.CUSTOM.value());
 			fixture.assertLiteralStatementInputObserved("native payload");
 			fixture.assertPayloadLookupCount("native payload", 1);
 			fixture.assertPayloadLookupCount("unused", 0);
 		}
 	}
 
-	private static String computedUnionQuery() {
-		String computed = "BIND(STRDT(CONCAT(\"native\", \" payload\"), <" + DATATYPE + ">) AS ?computed) ";
-		String unused = "BIND(STRDT(CONCAT(\"un\", \"used\"), <" + DATATYPE + ">) AS ?unused) ";
-		String branch = "{ ?target <" + PREDICATE + "> ?computed }";
-		String union = branch + " UNION " + branch;
-		return "SELECT ?s WHERE { " + computed + unused + "GRAPH <" + GRAPH + "> { ?s <"
-				+ LINK + "> ?target . " + union + " } }";
+	private static void assertUnionRows(List<BindingSet> rows) {
+		assertEquals(Map.of(FIRST, 2L, SECOND, 2L), rows.stream()
+				.collect(Collectors.groupingBy(row -> row.getValue("s"), Collectors.counting())));
+		rows.forEach(row -> assertEquals(Set.of("s"), row.getBindingNames()));
 	}
 
 	@Test
@@ -232,9 +261,10 @@ class LmdbStatementPatternIdNormalizationTest {
 		private final SailRepository repository;
 		private final RepositoryConnection connection;
 		private final List<PatternInputs> inputs = new ArrayList<>();
+		private final List<PatternInputs> patternRequests = new ArrayList<>();
 
 		private Fixture(File directory, Value object) {
-			store = new ProbeStore(directory, inputs);
+			store = new ProbeStore(directory, inputs, patternRequests);
 			repository = new SailRepository(store);
 			repository.init();
 			connection = repository.getConnection();
@@ -248,6 +278,10 @@ class LmdbStatementPatternIdNormalizationTest {
 		}
 
 		private int evaluate(String text, Value bound, SimpleDataset dataset) {
+			return evaluateBindings(text, bound, dataset).size();
+		}
+
+		private List<BindingSet> evaluateBindings(String text, Value bound, SimpleDataset dataset) {
 			TupleQuery query = connection.prepareTupleQuery(text);
 			if (bound != null) {
 				query.setBinding("bound", bound);
@@ -257,16 +291,25 @@ class LmdbStatementPatternIdNormalizationTest {
 				query.setDataset(dataset);
 			}
 			inputs.clear();
+			patternRequests.clear();
 			store.values.payloadLookups.clear();
 			store.values.unknownLookups.clear();
-			int rows = 0;
+			List<BindingSet> rows = new ArrayList<>();
 			try (TupleQueryResult result = query.evaluate()) {
 				while (result.hasNext()) {
-					result.next();
-					rows++;
+					rows.add(result.next());
 				}
 			}
 			return rows;
+		}
+
+		private void assertObjectInputs(Value expected) {
+			List<PatternInputs> patterns = patternRequests.stream()
+					.filter(pattern -> PREDICATE.equals(pattern.predicate))
+					.toList();
+			assertFalse(patterns.isEmpty(), "Both UNION branches must reach their real statement-pattern route");
+			patterns.forEach(pattern -> assertEquals(expected, pattern.object,
+					"Only the GRAPH-local computed binding may constrain the UNION statement pattern"));
 		}
 
 		private void assertBoundNativeInputs() {
@@ -552,11 +595,49 @@ class LmdbStatementPatternIdNormalizationTest {
 
 	private static final class ProbeStore extends LmdbStore {
 		private final List<PatternInputs> inputs;
+		private final List<PatternInputs> patternRequests;
 		private ProbeValueStore values;
 
-		private ProbeStore(File directory, List<PatternInputs> inputs) {
+		private ProbeStore(File directory, List<PatternInputs> inputs, List<PatternInputs> patternRequests) {
 			super(directory, new LmdbStoreConfig("spoc,posc").setForceSync(true).setInlineLiterals(false));
 			this.inputs = inputs;
+			this.patternRequests = patternRequests;
+		}
+
+		@Override
+		protected NotifyingSailConnection getConnectionInternal() throws SailException {
+			return new LmdbStoreConnection(this) {
+				@Override
+				protected EvaluationStrategy getEvaluationStrategy(Dataset dataset, TripleSource tripleSource) {
+					SailDatasetTripleTermSource source = assertInstanceOf(SailDatasetTripleTermSource.class,
+							tripleSource);
+					SailDataset sourceDataset = source.unwrapDataset(SailDataset.class).orElseThrow();
+					// Observe the physical pattern routes without changing their admitted dataset or native
+					// capabilities.
+					return super.getEvaluationStrategy(dataset,
+							new SailDatasetTripleTermSource(source.getValueFactory(), sourceDataset) {
+								@Override
+								public CloseableIteration<? extends Statement> getStatements(StatementPattern pattern,
+										Resource subject, IRI predicate, Value object, Resource... contexts) {
+									observePatternRequest(subject, predicate, object, contexts);
+									return super.getStatements(pattern, subject, predicate, object, contexts);
+								}
+
+								@Override
+								public long getStatementCount(StatementPattern pattern, Resource subject, IRI predicate,
+										Value object, Resource... contexts) {
+									observePatternRequest(subject, predicate, object, contexts);
+									return super.getStatementCount(pattern, subject, predicate, object, contexts);
+								}
+							});
+				}
+			};
+		}
+
+		private void observePatternRequest(Resource subject, IRI predicate, Value object, Resource[] contexts) {
+			if (values.planningDepth.get() == 0) {
+				patternRequests.add(new PatternInputs(subject, predicate, object, contexts.clone()));
+			}
 		}
 
 		@Override

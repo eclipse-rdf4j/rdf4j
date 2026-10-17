@@ -52,6 +52,9 @@ final class LmdbPrefixEvidenceResolver {
 		if (!cost.prefixFactorsDescribeCurrentRows()) {
 			return BagEstimate.heuristic(rows, "transformed-prefix");
 		}
+		if (!LmdbPlanningGraphEvidence.allowsAll(factors)) {
+			return BagEstimate.heuristic(rows, "unproved-graph-prefix");
+		}
 		Map<PrefixEstimateCacheKey, BagEstimate> cache = scope == null ? null : scope.prefixEstimates;
 		PrefixEstimateCacheKey cacheKey = cache == null
 				? null

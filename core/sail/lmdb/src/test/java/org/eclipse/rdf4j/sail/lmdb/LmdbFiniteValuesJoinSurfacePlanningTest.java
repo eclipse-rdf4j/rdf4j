@@ -58,6 +58,8 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CascadesPlan;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationCompleteness;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
@@ -129,9 +131,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					Var.of("assemblyType", ENG_ASSEMBLY));
 			StatementPattern partOf = new StatementPattern(Var.of("component"), Var.of("partOfPredicate", ENG_PART_OF),
 					Var.of("assembly"));
-			assertDirectFiniteDerivedPartOfSurface(store, assemblyNames, name, type, partOf);
-
 			TupleExpr join = new Join(new Join(new Join(assemblyNames, name), type), partOf);
+			// The complete query uses the contextless engineering rows loaded above, including its VALUES prefix.
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
+			assertDirectFiniteDerivedPartOfSurface(store, assemblyNames, name, type, partOf);
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
 					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
@@ -221,6 +224,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					Var.of("namePredicate", ENG_NAME), Var.of("assemblyName"));
 			StatementPattern rareLiteralLookup = new StatementPattern(Var.of("assembly"),
 					Var.of("namePredicate", ENG_NAME), Var.of("assemblyName", VF.createLiteral("Assembly 1")));
+			PlanningGraphDomains.capture(predicateScan, PlanningGraphDomain.defaultGraph());
+			PlanningGraphDomains.capture(rareLiteralLookup, PlanningGraphDomain.defaultGraph());
 
 			double scanRows = statistics.getCardinality(predicateScan);
 			double literalRows = statistics.getCardinality(rareLiteralLookup);
@@ -255,6 +260,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
 					Var.of("branchName"));
 			TupleExpr join = new Join(branchNames, name);
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
@@ -395,6 +401,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 							Compare.CompareOp.EQ));
 			LmdbEvaluationStatistics statistics = (LmdbEvaluationStatistics) store.getBackingStore()
 					.getEvaluationStatistics();
+			// This standalone input scan reads the loaded local default-graph library names.
+			PlanningGraphDomains.capture(name, PlanningGraphDomain.defaultGraph());
 			StatisticsEstimate input = statistics.statementPattern(name, Set.of()).orElseThrow();
 			StatisticsEstimate filtered = statistics.filter(name, selectedNames, input, Set.of()).orElseThrow();
 
@@ -433,6 +441,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
 					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
 			TupleExpr join = new Join(new Join(branchNames, name), locatedAt);
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
@@ -463,6 +472,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("rdfType", RDF_TYPE),
 					Var.of("copyType", LIB_COPY));
 			TupleExpr join = new Join(new Join(new Join(branchNames, name), locatedAt), copyType);
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
@@ -495,6 +505,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern copyType = new StatementPattern(Var.of("copy"), Var.of("rdfType", RDF_TYPE),
 					Var.of("copyType", LIB_COPY));
 			TupleExpr join = new Join(new Join(new Join(branchNames, name), locatedAt), copyType);
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
 					.planPreparedInput(join, OptimizationGoal.root(join, PhysicalProperties.ANY));
@@ -536,6 +547,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					new Not(new FunctionCall(FN.CONTAINS.stringValue(), new Str(Var.of("branch")),
 							new ValueConstant(VF.createLiteral("branch/0")))));
 			TupleExpr join = new Join(branchNames, residual);
+			PlanningGraphDomains.capture(join, PlanningGraphDomain.defaultGraph());
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 
 			CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
@@ -659,6 +671,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					"  FILTER EXISTS { ?copy a lib:Copy . }",
 					"}");
 			TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			PlanningGraphDomains.capture(input, PlanningGraphDomain.defaultGraph());
 			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
 			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
 					baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),
@@ -772,7 +785,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 					new Compare(Var.of("branchName"), new ValueConstant(VF.createLiteral("Branch 1")),
 							Compare.CompareOp.EQ));
 			PackedCostTestSupport.FilterPrefixCostCall call = PackedCostTestSupport
-					.connectedFilterPrefix(name, locatedAt, selectedNames);
+					.connectedFilterPrefix(PlanningGraphDomain.defaultGraph(), name, locatedAt, selectedNames);
 			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
 			LmdbPackedCostModel costModel = new LmdbPackedCostModel(runtime);
@@ -825,7 +838,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern type = new StatementPattern(Var.of("assembly"), Var.of("typePredicate", RDF_TYPE),
 					Var.of("assemblyType", ENG_ASSEMBLY));
 			PackedCostTestSupport.FilteredPairCostCall call = PackedCostTestSupport
-					.filteredConnectedStatementFactors(filteredName, type);
+					.filteredConnectedStatementFactors(PlanningGraphDomain.defaultGraph(), filteredName, type);
 			SailStore sailStore = store.getSailStore();
 			try (SailSource branch = sailStore.getExplicitSailSource().fork();
 					SailDataset dataset = branch.dataset(store.getDefaultIsolationLevel())) {
@@ -917,7 +930,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			Filter filter = new Filter(input, condition);
 			LmdbEstimatorRuntime runtime = ((LmdbEstimatorRuntimeProvider) store.getBackingStore()
 					.getEvaluationStatistics()).estimatorRuntime();
-			PackedCostTestSupport.CostCall call = PackedCostTestSupport.disconnectedFilter(prefix, filter, 3.0d);
+			PackedCostTestSupport.CostCall call = PackedCostTestSupport.disconnectedFilter(
+					PlanningGraphDomain.defaultGraph(), prefix, filter, 3.0d);
 			PackedCostEstimate estimate = new PackedCostEstimate();
 
 			new LmdbPackedCostModel(runtime).estimate(call.query(), call.factorRelationId(), call.context(),
@@ -947,8 +961,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			ProjectionElemList elements = new ProjectionElemList();
 			elements.addElement(new ProjectionElem("v1"));
 			Projection projection = new Projection(input.clone(), elements);
-			PackedCostTestSupport.CostCall contextualCall = PackedCostTestSupport.disconnectedFactor(prefix,
-					projection, 3.0d);
+			PackedCostTestSupport.CostCall contextualCall = PackedCostTestSupport.disconnectedFactor(
+					PlanningGraphDomain.defaultGraph(), prefix, projection, 3.0d);
 			estimate.clear();
 
 			new LmdbPackedCostModel(runtime).estimate(contextualCall.query(), contextualCall.factorRelationId(),
@@ -991,6 +1005,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			StatementPattern locatedAt = new StatementPattern(Var.of("copy"),
 					Var.of("locatedAtPredicate", LIB_LOCATED_AT), Var.of("branch"));
 			EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
+			PlanningGraphDomains.capture(name, PlanningGraphDomain.defaultGraph());
+			PlanningGraphDomains.capture(locatedAt, PlanningGraphDomain.defaultGraph());
 			JoinFactorCostModel costModel = (JoinFactorCostModel) statistics;
 			double prefixRows = statistics.getCardinality(name);
 			double expectedSurfaceRows = HIGH_FANOUT_LIBRARY_BRANCH_COUNT * COPIES_PER_HIGH_FANOUT_LIBRARY_BRANCH;
@@ -1187,6 +1203,7 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 			TupleExpr input = QueryParserUtil
 					.parseTupleQuery(QueryLanguage.SPARQL, medicalObservationValuesQuery(), null)
 					.getTupleExpr();
+			PlanningGraphDomains.capture(input, PlanningGraphDomain.defaultGraph());
 			OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
 			OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(),
 					baseGoal.semanticScope(), baseGoal.costPolicy(), baseGoal.costBound(),
@@ -1427,6 +1444,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 	private static StatementPattern planStatementPattern(LmdbStore store, TupleExpr input, IRI predicate,
 			String objectBindingName) {
+		// All callers own complete VALUES/name queries over loadSyntheticLibraryBranches' default dataset.
+		PlanningGraphDomains.capture(input, PlanningGraphDomain.defaultGraph());
 		EvaluationStatistics statistics = store.getBackingStore().getEvaluationStatistics();
 		CascadesPlan plan = new LmdbCascadesOptimizer(statistics, false)
 				.planPreparedInput(input, OptimizationGoal.root(input, PhysicalProperties.ANY));
@@ -1471,6 +1490,8 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 	private static CascadesPlan planAuto(LmdbStore store, String query) {
 		TupleExpr input = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		// Every caller supplies an owned complete engineering/library query over its contextless loader input.
+		PlanningGraphDomains.capture(input, PlanningGraphDomain.defaultGraph());
 		OptimizationGoal baseGoal = OptimizationGoal.root(input, PhysicalProperties.ANY);
 		OptimizationGoal autoGoal = new OptimizationGoal(baseGoal.requiredProperties(), baseGoal.semanticScope(),
 				baseGoal.costPolicy(), baseGoal.costBound(), baseGoal.excludedProperties(),

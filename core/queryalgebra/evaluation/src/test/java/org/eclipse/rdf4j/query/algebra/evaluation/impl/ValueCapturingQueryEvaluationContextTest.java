@@ -13,9 +13,11 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTimeoutPreemptively;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -41,6 +43,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
@@ -57,6 +60,29 @@ import org.junit.jupiter.params.provider.ValueSource;
 class ValueCapturingQueryEvaluationContextTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void enclosingProjectionScopeDefaultsFalseAndSurvivesContextWrappers() {
+		QueryEvaluationContext ordinary = new QueryEvaluationContext.Minimal((Dataset) null);
+		assertFalse(ordinary.hasEnclosingProjection());
+
+		QueryEvaluationContext enclosing = new QueryEvaluationContext.Minimal((Dataset) null) {
+			@Override
+			public boolean hasEnclosingProjection() {
+				return true;
+			}
+		};
+		QueryEvaluationContext array = new ArrayBindingBasedQueryEvaluationContext(enclosing, new String[0], null);
+		QueryEvaluationContext activeGraph = new ActiveGraphQueryEvaluationContext(array,
+				new QueryEvaluationContext.ActiveGraph(VF.createIRI("urn:graph"), null));
+		QueryEvaluationContext captured = new ValueCapturingQueryEvaluationContext(activeGraph, Function.identity());
+		QueryEvaluationContext planning = AdaptiveFilterEvaluationStep.planningContext(new SingletonSet(), captured);
+
+		assertTrue(array.hasEnclosingProjection());
+		assertTrue(activeGraph.hasEnclosingProjection());
+		assertTrue(captured.hasEnclosingProjection());
+		assertTrue(planning.hasEnclosingProjection());
+	}
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })

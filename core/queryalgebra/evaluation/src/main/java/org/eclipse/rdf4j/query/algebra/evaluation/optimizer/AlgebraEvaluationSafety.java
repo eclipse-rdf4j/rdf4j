@@ -17,6 +17,7 @@ import java.util.Map;
 
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BinaryValueOperator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
@@ -77,6 +78,7 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
@@ -141,8 +143,11 @@ final class AlgebraEvaluationSafety {
 
 		Class<?> expressionClass = expression.getClass();
 		if (expressionClass == StatementPattern.class || expressionClass == SingletonSet.class
-				|| expressionClass == EmptySet.class) {
+				|| expressionClass == EmptySet.class || expressionClass == ZeroLengthPath.class) {
 			return true;
+		}
+		if (expressionClass == ArbitraryLengthPath.class) {
+			return proof.isRepeatable(((ArbitraryLengthPath) expression).getPathExpression());
 		}
 		if (expressionClass == BindingSetAssignment.class) {
 			return hasStableBindings((BindingSetAssignment) expression);
@@ -344,7 +349,7 @@ final class AlgebraEvaluationSafety {
 				|| expressionClass == SameTerm.class;
 	}
 
-	private static boolean hasStableBindings(BindingSetAssignment assignment) {
+	static boolean hasStableBindings(BindingSetAssignment assignment) {
 		Iterable<BindingSet> bindingSets = assignment.getBindingSets();
 		if (bindingSets instanceof BindingSetAssignment.RepeatableBindingSetSource) {
 			return true;
