@@ -175,7 +175,8 @@ export function NodeDetailsCard({
           className="workbench-action workbench-action--secondary workbench-action--icon"
           type="button"
           aria-label="Hide from the graph"
-          title="Hide from the graph"
+          aria-keyshortcuts="Delete"
+          title="Hide from the graph (Delete)"
           onClick={onHide}
         >
           <Icon name="hide" />

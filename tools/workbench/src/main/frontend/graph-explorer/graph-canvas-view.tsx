@@ -22,6 +22,10 @@ import { compactTerm } from "./graph-terms.ts";
 import type { EdgeCurve, EdgeLabelPlacement, GraphEdge, GraphNode } from "./graph-types.ts";
 import { nodeVisual, UNTYPED_IRI_TYPE } from "./graph-visuals.ts";
 import { moreLinksPhrase } from "./link-counts.ts";
+import { isApplePlatform } from "./graph-viewport.ts";
+import { selectionKeys } from "./graph-selection.ts";
+
+const SELECTION_KEYS = selectionKeys(isApplePlatform());
 
 /**
  * Event handlers shared by every node. The object is created once and calls the explorer's current implementation,
@@ -36,6 +40,8 @@ export type NodeHandlers = {
   pointerMove(nodeId: string, event: PointerEvent<SVGGElement>): void;
   pointerEnd(event: PointerEvent<SVGGElement>, cancelled: boolean): void;
   keyDown(nodeId: string, event: KeyboardEvent<SVGGElement>): void;
+  /** The node got the keyboard focus: it becomes the canvas's stop in the tab order. */
+  focus(nodeId: string): void;
   /** The "+N" badge: load the node's next links. */
   more(nodeId: string): void;
 };
@@ -54,6 +60,8 @@ export type NodeViewProps = {
   expanding: boolean;
   /** Links in the repository that are not loaded yet ("+12", "920+"), or null. */
   more: string | null;
+  /** The one node Tab reaches (the canvas is one stop; arrow keys move between nodes). */
+  tabbable: boolean;
   handlers: NodeHandlers;
 };
 
@@ -79,6 +87,7 @@ export const NodeView = memo(function NodeView({
   dragging,
   expanding,
   more,
+  tabbable,
   handlers,
 }: NodeViewProps) {
   if (node.x === undefined || node.y === undefined) return null;
@@ -93,15 +102,19 @@ export const NodeView = memo(function NodeView({
       className={className}
       transform={`translate(${node.x - width / 2} ${node.y - height / 2})`}
       style={{ "--node-color": visual.stroke, "--node-fill": visual.fill } as CSSProperties}
-      tabIndex={0}
+      tabIndex={tabbable ? 0 : -1}
+      data-node-id={node.id}
       role="button"
       aria-pressed={pressed}
-      aria-label={`${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected as part of the movable group." : ""} Select to show its details; double-click to load its neighbours, or double-click and keep dragging to move it with its leaf neighbours. Shift- or ⌘-click to add or remove it from the selection. Right-click or long-press for more actions.`}
+      aria-label={`${node.label}. ${typeLabels}.${more ? ` ${moreLinksPhrase(more)}.` : ""}${selected ? " Selected; dragging it moves the whole selection." : ""} Select to show its details; double-click to load its neighbours, or double-click and keep dragging to move it with its leaf neighbours. ${SELECTION_KEYS}click to add or remove it from the selection. Right-click or long-press for more actions. Arrow keys move to the next node in that direction; Delete hides it.`}
       onClick={(event) => handlers.click(node.id, event)}
       onDoubleClick={(event) => handlers.doubleClick(node.id, event)}
       onMouseEnter={() => handlers.hover(node.id, true)}
       onMouseLeave={() => handlers.hover(node.id, false)}
-      onFocus={() => handlers.hover(node.id, true)}
+      onFocus={() => {
+        handlers.hover(node.id, true);
+        handlers.focus(node.id);
+      }}
       onBlur={() => handlers.hover(node.id, false)}
       onContextMenu={(event) => handlers.contextMenu(node.id, event)}
       onPointerDown={(event) => handlers.pointerDown(node.id, event)}

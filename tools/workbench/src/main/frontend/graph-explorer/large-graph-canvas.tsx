@@ -15,6 +15,8 @@ import {
   largeGraphHint,
   type LargeGraphProps,
 } from "./graph-canvas-controller.ts";
+import { selectionKeys } from "./graph-selection.ts";
+import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
 export function LargeGraphCanvas(props: LargeGraphProps) {
   const canvas = useRef<HTMLCanvasElement>(null),
     overlay = useRef<HTMLCanvasElement>(null),
@@ -63,9 +65,10 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
         className="large-graph-interactive"
         tabIndex={0}
         role="img"
-        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Drag to pan or move a node; double-click a node and keep dragging to move its leaf neighbours with it. Shift-, ⌘- or Ctrl-drag to select nodes with a box. ${props.zoomOnScroll ? "Scroll" : "Pinch"} to zoom. Right-click a node for actions.`}
+        aria-label={`Interactive RDF graph with ${props.graph.nodes.length} nodes and ${props.graph.edges.length} edges. Click a node or its label to show its details, double-click it to load its neighbours. Drag to pan or move a node; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(!props.zoomOnScroll)}click or drag to select nodes. ${props.zoomOnScroll ? "Scroll" : "Pinch"} to zoom. Right-click or long-press a node for actions. Arrow keys move from the shown node (or the middle of the view) to the next node in that direction; Enter shows its details again and the menu key or Shift+F10 opens its actions; Delete hides it. Escape closes the details, then clears the selection.`}
         onPointerDown={(e) => {
-          if (e.button !== 0) return;
+          // A secondary press, or a Ctrl-press where that is the context-menu click, is the menu's.
+          if (e.button !== 0 || (!props.zoomOnScroll && e.ctrlKey && !e.shiftKey && !e.metaKey && e.pointerType === "mouse")) return;
           e.preventDefault();
           e.currentTarget.setPointerCapture(e.pointerId);
           view.current?.downAt(contact(e));
@@ -79,17 +82,26 @@ export function LargeGraphCanvas(props: LargeGraphProps) {
           view.current?.context({ x: e.clientX, y: e.clientY });
         }}
         onKeyDown={(e) => {
-          if (
-            focused &&
-            (e.key === "ContextMenu" ||
-              e.key === "Enter" ||
-              (e.shiftKey && e.key === "F10"))
-          ) {
+          // As on the small canvas: Enter or Space shows the node's details (with Shift, ⌘ or Ctrl it toggles the node in
+          // the selection), the menu key opens its menu at the node. Escape is the page's (see escapeStep).
+          const direction = ARROW_KEYS[e.key];
+          if (direction && !e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+            // From the shown node to the nearest one that way; with none shown, from the middle of the view.
+            e.preventDefault();
+            const next = focused ? nodeInDirection(props.graph.nodes, focused.id, direction) : (view.current?.centreNode() ?? null);
+            if (next) props.onSelect(next, false, true);
+            return;
+          }
+          if (!focused) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            props.onSelect(focused.id, e.shiftKey || e.metaKey || e.ctrlKey, true);
+          } else if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
             e.preventDefault();
             const r = e.currentTarget.getBoundingClientRect();
-            props.onMenu(focused, r.left + r.width / 2, r.top + r.height / 2);
+            const at = view.current?.screenPoint(focused.id) ?? { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            props.onMenu(focused, at.x, at.y);
           }
-          if (e.key === "Escape") props.onSelect(null, false);
         }}
       />
       <span className="large-graph-hint" aria-busy={props.arranging || undefined}>

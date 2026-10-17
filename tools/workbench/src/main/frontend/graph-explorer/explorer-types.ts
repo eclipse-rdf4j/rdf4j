@@ -51,8 +51,8 @@ export type PredicateOption = {
 
 export type ContextMenu = {
   node: GraphNode;
+  /** What the menu acts on: the node it was opened on, or the selection that node is part of. */
   scopeNodeIds: string[];
-  selectedNodeIds: string[];
   nodeIds: string[];
   x: number;
   y: number;
@@ -96,6 +96,9 @@ export type GraphHistorySnapshot = {
   selectedNodeIds: string[];
   focusedNodeId: string | null;
   namedGroups: NamedGroup[];
+  /** The filters (facet id → value ids) and their range texts: Undo puts back what was selected. */
+  facetValues: Array<[string, string[]]>;
+  rangeDrafts: Array<[string, RangeDraft]>;
 };
 
 export type EndpointFacetValue = {

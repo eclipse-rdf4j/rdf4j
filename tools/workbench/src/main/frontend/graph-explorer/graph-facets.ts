@@ -279,3 +279,21 @@ export function facetValuesShown<T extends { id: string; label: string }>(
   }
   return { values: shown, more: Math.max(0, candidates.length - shownCandidates) };
 }
+
+/**
+ * A legend chip: its type joins the type filter, or leaves it when it is there (the filter goes when no type is left).
+ * Other filters stay; the types of the filter select together (OR), the filters together (AND).
+ */
+export function toggleTypeInSelection(
+  selection: ReadonlyMap<string, ReadonlySet<string>>,
+  facetId: string,
+  typeId: string,
+): Map<string, Set<string>> {
+  const next = new Map([...selection].map(([id, values]) => [id, new Set(values)]));
+  const types = next.get(facetId) ?? new Set<string>();
+  if (types.has(typeId)) types.delete(typeId);
+  else types.add(typeId);
+  if (types.size) next.set(facetId, types);
+  else next.delete(facetId);
+  return next;
+}

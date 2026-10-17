@@ -20,7 +20,9 @@ import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
 import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
 import { leafClusterForNode, directNeighborIds, seedIncrementalNodes, mergeTriples, cloneGraph, preserveSharedNodePositions, removeGraphNodes, shortestPathInGraph, commonNeighborIds } from "./graph-operations.ts";
-import { addToSelection, toggleInSelection } from "./graph-selection.ts";
+import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, selectionToEdit, toggleInSelection } from "./graph-selection.ts";
+import { escapeStep } from "./graph-dismissal.ts";
+import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
 import { createBatch, createStarStressBatch } from "./load-batches.ts";
 import { countFacetValues, formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
@@ -200,6 +202,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const namedGroupsRef = useRef(namedGroups);
   const provenanceBatchesRef = useRef(provenanceBatches);
   const manualSelectedNodeIdsRef = useRef(manualSelectedNodeIds);
+  const facetValuesRef = useRef(selectedFacetValues);
+  /** The filters' range texts and how to put them back, from `useFacetFilters` (set once it is called). */
+  const rangeDraftsRef = useRef<ReadonlyMap<string, RangeDraft>>(new Map());
+  const restoreRangeDraftsRef = useRef<(drafts: ReadonlyMap<string, RangeDraft>) => void>(() => {});
   const focusedNodeRef = useRef(focusedNodeId);
   const transformRef = useRef(transform);
   const graphRequestAbortRef = useRef<AbortController | null>(null);
@@ -211,6 +217,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const predicateRequestRef = useRef(0);
 
   const menuStateRef = useRef<ContextMenu | null>(menu);
+  /** The node the keyboard was last on: the canvas's one stop in the tab order. */
+  const [rovingNodeId, setRovingNodeId] = useState<string | null>(null);
+  /** Delete or Backspace: hides what the keyboard means (see below); false when there is nothing to hide. */
+  const hideFromKeyboardRef = useRef<() => boolean>(() => false);
+  /**
+   * When the user last moved the view (pan, zoom, Fit). A layout or animation that started earlier keeps moving the
+   * nodes but leaves the view where the user put it.
+   */
+  const viewportTouchedAtRef = useRef(-Infinity);
+  /** Where the keyboard was when the node menu opened; it goes back there when the menu closes. */
+  const menuReturnFocusRef = useRef<Element | null>(null);
+  /** The current `revealNode`, for observers set up once. */
+  const revealNodeRef = useRef<(nodeId: string, onlyIfCovered?: boolean) => void>(() => {});
+  /** What Escape may close below the menus, as of the last render (see `escapeStep`). */
+  const escapeTargetsRef = useRef({ card: false, selection: false });
   const layoutIntentRef = useRef<LayoutIntent | null>(null);
   const typesLoadingRef = useRef(new Set<string>());
   const canvasWrapRef = useRef<HTMLDivElement | null>(null);
@@ -244,6 +265,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       pointerMove: call("pointerMove"),
       pointerEnd: call("pointerEnd"),
       keyDown: call("keyDown"),
+      focus: call("focus"),
       more: call("more"),
     };
   }, []);
@@ -317,6 +339,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const gestureScaleRef = useRef<number | null>(null);
   /** The wheel zooms on Windows and Linux; on a Mac it pans and a pinch zooms. */
   const zoomOnScroll = useMemo(() => !isApplePlatform(), []);
+  /** On Apple platforms a Ctrl-click is the context-menu click, not a selection gesture. */
+  const applePlatform = !zoomOnScroll;
+  const contextClick = (event: { pointerType?: string; ctrlKey: boolean; shiftKey: boolean; metaKey: boolean }) =>
+    applePlatform && event.ctrlKey && !event.shiftKey && !event.metaKey && (event.pointerType ?? "mouse") === "mouse";
   const wheelHandlerRef = useRef<(event: WheelEvent) => void>(() => {});
   const gestureHandlerRef = useRef<(event: Event & { scale?: number; clientX?: number; clientY?: number }) => void>(() => {});
   const holdRef = useRef<number | null>(null);
@@ -329,6 +355,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   namedGroupsRef.current = namedGroups;
   provenanceBatchesRef.current = provenanceBatches;
   manualSelectedNodeIdsRef.current = manualSelectedNodeIds;
+  facetValuesRef.current = selectedFacetValues;
   focusedNodeRef.current = focusedNodeId;
   if (interactiveTransformTimerRef.current === null) {
     transformRef.current = transform;
@@ -394,6 +421,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       const animation = programmaticNodeAnimationRef.current;
       const runId = animation.runId;
       const sourceGraph = graphRef.current;
+      const animationStartedAt = performance.now();
+      const viewIsOurs = () => viewportTouchedAtRef.current < animationStartedAt;
       // The canvas renderer (500+ drawn nodes) jumps; SVG graphs animate, however many values they hide.
       if (canvasGraph(targetGraph, showValuesRef.current).nodes.length >= LARGE_GRAPH_NODES) {
         if (options.skipLayout && targetGraph.revision !== sourceGraph.revision) skipLayoutRevisionRef.current = targetGraph.revision;
@@ -454,8 +483,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         };
         graphRef.current = finalGraph;
         setGraph(finalGraph);
-        transformRef.current = { ...targetTransform };
-        setTransform({ ...targetTransform });
+        if (viewIsOurs()) {
+          transformRef.current = { ...targetTransform };
+          setTransform({ ...targetTransform });
+        }
         programmaticNodeAnimationRef.current.frame = null;
         setIsLayoutAnimating(false);
         options.onComplete?.();
@@ -497,13 +528,15 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         };
         graphRef.current = nextGraph;
         setGraph(nextGraph);
-        const nextTransform = {
-          x: startTransform.x + (targetTransform.x - startTransform.x) * eased,
-          y: startTransform.y + (targetTransform.y - startTransform.y) * eased,
-          k: startTransform.k + (targetTransform.k - startTransform.k) * eased,
-        };
-        transformRef.current = nextTransform;
-        setTransform(nextTransform);
+        if (viewIsOurs()) {
+          const nextTransform = {
+            x: startTransform.x + (targetTransform.x - startTransform.x) * eased,
+            y: startTransform.y + (targetTransform.y - startTransform.y) * eased,
+            k: startTransform.k + (targetTransform.k - startTransform.k) * eased,
+          };
+          transformRef.current = nextTransform;
+          setTransform(nextTransform);
+        }
         if (progress < 1) {
           programmaticNodeAnimationRef.current.frame =
             window.requestAnimationFrame(animate);
@@ -519,11 +552,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
 
   const applyInteractiveTransform = useCallback(
     (next: GraphTransform) => {
-      if (programmaticNodeAnimationRef.current.frame !== null) cancelProgrammaticNodeAnimation();
-      layoutJobRef.current?.cancel();
-      layoutJobRef.current = null;
-      layoutIntentRef.current = null;
-      localLayoutNodeIdsRef.current = null;
+      // Looking around takes the view from a running layout or animation; the nodes keep moving into place.
+      viewportTouchedAtRef.current = performance.now();
       transformRef.current = next;
       // While the view moves, the canvas drops what is costly to repaint every frame (node shadows, blurred overlays).
       canvasWrapRef.current?.setAttribute("data-moving", "");
@@ -547,7 +577,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         INTERACTIVE_TRANSFORM_COMMIT_DELAY,
       );
     },
-    [commitInteractiveTransform, cancelProgrammaticNodeAnimation],
+    [commitInteractiveTransform],
   );
 
   const dismissContextMenu = useCallback((immediate = false) => {
@@ -577,6 +607,18 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     if (layoutMenuRef.current) layoutMenuRef.current.open = false;
     if (toolbarMenuRef.current) toolbarMenuRef.current.open = false;
     if (viewMenuRef.current) viewMenuRef.current.open = false;
+  }, []);
+
+  /**
+   * Closes the node or statement card together with the highlight it explains (the focused node's neighbourhood or
+   * the focused link), as Escape and the card's close button do; a click on the background does the same.
+   */
+  const closeCard = useCallback(() => {
+    window.clearTimeout(detailsArrivalTimerRef.current);
+    setDetailsArriving(false);
+    setInspectorOpen(false);
+    setFocusedNodeId(null);
+    setFocusedEdgeId(null);
   }, []);
 
   const finishTransientAction = useCallback(() => {
@@ -618,6 +660,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         ...group,
         nodeIds: [...group.nodeIds],
       })),
+      facetValues: [...facetValuesRef.current].map(([facetId, values]) => [facetId, [...values]]),
+      rangeDrafts: [...rangeDraftsRef.current],
     }),
     [],
   );
@@ -632,7 +676,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       skipLayout: true,
     });
     setManualSelectedNodeIds(new Set(snapshot.selectedNodeIds));
-    setSelectedFacetValues(new Map());
+    // The filters come back as they were, like the selection.
+    setSelectedFacetValues(new Map(snapshot.facetValues.map(([facetId, values]) => [facetId, new Set(values)])));
+    restoreRangeDraftsRef.current(new Map(snapshot.rangeDrafts));
     filters.forgetRepositoryCounts();
     setNamedGroups(
       snapshot.namedGroups.map((group) => ({
@@ -641,6 +687,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       })),
     );
     setFocusedNodeId(snapshot.focusedNodeId);
+    // A node shown again is shown with its card, which explains why the rest of the graph is dimmed.
+    setInspectorOpen(Boolean(snapshot.focusedNodeId));
+    setFocusedEdgeId(null);
     setHoveredNodeId(null);
     setPathHighlight(null);
     dismissContextMenu(true);
@@ -808,6 +857,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     onChange: clearManualSelection,
     needed: filterSidebarOpen || [...selectedFacetValues.values()].some((values) => values.size > 0),
   });
+  rangeDraftsRef.current = filters.rangeDrafts;
+  restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
   // A load that reached its LIMIT may have left values out, so repository-wide counts are worth offering.
   const graphIsPartial = provenanceBatches.some((batch) => !batch.complete);
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
@@ -826,6 +877,12 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     [provenanceBatches],
   );
   const activeNodeId = focusedNodeId || hoveredNodeId;
+  /** The canvas's one stop in the tab order: where the keyboard last was, else the node in the card, else the first. */
+  const tabbableNodeId =
+    (rovingNodeId && drawnNodeById.has(rovingNodeId) ? rovingNodeId : null) ??
+    (focusedNodeId && drawnNodeById.has(focusedNodeId) ? focusedNodeId : null) ??
+    drawnGraph.nodes[0]?.id ??
+    null;
 
   // "+N" on a node: links the repository has that are not loaded. Counts come once per node (cached by the explorer).
   const [linkTotals, setLinkTotals] = useState<ReadonlyMap<string, number>>(() => new Map());
@@ -868,6 +925,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     (selectedNodeIdList.length === 1
       ? nodeById.get(selectedNodeIdList[0])
       : undefined);
+  escapeTargetsRef.current = {
+    card: Boolean(focusedNodeId || focusedEdgeId || (inspectorOpen && inspectorNode)),
+    selection: manualSelectedNodeIds.size > 0,
+  };
   const inspectorDetails = useMemo(() => {
     if (!inspectorNode) return null;
     const details = nodeDetails(inspectorNode, graph.edges, metadataNodeById);
@@ -884,11 +945,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     [focusedEdgeId, graph.edges],
   );
   const statementDetails = useStatementDetails(focusedEdge, endpoint, graphScope as GraphScope, explorer, serverIdentity);
-  const contextSelectionBaseIds = menu
-    ? menu.selectedNodeIds.length
-      ? menu.selectedNodeIds
-      : menu.scopeNodeIds
-    : [];
   const viewNodes = useMemo(
     () =>
       selectedNodeIds.size
@@ -1213,10 +1269,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     });
     layoutJobRef.current?.cancel();
     layoutJobRef.current = job;
+    const layoutStartedAt = performance.now();
     setIsLayoutComputing(true);
     void job.promise.then((result) => {
       if (cancelled) return;
       setIsLayoutComputing(false);
+      // A view the user moved while the layout ran stays where they put it.
+      const keepView = (wanted: GraphTransform) =>
+        viewportTouchedAtRef.current > layoutStartedAt ? { ...transformRef.current } : wanted;
       const positionByEntityId = result.positions;
       if (!cancelled && graphRef.current.revision === graphSnapshot.revision) {
         const targetGraph = applyGraphPositions(graphRef.current, positionByEntityId);
@@ -1266,7 +1326,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
               : startTransform;
           animationRunId = animateProgrammaticGraph(
             targetGraph,
-            targetTransform,
+            keepView(targetTransform),
             {
               duration: INCREMENTAL_LAYOUT_DURATION,
               onComplete: finishLayoutIntent,
@@ -1305,7 +1365,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
                 );
           animationRunId = animateProgrammaticGraph(
             targetGraph,
-            nextTransform,
+            keepView(nextTransform),
             { onComplete: finishLayoutIntent },
           );
         }
@@ -1354,6 +1414,29 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     return () => window.clearTimeout(timer);
   }, [metadataNodes, graph.revision, isLayoutComputing, isLayoutAnimating, draggingNodeId, isLargeGraphDragging]);
 
+  // When the canvas changes size (a narrower window turns the card into a sheet over the canvas, full screen, a side
+  // panel), the node shown in the card moves out from under it again, as it does when the card opens.
+  const cardNodeId = inspectorOpen ? focusedNodeId : null;
+  useEffect(() => {
+    const canvas = canvasWrapRef.current;
+    if (!cardNodeId || !canvas || typeof ResizeObserver !== "function") return;
+    let first = true;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (first) {
+        first = false;
+        return;
+      }
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => revealNodeRef.current(cardNodeId, true));
+    });
+    observer.observe(canvas);
+    return () => {
+      observer.disconnect();
+      window.cancelAnimationFrame(frame);
+    };
+  }, [cardNodeId]);
+
   useEffect(() => {
     const syncFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement));
     document.addEventListener("fullscreenchange", syncFullscreen);
@@ -1361,7 +1444,17 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   }, []);
 
   useEffect(() => {
-    if (!contextMenuNodeId) return;
+    if (!contextMenuNodeId) {
+      // The menu is gone: the keyboard goes back to where it was when the menu opened (the node), unless an action
+      // took it elsewhere.
+      const back = menuReturnFocusRef.current;
+      menuReturnFocusRef.current = null;
+      const active = document.activeElement;
+      if ((back instanceof HTMLElement || back instanceof SVGElement) && back.isConnected && (!active || active === document.body)) {
+        back.focus({ preventScroll: true });
+      }
+      return;
+    }
     const frame = window.requestAnimationFrame(() => {
       contextMenuRef.current?.focus({ preventScroll: true });
     });
@@ -1406,24 +1499,35 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         viewMenuRef.current.open = false;
       }
     };
-    const closeMenusWithKeyboard = (event: KeyboardEvent) => {
+    // Escape closes the topmost thing only: an open menu, else the card with its highlight, else the selection. While
+    // typing in a field, Escape belongs to the field (Find clears itself) and only closes menus.
+    const closeWithEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       const target = event.target;
       const typing = target instanceof HTMLElement && Boolean(target.closest("input, textarea, select, [contenteditable]"));
-      if (!menuStateRef.current && !typing) {
-        setInspectorOpen(false);
-        setFocusedEdgeId(null);
-      }
-      closePopoverMenus();
-      dismissContextMenu();
+      const popoverOpen = [layoutMenuRef, toolbarMenuRef, viewMenuRef].some((ref) => ref.current?.open);
+      // A node menu that is fading out (its close timer runs) is already closed.
+      const nodeMenuOpen = Boolean(menuStateRef.current) && menuCloseTimerRef.current === null;
+      const step = escapeStep({
+        menu: popoverOpen || nodeMenuOpen,
+        card: !typing && escapeTargetsRef.current.card,
+        selection: !typing && escapeTargetsRef.current.selection,
+      });
+      if (step === "menu") {
+        closePopoverMenus();
+        dismissContextMenu();
+      } else if (step === "card") closeCard();
+      else if (step === "selection") setManualSelectedNodeIds((current) => (current.size ? new Set() : current));
     };
-    document.addEventListener("pointerdown", closeMenusOutside);
-    document.addEventListener("keydown", closeMenusWithKeyboard);
+    // In the capture phase: nodes, badges and cards stop their presses from bubbling, and a press on them must still
+    // close an open toolbar menu.
+    document.addEventListener("pointerdown", closeMenusOutside, true);
+    document.addEventListener("keydown", closeWithEscape);
     return () => {
-      document.removeEventListener("pointerdown", closeMenusOutside);
-      document.removeEventListener("keydown", closeMenusWithKeyboard);
+      document.removeEventListener("pointerdown", closeMenusOutside, true);
+      document.removeEventListener("keydown", closeWithEscape);
     };
-  }, [closePopoverMenus, dismissContextMenu]);
+  }, [closeCard, closePopoverMenus, dismissContextMenu]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -1434,6 +1538,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         // Find is on the graph canvas: from another view, go there first.
         setViewMode("graph");
         window.requestAnimationFrame(() => findInputRef.current?.focus());
+        return;
+      }
+      if ((event.key === "Delete" || event.key === "Backspace") && !typing && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        if (hideFromKeyboardRef.current()) event.preventDefault();
         return;
       }
       // Undo in a text field undoes the typing, not the graph.
@@ -1818,15 +1926,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       }
       setMenuClosing(false);
       contextOpenRef.current = { nodeId: node.id, openedAt };
-      const selectedSnapshot = [...selectedNodeIds];
-      const candidateNodeIds = selectedNodeIds.has(node.id)
-        ? [
-            node.id,
-            ...[...selectedNodeIds]
-              .filter((nodeId) => nodeId !== node.id)
-              .sort(),
-          ]
-        : [node.id];
+      if (!menuStateRef.current) menuReturnFocusRef.current = document.activeElement;
+      // The menu acts on the node it was opened on, or on the whole selection when that node is part of it.
+      const candidateNodeIds = contextMenuScope(node.id, selectedNodeIds);
       const nodeIds = candidateNodeIds.filter((nodeId) => {
         const candidate = graphRef.current.nodes.find(
           (graphNode) => graphNode.id === nodeId,
@@ -1839,7 +1941,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         setMenu({
           node,
           scopeNodeIds: candidateNodeIds,
-          selectedNodeIds: selectedSnapshot,
           nodeIds: [],
           x,
           y,
@@ -1854,7 +1955,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       setMenu({
         node,
         scopeNodeIds: candidateNodeIds,
-        selectedNodeIds: selectedSnapshot,
         nodeIds,
         x,
         y,
@@ -2485,9 +2585,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       applyInteractiveTransform(next);
       return;
     }
-    if (programmaticNodeAnimationRef.current.frame !== null) cancelProgrammaticNodeAnimation();
-    layoutJobRef.current?.cancel();
-    layoutJobRef.current = null;
+    viewportTouchedAtRef.current = performance.now();
     commitInteractiveTransform();
     transformRef.current = next;
     setTransform(next);
@@ -2549,6 +2647,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
    */
   const selectNode = (nodeId: string | null, byPointer = false) => {
     setFocusedNodeId(nodeId);
+    if (nodeId) setRovingNodeId(nodeId);
     setFocusedEdgeId(null);
     endDetailsArrival();
     selectionAnchorRef.current = nodeId;
@@ -2582,12 +2681,35 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     return anchor !== null && anchor === focusedNodeRef.current && drawnNodeById.has(anchor) ? anchor : null;
   };
 
+  /**
+   * The selection a Shift-, ⌘- or Ctrl-gesture starts from: while filters are active, what they select (the filters
+   * give way to it, so the gesture changes what is on screen); otherwise the manual selection.
+   */
+  const takeSelectionToEdit = (): Set<string> | null => {
+    if (!filters.hasActive) return null;
+    const base = new Set(selectionToEdit(true, filters.matches, manualSelectedNodeIds));
+    setSelectedFacetValues(new Map());
+    return base;
+  };
+
   const toggleNodeInSelection = (nodeId: string) => {
     const anchor = takeSelectionAnchor();
-    setManualSelectedNodeIds((current) => toggleInSelection(current, nodeId, anchor));
+    const base = takeSelectionToEdit();
+    setManualSelectedNodeIds((current) => toggleInSelection(base ?? current, nodeId, anchor));
   };
 
   const nodeOf = (nodeId: string) => graphRef.current.nodes.find((candidate) => candidate.id === nodeId);
+
+  /** A node is dragged: a running layout (and its animation) stops where its nodes are, and says so. */
+  const stopLayoutForDrag = () => {
+    const computing = isLayoutComputing;
+    cancelProgrammaticNodeAnimation();
+    layoutJobRef.current?.cancel();
+    layoutJobRef.current = null;
+    layoutIntentRef.current = null;
+    localLayoutNodeIdsRef.current = null;
+    if (computing) setStatus("Stopped the layout to move the node.");
+  };
 
   // The current implementations behind the stable `nodeHandlers` (see graph-canvas-view.tsx).
   /** Opens the statement card of an edge (null closes it); a node's card closes. */
@@ -2663,7 +2785,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const addToManualSelection = (nodeIds: string[]) => {
     const anchor = takeSelectionAnchor();
-    setManualSelectedNodeIds((current) => addToSelection(current, nodeIds, anchor));
+    const base = takeSelectionToEdit();
+    setManualSelectedNodeIds((current) => addToSelection(base ?? current, nodeIds, anchor));
   };
 
   /** Shift, ⌘ or Ctrl held: a drag from here draws a selection box (a click on a node still toggles it). */
@@ -2727,7 +2850,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         suppressNodeClickUntilRef.current = 0;
         return;
       }
-      if (event.shiftKey || event.metaKey || event.ctrlKey) {
+      if (contextClick(event)) return; // the context menu opens instead
+      if (selectionModifier(event, applePlatform)) {
         toggleNodeInSelection(nodeId);
         return;
       }
@@ -2757,22 +2881,17 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       if (node) void openContextMenu(node, event.clientX, event.clientY);
     },
     pointerDown(nodeId, event) {
-      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (event.pointerType === "mouse" && (event.button !== 0 || contextClick(event))) return;
       event.stopPropagation();
       if (event.pointerType === "touch") event.preventDefault();
       closeHold();
-      if (event.pointerType !== "touch" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+      if (event.pointerType !== "touch" && selectionModifier(event, applePlatform)) {
         // The canvas follows the box (moves and the release bubble to it); a click without dragging toggles the node.
         startMarquee(event.pointerId, event.clientX, event.clientY, true);
         event.currentTarget.setPointerCapture(event.pointerId);
         return;
       }
-      // Direct manipulation always wins. Stop at the exact interpolated position before capturing drag origins.
-      cancelProgrammaticNodeAnimation();
-      layoutJobRef.current?.cancel();
-      layoutJobRef.current = null;
-      layoutIntentRef.current = null;
-      localLayoutNodeIdsRef.current = null;
+      // A press alone (a click) lets a running layout go on; the layout stops when the node starts to move.
       const now = performance.now();
       const previousTap = lastNodeTapRef.current;
       // The second press of a double click or double tap: dragging it brings the node's leaves along (neighbours linked
@@ -2822,6 +2941,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       if (!drag.moved && clientDistance < 5) return;
       if (!drag.moved) {
         drag.moved = true;
+        // Direct manipulation wins: the layout stops where its nodes are now, and the drag starts from there.
+        stopLayoutForDrag();
+        graphRef.current.nodes.forEach((candidate) => {
+          if (drag.origins.has(candidate.id)) drag.origins.set(candidate.id, { x: candidate.x ?? 0, y: candidate.y ?? 0 });
+        });
         pushHistory(drag.historySnapshot);
         closeHold();
         setDraggingNodeId(nodeId);
@@ -2839,7 +2963,17 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     pointerEnd(event, cancelled) {
       finishNodePointer(event.pointerId, event.clientX, event.clientY, cancelled);
     },
+    focus(nodeId) {
+      setRovingNodeId(nodeId);
+    },
     keyDown(nodeId, event) {
+      const direction = ARROW_KEYS[event.key];
+      if (direction && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        const next = nodeInDirection(drawnGraphRef.current.nodes, nodeId, direction);
+        if (next) moveKeyboardTo(next);
+        return;
+      }
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
         if (event.shiftKey || event.metaKey || event.ctrlKey) toggleNodeInSelection(nodeId);
@@ -2847,9 +2981,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       }
       if (event.key === "ContextMenu" || (event.shiftKey && event.key === "F10")) {
         event.preventDefault();
-        const rect = canvasRef.current?.getBoundingClientRect();
+        // The menu opens at the node, as a right-click on it would.
+        const rect = event.currentTarget.getBoundingClientRect();
         const node = nodeOf(nodeId);
-        if (node) void openContextMenu(node, rect ? rect.left + rect.width / 2 : 280, rect ? rect.top + rect.height / 2 : 180);
+        if (node) void openContextMenu(node, rect.left + rect.width / 2, rect.top + rect.height / 2);
       }
     },
   };
@@ -2937,6 +3072,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (!name) return;
     const color =
       TYPE_PALETTE[namedGroups.length % TYPE_PALETTE.length].stroke;
+    pushHistory();
     setNamedGroups((current) => [
       ...current,
       {
@@ -3038,15 +3174,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     dismissContextMenu();
     const action =
       mode === "extend"
-        ? "Expanded"
+        ? "Added the neighbours to the selection"
         : mode === "replace"
-          ? "Moved"
-          : "Inverted";
-    setStatus(
-      `${action} the selection · ${next.size} ${
-        next.size === 1 ? "node" : "nodes"
-      } selected.`,
-    );
+          ? "Selected the neighbours"
+          : "Inverted the selection";
+    setStatus(`${action} · ${next.size} ${next.size === 1 ? "node" : "nodes"} selected.`);
   };
 
   const copyText = async (text: string) => {
@@ -3065,7 +3197,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
    */
   const revealNode = (nodeId: string, onlyIfCovered = false) => {
     const node = drawnGraphRef.current.nodes.find((candidate) => candidate.id === nodeId);
-    const svg = canvasRef.current?.getBoundingClientRect();
+    // The SVG canvas, or the large graph's canvas (same view box): both show the graph through `transform`.
+    const svg = (canvasRef.current ?? canvasWrapRef.current?.querySelector(".large-graph-interactive"))?.getBoundingClientRect();
     if (node?.x === undefined || node.y === undefined || !svg) return;
     const viewport = { width: GRAPH_WIDTH, height: GRAPH_HEIGHT };
     const current = transformRef.current;
@@ -3078,10 +3211,44 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (next) animateProgrammaticGraph(graphRef.current, next);
   };
 
+  revealNodeRef.current = revealNode;
+
   /** Follow a link in the details card: show that node's details and bring it into view. */
   const focusLinkedNode = (nodeId: string) => {
     selectNode(nodeId);
     revealNode(nodeId);
+  };
+
+  /** An arrow key: the keyboard moves to the node, the card follows when one is open, and the node comes into view. */
+  const moveKeyboardTo = (nodeId: string) => {
+    setRovingNodeId(nodeId);
+    if (inspectorOpen && focusedNodeId) focusLinkedNode(nodeId);
+    else revealNode(nodeId);
+    // At once, so a key held down or pressed quickly moves on from here; on the next frame if it is not drawn yet.
+    const focusNode = () => {
+      const element = canvasRef.current?.querySelector<SVGGElement>(`[data-node-id="${CSS.escape(nodeId)}"]`);
+      element?.focus({ preventScroll: true });
+      return Boolean(element);
+    };
+    if (!focusNode()) window.requestAnimationFrame(focusNode);
+  };
+
+  // Delete and Backspace hide, as Hide does: the selection, else the node shown in the card, else the node the
+  // keyboard is on. Undo brings them back.
+  hideFromKeyboardRef.current = () => {
+    if (viewMode !== "graph" || menuStateRef.current) return false;
+    const active = document.activeElement;
+    const keyboardNodeId = active instanceof Element ? active.closest("[data-node-id]")?.getAttribute("data-node-id") : null;
+    const ids = selectedNodeIds.size
+      ? new Set(selectedNodeIds)
+      : focusedNodeId && nodeById.has(focusedNodeId)
+        ? new Set([focusedNodeId])
+        : keyboardNodeId && nodeById.has(keyboardNodeId)
+          ? new Set([keyboardNodeId])
+          : null;
+    if (!ids) return false;
+    hideNodes(ids);
+    return true;
   };
 
   const hideNodes = (nodeIds: Set<string>) => {
@@ -3105,10 +3272,12 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     );
     setManualSelectedNodeIds(remainingSelection);
     setSelectedFacetValues(new Map());
-    setFocusedNodeId((current) =>
-      current && !nodeIds.has(current) ? current : null,
-    );
-    setInspectorOpen(false);
+    // The card of a node that stays stays open; the card of a hidden node closes.
+    const focusStays = focusedNodeRef.current !== null && !nodeIds.has(focusedNodeRef.current);
+    if (!focusStays) {
+      setFocusedNodeId(null);
+      setInspectorOpen(false);
+    }
     setPathHighlight(null);
     dismissContextMenu();
     setStatus(`Hid ${nodeIds.size} ${nodeIds.size === 1 ? "node" : "nodes"}.`);
@@ -3124,7 +3293,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     invalidateAsyncRequests();
     localLayoutNodeIdsRef.current = null;
     pushHistory();
-    setGraph((current) => removeGraphNodes(current, cluster));
+    // As Hide: the leaves go, everything else stays where it is.
+    const remaining = removeGraphNodes(graphRef.current, cluster);
+    skipLayoutRevisionRef.current = remaining.revision;
+    setGraph(remaining);
     filters.forgetRepositoryCounts();
     setNamedGroups((current) =>
       current.flatMap((group) => {
@@ -3173,7 +3345,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const what = layoutSelection ? `the ${layoutSelection.size} selected nodes` : null;
     setStatus(
       refine
-        ? what ? `Tidying ${what}…` : "Refining positions…"
+        ? what ? `Tidying ${what}…` : "Tidying the layout…"
         : mode === 'hierarchy'
           ? what ? `Arranging ${what} as a hierarchy…` : "Arranging as a hierarchy…"
           : mode === 'square'
@@ -3228,7 +3400,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setProvenanceOpen(false);
     setViewMode("graph");
     setStatus(
-      "301-node stress test loaded. Scroll to pan; pinch or Ctrl/⌘-scroll to zoom.",
+      `301-node stress test loaded. ${zoomOnScroll ? "Scroll to zoom; drag to pan." : "Scroll to pan; pinch or ⌘-scroll to zoom."}`,
     );
   };
 
@@ -3511,7 +3683,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   <button
                     className="workbench-action workbench-action--secondary"
                     type="button"
-                    aria-label={`Clear filters and ${selectedNodeIds.size} selected nodes`}
+                    aria-label={filters.hasActive ? `Clear the filters that select ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}` : `Clear the selection of ${selectedNodeIds.size} ${selectedNodeIds.size === 1 ? "node" : "nodes"}`}
                     onClick={() => {
                       setSelectedFacetValues(new Map());
                       setManualSelectedNodeIds(new Set());
@@ -3533,7 +3705,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   <button
                     className="workbench-action workbench-action--secondary"
                     type="button"
-                    title="Hide the selected nodes from this graph; Undo brings them back"
+                    aria-keyshortcuts="Delete"
+                    title="Hide the selected nodes from this graph (Delete); Undo brings them back"
                     disabled={!selectedNodeIds.size}
                     onClick={() => hideNodes(new Set(selectedNodeIds))}
                   >
@@ -3583,6 +3756,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                         : [{ x: node.x, y: node.y, ...graphNodeSize(node) }],
                     ),
                   );
+                  viewportTouchedAtRef.current = performance.now();
                   transformRef.current = nextTransform;
                   setTransform(nextTransform);
                 }}
@@ -3625,7 +3799,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 drawn={drawnNodeById.has(inspectorNode.id)}
                 arriving={detailsArriving}
                 cardRef={detailsCardRef}
-                onClose={() => setInspectorOpen(false)}
+                onClose={closeCard}
                 onCopy={(text) => void copyText(text)}
                 onExpand={() => void expandNodes([inspectorNode.id], inspectorNode.id)}
                 onTogglePin={() => togglePin(inspectorNode.id)}
@@ -3650,8 +3824,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               graph={drawnGraph} transform={transform} selected={selectedNodeIds} focused={focusedNodeId}
               showLabels={showAllEdgeLabels} groups={namedGroups} arranging={isLayoutComputing} zoomOnScroll={zoomOnScroll}
               onTransform={next => { transformRef.current = next; setTransform(next); }}
-              onInterrupt={() => { cancelProgrammaticNodeAnimation(); layoutJobRef.current?.cancel(); layoutJobRef.current = null; }}
-              onDragStart={() => {setIsLargeGraphDragging(true); pushHistory();}}
+              onInterrupt={() => { viewportTouchedAtRef.current = performance.now(); }}
+              onDragStart={() => {stopLayoutForDrag(); setIsLargeGraphDragging(true); pushHistory();}}
               onPositions={positions => {
                 setIsLargeGraphDragging(false);
                 const current = graphRef.current;
@@ -3659,9 +3833,14 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 graphRef.current = next; setGraph(next);
               }}
               onBoxSelect={addToManualSelection}
-              onSelect={(id, multiple) => {
+              onSelect={(id, multiple, byKeyboard) => {
                 if (id && multiple) {
                   toggleNodeInSelection(id);
+                  return;
+                }
+                if (id && byKeyboard) {
+                  // Enter or an arrow key: show it, and bring it into view when the keyboard went off screen.
+                  focusLinkedNode(id);
                   return;
                 }
                 // A Shift-click on the background keeps the selection; a plain one clears it.
@@ -3695,7 +3874,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }`}
               viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
               role="img"
-              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. Shift-, ⌘- or Ctrl-drag to select nodes with a box; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"} or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions.`}
+              aria-label={`Interactive RDF graph. Select a node to show its details and double-click it to load its neighbours. Drag the background to pan and a node to move it; double-click a node and keep dragging to move its leaf neighbours with it. ${selectionKeys(applePlatform)}click or drag to select nodes; dragging a selected node moves the whole selection. ${zoomOnScroll ? "Scroll" : "Pinch"}, double-click the background, or double-tap and drag vertically to zoom. Right-click or long-press a node for more actions. Tab reaches one node; arrow keys move to the next node in that direction; Enter shows its details; Delete hides the selection or the shown node. Escape closes the details, then clears the selection; / finds a node.`}
               onDoubleClick={(event) => {
                 if (event.target !== event.currentTarget) return;
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -3725,9 +3904,9 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   touchPointersRef.current.set(event.pointerId, {x:event.clientX,y:event.clientY});
               }}
               onPointerDown={(event) => {
-                if (event.pointerType === "mouse" && event.button !== 0) return;
+                if (event.pointerType === "mouse" && (event.button !== 0 || contextClick(event))) return;
                 if (event.pointerType === "touch") event.preventDefault();
-                if (event.pointerType !== "touch" && (event.shiftKey || event.metaKey || event.ctrlKey)) {
+                if (event.pointerType !== "touch" && selectionModifier(event, applePlatform)) {
                   startMarquee(event.pointerId, event.clientX, event.clientY, false);
                   event.currentTarget.setPointerCapture(event.pointerId);
                   return;
@@ -4057,6 +4236,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                         ? (moreLinksOf(node.id)?.text ?? null)
                         : null
                     }
+                    tabbable={node.id === tabbableNodeId}
                     handlers={nodeHandlers}
                   />
                 ))}
@@ -4097,7 +4277,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 setSelectedFacetValues(new Map());
                 setManualSelectedNodeIds(new Set(group.nodeIds));
               }}
-              onDeleteGroup={(group) => setNamedGroups((current) => current.filter((candidate) => candidate.id !== group.id))}
+              onDeleteGroup={(group) => {
+                pushHistory();
+                setNamedGroups((current) => current.filter((candidate) => candidate.id !== group.id));
+                setStatus(`Deleted the group “${group.name}”; Undo brings it back.`);
+              }}
             />
           )}
           {provenanceOpen && <LoadHistoryPanel batches={provenanceBatches} onClose={() => setProvenanceOpen(false)} />}
@@ -4120,7 +4304,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 // The canvas is drawn again first; then the node is shown like any followed link.
                 window.requestAnimationFrame(() => focusLinkedNode(nodeId));
               }}
-              onSelectNodes={(nodeIds) => setManualSelectedNodeIds(new Set(nodeIds))}
+              onSelectNodes={(nodeIds) => {
+                // As the group list does: a chosen pair is the selection, whatever the filters selected before.
+                setSelectedFacetValues(new Map());
+                setManualSelectedNodeIds(new Set(nodeIds));
+              }}
             />
           )}
 
@@ -4131,7 +4319,8 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             drawnNodes={drawnGraph.nodes}
             linkCount={drawnGraph.edges.length}
             statementCount={graph.edges.length}
-            isTypeSelected={(typeId) => filters.isOnlyType(TYPE_FACET_ID, typeId)}
+            isTypeSelected={(typeId) => filters.isTypeSelected(TYPE_FACET_ID, typeId)}
+            filtersActive={filters.hasActive}
             onToggleType={(typeId) => filters.toggleType(TYPE_FACET_ID, typeId)}
           />
 
@@ -4141,7 +4330,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               menu={menu}
               closing={menuClosing}
               menuRef={contextMenuRef}
-              canGroup={selectedNodeIds.size > 1}
+              canGroup={menu.scopeNodeIds.length > 1}
               canHideLeaves={menu.scopeNodeIds.length === 1 && leafClusterForNode(drawnGraph, menu.node.id).size > 1}
               onDismiss={() => dismissContextMenu()}
               onExpandAll={() => void expandNodes(menu.nodeIds, menu.node.id)}
@@ -4151,8 +4340,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               }}
               onLoadRelations={() => void loadMenuPredicates(menu)}
               onExpandRelation={(option) => void expand(option)}
-              onSelectNeighbours={(mode) => updateSelectionFromContext(mode, contextSelectionBaseIds)}
-              onGroup={createNamedGroup}
+              onSelectNeighbours={(mode) => updateSelectionFromContext(mode, menu.scopeNodeIds)}
+              onGroup={() => {
+                createNamedGroup();
+                dismissContextMenu();
+              }}
               onHideLeaves={() => {
                 collapseNode(menu.node.id);
                 dismissContextMenu();

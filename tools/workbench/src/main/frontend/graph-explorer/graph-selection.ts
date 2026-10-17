@@ -33,3 +33,37 @@ export function addToSelection<S extends ReadonlySet<string>>(
   for (const nodeId of nodeIds) next.add(nodeId);
   return next.size === current.size ? current : next;
 }
+
+/**
+ * What the node menu acts on: the selection when the node it was opened on is part of it (that node first, the others
+ * in a stable order), otherwise that node alone.
+ */
+export function contextMenuScope(nodeId: string, selected: ReadonlySet<string>): string[] {
+  if (!selected.has(nodeId)) return [nodeId];
+  return [nodeId, ...[...selected].filter((id) => id !== nodeId).sort()];
+}
+
+/**
+ * The selection a Shift-, ⌘- or Ctrl-gesture changes: while filters are active the selection on screen is what they
+ * match, so the gesture starts from that (and the filters give way to it); otherwise from the manual selection.
+ */
+export function selectionToEdit(
+  filtersActive: boolean,
+  matches: ReadonlySet<string>,
+  manual: ReadonlySet<string>,
+): ReadonlySet<string> {
+  return filtersActive ? matches : manual;
+}
+
+/**
+ * Whether a press adds to or takes from the selection: Shift or ⌘ anywhere, Ctrl except on Apple platforms, where a
+ * Ctrl-click is the context-menu click.
+ */
+export function selectionModifier(press: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }, apple: boolean): boolean {
+  return press.shiftKey || press.metaKey || (press.ctrlKey && !apple);
+}
+
+/** The selection modifiers as a hint names them: "Shift- or ⌘-" on Apple platforms, "Shift- or Ctrl-" elsewhere. */
+export function selectionKeys(apple: boolean): string {
+  return apple ? "Shift- or ⌘-" : "Shift- or Ctrl-";
+}

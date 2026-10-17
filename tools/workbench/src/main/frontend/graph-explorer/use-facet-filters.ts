@@ -14,7 +14,7 @@ import { FACET_LIST_LIMIT } from "./explorer-config.ts";
 import type { EndpointFacetValue, FilterFacet, RangeDraft } from "./explorer-types.ts";
 import { formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { mergeFacetValues } from "./facet-values.ts";
-import { facetModel, valuesInRange } from "./graph-facets.ts";
+import { facetModel, toggleTypeInSelection, valuesInRange } from "./graph-facets.ts";
 import type { GraphEdge, GraphNode } from "./graph-types.ts";
 import {
   BLANK_VISUAL,
@@ -241,8 +241,9 @@ export function useFacetFilters(input: {
         next.delete(facetId);
         return next;
       });
+      onChange();
     },
-    [setSelection, toggleValue],
+    [onChange, setSelection, toggleValue],
   );
 
   const updateRange = useCallback(
@@ -262,25 +263,22 @@ export function useFacetFilters(input: {
     [onChange, rangeDrafts, selection, setSelection],
   );
 
-  /** One type at a time (the legend): a second press clears it. */
+  /** A legend chip: its type joins the type filter or leaves it; other filters stay (see toggleTypeInSelection). */
   const toggleType = useCallback(
     (facetId: string, typeId: string) => {
-      setSelection((current) => {
-        const values = current.get(facetId);
-        return current.size === 1 && values?.size === 1 && values.has(typeId)
-          ? new Map()
-          : new Map([[facetId, new Set([typeId])]]);
-      });
+      setSelection((current) => toggleTypeInSelection(current, facetId, typeId));
       onChange();
     },
     [onChange, setSelection],
   );
 
-  const isOnlyType = useCallback(
-    (facetId: string, typeId: string) =>
-      selection.size === 1 && selection.get(facetId)?.size === 1 && Boolean(selection.get(facetId)?.has(typeId)),
+  const isTypeSelected = useCallback(
+    (facetId: string, typeId: string) => Boolean(selection.get(facetId)?.has(typeId)),
     [selection],
   );
+
+  /** Undo and Redo put the range texts back with the filters they belong to. */
+  const restoreRangeDrafts = useCallback((drafts: ReadonlyMap<string, RangeDraft>) => setRangeDrafts(new Map(drafts)), []);
 
   /** Repository-wide counts of a filter's values; `count` runs the query and returns null when it is stale. */
   const countInRepository = useCallback(
@@ -327,7 +325,8 @@ export function useFacetFilters(input: {
     removeValue,
     updateRange,
     toggleType,
-    isOnlyType,
+    isTypeSelected,
+    restoreRangeDrafts,
     countInRepository,
     forgetRepositoryCounts,
   };

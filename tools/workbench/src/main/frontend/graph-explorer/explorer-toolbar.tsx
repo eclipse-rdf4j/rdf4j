@@ -12,6 +12,12 @@
 import type { MouseEvent, RefObject, SyntheticEvent } from "react";
 import type { ViewMode } from "./explorer-types.ts";
 import { Icon } from "./icons.tsx";
+import { isApplePlatform } from "./graph-viewport.ts";
+
+/** Undo and redo as the platform writes them (⌘ on Apple platforms, Ctrl elsewhere). */
+const HISTORY_KEYS = isApplePlatform()
+  ? { undo: { shown: "⌘Z", aria: "Meta+Z" }, redo: { shown: "⇧⌘Z", aria: "Meta+Shift+Z" } }
+  : { undo: { shown: "Ctrl+Z", aria: "Control+Z" }, redo: { shown: "Ctrl+Shift+Z", aria: "Control+Shift+Z" } };
 
 /** One row of the Layout or Tools menu. */
 export type ToolbarMenuItem = {
@@ -156,7 +162,8 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
             className="workbench-action workbench-action--ghost workbench-action--icon"
             type="button"
             aria-label="Undo the last graph change"
-            title="Undo"
+            aria-keyshortcuts={HISTORY_KEYS.undo.aria}
+            title={`Undo (${HISTORY_KEYS.undo.shown})`}
             disabled={!props.canUndo}
             onClick={props.onUndo}
           >
@@ -166,7 +173,8 @@ export function ExplorerToolbar(props: ExplorerToolbarProps) {
             className="workbench-action workbench-action--ghost workbench-action--icon"
             type="button"
             aria-label="Redo the last undone graph change"
-            title="Redo"
+            aria-keyshortcuts={HISTORY_KEYS.redo.aria}
+            title={`Redo (${HISTORY_KEYS.redo.shown})`}
             disabled={!props.canRedo}
             onClick={props.onRedo}
           >

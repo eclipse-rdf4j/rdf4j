@@ -277,6 +277,7 @@ export function NodeMenu({
               type="button"
               className="is-danger"
               onClick={onHide}
+              title="Hide (Delete); Undo brings it back"
             >
               <Icon name="hide" />
               <strong>

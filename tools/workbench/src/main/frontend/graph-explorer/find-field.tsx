@@ -92,6 +92,8 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository 
         type="search"
         role="combobox"
         aria-label="Find a node, or search the repository"
+        aria-keyshortcuts="/"
+        title="Find a node (/)"
         aria-autocomplete="list"
         aria-expanded={shown}
         aria-controls={listId}

@@ -62,9 +62,28 @@ test('empty and isolated-node layouts are finite and preserve pinned positions',
 test('a pure 300-leaf fan does not regress to stacked columns through its edges', async () => {
   const graph = createStarStressGraph(300, 1);
   const result = await computeGraphLayout(graph);
-  const metrics = layoutMetrics(graph, result.positions);
+  // A fan this big fills rings, so straight lines from the hub to outer cards pass inner ones; the drawn arrows are the
+  // routed ones, which use the lanes between cards.
+  const metrics = layoutMetrics(graph, result.positions, result.bends, result.routes);
   assert.equal(metrics.nodeOverlaps, 0);
-  assert.ok(metrics.edgeNodeOverlaps <= 700, `edge-node conflicts: ${metrics.edgeNodeOverlaps}`);
+  assert.ok(metrics.routedEdgeNodeOverlaps <= 350, `drawn edge-node conflicts: ${metrics.routedEdgeNodeOverlaps}`);
+  assert.ok(metrics.width / metrics.height > 0.8, `aspect ${(metrics.width / metrics.height).toFixed(2)}`);
+});
+
+test('a hub with hundreds of leaves fills rings around it, shaped like the view, instead of one tall column', async () => {
+  for (const leaves of [150, 519]) {
+    const graph = createStarStressGraph(leaves, 1);
+    const started = performance.now();
+    const result = await computeGraphLayout(graph, { mode: 'network', aspectRatio: 1.6 });
+    const elapsed = performance.now() - started;
+    const metrics = layoutMetrics(graph, result.positions);
+    const aspect = metrics.width / metrics.height;
+    assert.equal(metrics.nodeOverlaps, 0, `${leaves} leaves: overlapping cards`);
+    assert.ok(aspect > 0.8 && aspect < 3.2, `${leaves} leaves: aspect ${aspect.toFixed(3)} (${Math.round(metrics.width)}×${Math.round(metrics.height)})`);
+    // One ring around the hub grows with the square of its leaves; rings filled in turn grow with their number.
+    assert.ok(metrics.area < leaves * 60000, `${leaves} leaves: area ${(metrics.area / 1e6).toFixed(1)}M px²`);
+    assert.ok(elapsed < 6000, `${leaves} leaves: ${Math.round(elapsed)} ms`);
+  }
 });
 
 test('shared-hub organization does not explode neighborhoods into distant sectors', async () => {

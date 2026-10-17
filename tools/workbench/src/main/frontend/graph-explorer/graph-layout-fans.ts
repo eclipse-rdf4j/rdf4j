@@ -83,6 +83,13 @@ const ELLIPSE_RATIO = 1.5;
 /** How far a small fan's ellipse may grow to clear obstacles before the ring walk takes over. */
 const ELLIPSE_OBSTACLE_GROWTH = 1.7;
 
+/** Fans of at least this many leaves fill concentric rings (`ringsFan`) instead of one ring. */
+export const RINGS_FAN_MIN = 40;
+/** Room between two rings, in clearances: what is left beside a card is a lane for the arrows to the rings outside. */
+const RING_LANE = 1.5;
+/** Rings a big fan may use before it gives up on the obstacles around it. */
+const RINGS_MAX = 200;
+
 const ALONG_STEP = 8;
 
 /** Point of the ring at perimeter coordinate t, clockwise from the top of the right side: [side, offset on side]. */
@@ -238,6 +245,8 @@ export function placeFan(request: FanRequest): Fan {
   const {units, spacing} = request;
   const small = ellipseFan(request);
   if (small) return small;
+  const big = ringsFan(request);
+  if (big) return big;
   if (!units.length) {
     const e = {left: request.halfWidth, right: request.halfWidth, top: request.halfHeight, bottom: request.halfHeight};
     return {placements: [], extents: e, inner: {hx: request.halfWidth + spacing.edgeLength, hy: request.halfHeight + spacing.edgeLength}};
@@ -338,6 +347,82 @@ function ellipseFan(request: FanRequest): Fan | null {
     return {placements, extents: {left, right, top, bottom}, inner: {hx: a0 * scale, hy: b0 * scale}};
   }
   return null;
+}
+
+/**
+ * A big fan of leaves on concentric rectangular rings around the anchor, filled from the inside. One ring's area grows
+ * with the square of its units (and its best score then is a ring one card wide and very tall); rings filled in turn
+ * grow with their number. The inner ring is where a single ring would start, each next one a card and a clearance
+ * further out, with the steps stretched so the outermost ring approaches the wanted aspect ratio. Alternate rings are
+ * shifted by half a slot, so an arrow to an outer card tends to pass between the cards of the rings inside. A facing
+ * fan uses only the slots within its span; slots an obstacle blocks are skipped. Null when the fan is small, holds more
+ * than leaves, or (with obstacles) finds no room.
+ */
+function ringsFan(request: FanRequest): Fan | null {
+  const {units, shape, spacing, obstacles} = request;
+  if (units.length < RINGS_FAN_MIN) return null;
+  const shapes = units.map(unit => shape(unit, 0));
+  if (shapes.some(unit => [...unit.offsets.keys()].filter(key => key >= 0).length > 1)) return null;
+  const width = Math.max(...shapes.map(unit => unit.extents.left + unit.extents.right));
+  const height = Math.max(...shapes.map(unit => unit.extents.top + unit.extents.bottom));
+  // Twice the clearance between the cards of a side: room for the arrows to the rings outside.
+  const pitchX = width + spacing.clearX * 2, pitchY = height + spacing.clearY * 2;
+  let stepX = width + spacing.clearX * RING_LANE, stepY = height + spacing.clearY * RING_LANE;
+  if (stepX / stepY > spacing.aspectRatio) stepY = stepX / spacing.aspectRatio;
+  else stepX = stepY * spacing.aspectRatio;
+  const facing = request.direction ?? [0, Math.PI / 2, Math.PI, -Math.PI / 2][request.facing ?? 0];
+  const reach = Math.PI * Math.min(1, request.span ?? 1);
+  const within = (x: number, y: number) =>
+    request.spread || reach >= Math.PI || Math.abs(Math.atan2(Math.sin(Math.atan2(y, x) - facing), Math.cos(Math.atan2(y, x) - facing))) <= reach;
+  // Centres of the cards (of size `card`, every `pitch`) that fit a side of `length`, centred on it; one fewer, half a
+  // pitch along, when shifted.
+  const along = (length: number, card: number, pitch: number, shifted: boolean) => {
+    const count = (length < card ? 0 : Math.floor((length - card) / pitch) + 1) - (shifted ? 1 : 0);
+    return Array.from({length: Math.max(0, count)}, (_, j) => (j - (count - 1) / 2) * pitch);
+  };
+  type Slot = {side: Side; at: number};
+  const ringSlots = (hx: number, hy: number, shifted: boolean): Slot[] => {
+    // Clockwise from the top of the right side (y down): the sides hold the corners, the top and bottom rows keep a
+    // clearance from them.
+    const columns = along(2 * (hy + height), height, pitchY, shifted);
+    const rows = along(2 * (hx - spacing.clearX), width, pitchX, shifted);
+    return [
+      ...columns.map(at => ({side: 0 as Side, at})),
+      ...[...rows].reverse().map(at => ({side: 1 as Side, at})),
+      ...[...columns].reverse().map(at => ({side: 2 as Side, at})),
+      ...rows.map(at => ({side: 3 as Side, at})),
+    ];
+  };
+  const centre = (slot: Slot, unit: UnitShape, hx: number, hy: number) => {
+    const e = unit.extents;
+    switch (slot.side) {
+      case 0: return {x: hx + e.left, y: slot.at};
+      case 1: return {x: slot.at, y: hy + e.top};
+      case 2: return {x: -hx - e.right, y: slot.at};
+      default: return {x: slot.at, y: -hy - e.bottom};
+    }
+  };
+  const placements: FanPlacement[] = [];
+  let hx = request.halfWidth + spacing.edgeLength, hy = request.halfHeight + spacing.edgeLength * 0.7;
+  let outer = {hx, hy};
+  for (let ring = 0; placements.length < units.length && ring < RINGS_MAX; ring++, hx += stepX, hy += stepY) {
+    const next = placements.length;
+    const free = ringSlots(hx, hy, ring % 2 === 1).filter(slot => {
+      const at = centre(slot, shapes[next], hx, hy);
+      return within(at.x, at.y) && !(obstacles && blocked(at, slot.side, shapes[next], obstacles, spacing));
+    });
+    if (!free.length) continue;
+    const remaining = units.length - next;
+    // The last ring spreads what is left evenly round its free slots.
+    const chosen = remaining >= free.length ? free : Array.from({length: remaining}, (_, i) => free[Math.floor((i + 0.5) * free.length / remaining)]);
+    chosen.forEach((slot, i) => {
+      const unit = shapes[next + i];
+      placements.push({card: units[next + i], side: slot.side, ...centre(slot, unit, hx, hy), shape: shape(units[next + i], slot.side)});
+    });
+    outer = {hx, hy};
+  }
+  if (placements.length < units.length) return null;
+  return {placements, extents: fanExtents(request, placements), inner: outer, ring: true};
 }
 
 /** Packs or spreads the units on the ring of half size (hx, hy); null when they do not fit. */

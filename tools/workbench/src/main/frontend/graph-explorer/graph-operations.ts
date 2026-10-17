@@ -304,15 +304,25 @@ export function preserveSharedNodePositions(next: Graph, current: Graph): Graph 
   };
 }
 
+const RDF_TYPE_PREDICATE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
+
 export function removeGraphNodes(graph: Graph, nodeIds: Set<string>): Graph {
   const edges = graph.edges.filter(
     (edge) => !nodeIds.has(edge.source) && !nodeIds.has(edge.target),
   );
-  // A literal value belongs to the resources that state it; once none is left, it goes too.
+  // A literal value belongs to the resources that state it; once none is left, it goes too. So does a class that was
+  // only there as the type of removed resources: the canvas leaves a class out while rdf:type links reach it, and would
+  // otherwise draw it on its own once they are gone.
   const referenced = new Set(edges.flatMap((edge) => [edge.source, edge.target]));
+  const typeOfRemoved = new Set(
+    graph.edges.flatMap((edge) => (edge.predicate === RDF_TYPE_PREDICATE && nodeIds.has(edge.source) ? [edge.target] : [])),
+  );
   return {
     nodes: graph.nodes.filter(
-      (node) => !nodeIds.has(node.id) && (node.kind !== "literal" || referenced.has(node.id)),
+      (node) =>
+        !nodeIds.has(node.id) &&
+        (node.kind !== "literal" || referenced.has(node.id)) &&
+        (!typeOfRemoved.has(node.id) || referenced.has(node.id)),
     ),
     edges,
     revision: graph.revision + 1,
@@ -376,8 +386,6 @@ export function commonNeighborIds(graph: Graph, nodeIds: string[]) {
     ),
   );
 }
-
-const RDF_TYPE_PREDICATE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
 /**
  * Gives resources the types their loaded rdf:type statements state, so a large graph is coloured by type at once

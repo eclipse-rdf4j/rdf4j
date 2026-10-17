@@ -2742,7 +2742,7 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
 }
 
 .graph-explorer .graph-canvas.dim-by-path .edge:not(.is-on-path),
-.graph-explorer .graph-canvas.dim-by-selection .edge:not(.touches-selection),
+.graph-explorer .graph-canvas.dim-by-selection .edge:not(.touches-selection):not(.touches-active),
 .graph-explorer .graph-canvas.dim-by-focus .edge:not(.touches-active) {
   opacity: 0.16;
 }
@@ -2807,8 +2807,9 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   animation: node-expanding 900ms ease-in-out infinite alternate;
 }
 
+/* The node shown in the card (or under the pointer) is never faded by the selection. */
 .graph-explorer .graph-canvas.dim-by-path .graph-node:not(.is-on-path),
-.graph-explorer .graph-canvas.dim-by-selection .graph-node:not(.is-selected),
+.graph-explorer .graph-canvas.dim-by-selection .graph-node:not(.is-selected):not(.is-focused),
 .graph-explorer .graph-canvas.dim-by-focus .graph-node:not(.is-related) {
   opacity: 0.18;
 }
