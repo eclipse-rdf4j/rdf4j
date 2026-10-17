@@ -1,0 +1,1539 @@
+{
+  "specification": "RDF4J BNR-1 0.1",
+  "date": "2026-10-10",
+  "status": "unexecuted_specification_vectors",
+  "scope": "Semantic and syntax expectations for a future conformance runner; not a test implementation or a claim of passing results.",
+  "fixtureLoading": "Load typed fixture terms through the repository value API using the exact BNode IDs, not a Turtle parser that may relabel them. Each case starts with an independent fixture. Multiple requests in one case are sequential unless the case states otherwise.",
+  "comparison": "Use fixed scoped identity for referenced BNodes. Use graph isomorphism only for explicitly generated fresh nodes, while pinning fixed BNodes. Compare result multisets unless ordering is specified. No real requests to example.invalid are intended.",
+  "fixtures": {
+    "empty": [],
+    "base": [
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "bnode1"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:p"
+        },
+        "object": {
+          "type": "literal",
+          "value": "v",
+          "datatype": "http://www.w3.org/2001/XMLSchema#string"
+        },
+        "graph": null
+      },
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "bnode2"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:p"
+        },
+        "object": {
+          "type": "literal",
+          "value": "v",
+          "datatype": "http://www.w3.org/2001/XMLSchema#string"
+        },
+        "graph": null
+      },
+      {
+        "subject": {
+          "type": "iri",
+          "value": "urn:iriSubject"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:p"
+        },
+        "object": {
+          "type": "literal",
+          "value": "v",
+          "datatype": "http://www.w3.org/2001/XMLSchema#string"
+        },
+        "graph": null
+      },
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "bnode1"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:link"
+        },
+        "object": {
+          "type": "bnode",
+          "id": "bnode2"
+        },
+        "graph": null
+      },
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "bnode1"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:blocked"
+        },
+        "object": {
+          "type": "literal",
+          "value": "true",
+          "datatype": "http://www.w3.org/2001/XMLSchema#boolean"
+        },
+        "graph": null
+      },
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "bnode1"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:n"
+        },
+        "object": {
+          "type": "literal",
+          "value": "named",
+          "datatype": "http://www.w3.org/2001/XMLSchema#string"
+        },
+        "graph": {
+          "type": "bnode",
+          "id": "g"
+        }
+      }
+    ],
+    "sole": [
+      {
+        "subject": {
+          "type": "bnode",
+          "id": "sole"
+        },
+        "predicate": {
+          "type": "iri",
+          "value": "urn:p"
+        },
+        "object": {
+          "type": "literal",
+          "value": "1",
+          "datatype": "http://www.w3.org/2001/XMLSchema#integer"
+        },
+        "graph": null
+      }
+    ]
+  },
+  "cases": [
+    {
+      "id": "BNR-001",
+      "group": "lexical",
+      "title": "Exact label and ordinary term kind",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (isBlank(<_:bnode1>) AS ?blank) (sameTerm(<_:bnode1>, <_:bnode1>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: blank=true and same=true."
+    },
+    {
+      "id": "BNR-002",
+      "group": "lexical",
+      "title": "Strict mode rejects extension",
+      "mode": "strict-SPARQL-1.2",
+      "fixture": "base",
+      "requests": [
+        "ASK { <_:bnode1> <urn:p> \"v\" }"
+      ],
+      "expected": "Static rejection before evaluation."
+    },
+    {
+      "id": "BNR-003",
+      "group": "lexical",
+      "title": "VERSION does not enable extension",
+      "mode": "strict-SPARQL-1.2",
+      "fixture": "base",
+      "requests": [
+        "VERSION \"1.2\" ASK { <_:bnode1> <urn:p> \"v\" }"
+      ],
+      "expected": "Static rejection before evaluation."
+    },
+    {
+      "id": "BNR-004",
+      "group": "lexical",
+      "title": "Unicode escape decodes once",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:a>, <_:\\u0061>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=true."
+    },
+    {
+      "id": "BNR-005",
+      "group": "lexical",
+      "title": "Escaped marker recognition",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:a>, <\\u005F:a>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=true."
+    },
+    {
+      "id": "BNR-006",
+      "group": "lexical",
+      "title": "Percent sequence remains literal",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:a>, <_:%61>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=false."
+    },
+    {
+      "id": "BNR-007",
+      "group": "lexical",
+      "title": "No URL path decoding",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:a/b>, <_:a%2Fb>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=false."
+    },
+    {
+      "id": "BNR-008",
+      "group": "lexical",
+      "title": "Case-sensitive identifier",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:a>, <_:A>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=false."
+    },
+    {
+      "id": "BNR-009",
+      "group": "lexical",
+      "title": "Empty identifier is not allocation",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:>, <_:>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=true; both terms have the empty identifier. An explicitly documented backend ID-domain limitation may instead produce an explicit unsupported-value error, never allocation."
+    },
+    {
+      "id": "BNR-010",
+      "group": "lexical",
+      "title": "Non-label initial character",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?b WHERE { VALUES ?b { <_:-123> } }"
+      ],
+      "expected": "One row containing the BNode with canonical ID -123."
+    },
+    {
+      "id": "BNR-011",
+      "group": "lexical",
+      "title": "Escaped space and angle delimiter",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?b WHERE { VALUES ?b { <_:a\\u0020b\\u003E> } }"
+      ],
+      "expected": "One row containing canonical ID a b>; escapes do not retokenize the token."
+    },
+    {
+      "id": "BNR-012",
+      "group": "lexical",
+      "title": "Surrogate is invalid",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?b WHERE { VALUES ?b { <_:\\uD800> } }"
+      ],
+      "expected": "Static rejection."
+    },
+    {
+      "id": "BNR-013",
+      "group": "lexical",
+      "title": "Invalid Unicode scalar",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?b WHERE { VALUES ?b { <_:\\U00110000> } }"
+      ],
+      "expected": "Static rejection."
+    },
+    {
+      "id": "BNR-014",
+      "group": "lexical",
+      "title": "No Unicode normalization",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(<_:é>, <_:é>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=false. The second ID is e plus COMBINING ACUTE ACCENT."
+    },
+    {
+      "id": "BNR-015",
+      "group": "lexical",
+      "title": "BASE does not resolve reference",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "BASE <https://example.invalid/base/> SELECT (sameTerm(<_:a>, <_:a>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=true; ID is a, with no base prefix."
+    },
+    {
+      "id": "BNR-016",
+      "group": "lexical",
+      "title": "Reference text in string is literal",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (isLiteral(\"<_:bnode1>\") AS ?literal) WHERE {} # <_:comment>"
+      ],
+      "expected": "One row: literal=true; the comment creates no reference."
+    },
+    {
+      "id": "BNR-017",
+      "group": "lexical",
+      "title": "Ordinary IRI containing marker stays an IRI",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (isIRI(<urn:example:_:bnode1>) AS ?iri) WHERE {}"
+      ],
+      "expected": "One row: iri=true."
+    },
+    {
+      "id": "BNR-018",
+      "group": "position-errors",
+      "title": "Predicate",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <urn:s> <_:p> <urn:o> }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-019",
+      "group": "position-errors",
+      "title": "Path atom",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <urn:s> <_:p>* ?o }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-020",
+      "group": "position-errors",
+      "title": "Negated property-set member",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <urn:s> !(<_:p>) ?o }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-021",
+      "group": "position-errors",
+      "title": "Datatype",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?s WHERE { ?s <urn:p> \"x\"^^<_:d> }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-022",
+      "group": "position-errors",
+      "title": "Function name",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (<_:f>(1) AS ?x) WHERE {}"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-023",
+      "group": "position-errors",
+      "title": "BASE value",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "BASE <_:base> ASK {}"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-024",
+      "group": "position-errors",
+      "title": "PREFIX namespace",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "PREFIX x: <_:namespace> ASK {}"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-025",
+      "group": "position-errors",
+      "title": "SERVICE endpoint",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT * WHERE { SERVICE SILENT <_:service> { ?s ?p ?o } }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-026",
+      "group": "position-errors",
+      "title": "LOAD source",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "LOAD SILENT <_:document>"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-027",
+      "group": "position-errors",
+      "title": "FROM source",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT * FROM <_:g> WHERE { ?s ?p ?o }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-028",
+      "group": "position-errors",
+      "title": "FROM NAMED source",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT * FROM NAMED <_:g> WHERE { GRAPH ?g { ?s ?p ?o } }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-029",
+      "group": "position-errors",
+      "title": "USING source",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE { ?s ?p ?o } USING <_:g> WHERE { ?s ?p ?o }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-030",
+      "group": "position-errors",
+      "title": "USING NAMED source",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE { GRAPH ?g { ?s ?p ?o } } USING NAMED <_:g> WHERE { GRAPH ?g { ?s ?p ?o } }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-031",
+      "group": "position-errors",
+      "title": "BOUND operand",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (BOUND(<_:b>) AS ?x) WHERE {}"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-032",
+      "group": "position-errors",
+      "title": "Bare SELECT item",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT <_:b> WHERE {}"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-033",
+      "group": "position-errors",
+      "title": "LIMIT value",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT * WHERE {} LIMIT <_:b>"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-034",
+      "group": "position-errors",
+      "title": "Ordinary blank graph-name syntax",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { GRAPH _:g { ?s ?p ?o } }"
+      ],
+      "expected": "Static rejection; SILENT where present does not suppress a local static error."
+    },
+    {
+      "id": "BNR-035",
+      "group": "query",
+      "title": "Fixed subject addresses one node",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { <_:bnode1> <urn:p> ?o }"
+      ],
+      "expected": "One row: o is the xsd:string literal v."
+    },
+    {
+      "id": "BNR-036",
+      "group": "query",
+      "title": "Ordinary blank label remains existential",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { _:bnode1 <urn:p> ?o }"
+      ],
+      "expected": "Three rows with literal v, including the IRI subject; spelling is not an ID constraint."
+    },
+    {
+      "id": "BNR-037",
+      "group": "query",
+      "title": "Fixed object",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?s WHERE { ?s <urn:link> <_:bnode2> }"
+      ],
+      "expected": "One row: s is canonical BNode bnode1."
+    },
+    {
+      "id": "BNR-038",
+      "group": "query",
+      "title": "Same normal label may match fixed node",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "ASK { _:bnode1 <urn:link> <_:bnode2> . <_:bnode1> <urn:link> <_:bnode2> }"
+      ],
+      "expected": "true; no artificial inequality is imposed."
+    },
+    {
+      "id": "BNR-039",
+      "group": "query",
+      "title": "References across UNION and subquery",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?b WHERE { { BIND(<_:bnode1> AS ?b) } UNION { SELECT ?b WHERE { VALUES ?b { <_:bnode1> } } } }"
+      ],
+      "expected": "Two rows with the same canonical BNode bnode1."
+    },
+    {
+      "id": "BNR-040",
+      "group": "query",
+      "title": "DISTINCT deduplicates reference values",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT DISTINCT ?b WHERE { VALUES ?b { <_:bnode1> <_:bnode1> } }"
+      ],
+      "expected": "One row with canonical BNode bnode1."
+    },
+    {
+      "id": "BNR-041",
+      "group": "query",
+      "title": "Multi-column VALUES and UNDEF",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?b ?v WHERE { VALUES (?b ?v) { (<_:bnode1> 1) (<_:bnode2> UNDEF) } }"
+      ],
+      "expected": "Two rows; second v is unbound and second b is still a BNode reference."
+    },
+    {
+      "id": "BNR-042",
+      "group": "query",
+      "title": "Trailing VALUES",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?b ?o WHERE { ?b <urn:p> ?o } VALUES ?b { <_:bnode1> }"
+      ],
+      "expected": "One row: b=bnode1, o=v."
+    },
+    {
+      "id": "BNR-043",
+      "group": "query",
+      "title": "Unknown ID as value is valid",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?b WHERE { VALUES ?b { <_:missing> } }"
+      ],
+      "expected": "One row with canonical BNode missing and no repository mutation."
+    },
+    {
+      "id": "BNR-044",
+      "group": "query",
+      "title": "Unknown ID positive edge has no match",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <_:missing> <urn:p> ?o }"
+      ],
+      "expected": "false under simple matching."
+    },
+    {
+      "id": "BNR-045",
+      "group": "query",
+      "title": "Unknown ID zero-length self-path",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <_:missing> <urn:p>* <_:missing> }"
+      ],
+      "expected": "true; the empty active default graph exists."
+    },
+    {
+      "id": "BNR-046",
+      "group": "query",
+      "title": "Unknown ID nonzero path",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <_:missing> <urn:p>+ <_:missing> }"
+      ],
+      "expected": "false."
+    },
+    {
+      "id": "BNR-047",
+      "group": "query",
+      "title": "Unknown ID zero-length variable endpoint",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?o WHERE { <_:missing> <urn:p>* ?o }"
+      ],
+      "expected": "One row: o=canonical BNode missing."
+    },
+    {
+      "id": "BNR-048",
+      "group": "query",
+      "title": "Unknown graph does not become active",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { GRAPH <_:missingGraph> { <_:missing> <urn:p>* <_:missing> } }"
+      ],
+      "expected": "false; graph selection does not create a graph."
+    },
+    {
+      "id": "BNR-049",
+      "group": "query",
+      "title": "Inverse path",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "ASK { <_:bnode2> ^<urn:link> <_:bnode1> }"
+      ],
+      "expected": "true."
+    },
+    {
+      "id": "BNR-050",
+      "group": "query",
+      "title": "OPTIONAL with absent identity",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?b ?v WHERE { VALUES ?b { <_:missing> } OPTIONAL { ?b <urn:p> ?v } }"
+      ],
+      "expected": "One row: b=missing, v unbound."
+    },
+    {
+      "id": "BNR-051",
+      "group": "query",
+      "title": "MINUS ground RHS has no shared domain",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?s ?o WHERE { ?s <urn:p> ?o MINUS { <_:bnode1> <urn:blocked> true } }"
+      ],
+      "expected": "Three rows remain; the fixed RHS binds no shared variable."
+    },
+    {
+      "id": "BNR-052",
+      "group": "query",
+      "title": "NOT EXISTS fixed RHS",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?s ?o WHERE { ?s <urn:p> ?o FILTER NOT EXISTS { <_:bnode1> <urn:blocked> true } }"
+      ],
+      "expected": "Zero rows."
+    },
+    {
+      "id": "BNR-053",
+      "group": "query",
+      "title": "Grouping uses BNode identity",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?b (COUNT(*) AS ?n) WHERE { VALUES ?b { <_:bnode1> <_:bnode1> <_:bnode2> } } GROUP BY ?b"
+      ],
+      "expected": "Two rows: bnode1 count=2, bnode2 count=1; row order unspecified."
+    },
+    {
+      "id": "BNR-054",
+      "group": "query",
+      "title": "DESCRIBE direct node",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DESCRIBE <_:bnode1>"
+      ],
+      "expected": "The requested resource is canonical BNode bnode1; compare to the same implementation's variable-bound DESCRIBE policy, not a mandated CBD."
+    },
+    {
+      "id": "BNR-055",
+      "group": "query",
+      "title": "CONSTRUCT fixed and fresh roles",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "CONSTRUCT { <_:fixed> <urn:seen> ?v . _:fresh <urn:owner> <_:fixed> ; <urn:value> ?v } WHERE { VALUES ?v { 1 2 } }"
+      ],
+      "expected": "Six constructed triples. Fixed node fixed is preserved; two distinct fresh subjects are allocated. No repository mutation."
+    },
+    {
+      "id": "BNR-056",
+      "group": "query",
+      "title": "CONSTRUCT shorthand reference",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "CONSTRUCT WHERE { <_:bnode1> <urn:p> ?o }"
+      ],
+      "expected": "One constructed triple whose subject is canonical BNode bnode1."
+    },
+    {
+      "id": "BNR-057",
+      "group": "query",
+      "title": "CONSTRUCT shorthand ordinary label",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "CONSTRUCT WHERE { _:x <urn:p> ?o }"
+      ],
+      "expected": "Three constructed triples with fresh subjects per solution occurrence, not the three original subjects."
+    },
+    {
+      "id": "BNR-058",
+      "group": "query",
+      "title": "Duplicate solution occurrences allocate separately",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "CONSTRUCT { _:x <urn:p> <_:fixed> } WHERE { VALUES ?v { 1 1 } }"
+      ],
+      "expected": "Two triples with different fresh subjects and the same fixed object."
+    },
+    {
+      "id": "BNR-059",
+      "group": "expressions",
+      "title": "BNode type tests",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (isIRI(<_:b>) AS ?i) (hasLANG(<_:b>) AS ?l) (hasLANGDIR(<_:b>) AS ?d) (isTRIPLE(<_:b>) AS ?t) WHERE {}"
+      ],
+      "expected": "One row with all four booleans false."
+    },
+    {
+      "id": "BNR-060",
+      "group": "expressions",
+      "title": "STR error leaves BIND target unbound",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?x WHERE { BIND(STR(<_:b>) AS ?x) }"
+      ],
+      "expected": "One solution row with x unbound, not the identifier string."
+    },
+    {
+      "id": "BNR-061",
+      "group": "expressions",
+      "title": "BNode EBV is not true",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT * WHERE { FILTER(<_:b>) }"
+      ],
+      "expected": "Zero rows due to expression error."
+    },
+    {
+      "id": "BNR-062",
+      "group": "expressions",
+      "title": "COALESCE catches expression error",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (COALESCE(STR(<_:b>), \"fallback\") AS ?x) WHERE {}"
+      ],
+      "expected": "One row with x=fallback."
+    },
+    {
+      "id": "BNR-063",
+      "group": "expressions",
+      "title": "BNODE remains fresh",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(BNODE(\"b\"), <_:b>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=false."
+    },
+    {
+      "id": "BNR-064",
+      "group": "expressions",
+      "title": "TRIPLE with fixed BNode components",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(SUBJECT(TRIPLE(<_:s>, <urn:p>, <_:o>)), <_:s>) AS ?same) WHERE {}"
+      ],
+      "expected": "One row: same=true."
+    },
+    {
+      "id": "BNR-065",
+      "group": "expressions",
+      "title": "TRIPLE rejects runtime blank predicate",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?t WHERE { BIND(TRIPLE(<urn:s>, <_:p>, <urn:o>) AS ?t) }"
+      ],
+      "expected": "One row with t unbound due to expression error."
+    },
+    {
+      "id": "BNR-066",
+      "group": "expressions",
+      "title": "No IRI-to-BNode magic",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT ?v WHERE { BIND(IRI(\"_:b\") AS ?v) }"
+      ],
+      "expected": "Never returns a BNode. Apply ordinary IRI validity/error policy."
+    },
+    {
+      "id": "BNR-067",
+      "group": "updates",
+      "title": "INSERT DATA fixed identity",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "INSERT DATA { <_:bnode1> <urn:added> 1 }"
+      ],
+      "expected": "Exactly the new specified triple is added to bnode1, not another blank node."
+    },
+    {
+      "id": "BNR-068",
+      "group": "updates",
+      "title": "INSERT DATA same spelling is not aliasing",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { _:x <urn:pointsTo> <_:x> }"
+      ],
+      "expected": "One new triple; fresh subject differs from fixed object x."
+    },
+    {
+      "id": "BNR-069",
+      "group": "updates",
+      "title": "Repeat INSERT DATA with ordinary allocation",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { _:x <urn:pointsTo> <_:fixed> }",
+        "INSERT DATA { _:x <urn:pointsTo> <_:fixed> }"
+      ],
+      "expected": "Two triples with distinct fresh subjects and one fixed object."
+    },
+    {
+      "id": "BNR-070",
+      "group": "updates",
+      "title": "Repeat reference-ground INSERT DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> 1 }",
+        "INSERT DATA { <_:x> <urn:p> 1 }"
+      ],
+      "expected": "One RDF triple remains; repeated insertion is set-idempotent."
+    },
+    {
+      "id": "BNR-071",
+      "group": "updates",
+      "title": "DELETE DATA exact node",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DELETE DATA { <_:bnode1> <urn:p> \"v\" }"
+      ],
+      "expected": "Remove only the bnode1 p v triple; bnode2 and IRI-subject p v triples remain."
+    },
+    {
+      "id": "BNR-072",
+      "group": "updates",
+      "title": "DELETE DATA unknown is a no-op",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DELETE DATA { <_:missing> <urn:p> \"v\" }"
+      ],
+      "expected": "No dataset change."
+    },
+    {
+      "id": "BNR-073",
+      "group": "updates",
+      "title": "DELETE/INSERT same WHERE solution",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DELETE { <_:bnode1> <urn:p> ?v } INSERT { <_:bnode1> <urn:replacement> ?v } WHERE { <_:bnode1> <urn:p> ?v }"
+      ],
+      "expected": "Delete bnode1 p v and insert bnode1 replacement v, preserving identity."
+    },
+    {
+      "id": "BNR-074",
+      "group": "updates",
+      "title": "Template-only reference may introduce node",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT { <_:new> <urn:p> 1 } WHERE {}"
+      ],
+      "expected": "One triple inserted with canonical subject new."
+    },
+    {
+      "id": "BNR-075",
+      "group": "updates",
+      "title": "DELETE WHERE fixed subject",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DELETE WHERE { <_:bnode1> ?p ?o }"
+      ],
+      "expected": "Delete outgoing default-graph triples for bnode1 only. Its named-graph statements and inbound occurrences elsewhere remain."
+    },
+    {
+      "id": "BNR-076",
+      "group": "updates",
+      "title": "Full DELETE with FILTER",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DELETE { <_:bnode1> ?p ?o } WHERE { <_:bnode1> ?p ?o FILTER(?p = <urn:p>) }"
+      ],
+      "expected": "Delete bnode1 p v only."
+    },
+    {
+      "id": "BNR-077",
+      "group": "updates",
+      "title": "Cross-operation stable identity",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> 1 }; DELETE DATA { <_:x> <urn:p> 1 }; INSERT DATA { <_:x> <urn:p> 2 }"
+      ],
+      "expected": "Final default graph contains only x p 2."
+    },
+    {
+      "id": "BNR-078",
+      "group": "updates",
+      "title": "Empty collection allowed in deletion",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> () }",
+        "DELETE DATA { <_:x> <urn:p> () }"
+      ],
+      "expected": "No triples remain; () is rdf:nil, not a fresh list."
+    },
+    {
+      "id": "BNR-079",
+      "group": "update-errors",
+      "title": "Normal label in DELETE DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <_:x> <urn:p> _:y }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-080",
+      "group": "update-errors",
+      "title": "Anonymous node in DELETE template",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE { <_:x> <urn:p> [] } WHERE {}"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-081",
+      "group": "update-errors",
+      "title": "Nonempty list in deletion",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <_:x> <urn:p> (<_:y>) }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-082",
+      "group": "update-errors",
+      "title": "Normal label in DELETE WHERE",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE WHERE { _:x <urn:p> <_:y> }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-083",
+      "group": "update-errors",
+      "title": "VALUES illegally inside DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { VALUES ?x { <_:x> } }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-084",
+      "group": "update-errors",
+      "title": "Variable in INSERT DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> ?o }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-085",
+      "group": "update-errors",
+      "title": "Graph variable in DELETE DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { GRAPH ?g { <_:x> <urn:p> 1 } }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-086",
+      "group": "update-errors",
+      "title": "Nested variable in INSERT DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <urn:h> <urn:t> <<( <_:x> <urn:p> ?o )>> }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-087",
+      "group": "update-errors",
+      "title": "Nested normal blank in DELETE DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <urn:h> <urn:t> <<( <_:x> <urn:p> _:o )>> }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-088",
+      "group": "update-errors",
+      "title": "Reifier variable in DATA",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> 1 ~ ?r }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-089",
+      "group": "update-errors",
+      "title": "FILTER in DELETE WHERE shorthand",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE WHERE { <_:x> ?p ?o FILTER(?p = <urn:p>) }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-090",
+      "group": "update-errors",
+      "title": "Property path in DELETE WHERE shorthand",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE WHERE { <_:x> <urn:p>+ ?o }"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-091",
+      "group": "update-errors",
+      "title": "Quad CONSTRUCT not introduced",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "CONSTRUCT { GRAPH <_:g> { <_:x> <urn:p> 1 } } WHERE {}"
+      ],
+      "expected": "Static rejection; no update effects."
+    },
+    {
+      "id": "BNR-092",
+      "group": "nested-terms",
+      "title": "Nested VALUES triple term",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "SELECT (sameTerm(SUBJECT(?t), <_:s>) AS ?same) WHERE { VALUES ?t { <<( <_:s> <urn:p> <_:o> )>> } }"
+      ],
+      "expected": "One row: same=true."
+    },
+    {
+      "id": "BNR-093",
+      "group": "nested-terms",
+      "title": "Term insert does not assert inner triple",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <urn:h> <urn:t> <<( <_:s> <urn:p> <_:o> )>> }"
+      ],
+      "expected": "Exactly one outer triple inserted. No s p o triple and no implicit reifier."
+    },
+    {
+      "id": "BNR-094",
+      "group": "nested-terms",
+      "title": "Deep reference preservation",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <urn:h> <urn:t> <<( <_:a> <urn:p> <<( <_:b> <urn:q> <_:c> )>> )>> }",
+        "DELETE DATA { <urn:h> <urn:t> <<( <_:a> <urn:p> <<( <_:b> <urn:q> <_:c> )>> )>> }"
+      ],
+      "expected": "Insert and delete exactly the same nested term; final graph empty."
+    },
+    {
+      "id": "BNR-095",
+      "group": "reification",
+      "title": "Named reifier does not assert base",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { << <_:s> <urn:p> <_:o> ~ <_:r> >> <urn:source> <urn:src> }"
+      ],
+      "expected": "Exactly two metadata/reifying triples; no asserted s p o triple."
+    },
+    {
+      "id": "BNR-096",
+      "group": "reification",
+      "title": "Named annotation includes base",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:s> <urn:p> <_:o> ~ <_:r> {| <urn:source> <urn:src> |} }"
+      ],
+      "expected": "Exactly three expanded triples, including the asserted s p o triple."
+    },
+    {
+      "id": "BNR-097",
+      "group": "reification",
+      "title": "Named annotation deletion includes base",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:s> <urn:p> <_:o> ~ <_:r> {| <urn:source> <urn:src> |} }",
+        "DELETE DATA { <_:s> <urn:p> <_:o> ~ <_:r> {| <urn:source> <urn:src> |} }"
+      ],
+      "expected": "All three expanded triples deleted; final graph empty."
+    },
+    {
+      "id": "BNR-098",
+      "group": "reification",
+      "title": "Delete metadata without base",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:s> <urn:p> <_:o> ~ <_:r> {| <urn:source> <urn:src> |} }",
+        "DELETE DATA { << <_:s> <urn:p> <_:o> ~ <_:r> >> <urn:source> <urn:src> }"
+      ],
+      "expected": "Only asserted s p o remains."
+    },
+    {
+      "id": "BNR-099",
+      "group": "reification",
+      "title": "Implicit reifier still forbidden in deletion",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <urn:h> <urn:t> << <_:s> <urn:p> <_:o> >> }"
+      ],
+      "expected": "Static rejection due to the implicit reifier."
+    },
+    {
+      "id": "BNR-100",
+      "group": "reification",
+      "title": "Bare tilde forbidden in deletion",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <_:s> <urn:p> <_:o> ~ }"
+      ],
+      "expected": "Static rejection due to the implicit reifier."
+    },
+    {
+      "id": "BNR-101",
+      "group": "reification",
+      "title": "Second unqualified annotation is anonymous",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { <urn:s> <urn:p> <urn:o> ~ <_:r> {| <urn:a> 1 |} {| <urn:b> 2 |} }"
+      ],
+      "expected": "Static rejection: the second block introduces an ordinary placeholder."
+    },
+    {
+      "id": "BNR-102",
+      "group": "reification",
+      "title": "Repeating explicit reifier avoids anonymous block",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <urn:s> <urn:p> <urn:o> ~ <_:r> {| <urn:a> 1 |} ~ <_:r> {| <urn:b> 2 |} }"
+      ],
+      "expected": "Four unique triples: one base, one rdf:reifies, and two metadata triples using the same r."
+    },
+    {
+      "id": "BNR-103",
+      "group": "reification",
+      "title": "Outer fixed reifier does not fix nested anonymous one",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "DELETE DATA { << <urn:s> <urn:p> << <urn:a> <urn:b> <urn:c> >> ~ <_:outer> >> <urn:source> <urn:src> }"
+      ],
+      "expected": "Static rejection due to the nested implicit reifier."
+    },
+    {
+      "id": "BNR-104",
+      "group": "reification",
+      "title": "Annotation with unbound reifier does not allocate",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT { <urn:s> <urn:p> <urn:o> ~ ?r {| <urn:source> <urn:src> |} } WHERE {}"
+      ],
+      "expected": "Only the valid base triple is inserted. Triples using unbound r are omitted; no reifier allocated."
+    },
+    {
+      "id": "BNR-105",
+      "group": "reification",
+      "title": "Annotation on complex path remains invalid",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <_:s> (<urn:p>/<urn:q>) <_:o> ~ <_:r> {| <urn:source> <urn:src> |} }"
+      ],
+      "expected": "Static rejection under the baseline simple-predicate restriction."
+    },
+    {
+      "id": "BNR-106",
+      "group": "reification",
+      "title": "No uniqueness requirement for named reifier",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <urn:s> <urn:p> 1 ~ <_:r> . <urn:s> <urn:p> 2 ~ <_:r> }"
+      ],
+      "expected": "Both base triples and both rdf:reifies triples use the same r; no uniqueness error."
+    },
+    {
+      "id": "BNR-107",
+      "group": "graphs",
+      "title": "BNode named graph selection",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { GRAPH <_:g> { <_:bnode1> <urn:n> ?o } }"
+      ],
+      "expected": "One row: o=named."
+    },
+    {
+      "id": "BNR-108",
+      "group": "graphs",
+      "title": "VALUES-bound BNode graph name",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { VALUES ?g { <_:g> } GRAPH ?g { <_:bnode1> <urn:n> ?o } }"
+      ],
+      "expected": "Same row as direct GRAPH reference."
+    },
+    {
+      "id": "BNR-109",
+      "group": "graphs",
+      "title": "Same node as graph name and subject",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { GRAPH <_:g> { <_:g> <urn:self> <_:g> } }",
+        "ASK { GRAPH <_:g> { <_:g> <urn:self> <_:g> } }"
+      ],
+      "expected": "ASK=true; all three occurrences have the same identity."
+    },
+    {
+      "id": "BNR-110",
+      "group": "graphs",
+      "title": "WITH chooses referenced local graph",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "WITH <_:g> DELETE { <_:bnode1> <urn:n> ?o } INSERT { <_:bnode1> <urn:n2> ?o } WHERE { <_:bnode1> <urn:n> ?o }"
+      ],
+      "expected": "In graph g, replace n named with n2 named; other graphs unchanged."
+    },
+    {
+      "id": "BNR-111",
+      "group": "graphs",
+      "title": "WITH with USING has distinct matching and target roles",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "WITH <_:g> INSERT { <_:bnode1> <urn:copied> ?o } USING <urn:source> WHERE { <urn:s> <urn:value> ?o }"
+      ],
+      "expected": "With a configured IRI source resolver returning s value 7, insert bnode1 copied 7 into graph g. WHERE comes from USING, not g.",
+      "resolverRequirement": "Resolve urn:source to a graph containing <urn:s> <urn:value> 7; perform no external network access."
+    },
+    {
+      "id": "BNR-112",
+      "group": "graphs",
+      "title": "COPY selects fixed graph names",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "COPY GRAPH <_:g> TO GRAPH <_:copy>",
+        "ASK { GRAPH <_:copy> { <_:bnode1> <urn:n> \"named\" } }"
+      ],
+      "expected": "ASK=true and graph g remains. Copied subject identity is still bnode1."
+    },
+    {
+      "id": "BNR-113",
+      "group": "graphs",
+      "title": "MOVE selects fixed graph names",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "MOVE GRAPH <_:g> TO GRAPH <_:moved>",
+        "ASK { GRAPH <_:moved> { <_:bnode1> <urn:n> \"named\" } }"
+      ],
+      "expected": "ASK=true and source graph g is removed under the backend graph-store contract."
+    },
+    {
+      "id": "BNR-114",
+      "group": "graphs",
+      "title": "ADD into referenced graph",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "ADD GRAPH <_:g> TO GRAPH <_:added>",
+        "ASK { GRAPH <_:added> { <_:bnode1> <urn:n> \"named\" } }"
+      ],
+      "expected": "ASK=true; original graph g unchanged."
+    },
+    {
+      "id": "BNR-115",
+      "group": "graphs",
+      "title": "Copy same referenced graph is not destructive",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "COPY GRAPH <_:g> TO GRAPH <_:g>",
+        "ASK { GRAPH <_:g> { <_:bnode1> <urn:n> \"named\" } }"
+      ],
+      "expected": "ASK=true."
+    },
+    {
+      "id": "BNR-116",
+      "group": "graphs",
+      "title": "CLEAR exact graph",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "CLEAR GRAPH <_:g>",
+        "ASK { <_:bnode1> <urn:p> \"v\" }"
+      ],
+      "expected": "Referenced graph contents cleared; ASK=true for unchanged default graph."
+    },
+    {
+      "id": "BNR-117",
+      "group": "graphs",
+      "title": "DROP exact graph",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "DROP GRAPH <_:g>",
+        "ASK { <_:bnode1> <urn:p> \"v\" }"
+      ],
+      "expected": "Referenced graph dropped; ASK=true for unchanged default graph."
+    },
+    {
+      "id": "BNR-118",
+      "group": "graphs",
+      "title": "CREATE blank-node named graph",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "CREATE GRAPH <_:emptyGraph>"
+      ],
+      "expected": "Use ordinary backend graph-creation semantics, with exact graph name emptyGraph. No automatic triple insertion."
+    },
+    {
+      "id": "BNR-119",
+      "group": "graphs",
+      "title": "LOAD accepts reference only as destination",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "LOAD <https://example.invalid/input.ttl> INTO GRAPH <_:loaded>"
+      ],
+      "expected": "With a controlled source resolver, input is loaded into the referenced graph. Input document blank labels retain ordinary import semantics.",
+      "resolverRequirement": "Serve a local mock Turtle resource; do not fetch example.invalid."
+    },
+    {
+      "id": "BNR-120",
+      "group": "identity",
+      "title": "Prepared-query negative cache refresh",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "ASK { <_:later> <urn:p> 1 }",
+        "INSERT DATA { <_:later> <urn:p> 1 }",
+        "ASK { <_:later> <urn:p> 1 }"
+      ],
+      "expected": "First ASK=false, second ASK=true, reusing the same prepared ASK object after the committed insertion.",
+      "executionRequirement": "Prepare ASK once; execute it twice, with insertion between evaluations."
+    },
+    {
+      "id": "BNR-121",
+      "group": "identity",
+      "title": "Delete last triple and insert same identity",
+      "mode": "BNR-1",
+      "fixture": "sole",
+      "requests": [
+        "DELETE { <_:sole> <urn:p> 1 } INSERT { <_:sole> <urn:q> 2 } WHERE { <_:sole> <urn:p> 1 }"
+      ],
+      "expected": "Identity sole survives the DELETE/INSERT phases; q 2 is inserted for the same node."
+    },
+    {
+      "id": "BNR-122",
+      "group": "identity",
+      "title": "Result round-trip contract",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?s WHERE { ?s <urn:link> <_:bnode2> }",
+        "ASK { <_:bnode1> <urn:link> <_:bnode2> }"
+      ],
+      "expected": "Result term is a BNode, not an IRI. With addressable canonical results, its canonical ID can be used in the second request and ASK=true."
+    },
+    {
+      "id": "BNR-123",
+      "group": "identity",
+      "title": "Static malformed request has no partial writes",
+      "mode": "BNR-1",
+      "fixture": "empty",
+      "requests": [
+        "INSERT DATA { <_:x> <urn:p> 1 }; DELETE DATA { <_:x> <urn:p> _:y }"
+      ],
+      "expected": "Static rejection before execution; no x p 1 insertion."
+    },
+    {
+      "id": "BNR-124",
+      "group": "federation",
+      "title": "SERVICE-local lexical reference",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { SERVICE <https://example.invalid/service> { <_:bnode1> <urn:p> ?o } }"
+      ],
+      "expected": "Resolve bnode1 in the mocked remote identity scope, not the local scope.",
+      "mockServiceRequirement": "Remote scope is distinct and has canonical bnode1 p \"remote\". Its BNR-1 capability is configured. Expected row o=remote."
+    },
+    {
+      "id": "BNR-125",
+      "group": "federation",
+      "title": "No label-only local-to-remote binding",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?o WHERE { VALUES ?s { <_:bnode1> } SERVICE <https://example.invalid/service> { ?s <urn:p> ?o } }"
+      ],
+      "expected": "Without an explicit identity correspondence, do not serialize local bnode1 as a remote bnode1 handle. Preserve correct scoped join semantics or report unsupported identity transport; never return a false match based only on labels.",
+      "mockServiceRequirement": "Remote has independent canonical bnode1 p \"remote\"; no shared identity namespace."
+    },
+    {
+      "id": "BNR-126",
+      "group": "federation",
+      "title": "SERVICE SILENT execution failure",
+      "mode": "BNR-1",
+      "fixture": "base",
+      "requests": [
+        "SELECT ?x WHERE { VALUES ?x { 1 } SERVICE SILENT <https://example.invalid/service> { <_:bnode1> <urn:p> ?o } }"
+      ],
+      "expected": "If mocked remote rejects BNR-1 at execution, preserve the outer x=1 solution using normal SERVICE SILENT behavior.",
+      "mockServiceRequirement": "Mock endpoint does not support BNR-1; no real network request."
+    }
+  ]
+}

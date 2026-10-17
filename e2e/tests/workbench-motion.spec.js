@@ -55,16 +55,6 @@ async function retainedForwardFillCount(locator) {
 		.filter(animation => animation.effect && animation.effect.getTiming().fill === 'forwards').length);
 }
 
-async function hasVisibleIntermediateMotion(locator, lowerBound = 0, upperBound = null) {
-	return locator.evaluate((element, bounds) => {
-		const running = element.getAnimations({ subtree: false })
-			.some(animation => animation.playState === 'running');
-		const height = element.getBoundingClientRect().height;
-		const upper = bounds.upperBound === null ? element.scrollHeight : bounds.upperBound;
-		return running && height > bounds.lowerBound + 1 && height < upper - 1;
-	}, { lowerBound, upperBound });
-}
-
 /**
  * Watches an element on every animation frame for up to two seconds and remembers whether it was seen mid-motion: a
  * running animation with its height ('height'), its open details height ('details') or its opacity ('opacity')
@@ -115,7 +105,16 @@ async function hasVisibleIntermediateDetailsMotion(locator) {
 }
 
 async function waitForOwnedAnimations(locator) {
-	await expect.poll(() => activeMotionCount(locator)).toBe(0);
+	// A finished animation can retain its forwards effect until the queued onfinish handler cancels it.
+	// Wait for that cleanup as well as the motion, so callers inspect natural geometry after settlement.
+	await expect.poll(() => locator.evaluate(element => {
+		const animations = element.getAnimations({ subtree: false });
+		return {
+			running: animations.filter(animation => animation.playState === 'running').length,
+			forwards: animations.filter(animation => animation.effect
+				&& animation.effect.getTiming().fill === 'forwards').length
+		};
+	})).toEqual({ running: 0, forwards: 0 });
 }
 
 async function runPrimaryQuery(page) {
@@ -141,6 +140,7 @@ test('query explanation grows into view when Explain opens it', async ({ page })
 		element.CodeMirror.setValue('SELECT ?s WHERE { ?s ?p ?o }'));
 	const explanationRow = page.locator('#query-explanation-row');
 	await expect(explanationRow).toBeHidden();
+	await recordIntermediateMotion(explanationRow);
 
 	const opening = await explanationRow.evaluate(element => {
 		document.getElementById('explain-trigger').click();
@@ -154,7 +154,7 @@ test('query explanation grows into view when Explain opens it', async ({ page })
 	expect(opening.visible).toBe(true);
 	expect(opening.keyframes.length).toBeGreaterThan(1);
 	expect(parseFloat(opening.keyframes[0].height)).toBe(0);
-	await expect.poll(() => hasVisibleIntermediateMotion(explanationRow)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(explanationRow)).toBe(true);
 	await expect(page.locator('#query-explanation')).toContainText(/\S/);
 	await waitForOwnedAnimations(explanationRow);
 	await expect(explanationRow).toBeVisible();
@@ -735,43 +735,58 @@ test('shared form and mobile navigation disclosures reverse within narrow layout
 	await expect(advancedToggle).toBeVisible();
 	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
 	await expect(advancedPanel).toBeHidden();
+	await recordIntermediateMotion(advancedPanel);
 	await advancedToggle.focus();
 	await page.keyboard.press('Enter');
-	expect(await activeMotionCount(advancedPanel)).toBeGreaterThan(0);
+	await expect.poll(() => wasSeenInIntermediateMotion(advancedPanel)).toBe(true);
 	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'false');
 	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(false);
-	await expect.poll(() => hasVisibleIntermediateMotion(advancedPanel)).toBe(true);
 	await waitForOwnedAnimations(advancedPanel);
 	const firstControl = advancedPanel.locator('input:not([type="hidden"]), select, textarea').first();
 	await firstControl.focus();
-	await advancedToggle.click();
-	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'false');
-	await expect(advancedToggle).toBeFocused();
-	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'true');
-	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasVisibleIntermediateMotion(advancedPanel)).toBe(true);
-	const advancedReverse = await advancedPanel.evaluate(element => {
-		const before = element.getBoundingClientRect().height;
-		document.getElementById('create-advanced-toggle').click();
-		const animation = element.getAnimations({ subtree: false })
-			.find(candidate => candidate.playState === 'running');
-		const frames = animation.effect.getKeyframes();
-		const style = getComputedStyle(element);
-		const borderBoxInsets = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
-			+ parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
-		const firstKeyframeHeight = parseFloat(frames[0].height);
-		return {
-			before,
-			firstKeyframeHeight,
-			firstKeyframeBorderBoxHeight: style.boxSizing === 'border-box'
-					? firstKeyframeHeight
-					: firstKeyframeHeight + borderBoxInsets,
-			boxSizing: style.boxSizing,
-			borderBoxInsets,
-			currentHeight: element.getBoundingClientRect().height
+	const { closingState, advancedReverse } = await advancedPanel.evaluate(element => new Promise(resolve => {
+		const button = document.getElementById('create-advanced-toggle');
+		button.click();
+		const closingState = {
+			expanded: button.getAttribute('aria-expanded'),
+			focused: document.activeElement === button,
+			ariaHidden: element.getAttribute('aria-hidden'),
+			inert: element.inert
 		};
-	});
+		const deadline = performance.now() + 2000;
+		const sample = () => {
+			const before = element.getBoundingClientRect().height;
+			const running = element.getAnimations({ subtree: false })
+				.some(animation => animation.playState === 'running');
+			if (running && before > 1 && before < element.scrollHeight - 1) {
+				button.click();
+				const animation = element.getAnimations({ subtree: false })
+					.find(candidate => candidate.playState === 'running');
+				const style = getComputedStyle(element);
+				const borderBoxInsets = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+					+ parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+				const firstKeyframeHeight = parseFloat(animation.effect.getKeyframes()[0].height);
+				resolve({ closingState, advancedReverse: {
+					seenMidMotion: true,
+					before,
+					firstKeyframeHeight,
+					firstKeyframeBorderBoxHeight: style.boxSizing === 'border-box'
+						? firstKeyframeHeight : firstKeyframeHeight + borderBoxInsets,
+					boxSizing: style.boxSizing,
+					borderBoxInsets,
+					currentHeight: element.getBoundingClientRect().height
+				} });
+			} else if (running && performance.now() < deadline) {
+				requestAnimationFrame(sample);
+			} else {
+				resolve({ closingState, advancedReverse: { seenMidMotion: false } });
+			}
+		};
+		requestAnimationFrame(sample);
+	}));
+	expect(closingState).toEqual({ expanded: 'false', focused: true, ariaHidden: 'true', inert: true });
+	expect(advancedReverse, 'the close is visible part-way, where it reverses').toMatchObject({ seenMidMotion: true });
 	await expect(advancedToggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(advancedPanel).toHaveAttribute('aria-hidden', 'false');
 	await expect.poll(() => advancedPanel.evaluate(element => element.inert)).toBe(false);
@@ -788,17 +803,19 @@ test('shared form and mobile navigation disclosures reverse within narrow layout
 	const importToggle = page.locator('#add-import-settings-toggle');
 	const importPanel = page.locator('#add-import-settings-panel');
 	await expect(importPanel).toBeHidden();
+	await recordIntermediateMotion(importPanel);
 	await importToggle.click();
 	await expect(importToggle).toHaveAttribute('aria-expanded', 'true');
 	await expect(importPanel).toHaveAttribute('aria-hidden', 'false');
 	await expect.poll(() => importPanel.evaluate(element => element.inert)).toBe(false);
-	await expect.poll(() => hasVisibleIntermediateMotion(importPanel)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(importPanel)).toBe(true);
 	await waitForOwnedAnimations(importPanel);
+	await recordIntermediateMotion(importPanel);
 	await importToggle.click();
 	await expect(importToggle).toHaveAttribute('aria-expanded', 'false');
 	await expect(importPanel).toHaveAttribute('aria-hidden', 'true');
 	await expect.poll(() => importPanel.evaluate(element => element.inert)).toBe(true);
-	await expect.poll(() => hasVisibleIntermediateMotion(importPanel)).toBe(true);
+	await expect.poll(() => wasSeenInIntermediateMotion(importPanel)).toBe(true);
 	await waitForOwnedAnimations(importPanel);
 	await expect(importPanel).toBeHidden();
 

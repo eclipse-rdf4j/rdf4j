@@ -57,6 +57,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
@@ -92,6 +93,7 @@ import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -100,6 +102,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
@@ -130,7 +133,15 @@ import org.slf4j.LoggerFactory;
 /**
  * LMDB-based indexed storage and retrieval of RDF values. ValueStore maps RDF values to integer IDs and vice-versa.
  */
-class ValueStore extends AbstractValueFactory {
+class ValueStore extends AbstractValueFactory implements BNodeIdResolver {
+	@Override
+	public boolean hasBNodeId(String id) {
+		try {
+			return getId(SimpleValueFactory.getInstance().createBNode(id), false) != LmdbValue.UNKNOWN_ID;
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
 
 	private final static Logger logger = LoggerFactory.getLogger(ValueStore.class);
 

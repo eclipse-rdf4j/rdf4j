@@ -270,6 +270,20 @@ Servlet 6.1 container (Tomcat 11, Jetty 12 ee11). The full distribution zip, whi
 
 ## Test
 
+Blank nodes in query results and Explore use `<_:id>` references. You can copy a reference into a SPARQL query or
+update, the Explore resource field, or a resource/graph field in Remove, Add and Clear to reuse that exact node in
+the same repository. Explore's **Copy resource** keeps the brackets and any Unicode escapes needed for the ID;
+**Query this resource** opens a query using the reference. Nested triple terms retain these references too.
+An ordinary SPARQL `_:label` still has SPARQL's existential or fresh-allocation meaning. References are scoped to
+the repository and its stored blank node IDs. RDF downloads and the N-Quads view continue to use RDF serialization
+syntax, which can assign different blank node labels.
+Blank node aliases returned by `SERVICE` or federation are not reusable handles into their source repository;
+ordinary result transport does not carry the provenance needed to establish that identity.
+
+Focused coverage for this feature is in `ValueDecoderBlankNodeReferenceTest`,
+`ExploreServletPageDataTest#fixedBlankNodeResourcesKeepTheirExactIdentityInRowsAndMetadata`,
+`e2e/tests-unit/workbench-blank-node-references.test.js` and `e2e/tests/workbench-blank-node-references.spec.js`.
+
 ### Java unit tests
 
 After step 2, either use the repository's runner:

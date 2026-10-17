@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -70,7 +71,8 @@ class LmdbNonrepeatableBindingReplayTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void growthNeverReopensNonrepeatableQueryInputs(SourceKind sourceKind, TransactionMode transactionMode,
 			boolean nested, @TempDir File directory) throws Exception {
-		BarrierFunction function = new BarrierFunction();
+		int barrierInvocation = sourceKind == SourceKind.SINGLE_USE ? 2 : 1;
+		BarrierFunction function = new BarrierFunction(barrierInvocation);
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(MAP_SIZE)
 				.setValueDBSize(MAP_SIZE)
@@ -125,6 +127,7 @@ class LmdbNonrepeatableBindingReplayTest {
 				}
 			});
 			assertTrue(function.entered.await(5, TimeUnit.SECONDS), "sorting must hold a native read view");
+			assertEquals(2, function.keyEvaluations.get(), "ORDER must capture both keys before comparing them");
 			if (sourceKind == SourceKind.SINGLE_USE) {
 				assertEquals(2, rows.index, "both input rows must be consumed before growth");
 				assertEquals(1, rows.opens);
@@ -251,9 +254,15 @@ class LmdbNonrepeatableBindingReplayTest {
 	}
 
 	private static final class BarrierFunction implements Function {
+		private final int barrierInvocation;
 		private final CountDownLatch entered = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final AtomicInteger calls = new AtomicInteger();
+		private final AtomicInteger keyEvaluations = new AtomicInteger();
+
+		private BarrierFunction(int barrierInvocation) {
+			this.barrierInvocation = barrierInvocation;
+		}
 
 		@Override
 		public String getURI() {
@@ -267,6 +276,11 @@ class LmdbNonrepeatableBindingReplayTest {
 
 		@Override
 		public Value evaluate(TripleSource source, Value... args) {
+			keyEvaluations.incrementAndGet();
+			return new OrderComparisonIRI((Literal) args[0], () -> pauseComparison(source));
+		}
+
+		private void pauseComparison(TripleSource source) {
 			if (calls.incrementAndGet() == 1) {
 				try (CloseableIteration<? extends Statement> statements = source.getStatements(null,
 						VF.createIRI("urn:binding-replay:predicate"), null)) {
@@ -278,7 +292,6 @@ class LmdbNonrepeatableBindingReplayTest {
 					throw new AssertionError(interrupted);
 				}
 			}
-			return args[0];
 		}
 	}
 }

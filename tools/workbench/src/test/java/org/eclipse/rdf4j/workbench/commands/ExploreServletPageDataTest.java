@@ -20,6 +20,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Stream;
 
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -27,6 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
@@ -137,6 +139,29 @@ class ExploreServletPageDataTest {
 		assertThat(records.stream().filter(record -> "rows".equals(record.path("type").asText())).toList())
 				.singleElement()
 				.satisfies(rows -> assertThat(rows.path("values")).hasSize(1));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "node", "_:node", "space >\\雪", "", "literal%20+" })
+	void fixedBlankNodeResourcesKeepTheirExactIdentityInRowsAndMetadata(String id) throws Exception {
+		ValueFactory factory = repository.getValueFactory();
+		BNode resource = factory.createBNode(id);
+		try (RepositoryConnection connection = repository.getConnection()) {
+			connection.add(resource, factory.createIRI("urn:test:predicate"), factory.createLiteral("exact identity"));
+		}
+		MockHttpServletResponse response = new MockHttpServletResponse();
+		String reference = BlankNodeReferences.toReference(id);
+		servlet.service(pageRequest(reference), response);
+		List<JsonNode> records = records(response);
+		assertResultTotal(records, 1);
+		assertThat(rows(records)).singleElement().satisfies(row -> {
+			assertThat(row.get(0).path("kind").asText()).isEqualTo("bnode");
+			assertThat(row.get(0).path("value").asText()).isEqualTo(id);
+		});
+		assertThat(records.stream().filter(record -> "metadata".equals(record.path("type").asText())).toList())
+				.singleElement()
+				.satisfies(metadata -> assertThat(metadata.path("values").path("explore-resource").asText())
+						.isEqualTo(reference));
 	}
 
 	@ParameterizedTest

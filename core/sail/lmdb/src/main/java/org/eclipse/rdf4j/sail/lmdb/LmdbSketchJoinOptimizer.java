@@ -1782,40 +1782,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private boolean containsEquivalentRequiredPattern(TupleExpr tupleExpr, StatementPattern expectedPattern) {
-			if (tupleExpr instanceof StatementPattern) {
-				return sameStatementPattern((StatementPattern) tupleExpr, expectedPattern);
-			}
-			if (tupleExpr instanceof Join join) {
-				return containsEquivalentRequiredPattern(join.getLeftArg(), expectedPattern)
-						|| containsEquivalentRequiredPattern(join.getRightArg(), expectedPattern);
-			}
-			if (tupleExpr instanceof LeftJoin) {
-				return containsEquivalentRequiredPattern(((LeftJoin) tupleExpr).getLeftArg(), expectedPattern);
-			}
-			if (tupleExpr instanceof Difference) {
-				return containsEquivalentRequiredPattern(((Difference) tupleExpr).getLeftArg(), expectedPattern);
-			}
-			if (tupleExpr instanceof UnaryTupleOperator) {
-				return containsEquivalentRequiredPattern(((UnaryTupleOperator) tupleExpr).getArg(), expectedPattern);
-			}
-			return false;
-		}
-
-		private boolean sameStatementPattern(StatementPattern left, StatementPattern right) {
-			return samePatternVar(left.getSubjectVar(), right.getSubjectVar())
-					&& samePatternVar(left.getPredicateVar(), right.getPredicateVar())
-					&& samePatternVar(left.getObjectVar(), right.getObjectVar())
-					&& samePatternVar(left.getContextVar(), right.getContextVar());
-		}
-
-		private boolean samePatternVar(Var left, Var right) {
-			if (left == null || right == null) {
-				return left == right;
-			}
-			if (left.hasValue() || right.hasValue()) {
-				return left.hasValue() && right.hasValue() && left.getValue().equals(right.getValue());
-			}
-			return left.getName() != null && left.getName().equals(right.getName());
+			return LmdbJoinPlanSupport.containsEquivalentRequiredPattern(tupleExpr, expectedPattern);
 		}
 
 		private boolean isSafeTotalMinusLocalCondition(ValueExpr condition, Set<String> assuredConditionVars) {

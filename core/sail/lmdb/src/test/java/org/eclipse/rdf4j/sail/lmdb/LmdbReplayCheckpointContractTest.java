@@ -45,7 +45,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
-import org.eclipse.rdf4j.query.algebra.evaluation.util.OrderComparator;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
@@ -138,6 +137,7 @@ class LmdbReplayCheckpointContractTest {
 				}
 			});
 			await(function.firstComparison, "The initial ORDER comparison must hold an admitted read scope");
+			assertEquals(64, function.keyEvaluations.get(), "Every input key must be captured before sorting");
 			notification.armed.set(true);
 			Future<String> growth = growthExecutor.submit(() -> {
 				growthThread.set(Thread.currentThread());
@@ -281,6 +281,7 @@ class LmdbReplayCheckpointContractTest {
 	private static final class OrderBarrierFunction implements Function {
 		private final String uri;
 		private final AtomicInteger calls = new AtomicInteger();
+		private final AtomicInteger keyEvaluations = new AtomicInteger();
 		private final AtomicReference<Thread> comparatorThread = new AtomicReference<>();
 		private final AtomicReference<CloseableIteration<? extends Statement>> retainedStatements = new AtomicReference<>();
 		private final CountDownLatch firstComparison = new CountDownLatch(1);
@@ -299,9 +300,9 @@ class LmdbReplayCheckpointContractTest {
 
 		@Override
 		public Value evaluate(TripleSource tripleSource, Value... args) throws ValueExprEvaluationException {
-			if (calls.get() == 0) {
-				// ORDER has buffered its input. Keep a real nested cursor alive so the growth observer has an
-				// affected native view to notify while this admitted application comparison is paused.
+			if (keyEvaluations.get() == 0) {
+				// Retain a real nested cursor across key capture and buffering so the growth observer has an
+				// affected native view to notify while the subsequent application comparison is paused.
 				CloseableIteration<? extends Statement> statements = tripleSource.getStatements(null,
 						VF.createIRI(PREDICATE), null);
 				retainedStatements.set(statements);
@@ -312,13 +313,13 @@ class LmdbReplayCheckpointContractTest {
 
 		@Override
 		public Value evaluate(ValueFactory valueFactory, Value... args) throws ValueExprEvaluationException {
+			keyEvaluations.incrementAndGet();
+			return new OrderComparisonIRI((Literal) args[0], this::pauseComparison);
+		}
+
+		private void pauseComparison() {
 			int invocation = calls.incrementAndGet();
 			if (invocation == 1 || invocation == 3) {
-				boolean comparing = StackWalker.getInstance()
-						.walk(frames -> frames
-								.anyMatch(frame -> frame.getClassName().equals(OrderComparator.class.getName())
-										&& frame.getMethodName().equals("compare")));
-				assertTrue(comparing, "The checkpoint fixture must pause an actual ORDER comparator operand");
 				comparatorThread.set(Thread.currentThread());
 				(invocation == 1 ? firstComparison : nextComparison).countDown();
 				try {
@@ -333,7 +334,6 @@ class LmdbReplayCheckpointContractTest {
 					closeRetainedStatements();
 				}
 			}
-			return args[0];
 		}
 
 		private void closeRetainedStatements() {

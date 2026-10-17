@@ -16,6 +16,7 @@ import java.io.StringWriter;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer.DatasetView;
 
@@ -81,11 +83,19 @@ class SlowQueryLogFormatter {
 
 		try {
 			TupleExprIRRenderer renderer = createRenderer();
-			DatasetView datasetView = toDatasetView(info.getDataset());
+			Dataset dataset = info.getDataset();
+			boolean runtimeSelectors = dataset != null && (!onlyIris(dataset.getDefaultGraphResources())
+					|| !onlyIris(dataset.getNamedGraphResources())
+					|| dataset.isExplicitReadDataset() && isEmpty(dataset.getDefaultGraphResources())
+							&& isEmpty(dataset.getNamedGraphResources()));
+			DatasetView datasetView = runtimeSelectors ? null : toDatasetView(dataset);
+			String rendered;
 			if (info.getQueryType() == Query.QueryType.BOOLEAN) {
-				return renderer.renderAsk(info.getOptimizedTupleExpr(), datasetView);
+				rendered = renderer.renderAsk(info.getOptimizedTupleExpr(), datasetView);
+			} else {
+				rendered = renderer.render(info.getOptimizedTupleExpr(), datasetView);
 			}
-			return renderer.render(info.getOptimizedTupleExpr(), datasetView);
+			return runtimeSelectors ? describeRuntimeDataset(dataset) + rendered : rendered;
 		} catch (Throwable t) {
 			return "<unavailable>" + System.lineSeparator() + System.lineSeparator()
 					+ "Renderer throwable:" + System.lineSeparator() + stackTrace(t);
@@ -113,16 +123,56 @@ class SlowQueryLogFormatter {
 			return null;
 		}
 		DatasetView datasetView = new DatasetView();
-		for (IRI defaultGraph : dataset.getDefaultGraphs()) {
-			datasetView.addDefault(defaultGraph);
+		Set<Resource> defaults = dataset.getDefaultGraphResources();
+		if (defaults != null) {
+			for (Resource defaultGraph : defaults) {
+				datasetView.addDefault((IRI) defaultGraph);
+			}
 		}
-		for (IRI namedGraph : dataset.getNamedGraphs()) {
-			datasetView.addNamed(namedGraph);
+		Set<Resource> named = dataset.getNamedGraphResources();
+		if (named != null) {
+			for (Resource namedGraph : named) {
+				datasetView.addNamed((IRI) namedGraph);
+			}
 		}
 		if (datasetView.defaultGraphs.isEmpty() && datasetView.namedGraphs.isEmpty()) {
 			return null;
 		}
 		return datasetView;
+	}
+
+	private boolean onlyIris(Set<Resource> graphs) {
+		return graphs == null || graphs.stream().allMatch(IRI.class::isInstance);
+	}
+
+	private boolean isEmpty(Set<Resource> graphs) {
+		return graphs == null || graphs.isEmpty();
+	}
+
+	private String describeRuntimeDataset(Dataset dataset) {
+		StringBuilder description = new StringBuilder("# Runtime dataset selectors (not source FROM clauses)");
+		description.append(System.lineSeparator())
+				.append("# explicitReadDataset=")
+				.append(dataset.isExplicitReadDataset())
+				.append(System.lineSeparator());
+		appendSelectors(description, "default", dataset.getDefaultGraphResources());
+		appendSelectors(description, "named", dataset.getNamedGraphResources());
+		return description.toString();
+	}
+
+	private void appendSelectors(StringBuilder target, String name, Set<Resource> graphs) {
+		target.append("# ").append(name).append("=[");
+		if (graphs != null) {
+			boolean first = true;
+			for (Resource graph : graphs) {
+				if (!first) {
+					target.append(", ");
+				}
+				target.append(graph == null ? "DEFAULT" : RenderUtils.toSPARQL(graph));
+				first = false;
+			}
+		}
+		target.append(']').append(System.lineSeparator());
 	}
 
 	private void appendSection(StringBuilder sb, String title, String content) {

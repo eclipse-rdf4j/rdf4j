@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import time
 
 ROOT = Path(os.environ.get("RDF4J_CRASHLAB_RESULTS_DIR", "/mnt/run-results"))
@@ -58,10 +59,14 @@ def force_copy(source, destination):
 
 
 def write_exclusive(path, value):
-    with path.open("x", encoding="utf-8") as stream:
+    # The host treats the final name as a readiness signal, so it must never expose partial or unforced JSON.
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                     prefix="." + path.name + ".", suffix=".tmp") as stream:
         stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
         stream.flush()
         os.fsync(stream.fileno())
+        # A hard link publishes the already forced inode atomically and refuses any existing file or symlink.
+        os.link(stream.name, path)
     fsync_directory(path.parent)
 
 

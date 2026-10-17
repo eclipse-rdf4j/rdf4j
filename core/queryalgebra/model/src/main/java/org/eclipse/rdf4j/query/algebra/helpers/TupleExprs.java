@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Projection;
@@ -45,6 +46,33 @@ import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
  * @author Jeen Broekstra
  */
 public class TupleExprs {
+
+	/**
+	 * Whether a local operand contains a GRAPH boundary and therefore must receive invocation input rather than a
+	 * sibling's produced bindings. Remote SERVICE bodies have their own scope and are not inspected.
+	 */
+	public static boolean containsGraphBoundary(TupleExpr expression) {
+		if (expression instanceof Graph) {
+			return true;
+		}
+		if (expression instanceof Service) {
+			return false;
+		}
+		for (TupleExpr child : getChildren(expression)) {
+			if (containsGraphBoundary(child)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Identifies operands whose own scope must not receive bindings produced by an ordinary join sibling. */
+	public static boolean requiresIndependentEvaluation(TupleExpr expression) {
+		// SERVICE is a parameterized remote call. Its endpoint input remains in the caller's evaluator frame.
+		return !(expression instanceof Service)
+				&& (isVariableScopeChange(expression) || containsSubquery(expression)
+						|| containsGraphBoundary(expression));
+	}
 
 	/**
 	 * Whether an Extension executes this element. Root aggregate expressions describe results already computed by a
@@ -241,8 +269,8 @@ public class TupleExprs {
 	}
 
 	/**
-	 * Creates an (anonymous) Var representing a constant value. The variable name will be derived from the actual value
-	 * to guarantee uniqueness.
+	 * Creates an (anonymous) Var representing a constant value using a legacy hash-derived name hint. Distinct values
+	 * may receive the same name; translators that combine constants must allocate unique names in their own scope.
 	 *
 	 * @param value
 	 * @return an (anonymous) Var representing a constant value.
@@ -252,6 +280,7 @@ public class TupleExprs {
 		return Var.of(varName, value, true, true);
 	}
 
+	/** Returns a stable hash-derived name hint, which is not guaranteed to be unique. */
 	public static String getConstVarName(Value value) {
 		if (value == null) {
 			throw new IllegalArgumentException("value can not be null");

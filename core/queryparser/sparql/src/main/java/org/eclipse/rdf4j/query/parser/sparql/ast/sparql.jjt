@@ -26,15 +26,72 @@ options {
 PARSER_BEGIN(SyntaxTreeBuilder)
 package org.eclipse.rdf4j.query.parser.sparql.ast;
 
-import java.io.StringReader;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
 public class SyntaxTreeBuilder {
+    private String rawSource;
+    private int[] rawLineStarts;
+    private final List<String> turtleDirectives = new ArrayList<String>();
+
+    private boolean isTurtleDirective(String name) {
+        Token next = getToken(1);
+        return next.kind == LANGTAG && next.image.equalsIgnoreCase(name);
+    }
+
+    private boolean isSPARQLDataDirectiveStart() {
+        int kind = getToken(1).kind;
+        return kind == BASE || kind == PREFIX || kind == VERSION;
+    }
+
+    private boolean isDataDirectiveStart() {
+        return isSPARQLDataDirectiveStart() || isTurtleDirective("@base")
+            || isTurtleDirective("@prefix") || isTurtleDirective("@version");
+    }
+
+    private void setRawSource(String source) {
+        rawSource = source;
+        int lines = 1;
+        for (int offset = 0; offset < source.length(); offset++) {
+            char c = source.charAt(offset);
+            if (c == '\r') {
+                if (offset + 1 < source.length() && source.charAt(offset + 1) == '\n') {
+                    offset++;
+                }
+                lines++;
+            } else if (c == '\n') {
+                lines++;
+            }
+        }
+        rawLineStarts = new int[lines];
+        int line = 0;
+        for (int offset = 0; offset < source.length(); offset++) {
+            char c = source.charAt(offset);
+            if (c == '\r') {
+                if (offset + 1 < source.length() && source.charAt(offset + 1) == '\n') {
+                    offset++;
+                }
+                rawLineStarts[++line] = offset + 1;
+            } else if (c == '\n') {
+                rawLineStarts[++line] = offset + 1;
+            }
+        }
+    }
+
+    private int rawOffset(int tokenLine, int tokenColumn) {
+        if (tokenLine < 1 || tokenLine > rawLineStarts.length) {
+            throw new IllegalStateException("Token outside source");
+        }
+        return rawLineStarts[tokenLine - 1] + tokenColumn - 1;
+    }
+
 
 	/**
 	 * Parses the supplied SPARQL query and builds a syntax tree from it.
@@ -48,6 +105,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(query, 1) );
+        stb.setRawSource(query);
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -69,6 +127,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(sequence, 1) );
+        stb.setRawSource(sequence);
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
 		// index for substring splitting of service graph pattern.
@@ -88,50 +147,31 @@ public class SyntaxTreeBuilder {
 		return s;
 	}
 
-	private String readToMatchingBrace(boolean isDeleteData) throws ParseException {
-	    StringBuilder sb = new StringBuilder();
-	    Token tok;
-        Token prevTok = null;
-	    int nesting = 1;
-	    boolean previousTokenDtSep = false;
-        boolean lastTildeHasNamedReifier = false;
-	    while (true) {
-			tok = getToken(1);
-			if ("".equals(tok.image)) {
-				throw new ParseException("closing brace missing");
-			}
-            // Track if ~ was followed by a named IRI (not a blank node)
-            if (prevTok != null && prevTok.kind == TILDE) {
-                // named reifier if current token is IRI, prefixed name - not blank node
-                lastTildeHasNamedReifier = (tok.kind == Q_IRI_REF
-                    || tok.kind == PNAME_NS
-                    || tok.kind == PNAME_LN);
+    private String readToMatchingBrace(boolean isDeleteData) throws ParseException {
+        Token opening = getToken(0);
+        int start = rawOffset(opening.endLine, opening.endColumn) + 1;
+        int nesting = 1;
+        while (true) {
+            Token next = getToken(1);
+            if (next.kind == EOF) { throw new ParseException("closing brace missing"); }
+            if (next.kind == LBRACE) { nesting++; }
+            if (next.kind == RBRACE && --nesting == 0) {
+                return rawSource.substring(start, rawOffset(next.beginLine, next.beginColumn));
             }
-            if (tok.kind == TILDE) {
-                lastTildeHasNamedReifier = false; // reset until we see what follows
-            }
-            // Only throw for DELETE DATA, not INSERT DATA
-            if (tok.kind == ANNOTATION_OPEN && isDeleteData && !lastTildeHasNamedReifier) {
-                throw new ParseException(
-                    "Annotations not allowed in DELETE DATA — blank nodes are forbidden");
-            }
-			if (!previousTokenDtSep && !tok.image.equals("^^") && !tok.image.startsWith("@") &&
-			    !tok.image.equals("(") && !tok.image.equals(">>") && !tok.image.equals("|")) {
-				sb.append(" ");
-			}
-			if (tok.kind == LBRACE) nesting++;
-			if (tok.kind == RBRACE) {
-				nesting--;
-				if (nesting == 0) break;
-			}
-			sb.append(tok.image);
-			previousTokenDtSep = tok.image.equals("^^");
+            getNextToken();
+        }
+    }
 
-            prevTok = tok;
-			tok = getNextToken();
-	    }
-	    return sb.toString();
-	}
+    public static ASTUpdateContainer parseDataBlock(String source) throws ParseException {
+        SyntaxTreeBuilder parser = new SyntaxTreeBuilder(new UnicodeEscapeStream(source, 1));
+        parser.setRawSource(source);
+        ASTUpdateContainer result = parser.DataBlockContainer();
+        ASTUpdateSequence sequence = new ASTUpdateSequence(JJTUPDATESEQUENCE);
+        sequence.setSourceString(source);
+        sequence.jjtAppendChild(result);
+        result.jjtSetParent(sequence);
+        return result;
+    }
 
 	private static void validateStringLiteral(String raw, int line, int col) throws ParseException {
         // Codepoint escapes have already been resolved by UnicodeEscapeStream, which re-encodes any resolved character
@@ -344,7 +384,17 @@ TOKEN [IGNORE_CASE] :	// SPARQL 1.1 Update-specific tokens
 
 TOKEN:
 {
-	<Q_IRI_REF: "<" (~["<", ">", "\"", "{", "}", "|", "^", "`", "\\", "\u0000"-"\u0020"])* ">">
+    <Q_IRI_REF: "<" ((~["<", ">", "\"", "{", "}", "|", "^", "`", "\\", "\u0000"-"\u0020"]) | <UCHAR>)* ">">
+    {
+        try {
+            String decoded = BlankNodeReferences.decodeIRIRef(matchedToken.image);
+            matchedToken.image = "<" + decoded + ">";
+            if (decoded.startsWith("_:")) matchedToken.kind = BNODE_REF;
+        } catch (IllegalArgumentException failure) {
+            throw new TokenMgrError(failure.getMessage() + " at line " + matchedToken.beginLine
+                + ", column " + matchedToken.beginColumn, TokenMgrError.LEXICAL_ERROR);
+        }
+    }
 
 |	<PNAME_NS: (<PN_PREFIX>)? ":">
 |	<PNAME_LN: (<PN_PREFIX>)? ":" <PN_LOCAL>> // Note: PN_LOCAL not optional, case handled by PNAME_NS
@@ -401,6 +451,11 @@ TOKEN:
 |   <TILDE: "~">
 |   <ANNOTATION_OPEN: "{|">
 |   <ANNOTATION_CLOSE: "|}">
+}
+
+TOKEN : {
+    <#UCHAR: "\\" ("u" <HEX> <HEX> <HEX> <HEX> | "U" <HEX> <HEX> <HEX> <HEX> <HEX> <HEX> <HEX> <HEX>)>
+|   <BNODE_REF: <Q_IRI_REF>>
 }
 
 //
@@ -510,11 +565,12 @@ void ProjectionElem() :
 }
 
 void ConstructQuery() :
-{}
+{ boolean shorthand; }
 {
 	Construct()
+    { shorthand = ((ASTConstruct)jjtree.peekNode()).isWildcard(); }
 	( DatasetClause() )*
-	WhereClause()
+    ( LOOKAHEAD({shorthand}) ShorthandConstructWhereClause() | WhereClause() )
 	SolutionModifier()
 	[BindingsClause()]
 }
@@ -522,7 +578,9 @@ void ConstructQuery() :
 void Construct() :
 {}
 {
-	<CONSTRUCT> [ LOOKAHEAD(2) ConstructClause() ]
+	<CONSTRUCT>
+    { jjtThis.setTemplateInsertionOffset(rawOffset(getToken(0).endLine, getToken(0).endColumn) + 1); }
+    [ LOOKAHEAD(2) ConstructClause() { jjtThis.setExplicitTemplate(true); } ]
 
 }
 
@@ -550,7 +608,7 @@ void Describe() :
 	(
 		<STAR> { jjtThis.setWildcard(true); }
 	|
-		( ConstTripleTerm() | VarOrIRIref() ) +
+		( ConstTripleTerm() | VarOrResourceName() ) +
 	)
 }
 
@@ -576,9 +634,12 @@ void DatasetClause() :
 }
 
 void WhereClause() :
-{}
+{ Token closing; }
 {
-	 [<WHERE>] GroupGraphPattern()
+	 [<WHERE>]
+     { jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
+     closing = GroupGraphPattern()
+     { jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
 }
 
 void BindingsClause() :
@@ -629,7 +690,8 @@ void BindingSet() :
 void BindingValue() :
 {}
 {
-	IRIref()
+    BNodeRef()
+|	IRIref()
 |	RDFLiteral()
 |	NumericLiteral()
 |	BooleanLiteral()
@@ -667,7 +729,7 @@ void GroupCondition() :
 void HavingClause() :
 {}
 {
-    <HAVING> Constraint()
+    <HAVING> (Constraint())+
 }
 
 void OrderCondition() :
@@ -754,6 +816,30 @@ void TriplesTemplate() #void :
 	TriplesSameSubject() ( LOOKAHEAD(2) <DOT> TriplesSameSubject() )* [<DOT>]
 }
 
+// Shorthand CONSTRUCT uses template syntax, not a general graph pattern.
+// Reuse the WHERE AST shape and original-source offsets needed by binding serialization.
+void ShorthandConstructWhereClause() #WhereClause :
+{ Token closing; }
+{
+    <WHERE>
+    { jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
+    closing = ShorthandConstructGraphPattern()
+    { jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
+}
+
+Token ShorthandConstructGraphPattern() #GraphPatternGroup :
+{ Token closing; }
+{
+    <LBRACE> [ShorthandConstructTriples()] closing = <RBRACE>
+    { return closing; }
+}
+
+void ShorthandConstructTriples() #BasicGraphPattern :
+{}
+{
+    TriplesTemplate()
+}
+
 void GraphPatternNotTriples() #void :
 {}
 {
@@ -783,9 +869,17 @@ void LateralGraphPattern() :
 }
 
 void GraphGraphPattern() :
-{}
+{ Token closing; }
 {
-	<GRAPH> VarOrIRIref() GroupGraphPattern()
+	<GRAPH>
+	{ jjtThis.setSelectorStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn)); }
+	VarOrResourceName()
+	{
+		jjtThis.setSelectorEndOffset(rawOffset(getToken(0).endLine, getToken(0).endColumn) + 1);
+		jjtThis.setGroupStartOffset(rawOffset(getToken(1).beginLine, getToken(1).beginColumn));
+	}
+	closing = GroupGraphPattern()
+	{ jjtThis.setGroupEndOffset(rawOffset(closing.beginLine, closing.beginColumn)); }
 }
 
 void GroupOrUnionGraphPattern() #void :
@@ -854,6 +948,10 @@ void ValueExpression() #void :
 void TriplesSameSubject() :
 {}
 {
+	LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) VarOrTerm() PropertyList()
+|
+	LOOKAHEAD(1, <TRIPLE_OPEN>) ReifiedTripleSubject() [PropertyList()]
+|
 	VarOrTerm() PropertyList()
 |
 	TriplesNode() [PropertyList()]
@@ -863,12 +961,7 @@ void PropertyList() :
 {}
 {
 	Verb() ObjectList()
-        (<TILDE> ( IRIref() | BlankNode() | Var() )
-        |
-        <ANNOTATION_OPEN>
-            PropertyList() { ((ASTPropertyList)jjtree.peekNode()).setAnnotation(true); }
-        <ANNOTATION_CLOSE>
-    )*
+        ( AnnotationSuffix(false) )*
 	[ <SEMICOLON> [PropertyList()] ]
 }
 
@@ -894,13 +987,7 @@ void PropertyListPath() :
 {}
 {
     (VerbPath() | VerbSimple()) ObjectListPath()
-        (<TILDE> ( IRIref() | BlankNode() )
-        |
-        <ANNOTATION_OPEN>
-            PropertyListPath() { ((ASTPropertyListPath)jjtree.peekNode()).setAnnotation(true); }
-        <ANNOTATION_CLOSE>
-
-    )*
+        ( AnnotationSuffix(true) )*
     [<SEMICOLON> [PropertyListPath()] ]
 }
 
@@ -1075,6 +1162,8 @@ void GraphNodePath() #void :
 void VarOrTerm() #void :
 {}
 {
+    BNodeRef()
+|
     LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm()
 |
 	Var()
@@ -1122,7 +1211,8 @@ void GraphTermNoNil() #void :
 	boolean positive = true;
 }
 {
-	IRIref()
+    BNodeRef()
+|	IRIref()
 |
 	RDFLiteral()
 |
@@ -1144,7 +1234,7 @@ void ReifiedTriple() :
         ( LOOKAHEAD(2, <TRIPLE_OPEN> <LPAREN>) TripleTerm() | GraphTermNoNil() | Var() )
         [
             <TILDE>
-            ( IRIref() | BlankNode() | Var() )
+            [ BNodeRef() | IRIref() | BlankNode() | Var() ]
         ]
     <TRIPLE_CLOSE>
 }
@@ -1154,9 +1244,9 @@ void TripleTerm() :
 {
     <TRIPLE_OPEN>
         <LPAREN>
-            (IRIref() | BlankNode() | TripleTerm() | Var())
+            (BNodeRef() | IRIref() | BlankNode() | TripleTerm() | Var())
             Verb()
-            (IRIref() | BlankNode() | TripleTerm() | NumericLiteral() | RDFLiteral() |BooleanLiteral() | Var())
+            (BNodeRef() | IRIref() | BlankNode() | TripleTerm() | NumericLiteral() | RDFLiteral() |BooleanLiteral() | Var())
         <RPAREN>
     <TRIPLE_CLOSE>
 }
@@ -1166,9 +1256,9 @@ void LabeledTripleTerm() :
 {
     <TRIPLE_OPEN>
         <LPAREN>
-            (IRIref() | LabeledBlankNode() | Var())
+            (BNodeRef() | IRIref() | LabeledBlankNode() | Var())
             Verb()
-            (IRIref() | LabeledBlankNode() | TripleTerm() | NumericLiteral() | RDFLiteral() |BooleanLiteral() | Var())
+            (BNodeRef() | IRIref() | LabeledBlankNode() | LabeledTripleTerm() | NumericLiteral() | RDFLiteral() |BooleanLiteral() | Var())
         <RPAREN>
     <TRIPLE_CLOSE>
 }
@@ -1178,9 +1268,9 @@ void ConstTripleTerm() :
 {
     <TRIPLE_OPEN>
         <LPAREN>
-            ( IRIref() | LabeledBlankNode() )
+            ( BNodeRef() | IRIref() )
             Verb()
-            ( ConstTripleTerm() | IRIref() | LabeledBlankNode() | NumericLiteral() | RDFLiteral() |BooleanLiteral() )
+            ( ConstTripleTerm() | BNodeRef() | IRIref() | NumericLiteral() | RDFLiteral() |BooleanLiteral() )
         <RPAREN>
     <TRIPLE_CLOSE>
 }
@@ -1282,6 +1372,8 @@ void UnaryMinus() #NumericLiteral :
 void PrimaryExpression() #void :
 {}
 {
+    BNodeRef()
+|
 	BrackettedExpression()
 |	BuiltInCall()
 |	LOOKAHEAD(2) FunctionCall()
@@ -1667,7 +1759,7 @@ void NotIn() :
 void Coalesce() :
 {}
 {
-    <COALESCE> <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>
+    <COALESCE> (<NIL> | <LPAREN> Expression() (<COMMA> Expression())* <RPAREN>)
 }
 
 void Str() :
@@ -1979,13 +2071,13 @@ void GraphOrDefault() :
 {}
 {
 	<DEFAULT_GRAPH>
-|	[<GRAPH>] IRIref()
+|	[<GRAPH>] ResourceName()
 }
 
 void GraphRef() #void :
 {}
 {
-	<GRAPH> IRIref()
+	<GRAPH> ResourceName()
 }
 
 void UnparsedQuadDataBlock(boolean isDelete) :
@@ -2009,7 +2101,7 @@ void Quads() #void :
 void QuadsNotTriples() :
 {}
 {
-    <GRAPH> VarOrIRIref() <LBRACE> [TriplesTemplate()] <RBRACE>
+    <GRAPH> VarOrResourceName() <LBRACE> [TriplesTemplate()] <RBRACE>
 }
 
 void Update() #void :
@@ -2110,7 +2202,7 @@ void UsingClause() #DatasetClause :
 void WithClause() #DatasetClause :
 {}
 {
-    <WITH> IRIref()
+    <WITH> ResourceName()
 }
 
 /*
@@ -2128,4 +2220,92 @@ void Modify() :
     [ WithClause() ]
     ( DeleteClause() [InsertClause()] | InsertClause() ) (UsingClause())*
     ModifyWhereClause()
+}
+
+void BNodeRef() :
+{ Token t; }
+{
+    t = <BNODE_REF> { jjtThis.setID(t.image.substring(3, t.image.length() - 1)); }
+}
+
+void ResourceName() #void : {} { IRIref() | BNodeRef() }
+void VarOrResourceName() #void : {} { Var() | ResourceName() }
+
+void AnnotationSuffix(boolean path) : {} {
+    ( <TILDE> [ResourceName() | BlankNode() | Var()]
+      [ <ANNOTATION_OPEN>
+        ( LOOKAHEAD({path}) PropertyListPath() | PropertyList() )
+        <ANNOTATION_CLOSE> ]
+    | <ANNOTATION_OPEN>
+        ( LOOKAHEAD({path}) PropertyListPath() | PropertyList() )
+      <ANNOTATION_CLOSE>
+    )
+}
+
+ASTUpdateContainer DataBlockContainer() #UpdateContainer : { boolean hasPrologue = false; } {
+    ( LOOKAHEAD({isSPARQLDataDirectiveStart()}) DataDirective() { hasPrologue = true; } )*
+    {
+        int bodyStart = 0;
+        if (hasPrologue) {
+            Token lastDirective = getToken(0);
+            bodyStart = rawOffset(lastDirective.endLine, lastDirective.endColumn) + 1;
+            while (bodyStart < rawSource.length()) {
+                char separator = rawSource.charAt(bodyStart);
+                if (separator != ' ' && separator != '\t' && separator != '\r' && separator != '\n') {
+                    break;
+                }
+                bodyStart++;
+            }
+        }
+        jjtThis.setDataBlockBodyStartOffset(bodyStart);
+    }
+    [DataQuads()]
+    ( LOOKAHEAD({isDataDirectiveStart()}) DataDirective() [DataQuads()] )*
+    <EOF>
+    { jjtThis.setTurtleDirectives(turtleDirectives); return jjtThis; }
+}
+
+void DataQuads() #void : { boolean needsSeparator = false; } {
+    (
+        LOOKAHEAD( [<GRAPH>] (ResourceName() | BlankNode()) <LBRACE> | <LBRACE> )
+        DataGraphBlock() [<DOT>] { needsSeparator = false; }
+    |
+        {
+            if (needsSeparator) {
+                throw new ParseException("Expected '.' between DATA triples at line "
+                    + getToken(1).beginLine + ", column " + getToken(1).beginColumn);
+            }
+        }
+        TriplesSameSubject() { needsSeparator = true; } [<DOT> { needsSeparator = false; }]
+    )+
+}
+
+// DATA historically accepts TriG graph blocks, including omitted GRAPH and default graph braces.
+// Keep these forms separate from the SPARQL query and update-template quad productions.
+void DataGraphBlock() #QuadsNotTriples : { boolean named = false; } {
+    ( <GRAPH> (ResourceName() | BlankNode()) { named = true; }
+    | [ (ResourceName() | BlankNode()) { named = true; } ] )
+    <LBRACE> { jjtThis.setDefaultGraph(!named); } [TriplesTemplate()] <RBRACE>
+}
+
+void DataDirective() #void : {} {
+    BaseDecl() | PrefixDecl() | VersionDecl()
+    | LOOKAHEAD({isTurtleDirective("@base")}) TurtleDataBaseDecl()
+    | LOOKAHEAD({isTurtleDirective("@prefix")}) TurtleDataPrefixDecl()
+    | LOOKAHEAD({isTurtleDirective("@version")}) TurtleDataVersionDecl()
+}
+
+void TurtleDataBaseDecl() #BaseDecl : { Token directive; Token iri; } {
+    directive = <LANGTAG> iri = <Q_IRI_REF> <DOT>
+    { turtleDirectives.add(directive.image); jjtThis.setIRI(_trimString(iri.image, 1)); }
+}
+
+void TurtleDataPrefixDecl() #PrefixDecl : { Token directive; Token prefix; } {
+    directive = <LANGTAG> prefix = <PNAME_NS> IRI() <DOT>
+    { turtleDirectives.add(directive.image); jjtThis.setPrefix(prefix.image.substring(0, prefix.image.length() - 1)); }
+}
+
+void TurtleDataVersionDecl() #VersionDecl : { Token directive; Token version; } {
+    directive = <LANGTAG> ( version = <STRING_LITERAL1> | version = <STRING_LITERAL2> ) <DOT>
+    { turtleDirectives.add(directive.image); jjtThis.setVersion(version.image); }
 }

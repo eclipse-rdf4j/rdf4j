@@ -52,7 +52,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 						runtimeTelemetryTrackingActive);
 		QueryAlgebraBindingAnalysis bindingAnalysis = QueryAlgebraBindingAnalysis.withBindingValues(leftJoin,
 				EmptyBindingSet.getInstance());
-		if (TupleExprs.containsSubquery(leftJoin.getRightArg())
+		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())
 				|| TupleExprs.containsResultSetModifier(leftJoin.getRightArg(), bindingAnalysis)) {
 			// The right side is evaluated once with the query input and hashed on the names both sides may share.
 			String[] joinAttributes = HashJoinIteration.hashJoinAttributeNames(leftJoin);
@@ -70,7 +70,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		QueryValueEvaluationStep condition;
 		if (leftJoin.hasCondition()) {
 			leftJoin.getCondition().visit(optionalVarCollector);
-			condition = strategy.precompile(leftJoin.getCondition(), context);
+			condition = scopedOccurrence(strategy.precompile(leftJoin.getCondition(), context), context);
 		} else {
 			condition = null;
 		}
@@ -81,7 +81,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			QueryEvaluationContext context) {
 		QueryValueEvaluationStep condition;
 		try {
-			condition = strategy.precompile(leftJoin.getCondition(), context);
+			condition = scopedOccurrence(strategy.precompile(leftJoin.getCondition(), context), context);
 		} catch (QueryEvaluationException e) {
 			// A condition that fails to compile can never be true, so the OPTIONAL never matches (as in
 			// FilterIterator).
@@ -90,6 +90,15 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// Like the ordinary OPTIONAL path, the condition only sees the operands' bindings; incoming bindings of other
 		// names may come from a sibling row and are out of scope.
 		return new ScopedQueryValueEvaluationStep(leftJoin.getBindingNames(), condition);
+	}
+
+	private static QueryValueEvaluationStep scopedOccurrence(QueryValueEvaluationStep condition,
+			QueryEvaluationContext context) {
+		return row -> {
+			try (var ignored = context.getBlankNodeAllocationScope().beginSolutionOccurrence(row)) {
+				return condition.evaluate(row);
+			}
+		};
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

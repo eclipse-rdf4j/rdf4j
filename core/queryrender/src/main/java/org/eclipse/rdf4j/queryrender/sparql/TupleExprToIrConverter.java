@@ -50,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
@@ -87,11 +88,13 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -101,6 +104,7 @@ import org.eclipse.rdf4j.queryrender.sparql.ir.IrBind;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraph;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrGraphScope;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrGroupByElem;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrInlineTripleTerm;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrLateral;
@@ -150,6 +154,7 @@ public class TupleExprToIrConverter {
 
 	static {
 		Map<String, String> m = new LinkedHashMap<>();
+		m.put("http://www.w3.org/1999/02/22-rdf-syntax-ns#Statement", "TRIPLE");
 		m.put(FN_NS + "string-length", "STRLEN");
 		m.put(FN_NS + "lower-case", "LCASE");
 		m.put(FN_NS + "upper-case", "UCASE");
@@ -190,7 +195,7 @@ public class TupleExprToIrConverter {
 	// PN_LOCAL checks handled in TermRenderer via SparqlNameUtils
 
 	private String convertValueToString(final Value val) {
-		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction, cfg.parseOptions);
 	}
 
 	private String renderVarOrValue(final Var v) {
@@ -507,6 +512,13 @@ public class TupleExprToIrConverter {
 		if (e instanceof ValueConstant) {
 			return convertValueToString(((ValueConstant) e).getValue());
 		}
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExpr(triple.getSubjectExpr()) + ", " + renderExpr(triple.getPredicateExpr())
+					+ ", " + renderExpr(triple.getObjectExpr()) + ")";
+		}
+		if (e instanceof TripleComponent component) {
+			return component.getRole().name() + "(" + renderExpr(component.getTripleTermExpr()) + ")";
+		}
 
 		if (e instanceof If) {
 			final If iff = (If) e;
@@ -600,6 +612,10 @@ public class TupleExprToIrConverter {
 			return "REGEX(" + term + ", " + patt + ")";
 		}
 
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExpr(triple.getSubjectVar()) + ", " + renderExpr(triple.getPredicateVar())
+					+ ", " + renderExpr(triple.getObjectVar()) + ")";
+		}
 		if (e instanceof FunctionCall) {
 			final FunctionCall f = (FunctionCall) e;
 			final String args = f.getArgs().stream().map(this::renderExpr).collect(Collectors.joining(", "));
@@ -1489,6 +1505,15 @@ public class TupleExprToIrConverter {
 		if (e == null) {
 			return "()";
 		}
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExprWithSubstitution(triple.getSubjectExpr(), subs) + ", "
+					+ renderExprWithSubstitution(triple.getPredicateExpr(), subs) + ", "
+					+ renderExprWithSubstitution(triple.getObjectExpr(), subs) + ")";
+		}
+		if (e instanceof TripleComponent component) {
+			return component.getRole().name() + "(" + renderExprWithSubstitution(component.getTripleTermExpr(), subs)
+					+ ")";
+		}
 
 		if (e instanceof Var) {
 			final Var v = (Var) e;
@@ -2283,6 +2308,12 @@ public class TupleExprToIrConverter {
 			}
 			final String cond = ExprTextUtils.stripRedundantOuterParens(renderExpr(condExpr));
 			return new IrFilter(cond, false);
+		}
+
+		@Override
+		public void meet(final Graph graph) {
+			where.add(new IrGraphScope(graph.getGraphName(), childBuilder().build(graph.getArg()),
+					graph.isVariableScopeChange()));
 		}
 
 		public void meet(final StatementPattern sp) {
