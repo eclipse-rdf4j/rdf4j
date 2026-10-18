@@ -450,7 +450,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 			merged = ValueOverlayDelta.merge(newer, older,
 					deltaOptions(anchor, registry.options, newer.size() + older.size()),
 					Math.min(Math.max(newer.level, older.level) + 1, registry.options.maxLevels - 1),
-					() -> registry.closed || registry.current == null || cancel.getAsBoolean());
+					() -> registry.closed || cancel.getAsBoolean());
 		}
 
 		/**
