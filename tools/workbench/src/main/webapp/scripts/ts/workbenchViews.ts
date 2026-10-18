@@ -3095,11 +3095,11 @@ module workbench {
         }
 
         /** The status beside a write's button: a spinner while it runs, a green tick when it is done. */
-        function submissionStatus(runtime: LitRuntime, model: PageModel): any {
+        function submissionStatus(runtime: LitRuntime, model: PageModel, showSpinner: boolean = true): any {
             const h = runtime.html;
             const submission = submissionOf(model);
             const mark = submission.state === 'running'
-                ? h`<span class="workbench-submit-status__spinner" aria-hidden="true"></span>`
+                ? showSpinner ? h`<span class="workbench-submit-status__spinner" aria-hidden="true"></span>` : ''
                 : submission.state === 'done' ? icon(runtime, 'check', 'workbench-submit-status__icon')
                     : submission.state === 'failed' ? icon(runtime, 'error', 'workbench-submit-status__icon') : '';
             return h`<span class="workbench-submit-status" role="status" data-state=${submission.state}>${mark}${
@@ -3124,23 +3124,34 @@ module workbench {
         function sendInPlace(form: any, submitter: any, model: PageModel, context: ViewContext, runtime: LitRuntime,
                              running: string, done: string, after?: () => void): void {
             if (!modelOwner(form, model)()) { return; }
+            const submission = submissionOf(model);
+            if (submission.state === 'running') { return; }
+            if (!form.noValidate && !(submitter && submitter.formNoValidate)
+                    && typeof form.checkValidity === 'function' && !form.checkValidity()) {
+                if (typeof form.reportValidity === 'function') { form.reportValidity(); }
+                return;
+            }
             const router: any = (workbench as any).router;
             // What the server said when it did not accept the write ('' when nothing came back).
             let refusal = '';
-            // The form is read before its button is disabled.
-            const sent: Promise<string> = router && typeof router.send === 'function'
-                ? router.send(form, submitter, (failure: any) => { refusal = failure && failure.message || ''; })
-                : Promise.resolve('fallback').then((outcome: string) => {
-                    (workbench as any).submitForm(form);
-                    return outcome;
-                });
-            const submission = submissionOf(model);
+            // Lock synchronously, while letting the router read successful controls before rendering disables them.
             submission.state = 'running';
             submission.message = running;
+            let sent: Promise<string>;
+            try {
+                sent = router && typeof router.send === 'function'
+                    ? router.send(form, submitter, (failure: any) => { refusal = failure && failure.message || ''; })
+                    : Promise.resolve('fallback').then((outcome: string) => {
+                        (workbench as any).submitForm(form);
+                        return outcome;
+                    });
+            } catch (error) {
+                sent = Promise.reject(error);
+            }
             // The refusal this page was answered with belongs to what was sent before (C17).
             (model as any).errorSuperseded = true;
             renderAgain(form, model, context, runtime);
-            sent.then((outcome: string) => {
+            const complete = (outcome: string) => {
                 // 'committed' shows the answer page and 'fallback' loads a document: this page is gone either way.
                 if (outcome === 'committed' || outcome === 'fallback') {
                     return;
@@ -3153,6 +3164,10 @@ module workbench {
                 if (outcome === 'done' && after) {
                     after();
                 }
+            };
+            sent.then(complete, (error: any) => {
+                console.error('The Workbench could not complete the form submission.', error);
+                complete('failed');
             });
         }
 
@@ -3197,6 +3212,13 @@ module workbench {
                                 <option value="" selected>Choose a file</option>
                                 ${serverFiles.map((row: any) => h`<option value=${text(row['server-file-option'])}>${text(row['server-file-option'])}</option>`)}
                             </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
+                            <p class="workbench-field__help">By default, Workbench reads files from <code>imports</code> inside its application data directory,
+                                under the shared base selected by <code>org.eclipse.rdf4j.appdata.basedir</code>
+                                (for example, <code>Workbench/imports</code> on macOS or <code>workbench/imports</code> on Linux).</p>
+                            <p class="workbench-field__help">To use another existing, readable absolute directory, add
+                                <code>-Dorg.eclipse.rdf4j.workbench.add-file-directory=/absolute/directory</code> to the startup options of the JVM running Workbench,
+                                or set the <code>add-file-directory</code> init parameter on the <code>workbench</code> servlet in Workbench's <code>WEB-INF/web.xml</code>.
+                                Restart Workbench to apply changes; the JVM property overrides the servlet setting.</p>
                             ${serverFiles.length ? '' : h`<p class="workbench-field__help">No approved server files are available.</p>`}
                         </div>
                         <div id="add-source-url-panel" class="workbench-field add-source-panel" data-source="url" hidden>
@@ -3221,7 +3243,8 @@ module workbench {
                         </div>
                     </div>
                     <div id="add-upload-actions" class="workbench-form-actions"><span class="workbench-action workbench-action--primary">
-                        <label class="workbench-action-hit-area">${icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload"
+                        <label class="workbench-action-hit-area">${submissionOf(model).state === 'running'
+                            ? h`<span class="workbench-submit-status__spinner" aria-hidden="true"></span>` : icon(runtime, 'upload')}<span class="workbench-action-label"><input type="submit" value="Upload"
                             ?disabled=${submissionOf(model).state === 'running'} /></span></label>
                     </span>
                     ${workbench.detailDisclosure.render(h, {
@@ -3244,7 +3267,7 @@ module workbench {
                                 </select>
                                 <div class="hint">Choose the transaction isolation level used for this import.</div>
                             </div>
-                        </div>`)}${submissionStatus(runtime, model)}</div>
+                        </div>`)}${submissionStatus(runtime, model, false)}</div>
                 </form>`;
         }
 

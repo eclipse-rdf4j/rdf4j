@@ -837,6 +837,25 @@ body.workbench-body .add-drop-zone__file:empty {
 	display: none;
 }
 
+body.workbench-body .add-drop-zone:has(.add-drop-zone__file:not(:empty)) :is(.add-drop-zone__prompt, .add-drop-zone__formats) {
+	opacity: .3;
+}
+
+body.workbench-body .add-source-panel .workbench-field__help {
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body #add-upload-actions > .workbench-action:has(input:disabled) {
+	border-color: var(--workbench-rule);
+	background: var(--workbench-inset);
+	color: var(--workbench-muted);
+	box-shadow: none;
+}
+
+body.workbench-body #add-upload-actions .workbench-action-hit-area:has(input:disabled) {
+	cursor: not-allowed;
+}
+
 body.workbench-body .add-source-fields + .add-target-fields {
 	margin-top: var(--workbench-form-gap);
 }

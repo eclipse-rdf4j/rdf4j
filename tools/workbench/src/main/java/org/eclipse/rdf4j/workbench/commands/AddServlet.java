@@ -75,6 +75,13 @@ public class AddServlet extends TransformationServlet {
 	private static final String FILE_DIRECTORY_PARAM = "add-file-directory";
 	private static final String MAX_FILE_BYTES_PARAM = "add-file-max-bytes";
 	private static final String SYSTEM_PROPERTY_PREFIX = "org.eclipse.rdf4j.workbench.";
+	private static final String URL_ORIGIN_REQUIRED_MESSAGE = "URL imports require an allowed origin. "
+			+ "To allow a source, add -D" + SYSTEM_PROPERTY_PREFIX + ALLOWED_URL_ORIGINS_PARAM
+			+ "=https://data.example.org to the startup options of the JVM running Workbench, or set the "
+			+ ALLOWED_URL_ORIGINS_PARAM
+			+ " init parameter on the workbench servlet in Workbench's WEB-INF/web.xml. "
+			+ "Use comma-separated exact HTTP(S) origins (scheme, host and optional port), without paths. "
+			+ "Restart Workbench after changing the configuration. The JVM property overrides the servlet setting.";
 	private static final long DEFAULT_MAX_SOURCE_BYTES = 32L * 1024 * 1024;
 	private static final long MAX_SOURCE_BYTES = 256L * 1024 * 1024;
 	private static final String ISOLATION_LEVEL_OPTION = "isolation-level-option";
@@ -348,7 +355,7 @@ public class AddServlet extends TransformationServlet {
 			validateImportUrl(url);
 			URLConnection connection = url.openConnection();
 			if (!(connection instanceof HttpURLConnection)) {
-				throw new BadRequestException("URL imports require an allowed origin");
+				throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE);
 			}
 			HttpURLConnection http = (HttpURLConnection) connection;
 			http.setInstanceFollowRedirects(false);
@@ -388,7 +395,7 @@ public class AddServlet extends TransformationServlet {
 	private void validateImportUrl(URL url) throws BadRequestException {
 		String allowed = allowedUrlOrigins;
 		if (allowed == null || allowed.isBlank()) {
-			throw new BadRequestException("URL imports require an allowed origin");
+			throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE);
 		}
 		try {
 			URI source = url.toURI();
@@ -404,9 +411,9 @@ public class AddServlet extends TransformationServlet {
 				}
 			}
 		} catch (URISyntaxException | IllegalArgumentException exc) {
-			throw new BadRequestException("URL imports require an allowed origin", exc);
+			throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE, exc);
 		}
-		throw new BadRequestException("URL imports require an allowed origin");
+		throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE);
 	}
 
 	private static String origin(URI uri) {

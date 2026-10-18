@@ -113,6 +113,26 @@ class AddServletTest {
 	}
 
 	@Test
+	void deniedUrlExplainsOriginConfiguration() throws Exception {
+		String previous = System.getProperty(ORIGINS_PROPERTY);
+		String previousDirectory = System.getProperty(FILE_DIRECTORY_PROPERTY);
+		try {
+			System.clearProperty(ORIGINS_PROPERTY);
+			System.setProperty(FILE_DIRECTORY_PROPERTY, temporaryDirectory.toString());
+			for (String allowed : new String[] { null, "", "https://other.test", "not an origin" }) {
+				assertThat(addFromUrl("https://example.test/data.ttl", allowed))
+						.contains("URL imports require an allowed origin", ORIGINS_PROPERTY,
+								"add-url-allowed-origins", "WEB-INF/web.xml", "JVM", "comma-separated", "HTTP(S)");
+			}
+			assertThat(addFromUrl("file:///etc/passwd", "https://example.test"))
+					.contains(ORIGINS_PROPERTY, "HTTP(S)");
+		} finally {
+			restoreProperty(ORIGINS_PROPERTY, previous);
+			restoreProperty(FILE_DIRECTORY_PROPERTY, previousDirectory);
+		}
+	}
+
+	@Test
 	void emptySystemOriginPropertyDeniesAnInitParameterOrigin() throws Exception {
 		String previous = System.getProperty(ORIGINS_PROPERTY);
 		try {

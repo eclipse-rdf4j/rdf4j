@@ -198,6 +198,8 @@ module workbench {
         let kept: { route: ShownRoute; outlet: any; scrollY: number } = null;
         /** The navigation (its generation) that is uploading a file, or 0. */
         let uploading = 0;
+        /** A mounted form owns one outstanding write, including submissions made by scripts. */
+        const pendingForms = new WeakMap<object, Promise<Outcome>>();
         /** How long the pointer or focus must stay on a link before its route's scripts load (M11.2). */
         const prefetchDelayMillis = 50;
         let prefetchTimer: any = null;
@@ -544,6 +546,7 @@ module workbench {
 
         /** Send a form through the router when its action is a route the router shows; false otherwise. */
         function route(form: any, submitter: any): boolean {
+            if (pendingForms.has(form)) { return true; }
             const request = formRequest(form, submitter);
             if (!routable(request.action)) {
                 return false;
@@ -601,13 +604,29 @@ module workbench {
         export function send(form: any, submitter?: any, failed?: (failure: SendFailure) => void): Promise<Outcome> {
             // In-place writes are owned by the mounted outlet, including after an asynchronous confirmation.
             if (running && !outlet().contains(form)) { return Promise.resolve<Outcome>('abandoned'); }
+            const existing = pendingForms.get(form);
+            if (existing) { return existing; }
             const request = running ? formRequest(form, submitter) : null;
             if (!request || request.method !== 'post' || !routable(request.action)) {
                 form.submit();
                 return Promise.resolve<Outcome>('fallback');
             }
-            return navigate(request.action.href, { history: 'push', inPlace: true, failed,
-                body: request.multipart ? request.data : new URLSearchParams(request.data) });
+            let resolve: (outcome: Outcome) => void;
+            let reject: (error: any) => void;
+            const pending = new Promise<Outcome>((done, refused) => { resolve = done; reject = refused; });
+            // Lock before starting IO: a synchronous transport callback may itself try to submit this form.
+            pendingForms.set(form, pending);
+            const release = () => {
+                if (pendingForms.get(form) === pending) { pendingForms.delete(form); }
+            };
+            pending.then(release, release);
+            try {
+                navigate(request.action.href, { history: 'push', inPlace: true, failed,
+                    body: request.multipart ? request.data : new URLSearchParams(request.data) }).then(resolve, reject);
+            } catch (error) {
+                reject(error);
+            }
+            return pending;
         }
 
         /** The header and end-record metadata with which a write servlet acknowledges a completed write (J43). */
@@ -919,8 +938,15 @@ module workbench {
             }
             controller = typeof AbortController === 'function' ? new AbortController() : null;
             const signal = controller ? controller.signal : undefined;
-            const fetcher = (requestUrl: string, requestOptions: any) => session.fetcher(requestUrl,
-                signal ? Object.assign({}, requestOptions, { signal }) : requestOptions);
+            const fetcher = (requestUrl: string, requestOptions: any): Promise<any> => {
+                try {
+                    return Promise.resolve(session.fetcher(requestUrl,
+                        signal ? Object.assign({}, requestOptions, { signal }) : requestOptions));
+                } catch (error) {
+                    // Synchronous adapters follow the same generation-owned cleanup as rejected fetch promises.
+                    return Promise.reject(error);
+                }
+            };
             const stale = () => mine !== generation;
             let model: any = null;
             let shownDefinition = definition;

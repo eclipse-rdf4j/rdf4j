@@ -1058,6 +1058,56 @@ test('an upload sent in place guards the page until the server accepts it', asyn
     assert.equal(harness.window.listenerCount('beforeunload'), 0);
 });
 
+test('an in-place upload deduplicates send, submit and submit events until it finishes', async () => {
+    const harness = loadSendRouter();
+    const form = fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' });
+    const first = harness.router.send(form);
+    const repeated = harness.router.send(form);
+    harness.router.submit(form);
+    harness.window.document.dispatch('submit', submitEvent(form));
+    await settle();
+    assert.equal(harness.posts.length, 1);
+    assert.equal(harness.dialogs.length, 0, 'duplicates do not ask to cancel the active upload');
+    harness.respond(writeDoneResponse('add'));
+    assert.equal(await first, 'done');
+    assert.equal(await repeated, 'done');
+    const retry = harness.router.send(form);
+    assert.equal(harness.posts.length, 2);
+    harness.respond(writeDoneResponse('add'));
+    assert.equal(await retry, 'done');
+});
+
+test('a failed in-place upload releases the form for retry', async () => {
+    const harness = loadSendRouter();
+    const form = fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' });
+    const first = harness.router.send(form);
+    harness.refuse(new TypeError('Failed to fetch'));
+    assert.equal(await first, 'failed');
+    const retry = harness.router.send(form);
+    assert.equal(harness.posts.length, 2);
+    harness.respond(writeDoneResponse('add'));
+    assert.equal(await retry, 'done');
+});
+
+test('a synchronous upload transport failure releases its leave guard and permits retry', async () => {
+    const harness = loadSendRouter();
+    const form = fakeForm(harness, { action: 'add', method: 'post', enctype: 'multipart/form-data' });
+    const fetcher = harness.session.fetcher;
+    harness.session.fetcher = () => { throw new TypeError('synchronous transport failure'); };
+
+    const result = await harness.router.send(form).then((outcome) => ({ outcome }),
+        (error) => ({ outcome: 'rejected', message: error.message }));
+
+    assert.equal(harness.window.listenerCount('beforeunload'), 0, 'no upload remains to guard');
+    assert.equal(result.outcome, 'failed');
+    harness.session.fetcher = fetcher;
+    const retry = harness.router.send(form);
+    assert.equal(harness.posts.length, 1);
+    assert.equal(harness.dialogs.length, 0, 'retry does not ask to cancel a phantom upload');
+    harness.respond(writeDoneResponse('add'));
+    assert.equal(await retry, 'done');
+});
+
 test('send posts natively without the router, and for forms the router cannot send', async () => {
     const harness = loadFormRouter();
     const form = fakeForm(harness, { action: 'clear', method: 'post' });

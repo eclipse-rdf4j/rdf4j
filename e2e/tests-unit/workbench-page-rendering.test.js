@@ -2306,6 +2306,94 @@ test('Add lists approved server files as a separate selectable source', () => {
     const emptyMarkup = flattenTemplateMarkup(workbench.views.pageTemplate({ ...model, rows: [], rowCount: 0 },
         { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
     assert.match(emptyMarkup, /No approved server files are available/);
+    for (const helpMarkup of [markup, emptyMarkup]) {
+        assert.match(helpMarkup, /Workbench\/imports/);
+        assert.match(helpMarkup, /org\.eclipse\.rdf4j\.appdata\.basedir/);
+        assert.match(helpMarkup, /org\.eclipse\.rdf4j\.workbench\.add-file-directory/);
+        assert.match(helpMarkup, /WEB-INF\/web\.xml/);
+        assert.match(helpMarkup, /existing[^<]*absolute|absolute[^<]*existing/);
+    }
+});
+
+/** Return the event handler attached to a particular template element. */
+function templateEventHandler(template, marker, eventName) {
+    if (Array.isArray(template)) {
+        return template.map((entry) => templateEventHandler(entry, marker, eventName)).find(Boolean);
+    }
+    if (template && Array.isArray(template.strings)) {
+        if (template.strings.join('').includes(marker)) {
+            const index = template.strings.findIndex((part) => part.trimEnd().endsWith('@' + eventName + '='));
+            if (index >= 0) { return template.values[index]; }
+        }
+        return template.values.map((entry) => templateEventHandler(entry, marker, eventName)).find(Boolean);
+    }
+    return undefined;
+}
+
+function uploadSubmissionHarness(send) {
+    const workbench = loadWorkbench();
+    const model = { viewId: 'add', metadata: {}, vars: [], rows: [] };
+    workbench.router = { send };
+    const runtime = fakeRuntime();
+    const template = workbench.views.pageTemplate(model,
+        { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, runtime);
+    const submit = templateEventHandler(template, 'id="add-form"', 'submit');
+    const form = { isConnected: true, checkValidity: () => true };
+    return { workbench, model, form, submit: () => submit({ currentTarget: form, preventDefault() {} }) };
+}
+
+test('Add locks its submission before sending and ignores rapid or reentrant submits', async () => {
+    let resolve;
+    let calls = 0;
+    const pending = new Promise((done) => { resolve = done; });
+    const harness = uploadSubmissionHarness(() => {
+        calls++;
+        if (calls === 1) { harness.submit(); }
+        return pending;
+    });
+    harness.submit();
+    harness.submit();
+    assert.equal(calls, 1);
+    assert.equal(harness.model.submission.state, 'running');
+    resolve('done');
+    await Promise.resolve();
+    assert.equal(harness.model.submission.state, 'done');
+    harness.submit();
+    assert.equal(calls, 2, 'a finished upload can be submitted again');
+});
+
+test('Add restores its submission after rejected or synchronous transport errors', async () => {
+    for (const synchronous of [true, false]) {
+        const harness = uploadSubmissionHarness(() => {
+            if (synchronous) { throw new Error('transport unavailable'); }
+            return Promise.reject(new Error('transport unavailable'));
+        });
+        assert.doesNotThrow(() => harness.submit());
+        await new Promise((resolve) => setImmediate(resolve));
+        assert.equal(harness.model.submission.state, 'failed');
+        assert.match(harness.model.submission.message, /server did not confirm/i);
+    }
+});
+
+test('Add respects native validation before starting a scripted submission', () => {
+    let calls = 0;
+    const harness = uploadSubmissionHarness(() => { calls++; return Promise.resolve('done'); });
+    harness.form.checkValidity = () => false;
+    harness.submit();
+    assert.equal(calls, 0);
+    assert.notEqual(harness.model.submission && harness.model.submission.state, 'running');
+});
+
+test('Add puts the running spinner inside the Upload action', () => {
+    const workbench = loadWorkbench();
+    const model = { viewId: 'add', metadata: {}, vars: [], rows: [],
+        submission: { state: 'running', message: 'Adding data…' } };
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate(model,
+        { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    const actions = markup.indexOf('id="add-upload-actions"');
+    const advanced = markup.indexOf('id="add-import-settings"', actions);
+    assert.match(markup.slice(actions, advanced), /workbench-submit-status__spinner/);
+    assert.equal((markup.match(/workbench-submit-status__spinner/g) || []).length, 1);
 });
 
 test('Remove offers a preview of the statements it would remove, beside the Remove button', () => {
