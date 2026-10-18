@@ -44,7 +44,7 @@ import { useFacetFilters } from "./use-facet-filters.ts";
 import { DataViews, recommendedViewOf, type DataViewMode } from "./data-views.tsx";
 import { colorToRgba, readCanvasPalette } from "./graph-canvas-controller.ts";
 import { createGraphVertexCache, graphClipTransform } from "./graph-webgl.ts";
-import { releaseGraphLayoutWorker, startGraphLayout, warmGraphLayoutWorker } from "./graph-layout-client.ts";
+import { retainGraphLayoutWorker, startGraphLayout } from "./graph-layout-client.ts";
 import { expansionMovableIds } from "./graph-layout-expansion.ts";
 import { LINK_COUNT_CAP, RdfExplorer, clearMetadataCache } from "./rdf-explorer.ts";
 import { loadedLinkCounts, loadedLinksOf, moreLinks } from "./link-counts.ts";
@@ -642,9 +642,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     setIsLargeGraphDragging(false);
   }, []);
 
-  /** Curved-edge routing for a graph shown again (undo, restore); only the drawn cards are obstacles. */
-  const applyRouting = (target: Graph) => {
-    const routed = routeDrawnGraph(target, showValuesRef.current);
+  /** Refresh arrow geometry without moving cards, including when a large graph becomes small again. */
+  const applyRouting = (target: Graph, valuesVisible = showValuesRef.current) => {
+    const routed = routeDrawnGraph(target, valuesVisible);
     setEdgeBends(routed.bends);
     setEdgeRoutes(routed.routes);
   };
@@ -771,10 +771,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     [labelPolicy, labelEvidence, explorer, dismissedLabelGuidance]);
   useEffect(() => () => explorer.dispose(), [explorer]);
   // A layout worker is started while the page is idle, so a large answer's layout does not wait for one to start.
-  useEffect(() => {
-    warmGraphLayoutWorker();
-    return releaseGraphLayoutWorker;
-  }, []);
+  useEffect(() => retainGraphLayoutWorker(), []);
   useEffect(() => () => window.clearTimeout(detailsArrivalTimerRef.current), []);
   useEffect(() => {
     if(!focusedNodeId || !isQueryableResource(focusedNodeId) || focusedNodeId.startsWith("urn:graph-field:stress:"))return;
@@ -1241,6 +1238,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       localNodeIds: localLayoutNodeIds,
       movableNodeIds: movableEntityIds,
       newNodeIds: newEntityIds,
+      includeRoutes: graphSnapshot.nodes.length < LARGE_GRAPH_NODES,
     });
     layoutJobRef.current?.cancel();
     layoutJobRef.current = job;
@@ -3276,6 +3274,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const remaining = removeGraphNodes(graphRef.current, nodeIds);
     skipLayoutRevisionRef.current = remaining.revision;
     setGraph(remaining);
+    applyRouting(remaining);
     filters.forgetRepositoryCounts();
     setNamedGroups((current) =>
       current.flatMap((group) => {
@@ -3310,6 +3309,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const remaining = removeGraphNodes(graphRef.current, cluster);
     skipLayoutRevisionRef.current = remaining.revision;
     setGraph(remaining);
+    applyRouting(remaining);
     filters.forgetRepositoryCounts();
     setNamedGroups((current) =>
       current.flatMap((group) => {
@@ -3569,8 +3569,11 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               setViewMode("graph");
               // Showing values places only them, next to their resources; hiding them moves nothing.
               const withoutValues = new Set(canvasGraph(graphRef.current, false).nodes.map((node) => node.id));
-              if (showValuesRef.current) skipLayoutRevisionRef.current = graphRef.current.revision;
-              else
+              if (showValuesRef.current) {
+                skipLayoutRevisionRef.current = graphRef.current.revision;
+                // Route the next projection: the visibility ref still describes Values on until React renders.
+                applyRouting(graphRef.current, false);
+              } else
                 localLayoutNodeIdsRef.current = new Set(
                   canvasGraph(graphRef.current, true).nodes.flatMap((node) => (withoutValues.has(node.id) ? [] : [node.id])),
                 );

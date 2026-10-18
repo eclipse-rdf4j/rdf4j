@@ -246,7 +246,100 @@ export class StaticGrid {
   }
 }
 
-/** Puts distinct ids in ascending order by setting their bits in `bits` (all clear, one bit per id) and reading them back. */
+/**
+ * A refittable rectangle tree for repeated local-search queries. Leaves retain their input IDs, while internal
+ * bounds are refitted when an accepted position changes. `include` lets a caller test temporarily moved leaves
+ * without changing the accepted tree; exact geometry is still tested by the caller. Results are unique and in
+ * ascending input order, including those explicitly included leaves.
+ */
+export class BoundsTree {
+  private readonly minX: Float64Array;
+  private readonly minY: Float64Array;
+  private readonly maxX: Float64Array;
+  private readonly maxY: Float64Array;
+  private readonly left: Int32Array;
+  private readonly right: Int32Array;
+  private readonly parent: Int32Array;
+  private readonly leaf: Int32Array;
+  private readonly stack: Int32Array;
+  private readonly bits: Int32Array;
+  private readonly count: number;
+
+  constructor(minX: Float64Array, minY: Float64Array, maxX: Float64Array, maxY: Float64Array) {
+    const count = minX.length, size = Math.max(1, 2 * count - 1);
+    if (minY.length !== count || maxX.length !== count || maxY.length !== count) throw new RangeError('Mismatched spatial bounds');
+    const centerX = new Float64Array(count), centerY = new Float64Array(count), order = new Int32Array(count);
+    for (let i = 0; i < count; i++) {
+      if (!(Number.isFinite(minX[i]) && Number.isFinite(minY[i]) && Number.isFinite(maxX[i]) && Number.isFinite(maxY[i])) ||
+          minX[i] > maxX[i] || minY[i] > maxY[i]) throw new RangeError('Invalid spatial bounds');
+      centerX[i] = minX[i] / 2 + maxX[i] / 2; centerY[i] = minY[i] / 2 + maxY[i] / 2; order[i] = i;
+    }
+    this.count = count;
+    this.minX = new Float64Array(size); this.minY = new Float64Array(size);
+    this.maxX = new Float64Array(size); this.maxY = new Float64Array(size);
+    this.left = new Int32Array(size).fill(-1); this.right = new Int32Array(size);
+    this.parent = new Int32Array(size).fill(-1); this.leaf = new Int32Array(count);
+    this.stack = new Int32Array(size); this.bits = new Int32Array((count + 31) >>> 5);
+    let next = 0;
+    const build = (lo: number, hi: number, parent: number): number => {
+      const node = next++;
+      let lx = Infinity, ly = Infinity, hx = -Infinity, hy = -Infinity;
+      for (let k = lo; k < hi; k++) {
+        const id = order[k];
+        if (minX[id] < lx) lx = minX[id]; if (minY[id] < ly) ly = minY[id];
+        if (maxX[id] > hx) hx = maxX[id]; if (maxY[id] > hy) hy = maxY[id];
+      }
+      this.minX[node] = lx; this.minY[node] = ly; this.maxX[node] = hx; this.maxY[node] = hy; this.parent[node] = parent;
+      if (hi - lo === 1) { const id = order[lo]; this.right[node] = id; this.leaf[id] = node; }
+      else {
+        const center = hx - lx >= hy - ly ? centerX : centerY;
+        order.subarray(lo, hi).sort((a, b) => center[a] - center[b] || a - b);
+        const mid = (lo + hi) >>> 1;
+        this.left[node] = build(lo, mid, node); this.right[node] = build(mid, hi, node);
+      }
+      return node;
+    };
+    if (count) build(0, count, -1);
+  }
+
+  update(id: number, minX: number, minY: number, maxX: number, maxY: number) {
+    if (!Number.isInteger(id) || id < 0 || id >= this.count ||
+        !(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) ||
+        minX > maxX || minY > maxY) throw new RangeError('Invalid spatial update');
+    const leaf = this.leaf[id];
+    this.minX[leaf] = minX; this.minY[leaf] = minY; this.maxX[leaf] = maxX; this.maxY[leaf] = maxY;
+    for (let node = this.parent[leaf]; node >= 0; node = this.parent[node]) {
+      const a = this.left[node], b = this.right[node];
+      const lx = Math.min(this.minX[a], this.minX[b]), ly = Math.min(this.minY[a], this.minY[b]);
+      const hx = Math.max(this.maxX[a], this.maxX[b]), hy = Math.max(this.maxY[a], this.maxY[b]);
+      if (lx === this.minX[node] && ly === this.minY[node] && hx === this.maxX[node] && hy === this.maxY[node]) break;
+      this.minX[node] = lx; this.minY[node] = ly; this.maxX[node] = hx; this.maxY[node] = hy;
+    }
+  }
+
+  search(minX: number, minY: number, maxX: number, maxY: number, result: number[] = [], include: readonly number[] = []) {
+    result.length = 0;
+    if (!this.count || !(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) ||
+        minX > maxX || minY > maxY) return result;
+    const lx = this.minX, ly = this.minY, hx = this.maxX, hy = this.maxY, left = this.left, right = this.right, stack = this.stack;
+    let size = 1;
+    stack[0] = 0;
+    while (size) {
+      const node = stack[--size];
+      if (hx[node] < minX || lx[node] > maxX || hy[node] < minY || ly[node] > maxY) continue;
+      if (left[node] < 0) result.push(right[node]);
+      else { stack[size++] = left[node]; stack[size++] = right[node]; }
+    }
+    if (include.length) {
+      for (const id of include) result.push(id);
+      orderByBits(result, this.bits);
+    } else if (result.length > 12 && this.count <= 64 * result.length) orderByBits(result, this.bits);
+    else sortIds(result);
+    return result;
+  }
+}
+
+/** Puts ids in ascending order, removing duplicates, using clear scratch bits (one bit per possible id). */
 function orderByBits(ids: number[], bits: Int32Array) {
   let low = bits.length, high = -1;
   for (const id of ids) {
@@ -265,4 +358,5 @@ function orderByBits(ids: number[], bits: Int32Array) {
       w &= w - 1;
     }
   }
+  ids.length = k;
 }

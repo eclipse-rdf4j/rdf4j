@@ -25,7 +25,8 @@
  * and a card cut by a link it is not part of is pushed off the link while the link's ends move the other way (ImPrEd,
  * Simonetto et al., Computer Graphics Forum 2011). A final phase repeats only the hinges until none applies.
  */
-import {StaticGrid} from './spatial-grid.ts';
+import {BoundsTree, StaticGrid} from './spatial-grid.ts';
+import {createStressPairKernel} from './graph-layout-wasm.ts';
 
 export type StressProblem = {
   /** Extent of each card from its position: left, right, top and bottom (a card is centred when left = right). */
@@ -90,12 +91,13 @@ export const DEFAULT_STRESS_OPTIONS: StressOptions = {
 /** Deterministic xorshift generator in [0, 1). */
 function random(seed: number) {
   let state = (seed >>> 0) || 0x9e3779b9;
-  return () => {
+  const next = () => {
     state ^= state << 13; state >>>= 0;
     state ^= state >>> 17;
     state ^= state << 5; state >>>= 0;
     return state / 4294967296;
   };
+  return Object.assign(next, {getState: () => state, setState: (value: number) => {state = value >>> 0;}});
 }
 
 type Adjacency = {offsets: Int32Array; targets: Int32Array; lengths: Float64Array};
@@ -182,7 +184,7 @@ export type StressStats = {epochs: number; pairs: number; overlapsLeft: number; 
 
 /** The links' adjacency, all-pairs distances in hops, and the connected pairs (a < b, in order) with their distance. */
 type Distances = {n: number; links: Int32Array; linkLengths?: Float64Array; adjacency: Adjacency; hops: Float32Array;
-  pairA: Uint32Array; pairB: Uint32Array; pairHops: Float32Array; maxHops: number};
+  pairNodes: Uint32Array; pairHops: Float32Array; maxHops: number};
 
 /** Runs over the same links (the starts of a layout, its polish) share their distances while the links are alive. */
 const distanceCache = new WeakMap<Int32Array, Distances>();
@@ -195,6 +197,9 @@ const sameValues = (a: ArrayLike<number> | undefined, b: ArrayLike<number> | und
 };
 
 function distancesOf(n: number, links: Int32Array, linkLengths?: Float64Array): Distances {
+  // Two unsigned 16-bit node indices share a word; check before allocating the all-pairs matrix.
+  // The organic engine currently caps a layout at 1500 cards.
+  if (n > 0x10000) throw new RangeError('Stress layout supports at most 65536 nodes');
   const cached = distanceCache.get(links);
   if (cached && cached.n === n && sameValues(cached.links, links) && sameValues(cached.linkLengths, linkLengths)) return cached;
   const adjacency = adjacencyOf(n, links, linkLengths);
@@ -207,12 +212,12 @@ function distancesOf(n: number, links: Int32Array, linkLengths?: Float64Array): 
     const d = hops[i * n + j];
     if (d !== Infinity) { pairCount++; if (d > maxHops) maxHops = d; }
   }
-  const pairA = new Uint32Array(pairCount), pairB = new Uint32Array(pairCount), pairHops = new Float32Array(pairCount);
+  const pairNodes = new Uint32Array(pairCount), pairHops = new Float32Array(pairCount);
   for (let i = 0, p = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
     const d = hops[i * n + j];
-    if (d !== Infinity) { pairA[p] = i; pairB[p] = j; pairHops[p] = d; p++; }
+    if (d !== Infinity) { pairNodes[p] = i | (j << 16); pairHops[p] = d; p++; }
   }
-  const distances = {n, links: links.slice(), linkLengths: linkLengths?.slice(), adjacency, hops, pairA, pairB, pairHops, maxHops};
+  const distances = {n, links: links.slice(), linkLengths: linkLengths?.slice(), adjacency, hops, pairNodes, pairHops, maxHops};
   distanceCache.set(links, distances);
   return distances;
 }
@@ -236,8 +241,7 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
   const halfHeights = Array.from({length: n}, (_, i) => (top[i] + bottom[i]) / 2).sort((a, b) => a - b);
   const typicalHalfWidth = halfWidths[n >> 1], typicalHalfHeight = halfHeights[n >> 1];
 
-  // The connected pairs, copied: an epoch shuffles them.
-  const pairA = distances.pairA.slice(), pairB = distances.pairB.slice(), pairHops = distances.pairHops.slice(), pairCount = pairA.length;
+  const pairCount = distances.pairNodes.length;
   const springs = (problem.springs ?? []).filter(s => s.a !== s.b && s.a >= 0 && s.b >= 0 && s.a < n && s.b < n);
 
   const next = random(options.seed);
@@ -261,17 +265,25 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
   const linkWeight = options.linkWeight;
   // The boxes the hinges keep apart and off links; their sizes do not change.
   const entries = entriesOf(problem);
+  const pairKernel = createStressPairKernel({x, y, fixed, left, right, top, bottom,
+    pairNodes: distances.pairNodes, pairHops: distances.pairHops, L, typicalHalfWidth, typicalHalfHeight, linkWeight});
+  // Each backend owns a working copy for its shuffle; the shared distance-cache templates stay in their original order.
+  const pairNodes = pairKernel ? distances.pairNodes : distances.pairNodes.slice();
+  const pairHops = pairKernel ? distances.pairHops : distances.pairHops.slice();
 
   for (let epoch = firstEpoch; epoch < epochs; epoch++) {
     const eta = etaMax * Math.exp(-decay * epoch);
-    // Fisher–Yates shuffle with the seeded generator keeps runs reproducible.
-    for (let p = pairCount - 1; p > 0; p--) {
-      const q = Math.floor(next() * (p + 1));
-      const t = pairA[p]; pairA[p] = pairA[q]; pairA[q] = t;
-      const u = pairB[p]; pairB[p] = pairB[q]; pairB[q] = u;
-      const h = pairHops[p]; pairHops[p] = pairHops[q]; pairHops[q] = h;
+    if (pairKernel) {
+      next.setState(pairKernel.epoch(eta, next.getState()));
+    } else {
+      // Fisher–Yates shuffle with the seeded generator keeps runs reproducible.
+      for (let p = pairCount - 1; p > 0; p--) {
+        const q = Math.floor(next() * (p + 1));
+        const t = pairNodes[p]; pairNodes[p] = pairNodes[q]; pairNodes[q] = t;
+        const h = pairHops[p]; pairHops[p] = pairHops[q]; pairHops[q] = h;
+      }
+      pairEpoch(x, y, fixed, left, right, top, bottom, pairNodes, pairHops, L, typicalHalfWidth, typicalHalfHeight, linkWeight, eta, next);
     }
-    pairEpoch(x, y, fixed, left, right, top, bottom, pairA, pairB, pairHops, L, typicalHalfWidth, typicalHalfHeight, linkWeight, eta, next);
     for (const spring of springs) {
       const a = spring.a, b = spring.b;
       if (fixed[a] && fixed[b]) continue;
@@ -306,10 +318,10 @@ export function stressLayout(problem: StressProblem, overrides: Partial<StressOp
 
 /** One pass over the pairs in their shuffled order (`radius` and `movePair` written out). */
 function pairEpoch(x: Float64Array, y: Float64Array, fixed: Uint8Array, left: Float64Array, right: Float64Array, top: Float64Array,
-  bottom: Float64Array, pairA: Uint32Array, pairB: Uint32Array, pairHops: Float32Array, L: number, typicalHalfWidth: number,
+  bottom: Float64Array, pairNodes: Uint32Array, pairHops: Float32Array, L: number, typicalHalfWidth: number,
   typicalHalfHeight: number, linkWeight: number, eta: number, next: () => number) {
-  for (let k = 0; k < pairA.length; k++) {
-    const a = pairA[k], b = pairB[k];
+  for (let k = 0; k < pairNodes.length; k++) {
+    const pair = pairNodes[k], a = pair & 0xffff, b = pair >>> 16;
     const fa = fixed[a], fb = fixed[b];
     if (fa && fb) continue;
     const d = pairHops[k];
@@ -684,6 +696,76 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
   // Centres and sizes of the boxes for the overlap test.
   const boxMidX = Float64Array.from(boxMinX, (minX, e) => (minX + boxMaxX[e]) / 2), boxMidY = Float64Array.from(boxMinY, (minY, e) => (minY + boxMaxY[e]) / 2);
   const boxWidth = Float64Array.from(boxMinX, (minX, e) => boxMaxX[e] - minX), boxHeight = Float64Array.from(boxMinY, (minY, e) => boxMaxY[e] - minY);
+  // Index the accepted drawing, not each temporary trial. Every temporarily moved card and its incident links is
+  // explicitly included in queries, so their old indexed bounds cannot hide a conflict. The tree returns the same
+  // ascending IDs as the scans below; skipped entries contribute zero and the narrow-phase arithmetic is unchanged.
+  const cardLoX = new Float64Array(n), cardLoY = new Float64Array(n), cardHiX = new Float64Array(n), cardHiY = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    let lx = Infinity, ly = Infinity, hx = -Infinity, hy = -Infinity;
+    for (let e = boxStart[i]; e < boxStart[i + 1]; e++) {
+      if (boxMinX[e] < lx) lx = boxMinX[e]; if (boxMinY[e] < ly) ly = boxMinY[e];
+      if (boxMaxX[e] > hx) hx = boxMaxX[e]; if (boxMaxY[e] > hy) hy = boxMaxY[e];
+    }
+    cardLoX[i] = lx; cardLoY[i] = ly; cardHiX[i] = hx; cardHiY[i] = hy;
+  }
+  const allCards = Array.from({length: n}, (_, i) => i), allLinks = Array.from({length: count}, (_, i) => i);
+  const movedCards: number[] = [], movedLinks: number[] = [], foundCards: number[] = [], foundLinks: number[] = [];
+  let cardTree: BoundsTree | null = null, linkTree: BoundsTree | null = null;
+  // A pixel of broad-phase slack is far above rounding at drawing coordinates. Unusually large/invalid bounds use
+  // the original scans instead; this also avoids adding a finite-coordinate requirement to the exported solver.
+  const safeBounds = (lx: number, ly: number, hx: number, hy: number) =>
+    lx >= -0x10000000000 && ly >= -0x10000000000 && hx <= 0x10000000000 && hy <= 0x10000000000 && lx <= hx && ly <= hy;
+  if (n >= 32 && count >= 32) {
+    const lx = new Float64Array(n), ly = new Float64Array(n), hx = new Float64Array(n), hy = new Float64Array(n);
+    let safe = true;
+    for (let i = 0; i < n; i++) {
+      lx[i] = x[i] + cardLoX[i]; ly[i] = y[i] + cardLoY[i]; hx[i] = x[i] + cardHiX[i]; hy[i] = y[i] + cardHiY[i];
+      if (!safeBounds(lx[i], ly[i], hx[i], hy[i])) safe = false;
+    }
+    if (safe) {
+      const ex0 = new Float64Array(count), ey0 = new Float64Array(count), ex1 = new Float64Array(count), ey1 = new Float64Array(count);
+      for (let p = 0; p < count; p++) {
+        const a = links[2 * p], b = links[2 * p + 1];
+        ex0[p] = Math.min(x[a], x[b]); ey0[p] = Math.min(y[a], y[b]); ex1[p] = Math.max(x[a], x[b]); ey1[p] = Math.max(y[a], y[b]);
+        if (!safeBounds(ex0[p], ey0[p], ex1[p], ey1[p])) safe = false;
+      }
+      if (safe) {
+        const tree = new BoundsTree(ex0, ey0, ex1, ey1), sample: number[] = [];
+        const samples = Math.min(16, count);
+        let candidates = 0;
+        for (let s = 0; s < samples; s++) {
+          const p = Math.floor(s * count / samples);
+          candidates += tree.search(ex0[p] - 1, ey0[p] - 1, ex1[p] + 1, ey1[p] + 1, sample).length;
+        }
+        // Dense drawings gain little from traversing and ordering a tree for every trial. Choose the streaming
+        // scans unless deterministic sample queries exclude at least seven eighths of the links. Both paths score
+        // the same conflicts in the same order; this choice changes neither the search nor its quality budget.
+        if (candidates * 8 <= samples * count) { cardTree = new BoundsTree(lx, ly, hx, hy); linkTree = tree; }
+      }
+    }
+  }
+  const trial = (a: number, b = -1) => {
+    movedCards.length = movedLinks.length = 0;
+    movedCards.push(a);
+    for (const p of incident[a]) movedLinks.push(p);
+    if (b >= 0) { movedCards.push(b); for (const p of incident[b]) movedLinks.push(p); }
+  };
+  const cardsNear = (lx: number, ly: number, hx: number, hy: number) => cardTree && safeBounds(lx, ly, hx, hy)
+    ? cardTree.search(lx, ly, hx, hy, foundCards, movedCards) : allCards;
+  const linksNear = (lx: number, ly: number, hx: number, hy: number) => linkTree && safeBounds(lx, ly, hx, hy)
+    ? linkTree.search(lx, ly, hx, hy, foundLinks, movedLinks) : allLinks;
+  const accept = (i: number) => {
+    if (!cardTree || !linkTree) return;
+    const lx = x[i] + cardLoX[i], ly = y[i] + cardLoY[i], hx = x[i] + cardHiX[i], hy = y[i] + cardHiY[i];
+    if (!safeBounds(lx, ly, hx, hy)) { cardTree = linkTree = null; return; }
+    cardTree.update(i, lx, ly, hx, hy);
+    for (const p of incident[i]) {
+      const a = links[2 * p], b = links[2 * p + 1];
+      const ex0 = Math.min(x[a], x[b]), ey0 = Math.min(y[a], y[b]), ex1 = Math.max(x[a], x[b]), ey1 = Math.max(y[a], y[b]);
+      if (!safeBounds(ex0, ey0, ex1, ey1)) { cardTree = linkTree = null; return; }
+      linkTree.update(p, ex0, ey0, ex1, ey1);
+    }
+  };
   /** Boxes of card k that segment a–b passes within `pad` of (boxes more than a pixel beside its box are skipped). */
   const cuts = (ax: number, ay: number, bx: number, by: number, k: number, pad: number) =>
     cutsWithin(ax, ay, bx, by, ax < bx ? ax : bx, ax < bx ? bx : ax, ay < by ? ay : by, ay < by ? by : ay, k, pad);
@@ -714,11 +796,12 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
   const linkCost = (p: number, base = 0, done?: (cost: number) => boolean) => {
     const a = links[2 * p], b = links[2 * p + 1];
     const ax = x[a], ay = y[a], bx = x[b], by = y[b];
+    const loX = ax < bx ? ax : bx, hiX = ax < bx ? bx : ax, loY = ay < by ? ay : by, hiY = ay < by ? by : ay;
     let cost = 0;
     if (crossings) {
       const ex = bx - ax, ey = by - ay;
       for (let k = 0; k < n; k++) side[k] = ex * (y[k] - ay) - ey * (x[k] - ax);
-      for (let q = 0; q < count; q++) {
+      for (const q of linksNear(loX - 1, loY - 1, hiX + 1, hiY + 1)) {
         const c = links[2 * q], d = links[2 * q + 1];
         if (!(side[c] * side[d] < -1e-9)) continue;
         const cx = x[c], cy = y[c], fx = x[d] - cx, fy = y[d] - cy;
@@ -727,8 +810,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
         if (done?.(base + cost)) { stopped = true; return cost; }
       }
     }
-    const loX = ax < bx ? ax : bx, hiX = ax < bx ? bx : ax, loY = ay < by ? ay : by, hiY = ay < by ? by : ay;
-    for (let k = 0; k < n; k++) {
+    for (const k of cardsNear(loX - 5, loY - 5, hiX + 5, hiY + 5)) {
       if (k === a || k === b) continue;
       const hits = cutsWithin(ax, ay, bx, by, loX, hiX, loY, hiY, k, 4);
       if (!hits) continue;
@@ -747,7 +829,8 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
       if (stopped) return cost;
     }
     // Links of other cards cutting this card or its fan.
-    for (let p = 0; p < count; p++) {
+    const xi = x[i], yi = y[i], loX = xi + cardLoX[i], loY = yi + cardLoY[i], hiX = xi + cardHiX[i], hiY = yi + cardHiY[i];
+    for (const p of linksNear(loX - 5, loY - 5, hiX + 5, hiY + 5)) {
       const a = links[2 * p], b = links[2 * p + 1];
       if (a === i || b === i) continue;
       const hits = cuts(x[a], y[a], x[b], y[b], i, 4);
@@ -755,8 +838,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
       cost += 3 * hits;
       if (done?.(cost)) { stopped = true; return cost; }
     }
-    const xi = x[i], yi = y[i];
-    for (let k = 0; k < n; k++) {
+    for (const k of cardsNear(loX - 25, loY - 19, hiX + 25, hiY + 19)) {
       if (k === i) continue;
       const xk = x[k], yk = y[k];
       for (let e = boxStart[i]; e < boxStart[i + 1]; e++) for (let f = boxStart[k]; f < boxStart[k + 1]; f++) {
@@ -775,6 +857,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
     let improved = 0;
     for (let i = 0; i < n; i++) {
       if (fixed[i] || !incident[i].length) continue;
+      trial(i);
       const start = cardCost(i);
       if (!start) continue;
       const x0 = x[i], y0 = y[i];
@@ -808,7 +891,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
         if (cost < limit) { bestCost = cost; bestX = cx; bestY = cy; }
       }
       x[i] = bestX; y[i] = bestY;
-      if (bestX !== x0 || bestY !== y0) { improved++; continue; }
+      if (bestX !== x0 || bestY !== y0) { accept(i); improved++; continue; }
       // Trading places with a nearby card undoes crossings no single move can (two cards on the wrong sides). The card
       // is back where its cost was `start`.
       const here = start;
@@ -817,6 +900,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
         if (j === i || fixed[j] || Math.hypot(x[j] - x0, y[j] - y0) > 4 * scale) continue;
         const before = here + cardCost(j);
         x[i] = x[j]; y[i] = y[j]; x[j] = x0; y[j] = y0;
+        trial(i, j);
         // A trade whose new conflicts counted so far already use up the gain to beat is not taken.
         let gain = -Infinity;
         const after = cardCost(i, cost => before - cost <= bestGain);
@@ -825,10 +909,12 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
           if (!stopped) gain = before - (after + other);
         }
         x[j] = x[i]; y[j] = y[i]; x[i] = x0; y[i] = y0;
+        trial(i);
         if (gain > bestGain) { bestGain = gain; bestSwap = j; }
       }
       if (bestSwap >= 0) {
         x[i] = x[bestSwap]; y[i] = y[bestSwap]; x[bestSwap] = x0; y[bestSwap] = y0;
+        accept(i); accept(bestSwap);
         improved++;
       }
     }

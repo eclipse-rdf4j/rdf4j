@@ -184,7 +184,7 @@ test("rows become the same triples as before, whatever their columns are called"
   for (const rows of answers) assert.deepEqual(bindingsToTriples(rows), referenceTriples(rows));
 });
 
-test("a layout takes the worker started ahead of it, and the next one is started afterwards", async () => {
+test("a layout reuses its successful prewarmed worker and isolates injected factories", async () => {
   const created = [];
   class FakeWorker {
     constructor(url, options) {
@@ -196,7 +196,7 @@ test("a layout takes the worker started ahead of it, and the next one is started
     }
     postMessage(message) {
       this.posted.push(message);
-      queueMicrotask(() => this.onmessage?.({ data: { result: { positions: new Map(), bends: new Map() } } }));
+      queueMicrotask(() => this.onmessage?.({ data: { requestId: message.requestId, result: { positions: new Map(), bends: new Map() } } }));
     }
     terminate() {
       this.terminated = true;
@@ -215,9 +215,9 @@ test("a layout takes the worker started ahead of it, and the next one is started
     const graph = { nodes: [], edges: [], revision: 1 };
     await startGraphLayout(graph).promise;
     assert.equal(created[0].posted.length, 1, "the job went to the spare");
-    assert.equal(created[0].terminated, true, "and the worker ended with it");
+    assert.equal(created[0].terminated, false, "and keeps its compiled code after success");
     await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.equal(created.length, 2, "a new spare is started after the job");
+    assert.equal(created.length, 1, "success does not construct a replacement worker");
 
     const own = [];
     await startGraphLayout(graph, {}, () => {
@@ -226,12 +226,13 @@ test("a layout takes the worker started ahead of it, and the next one is started
       return worker;
     }).promise;
     assert.equal(own.length, 1, "a caller's own worker factory is used as given");
-    assert.equal(created[1].posted.length, 0, "and leaves the spare for the page");
+    assert.equal(created[0].posted.length, 1, "and leaves the completed worker for the page");
+    assert.equal(own[0].terminated, true, "an injected worker remains one-shot");
 
     const cancelled = startGraphLayout(graph);
     cancelled.cancel();
     await assert.rejects(cancelled.promise, { name: "AbortError" });
-    assert.equal(created[1].terminated, true, "a cancelled job ends its worker");
+    assert.equal(created[0].terminated, true, "a cancelled job ends its worker");
 
     releaseGraphLayoutWorker();
     await new Promise((resolve) => setTimeout(resolve, 0));
