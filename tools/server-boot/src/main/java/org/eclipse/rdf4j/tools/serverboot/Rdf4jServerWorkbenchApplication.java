@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.workbench.proxy.CookieCacheControlFilter;
 import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
+import org.eclipse.rdf4j.workbench.security.WorkbenchSessionCookieInitializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -42,7 +43,10 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.tomcat.TomcatContextCustomizer;
 import org.springframework.boot.tomcat.servlet.TomcatServletWebServerFactory;
 import org.springframework.boot.web.server.Compression;
+import org.springframework.boot.web.server.Cookie;
+import org.springframework.boot.web.server.autoconfigure.ServerProperties;
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
+import org.springframework.boot.web.servlet.ServletContextInitializer;
 import org.springframework.boot.web.servlet.ServletRegistrationBean;
 import org.springframework.context.ApplicationContext;
 import org.springframework.context.ConfigurableApplicationContext;
@@ -181,6 +185,20 @@ public class Rdf4jServerWorkbenchApplication {
 
 			context.getLogger(Logger.ROOT_LOGGER_NAME).addAppender(appender);
 		};
+	}
+
+	@Bean
+	ServletContextInitializer workbenchSessionCookieInitializer(
+			ServerProperties serverProperties) {
+		Cookie.SameSite configured = serverProperties.getServlet().getSession().getCookie().getSameSite();
+		String sameSite = configured == null ? "Lax" : configured.attributeValue();
+		if (sameSite == null) {
+			// An explicit omission leaves session-cookie attributes to the container.
+			return context -> {
+			};
+		}
+		WorkbenchSessionCookieInitializer initializer = new WorkbenchSessionCookieInitializer(sameSite);
+		return initializer::initialize;
 	}
 
 	@Bean

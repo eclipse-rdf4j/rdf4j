@@ -25,7 +25,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -37,8 +36,8 @@ import org.eclipse.rdf4j.workbench.proxy.config.InvalidWorkbenchPolicyException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
+import org.eclipse.rdf4j.workbench.security.WorkbenchSessionState;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
-import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
@@ -51,8 +50,6 @@ import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
-import jakarta.servlet.http.HttpSessionBindingEvent;
-import jakarta.servlet.http.HttpSessionBindingListener;
 
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
@@ -70,14 +67,12 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final String ANONYMOUS_SCOPE = WorkbenchGateway.class.getName() + ".anonymousScope";
 	private static final Set<String> LEGACY_SENSITIVE_COOKIES = Set.of("query", "ref", SERVER_USER_PASSWORD);
 
-	/**
-	 * Thread-safe map of server paths to their WorkbenchServlet instances.
-	 */
-	private final Map<String, WorkbenchServlet> servlets = new ConcurrentHashMap<>();
+	static final String SESSION_STATE_ATTRIBUTE = WorkbenchGateway.class.getName() + ".sessionState";
 
 	private CookieHandler cookies;
 
 	private ServerValidator serverValidator;
+	private final Set<WorkbenchSessionState> sessionStates = ConcurrentHashMap.newKeySet();
 
 	private volatile WorkbenchPolicy policy;
 
@@ -99,10 +94,10 @@ public class WorkbenchGateway extends AbstractServlet {
 
 	@Override
 	public void destroy() {
-		for (WorkbenchServlet servlet : servlets.values()) {
-			servlet.destroy();
+		for (WorkbenchSessionState state : Set.copyOf(sessionStates)) {
+			state.close();
 		}
-		QueryStorage.shutdownSingleton();
+		sessionStates.clear();
 	}
 
 	public String getChangeServerPath() {
@@ -190,8 +185,8 @@ public class WorkbenchGateway extends AbstractServlet {
 				throw new IOException(e);
 			}
 		} else {
-			final WorkbenchServlet servlet = findWorkbenchServlet(req, resp);
-			if (servlet == null) {
+			final WorkbenchSessionState.Lease lease = findWorkbenchServlet(req, resp);
+			if (lease == null) {
 				// Redirect to change-server-path
 				if (change != null && !isChangeServerPageAllowed(change)) {
 					resp.sendError(HttpServletResponse.SC_NOT_FOUND);
@@ -203,7 +198,9 @@ public class WorkbenchGateway extends AbstractServlet {
 				}
 				resp.sendRedirect(uri.append(getChangeServerPath()).toString());
 			} else {
-				servlet.service(req, resp);
+				try (lease) {
+					lease.servlet().service(req, resp);
+				}
 			}
 		}
 	}
@@ -244,13 +241,6 @@ public class WorkbenchGateway extends AbstractServlet {
 	/** The change-server path is the Connection page wherever it is mounted, so the server page policy applies. */
 	private boolean isChangeServerPageAllowed(String changeServerPath) {
 		return policy.isRouteAllowed("/server") && policy.isRouteAllowed(changeServerPath);
-	}
-
-	private void resetCache() {
-		for (WorkbenchServlet servlet : servlets.values()) {
-			// inform browser that server changed and cache is invalid
-			servlet.resetCache();
-		}
 	}
 
 	/**
@@ -327,7 +317,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
 		final StringBuilder uri = new StringBuilder(req.getRequestURI());
 		uri.setLength(uri.length() - req.getPathInfo().length());
-		resetCache();
+		clearSessionState(req.getSession(false));
 		resp.sendRedirect(uri.toString());
 	}
 
@@ -396,43 +386,77 @@ public class WorkbenchGateway extends AbstractServlet {
 	 *
 	 * @param req  the current request
 	 * @param resp the current response
-	 * @return a WorkbenchServlet instance allocated for the requested server
+	 * @return a lease on the WorkbenchServlet allocated for the requested server
 	 * @throws ServletException if a problem occurs initializing a new servlet
 	 */
-	private WorkbenchServlet findWorkbenchServlet(final HttpServletRequest req, final HttpServletResponse resp)
+	private WorkbenchSessionState.Lease findWorkbenchServlet(final HttpServletRequest req,
+			final HttpServletResponse resp)
 			throws ServletException {
-		WorkbenchServlet servlet = null;
 		final ServerSelection selection = findServerSelection(req, resp);
 		final String server = selection.server;
-		ConnectionState state = connectionState(req);
-		ServerCredentials.Credentials credentials = state == null ? null : state.credentialsFor(server);
+		if (!(isServerFixed() || isRelativeDefaultServer(selection) || selection.validServer
+				|| this.serverValidator.isValidServer(server))) {
+			return null;
+		}
+
+		ConnectionState connection = connectionState(req);
+		ServerCredentials.Credentials credentials = connection == null ? null : connection.credentialsFor(server);
 		ServerCredentials.bindRequest(req, credentials);
-		Map<String, WorkbenchServlet> cache = credentials == null ? servlets : state.servlets;
-		if (cache.containsKey(server)) {
-			servlet = cache.get(server);
-		} else {
-			if (isServerFixed() || isRelativeDefaultServer(selection) || selection.validServer
-					|| this.serverValidator.isValidServer(server)) {
-				synchronized (cache) {
-					// Even though the map is thread-safe, we only wish one
-					// thread to be in this block at a time, to avoid abandoning
-					// a WorkbenchServlet instance to the garbage collector.
-					if (cache.containsKey(server)) {
-						servlet = cache.get(server);
-					} else {
-						final Map<String, String> params = new HashMap<>(3);
-						params.put(SERVER_PARAM, server);
-						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
-						final ServletConfig cfg = createWorkbenchServletConfig(server, params);
-						servlet = createWorkbenchServlet();
-						servlet.setServerCredentials(credentials);
-						servlet.init(cfg);
-						cache.put(server, servlet);
-					}
+		String credentialMarker = credentials == null ? null : connection.identity;
+		WorkbenchSessionState state = getSessionState(req.getSession(true));
+		try {
+			return state.acquire(server, credentialMarker,
+					() -> createAndInitializeWorkbenchServlet(server, credentials));
+		} catch (ServletInitializationException e) {
+			throw e.getServletException();
+		}
+	}
+
+	private WorkbenchServlet createAndInitializeWorkbenchServlet(String server,
+			ServerCredentials.Credentials credentials) {
+		final Map<String, String> params = new HashMap<>(3);
+		params.put(SERVER_PARAM, server);
+		params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
+		final ServletConfig cfg = createWorkbenchServletConfig(server, params);
+		WorkbenchServlet servlet = createWorkbenchServlet();
+		servlet.setServerCredentials(credentials);
+		try {
+			servlet.init(cfg);
+			return servlet;
+		} catch (ServletException e) {
+			servlet.destroy();
+			throw new ServletInitializationException(e);
+		}
+	}
+
+	private WorkbenchSessionState getSessionState(HttpSession session) {
+		synchronized (session) {
+			Object existing = session.getAttribute(SESSION_STATE_ATTRIBUTE);
+			if (existing instanceof WorkbenchSessionState) {
+				return (WorkbenchSessionState) existing;
+			}
+			WorkbenchSessionState state = new WorkbenchSessionState(sessionStates::remove);
+			sessionStates.add(state);
+			try {
+				session.setAttribute(SESSION_STATE_ATTRIBUTE, state);
+			} catch (RuntimeException e) {
+				state.close();
+				throw e;
+			}
+			return state;
+		}
+	}
+
+	private void clearSessionState(HttpSession session) {
+		if (session != null) {
+			synchronized (session) {
+				Object state = session.getAttribute(SESSION_STATE_ATTRIBUTE);
+				session.removeAttribute(SESSION_STATE_ATTRIBUTE);
+				if (state instanceof WorkbenchSessionState) {
+					((WorkbenchSessionState) state).close();
 				}
 			}
 		}
-		return servlet;
 	}
 
 	private static ConnectionState connectionState(HttpServletRequest request) {
@@ -464,13 +488,11 @@ public class WorkbenchGateway extends AbstractServlet {
 		}
 	}
 
-	/** A session owns every servlet whose remote repository manager has been given that session's credentials. */
-	private static final class ConnectionState implements HttpSessionBindingListener {
+	/** Immutable connection identity; WorkbenchSessionState owns and retires its leased servlet trees. */
+	private static final class ConnectionState {
 		private final String server;
 		private final ServerCredentials.Credentials credentials;
 		private final String identity = UUID.randomUUID().toString();
-		private final Map<String, WorkbenchServlet> servlets = new ConcurrentHashMap<>();
-		private final AtomicBoolean destroyed = new AtomicBoolean();
 
 		private ConnectionState(String server, ServerCredentials.Credentials credentials) {
 			this.server = server;
@@ -481,15 +503,6 @@ public class WorkbenchGateway extends AbstractServlet {
 			return server.equals(selectedServer) ? credentials : null;
 		}
 
-		@Override
-		public void valueUnbound(HttpSessionBindingEvent event) {
-			if (destroyed.compareAndSet(false, true)) {
-				for (WorkbenchServlet servlet : servlets.values()) {
-					servlet.destroy();
-				}
-				servlets.clear();
-			}
-		}
 	}
 
 	private boolean isRelativeDefaultServer(ServerSelection selection) {
@@ -646,6 +659,18 @@ public class WorkbenchGateway extends AbstractServlet {
 			this.server = server;
 			this.defaultServer = defaultServer;
 			this.validServer = validServer;
+		}
+	}
+
+	private static final class ServletInitializationException extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+
+		private ServletInitializationException(ServletException cause) {
+			super(cause);
+		}
+
+		private ServletException getServletException() {
+			return (ServletException) getCause();
 		}
 	}
 }

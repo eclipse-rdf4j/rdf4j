@@ -62,7 +62,6 @@ import org.eclipse.rdf4j.workbench.util.QueryStorage;
 import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
 import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -78,11 +77,6 @@ import tools.jackson.databind.ObjectMapper;
 class QueryServletCoverageTest {
 
 	private static final String SHORT_QUERY = "select * {?s ?p ?o .}";
-
-	@AfterEach
-	void shutdownQueryStorageSingleton() throws Exception {
-		shutdownDefaultQueryStorage();
-	}
 
 	@Test
 	void initAndDestroyManageQueryStorageLifecycle() throws Exception {
@@ -410,11 +404,6 @@ class QueryServletCoverageTest {
 	}
 
 	private static RecordingQueryServlet newInitializedServlet() throws ServletException {
-		try {
-			shutdownDefaultQueryStorage();
-		} catch (Exception e) {
-			throw new ServletException(e);
-		}
 		RecordingQueryServlet servlet = new RecordingQueryServlet();
 		servlet.initializeForTests(
 				TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60"));
@@ -426,10 +415,6 @@ class QueryServletCoverageTest {
 		servlet.initializeForCookieTests(
 				TestServletConfig.withParams("query", "transformations", "/transform", "cookie-max-age", "60"));
 		return servlet;
-	}
-
-	private static void shutdownDefaultQueryStorage() throws Exception {
-		QueryStorage.shutdownSingleton();
 	}
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {

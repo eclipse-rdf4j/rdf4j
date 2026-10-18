@@ -151,12 +151,14 @@ public class QueryServlet extends TransformationServlet {
 	private static final ObjectMapper mapper = new ObjectMapper();
 
 	private QueryStorage storage;
+	private QueryStorage.Lease storageLease;
 
 	private AsyncExplainCoordinator asyncExplainCoordinator = new AsyncExplainCoordinator();
 
 	private CancellableOperationCoordinator queryCoordinator = new CancellableOperationCoordinator();
 
 	protected void substituteQueryStorage(QueryStorage storage) {
+		releaseQueryStorage();
 		this.storage = storage;
 	}
 
@@ -191,7 +193,8 @@ public class QueryServlet extends TransformationServlet {
 	public void init(final ServletConfig config) throws ServletException {
 		super.init(config);
 		try {
-			this.storage = QueryStorage.getSingletonInstance(this.appConfig);
+			this.storageLease = QueryStorage.acquire(this.appConfig);
+			this.storage = storageLease.storage();
 		} catch (RepositoryException e) {
 			throw new ServletException(e);
 		}
@@ -199,9 +202,20 @@ public class QueryServlet extends TransformationServlet {
 
 	@Override
 	public void destroy() {
-		this.asyncExplainCoordinator.shutdown();
-		this.queryCoordinator.shutdown();
-		super.destroy();
+		try {
+			this.asyncExplainCoordinator.shutdown();
+			this.queryCoordinator.shutdown();
+		} finally {
+			releaseQueryStorage();
+			super.destroy();
+		}
+	}
+
+	private void releaseQueryStorage() {
+		if (storageLease != null) {
+			storageLease.close();
+			storageLease = null;
+		}
 	}
 
 	@Override

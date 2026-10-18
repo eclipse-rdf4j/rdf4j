@@ -12,6 +12,9 @@
 package org.eclipse.rdf4j.workbench.util;
 
 import java.io.File;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 import org.eclipse.rdf4j.common.app.AppConfiguration;
@@ -50,24 +53,66 @@ public class QueryStorage {
 
 	private static final QueryEvaluator EVAL = QueryEvaluator.INSTANCE;
 
-	private static QueryStorage instance;
+	private static final Map<File, QueryStorage> STORES = new HashMap<>();
 
+	/**
+	 * Returns the store for this data directory, retaining legacy ownership until {@link #shutdown()} is called.
+	 * Repeated calls retain the same legacy owner. Servlet consumers should use {@link #acquire(AppConfiguration)}.
+	 */
 	public static QueryStorage getSingletonInstance(final AppConfiguration config)
 			throws RepositoryException {
 		synchronized (LOCK) {
-			if (instance == null || instance.isShutdown()) {
-				instance = new QueryStorage(config);
-			}
-			return instance;
+			QueryStorage storage = getStore(config);
+			storage.legacyOwner = true;
+			return storage;
 		}
 	}
 
-	/** Close the shared store only when the Workbench application is being destroyed. */
-	public static void shutdownSingleton() {
+	/** Retains the shared store until this consumer closes its lease. */
+	public static Lease acquire(final AppConfiguration config) throws RepositoryException {
 		synchronized (LOCK) {
-			if (instance != null) {
-				instance.shutdown();
-				instance = null;
+			QueryStorage storage = getStore(config);
+			storage.consumers++;
+			return new Lease(storage);
+		}
+	}
+
+	private static QueryStorage getStore(AppConfiguration config) throws RepositoryException {
+		final File directory;
+		try {
+			directory = new File(config.getDataDir(), "queries").getCanonicalFile();
+		} catch (IOException e) {
+			throw new RepositoryException("Could not resolve saved-query data directory", e);
+		}
+		QueryStorage storage = STORES.get(directory);
+		if (storage == null || storage.isShutdown()) {
+			storage = new QueryStorage(directory);
+			STORES.put(directory, storage);
+		}
+		return storage;
+	}
+
+	/** An idempotent ownership handle for a single saved-query consumer. */
+	public static final class Lease implements AutoCloseable {
+		private final QueryStorage storage;
+		private boolean closed;
+
+		private Lease(QueryStorage storage) {
+			this.storage = storage;
+		}
+
+		public QueryStorage storage() {
+			return storage;
+		}
+
+		@Override
+		public void close() {
+			synchronized (LOCK) {
+				if (!closed) {
+					closed = true;
+					storage.consumers--;
+					storage.closeIfUnused();
+				}
 			}
 		}
 	}
@@ -128,6 +173,9 @@ public class QueryStorage {
 			+ READ_FILTER + "ORDER BY ?user ?queryName";
 
 	private final Repository queries;
+	private final File directory;
+	private int consumers;
+	private boolean legacyOwner;
 
 	private static final String USER_NAME = "userName";
 
@@ -142,25 +190,44 @@ public class QueryStorage {
 	/**
 	 * Create a new object for accessing the store of user queries.
 	 *
-	 * @param appConfig the application configuration, for obtaining the data directory
+	 * @param directory the canonical saved-query data directory
 	 * @throws RepositoryException if there is an issue creating the object to access the repository
 	 */
-	private QueryStorage(final AppConfiguration appConfig) throws RepositoryException {
-		this(new SailRepository(new NativeStore(new File(appConfig.getDataDir(), "queries"))));
+	private QueryStorage(final File directory) throws RepositoryException {
+		this(new SailRepository(new NativeStore(directory)), directory);
 		queries.init();
 	}
 
 	QueryStorage(final Repository queries) {
-		this.queries = queries;
+		this(queries, null);
 	}
 
+	private QueryStorage(final Repository queries, File directory) {
+		this.queries = queries;
+		this.directory = directory;
+	}
+
+	/** Releases legacy ownership; leased consumers keep the store alive until their last release. */
 	public void shutdown() {
+		synchronized (LOCK) {
+			legacyOwner = false;
+			closeIfUnused();
+		}
+	}
+
+	private void closeIfUnused() {
+		if (legacyOwner || consumers != 0) {
+			return;
+		}
 		try {
 			if (queries != null && queries.isInitialized()) {
 				queries.shutDown();
 			}
 		} catch (RepositoryException e) {
 			LOGGER.warn(e.getMessage());
+		}
+		if (directory != null && isShutdown()) {
+			STORES.remove(directory, this);
 		}
 	}
 
