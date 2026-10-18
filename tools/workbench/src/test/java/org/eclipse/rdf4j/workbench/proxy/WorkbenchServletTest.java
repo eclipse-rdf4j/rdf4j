@@ -18,9 +18,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.mockConstruction;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.io.File;
@@ -64,11 +67,14 @@ import org.eclipse.rdf4j.workbench.exceptions.MissingInitParameterException;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.InOrder;
+import org.mockito.MockedConstruction;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.mock.web.MockServletContext;
@@ -133,6 +139,52 @@ public class WorkbenchServletTest {
 		servlet.destroy();
 
 		verify(manager).shutDown();
+	}
+
+	@Test
+	void serverIdentitySeparatesBrowserSessionsForWorkspaceStorage() throws Exception {
+		TestWorkbenchServlet servlet = initServlet(mock(RepositoryManager.class));
+		MockHttpServletRequest first = request("/workbench", null);
+		first.setAttribute("org.eclipse.rdf4j.workbench.clientScope", "session-one");
+		MockHttpServletResponse firstResponse = new MockHttpServletResponse();
+		servlet.service(first, firstResponse);
+		MockHttpServletRequest second = request("/workbench", null);
+		second.setAttribute("org.eclipse.rdf4j.workbench.clientScope", "session-two");
+		MockHttpServletResponse secondResponse = new MockHttpServletResponse();
+		servlet.service(second, secondResponse);
+
+		assertThat(firstResponse.getHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER))
+				.isNotEqualTo(secondResponse.getHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER));
+	}
+
+	@Test
+	void signedInUserIsPublishedWithoutExposingCredentialsToTheBrowser() throws Exception {
+		TestWorkbenchServlet servlet = initServlet(mock(RepositoryManager.class));
+		servlet.setServerCredentials(ServerCredentials.fromConnectionForm(
+				Base64.getEncoder().encodeToString("alice:private-password".getBytes(StandardCharsets.UTF_8))));
+		MockHttpServletRequest request = request("/workbench", null);
+		servlet.service(request, new MockHttpServletResponse());
+
+		assertThat(request.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE)).isEqualTo("alice");
+		assertThat(request.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE).toString())
+				.doesNotContain("private-password");
+	}
+
+	@Test
+	void remoteManagerGetsItsSessionCredentialsBeforeItsFirstInitialization() throws Exception {
+		try (MockedConstruction<RemoteRepositoryManager> managers = mockConstruction(RemoteRepositoryManager.class)) {
+			WorkbenchServlet servlet = new WorkbenchServlet();
+			servlet.setServerCredentials(ServerCredentials.fromConnectionForm(
+					Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8))));
+			servlet.init(TestServletConfig.withParams("workbench", "default-path", "/repositories",
+					WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server"));
+
+			RemoteRepositoryManager manager = managers.constructed().get(0);
+			InOrder order = inOrder(manager);
+			order.verify(manager).setUsernameAndPassword("alice", "secret");
+			order.verify(manager).init();
+			verify(manager, times(1)).init();
+		}
 	}
 
 	@Test
@@ -221,7 +273,7 @@ public class WorkbenchServletTest {
 			servlet.service(request("/workbench/repo/summary", "/repo/summary"), response);
 
 			assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_NOT_FOUND);
-			verifyNoInteractions(manager);
+			verify(manager, never()).getRepository(anyString());
 		} finally {
 			servlet.destroy();
 		}
@@ -653,7 +705,7 @@ public class WorkbenchServletTest {
 	}
 
 	@Test
-	void remoteManagersReceiveCookieCredentials() throws Exception {
+	void remoteManagersReceiveSessionCredentialsBeforeInitialization() throws Exception {
 		RemoteRepositoryManager remoteManager = mock(RemoteRepositoryManager.class);
 		Repository repository = mock(Repository.class);
 		when(remoteManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
@@ -661,18 +713,16 @@ public class WorkbenchServletTest {
 		when(remoteManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
 
 		TestWorkbenchServlet noCookieServlet = initServlet(remoteManager);
-		noCookieServlet.cookieHandler = new FixedCookieHandler(null);
 		noCookieServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		noCookieServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
-		verify(remoteManager).setUsernameAndPassword(null, null);
+		verify(remoteManager, never()).setUsernameAndPassword(any(), any());
 		verify(remoteManager).init();
 
 		RemoteRepositoryManager base64Manager = mock(RemoteRepositoryManager.class);
 		when(base64Manager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
 		when(base64Manager.getRepository(anyString())).thenReturn(repository);
 		when(base64Manager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet base64Servlet = initServlet(base64Manager);
-		base64Servlet.cookieHandler = new FixedCookieHandler(
+		TestWorkbenchServlet base64Servlet = initServletWithCredentials(base64Manager,
 				Base64.getEncoder().encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
 		base64Servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		base64Servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
@@ -682,8 +732,7 @@ public class WorkbenchServletTest {
 		when(rawManager.getLocation()).thenReturn(new URL("https://remote.example/rdf4j-server"));
 		when(rawManager.getRepository(anyString())).thenReturn(repository);
 		when(rawManager.getRepositoryInfo(anyString())).thenReturn(new RepositoryInfo());
-		TestWorkbenchServlet rawServlet = initServlet(rawManager);
-		rawServlet.cookieHandler = new FixedCookieHandler("bob:hunter2");
+		TestWorkbenchServlet rawServlet = initServletWithCredentials(rawManager, "bob:hunter2");
 		rawServlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		rawServlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		verify(rawManager).setUsernameAndPassword("bob", "hunter2");
@@ -695,7 +744,7 @@ public class WorkbenchServletTest {
 	 * is a user without a password rather than a server error.
 	 */
 	@Test
-	void cookieCredentialsAreDecodedAsUtf8() throws Exception {
+	void sessionCredentialsAreDecodedAsUtf8() throws Exception {
 		assertThat(credentialsSentFor(Base64.getEncoder()
 				.encodeToString("håvard:pass✓".getBytes(StandardCharsets.UTF_8)))).containsExactly("håvard", "pass✓");
 		assertThat(credentialsSentFor(Base64.getEncoder()
@@ -716,8 +765,7 @@ public class WorkbenchServletTest {
 			sent.add(invocation.getArgument(1));
 			return null;
 		}).when(manager).setUsernameAndPassword(anyString(), anyString());
-		TestWorkbenchServlet servlet = initServlet(manager);
-		servlet.cookieHandler = new FixedCookieHandler(cookie);
+		TestWorkbenchServlet servlet = initServletWithCredentials(manager, cookie);
 		servlet.createdServlets.add(new RecordingProxyRepositoryServlet());
 		servlet.service(request("/workbench/repo", "/repo"), new CapturedResponse());
 		return sent;
@@ -754,6 +802,18 @@ public class WorkbenchServletTest {
 
 	private static TestWorkbenchServlet initServlet(RepositoryManager manager) throws Exception {
 		return initServlet(manager, null);
+	}
+
+	private static TestWorkbenchServlet initServletWithCredentials(RepositoryManager manager, String submitted)
+			throws Exception {
+		TestWorkbenchServlet servlet = new TestWorkbenchServlet();
+		servlet.managerToReturn = manager;
+		servlet.setServerCredentials(ServerCredentials.fromConnectionForm(submitted));
+		servlet.init(TestServletConfig.withParams("workbench",
+				"default-path", "/repositories",
+				WorkbenchServlet.SERVER_PARAM, "https://example.org/rdf4j-server",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		return servlet;
 	}
 
 	private static TestWorkbenchServlet initServlet(RepositoryManager manager, String noRepositoryId) throws Exception {

@@ -16,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Properties;
@@ -32,6 +33,7 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -225,6 +227,58 @@ class GraphServletTest {
 		MockHttpServletResponse response = new MockHttpServletResponse();
 		servlet.service(unlimited, response);
 		assertThat(JSON_MAPPER.readTree(response.getContentAsString()).path("results").path("bindings")).hasSize(2);
+	}
+
+	@Test
+	void configuredRowCeilingCannotBeRaisedByTheBrowser() throws Exception {
+		servlet.destroy();
+		servlet = newServlet("graph-max-query-length", "120", "graph-max-result-rows", "1");
+		for (String requested : List.of("0", "-1", "500000", "nonsense")) {
+			MockHttpServletRequest request = sparqlPost("CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }");
+			request.setParameter("row-limit", requested);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+			servlet.service(request, response);
+			assertThat(JSON_MAPPER.readTree(response.getContentAsString()).path("results").path("bindings"))
+					.as(requested)
+					.hasSize(1);
+		}
+	}
+
+	@Test
+	void anUnboundedSparqlBodyIsRejectedBeforeItIsFullyRead() throws Exception {
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getContentType()).thenReturn("application/sparql-query");
+		jakarta.servlet.ServletInputStream source = new jakarta.servlet.ServletInputStream() {
+			private int reads;
+
+			@Override
+			public int read() throws IOException {
+				if (++reads > 4 * 120 + 2) {
+					throw new IOException("read beyond the query body limit");
+				}
+				return 'a';
+			}
+
+			@Override
+			public boolean isFinished() {
+				return false;
+			}
+
+			@Override
+			public boolean isReady() {
+				return true;
+			}
+
+			@Override
+			public void setReadListener(jakarta.servlet.ReadListener listener) {
+			}
+		};
+		when(request.getInputStream()).thenReturn(source);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.doPost(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(413);
 	}
 
 	@Test

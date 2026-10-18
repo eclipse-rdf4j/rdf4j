@@ -9,7 +9,7 @@ const { renderPageResultTables } = require('./page-result-table-harness.js');
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
 function loadWorkbench() {
-    const window = {};
+    const window = { atob: (value) => Buffer.from(value, 'base64').toString('binary') };
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({
@@ -969,6 +969,20 @@ test('saved-query execution has an explicit streamed result mount and native edi
     assert.ok(output.includes('value="exec"'));
     assert.ok(output.includes('value="edit"'));
     assert.match(output, /class="saved-query-delete[ "]/);
+});
+
+test('saved-query cards show a readable owner while retaining its opaque selector', () => {
+    const workbench = loadWorkbench();
+    const runtime = fakeRuntime();
+    const owner = 'wb2.YWxpY2U.' + 'A'.repeat(43);
+    const row = { query: 'urn:saved:1', queryName: 'Example query', queryText: 'SELECT * WHERE {}',
+        user: owner, queryLn: 'SPARQL', infer: 'true', rowsPerPage: '20', shared: 'false' };
+    const template = workbench.views.pageTemplate({
+        viewId: 'saved-queries', vars: Object.keys(row), rows: [Object.values(row)], metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, runtime);
+    const values = collectTemplateText(template).join(' ');
+    assert.ok(values.includes('alice'), 'the visible owner is readable');
+    assert.ok(values.includes(owner), 'forms retain the opaque storage selector');
 });
 
 test('modification and browse views preserve their action form identifiers', () => {
@@ -2131,23 +2145,24 @@ test('a model without a menu renders only Connection instead of a built-in fallb
     assert.deepEqual(errors, ['Workbench menu is unavailable']);
 });
 
-test('the context bar decodes the server user from its cookie and renders it as text', () => {
+test('the context bar uses server-provided user metadata and renders it as text', () => {
     const workbench = loadWorkbench();
     const runtime = fakeRuntime();
     const cookies = {};
     workbench.__testWindow.atob = (value) => Buffer.from(value, 'base64').toString('binary');
     workbench.getCookie = (name) => cookies[name] || '';
     const context = { basePath: '/workbench', repositoryId: 'repo-1', workbench: { menu: [], server: 'http://example.test:8080/rdf4j-server' } };
-    assert.equal(workbench.views.contextBarState(context).user, '', 'no cookie and no document means no user');
+    assert.equal(workbench.views.contextBarState(context).user, '', 'no server identity means no user');
 
     const withDocument = loadWorkbenchWithDocument();
     const payload = '<img src=x onerror=globalThis.rdf4jXss=true>';
-    withDocument.cookies['server-user-password'] = Buffer.from(payload + ':secret').toString('base64');
-    const state = withDocument.workbench.views.contextBarState(context);
+    withDocument.cookies['server-user-password'] = Buffer.from('mallory:secret').toString('base64');
+    const signedInContext = { ...context, serverUser: payload };
+    const state = withDocument.workbench.views.contextBarState(signedInContext);
     assert.equal(state.user, payload);
     assert.equal(state.server, 'http://example.test:8080/rdf4j-server');
     const template = withDocument.workbench.views.pageTemplate({ viewId: 'summary', vars: [], rows: [], metadata: {} },
-        context, runtime);
+        signedInContext, runtime);
     const values = [];
     const collectValues = (value) => {
         if (Array.isArray(value)) { value.forEach(collectValues); return; }
@@ -2161,7 +2176,6 @@ test('the context bar decodes the server user from its cookie and renders it as 
     collectValues(template);
     assert.ok(values.includes(payload), 'the user name is a text value binding');
     assert.ok(values.includes('example.test:8080'), 'the server switcher shows host and port');
-    withDocument.cookies['server-user-password'] = '';
     assert.equal(withDocument.workbench.views.contextBarState(context).user, '');
 });
 
@@ -2272,6 +2286,26 @@ test('Add RDF puts Advanced settings in the Upload row, right of Upload', () => 
         'the actions row holds Upload, then the Advanced settings dropdown');
     const ownerTag = markup.slice(markup.lastIndexOf('<', advanced), markup.indexOf('>', advanced));
     assert.doesNotMatch(ownerTag, /workbench-form-subgroup/, 'in the row it adds no subgroup space above itself');
+});
+
+test('Add lists approved server files as a separate selectable source', () => {
+    const workbench = loadWorkbench();
+    const model = {
+        viewId: 'add', vars: ['server-file-option'],
+        rows: [['one.ttl'], ['two.unknown']], rowCount: 2, metadata: {}
+    };
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate(model,
+        { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+
+    assert.match(markup, /id=(?:"source-server-file"|source-server-file)[^>]*value=(?:"server-file"|server-file)/);
+    assert.match(markup, /id="add-source-server-file-panel"/);
+    assert.match(markup, /name="server-file"/);
+    assert.match(markup, /one\.ttl/);
+    assert.match(markup, /two\.unknown/);
+
+    const emptyMarkup = flattenTemplateMarkup(workbench.views.pageTemplate({ ...model, rows: [], rowCount: 0 },
+        { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    assert.match(emptyMarkup, /No approved server files are available/);
 });
 
 test('Remove offers a preview of the statements it would remove, beside the Remove button', () => {

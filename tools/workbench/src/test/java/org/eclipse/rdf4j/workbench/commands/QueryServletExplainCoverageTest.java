@@ -25,6 +25,8 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 import org.eclipse.rdf4j.http.client.AsyncExplainCoordinator;
 import org.eclipse.rdf4j.model.IRI;
@@ -41,8 +43,9 @@ import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.http.HTTPQueryEvaluationException;
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
-import org.eclipse.rdf4j.workbench.support.TestServerCredentials;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.Test;
 
@@ -195,9 +198,12 @@ class QueryServletExplainCoverageTest {
 		HttpServletResponse response = mock(HttpServletResponse.class);
 		StringWriter body = new StringWriter();
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
+		ServerCredentials.Credentials credentials = ServerCredentials.fromConnectionForm(Base64.getEncoder()
+				.encodeToString("alice:secret".getBytes(StandardCharsets.UTF_8)));
+		when(request.getAttribute(ServerCredentials.class.getName() + ".current")).thenReturn(credentials);
 
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "alice")).thenReturn(true);
+		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(true);
 		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query")))
 				.thenThrow(new RepositoryException("storage boom"));
 		when(response.getWriter()).thenReturn(new PrintWriter(body));
@@ -205,7 +211,6 @@ class QueryServletExplainCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("alice"));
 		servlet.substituteQueryStorage(storage);
 
 		servlet.service(request, response);

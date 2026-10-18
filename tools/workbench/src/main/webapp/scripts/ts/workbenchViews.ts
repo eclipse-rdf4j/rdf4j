@@ -143,6 +143,7 @@ module workbench {
             basePath: string;
             repositoryId: string;
             serverIdentity?: string | null;
+            serverUser?: string;
             workbench: any;
             linked?: any;
             pageModel?: PageModel;
@@ -730,48 +731,8 @@ module workbench {
             });
         }
 
-        /** Decodes the user name from the server-user-password cookie ("user:password" in base64). */
-        function serverUser(): string {
-            if (typeof document === 'undefined') {
-                return '';
-            }
-            // Base64, where '+' is a digit: the raw value (form decoding would make it a space).
-            const encoded = currentCookieValue('server-user-password', true);
-            if (!encoded) {
-                return '';
-            }
-            const decoded = decodeCredentials(encoded);
-            if (!decoded) {
-                return '';
-            }
-            const user = decoded.indexOf(':') >= 0 ? decoded.substring(0, decoded.indexOf(':')) : decoded;
-            return user === '""' ? '' : user;
-        }
-
-        /**
-         * The text of the base64 server-user-password credentials: UTF-8 "user:password" (C15), or, for credentials
-         * written one byte per character (an older Connection page), the bytes as they are. '' when it is no base64.
-         */
-        function decodeCredentials(encoded: string): string {
-            const view: any = typeof window !== 'undefined' ? window : null;
-            if (!view || typeof view.atob !== 'function') {
-                return encoded;
-            }
-            let binary: string;
-            try {
-                binary = view.atob(encoded);
-            } catch (error) {
-                return '';
-            }
-            try {
-                const bytes = new Uint8Array(binary.length);
-                for (let index = 0; index < binary.length; index++) {
-                    bytes[index] = binary.charCodeAt(index);
-                }
-                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            } catch (error) {
-                return binary;
-            }
+        function serverUser(context: ViewContext): string {
+            return text(context && context.serverUser);
         }
 
         function hostAndPort(server: string): string {
@@ -791,7 +752,7 @@ module workbench {
                 server: text(info.server || info.location || ''),
                 repositoryId: repositoryId === 'NONE' ? '' : repositoryId,
                 repositoryTitle: text(info.description || info.title),
-                user: serverUser()
+                user: serverUser(context)
             };
         }
 
@@ -2754,6 +2715,23 @@ module workbench {
             return details.concat([['Include inferred statements', yesNo(row.infer)], ['Shared', yesNo(row.shared)]]);
         }
 
+        function savedQueryDisplayOwner(owner: string): string {
+            if (!owner.startsWith('wb2.')) { return owner; }
+            const dot = owner.indexOf('.', 4);
+            if (dot < 0 || typeof window === 'undefined' || typeof window.atob !== 'function') { return owner; }
+            try {
+                const encoded = owner.substring(4, dot).replace(/-/g, '+').replace(/_/g, '/');
+                const binary = window.atob(encoded);
+                let escaped = '';
+                for (let index = 0; index < binary.length; index++) {
+                    escaped += '%' + ('0' + binary.charCodeAt(index).toString(16)).slice(-2);
+                }
+                return decodeURIComponent(escaped);
+            } catch (error) {
+                return owner;
+            }
+        }
+
         function savedQueryContent(runtime: LitRuntime, row: any, index: number): any {
             const h = runtime.html;
             const urn = text(row.query);
@@ -2763,7 +2741,7 @@ module workbench {
             const queryTimeout = text(row.queryTimeout).trim() || '0';
             const formId = 'saved-query-exec-' + index;
             return h`
-                        <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${owner}</span></div>
+                        <div class="saved-query-row__heading"><h2>${queryName}</h2><span>${savedQueryDisplayOwner(owner)}</span></div>
                         <div class="saved-query-actions">
                             <form method="post" action="query" id=${formId}
                                 data-workbench-query-execution="true"
@@ -2999,8 +2977,7 @@ module workbench {
         }
 
         /**
-         * A cookie's value, form-decoded ('+' is a space) unless raw: URI-decoded only, for base64 values such as the
-         * server-user-password credentials, where '+' is a digit (workbench.getCookie would make it a space).
+         * A cookie's value, form-decoded ('+' is a space) unless raw, which preserves '+' in encoded values.
          */
         function currentCookieValue(name: string, raw?: boolean): string {
             const namespace: any = workbench as any;
@@ -3187,6 +3164,7 @@ module workbench {
             const defaults = info.defaults || info;
             const formats = formatOptions(info.uploadFormats || info['upload-format']);
             const isolationOptions = rows.filter((row: any) => field(row, 'isolation-level-option'));
+            const serverFiles = rows.filter((row: any) => field(row, 'server-file-option'));
             const selectedIsolation = text(pageValue(model, 'transaction-setting__org.eclipse.rdf4j.common.transaction.IsolationLevel'));
             const error = pageErrorMessage(model);
             return h`${error ? callout(runtime, 'error', error) : ''}
@@ -3200,8 +3178,8 @@ module workbench {
                         @input=${(event: any) => clearSubmission(event, model, context, runtime)}
                         @change=${(event: any) => clearSubmission(event, model, context, runtime)}>
                     <fieldset id="add-source-tabs" class="workbench-source-tabs"><legend>Source</legend>
-                        ${[['file', 'File'], ['url', 'URL'], ['text', 'Text']].map((entry: string[]) => h`<label for=${'source-' + entry[0]}>
-                            ${icon(runtime, 'source-' + (entry[0] === 'text' ? 'text' : entry[0]))}
+                        ${[['file', 'File'], ['server-file', 'Server file'], ['url', 'URL'], ['text', 'Text']].map((entry: string[]) => h`<label for=${'source-' + entry[0]}>
+                            ${icon(runtime, 'source-' + (entry[0] === 'server-file' ? 'file' : entry[0]))}
                             <input type="radio" id=${'source-' + entry[0]} name="source"
                                 value=${entry[0] === 'text' ? 'contents' : entry[0]}
                                 ?checked=${entry[0] === 'file'}
@@ -3212,6 +3190,14 @@ module workbench {
                     <div class="workbench-field-stack add-source-fields">
                         <div id="add-source-file-panel" class="workbench-field add-source-panel" data-source="file">
                             <label for="file">RDF file</label>${addDropZone(runtime)}
+                        </div>
+                        <div id="add-source-server-file-panel" class="workbench-field add-source-panel" data-source="server-file" hidden>
+                            <label for="server-file">Approved server file</label>
+                            <div class="workbench-select-control"><select id="server-file" name="server-file" disabled required>
+                                <option value="" selected>Choose a file</option>
+                                ${serverFiles.map((row: any) => h`<option value=${text(row['server-file-option'])}>${text(row['server-file-option'])}</option>`)}
+                            </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
+                            ${serverFiles.length ? '' : h`<p class="workbench-field__help">No approved server files are available.</p>`}
                         </div>
                         <div id="add-source-url-panel" class="workbench-field add-source-panel" data-source="url" hidden>
                             <label for="url">RDF URL</label><input id="url" name="url" type="text" size="48" disabled
@@ -4244,7 +4230,7 @@ module workbench {
             const explanationLevel = text(pageValue(model, 'explanation-level')) || 'Optimized';
             // A private query belongs to the signed-in server user; without one the server would store it for everyone.
             const privateSave = queryFeatureEnabled(context, 'query-private-save');
-            const signedIn = !!serverUser();
+            const signedIn = !!serverUser(context);
             // Controls the policy turns off are disabled as well as hidden, so the form never submits them (M-policy).
             const languageEnabled = queryFeatureEnabled(context, 'query-language');
             const timeoutEnabled = queryFeatureEnabled(context, 'query-timeout');

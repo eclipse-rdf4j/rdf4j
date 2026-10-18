@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.proxy;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -41,17 +42,65 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.mock.web.MockHttpSession;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.ServletOutputStream;
 import jakarta.servlet.WriteListener;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 class WorkbenchGatewayTest {
+
+	@Test
+	void everyWorkbenchPageExpiresLegacySensitiveCookies() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server",
+				"change-server-path", "/change"));
+		MockHttpServletRequest request = request("GET", "/workbench/change", "/change");
+		request.setCookies(new Cookie("query", "sensitive SPARQL"), new Cookie("ref", "text"),
+				new Cookie("server-user-password", "encoded-password"));
+		CapturedResponse response = new CapturedResponse();
+
+		gateway.service(request, response);
+
+		assertThat(response.getCookiesAdded()).filteredOn(cookie -> "query".equals(cookie.getName())
+				|| "ref".equals(cookie.getName()) || "server-user-password".equals(cookie.getName()))
+				.extracting(Cookie::getName, Cookie::getValue, Cookie::getMaxAge, Cookie::getPath)
+				.containsExactlyInAnyOrder(
+						tuple("query", "", 0, "/workbench"), tuple("ref", "", 0, "/workbench"),
+						tuple("server-user-password", "", 0, "/workbench"));
+	}
+
+	@Test
+	void multipartUploadsHaveAFiniteRequestAndFileLimit() {
+		jakarta.servlet.annotation.MultipartConfig multipart = WorkbenchGateway.class
+				.getAnnotation(jakarta.servlet.annotation.MultipartConfig.class);
+		assertThat(multipart).isNotNull();
+		assertThat(multipart.maxFileSize()).isBetween(1L, 32L * 1024 * 1024);
+		assertThat(multipart.maxRequestSize()).isBetween(multipart.maxFileSize(), 36L * 1024 * 1024);
+	}
+
+	@Test
+	void gatewayAssignsDifferentWorkspaceScopesToDifferentBrowserSessions() throws Exception {
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
+				mock(ServerValidator.class));
+		gateway.init(TestServletConfig.withParams("gateway", "default-server", "/rdf4j-server"));
+		MockHttpServletRequest first = request("GET", "/workbench/repositories", "/repositories");
+		MockHttpServletRequest second = request("GET", "/workbench/repositories", "/repositories");
+
+		gateway.service(first, new CapturedResponse());
+		gateway.service(second, new CapturedResponse());
+
+		assertThat(first.getAttribute("org.eclipse.rdf4j.workbench.clientScope")).isInstanceOf(String.class)
+				.isNotEqualTo(second.getAttribute("org.eclipse.rdf4j.workbench.clientScope"));
+	}
+
 	private static final String LEGACY_TRANSFORMATIONS = "transformations";
 
 	@Test
@@ -481,11 +530,65 @@ class WorkbenchGatewayTest {
 		gateway.service(changeRequest, changeResponse);
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://next.example/rdf4j-server")
-				.containsEntry("server-user-password", "encoded");
+				.doesNotContainKey("server-user-password");
 		assertThat(gateway.createdServlets.get(0).resetCount).isEqualTo(1);
 
 		gateway.destroy();
 		assertThat(gateway.createdServlets.get(0).destroyCount).isEqualTo(1);
+	}
+
+	@Test
+	void connectionGetCannotChangeServerEvenWhenAnAcceptParameterMasksHtmlNavigation() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://attacker.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+		MockHttpServletRequest request = request("GET", "/workbench/change", "/change");
+		request.addHeader("Accept", "text/html");
+		request.addParameter("Accept", "application/json");
+		request.addParameter("workbench-server", "https://attacker.example/rdf4j-server");
+		request.addParameter("server-user-password", "attacker:password");
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		gateway.service(request, response);
+
+		assertThat(response.getStatus()).isEqualTo(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+		assertThat(cookies.addedCookies).isEmpty();
+		assertThat(gateway.createdServlets).isEmpty();
+	}
+
+	@Test
+	void connectionPostKeepsCredentialsOutOfCookiesAndSeparatesSignedInSessions() throws Exception {
+		TestCookieHandler cookies = new TestCookieHandler("10");
+		ServerValidator validator = mock(ServerValidator.class);
+		when(validator.isValidServer("https://default.example/rdf4j-server")).thenReturn(true);
+		TestWorkbenchGateway gateway = new TestWorkbenchGateway(cookies, validator);
+		gateway.init(TestServletConfig.withParams("gateway",
+				"default-server", "https://default.example/rdf4j-server",
+				"change-server-path", "/change",
+				LEGACY_TRANSFORMATIONS, "/transform"));
+
+		for (String user : List.of("alice", "bob")) {
+			MockHttpSession session = new MockHttpSession();
+			MockHttpServletRequest connection = request("POST", "/workbench/change", "/change");
+			connection.setSession(session);
+			connection.addParameter("workbench-server", "https://default.example/rdf4j-server");
+			connection.addParameter("server-user-password",
+					Base64.getEncoder().encodeToString((user + ":secret").getBytes(StandardCharsets.UTF_8)));
+			gateway.service(connection, new MockHttpServletResponse());
+
+			MockHttpServletRequest navigation = request("GET", "/workbench/repositories", "/repositories");
+			navigation.setSession(session);
+			gateway.service(navigation, new MockHttpServletResponse());
+		}
+
+		assertThat(cookies.addedCookies).doesNotContainKey("server-user-password");
+		assertThat(gateway.createdServlets).hasSize(2);
+		assertThat(gateway.createdServlets.get(0)).isNotSameAs(gateway.createdServlets.get(1));
 	}
 
 	@Test
@@ -899,7 +1002,7 @@ class WorkbenchGatewayTest {
 		changeGateway.service(changeRequest, changeResponse);
 
 		assertThat(cookies.addedCookies).containsEntry("workbench-server", "https://valid.example/rdf4j-server")
-				.containsEntry("server-user-password", "");
+				.doesNotContainKey("server-user-password");
 		assertThat(changeResponse.getRedirect()).isEqualTo("/workbench");
 
 		TestWorkbenchGateway sparseGateway = new TestWorkbenchGateway(new TestCookieHandler("10"), validator);

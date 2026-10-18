@@ -62,6 +62,16 @@ public class QueryStorage {
 		}
 	}
 
+	/** Close the shared store only when the Workbench application is being destroyed. */
+	public static void shutdownSingleton() {
+		synchronized (LOCK) {
+			if (instance != null) {
+				instance.shutdown();
+				instance = null;
+			}
+		}
+	}
+
 	private boolean isShutdown() {
 		return queries == null || !queries.isInitialized();
 	}

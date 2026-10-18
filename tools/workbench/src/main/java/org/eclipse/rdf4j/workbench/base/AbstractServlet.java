@@ -229,6 +229,8 @@ public abstract class AbstractServlet implements Servlet {
 			try {
 				pageWriter.metadata(WorkbenchPageProtocol.SERVER_IDENTITY_METADATA,
 						req.getAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE));
+				pageWriter.metadata(WorkbenchPageProtocol.SERVER_USER_METADATA,
+						req.getAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE));
 			} catch (QueryResultHandlerException e) {
 				throw new IOException("Unable to write Workbench server identity", e);
 			}
@@ -286,9 +288,7 @@ public abstract class AbstractServlet implements Servlet {
 		// HACK : SES-2043 : Need to support Chrome who decide to send Accept: */*
 		// instead of application/javascript for JSONP queries, so need to check
 		// it first as other algorithm fails in this case.
-		// JSONP is enabled in the default properties, but if users setup their
-		// own application.properties file then it must be inserted explicitly
-		// to be enabled
+		// JSONP is disabled by default; administrators may enable it explicitly in application.properties.
 		if (appConfig != null && appConfig.getProperties().containsKey(JSONP_ENABLED)) {
 
 			String jsonpEnabledProperty = appConfig.getProperties().getProperty(JSONP_ENABLED);

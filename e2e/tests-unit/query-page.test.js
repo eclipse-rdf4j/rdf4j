@@ -113,7 +113,7 @@ test('query explain flow covers success, error, download, and legacy change noti
 
     harness.document.cookie = 'ref=hash';
     harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    assert.equal(harness.context.workbench.getCookie('query'), 'SELECT * WHERE {?s ?p ?o}');
+    assert.equal(harness.context.workbench.getCookie('query'), '');
     assert.equal(harness.context.workbench.getCookie('ref'), '');
 
     harness.context.workbench.query.runExplain('Optimized', 'rerun-explanation');
@@ -597,7 +597,7 @@ test('highlight radios use native selection and hide outside Text format', () =>
     assert.equal(harness.getProperty('explanation-highlight-mode', 'visible'), false);
 });
 
-test('large primary query edits preserve existing hash-backed cookie state', () => {
+test('large primary query edits expire existing hash-backed cookie state', () => {
     const longQuery = 'x'.repeat(3000);
     const harness = createQueryBrowserHarness({
         query: longQuery
@@ -609,8 +609,8 @@ test('large primary query edits preserve existing hash-backed cookie state', () 
 
     harness.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
 
-    assert.equal(harness.context.workbench.getCookie('query'), '123456');
-    assert.equal(harness.context.workbench.getCookie('ref'), 'hash');
+    assert.equal(harness.context.workbench.getCookie('query'), '');
+    assert.equal(harness.context.workbench.getCookie('ref'), '');
 });
 
 test('large primary query edits do not create raw query cookies from empty state', () => {
@@ -647,7 +647,7 @@ test('primary query draft survives a page reload in the same tab without a query
     firstPage.runPageLoad();
     firstPage.context.workbench.query.setQueryValue(query);
     firstPage.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
-    assert.equal(sessionValues.get('workbench:query-draft:/rdf4j-workbench/repositories/test/query'), query);
+    assert.equal(sessionValues.get('workbench:query-draft:test-session:/rdf4j-workbench/repositories/test/query'), query);
 
     const reloadedPage = createQueryBrowserHarness({ href, query: '', window: { sessionStorage } });
     reloadedPage.runPageLoad();
@@ -655,6 +655,26 @@ test('primary query draft survives a page reload in the same tab without a query
     assert.equal(reloadedPage.context.workbench.query.getQueryValue(), query);
     assert.equal(reloadedPage.context.workbench.getCookie('query'), '',
         'the tab draft should restore independently of cookie persistence');
+});
+
+test('a query draft from one browser session is not restored in another', () => {
+    const values = new Map();
+    const sessionStorage = {
+        getItem: (key) => values.get(key) || null,
+        setItem: (key, value) => values.set(key, String(value)),
+        removeItem: (key) => values.delete(key)
+    };
+    const href = 'http://localhost:8080/rdf4j-workbench/repositories/test/query';
+    const first = createQueryBrowserHarness({ href, query: '', serverIdentity: 'server:session-one',
+        window: { sessionStorage } });
+    first.runPageLoad();
+    first.context.workbench.query.setQueryValue('SELECT * WHERE {?secret ?p ?o}');
+    first.context.workbench.query.notifyQueryPageInputChange('PRIMARY_QUERY_CHANGED');
+
+    const second = createQueryBrowserHarness({ href, query: '', serverIdentity: 'server:session-two',
+        window: { sessionStorage } });
+    second.runPageLoad();
+    assert.equal(second.context.workbench.query.getQueryValue(), '');
 });
 
 test('query compare flow covers auto-explain, compare refresh, diff modal, and compare cancellation', () => {

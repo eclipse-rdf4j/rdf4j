@@ -207,6 +207,10 @@ function createQueryBrowserHarness(options = {}) {
         }
     };
 
+    const app = registerElement('div', { id: 'workbench-app', attributes: {
+        'data-workbench-server-identity': options.serverIdentity || 'test-session'
+    } });
+    document.body.appendChild(app);
     const navigation = registerElement('div', { id: 'navigation' });
     const titleHeading = registerElement('div', { id: 'title_heading', textContent: 'Query' });
     const queryFormContainer = registerElement('div', { className: 'query-form' });

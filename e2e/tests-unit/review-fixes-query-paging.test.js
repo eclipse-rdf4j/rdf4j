@@ -135,7 +135,8 @@ test('paging keeps its page-request paths: matrix URLs, embedded query text and 
     harness.document.cookie = 'query=SELECT%20*; ref=text';
     paging.addPagingParam('offset', 3);
     const fromCookies = harness.document.lastSubmittedForm.serializeArray();
-    assert.equal(fromCookies.find((entry) => entry.name === 'query').value, 'SELECT *', 'the query cookie is posted');
+    assert.equal(fromCookies.find((entry) => entry.name === 'query'), undefined,
+        'legacy query cookies must not be sent as query text');
 
     const text = harness.registerElement('textarea', { id: 'wb-query-text', value: 'ASK {}' });
     harness.document.body.appendChild(text);

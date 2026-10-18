@@ -65,6 +65,10 @@ public class GraphServlet extends TransformationServlet {
 	public static final String MAX_QUERY_LENGTH_PARAM = "graph-max-query-length";
 
 	public static final int DEFAULT_MAX_QUERY_LENGTH = 150_000;
+	public static final String MAX_RESULT_ROWS_PARAM = "graph-max-result-rows";
+	public static final String MAX_QUERY_TIMEOUT_PARAM = "graph-max-query-timeout";
+	public static final int DEFAULT_MAX_RESULT_ROWS = 5_000;
+	public static final int DEFAULT_MAX_QUERY_TIMEOUT = 60;
 
 	private static final String SPARQL_QUERY_CONTENT_TYPE = "application/sparql-query";
 
@@ -73,6 +77,8 @@ public class GraphServlet extends TransformationServlet {
 	private static final String QUERY_EXECUTION_FEATURE = "query-execution";
 
 	private int maxQueryLength = DEFAULT_MAX_QUERY_LENGTH;
+	private int maxResultRows = DEFAULT_MAX_RESULT_ROWS;
+	private int maxQueryTimeout = DEFAULT_MAX_QUERY_TIMEOUT;
 
 	@Override
 	public void init(ServletConfig config) throws ServletException {
@@ -88,6 +94,27 @@ public class GraphServlet extends TransformationServlet {
 				throw new ServletException(MAX_QUERY_LENGTH_PARAM + " must be positive: " + configured);
 			}
 		}
+		if (maxQueryLength > 1_000_000) {
+			throw new ServletException(MAX_QUERY_LENGTH_PARAM + " must not exceed 1000000");
+		}
+		maxResultRows = positiveLimit(config, MAX_RESULT_ROWS_PARAM, DEFAULT_MAX_RESULT_ROWS);
+		maxQueryTimeout = positiveLimit(config, MAX_QUERY_TIMEOUT_PARAM, DEFAULT_MAX_QUERY_TIMEOUT);
+	}
+
+	private static int positiveLimit(ServletConfig config, String name, int fallback) throws ServletException {
+		String value = config.getInitParameter(name);
+		if (value == null || value.isBlank()) {
+			return fallback;
+		}
+		try {
+			int parsed = Integer.parseInt(value.trim());
+			if (parsed > 0) {
+				return parsed;
+			}
+		} catch (NumberFormatException ignored) {
+			// Report the same configuration error for malformed and nonpositive values.
+		}
+		throw new ServletException(name + " must be a positive integer: " + value);
 	}
 
 	@Override
@@ -107,7 +134,14 @@ public class GraphServlet extends TransformationServlet {
 
 	@Override
 	protected void doPost(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
-		String queryText = readQuery(req);
+		String queryText;
+		try {
+			queryText = readQuery(req);
+		} catch (QueryBodyTooLargeException e) {
+			reject(resp, HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE,
+					"The query exceeds the maximum of " + maxQueryLength + " characters.");
+			return;
+		}
 		if (queryText == null || queryText.isBlank()) {
 			reject(resp, HttpServletResponse.SC_BAD_REQUEST,
 					"A SPARQL SELECT, CONSTRUCT or DESCRIBE query is required.");
@@ -140,10 +174,7 @@ public class GraphServlet extends TransformationServlet {
 					? connection.prepareGraphQuery(QueryLanguage.SPARQL, queryText)
 					: connection.prepareTupleQuery(QueryLanguage.SPARQL, queryText);
 			query.setIncludeInferred(includeInferred(req));
-			int timeout = queryTimeout(req);
-			if (timeout > 0) {
-				query.setMaxExecutionTime(timeout);
-			}
+			query.setMaxExecutionTime(queryTimeout(req));
 			ValueFactory factory = connection.getValueFactory();
 			long limit = rowLimit(req);
 			try {
@@ -249,29 +280,38 @@ public class GraphServlet extends TransformationServlet {
 
 	/**
 	 * The {@code row-limit} parameter: how many rows the page wants at most (queries other Workbench pages handed over
-	 * have no LIMIT of their own). Anything but a positive number means no limit. It is read from the request itself:
-	 * {@link WorkbenchRequest#getParameter(String)} falls back to cookies and Workbench defaults, and the Query page's
-	 * page size lives in a "limit" cookie.
+	 * have no LIMIT of their own). Anything but a positive number uses the configured safety ceiling. It is read from
+	 * the request itself: {@link WorkbenchRequest#getParameter(String)} falls back to cookies and Workbench defaults,
+	 * and the Query page's page size lives in a "limit" cookie.
 	 */
-	private static long rowLimit(WorkbenchRequest req) {
+	private long rowLimit(WorkbenchRequest req) {
 		String limit = req.getRequest().getParameter("row-limit");
 		if (limit == null || limit.isBlank()) {
-			return Long.MAX_VALUE;
+			return maxResultRows;
 		}
 		try {
 			long value = Long.parseLong(limit.trim());
-			return value > 0 ? value : Long.MAX_VALUE;
+			return value > 0 ? Math.min(value, maxResultRows) : maxResultRows;
 		} catch (NumberFormatException e) {
-			return Long.MAX_VALUE;
+			return maxResultRows;
 		}
 	}
 
-	private static String readQuery(WorkbenchRequest req) throws IOException {
+	private String readQuery(WorkbenchRequest req) throws IOException {
 		String contentType = req.getContentType();
 		if (contentType != null && contentType.toLowerCase(Locale.ENGLISH).startsWith(SPARQL_QUERY_CONTENT_TYPE)) {
-			return new String(req.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+			int maxBytes = 4 * maxQueryLength;
+			byte[] bytes = req.getInputStream().readNBytes(maxBytes + 1);
+			if (bytes.length > maxBytes) {
+				throw new QueryBodyTooLargeException();
+			}
+			return new String(bytes, StandardCharsets.UTF_8);
 		}
 		return req.getParameter("query");
+	}
+
+	private static final class QueryBodyTooLargeException extends IOException {
+		private static final long serialVersionUID = 1L;
 	}
 
 	private boolean includeInferred(WorkbenchRequest req) {
@@ -282,12 +322,13 @@ public class GraphServlet extends TransformationServlet {
 	private int queryTimeout(WorkbenchRequest req) {
 		String timeout = evaluationOption(req, "query-timeout", "query-timeout");
 		if (timeout == null || timeout.isBlank()) {
-			return 0;
+			return maxQueryTimeout;
 		}
 		try {
-			return Integer.parseInt(timeout.trim());
+			int requested = Integer.parseInt(timeout.trim());
+			return requested > 0 ? Math.min(requested, maxQueryTimeout) : maxQueryTimeout;
 		} catch (NumberFormatException e) {
-			return 0;
+			return maxQueryTimeout;
 		}
 	}
 

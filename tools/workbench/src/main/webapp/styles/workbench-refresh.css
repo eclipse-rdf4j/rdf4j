@@ -3143,6 +3143,10 @@ body.workbench-body .workbench-page-surface fieldset:is(.workbench-source-tabs, 
 	background: transparent;
 }
 
+body.workbench-body .workbench-page-surface fieldset.workbench-source-tabs {
+	grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
 body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) label + label {
 	border-left-width: 0;
 }
@@ -4768,6 +4772,24 @@ body.workbench-body .saved-query-row > .yasqe {
 }
 
 @media (max-width: 600px) {
+	body.workbench-body .workbench-page-surface fieldset.workbench-source-tabs {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	body.workbench-body .workbench-source-tabs label:nth-of-type(2) {
+		border-top-right-radius: var(--workbench-control-radius);
+	}
+
+	body.workbench-body .workbench-source-tabs label:nth-of-type(3) {
+		border-left-width: 1px;
+		border-top-width: 0;
+		border-bottom-left-radius: var(--workbench-control-radius);
+	}
+
+	body.workbench-body .workbench-source-tabs label:nth-of-type(4) {
+		border-top-width: 0;
+	}
+
 	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {
 	box-sizing: border-box;
 	width: 100%;

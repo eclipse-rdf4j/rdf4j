@@ -17,7 +17,6 @@ import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -84,10 +83,15 @@ public class WorkbenchServlet extends AbstractServlet {
 
 	private RepositoryManager manager;
 	private String serverIdentity;
+	private ServerCredentials.Credentials credentials;
 
 	private WorkbenchPolicy policy;
 
 	private final ConcurrentMap<String, ProxyRepositoryServlet> repositories = new ConcurrentHashMap<>();
+
+	void setServerCredentials(ServerCredentials.Credentials credentials) {
+		this.credentials = credentials;
+	}
 
 	@Override
 	public void init(final ServletConfig config) throws ServletException {
@@ -103,6 +107,10 @@ public class WorkbenchServlet extends AbstractServlet {
 		try {
 			serverIdentity = ServerIdentity.of(param);
 			manager = createRepositoryManager(param);
+			if (manager instanceof RemoteRepositoryManager remote && credentials != null) {
+				remote.setUsernameAndPassword(credentials.userName(), credentials.password());
+			}
+			manager.init();
 		} catch (IOException | RepositoryException e) {
 			throw new ServletException(e);
 		}
@@ -126,9 +134,15 @@ public class WorkbenchServlet extends AbstractServlet {
 	@Override
 	public void service(final HttpServletRequest req, final HttpServletResponse resp)
 			throws ServletException, IOException {
+		ServerCredentials.bindRequest(req, credentials);
 		// This servlet is selected after the gateway resolves the cookie, relative default, or local manager.
-		req.setAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE, serverIdentity);
-		resp.setHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER, serverIdentity);
+		String responseIdentity = serverIdentity;
+		if (req.getAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE)instanceof String scope) {
+			responseIdentity += ":" + scope;
+		}
+		req.setAttribute(WorkbenchPageProtocol.SERVER_IDENTITY_ATTRIBUTE, responseIdentity);
+		req.setAttribute(WorkbenchPageProtocol.SERVER_USER_ATTRIBUTE, ServerCredentials.userName(req));
+		resp.setHeader(WorkbenchPageProtocol.SERVER_IDENTITY_HEADER, responseIdentity);
 		final String pathInfo = req.getPathInfo();
 		boolean landingRequest = pathInfo == null || "/".equals(pathInfo);
 		String landingPath = landingRequest
@@ -392,7 +406,6 @@ public class WorkbenchServlet extends AbstractServlet {
 	private void service(final String repoID, final HttpServletRequest req, final HttpServletResponse resp)
 			throws RepositoryConfigException, RepositoryException, ServletException, IOException {
 		LOGGER.info("Servicing repository: {}", repoID);
-		setCredentials(req, resp);
 		final DynamicHttpRequest http = new DynamicHttpRequest(req);
 		final String path = req.getPathInfo();
 		final int idx = path.indexOf(repoID) + repoID.length();
@@ -422,39 +435,6 @@ public class WorkbenchServlet extends AbstractServlet {
 		}
 	}
 
-	/**
-	 * Set the username and password for all requests to the repository.
-	 *
-	 * @param req  the servlet request
-	 * @param resp the servlet response
-	 * @throws MalformedURLException if the repository location is malformed
-	 */
-	private void setCredentials(final HttpServletRequest req, final HttpServletResponse resp)
-			throws MalformedURLException, RepositoryException {
-		if (manager instanceof RemoteRepositoryManager) {
-			final RemoteRepositoryManager rrm = (RemoteRepositoryManager) manager;
-			LOGGER.info("RemoteRepositoryManager URL: {}", rrm.getLocation());
-			final CookieHandler cookies = createCookieHandler();
-			final String user_password = cookies.getCookieNullIfEmpty(req, resp, WorkbenchGateway.SERVER_USER_PASSWORD);
-			if (user_password == null) {
-				rrm.setUsernameAndPassword(null, null);
-			} else {
-				String decoded = ServerCredentials.decode(user_password);
-				if (decoded == null) {
-					decoded = user_password; // older browsers
-				}
-				int colon = decoded.indexOf(':');
-				final String user = colon >= 0 ? decoded.substring(0, colon) : decoded;
-				final String password = colon >= 0 ? decoded.substring(colon + 1) : "";
-				LOGGER.info("Setting user '{}' and their password.", user);
-				rrm.setUsernameAndPassword(user, password);
-			}
-			// init() required to push credentials to internal HTTP
-			// client.
-			rrm.init();
-		}
-	}
-
 	protected RepositoryManager createRepositoryManager(final String param) throws IOException, RepositoryException {
 		RepositoryManager manager;
 		if (param.startsWith("file:")) {
@@ -462,7 +442,6 @@ public class WorkbenchServlet extends AbstractServlet {
 		} else {
 			manager = new RemoteRepositoryManager(param);
 		}
-		manager.init();
 		return manager;
 	}
 

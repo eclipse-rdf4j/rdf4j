@@ -68,13 +68,16 @@ module workbench {
 
         function addQueryReferenceToForm(form: HTMLFormElement) {
             var queryText = getEmbeddedQueryText();
+            if (!queryText) {
+                var queryModule: any = (workbench as any).query;
+                if (queryModule && typeof queryModule.getPrimaryQueryDraftSessionValue === 'function') {
+                    queryText = queryModule.getPrimaryQueryDraftSessionValue();
+                }
+            }
             if (queryText) {
                 form.appendChild(createHiddenInput('query', queryText));
                 form.appendChild(createHiddenInput('ref', 'text'));
-                return;
             }
-            addCookieToFormIfPresent(form, 'query');
-            addCookieToFormIfPresent(form, 'ref');
         }
 
         function addQueryOptionsToForm(form: HTMLFormElement) {

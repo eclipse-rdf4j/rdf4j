@@ -17,8 +17,6 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.http.Cookie;
@@ -32,8 +30,6 @@ import jakarta.servlet.http.HttpServletResponse;
 public class CookieHandler {
 
 	private static final String COOKIE_AGE_PARAM = "cookie-max-age";
-
-	private static final Logger LOGGER = LoggerFactory.getLogger(CookieHandler.class);
 
 	private final ServletConfig config;
 
@@ -59,8 +55,6 @@ public class CookieHandler {
 	private void addCookie(final WorkbenchRequest req, final HttpServletResponse resp, final String name) {
 		final String raw = req.getParameter(name);
 		final String value = URLEncoder.encode(raw, StandardCharsets.UTF_8);
-		LOGGER.info("name: {}\nvalue: {}", name, value);
-		LOGGER.info("un-encoded value: {}\n--", raw);
 		final Cookie cookie = new Cookie(name, value);
 		if (req.getContextPath().isEmpty()) {
 			cookie.setPath("/");

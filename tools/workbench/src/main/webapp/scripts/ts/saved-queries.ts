@@ -34,71 +34,15 @@ module workbench {
 
         const pages = new WeakMap<HTMLElement, Page>();
 
-        /** A cookie's value, URI-decoded only (workbench.getCookie reads '+' as a space, a digit in base64). */
-        function rawCookie(name: string): string {
-            const cookies = typeof document !== 'undefined' && typeof document.cookie === 'string'
-                ? document.cookie.split(';') : [];
-            for (let index = 0; index < cookies.length; index++) {
-                const cookie = cookies[index].trim();
-                const separator = cookie.indexOf('=');
-                if (separator > 0 && cookie.substring(0, separator) === name) {
-                    const value = cookie.substring(separator + 1);
-                    try {
-                        return decodeURIComponent(value);
-                    } catch (error) {
-                        return value;
-                    }
-                }
-            }
-            return '';
-        }
-
-        /**
-         * The text of the base64 server-user-password credentials: UTF-8 "user:password" (C15), or, for credentials
-         * written one byte per character (an older Connection page), the bytes as they are. '' when it is no base64.
-         */
-        function decodeCredentials(encoded: string): string {
-            const view: any = typeof window !== 'undefined' ? window : null;
-            if (!view || typeof view.atob !== 'function') {
-                return encoded;
-            }
-            let binary: string;
-            try {
-                binary = view.atob(encoded);
-            } catch (error) {
-                return '';
-            }
-            try {
-                const bytes = new Uint8Array(binary.length);
-                for (let index = 0; index < binary.length; index++) {
-                    bytes[index] = binary.charCodeAt(index);
-                }
-                return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-            } catch (error) {
-                return binary;
-            }
-        }
-
-        function confirmDeletion(savedBy: string, name: string, form: () => HTMLFormElement): void {
-            // The signed-in user as the server reads it: base64 "user:password" (raw: '+' is a base64 digit there).
-            const encoded = rawCookie('server-user-password') || workbench.getCookie('server-user-password');
-            const decoded = encoded ? decodeCredentials(encoded) : '';
-            const colon = decoded ? decoded.indexOf(':') : -1;
-            const user = colon >= 0 ? decoded.substring(0, colon) : decoded;
-            const currentUser = user === '""' ? '' : user;
-            if (!savedBy || currentUser === savedBy) {
-                workbench.confirmDialog.open({
-                    title: 'Delete saved query?',
-                    body: "'" + name + "' will no longer be accessible, even using your browser's history.",
-                    confirmLabel: 'Delete', danger: true
-                }).then((confirmed: boolean) => {
-                    const target = confirmed && form();
-                    if (target) { workbench.submitForm(target); }
-                });
-            } else {
-                alert("'" + name + "' was saved by user '" + savedBy + "'.\nUser '"
-                    + currentUser + "' is not allowed do delete it.");
-            }
+        function confirmDeletion(name: string, form: () => HTMLFormElement): void {
+            workbench.confirmDialog.open({
+                title: 'Delete saved query?',
+                body: "'" + name + "' will no longer be accessible, even using your browser's history.",
+                confirmLabel: 'Delete', danger: true
+            }).then((confirmed: boolean) => {
+                const target = confirmed && form();
+                if (target) { workbench.submitForm(target); }
+            });
         }
 
         /** IDs are opaque saved-query URNs, so never interpolate them into CSS selectors. */
@@ -195,7 +139,7 @@ module workbench {
                     showDetails(page, urn, !page.expanded.has(urn));
                 } else {
                     const form = <HTMLFormElement>element(page, urn);
-                    confirmDeletion(button.getAttribute('data-query-owner'), button.getAttribute('data-query-name'),
+                    confirmDeletion(button.getAttribute('data-query-name'),
                         () => !page.disposed && outlet.contains(button) && form && outlet.contains(form) ? form : null);
                 }
             };

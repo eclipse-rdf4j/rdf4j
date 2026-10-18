@@ -43,11 +43,13 @@ test('add page handles context and source selection branches', () => {
     const text = harness.registerElement('textarea', { id: 'text' });
     const file = harness.registerElement('input', { id: 'file', value: '/tmp/data.ttl' });
     const url = harness.registerElement('input', { id: 'url', value: 'https://example.test/data' });
+    const serverFile = harness.registerElement('select', { id: 'server-file', value: 'approved.ttl' });
     const baseURI = harness.registerElement('input', { id: 'baseURI', value: 'https://example.test/base' });
     const context = harness.registerElement('input', { id: 'context', value: '' });
     const sourceText = harness.registerElement('input', { id: 'source-text', type: 'radio' });
     const sourceFile = harness.registerElement('input', { id: 'source-file', type: 'radio' });
     const sourceUrl = harness.registerElement('input', { id: 'source-url', type: 'radio' });
+    const sourceServerFile = harness.registerElement('input', { id: 'source-server-file', type: 'radio' });
     const contentType = harness.registerElement('select', { id: 'Content-Type' });
 
     appendOptions(harness, contentType, [
@@ -60,11 +62,13 @@ test('add page handles context and source selection branches', () => {
         text,
         file,
         url,
+        serverFile,
         baseURI,
         context,
         sourceText,
         sourceFile,
         sourceUrl,
+        sourceServerFile,
         contentType
     ].forEach((element) => harness.document.body.appendChild(element));
 
@@ -78,6 +82,7 @@ test('add page handles context and source selection branches', () => {
     assert.equal(text.disabled, false);
     assert.equal(file.disabled, true);
     assert.equal(url.disabled, true);
+    assert.equal(serverFile.disabled, true);
     assert.equal(sourceText.checked, true);
     assert.equal(contentType.getElementsByTagName('option')[0].disabled, true);
     assert.equal(contentType.getElementsByTagName('option')[1].selected, true);
@@ -91,9 +96,21 @@ test('add page handles context and source selection branches', () => {
 
     harness.context.workbench.add.enabledInput('url');
     assert.equal(url.disabled, false);
+    assert.equal(serverFile.disabled, true);
     assert.equal(baseURI.value, 'https://example.test/data');
     assert.equal(context.value, '');
     assert.equal(context.disabled, false);
+
+    harness.context.workbench.add.enabledInput('server-file');
+    assert.equal(sourceServerFile.checked, true);
+    assert.equal(serverFile.disabled, false);
+    assert.equal(file.disabled, true);
+    assert.equal(url.disabled, true);
+    assert.equal(text.disabled, true);
+
+    harness.context.workbench.add.enabledInput('file');
+    assert.equal(serverFile.disabled, true);
+    assert.equal(file.disabled, false);
   });
 
 /** Lets promise chains (confirmation dialogs, M6.2) finish. */

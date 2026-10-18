@@ -29,7 +29,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.lang.reflect.Field;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
@@ -57,10 +56,11 @@ import org.eclipse.rdf4j.repository.manager.RepositoryManager;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
-import org.eclipse.rdf4j.workbench.support.TestServerCredentials;
 import org.eclipse.rdf4j.workbench.support.TestServletConfig;
 import org.eclipse.rdf4j.workbench.util.CookieHandler;
 import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.SavedQueryIdentity;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -92,7 +92,7 @@ class QueryServletCoverageTest {
 	}
 
 	@Test
-	void publicServiceTracksLongQueryCookiesOnGet() throws Exception {
+	void publicServiceRoutesLongQueriesOnGet() throws Exception {
 		RecordingQueryServlet servlet = newInitializedServlet();
 		try {
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/query");
@@ -103,14 +103,13 @@ class QueryServletCoverageTest {
 			servlet.service(request, response);
 
 			assertThat(servlet.lastDispatch).isEqualTo("GET");
-			assertThat(servlet.lastWriteQueryCookie).isFalse();
 		} finally {
 			servlet.destroy();
 		}
 	}
 
 	@Test
-	void publicServiceTracksShortQueryCookiesOnPost() throws Exception {
+	void publicServiceRoutesShortQueriesOnPost() throws Exception {
 		RecordingQueryServlet servlet = newInitializedServlet();
 		try {
 			MockHttpServletRequest request = new MockHttpServletRequest("POST", "/query");
@@ -121,7 +120,6 @@ class QueryServletCoverageTest {
 			servlet.service(request, response);
 
 			assertThat(servlet.lastDispatch).isEqualTo("POST");
-			assertThat(servlet.lastWriteQueryCookie).isTrue();
 		} finally {
 			servlet.destroy();
 		}
@@ -275,7 +273,6 @@ class QueryServletCoverageTest {
 		when(request.getInt("query-timeout")).thenReturn(0);
 		when(request.getHeader("Accept-Encoding")).thenReturn(null);
 		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
 		servlet.service(request, response);
@@ -306,9 +303,10 @@ class QueryServletCoverageTest {
 		ByteArrayServletOutputStream outputStream = new ByteArrayServletOutputStream();
 		WorkbenchRequest request = mock(WorkbenchRequest.class);
 		IRI queryId = SimpleValueFactory.getInstance().createIRI("urn:query:saved");
+		mockSignedIn(request, "alice");
 
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query"))).thenReturn(queryId);
-		when(storage.canRead(queryId, "alice")).thenReturn(true);
+		when(storage.canRead(queryId, SavedQueryIdentity.owner(request, null))).thenReturn(true);
 		when(storage.getQueryText(anyString(), eq("owner"), eq("saved-query"))).thenReturn(SHORT_QUERY);
 		when(response.getOutputStream()).thenReturn(outputStream);
 		stubAction(request, "edit");
@@ -317,7 +315,6 @@ class QueryServletCoverageTest {
 		when(request.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(request.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(request.getParameter("owner")).thenReturn("owner");
-		when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("alice"));
 		when(request.getParameter("queryLn")).thenReturn("SPARQL");
 		when(request.getParameter("infer")).thenReturn("false");
 		when(request.getParameter("limit_query")).thenReturn("20");
@@ -340,16 +337,17 @@ class QueryServletCoverageTest {
 		QueryStorage storage = mock(QueryStorage.class);
 		WorkbenchRequest unreadableRequest = mock(WorkbenchRequest.class);
 		WorkbenchRequest unknownActionRequest = mock(WorkbenchRequest.class);
+		mockSignedIn(unreadableRequest, "alice");
+		String currentOwner = SavedQueryIdentity.owner(unreadableRequest, null);
 
 		when(storage.selectSavedQuery(anyString(), eq("owner"), eq("saved-query")))
 				.thenReturn(SimpleValueFactory.getInstance().createIRI("urn:query:private"));
-		when(storage.canRead(any(IRI.class), eq("alice"))).thenReturn(false);
+		when(storage.canRead(any(IRI.class), eq(currentOwner))).thenReturn(false);
 		stubAction(unreadableRequest, "exec");
 		when(unreadableRequest.isParameterPresent(QueryServlet.REF)).thenReturn(true);
 		when(unreadableRequest.getParameter(QueryServlet.REF)).thenReturn("id");
 		when(unreadableRequest.getParameter(QueryServlet.QUERY)).thenReturn("saved-query");
 		when(unreadableRequest.getParameter("owner")).thenReturn("owner");
-		when(unreadableRequest.getCookies()).thenReturn(TestServerCredentials.signedIn("alice"));
 		stubAction(unknownActionRequest, "surprise");
 		servlet.substituteQueryStorage(storage);
 
@@ -378,10 +376,13 @@ class QueryServletCoverageTest {
 		when(storage.checkAccess(null)).thenReturn(false);
 		when(storage.checkAccess(repository)).thenReturn(true);
 		when(storage.askExists(expectedRepositoryReference("unknown-repository"), "first", "")).thenReturn(false);
-		when(storage.askExists(expectedRepositoryReference(repository.getClass().getName()), "second", "bob"))
+		String bobOwner = SavedQueryIdentity.owner(noOverwrite, null);
+		String carolOwner = SavedQueryIdentity.owner(savePrivate, null);
+		when(storage.askExists(expectedRepositoryReference(repository.getClass().getName()), "second", bobOwner))
 				.thenReturn(true);
-		when(storage.askExists(expectedRepositoryReference("https://example.org/repositories/test"), "third", "carol"))
-				.thenReturn(false);
+		when(storage.askExists(expectedRepositoryReference("https://example.org/repositories/test"), "third",
+				carolOwner))
+						.thenReturn(false);
 
 		servlet.substituteQueryStorage(storage);
 
@@ -396,7 +397,7 @@ class QueryServletCoverageTest {
 		assertThat(body.toString()).contains("\"existed\":true").contains("\"written\":false");
 		verify(storage, never()).updateQuery(any(), anyString(), eq(false), eq(QueryLanguage.SPARQL), anyString(),
 				eq(false), eq(20), eq(0));
-		verify(storage, never()).saveQuery(anyString(), eq("second"), eq("bob"), eq(false), eq(QueryLanguage.SPARQL),
+		verify(storage, never()).saveQuery(anyString(), eq("second"), eq(bobOwner), eq(false), eq(QueryLanguage.SPARQL),
 				anyString(), eq(false), eq(20), eq(0));
 
 		body.getBuffer().setLength(0);
@@ -404,7 +405,7 @@ class QueryServletCoverageTest {
 		servlet.setRepositoryInfo(info);
 		assertThatCode(() -> servlet.doPost(savePrivate, response)).doesNotThrowAnyException();
 		verify(storage).saveQuery(expectedRepositoryReference("https://example.org/repositories/test"), "third",
-				"carol", false, QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
+				carolOwner, false, QueryLanguage.SPARQL, SHORT_QUERY, false, 20, 0);
 		assertThat(body.toString()).contains("\"accessible\":true").contains("\"written\":true");
 	}
 
@@ -428,13 +429,7 @@ class QueryServletCoverageTest {
 	}
 
 	private static void shutdownDefaultQueryStorage() throws Exception {
-		Field instanceField = QueryStorage.class.getDeclaredField("instance");
-		instanceField.setAccessible(true);
-		QueryStorage queryStorage = (QueryStorage) instanceField.get(null);
-		if (queryStorage != null) {
-			queryStorage.shutdown();
-			instanceField.set(null, null);
-		}
+		QueryStorage.shutdownSingleton();
 	}
 
 	private static WorkbenchRequest mockSaveRequest(String queryName) throws Exception {
@@ -456,13 +451,19 @@ class QueryServletCoverageTest {
 		} else if ("second".equals(queryName)) {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("bob"));
+			mockSignedIn(request, "bob");
 		} else {
 			when(request.getParameter("overwrite")).thenReturn("false");
 			when(request.getParameter("save-private")).thenReturn("true");
-			when(request.getCookies()).thenReturn(TestServerCredentials.signedIn("carol"));
+			mockSignedIn(request, "carol");
 		}
 		return request;
+	}
+
+	private static void mockSignedIn(WorkbenchRequest request, String user) {
+		ServerCredentials.Credentials credentials = ServerCredentials.fromConnectionForm(Base64.getEncoder()
+				.encodeToString((user + ":secret").getBytes(StandardCharsets.UTF_8)));
+		when(request.getAttribute(ServerCredentials.class.getName() + ".current")).thenReturn(credentials);
 	}
 
 	private static void stubAction(WorkbenchRequest request, String action) {
@@ -510,7 +511,6 @@ class QueryServletCoverageTest {
 		when(request.isParameterPresent(QueryServlet.QUERY)).thenReturn(false);
 		when(response.getOutputStream()).thenReturn(new ByteArrayServletOutputStream());
 		servlet.setRepository(repository);
-		servlet.writeQueryCookie = true;
 		servlet.setCookieHandler(mock(CookieHandler.class));
 
 		servlet.service(request, response);
@@ -524,7 +524,6 @@ class QueryServletCoverageTest {
 
 	private static final class RecordingQueryServlet extends QueryServlet {
 		private String lastDispatch;
-		private Boolean lastWriteQueryCookie;
 
 		private void initializeForTests(TestServletConfig servletConfig) {
 			this.config = servletConfig;
@@ -536,13 +535,11 @@ class QueryServletCoverageTest {
 		@Override
 		protected void service(WorkbenchRequest req, HttpServletResponse resp) {
 			lastDispatch = "GET";
-			lastWriteQueryCookie = writeQueryCookie;
 		}
 
 		@Override
 		protected void doPost(WorkbenchRequest req, HttpServletResponse resp) {
 			lastDispatch = "POST";
-			lastWriteQueryCookie = writeQueryCookie;
 		}
 	}
 

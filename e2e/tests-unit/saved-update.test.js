@@ -72,7 +72,7 @@ function createYasqeStub(harness) {
 
 test('saved queries delete permissions and toggle behavior cover both branches', async () => {
     const harness = createFormBrowserHarness({
-        confirmResponses: [true]
+        confirmResponses: [true, true]
     });
     const form = harness.registerElement('form', { id: 'urn:query', name: 'urn:query' });
     const metadata = harness.registerElement('div', {
@@ -126,7 +126,9 @@ test('saved queries delete permissions and toggle behavior cover both branches',
     remove.setAttribute('data-query-owner', 'bob');
     remove.setAttribute('data-query-name', 'Query 2');
     remove.dispatchEvent({ type: 'click', bubbles: true });
-    assert.match(harness.alerts[0], /User 'alice' is not allowed do delete it/);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(form.submitCount, 2, 'the server makes the authorization decision');
+    assert.deepEqual(harness.alerts, []);
 
     toggle.dispatchEvent({ type: 'click', bubbles: true });
     assert.equal(metadata.style.display, '');
@@ -277,7 +279,7 @@ test('the owner whose credentials encode with "+" may delete their saved query',
     assert.equal(form.submitCount, 1);
 });
 
-test('a credentials cookie that is not base64 is nobody, without an error', async () => {
+test('a malformed legacy credentials cookie has no effect on deletion confirmation', async () => {
     const harness = createFormBrowserHarness({ confirmResponses: [true] });
     const form = harness.registerElement('form', { id: 'urn:query', name: 'urn:query' });
     const deleteButton = harness.registerElement('input', {
@@ -293,8 +295,9 @@ test('a credentials cookie that is not base64 is nobody, without an error', asyn
     harness.loadScripts(['saved-queries.js']);
     harness.context.workbench.savedQueries.mount(harness.document.body);
     assert.doesNotThrow(() => deleteButton.dispatchEvent({ type: 'click', bubbles: true }));
-    assert.equal(alerts.length, 1, 'an anonymous user may not delete alice\'s query');
-    assert.equal(form.submitCount || 0, 0);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(alerts.length, 0);
+    assert.equal(form.submitCount, 1, 'the server checks whether deletion is authorized');
 });
 
 test('update page initializes yasqe, applies defaults, and submits safely without init', () => {

@@ -152,7 +152,7 @@ class GraphServletEvaluationTest {
 	}
 
 	@Test
-	void aDisabledTimeoutWithoutDefaultIgnoresTheRequestedTimeout() throws Exception {
+	void aDisabledTimeoutWithoutDefaultUsesTheGraphSafetyDeadline() throws Exception {
 		disable("query-timeout");
 		servlet();
 		MockHttpServletRequest request = post(SELECT);
@@ -160,7 +160,21 @@ class GraphServletEvaluationTest {
 
 		assertThat(run(request).getStatus()).isEqualTo(200);
 
-		verify(tupleQuery, never()).setMaxExecutionTime(anyInt());
+		verify(tupleQuery).setMaxExecutionTime(60);
+	}
+
+	@Test
+	void graphQueriesAlwaysHaveAnExecutionDeadline() throws Exception {
+		servlet();
+		for (String timeout : List.of("0", "-1", "soon", "3600")) {
+			MockHttpServletRequest request = post(SELECT);
+			request.addParameter("query-timeout", timeout);
+			assertThat(run(request).getStatus()).isEqualTo(200);
+		}
+		assertThat(run(post(SELECT)).getStatus()).isEqualTo(200);
+
+		verify(tupleQuery, times(5)).setMaxExecutionTime(org.mockito.ArgumentMatchers.intThat(
+				value -> value != null && value > 0 && value <= 60));
 	}
 
 	@Test
@@ -220,7 +234,7 @@ class GraphServletEvaluationTest {
 	}
 
 	@Test
-	void unparseableOrNonPositiveTimeoutsSetNoLimit() throws Exception {
+	void unparseableOrNonPositiveTimeoutsUseTheGraphSafetyDeadline() throws Exception {
 		servlet();
 		for (String timeout : List.of("soon", "-1", "0", " ")) {
 			MockHttpServletRequest request = post(SELECT);
@@ -228,7 +242,7 @@ class GraphServletEvaluationTest {
 			assertThat(run(request).getStatus()).as(timeout).isEqualTo(200);
 		}
 
-		verify(tupleQuery, never()).setMaxExecutionTime(anyInt());
+		verify(tupleQuery, times(4)).setMaxExecutionTime(60);
 	}
 
 	// Failures before the response starts get their own status; after it, the response cannot be taken back.

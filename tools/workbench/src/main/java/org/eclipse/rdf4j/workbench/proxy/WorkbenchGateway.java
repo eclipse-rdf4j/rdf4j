@@ -22,7 +22,10 @@ import java.net.URISyntaxException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
@@ -35,6 +38,8 @@ import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyLoader;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicyResponse;
 import org.eclipse.rdf4j.workbench.util.BasicServletConfig;
+import org.eclipse.rdf4j.workbench.util.QueryStorage;
+import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
@@ -42,13 +47,17 @@ import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.MultipartConfig;
+import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpSession;
+import jakarta.servlet.http.HttpSessionBindingEvent;
+import jakarta.servlet.http.HttpSessionBindingListener;
 
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
  */
-@MultipartConfig
+@MultipartConfig(fileSizeThreshold = 1_048_576, maxFileSize = 33_554_432, maxRequestSize = 37_748_736)
 public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String DEFAULT_SERVER = "default-server";
@@ -56,6 +65,10 @@ public class WorkbenchGateway extends AbstractServlet {
 	private static final String CHANGE_SERVER = "change-server-path";
 
 	private static final String SERVER_COOKIE = "workbench-server";
+
+	private static final String CONNECTION_STATE = WorkbenchGateway.class.getName() + ".connection";
+	private static final String ANONYMOUS_SCOPE = WorkbenchGateway.class.getName() + ".anonymousScope";
+	private static final Set<String> LEGACY_SENSITIVE_COOKIES = Set.of("query", "ref", SERVER_USER_PASSWORD);
 
 	/**
 	 * Thread-safe map of server paths to their WorkbenchServlet instances.
@@ -89,6 +102,7 @@ public class WorkbenchGateway extends AbstractServlet {
 		for (WorkbenchServlet servlet : servlets.values()) {
 			servlet.destroy();
 		}
+		QueryStorage.shutdownSingleton();
 	}
 
 	public String getChangeServerPath() {
@@ -120,6 +134,7 @@ public class WorkbenchGateway extends AbstractServlet {
 			throws ServletException, IOException {
 		// Before the page-protocol checks below read the first parameter, which makes the container decode the body.
 		useUtf8RequestEncoding(req);
+		expireLegacySensitiveCookies(req, resp);
 		WorkbenchPolicy policy = this.policy;
 		if (policy == null) {
 			try {
@@ -156,6 +171,7 @@ public class WorkbenchGateway extends AbstractServlet {
 				return;
 			}
 		}
+		bindBrowserScope(req);
 		if (change != null && change.equals(req.getPathInfo())) {
 			if (!isChangeServerPageAllowed(change)) {
 				resp.sendError(HttpServletResponse.SC_NOT_FOUND);
@@ -188,6 +204,27 @@ public class WorkbenchGateway extends AbstractServlet {
 				resp.sendRedirect(uri.append(getChangeServerPath()).toString());
 			} else {
 				servlet.service(req, resp);
+			}
+		}
+	}
+
+	private static void expireLegacySensitiveCookies(HttpServletRequest req, HttpServletResponse resp) {
+		Cookie[] cookies = req.getCookies();
+		if (cookies == null) {
+			return;
+		}
+		for (String name : LEGACY_SENSITIVE_COOKIES) {
+			for (Cookie existing : cookies) {
+				if (name.equals(existing.getName())) {
+					Cookie expired = new Cookie(name, "");
+					expired.setMaxAge(0);
+					expired.setPath(req.getContextPath().isEmpty() ? "/" : req.getContextPath());
+					expired.setHttpOnly(true);
+					expired.setSecure(req.isSecure());
+					expired.setAttribute("SameSite", "Lax");
+					resp.addCookie(expired);
+					break;
+				}
 			}
 		}
 	}
@@ -227,6 +264,14 @@ public class WorkbenchGateway extends AbstractServlet {
 	private void changeServer(final HttpServletRequest req, final HttpServletResponse resp)
 			throws IOException, QueryResultHandlerException {
 		String server = req.getParameter(SERVER_COOKIE);
+		if (!"GET".equalsIgnoreCase(req.getMethod()) && !"POST".equalsIgnoreCase(req.getMethod())) {
+			resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+			return;
+		}
+		if (server != null && !"POST".equalsIgnoreCase(req.getMethod())) {
+			resp.sendError(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
+			return;
+		}
 		if (server == null) {
 			// see if server url was still present in cookie, if so use that
 			// value as prefilled value in the form
@@ -267,11 +312,19 @@ public class WorkbenchGateway extends AbstractServlet {
 
 		}
 
-		// Valid server was submitted by form. Set cookie and redirect to
-		// repository selection page.
+		// A credential-bearing connection is bound to the browser's server-side session. Only the server choice is a
+		// browser preference; the password must never be sent back to the browser.
+		ServerCredentials.Credentials credentials;
+		try {
+			credentials = ServerCredentials.fromConnectionForm(getOptionalParameter(req, SERVER_USER_PASSWORD));
+		} catch (IllegalArgumentException e) {
+			resp.sendError(HttpServletResponse.SC_BAD_REQUEST, e.getMessage());
+			return;
+		}
+		HttpSession session = req.getSession();
+		session.setAttribute(CONNECTION_STATE, new ConnectionState(server, credentials));
+		req.changeSessionId();
 		this.cookies.addNewCookie(req, resp, SERVER_COOKIE, server);
-		final String user_password = getOptionalParameter(req, SERVER_USER_PASSWORD);
-		this.cookies.addNewCookie(req, resp, SERVER_USER_PASSWORD, user_password);
 		final StringBuilder uri = new StringBuilder(req.getRequestURI());
 		uri.setLength(uri.length() - req.getPathInfo().length());
 		resetCache();
@@ -351,30 +404,92 @@ public class WorkbenchGateway extends AbstractServlet {
 		WorkbenchServlet servlet = null;
 		final ServerSelection selection = findServerSelection(req, resp);
 		final String server = selection.server;
-		if (servlets.containsKey(server)) {
-			servlet = servlets.get(server);
+		ConnectionState state = connectionState(req);
+		ServerCredentials.Credentials credentials = state == null ? null : state.credentialsFor(server);
+		ServerCredentials.bindRequest(req, credentials);
+		Map<String, WorkbenchServlet> cache = credentials == null ? servlets : state.servlets;
+		if (cache.containsKey(server)) {
+			servlet = cache.get(server);
 		} else {
 			if (isServerFixed() || isRelativeDefaultServer(selection) || selection.validServer
 					|| this.serverValidator.isValidServer(server)) {
-				synchronized (servlets) {
+				synchronized (cache) {
 					// Even though the map is thread-safe, we only wish one
 					// thread to be in this block at a time, to avoid abandoning
 					// a WorkbenchServlet instance to the garbage collector.
-					if (servlets.containsKey(server)) {
-						servlet = servlets.get(server);
+					if (cache.containsKey(server)) {
+						servlet = cache.get(server);
 					} else {
 						final Map<String, String> params = new HashMap<>(3);
 						params.put(SERVER_PARAM, server);
 						params.put(CookieHandler.COOKIE_AGE_PARAM, this.cookies.getMaxAge());
 						final ServletConfig cfg = createWorkbenchServletConfig(server, params);
 						servlet = createWorkbenchServlet();
+						servlet.setServerCredentials(credentials);
 						servlet.init(cfg);
-						servlets.put(server, servlet);
+						cache.put(server, servlet);
 					}
 				}
 			}
 		}
 		return servlet;
+	}
+
+	private static ConnectionState connectionState(HttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session == null) {
+			return null;
+		}
+		Object value = session.getAttribute(CONNECTION_STATE);
+		return value instanceof ConnectionState ? (ConnectionState) value : null;
+	}
+
+	private static void bindBrowserScope(HttpServletRequest request) {
+		HttpSession session = request.getSession();
+		if (session == null) {
+			return;
+		}
+		Object connection = session.getAttribute(CONNECTION_STATE);
+		if (connection instanceof ConnectionState) {
+			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, ((ConnectionState) connection).identity);
+			return;
+		}
+		synchronized (session) {
+			Object scope = session.getAttribute(ANONYMOUS_SCOPE);
+			if (!(scope instanceof String)) {
+				scope = UUID.randomUUID().toString();
+				session.setAttribute(ANONYMOUS_SCOPE, scope);
+			}
+			request.setAttribute(WorkbenchPageProtocol.CLIENT_SCOPE_ATTRIBUTE, scope);
+		}
+	}
+
+	/** A session owns every servlet whose remote repository manager has been given that session's credentials. */
+	private static final class ConnectionState implements HttpSessionBindingListener {
+		private final String server;
+		private final ServerCredentials.Credentials credentials;
+		private final String identity = UUID.randomUUID().toString();
+		private final Map<String, WorkbenchServlet> servlets = new ConcurrentHashMap<>();
+		private final AtomicBoolean destroyed = new AtomicBoolean();
+
+		private ConnectionState(String server, ServerCredentials.Credentials credentials) {
+			this.server = server;
+			this.credentials = credentials;
+		}
+
+		private ServerCredentials.Credentials credentialsFor(String selectedServer) {
+			return server.equals(selectedServer) ? credentials : null;
+		}
+
+		@Override
+		public void valueUnbound(HttpSessionBindingEvent event) {
+			if (destroyed.compareAndSet(false, true)) {
+				for (WorkbenchServlet servlet : servlets.values()) {
+					servlet.destroy();
+				}
+				servlets.clear();
+			}
+		}
 	}
 
 	private boolean isRelativeDefaultServer(ServerSelection selection) {

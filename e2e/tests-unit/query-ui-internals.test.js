@@ -105,7 +105,7 @@ test('query ui helpers cover editors, cookies, buttons, wait states, and dot ren
     assert.equal(harness.context.workbench.getCookie('query'), '');
     testing.setWorkbenchCookie('ref', 'hash');
     testing.persistPrimaryQueryValue();
-    assert.equal(harness.context.workbench.getCookie('query'), 'ASK {}');
+	assert.equal(harness.context.workbench.getCookie('query'), '');
     assert.equal(harness.context.workbench.getCookie('ref'), '');
 
     testing.clearExplainSelection();

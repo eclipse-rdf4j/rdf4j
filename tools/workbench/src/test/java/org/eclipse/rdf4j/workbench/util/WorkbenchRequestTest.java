@@ -33,6 +33,16 @@ import jakarta.servlet.http.Part;
 class WorkbenchRequestTest {
 
 	@Test
+	void legacyQueryAndReferenceCookiesAreNotRequestParameters() throws Exception {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/query");
+		request.setCookies(new Cookie("query", "private-text"), new Cookie("ref", "hash"));
+		WorkbenchRequest wrapped = new WorkbenchRequest(null, request, Map.of());
+
+		assertThat(wrapped.getParameter("query")).isNull();
+		assertThat(wrapped.getParameter("ref")).isNull();
+	}
+
+	@Test
 	void resolvesUrlParametersRequestParametersCookiesAndDefaults() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/repositories");
 		request.setScheme("http");
@@ -84,12 +94,41 @@ class WorkbenchRequestTest {
 
 		WorkbenchRequest wrapped = new WorkbenchRequest(null, request, Map.of());
 
-		assertThat(wrapped.getParameter("title")).isEqualTo("line-one");
-		assertThat(wrapped.getParameterValues("title")).containsExactly("line-one");
+		assertThat(wrapped.getParameter("title")).isEqualTo("line-one\nline-two");
+		assertThat(wrapped.getParameterValues("title")).containsExactly("line-one\nline-two");
 		assertThat(wrapped.getContentFileName()).isEqualTo("upload.ttl");
 		assertThat(new String(wrapped.getContentParameter().readAllBytes(), StandardCharsets.UTF_8))
 				.isEqualTo("payload");
-		assertThat(wrapped.getSingleParameterMap()).containsEntry("title", "line-one");
+		assertThat(wrapped.getSingleParameterMap()).containsEntry("title", "line-one\nline-two");
+	}
+
+	@Test
+	void multipartFieldsPreserveCompleteUtf8NamesAndFieldsAfterContent() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		Part selectedFile = mock(Part.class);
+		Part content = mock(Part.class);
+		Part context = mock(Part.class);
+		when(request.getMethod()).thenReturn("POST");
+		when(request.getContentType()).thenReturn("multipart/form-data; boundary=test");
+		when(request.getCharacterEncoding()).thenReturn(StandardCharsets.UTF_8.name());
+		when(request.getRequestURL()).thenReturn(new StringBuffer("http://localhost/add"));
+		when(request.getParts()).thenReturn(java.util.List.of(selectedFile, content, context));
+		when(request.getParameterMap()).thenReturn(Collections.emptyMap());
+		when(selectedFile.getName()).thenReturn("server-file");
+		when(selectedFile.getInputStream())
+				.thenReturn(new ByteArrayInputStream("é\nsecond.ttl".getBytes(StandardCharsets.UTF_8)));
+		when(content.getName()).thenReturn("content");
+		when(content.getInputStream()).thenReturn(new ByteArrayInputStream("payload".getBytes(StandardCharsets.UTF_8)));
+		when(content.getSubmittedFileName()).thenReturn("upload.ttl");
+		when(context.getName()).thenReturn("context");
+		when(context.getInputStream())
+				.thenReturn(new ByteArrayInputStream("urn:graph".getBytes(StandardCharsets.UTF_8)));
+
+		WorkbenchRequest wrapped = new WorkbenchRequest(null, request, Map.of());
+
+		assertThat(wrapped.getParameter("server-file")).isEqualTo("é\nsecond.ttl");
+		assertThat(wrapped.getParameter("context")).isEqualTo("urn:graph");
+		assertThat(wrapped.getContentFileName()).isEqualTo("upload.ttl");
 	}
 
 	@Test

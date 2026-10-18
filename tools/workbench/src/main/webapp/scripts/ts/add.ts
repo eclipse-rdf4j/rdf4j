@@ -12,6 +12,7 @@ module workbench {
         export function enabledInput(selected: string) {
             var istext = (selected == 'text');
             $('#add-source-file-panel').prop('hidden', selected != 'file');
+            $('#add-source-server-file-panel').prop('hidden', selected != 'server-file');
             $('#add-source-url-panel').prop('hidden', selected != 'url');
             $('#add-source-text-panel').prop('hidden', !istext);
             $('#text').prop('disabled', !istext);
@@ -20,6 +21,8 @@ module workbench {
             var isfile = (selected == 'file');
             var file = $('#file');
             file.prop('disabled', !isfile);
+            var isServerFile = (selected == 'server-file');
+            $('#server-file').prop('disabled', !isServerFile);
             var isurl = (selected == 'url');
             var url = $('#url');
             url.prop('disabled', !isurl);
@@ -43,6 +46,9 @@ module workbench {
                 }
                 else if (isurl) {
                     $('#baseURI').val(url.val());
+                }
+                else if (isServerFile) {
+                    $('#baseURI').val('');
                 }
             }
         }

@@ -1258,11 +1258,14 @@ module workbench {
         }
 
         function getPrimaryQueryDraftSessionStorageKey(): string {
-            return 'workbench:query-draft:' + window.location.pathname;
+            var mount = document.getElementById('workbench-app');
+            var scope = mount && mount.getAttribute('data-workbench-server-identity');
+            return scope ? 'workbench:query-draft:' + scope + ':' + window.location.pathname : '';
         }
 
         export function getPrimaryQueryDraftSessionValue(): string {
             var storageKey = getPrimaryQueryDraftSessionStorageKey();
+            if (!storageKey) { return ''; }
             try {
                 return window.sessionStorage.getItem(storageKey) || '';
             } catch (e) {
@@ -1273,6 +1276,7 @@ module workbench {
 
         function setPrimaryQueryDraftSessionValue(queryValue: string): void {
             var storageKey = getPrimaryQueryDraftSessionStorageKey();
+            if (!storageKey) { return; }
             try {
                 window.sessionStorage.setItem(storageKey, queryValue);
             } catch (e) {
@@ -1297,17 +1301,10 @@ module workbench {
                 + '; SameSite=Lax';
         }
 
-        function shouldPersistPrimaryQueryCookieValue(queryValue: string): boolean {
-            return !queryValue || queryValue.length <= 2048;
-        }
-
         export function persistPrimaryQueryValue(): void {
             var queryValue = getPaneRawQueryValue('primary');
             setPrimaryQueryDraftSessionValue(queryValue);
-            if (!shouldPersistPrimaryQueryCookieValue(queryValue)) {
-                return;
-            }
-            setWorkbenchCookie('query', queryValue);
+            clearWorkbenchCookie('query');
             clearWorkbenchCookie('ref');
         }
 
@@ -4788,14 +4785,14 @@ module workbench {
             // (all the following 'set' and 'get' SPARQL query functions require an instantiated yasqe instance).
             updateYasqe();
 
-            // Populate the query text area with the value of the URL query parameter, only if it is present. If
-            // it is not present in the URL query, then looks for the 'query' cookie, and sets it from that. (The
-            // cookie enables re-populating the text field with the previous query when the user returns via the
-            // browser back button.)
+            // Restore a query from an explicit URL reference, the page model, or this tab's draft.
+            // Expire cookies written by older Workbench releases so the query text is no longer sent on requests.
+            clearWorkbenchCookie('query');
+            clearWorkbenchCookie('ref');
             var query = getParameterFromUrl('query');
             if (query) {
                 var ref = getParameterFromUrl('ref');
-                if (ref == 'id' || ref == 'hash') {
+                if (ref == 'id') {
                     getQueryTextFromServer(query, ref);
                 } else {
                     setQueryValue(query);
@@ -4809,17 +4806,6 @@ module workbench {
                     var sessionDraft = getPrimaryQueryDraftSessionValue();
                     if (sessionDraft) {
                         setQueryValue(sessionDraft);
-                    } else {
-                        query = getParameterFromUrlOrCookie('query');
-                        if (query) {
-                            var fallbackRef = getParameterFromUrlOrCookie('ref');
-                            if (fallbackRef == 'id' || fallbackRef == 'hash') {
-                                getQueryTextFromServer(query, fallbackRef);
-                            } else {
-                                setQueryValue(query);
-                                persistPrimaryQueryValue();
-                            }
-                        }
                     }
                 }
             }

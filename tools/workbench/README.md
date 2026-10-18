@@ -97,6 +97,40 @@ that the upgraded package no longer declares; do not restore those stale entries
 The repository convention is to use a workspace-local Maven repository (`-Dmaven.repo.local=.m2_repo`) and to run
 Maven offline (`-o`). The first build on a fresh checkout must download dependencies, so drop `-o` once.
 
+## Public deployment settings
+
+Serve Workbench over HTTPS and configure the servlet container to issue secure, HttpOnly session cookies. Connection
+credentials are held in the HTTP session after a POST; they are never stored in a Workbench cookie. Changing the
+connection rotates the session ID. Query text is kept in the current browser tab's session storage for editing and
+paging, scoped to that session, and is not stored in cookies. On the first request after an upgrade, Workbench expires
+legacy query and credential cookies that the browser still sends.
+
+The Add page accepts browser uploads and files placed in Workbench's approved import directory. By default, that is the
+private `imports` directory under Workbench's application data directory (for example, below the directory selected by
+`org.eclipse.rdf4j.appdata.basedir`). Workbench creates this directory with owner-only permissions on POSIX systems.
+Set `-Dorg.eclipse.rdf4j.workbench.add-file-directory=/absolute/existing/directory` to approve a different directory;
+it must already exist and be readable by Workbench. The Add page lists its direct, readable regular files, excluding
+hidden and dot-prefixed files and symbolic links. A submitted filename cannot select a file outside that directory.
+Keep the approved directory writable only by trusted administrators. Local file imports have a 32 MiB limit by default;
+`-Dorg.eclipse.rdf4j.workbench.add-file-max-bytes=<bytes>` can set it from 1 byte up to 256 MiB.
+
+URL imports are denied by default. Set `-Dorg.eclipse.rdf4j.workbench.add-url-allowed-origins=https://data.example.org`
+to approve exact, comma-separated HTTP(S) origins. A source URL must match one of them; redirects are rejected. An
+explicitly empty origins property disables URL imports. Set `-Dorg.eclipse.rdf4j.workbench.add-url-max-bytes=<bytes>`
+to adjust the 32 MiB URL source limit (1 byte to 256 MiB). Each Java system property overrides the corresponding
+`add-url-allowed-origins`, `add-url-max-bytes`, `add-file-directory`, or `add-file-max-bytes` servlet init parameter.
+Multipart uploads are limited to 32 MiB per file and 36 MiB per request.
+
+Graph requests are capped at 5,000 result rows and 60 seconds by default, including when callers omit or disable
+their own limits. The `graph-max-result-rows`, `graph-max-query-timeout`, and `graph-max-query-length` servlet init
+parameters configure these ceilings; the query length defaults to 150,000 characters and cannot exceed one million.
+JSONP is disabled by the default `org.eclipse.rdf4j.workbench.jsonp.enabled=false` application property.
+Keep it disabled on public deployments: enabling JSONP lets another origin load Workbench responses as scripts.
+
+Private saved queries created before session-backed ownership used a browser-claimed username. They are intentionally
+not assigned to a new credential identity automatically, because Workbench cannot verify which password owned them.
+An operator should review and re-save any legacy private queries under the intended account before public release.
+
 ## Build everything from a clean checkout
 
 ### 1. Build the front end (optional: Maven does it in step 3)

@@ -8,7 +8,7 @@ const { installDetailDisclosureTemplateRuntime } = require('./workbench-detail-d
 
 const scripts = require('./workbench-scripts.js').compiledScriptsDir();
 
-/** The Query page markup for these policy features, with an optional cookie jar for the signed-in user. */
+/** The Query page markup for these policy features, with the user supplied by the server model. */
 function queryMarkup(queryFeatures, options = {}) {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
@@ -31,6 +31,7 @@ function queryMarkup(queryFeatures, options = {}) {
     };
     const template = context.workbench.views.pageTemplate({ viewId: 'query', vars: [], rows: [], metadata: {} }, {
         basePath: '/workbench', repositoryId: 'repo-1',
+        serverUser: options.serverUser || '',
         workbench: { defaults: { 'default-infer': 'true' }, queryFeatures,
             queryFormats: [{ value: 'SPARQL', label: 'SPARQL' }, { value: 'SERQL', label: 'SeRQL' }] }
     }, runtime);
@@ -76,32 +77,27 @@ test('A13: Private cannot be chosen while nobody is signed in', () => {
 });
 
 test('A13: a signed-in user can save privately', () => {
-    const cookie = 'server-user-password=' + Buffer.from('alice:secret').toString('base64');
-    const markup = queryMarkup({}, { cookie });
+    const markup = queryMarkup({}, { serverUser: 'alice' });
     assert.match(tagOf(markup, 'save-private'), /\?disabled=false/);
     assert.doesNotMatch(markup, /id="save-private-help"[^>]*>[^<]*[Ss]ign in/);
 });
 
-// Round 2 (R2 client): the server sets the credentials cookie raw, and base64 may contain '+' (a digit there, not a
-// space): user 'n>>' with password 'pw' encodes as bj4+OnB3. The page must read the same user as the server.
-test('a signed-in user whose credentials encode with "+" can save privately, under their own name', () => {
-    const encoded = Buffer.from('n>>:pw').toString('base64');
-    assert.ok(encoded.includes('+'));
-    const markup = queryMarkup({}, { cookie: 'server-user-password=' + encoded });
+test('a signed-in user with punctuation in the name can save privately from server metadata', () => {
+    const markup = queryMarkup({}, { serverUser: 'n>>', cookie: 'server-user-password=mallory' });
     assert.match(tagOf(markup, 'save-private'), /\?disabled=false/);
 
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ URL, URLSearchParams, workbench,
         window: { location: { search: '' }, atob: (value) => Buffer.from(value, 'base64').toString('binary') },
-        document: { cookie: 'server-user-password=' + encoded } });
+        document: { cookie: 'server-user-password=mallory' } });
     vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8'), context,
         { filename: 'workbenchViews.js' });
-    assert.equal(context.workbench.views.contextBarState({ workbench: {} }).user, 'n>>', 'the context bar names n>>');
+    assert.equal(context.workbench.views.contextBarState({ workbench: {}, serverUser: 'n>>' }).user, 'n>>',
+        'the context bar names the server-provided user');
 });
 
 test('A13: Private stays off when the policy disables private saves, even when signed in', () => {
-    const cookie = 'server-user-password=' + Buffer.from('alice:secret').toString('base64');
-    const markup = queryMarkup({ 'query-private-save': false }, { cookie });
+    const markup = queryMarkup({ 'query-private-save': false }, { serverUser: 'alice' });
     assert.match(tagOf(markup, 'save-private'), /\?disabled=true/);
 });
