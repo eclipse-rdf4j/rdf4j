@@ -20,8 +20,8 @@
 // In-page navigation between router-ready routes: the old page stays visible
 // and usable while the next route's scripts and page model load, a newer
 // navigation abandons an older one, and the outlet swaps in one step.
-module workbench {
-    export module router {
+namespace workbench {
+    export namespace router {
 
         export interface NavigateOptions {
             history: 'push' | 'replace' | 'none';

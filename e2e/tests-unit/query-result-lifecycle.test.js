@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { classicCompilerOptions } = require('./workbench-scripts.js');
 
 const { createQueryBrowserHarness } = require('./query-browser-harness.js');
 
@@ -14,7 +15,7 @@ function compileQuerySource() {
     const sourcePath = path.resolve(__dirname,
         '../../tools/workbench/src/main/webapp/scripts/ts/query.ts');
     fs.writeFileSync(sharedTypePath, `declare namespace workbench {
-    module resultFullscreen {
+    namespace resultFullscreen {
         function currentTarget(): HTMLElement;
         function isFullscreen(target?: HTMLElement): boolean;
         function set(target: HTMLElement, control: HTMLButtonElement, enabled: boolean,
@@ -23,6 +24,7 @@ function compileQuerySource() {
     }
 }`);
     const compilation = spawnSync('tsc', [
+        ...classicCompilerOptions(),
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',

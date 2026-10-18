@@ -84,7 +84,8 @@ function shell(viewId) {
 <meta name="color-scheme" content="light"><script src="${basePath}/scripts/workbench-theme.js"></script>
 <link rel="stylesheet" href="${basePath}/styles/workbench-refresh.css">
 <link rel="stylesheet" href="${basePath}/styles/query.css">
-<link rel="stylesheet" href="${basePath}/styles/yasqe.min.css"></head>
+<link rel="stylesheet" href="${basePath}/styles/yasqe.min.css">
+<link rel="stylesheet" href="${basePath}/scripts/vendor/codemirror-5.65.21/codemirror.css"></head>
 <body class="workbench-body"><div id="workbench-app" data-workbench-view="${viewId}"
 data-workbench-context-path="${basePath}" data-workbench-base-path="${basePath}"
 data-workbench-repository-id="a" data-workbench-fetch-page-model="true"></div>

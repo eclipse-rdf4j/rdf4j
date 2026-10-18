@@ -8,7 +8,7 @@
 
 // Browser bootstrap for structured Workbench page models. Route-changing POST
 // forms remain browser-owned; only eligible GET shells fetch page data here.
-module workbench {
+namespace workbench {
     export interface PageModel {
         viewId: string;
         vars: string[];
@@ -40,7 +40,7 @@ module workbench {
         nothing?: any;
     }
 
-    export module app {
+    export namespace app {
         export const ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
         const scriptPromiseKey = '__rdf4jWorkbenchScriptPromises';
         const litPromiseKey = '__rdf4jWorkbenchLitPromise';
@@ -1023,7 +1023,7 @@ module workbench {
                 promises.push(loadClassicScript(scriptUrl(basePath, 'template.js'), dependencies));
             }
             if (windowObject && !windowObject.jQuery) {
-                promises.push(loadClassicScript(scriptUrl(basePath, 'jquery-1.11.0.min.js'), dependencies));
+                promises.push(loadClassicScript(scriptUrl(basePath, 'vendor/jquery-3.7.1/jquery.min.js'), dependencies));
             }
             return Promise.all(promises).then((): void => {});
         }

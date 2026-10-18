@@ -149,8 +149,9 @@ cd tools/workbench && npm ci && npm run build && cd ../..
 Files in `src/main/webapp/scripts/` are hand-written or vendored, so edit them directly (or not at all, for vendored code):
 
 - `workbench-theme.js`, `workbench-lit-html.mjs`, `cookies.html` (hand-written)
-- `jquery-1.11.0*`, `codemirror.4.5.0.min.js`, `yasqe*`, `diff.min.js`, `svg-pan-zoom.min.js`, `viz/`,
-  `vendor/lit-html-3.3.3/` (vendored third-party libraries)
+- `yasqe*`, `diff.min.js`, `svg-pan-zoom.min.js`, and the versioned `vendor/` directories
+  (vendored third-party libraries; exact releases and compatibility holds are listed in
+  [FRONTEND_DEPENDENCIES.md](FRONTEND_DEPENDENCIES.md))
 
 ### 2. Build and install with Maven
 

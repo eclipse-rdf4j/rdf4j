@@ -6,9 +6,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module update {
+    export namespace update {
 
         // Need to declare YASQE library for typescript compilation.
         declare var YASQE:any;

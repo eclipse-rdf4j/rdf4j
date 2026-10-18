@@ -7,7 +7,7 @@
 
 // Ordinary-DOM Lit views for the Workbench shell and non-query routes. The
 // existing route names, field names, and script-facing selectors stay stable.
-module workbench {
+namespace workbench {
     const actionIconCatalog: { [name: string]: string } = {
         server: 'M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01',
         repository: 'M5 6c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3Zm0 0v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6',
@@ -107,7 +107,7 @@ module workbench {
         return element;
     }
 
-    export module icons {
+    export namespace icons {
         export function decorateButton(button: any, name: string, accessibleName: string): void {
             if (!button || !button.ownerDocument || typeof button.setAttribute !== 'function') {
                 return;
@@ -138,7 +138,7 @@ module workbench {
         }
     }
 
-    export module views {
+    export namespace views {
         interface ViewContext {
             basePath: string;
             repositoryId: string;

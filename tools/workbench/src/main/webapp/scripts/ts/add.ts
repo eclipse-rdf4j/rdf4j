@@ -5,9 +5,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module add {
+    export namespace add {
 
         export function enabledInput(selected: string) {
             var istext = (selected == 'text');
@@ -42,7 +42,7 @@ module workbench {
                 autodetect.prop('selected', true);
                 if (isfile) {
                     $('#baseURI').val(file.val() == '' ? '' : encodeURI('file://'
-                        + file.val().replace(/\\/g, '/')));
+                        + (<string>file.val()).replace(/\\/g, '/')));
                 }
                 else if (isurl) {
                     $('#baseURI').val(url.val());
@@ -55,7 +55,7 @@ module workbench {
 
         /** Route mount (plan task M7.2): show the panel of the source that is checked in this page. */
         export function mount(outlet: HTMLElement): () => void {
-            var selected = $(outlet).find("input[name='source']:checked").val() || 'file';
+            var selected = <string>$(outlet).find("input[name='source']:checked").val() || 'file';
             enabledInput(selected == 'contents' ? 'text' : selected);
             return function() {};
         }

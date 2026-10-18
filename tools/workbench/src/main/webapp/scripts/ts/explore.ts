@@ -6,9 +6,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module explore {
+    export namespace explore {
 
         /**
          * Route mount (plan task M7.2): fill the resource summary and the row count and bind the datatype toggle, all
@@ -56,7 +56,7 @@ module workbench {
             });
             var explore = 'explore';
             workbench.paging.correctButtons(explore);
-            var rvalue = resource.val();
+            var rvalue = <string>resource.val();
             var summary = outlet.querySelector('#explore-resource-summary');
             var resourceValue = outlet.querySelector('#explore-resource-value');
             var resultCount = outlet.querySelector('#explore-result-count');

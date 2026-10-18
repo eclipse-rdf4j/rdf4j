@@ -6,7 +6,7 @@
 // corresponding *.ts source in the ts sub-folder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
     export interface EditorSizingOptions {
         /** Smallest height in pixels (six lines by default). */
@@ -21,7 +21,7 @@ module workbench {
      * handle or pressing ArrowUp/ArrowDown on it fixes a height between six lines and 80% of the viewport,
      * which is remembered in localStorage; double-click or Escape returns to the automatic height.
      */
-    export module editorSizing {
+    export namespace editorSizing {
         var STORAGE_UNAVAILABLE = -1;
 
         function readStoredHeight(storageKey: string): number {
@@ -173,7 +173,7 @@ module workbench {
         }
     }
 
-    export module yasqeHelper {
+    export namespace yasqeHelper {
 
         export function setupCompleters(namespaces: any) {//namespace in form {"rdf:":"http://bla"}
             var newPrefixCompleterName = "customPrefixCompleter";

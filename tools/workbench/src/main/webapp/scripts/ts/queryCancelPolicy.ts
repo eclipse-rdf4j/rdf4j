@@ -1,6 +1,6 @@
-module workbench {
+namespace workbench {
 
-    export module queryCancelPolicy {
+    export namespace queryCancelPolicy {
 
         export interface ExplainControlIds {
             buttonId: string;

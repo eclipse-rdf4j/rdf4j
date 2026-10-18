@@ -16,12 +16,14 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { classicCompilerOptions } = require('./workbench-scripts.js');
 const { FakeDocument } = require('./browser-fakes.js');
 
 const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-load-more-'));
 const outputPath = path.join(outputDirectory, 'queryStream.js');
 const sourceRoot = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts/ts');
 const compilation = spawnSync('tsc', [
+    ...classicCompilerOptions(),
     '--target', 'ES2017', '--lib', 'ES2017,DOM', '--skipLibCheck', '--outFile', outputPath,
     path.join(sourceRoot, 'template.ts'), path.join(sourceRoot, 'queryStream.ts')
 ], { encoding: 'utf8' });

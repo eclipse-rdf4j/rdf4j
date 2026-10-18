@@ -6,9 +6,9 @@
 // the corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module exportPage {
+    export namespace exportPage {
 
         /** Route mount (plan task M7.2): restore the preview limit from the URL or its cookie. */
         export function mount(outlet: HTMLElement): () => void {

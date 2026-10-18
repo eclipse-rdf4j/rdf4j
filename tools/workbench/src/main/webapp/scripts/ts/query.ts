@@ -9,9 +9,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module query {
+    export namespace query {
 
         /**
          * JSON value provided by the rendered query page.
@@ -43,7 +43,7 @@ module workbench {
         /** The mounted Query page's own query endpoint, absolute: a later page may show another repository. */
         var queryEndpointUrl = '';
         /** Loaded only for DOT explanations (M11.1). */
-        var GRAPH_RENDERER_SCRIPTS = ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js'];
+        var GRAPH_RENDERER_SCRIPTS = ['graph-explorer/query-graph-renderer.mjs', 'svg-pan-zoom.min.js'];
         var primaryExplanationPending = false;
         var activeCompareRequestId = 0;
         var activeComparePendingRequests = 0;
@@ -1957,7 +1957,7 @@ module workbench {
                 pendingDotRenderKeys[paneKey] = explanationContentKey;
                 var app: any = (<any>workbench).app;
                 if (typeof Viz === 'undefined' && !rendererLoaded && app && typeof app.loadScripts === 'function') {
-                    // The graph renderer (about 2 MB) is loaded with the first DOT explanation (M11.1).
+                    // The modern Graphviz module is loaded with the first DOT explanation (M11.1).
                     dotView.html('<div>Loading graph renderer…</div>').show();
                     var renderAfterLoad = function() {
                         if (pendingDotRenderKeys[paneKey] === explanationContentKey) {
@@ -1981,9 +1981,13 @@ module workbench {
                     return;
                 }
                 if (!vizRenderer) {
-                    vizRenderer = new Viz();
+                    // Modern Graphviz initializes asynchronously, then renders SVG synchronously. Share initialization
+                    // across panes, and turn initialization or render exceptions into the same visible failure path.
+                    vizRenderer = Promise.resolve().then(function() { return Viz.instance(); });
                 }
-                vizRenderer.renderSVGElement(explanationText).then(function(svgElement: SVGElement) {
+                vizRenderer.then(function(renderer: any) {
+                    return renderer.renderSVGElement(explanationText);
+                }).then(function(svgElement: SVGElement) {
                     if (pendingDotRenderKeys[paneKey] !== explanationContentKey) {
                         return;
                     }
@@ -2008,7 +2012,7 @@ module workbench {
                     if (pendingDotRenderKeys[paneKey] !== explanationContentKey) {
                         return;
                     }
-                    vizRenderer = new Viz();
+                    vizRenderer = null;
                     destroyDotPanZoom(paneKey);
                     dotView.html('<div class="error">Unable to render DOT graph.</div>');
                     if (displayExplanation) {

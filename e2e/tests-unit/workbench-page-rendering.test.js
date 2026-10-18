@@ -472,7 +472,7 @@ test('query route loads the complete legacy Explain, Compare, and Diff dependenc
     for (const name of required) {
         assert.ok(routeScripts.includes(name), `query route must load ${name}`);
     }
-    for (const name of ['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js']) {
+    for (const name of ['graph-explorer/query-graph-renderer.mjs', 'svg-pan-zoom.min.js']) {
         assert.equal(routeScripts.includes(name), false, `${name} loads only for a DOT explanation (M11.1)`);
     }
     assert.ok(routeScripts.indexOf('queryCancelPolicy.js') < routeScripts.indexOf('query.js'));

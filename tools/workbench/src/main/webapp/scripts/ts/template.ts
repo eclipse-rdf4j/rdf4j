@@ -2,7 +2,7 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
     export interface DetailDisclosureOptions {
         id?: string;
@@ -30,7 +30,7 @@ module workbench {
     }
 
     /** Shared settings/action disclosure markup and controller entry point. */
-    export module detailDisclosure {
+    export namespace detailDisclosure {
         var chevronPath = 'm6 9 6 6 6-6';
 
         function classes(base: string, extra: string): string {
@@ -186,7 +186,7 @@ module workbench {
     }
 
     /** Number formatting shared by the Workbench pages. */
-    export module format {
+    export namespace format {
         /**
          * Formats an integer (number or digit string) with Intl.NumberFormat for the given locale
          * (the browser locale when omitted); any other value is returned unchanged as text.
@@ -228,7 +228,7 @@ module workbench {
      * open at a time; Escape or a click outside closes it and Escape returns focus to its button.
      */
     /** Accessible tabs: one selected tab in the Tab order, arrow keys move between tabs, panels follow. */
-    export module tabs {
+    export namespace tabs {
         function tabsOf(tablist: HTMLElement): HTMLElement[] {
             return Array.prototype.slice.call(tablist.querySelectorAll('[role="tab"]'))
                 .filter(function(tab: HTMLElement) {
@@ -310,7 +310,7 @@ module workbench {
      * Cancel (focused first) and the confirm button. Escape and Cancel resolve false; only confirming resolves true.
      * Closing it returns focus to the control that opened it.
      */
-    export module confirmDialog {
+    export namespace confirmDialog {
         var counter = 0;
 
         /**
@@ -486,7 +486,7 @@ module workbench {
      * anywhere on the page leaves full screen (after the editor's own uses of Escape, such as closing the completion
      * list).
      */
-    export module editorFullscreen {
+    export namespace editorFullscreen {
         function editorAt(node: any): any {
             var wrapper = node && typeof node.closest === 'function' ? node.closest('.CodeMirror') : null;
             return wrapper && wrapper.CodeMirror ? wrapper.CodeMirror : null;
@@ -540,7 +540,7 @@ module workbench {
         editorFullscreen.install(window);
     }
 
-    export module popover {
+    export namespace popover {
         var closeOpenPopover: (returnFocus: boolean) => void = null;
 
         function focusableIn(panel: HTMLElement): HTMLElement {

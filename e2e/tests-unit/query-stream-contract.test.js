@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { classicCompilerOptions } = require('./workbench-scripts.js');
 const { FakeDocument } = require('./browser-fakes.js');
 
 const disclosureSource = path.resolve(__dirname,
@@ -74,6 +75,7 @@ function loadQueryStreamApi() {
     const loadCallbacks = [];
     const document = new FakeDocument();
     const compilation = spawnSync('tsc', [
+        ...classicCompilerOptions(),
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',

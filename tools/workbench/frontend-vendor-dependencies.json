@@ -1,0 +1,178 @@
+{
+  "schemaVersion": 1,
+  "dependencies": [
+    {
+      "name": "jquery",
+      "version": "3.7.1",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.js",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.min.js",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.min.map",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/LICENSE.txt"
+      ],
+      "source": "https://registry.npmjs.org/jquery/-/jquery-3.7.1.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.js": "78a85aca2f0b110c29e0d2b137e09f0a1fb7a8e554b499f740d6744dc8962cfe",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.min.js": "fc9a93dd241f6b045cbff0481cf4e1901becd0e12fb45166a8f17f95823f0b1a",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/jquery.min.map": "cf74d51c62d299189989130ebb423b30453532fdc8988d8e2b71b1b9165a80b8",
+        "tools/workbench/src/main/webapp/scripts/vendor/jquery-3.7.1/LICENSE.txt": "d4db9ebe6f29f5168eac45ad713f055623ac5d0dcd5ba92da23d650ae012020d"
+      },
+      "integrity": "sha512-m4avr8yL8kmFN8psrbFFFmB/If14iN5o9nw/NgnnM+kybDJpRsAynV2BsfpTYrTRysYUdADVD7CkUUizgkpLfg=="
+    },
+    {
+      "name": "codemirror",
+      "version": "5.65.21",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/codemirror.js",
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/codemirror.css",
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/LICENSE"
+      ],
+      "source": "https://registry.npmjs.org/codemirror/-/codemirror-5.65.21.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/codemirror.js": "e98aac5ffa07bae58acd4ff07c4293059f8921c0ae0eba506929d8c6f41c9288",
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/codemirror.css": "eb494ea972d2661ef86f7f6ac656dd6786d721e49c9c1b46e1eb967e4b6f9bf3",
+        "tools/workbench/src/main/webapp/scripts/vendor/codemirror-5.65.21/LICENSE": "168a4becc968f5001e2ee2e0291b6e4daabafc1894a11ade1e11d56e96096e07"
+      },
+      "integrity": "sha512-6teYk0bA0nR3QP0ihGMoxuKzpl5W80FpnHpBJpgy66NK3cZv5b/d/HY8PnRvfSsCG1MTfr92u2WUl+wT0E40mQ=="
+    },
+    {
+      "name": "yasgui-yasqe",
+      "version": "2.11.22",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/yasqe.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map",
+        "tools/workbench/src/main/webapp/styles/yasqe.min.css",
+        "tools/workbench/src/main/webapp/scripts/yasqe.LICENSE.txt"
+      ],
+      "source": "https://registry.npmjs.org/yasgui-yasqe/-/yasgui-yasqe-2.11.22.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/yasqe.js": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map": "d6b957089d5125df2bded21b168c26b3aed5a92e6277639912053ae793333e4d",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js": "08f24eddf70e390de69c98789a1b187d5e0b40c498a32b2502d4463f151d8285",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map": "922ce40fe999b4a9383c7287816b98ec6f5265744a3e97b0476540faa5dfc58d",
+        "tools/workbench/src/main/webapp/styles/yasqe.min.css": "06f98d84db9bcfea34571a2e8921c8014e744f2fef869189d39816d04165afe5",
+        "tools/workbench/src/main/webapp/scripts/yasqe.LICENSE.txt": "1e8d9c981513c8cfc7010408385511b658cc47b18390c192a8119f11e7c7a443"
+      },
+      "integrity": "sha512-8yNcjune6ONTJXJ2s6bZhRXBxyvuNErXjNAIQCbVyQbnG1feZBTR1SPjTKxkFWaCB/f0f19hmJPtcOkLOcOjUw==",
+      "runtimeVersion": "2.11.19",
+      "distribution": "dist/yasqe.min.js (external jquery and CodeMirror core)"
+    },
+    {
+      "name": "codemirror",
+      "version": "5.17.0",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/yasqe.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/codemirror-5.17.0.LICENSE"
+      ],
+      "source": "https://registry.npmjs.org/codemirror/-/codemirror-5.17.0.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/yasqe.js": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map": "d6b957089d5125df2bded21b168c26b3aed5a92e6277639912053ae793333e4d",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js": "08f24eddf70e390de69c98789a1b187d5e0b40c498a32b2502d4463f151d8285",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map": "922ce40fe999b4a9383c7287816b98ec6f5265744a3e97b0476540faa5dfc58d",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/codemirror-5.17.0.LICENSE": "13110d66c514a7890c4b388a353bc08fa094fe13d5ed7f3a222cc0a0caa3fd17"
+      },
+      "integrity": "sha512-5PtAlqXqe+Cu+LAKeXXSE8kprcua6JG6JLNr+wxgKDMZ0ah0agWLZ9t4me3cloPfGUSmvGS/ww8tkItsx7wqbg==",
+      "bundledIn": "yasgui-yasqe@2.11.22",
+      "evidence": "Nine source-map addon modules match codemirror@5.17.0 byte-for-byte after reversing only the publisher Browserify import shim. Core is external, 5.65.21."
+    },
+    {
+      "name": "yasgui-utils",
+      "version": "1.6.7",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/yasqe.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/yasgui-utils-1.6.7.LICENSE"
+      ],
+      "source": "https://registry.npmjs.org/yasgui-utils/-/yasgui-utils-1.6.7.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/yasqe.js": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map": "d6b957089d5125df2bded21b168c26b3aed5a92e6277639912053ae793333e4d",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js": "08f24eddf70e390de69c98789a1b187d5e0b40c498a32b2502d4463f151d8285",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map": "922ce40fe999b4a9383c7287816b98ec6f5265744a3e97b0476540faa5dfc58d",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/yasgui-utils-1.6.7.LICENSE": "1e8d9c981513c8cfc7010408385511b658cc47b18390c192a8119f11e7c7a443"
+      },
+      "integrity": "sha512-w9BnalJg330lZhljHn0j6Ta6jyQTJL8nbhjyeDj4Z9PrX7GLrgcwq7CO7uP6Keq86L1XjpUgUU6JAmTlmkXj6w==",
+      "bundledIn": "yasgui-yasqe@2.11.22",
+      "evidence": "Embedded package metadata names yasgui-utils version 1.6.7."
+    },
+    {
+      "name": "store",
+      "version": "2.0.12",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/yasqe.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/store-2.0.12.LICENSE"
+      ],
+      "source": "https://registry.npmjs.org/store/-/store-2.0.12.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/yasqe.js": "888e2545b7f5f66c867d9449e2140d9491ce5949d528b2758a5ce16b109c572e",
+        "tools/workbench/src/main/webapp/scripts/yasqe.js.map": "d6b957089d5125df2bded21b168c26b3aed5a92e6277639912053ae793333e4d",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js": "08f24eddf70e390de69c98789a1b187d5e0b40c498a32b2502d4463f151d8285",
+        "tools/workbench/src/main/webapp/scripts/yasqe.min.js.map": "922ce40fe999b4a9383c7287816b98ec6f5265744a3e97b0476540faa5dfc58d",
+        "tools/workbench/src/main/webapp/scripts/vendor/yasqe-components/store-2.0.12.LICENSE": "af4a0aa33e3a61cf96a6ffa912f9e13a6981e3161c6ea352eb84902af357c271"
+      },
+      "integrity": "sha512-eO9xlzDpXLiMr9W1nQ3Nfp9EzZieIQc10zPPMP5jsVV7bLOziSFFBP0XoDXACEIFtdI+rIz0NwWVA/QVJ8zJtw==",
+      "bundledIn": "yasgui-yasqe@2.11.22",
+      "evidence": "Embedded store-engine source explicitly declares version 2.0.12; legacy storage and json2 plugin sources are in the source maps."
+    },
+    {
+      "name": "diff",
+      "version": "9.0.0",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/diff.min.js",
+        "tools/workbench/src/main/webapp/scripts/diff.min.js.LICENSE.txt"
+      ],
+      "source": "https://registry.npmjs.org/diff/-/diff-9.0.0.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/diff.min.js": "b51a9d2885f2c090dc97b981027395f7e7e6558a46c75ae3747db267913a89ab",
+        "tools/workbench/src/main/webapp/scripts/diff.min.js.LICENSE.txt": "eda81a415869e67809f6a9f3fd6056062cb83a462118e07eec5e92b2e0c40ce9"
+      },
+      "integrity": "sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw=="
+    },
+    {
+      "name": "svg-pan-zoom",
+      "version": "3.6.2",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/svg-pan-zoom.min.js",
+        "tools/workbench/src/main/webapp/scripts/svg-pan-zoom.min.js.LICENSE.txt"
+      ],
+      "source": "https://registry.npmjs.org/svg-pan-zoom/-/svg-pan-zoom-3.6.2.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/svg-pan-zoom.min.js": "9c8fc41b3359e699990766dd7a943595d234a80c880a90dfc14b920a273b99d8",
+        "tools/workbench/src/main/webapp/scripts/svg-pan-zoom.min.js.LICENSE.txt": "ba3bc682f143f2bba92b69b730baa8eb1119fd8523b6290c6d28b14a5b52140d"
+      },
+      "evidence": "Vendored JavaScript header explicitly identifies svg-pan-zoom v3.6.2."
+    },
+    {
+      "name": "lit-html",
+      "version": "3.3.3",
+      "files": [
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/lit-html.js",
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/lit-html.js.map",
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/LICENSE"
+      ],
+      "source": "https://registry.npmjs.org/lit-html/-/lit-html-3.3.3.tgz",
+      "sha256": {
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/lit-html.js": "b878e7f95dec8a9b6e9b217faca6b6a11bad82ebc44c0caa77419ed83edd81f2",
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/lit-html.js.map": "d2761dc34ea527e6aeab453da73805b90665fe9ff4b07eaefb4ee192f7d873ec",
+        "tools/workbench/src/main/webapp/scripts/vendor/lit-html-3.3.3/LICENSE": "2b66f9390afde29edfe4314daff93f01fb182e1178053e228120178987e5db75"
+      },
+      "evidence": "Existing vendoring README records the exact npm archive integrity and JavaScript hash."
+    }
+  ],
+  "bundleLimitations": [
+    "The official yasgui-yasqe@2.11.22 tarball ships compiled assets whose self-reported YASQE version is 2.11.19. The npm coordinate describes verified release-archive provenance, not a claim that the embedded runtime reports 2.11.22.",
+    "The non-bundled YASQE distribution uses the separately upgraded global jQuery and CodeMirror core, but retains publisher-bundled CodeMirror 5.17.0 addons, yasgui-utils 1.6.7, and store 2.0.12. No third-party code was patched or forcibly re-resolved.",
+    "Package IDs cover evidenced standalone and bundled npm packages. Source-map contents, publisher-generated loader code, bundled json2 code and compiled non-npm engine components do not justify guessing additional npm package IDs."
+  ]
+}

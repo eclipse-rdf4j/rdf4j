@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
+const { classicCompilerOptions } = require('./workbench-scripts.js');
 
 const { createExploreBrowserHarness } = require('./explore-browser-harness.js');
 const { createListBrowserHarness } = require('./list-browser-harness.js');
@@ -14,6 +15,7 @@ function compilePagingSource() {
     const sourcePath = path.resolve(__dirname,
         '../../tools/workbench/src/main/webapp/scripts/ts/paging.ts');
     const compilation = spawnSync('tsc', [
+        ...classicCompilerOptions(),
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',

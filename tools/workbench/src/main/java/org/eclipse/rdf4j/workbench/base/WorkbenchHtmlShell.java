@@ -96,7 +96,10 @@ public final class WorkbenchHtmlShell {
 		writer.write("/styles/query.css\">");
 		writer.write("<link rel=\"stylesheet\" href=\"");
 		writer.write(escape(basePath));
-		writer.write("/styles/yasqe.min.css\"></head>");
+		writer.write("/styles/yasqe.min.css\">");
+		writer.write("<link rel=\"stylesheet\" href=\"");
+		writer.write(escape(basePath));
+		writer.write("/scripts/vendor/codemirror-5.65.21/codemirror.css\"></head>");
 		writer.write("<body class=\"workbench-body\"><div id=\"workbench-app\" data-workbench-view=\"");
 		writer.write(escape(viewId));
 		writer.write("\" data-workbench-context-path=\"");

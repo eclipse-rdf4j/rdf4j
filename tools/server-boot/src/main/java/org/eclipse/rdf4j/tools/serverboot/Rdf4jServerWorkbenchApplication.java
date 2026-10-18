@@ -396,6 +396,7 @@ public class Rdf4jServerWorkbenchApplication {
 	FilterRegistrationBean<CacheFilter> revalidatedEntryFilter() {
 		FilterRegistrationBean<CacheFilter> registration = new FilterRegistrationBean<>(new CacheFilter());
 		registration.addUrlPatterns("/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
+				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
 				"/rdf4j-workbench/styles/graph-explorer.css");
 		registration.setName("RevalidatedEntryFilter");
 		registration.setOrder(3);

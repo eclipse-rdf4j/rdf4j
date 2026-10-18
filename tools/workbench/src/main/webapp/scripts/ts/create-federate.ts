@@ -5,9 +5,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module createFederate {
+    export namespace createFederate {
 
         /**
          * Route mount (plan task M7.2): Create is enabled only for a new id and at least two members. The id
@@ -26,7 +26,7 @@ module workbench {
                 } else {
                     page.find('#create-feedback').show();
                 }
-                var fedID = id.val();
+                var fedID = <string>id.val();
                 // The repository id rule of create.js (and of the server): an id it rejects is explained under the
                 // field and keeps Create disabled. Without create.js only a non-empty id is required.
                 var create: any = (workbench as any).create;

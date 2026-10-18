@@ -5,9 +5,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module paging {
+    export namespace paging {
 
         var KT = 'know_total';
 
@@ -260,7 +260,7 @@ module workbench {
                     return parseInt(options[i].value, 10);
                 }
             }
-            return parseInt($(LIM_ID + '_' + page).val(), 10);
+            return parseInt(<string>$(LIM_ID + '_' + page).val(), 10);
         }
 
         /**
@@ -330,13 +330,13 @@ module workbench {
         export function correctButtons(page: string) {
             var buttonWordPattern = /^[A-z]+\s+/;
             var nextButton = $('#nextX');
-            var oldNext = nextButton.val();
+            var oldNext = <string>nextButton.val();
             var count = parseInt(/\d+$/.exec(oldNext)[0], 10);
             var limit = workbench.paging.getLimit(page);
             nextButton.val(buttonWordPattern.exec(oldNext)[0] + limit);
             var previousButton = $('#previousX');
             previousButton
-                .val(buttonWordPattern.exec(previousButton.val())[0] + limit);
+                .val(buttonWordPattern.exec(<string>previousButton.val())[0] + limit);
             var offset = workbench.paging.getOffset();
             previousButton.prop('disabled', (offset <= 0 || limit <= 0));
             nextButton.prop('disabled',
@@ -372,7 +372,7 @@ module workbench {
             return total_result_count;
         }
 
-        module DataTypeVisibility {
+        namespace DataTypeVisibility {
             function setCookie(c_name: string, value: boolean, exdays: number) {
                 var exdate = new Date();
                 exdate.setDate(exdate.getDate() + exdays);

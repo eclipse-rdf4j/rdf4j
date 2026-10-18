@@ -5,9 +5,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module server {
+    export namespace server {
         /**
          * Base64 of the UTF-8 bytes of a text. window.btoa only takes characters up to U+00FF, so a password such as
          * 'pass✓' is encoded to UTF-8 first; the server decodes the credentials as UTF-8.

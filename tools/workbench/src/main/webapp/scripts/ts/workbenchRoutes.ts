@@ -19,8 +19,8 @@
 // The route lifecycle contract: every Workbench view registers how it is
 // mounted into the page outlet, which scripts it needs, and how it releases
 // what it holds when the page is left.
-module workbench {
-    export module routes {
+namespace workbench {
+    export namespace routes {
 
         export interface RouteMountContext {
             /** The #workbench-outlet element the route renders into. */
@@ -283,13 +283,13 @@ module workbench {
         register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
         register(staticRoute('saved-queries',
-            ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js', 'saved-queries.js'],
+            ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js', 'saved-queries.js'],
             routeMount(scriptMount('savedQueries'))));
-        register(staticRoute('update', ['codemirror.4.5.0.min.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'],
+        register(staticRoute('update', ['vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js', 'yasqeHelper.js', 'update.js'],
             routeMount(scriptMount('update'))));
-        // The graph renderer (viz.js, full.render.js, svg-pan-zoom) is loaded by query.ts when a DOT explanation is
+        // The modern Graphviz module and svg-pan-zoom are loaded by query.ts when a DOT explanation is
         // shown (M11.1).
-        register(staticRoute('query', ['queryStream.js', 'codemirror.4.5.0.min.js', 'yasqe.min.js',
+        register(staticRoute('query', ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js',
             'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js', 'paging.js',
             'query.js'], routeMount(mountQuery), true));
         const createRoute: RouteDefinition = {

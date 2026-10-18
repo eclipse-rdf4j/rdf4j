@@ -14,9 +14,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module queryExplanationHighlighter {
+    export namespace queryExplanationHighlighter {
 
         export type ExplainLevel = 'Unoptimized' | 'Optimized' | 'Executed' | 'Telemetry' | 'Timed';
         export type HighlightMode = 'syntax' | 'hotspot';

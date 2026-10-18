@@ -15,8 +15,8 @@
 /// <reference path="jquery.d.ts" />
 
 // Edit this TypeScript source and run compileTypescript.sh to regenerate JavaScript.
-module workbench {
-    export module savedQueries {
+namespace workbench {
+    export namespace savedQueries {
         declare var YASQE: any;
 
         interface Editor {

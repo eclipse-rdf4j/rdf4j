@@ -127,7 +127,7 @@ test('the route registry loads on its own, before any other Workbench script', (
 test('the built-in definitions carry the script lists the pages load today', () => {
     const workbench = loadWorkbench();
     const routes = workbench.routes;
-    assert.deepEqual(Array.from(routes.get('query').scripts({ vars: [] })), ['queryStream.js', 'codemirror.4.5.0.min.js',
+    assert.deepEqual(Array.from(routes.get('query').scripts({ vars: [] })), ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js',
         'yasqe.min.js', 'yasqeHelper.js', 'queryCancelPolicy.js', 'diff.min.js', 'queryExplanationHighlighter.js',
         'paging.js', 'query.js'], 'the graph renderer is loaded only for DOT explanations (M11.1)');
     assert.deepEqual(Array.from(routes.get('explore').baseScripts()), ['paging.js', 'explore.js']);

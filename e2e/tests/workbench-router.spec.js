@@ -479,7 +479,7 @@ test('the Query page loads the graph renderer only when a DOT explanation is sho
 	await page.setViewportSize({ width: 1440, height: 900 });
 	const renderer = [];
 	page.on('request', (request) => {
-		if (request.url().endsWith('/full.render.js')) {
+		if (request.url().endsWith('/query-graph-renderer.mjs')) {
 			renderer.push(request.url());
 		}
 	});
@@ -495,6 +495,15 @@ test('the Query page loads the graph renderer only when a DOT explanation is sho
 
 	await expect(page.locator('#query-explanation-dot-view svg').first()).toBeVisible({ timeout: 15000 });
 	expect(renderer).toHaveLength(1);
+	await expect(page.locator('#query-explanation-dot-view svg .node').first()).toBeVisible();
+	await expect(page.locator('#query-explanation-dot-view #svg-pan-zoom-controls')).toBeVisible();
+	const viewport = page.locator('#query-explanation-dot-view .svg-pan-zoom_viewport');
+	const beforeZoom = await viewport.getAttribute('transform');
+	await page.locator('#query-explanation-dot-view #svg-pan-zoom-zoom-in').click();
+	await expect(viewport).not.toHaveAttribute('transform', beforeZoom);
+	await page.locator('#rerun-explanation').click();
+	await expect(page.locator('#query-explanation-dot-view svg .node').first()).toBeVisible();
+	expect(renderer, 'later explanations reuse the lazily loaded modern engine').toHaveLength(1);
 });
 
 // Plan task M11.2: route code is prefetched when its link is hovered.

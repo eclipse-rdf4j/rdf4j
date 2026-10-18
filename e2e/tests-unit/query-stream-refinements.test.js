@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const vm = require('node:vm');
 const { spawnSync } = require('node:child_process');
+const { classicCompilerOptions } = require('./workbench-scripts.js');
 const { FakeDocument } = require('./browser-fakes.js');
 
 const streamSource = path.resolve(__dirname,
@@ -16,6 +17,7 @@ function loadQueryStreamApi(workbench = {}) {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-stream-refinements-'));
     const outputPath = path.join(outputDirectory, 'queryStream.js');
     const compilation = spawnSync('tsc', [
+        ...classicCompilerOptions(),
         '--target', 'ES2017',
         '--lib', 'ES2017,DOM',
         '--skipLibCheck',

@@ -5,9 +5,9 @@
 // corresponding *.ts source in the ts subfolder, and then invoke the
 // compileTypescript.sh bash script to generate new *.js and *.js.map files.
 
-module workbench {
+namespace workbench {
 
-    export module create {
+    export namespace create {
         /** The field with the given role (inside root when given), or the fallback selector's field. */
         export function findFieldByRole(role: string, fallbackSelector: string, root?: HTMLElement): JQuery {
             var find = function(selector: string) { return root ? $(root).find(selector) : $(selector); };
@@ -374,7 +374,7 @@ module workbench {
              */
             var createButton = $(outlet).find('input#create');
             function disableCreateUnlessValidId() {
-                createButton.prop('disabled', !VALID_ID.test(id.val() || ''));
+                createButton.prop('disabled', !VALID_ID.test(<string>id.val() || ''));
             }
 
             // Populate parameters
@@ -421,7 +421,7 @@ module workbench {
  * back out before its configuration is replaced.
  */
 function checkOverwrite() {
-    var id = workbench.create.id.val();
+    var id = <string>workbench.create.id.val();
     var form = <HTMLFormElement>$(workbench.create.id.get(0)).closest('form').get(0);
     var owner = workbench.captureFormOwner(form);
     if (!owner.isCurrent()) { return; }

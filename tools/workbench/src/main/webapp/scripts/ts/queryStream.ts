@@ -17,7 +17,7 @@
 namespace workbench {
 
     /** One viewport owner for streamed and legacy result controls on every query route. */
-    export module resultFullscreen {
+    export namespace resultFullscreen {
 
         export interface Callbacks {
             previousFocus?: HTMLElement;
@@ -173,7 +173,7 @@ namespace workbench {
         }
     }
 
-    export module queryStream {
+    export namespace queryStream {
 
         export var ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
         export var COMPACT_ACCEPT = 'application/vnd.rdf4j.workbench-query-v2+ndjson';
@@ -7593,7 +7593,7 @@ namespace workbench {
             return createExecutionController(form, target, options);
         }
 
-        export module queryPage {
+        export namespace queryPage {
             var mountedForm: any = null;
             var mountedController: BoundExecutionController = null;
             var mountedSubmitHandler: (event: any) => void = null;
@@ -7891,7 +7891,7 @@ namespace workbench {
     }
 
     /** Stable lifecycle hook used by the shared Workbench page bootstrap. */
-    export module queryPage {
+    export namespace queryPage {
         export function renderInto(mount: any, model: any, shellContext: any): (reason?: string) => void {
             return queryStream.queryPage.renderInto(mount, model, shellContext);
         }

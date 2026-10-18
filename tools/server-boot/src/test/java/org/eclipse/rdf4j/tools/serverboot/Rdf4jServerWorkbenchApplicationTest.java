@@ -268,6 +268,7 @@ class Rdf4jServerWorkbenchApplicationTest {
 	void theExplorerEntryIsRevalidatedAfterTheLongCacheHeaderLikeTheWar() {
 		assertThat(revalidatedEntryFilter.getUrlPatterns()).containsExactlyInAnyOrder(
 				"/rdf4j-workbench/scripts/graph-explorer/graph-explorer.mjs",
+				"/rdf4j-workbench/scripts/graph-explorer/query-graph-renderer.mjs",
 				"/rdf4j-workbench/styles/graph-explorer.css");
 		assertThat(revalidatedEntryFilter.getInitParameters()).containsEntry("Cache-Control", "0");
 		assertThat(cacheFilter.getInitParameters()).containsEntry("Cache-Control", "600");
