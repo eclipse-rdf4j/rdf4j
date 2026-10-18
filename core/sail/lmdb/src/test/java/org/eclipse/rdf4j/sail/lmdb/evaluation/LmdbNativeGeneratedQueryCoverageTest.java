@@ -40,8 +40,8 @@ import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
-import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -51,10 +51,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -660,7 +660,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				"SELECT DISTINCT ?s { { SELECT ?s { GRAPH ?g { ?s <http://ex/pA> ?o } } } } ORDER BY ?s LIMIT 3")) {
 			assertThat(rows(wrapped, true)).isEqualTo(genericRows(wrapped, true));
 			try (SailRepositoryConnection connection = repository.getConnection()) {
-				GenericPlanNode plan = connection.prepareTupleQuery(wrapped).explain(Explanation.Level.Telemetry)
+				GenericPlanNode plan = connection.prepareTupleQuery(wrapped)
+						.explain(Explanation.Level.Telemetry)
 						.toGenericPlanNode();
 				GenericPlanNode owner = nativeInvocationNode(plan);
 				assertThat(owner).as(wrapped).isNotNull();
@@ -683,7 +684,8 @@ class LmdbNativeGeneratedQueryCoverageTest {
 			prepared.setBinding("g", RDF4J.NIL);
 			GenericPlanNode plan = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
 			assertThat(plan.getLongMetricActual("nativeInvocationsActual"))
-					.as("the invocation-bound alias takes the semantic alternative once").isEqualTo(1L);
+					.as("the invocation-bound alias takes the semantic alternative once")
+					.isEqualTo(1L);
 			assertThat(plan.getStringMetricActual("nativeExecutionPath")).isNotEmpty();
 		}
 	}
@@ -760,11 +762,14 @@ class LmdbNativeGeneratedQueryCoverageTest {
 				Set<StrategyDecline> declines = declineReasons(query);
 				assertThat(actual).as("lexical frame answer parity\n%s", query).isEqualTo(expected);
 				assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
-						.as("semantic boundaries need no generic host\n%s", plan).isZero();
+						.as("semantic boundaries need no generic host\n%s", plan)
+						.isZero();
 				assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
-						.as("semantic boundaries need no generic island\n%s", plan).isZero();
+						.as("semantic boundaries need no generic island\n%s", plan)
+						.isZero();
 				assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
-						.as("semantic native admission; reasons=%s\n%s", declines, plan).isTrue();
+						.as("semantic native admission; reasons=%s\n%s", declines, plan)
+						.isTrue();
 			}
 		} finally {
 			if (previousIslands == null) {

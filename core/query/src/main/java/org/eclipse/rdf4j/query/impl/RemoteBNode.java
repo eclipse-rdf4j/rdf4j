@@ -530,8 +530,9 @@ public final class RemoteBNode extends SimpleBNode {
 
 			Value preserved = frame.preservedSubject != frame.capturedSubject
 					|| frame.preservedObject != frame.capturedObject
-							? SimpleValueFactory.getInstance().createTripleTerm((Resource) frame.preservedSubject,
-									capturedTriple.getPredicate(), frame.preservedObject)
+							? SimpleValueFactory.getInstance()
+									.createTripleTerm((Resource) frame.preservedSubject,
+											capturedTriple.getPredicate(), frame.preservedObject)
 							: frame.captured;
 			completed.put(frame.key, preserved);
 			pending.pop();

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.queryrender;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -50,10 +51,8 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SparqlQueryRenderer;
-import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.Test;
-
-import static org.junit.jupiter.api.Assertions.assertAll;
+import org.junit.jupiter.api.function.Executable;
 
 class InheritedGraphContextRenderTest {
 

@@ -502,7 +502,8 @@ public class LmdbNativeInteriorIslandTest {
 		assertThat(vf.createLiteral(2).getDatatype()).isEqualTo(XSD.INT);
 		for (String query : List.of("SELECT ?o WHERE { BIND(2 AS ?o) }", "SELECT ?o WHERE { VALUES ?o { 2 } }")) {
 			List<Value> parsed = new ArrayList<>();
-			QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr()
+			QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null)
+					.getTupleExpr()
 					.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 						@Override
 						public void meet(ValueConstant constant) {
@@ -515,7 +516,8 @@ public class LmdbNativeInteriorIslandTest {
 						}
 					});
 			assertThat(parsed).as(query).containsExactly(vf.createLiteral("2", XSD.INTEGER));
-			assertThat(parsed.get(0)).as("numeric equality does not make the RDF terms join-compatible").isNotEqualTo(source);
+			assertThat(parsed.get(0)).as("numeric equality does not make the RDF terms join-compatible")
+					.isNotEqualTo(source);
 		}
 	}
 

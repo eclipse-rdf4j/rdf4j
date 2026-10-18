@@ -83,8 +83,8 @@ class ParentReferenceCheckerRuntimeValueTest {
 
 		assertThatThrownBy(() -> new ParentReferenceChecker(null).optimize(root, null,
 				EmptyBindingSet.getInstance()))
-				.isInstanceOf(AssertionError.class)
-				.hasMessageContaining("unexpected parent");
+						.isInstanceOf(AssertionError.class)
+						.hasMessageContaining("unexpected parent");
 	}
 
 	private static final class OneShotBindingSets implements Iterable<BindingSet>, Serializable {

@@ -346,7 +346,9 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		return var;
 	}
 
-	/** Takes a fresh base-class copy after the provider hook, preserving the hook result's runtime subtype and state. */
+	/**
+	 * Takes a fresh base-class copy after the provider hook, preserving the hook result's runtime subtype and state.
+	 */
 	private Var intrinsicCopy() {
 		return (Var) super.clone();
 	}

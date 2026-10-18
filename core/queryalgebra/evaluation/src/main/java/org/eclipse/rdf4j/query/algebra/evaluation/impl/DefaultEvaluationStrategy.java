@@ -700,7 +700,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryEvaluationStep precompilePlanned(TupleExpr expr, QueryEvaluationContext context, boolean generic) {
-		QueryEvaluationStep prepared = generic ? precompileGenericPlanned(expr, context) : precompileTupleExpr(expr, context);
+		QueryEvaluationStep prepared = generic ? precompileGenericPlanned(expr, context)
+				: precompileTupleExpr(expr, context);
 		QueryEvaluationStep tracked = trackPreparedStep(expr, prepared);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, tracked);
 		return tracked;

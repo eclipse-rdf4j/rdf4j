@@ -55,10 +55,10 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
@@ -208,7 +208,9 @@ class BlankNodeReferenceBindingOriginTest {
 		new SameTermFilterOptimizer().optimize(runtimeFilter, null, EmptyBindingSet.getInstance());
 		Var runtimeTarget = valuedVar(runtimeFilter, "target");
 		assertTrue(runtimeTarget.hasApiInputOrigin(), "a value copied from an API Var remains runtime input");
-		assertTrue(LocalBNodeReferences.analyze(runtimeFilter).runtimeValues().stream()
+		assertTrue(LocalBNodeReferences.analyze(runtimeFilter)
+				.runtimeValues()
+				.stream()
 				.anyMatch(value -> value == shared));
 		assertUninspected(shared, nested);
 

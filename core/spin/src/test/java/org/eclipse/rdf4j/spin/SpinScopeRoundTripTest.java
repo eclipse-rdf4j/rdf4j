@@ -140,7 +140,8 @@ class SpinScopeRoundTripTest {
 
 	@ParameterizedTest
 	@MethodSource("semanticCases")
-	void rdfOnlyExecutionPreservesExpectedBags(String text, String boundVariable, List<String> expected) throws Exception {
+	void rdfOnlyExecutionPreservesExpectedBags(String text, String boundVariable, List<String> expected)
+			throws Exception {
 		ParsedTupleQuery original = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
 		MapBindingSet bindings = new MapBindingSet();
 		if (!boundVariable.isEmpty()) {
@@ -161,8 +162,12 @@ class SpinScopeRoundTripTest {
 		StatementCollector collector = new StatementCollector();
 		new SpinRenderer(SpinRenderer.Output.RDF_ONLY).render(original, collector);
 		TreeModel model = new TreeModel(collector.getStatements());
-		Resource query = model.filter(null, RDF.TYPE, SP.SELECT_CLASS).subjects().stream()
-				.filter(candidate -> !model.contains(null, SP.QUERY_PROPERTY, candidate)).findFirst().orElseThrow();
+		Resource query = model.filter(null, RDF.TYPE, SP.SELECT_CLASS)
+				.subjects()
+				.stream()
+				.filter(candidate -> !model.contains(null, SP.QUERY_PROPERTY, candidate))
+				.findFirst()
+				.orElseThrow();
 		return new SpinParser(SpinParser.Input.RDF_ONLY).parseSelectQuery(query, new ModelTripleSource(model));
 	}
 
@@ -176,7 +181,8 @@ class SpinScopeRoundTripTest {
 				}
 				if (node instanceof Projection projection) {
 					metadata.add("subquery=" + projection.isSubquery() + ":context="
-							+ projection.getProjectionContext() + ":parameter=" + projection.getInheritedGraphParameter());
+							+ projection.getProjectionContext() + ":parameter="
+							+ projection.getInheritedGraphParameter());
 				}
 				if (node instanceof Var variable) {
 					metadata.add("graphContextDepth=" + variable.getGraphContextDepth());
@@ -211,8 +217,11 @@ class SpinScopeRoundTripTest {
 			try (var result = connection.evaluate(query.getTupleExpr().clone(), dataset, bindings, false)) {
 				while (result.hasNext()) {
 					BindingSet row = result.next();
-					rows.add(row.getBindingNames().stream().sorted()
-							.map(name -> name + "=" + row.getValue(name).stringValue()).collect(Collectors.joining(";")));
+					rows.add(row.getBindingNames()
+							.stream()
+							.sorted()
+							.map(name -> name + "=" + row.getValue(name).stringValue())
+							.collect(Collectors.joining(";")));
 				}
 			}
 			return rows;

@@ -401,8 +401,7 @@ public class TupleExprBuilder extends AbstractASTVisitor {
 	 * Maps the given ValueExpr to a Var for use as a component of a triple term construction.
 	 * <ul>
 	 * <li>If the supplied ValueExpr is a {@link Var}, the object itself is returned.</li>
-	 * <li>If it is a {@link ValueConstant}, a constant variable is created via
-	 * {@link #constantVar(Value)}.</li>
+	 * <li>If it is a {@link ValueConstant}, a constant variable is created via {@link #constantVar(Value)}.</li>
 	 * <li>Otherwise, an anonymous variable is created and the expression is registered as an {@link ExtensionElem} on
 	 * the current graph pattern, so that the expression is evaluated at runtime and its result bound to the returned
 	 * var.</li>

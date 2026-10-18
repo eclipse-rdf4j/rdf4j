@@ -1754,7 +1754,8 @@ public final class QueryAlgebraBindingAnalysis {
 	private record ChildInputKey(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
 		@Override
 		public boolean equals(Object other) {
-			return other instanceof ChildInputKey key && parent == key.parent && child == key.child && input == key.input;
+			return other instanceof ChildInputKey key && parent == key.parent && child == key.child
+					&& input == key.input;
 		}
 
 		@Override

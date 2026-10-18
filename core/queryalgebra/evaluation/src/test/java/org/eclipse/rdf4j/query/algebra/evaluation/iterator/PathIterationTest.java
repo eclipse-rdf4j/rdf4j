@@ -278,7 +278,8 @@ public class PathIterationTest {
 						default -> new ArrayBindingBasedQueryEvaluationContext(
 								new QueryEvaluationContext.Minimal(null),
 								ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery(
-										new QueryRoot(step.clone())), null);
+										new QueryRoot(step.clone())),
+								null);
 						};
 						Set<List<Value>> actual = new HashSet<>();
 						try (PathIteration path = context == null

@@ -161,7 +161,7 @@ public class ExpressionErrorSemanticsTest {
 					}
 					assertThat(evaluate(mode, "SELECT (COALESCE(" + component + "(42),'safe') AS ?x) WHERE {}",
 							optimize)).singleElement()
-							.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo("safe"));
+									.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo("safe"));
 				}
 			}
 		} finally {

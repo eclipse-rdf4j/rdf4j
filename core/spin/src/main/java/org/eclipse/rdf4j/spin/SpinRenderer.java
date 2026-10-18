@@ -754,7 +754,7 @@ public class SpinRenderer {
 		public void meet(ArbitraryLengthPath node) throws RDFHandlerException {
 			// The parser's ModPath grammar has one fixed predicate. Inverse paths use the actual edge endpoints.
 			// More complex path algebra needs additional SPIN path grammar support.
-			if (!(node.getPathExpression() instanceof StatementPattern pattern)
+			if (!(node.getPathExpression()instanceof StatementPattern pattern)
 					|| !pattern.getPredicateVar().isConstant()
 					|| !(pattern.getPredicateVar().getValue() instanceof IRI)
 					|| pattern.getScope() != node.getScope()
@@ -763,7 +763,8 @@ public class SpinRenderer {
 							&& pattern.getObjectVar().equals(node.getObjectVar())
 							|| pattern.getSubjectVar().equals(node.getObjectVar())
 									&& pattern.getObjectVar().equals(node.getSubjectVar()))) {
-				throw new UnsupportedOperationException("Unsupported SPIN path expression: " + node.getPathExpression());
+				throw new UnsupportedOperationException(
+						"Unsupported SPIN path expression: " + node.getPathExpression());
 			}
 			ListContext ctxList = null;
 			if (StatementPattern.Scope.NAMED_CONTEXTS == node.getScope()) {
@@ -783,7 +784,8 @@ public class SpinRenderer {
 			pattern.getPredicateVar().visit(this);
 			handler.handleStatement(valueFactory.createStatement(path, SP.MOD_MIN_PROPERTY,
 					valueFactory.createLiteral(node.getMinLength())));
-			handler.handleStatement(valueFactory.createStatement(path, SP.MOD_MAX_PROPERTY, valueFactory.createLiteral(-2)));
+			handler.handleStatement(
+					valueFactory.createStatement(path, SP.MOD_MAX_PROPERTY, valueFactory.createLiteral(-2)));
 			predicate = null;
 			if (ctxList != null) {
 				restoreNamedGraph(ctxList);

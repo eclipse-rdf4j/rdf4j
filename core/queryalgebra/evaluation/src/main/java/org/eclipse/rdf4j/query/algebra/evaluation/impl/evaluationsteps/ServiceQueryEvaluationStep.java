@@ -85,7 +85,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		try {
 			SPARQLQueries.initializeServiceReferences(service);
 			TupleExpr body = service.getServiceExpr();
-			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(body, originalBindings);
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(body,
+					originalBindings);
 			QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(body);
 			Set<String> visibleNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
 					outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : service.getServiceVars());
@@ -109,7 +110,8 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			Set<String> freeVars = new HashSet<>(visibleNames);
 			freeVars.removeAll(invocationBindings.getBindingNames());
 
-			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport, canonicalIDs);
+			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport,
+					canonicalIDs);
 			if (runtimeTelemetryEnabled) {
 				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));

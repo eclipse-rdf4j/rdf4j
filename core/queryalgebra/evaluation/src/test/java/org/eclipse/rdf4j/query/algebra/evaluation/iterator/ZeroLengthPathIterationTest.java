@@ -218,7 +218,8 @@ public class ZeroLengthPathIterationTest {
 						bindings.addBinding("g", graph);
 					}
 					List<Value> graphs = new ArrayList<>();
-					try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(createEvaluationStrategy(model),
+					try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(
+							createEvaluationStrategy(model),
 							Var.of("x"), Var.of("y"), bindings.getValue("x"), bindings.getValue("y"), Var.of("g"),
 							bindings, new QueryEvaluationContext.Minimal(null))) {
 						while (iteration.hasNext()) {

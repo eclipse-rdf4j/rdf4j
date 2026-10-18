@@ -33,8 +33,8 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
-import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -49,12 +49,12 @@ class LmdbGraphPatternImplicationTest {
 
 	static Stream<Arguments> graphPatternConfigurations() {
 		return Stream.of(
-			"GRAPH ?g { ?s <urn:p> ?o }",
-			"GRAPH <urn:g> { ?s <urn:p> ?o }",
-			"{ GRAPH ?g { ?s <urn:p> ?o } } OPTIONAL { ?s <urn:q> ?optional }",
-			"{ GRAPH ?g { ?s <urn:p> ?o } } MINUS { ?s <urn:q> ?excluded }",
-			"{ SELECT ?s ?o { GRAPH ?g { ?s <urn:p> ?o } } }",
-			"{ GRAPH ?g { ?s <urn:p> ?o } } UNION { GRAPH ?g { ?s <urn:p> ?o } }"
+				"GRAPH ?g { ?s <urn:p> ?o }",
+				"GRAPH <urn:g> { ?s <urn:p> ?o }",
+				"{ GRAPH ?g { ?s <urn:p> ?o } } OPTIONAL { ?s <urn:q> ?optional }",
+				"{ GRAPH ?g { ?s <urn:p> ?o } } MINUS { ?s <urn:q> ?excluded }",
+				"{ SELECT ?s ?o { GRAPH ?g { ?s <urn:p> ?o } } }",
+				"{ GRAPH ?g { ?s <urn:p> ?o } } UNION { GRAPH ?g { ?s <urn:p> ?o } }"
 		).flatMap(required -> Stream.of(false, true).map(experimental -> Arguments.of(required, experimental)));
 	}
 

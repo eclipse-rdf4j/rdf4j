@@ -584,7 +584,8 @@ class LmdbStatementPatternIdNormalizationTest {
 						return values;
 					}, TripleStore::new) {
 				@Override
-				CloseableIteration<? extends Statement> createStatementIterator(LmdbSailDataset source, Resource subject,
+				CloseableIteration<? extends Statement> createStatementIterator(LmdbSailDataset source,
+						Resource subject,
 						IRI predicate, Value object, Resource... contexts) throws IOException {
 					statementInputs.add(new PatternInputs(subject, predicate, object, contexts.clone()));
 					return super.createStatementIterator(source, subject, predicate, object, contexts);

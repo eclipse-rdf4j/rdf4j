@@ -35,9 +35,9 @@ class IterationsOwnershipTest {
 
 			assertThat(iteration.closeCount).as("%s closes its input once", collector).isEqualTo(1);
 			switch (collector) {
-				case AS_LIST -> assertThat(result).isEqualTo(VALUES);
-				case AS_SET -> assertThat(result).isEqualTo(new LinkedHashSet<>(VALUES));
-				case ADD_ALL -> assertThat(result).isSameAs(target).isEqualTo(VALUES);
+			case AS_LIST -> assertThat(result).isEqualTo(VALUES);
+			case AS_SET -> assertThat(result).isEqualTo(new LinkedHashSet<>(VALUES));
+			case ADD_ALL -> assertThat(result).isSameAs(target).isEqualTo(VALUES);
 			}
 		}
 	}
@@ -52,9 +52,10 @@ class IterationsOwnershipTest {
 
 					assertThatThrownBy(() -> collect(collector, iteration,
 							collector == Collector.ADD_ALL ? new ArrayList<>() : null))
-							.as("%s keeps %s primary when close failure is %s", collector, primary.getClass().getSimpleName(),
-									sameFailure ? "identical" : "distinct")
-							.isSameAs(primary);
+									.as("%s keeps %s primary when close failure is %s", collector,
+											primary.getClass().getSimpleName(),
+											sameFailure ? "identical" : "distinct")
+									.isSameAs(primary);
 					assertThat(iteration.closeCount).as("%s closes once after a read failure", collector).isEqualTo(1);
 					assertThat(primary.getSuppressed())
 							.containsExactly(sameFailure ? new Throwable[0] : new Throwable[] { closeFailure });
@@ -72,7 +73,7 @@ class IterationsOwnershipTest {
 
 					assertThatThrownBy(() -> collect(collector, iteration,
 							collector == Collector.ADD_ALL ? new ArrayList<>() : null))
-							.isSameAs(closeFailure);
+									.isSameAs(closeFailure);
 					assertThat(iteration.closeCount).as("%s closes once on completion", collector).isEqualTo(1);
 				}
 			}
@@ -87,10 +88,10 @@ class IterationsOwnershipTest {
 				UnmanagedIteration iteration = new UnmanagedIteration(VALUES, null, closeFailure);
 				Collection<String> rejectingTarget = new ArrayList<>() {
 					@Override
-				public boolean add(String value) {
-					throwUnchecked(primary);
-					return false;
-				}
+					public boolean add(String value) {
+						throwUnchecked(primary);
+						return false;
+					}
 				};
 
 				assertThatThrownBy(() -> Iterations.addAll(iteration, rejectingTarget))
@@ -117,9 +118,9 @@ class IterationsOwnershipTest {
 	private static Object collect(Collector collector, CloseableIteration<String> iteration,
 			Collection<String> target) {
 		return switch (collector) {
-			case AS_LIST -> Iterations.asList(iteration);
-			case AS_SET -> Iterations.asSet(iteration);
-			case ADD_ALL -> Iterations.addAll(iteration, target);
+		case AS_LIST -> Iterations.asList(iteration);
+		case AS_SET -> Iterations.asSet(iteration);
+		case ADD_ALL -> Iterations.addAll(iteration, target);
 		};
 	}
 

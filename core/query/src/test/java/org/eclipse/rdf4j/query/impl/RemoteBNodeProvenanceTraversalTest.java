@@ -107,8 +107,8 @@ class RemoteBNodeProvenanceTraversalTest {
 
 		assertThatThrownBy(() -> RemoteBNode.preserveProvenance(originalAlias,
 				VF.createBNode("different-alias")))
-				.isInstanceOf(QueryEvaluationException.class)
-				.hasMessageContaining("value copy changed its alias");
+						.isInstanceOf(QueryEvaluationException.class)
+						.hasMessageContaining("value copy changed its alias");
 		assertThatThrownBy(() -> RemoteBNode.preserveProvenance(original, VF.createIRI("urn:lost-copy")))
 				.isInstanceOf(QueryEvaluationException.class)
 				.hasMessageContaining("value copy lost nested provenance");

@@ -21,8 +21,8 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.util.Collections;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -132,7 +132,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 			assertThat(result.hasNext()).isFalse();
 		}
 		assertThat(bodyHasRow.get()).isTrue();
-		assertThat(outbound.get().getBindingNames()).contains("bodyVar", "bodyObject").doesNotContain("anonymousConstant");
+		assertThat(outbound.get().getBindingNames()).contains("bodyVar", "bodyObject")
+				.doesNotContain("anonymousConstant");
 	}
 
 	@Test
@@ -147,8 +148,10 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 						Var.of("nestedObject", OBJECT, false, true)),
 				"{ ?nestedLocal <urn:service:predicate> <urn:service:object> }", false);
 		TupleExpr projectedNestedExpr = new Projection(
-				new Extension(new StatementPattern(Var.of("nestedHidden"), Var.of("nestedProjectedP", PREDICATE, false, true),
-						Var.of("nestedSource")), new ExtensionElem(Var.of("nestedSource"), "nestedAlias")),
+				new Extension(
+						new StatementPattern(Var.of("nestedHidden"), Var.of("nestedProjectedP", PREDICATE, false, true),
+								Var.of("nestedSource")),
+						new ExtensionElem(Var.of("nestedSource"), "nestedAlias")),
 				new ProjectionElemList(new ProjectionElem("nestedAlias")), true);
 		Service projectedNestedService = service(Var.of("projectedNestedEndpoint", NESTED_ENDPOINT, false, true),
 				projectedNestedExpr,
@@ -236,7 +239,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		caller.addBinding("mandatory", VF.createLiteral("in"));
 		BindingSet frame = caller;
 		AtomicReference<Set<String>> projected = new AtomicReference<>();
-		MapBindingSet rowWithOptionalAndUnion = bindings("optionalOnly", VF.createLiteral("remote-optional"), "unionOneArm",
+		MapBindingSet rowWithOptionalAndUnion = bindings("optionalOnly", VF.createLiteral("remote-optional"),
+				"unionOneArm",
 				VF.createLiteral("remote-union"));
 		MapBindingSet rowWithoutEither = new MapBindingSet();
 		FederatedService remote = mock(FederatedService.class);
@@ -245,7 +249,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 					projected.set(Set.copyOf(invocation.getArgument(1)));
 					BindingSet original = RemoteBNode.originalBindings(invocation.getArgument(2));
 					return new CloseableIteratorIteration<>(
-							List.of(merge(original, rowWithOptionalAndUnion), merge(original, rowWithoutEither)).iterator());
+							List.of(merge(original, rowWithOptionalAndUnion), merge(original, rowWithoutEither))
+									.iterator());
 				});
 		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
 
@@ -257,7 +262,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 			assertThat(first.getBindingNames()).doesNotContain("minusOnly", "existsLocal");
 			assertThat(result.hasNext()).isTrue();
 			BindingSet second = result.next();
-			assertThat(second.getBindingNames()).doesNotContain("optionalOnly", "unionOneArm", "minusOnly", "existsLocal");
+			assertThat(second.getBindingNames()).doesNotContain("optionalOnly", "unionOneArm", "minusOnly",
+					"existsLocal");
 			assertThat(result.hasNext()).isFalse();
 		}
 		assertThat(projected.get()).contains("optionalOnly", "unionOneArm").doesNotContain("minusOnly", "existsLocal");
@@ -313,8 +319,10 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 				Var.of("value"));
 		TupleExpr optional = new LeftJoin(mandatory, new StatementPattern(Var.of("item"),
 				Var.of("optionalPredicate", optionalPredicate, false, true), Var.of("optionalValue")));
-		TupleExpr union = new Union(new StatementPattern(Var.of("item"), Var.of("unionPredicate", unionPredicate, false, true),
-				Var.of("unionOneArm")), new SingletonSet());
+		TupleExpr union = new Union(
+				new StatementPattern(Var.of("item"), Var.of("unionPredicate", unionPredicate, false, true),
+						Var.of("unionOneArm")),
+				new SingletonSet());
 		TupleExpr expression = new Join(optional, union);
 		String body = "{ ?item <urn:service:predicate> ?value . "
 				+ "OPTIONAL { ?item <urn:service:optional> ?optionalValue } "
@@ -351,7 +359,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 					selected.set(projection);
 					BindingSet outgoing = invocation.getArgument(2);
 					BindingSet original = RemoteBNode.originalBindings(outgoing);
-					List<BindingSet> remoteRows = evaluateAndProject(service.getServiceExpr(), source, outgoing, projection);
+					List<BindingSet> remoteRows = evaluateAndProject(service.getServiceExpr(), source, outgoing,
+							projection);
 					return new CloseableIteratorIteration<>(
 							remoteRows.stream().map(row -> merge(original, row)).iterator());
 				});
@@ -378,10 +387,13 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		IRI item = VF.createIRI("urn:item:projected");
 		IRI aliasPredicate = VF.createIRI("urn:service:alias");
 		Value hiddenValue = VF.createLiteral("hidden-value");
-		MemoryTripleSource source = new MemoryTripleSource(List.of(VF.createStatement(item, aliasPredicate, hiddenValue)));
+		MemoryTripleSource source = new MemoryTripleSource(
+				List.of(VF.createStatement(item, aliasPredicate, hiddenValue)));
 		TupleExpr expression = new Projection(
-				new Extension(new StatementPattern(Var.of("item"), Var.of("aliasPredicate", aliasPredicate, false, true),
-						Var.of("hiddenLocal")), new ExtensionElem(Var.of("hiddenLocal"), "projectedAlias")),
+				new Extension(
+						new StatementPattern(Var.of("item"), Var.of("aliasPredicate", aliasPredicate, false, true),
+								Var.of("hiddenLocal")),
+						new ExtensionElem(Var.of("hiddenLocal"), "projectedAlias")),
 				new ProjectionElemList(new ProjectionElem("item"), new ProjectionElem("projectedAlias")), true);
 		Service service = service(Var.of("endpoint"), expression,
 				"{ SELECT ?item (?hiddenLocal AS ?projectedAlias) WHERE { ?item <urn:service:alias> ?hiddenLocal } }",
@@ -404,7 +416,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 					selected.set(projection);
 					BindingSet outgoing = invocation.getArgument(2);
 					BindingSet original = RemoteBNode.originalBindings(outgoing);
-					List<BindingSet> remoteRows = evaluateAndProject(service.getServiceExpr(), source, outgoing, projection);
+					List<BindingSet> remoteRows = evaluateAndProject(service.getServiceExpr(), source, outgoing,
+							projection);
 					return new CloseableIteratorIteration<>(
 							remoteRows.stream().map(row -> merge(original, row)).iterator());
 				});
@@ -436,7 +449,7 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 			assertThat(row.getBindingNames()).containsExactlyInAnyOrder("caller", "endpoint", "bodyVar", "bodyObject");
 			assertThat(row.getValue("caller")).isSameAs(callerValue);
 			assertThat(row.getValue("endpoint")).isSameAs(ENDPOINT);
-				assertThat(row.getValue("bodyVar")).isEqualTo(VF.createIRI("urn:body:subject"));
+			assertThat(row.getValue("bodyVar")).isEqualTo(VF.createIRI("urn:body:subject"));
 			assertThat(result.hasNext()).isFalse();
 		}
 	}
@@ -472,7 +485,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		QueryExecutionContext.ReplaySafepointException primary = replaySafepointFailure();
 		FailingIteration response = new FailingIteration(primary, primary);
 		FederatedService remote = mock(FederatedService.class);
-		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI()))).thenReturn(response);
+		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenReturn(response);
 		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
 
 		assertThatThrownBy(() -> step.evaluate(frame)).isSameAs(primary);
@@ -487,7 +501,8 @@ class ServiceQueryEvaluationStepBindingScopeTest {
 		IllegalStateException closeFailure = new IllegalStateException("close failed");
 		FailingIteration response = new FailingIteration(primary, closeFailure);
 		FederatedService remote = mock(FederatedService.class);
-		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI()))).thenReturn(response);
+		when(remote.select(eq(service), anySet(), any(BindingSet.class), eq(service.getBaseURI())))
+				.thenReturn(response);
 		ServiceQueryEvaluationStep step = step(service, remote, ENDPOINT);
 
 		assertThatThrownBy(() -> step.evaluate(frame)).isSameAs(primary);

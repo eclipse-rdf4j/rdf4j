@@ -646,77 +646,79 @@ class LmdbRepositoryValueExposureTest {
 		sourceStore.init();
 		Value nativeValue;
 		try {
-		try (SailConnection source = sourceStore.getConnection();
-				CloseableIteration<? extends Statement> statements = source.getStatements(SUBJECT, PREDICATE, null,
-						false)) {
-			assertTrue(statements.hasNext());
-		nativeValue = statements.next().getObject();
-		assertFalse(((LmdbValue) nativeValue).isInitialized());
-		assertTrue(((LmdbValue) nativeValue).isExternallyOwned());
-		assertFalse(statements.hasNext());
-		}
-		LmdbValue externalNativeValue = (LmdbValue) nativeValue;
-		assertTrue(externalNativeValue.isExternallyOwned(), "A raw statement value must retain external ownership");
-		assertFalse(externalNativeValue.isInitialized(), "A raw statement value must remain cold before handoff");
-		assertTrue(externalNativeValue.getInternalIdentity().id() != LmdbValue.UNKNOWN_ID,
-				"The cold value must retain its original dictionary identity");
-
-		LmdbStore evaluationStore = newStore(new File(directory, "evaluation-store"));
-		evaluationStore.init();
-		try (LmdbSailStore.DatasetAdmission admission = evaluationStore.getBackingStore()
-				.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)) {
-			ValueStore evaluationValues = (ValueStore) evaluationStore.getBackingStore().getValueFactory();
-			Value captured = evaluationValues.valueCapturer(admission.view().valueSnapshot()).apply(nativeValue);
-			assertSame(nativeValue, captured, "Direct result capture must preserve a foreign cold native value");
-			assertFalse(((LmdbValue) nativeValue).isInitialized(),
-					"Direct result capture must not decode a foreign cold native value");
-		}
-		String functionIRI = "urn:repository-exposure:cross-store-cold-input:" + UUID.randomUUID();
-		AtomicReference<Value> functionArgument = new AtomicReference<>();
-		Function function = new Function() {
-			@Override
-			public String getURI() {
-				return functionIRI;
+			try (SailConnection source = sourceStore.getConnection();
+					CloseableIteration<? extends Statement> statements = source.getStatements(SUBJECT, PREDICATE, null,
+							false)) {
+				assertTrue(statements.hasNext());
+				nativeValue = statements.next().getObject();
+				assertFalse(((LmdbValue) nativeValue).isInitialized());
+				assertTrue(((LmdbValue) nativeValue).isExternallyOwned());
+				assertFalse(statements.hasNext());
 			}
+			LmdbValue externalNativeValue = (LmdbValue) nativeValue;
+			assertTrue(externalNativeValue.isExternallyOwned(), "A raw statement value must retain external ownership");
+			assertFalse(externalNativeValue.isInitialized(), "A raw statement value must remain cold before handoff");
+			assertTrue(externalNativeValue.getInternalIdentity().id() != LmdbValue.UNKNOWN_ID,
+					"The cold value must retain its original dictionary identity");
 
-			@Override
-			public boolean mustReturnDifferentResult() {
-				return true;
-			}
-
-			@Override
-			public Value evaluate(ValueFactory factory, Value... args) {
-				functionArgument.set(args[0]);
-				return args[0];
-			}
-		};
-		FunctionRegistry.getInstance().add(function);
-		try (SailConnection evaluation = evaluationStore.getConnection()) {
-			MapBindingSet bindings = new MapBindingSet();
-			bindings.addBinding("provided", nativeValue);
-			var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
-					"SELECT (<" + functionIRI + ">(?provided) AS ?returned) WHERE {}", null).getTupleExpr();
-			try (CloseableIteration<? extends BindingSet> rows = evaluation.evaluate(expression, null, bindings, false)) {
-				assertTrue(rows.hasNext());
-				BindingSet result = rows.next();
-				assertSame(nativeValue, functionArgument.get(),
-						"The caller value must remain native until the function reads it");
-				assertSame(nativeValue, result.getValue("returned"),
-						"A foreign store's externally owned cold value retains its identity");
+			LmdbStore evaluationStore = newStore(new File(directory, "evaluation-store"));
+			evaluationStore.init();
+			try (LmdbSailStore.DatasetAdmission admission = evaluationStore.getBackingStore()
+					.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)) {
+				ValueStore evaluationValues = (ValueStore) evaluationStore.getBackingStore().getValueFactory();
+				Value captured = evaluationValues.valueCapturer(admission.view().valueSnapshot()).apply(nativeValue);
+				assertSame(nativeValue, captured, "Direct result capture must preserve a foreign cold native value");
 				assertFalse(((LmdbValue) nativeValue).isInitialized(),
-						"Capturing a cold value must not decode it in the receiving store");
-				assertFalse(rows.hasNext());
+						"Direct result capture must not decode a foreign cold native value");
 			}
-		} finally {
-			FunctionRegistry.getInstance().remove(function);
-			evaluationStore.shutDown();
-		}
+			String functionIRI = "urn:repository-exposure:cross-store-cold-input:" + UUID.randomUUID();
+			AtomicReference<Value> functionArgument = new AtomicReference<>();
+			Function function = new Function() {
+				@Override
+				public String getURI() {
+					return functionIRI;
+				}
+
+				@Override
+				public boolean mustReturnDifferentResult() {
+					return true;
+				}
+
+				@Override
+				public Value evaluate(ValueFactory factory, Value... args) {
+					functionArgument.set(args[0]);
+					return args[0];
+				}
+			};
+			FunctionRegistry.getInstance().add(function);
+			try (SailConnection evaluation = evaluationStore.getConnection()) {
+				MapBindingSet bindings = new MapBindingSet();
+				bindings.addBinding("provided", nativeValue);
+				var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+						"SELECT (<" + functionIRI + ">(?provided) AS ?returned) WHERE {}", null).getTupleExpr();
+				try (CloseableIteration<? extends BindingSet> rows = evaluation.evaluate(expression, null, bindings,
+						false)) {
+					assertTrue(rows.hasNext());
+					BindingSet result = rows.next();
+					assertSame(nativeValue, functionArgument.get(),
+							"The caller value must remain native until the function reads it");
+					assertSame(nativeValue, result.getValue("returned"),
+							"A foreign store's externally owned cold value retains its identity");
+					assertFalse(((LmdbValue) nativeValue).isInitialized(),
+							"Capturing a cold value must not decode it in the receiving store");
+					assertFalse(rows.hasNext());
+				}
+			} finally {
+				FunctionRegistry.getInstance().remove(function);
+				evaluationStore.shutDown();
+			}
 		} finally {
 			sourceStore.shutDown();
 		}
 		assertEquals(VF.createTripleTerm(SUBJECT, PREDICATE,
 				VF.createTripleTerm(SUBJECT, PREDICATE,
-						VF.createLiteral("nested outward value 0", DATATYPE))), nativeValue,
+						VF.createLiteral("nested outward value 0", DATATYPE))),
+				nativeValue,
 				"The preserved old-revision identity remains readable after both stores close");
 	}
 

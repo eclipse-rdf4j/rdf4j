@@ -64,7 +64,8 @@ class BlankNodeEvaluationScopeTest {
 		for (String occupied : List.of("runtime-node", "nested-node")) {
 			BlankNodeAllocationScope child = parent.newEvaluationScope();
 			assertThatThrownBy(() -> child.createBNode(new RepeatingFactory(occupied)))
-					.hasMessage("Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
+					.hasMessage(
+							"Unsupported blank-node freshness: backend cannot check stored IDs after an allocation collision");
 		}
 	}
 

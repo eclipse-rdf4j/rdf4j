@@ -2423,7 +2423,8 @@ final class LmdbNativeKernelLowering {
 				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(leftJoin.right);
 			}
 			if (plan instanceof GeneralPathPlan || plan instanceof ZeroLengthPathPlan
-					|| plan instanceof NativeSubqueryPlan || plan instanceof NativeGraphPlan || plan instanceof RowDistinctPlan
+					|| plan instanceof NativeSubqueryPlan || plan instanceof NativeGraphPlan
+					|| plan instanceof RowDistinctPlan
 					|| plan instanceof LateralPlan || plan instanceof TripleTermScanPlan) {
 				return lowerNativeOperator(plan);
 			}

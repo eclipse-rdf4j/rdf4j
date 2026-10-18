@@ -35,8 +35,8 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
@@ -881,8 +881,9 @@ public class LmdbNativeDifferentialFuzzTest {
 			for (boolean experimental : new boolean[] { false, true }) {
 				LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
 				config.setExperimentalQueryOptimizations(experimental);
-				SailRepository isolated = new SailRepository(new LmdbStore(new File(dataDir, "union-domain-" + experimental),
-						config));
+				SailRepository isolated = new SailRepository(
+						new LmdbStore(new File(dataDir, "union-domain-" + experimental),
+								config));
 				try {
 					try (SailRepositoryConnection connection = isolated.getConnection()) {
 						ValueFactory vf = connection.getValueFactory();
@@ -901,8 +902,10 @@ public class LmdbNativeDifferentialFuzzTest {
 							new QueryBag(body + " MINUS { ?unshared <" + EX + "missing> ?other }", 1),
 							new QueryBag(body + " FILTER EXISTS { ?b ?p ?c }", 1),
 							new QueryBag(body + " FILTER NOT EXISTS { ?b <" + EX + "missing> ?c }", 1),
-							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?c ?p -19 } FILTER(BOUND(?b))", 1),
-							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?b ?p ?c } FILTER(BOUND(?b))", 2))) {
+							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?c ?p -19 } FILTER(BOUND(?b))",
+									1),
+							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?b ?p ?c } FILTER(BOUND(?b))",
+									2))) {
 						String query = "SELECT * { " + test.where + " }";
 						for (boolean nativeEngine : new boolean[] { false, true }) {
 							System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEngine));
@@ -913,12 +916,12 @@ public class LmdbNativeDifferentialFuzzTest {
 									prepared.setForcedLmdbExecutionStrategy(execution);
 								}
 								try (var results = prepared.evaluate()) {
-								while (results.hasNext()) {
-									BindingSet row = results.next();
-									assertThat(row.getBindingNames()).containsExactlyInAnyOrder("b", "c", "p");
-									rows.add(row.getValue("b").stringValue() + "|" + row.getValue("p").stringValue()
-											+ "|" + row.getValue("c").stringValue());
-								}
+									while (results.hasNext()) {
+										BindingSet row = results.next();
+										assertThat(row.getBindingNames()).containsExactlyInAnyOrder("b", "c", "p");
+										rows.add(row.getValue("b").stringValue() + "|" + row.getValue("p").stringValue()
+												+ "|" + row.getValue("c").stringValue());
+									}
 								}
 							}
 							List<String> expected = new ArrayList<>();
@@ -927,14 +930,16 @@ public class LmdbNativeDifferentialFuzzTest {
 										EX + "b|" + EX + "loop|" + EX + "b",
 										EX + "incoming|" + EX + "edge|" + EX + "a"));
 							}
-							assertThat(rows).as("experimental=%s native=%s execution=%s\n%s", experimental, nativeEngine,
-									execution, query)
-								.withFailMessage(() -> {
-									try (SailRepositoryConnection connection = isolated.getConnection()) {
-										return query + "\nactual=" + rows + "\n"
-												+ connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
-									}
-								})
+							assertThat(rows)
+									.as("experimental=%s native=%s execution=%s\n%s", experimental, nativeEngine,
+											execution, query)
+									.withFailMessage(() -> {
+										try (SailRepositoryConnection connection = isolated.getConnection()) {
+											return query + "\nactual=" + rows + "\n"
+													+ connection.prepareTupleQuery(query)
+															.explain(Explanation.Level.Optimized);
+										}
+									})
 									.containsExactlyInAnyOrderElementsOf(expected);
 						}
 					}

@@ -50,7 +50,8 @@ class LmdbNativeGraphBoundaryTest {
 	@BeforeEach
 	void setUp() {
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
-				.setNativeEvaluationEnabled(true).setSketchEstimatorEnabled(false));
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(false));
 		repository = new SailRepository(store);
 		ValueFactory vf = repository.getValueFactory();
 		blankGraph = vf.createBNode("native-graph-boundary");
@@ -79,13 +80,13 @@ class LmdbNativeGraphBoundaryTest {
 	@ValueSource(booleans = { false, true })
 	void ordinarySiblingsDoNotBecomeGraphBodyInputs(boolean experimental) {
 		reopen(experimental);
-			String query = "SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { ?s <urn:p> ?o FILTER(BOUND(?g)) } }";
-			assertThat(rows(query, false, null, null)).isEmpty();
-			assertThat(rows(query, true, null, null)).isEmpty();
-			assertParity("SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { ?s <urn:p> ?o BIND(?g AS ?copy) } }",
-					null, null);
-			assertParity("SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { { SELECT ?s { ?s <urn:p> ?o } } } }",
-					null, null);
+		String query = "SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { ?s <urn:p> ?o FILTER(BOUND(?g)) } }";
+		assertThat(rows(query, false, null, null)).isEmpty();
+		assertThat(rows(query, true, null, null)).isEmpty();
+		assertParity("SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { ?s <urn:p> ?o BIND(?g AS ?copy) } }",
+				null, null);
+		assertParity("SELECT * { VALUES ?g { <urn:g1> } GRAPH ?g { { SELECT ?s { ?s <urn:p> ?o } } } }",
+				null, null);
 	}
 
 	@ParameterizedTest
@@ -152,7 +153,8 @@ class LmdbNativeGraphBoundaryTest {
 	private void reopen(boolean experimental) {
 		repository.shutDown();
 		store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc,ospc")
-				.setNativeEvaluationEnabled(true).setSketchEstimatorEnabled(false));
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(false));
 		store.setExperimentalQueryOptimizations(experimental);
 		repository = new SailRepository(store);
 		repository.init();
@@ -179,8 +181,11 @@ class LmdbNativeGraphBoundaryTest {
 				List<String> rows = new ArrayList<>();
 				while (result.hasNext()) {
 					var row = result.next();
-					rows.add(row.getBindingNames().stream().sorted()
-							.map(name -> name + "=" + row.getValue(name)).collect(Collectors.joining(";")));
+					rows.add(row.getBindingNames()
+							.stream()
+							.sorted()
+							.map(name -> name + "=" + row.getValue(name))
+							.collect(Collectors.joining(";")));
 				}
 				return rows.stream().sorted().toList();
 			}

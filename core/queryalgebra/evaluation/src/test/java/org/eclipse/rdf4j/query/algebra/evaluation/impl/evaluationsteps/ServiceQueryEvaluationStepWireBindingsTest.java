@@ -167,12 +167,13 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 		SPARQLProtocolSession client = mock(SPARQLProtocolSession.class);
 		when(client.sendTupleQuery(eq(QueryLanguage.SPARQL), anyString(), isNull(), isNull(), anyBoolean(), anyInt(),
 				ArgumentMatchers.<WeakReference<?>>isNull(), any(Binding[].class))).thenAnswer(invocation -> {
-			String text = invocation.getArgument(1);
-			serialized.add(text);
-			List<BindingSet> rows = evaluate(text);
-			TupleExpr request = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null).getTupleExpr();
-			return new IteratingTupleQueryResult(new ArrayList<>(request.getBindingNames()), rows);
-		});
+					String text = invocation.getArgument(1);
+					serialized.add(text);
+					List<BindingSet> rows = evaluate(text);
+					TupleExpr request = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null)
+							.getTupleExpr();
+					return new IteratingTupleQueryResult(new ArrayList<>(request.getBindingNames()), rows);
+				});
 		SPARQLRepository repository = new SPARQLRepository("http://example.invalid/sparql") {
 			@Override
 			protected SPARQLProtocolSession createSPARQLProtocolSession() {
@@ -250,7 +251,8 @@ class ServiceQueryEvaluationStepWireBindingsTest {
 			return new CloseableIteratorIteration<>(statements.stream()
 					.filter(statement -> subject == null || subject.equals(statement.getSubject()))
 					.filter(statement -> predicate == null || predicate.equals(statement.getPredicate()))
-					.filter(statement -> object == null || object.equals(statement.getObject())).iterator());
+					.filter(statement -> object == null || object.equals(statement.getObject()))
+					.iterator());
 		}
 
 		@Override

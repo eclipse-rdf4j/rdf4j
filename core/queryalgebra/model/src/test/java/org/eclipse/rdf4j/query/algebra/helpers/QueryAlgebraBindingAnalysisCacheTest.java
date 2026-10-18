@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
-import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -46,7 +46,8 @@ class QueryAlgebraBindingAnalysisCacheTest {
 
 		ProbeValue equalValue = new ProbeValue("same-value");
 		QueryAlgebraBindingAnalysis.ReadOnlyContext equalButDistinctInput = QueryAlgebraBindingAnalysis
-				.withBindingValues(expression, bindings(equalValue)).rootContext();
+				.withBindingValues(expression, bindings(equalValue))
+				.rootContext();
 		QueryAlgebraBindingAnalysis.OutputFacts distinctFrame = analysis.outputFacts(expression,
 				equalButDistinctInput);
 
@@ -103,7 +104,8 @@ class QueryAlgebraBindingAnalysisCacheTest {
 		assertThat(facts.possibleOutputs()).containsExactlyInAnyOrderElementsOf(possible);
 		assertThat(facts.guaranteedOutputs()).containsExactlyInAnyOrder("s", "p0", "o0");
 		assertThat(bindingReads.get())
-				.as("a chain of %s OPTIONALs permits structural passes and depth walks, not repeated subtree expansion", depth)
+				.as("a chain of %s OPTIONALs permits structural passes and depth walks, not repeated subtree expansion",
+						depth)
 				.isLessThanOrEqualTo(4 * (depth + 1) * (depth + 1));
 		int readsAfterFacts = bindingReads.get();
 		assertThat(analysis.outputFacts(expression)).isSameAs(facts);

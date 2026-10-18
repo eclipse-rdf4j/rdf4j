@@ -89,7 +89,8 @@ final class NativeGraphPlan implements SlotPlan {
 	}
 
 	void explainStrategies() {
-		LmdbNativeStrategyPreview.empty("GRAPH selection", "The active graph must be selected before compiling its body");
+		LmdbNativeStrategyPreview.empty("GRAPH selection",
+				"The active graph must be selected before compiling its body");
 	}
 
 	@Override

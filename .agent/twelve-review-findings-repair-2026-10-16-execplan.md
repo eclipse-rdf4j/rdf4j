@@ -47,8 +47,8 @@ Delivery includes a reviewed cohesive commit on the existing `optimize-lmdb` bra
 - [done] Commit exact 414-path checkpoint locally.
 - [done] Integrate required pinned develop blocker.
 - [done] Verify targeted controls and publication evidence.
-- [in_progress] Review manifest and publish final merge.
-- [todo] Repair and account exact-head CI.
+- [done] Review manifest and publish final merge.
+- [in_progress] Repair current-head CI gate.
 
 Exactly one item must remain `in_progress` while work is active. Split completed and remaining work at each milestone. The detailed per-finding red/green ledger is retained in the evidence index below and summarized here as it arrives.
 

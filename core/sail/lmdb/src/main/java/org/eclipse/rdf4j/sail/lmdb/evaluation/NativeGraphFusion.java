@@ -138,7 +138,8 @@ final class NativeGraphFusion {
 	private static boolean canFuse(Graph graph, Dataset dataset) {
 		Value selector = graph.getGraphName().getValue();
 		return (selector == null || selector instanceof Resource && !isDefaultAlias(selector))
-				&& (dataset == null || dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias))
+				&& (dataset == null
+						|| dataset.getNamedGraphResources().stream().noneMatch(NativeGraphFusion::isDefaultAlias))
 				&& GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph);
 	}
 

@@ -146,9 +146,9 @@ class FederatedBlankNodeScopeTest {
 
 	private static Service service(boolean silent, EndpointKind endpointKind, boolean askOnly) {
 		Var endpoint = switch (endpointKind) {
-			case CONSTANT -> Var.of("endpoint", VF.createIRI("urn:service"), true, true);
-			case RUNTIME_ASSIGNED -> Var.of("endpoint", VF.createIRI("urn:service"), false, false);
-			case API_BOUND -> Var.of("endpoint");
+		case CONSTANT -> Var.of("endpoint", VF.createIRI("urn:service"), true, true);
+		case RUNTIME_ASSIGNED -> Var.of("endpoint", VF.createIRI("urn:service"), false, false);
+		case API_BOUND -> Var.of("endpoint");
 		};
 		if (askOnly) {
 			var pattern = new StatementPattern(Var.of("s", VF.createIRI("urn:s"), true, true),
@@ -180,7 +180,8 @@ class FederatedBlankNodeScopeTest {
 			expected.addBinding("endpoint", VF.createIRI("urn:service"));
 		}
 		try (var rows = step.evaluate(input)) {
-			assertEquals(expected, rows.next(), endpointKind + " / ask=" + askOnly + " / preflight=" + unsupportedBNode);
+			assertEquals(expected, rows.next(),
+					endpointKind + " / ask=" + askOnly + " / preflight=" + unsupportedBNode);
 			assertFalse(rows.hasNext());
 		}
 		assertEquals(askOnly && !unsupportedBNode ? 1 : 0, remote.askCalls);

@@ -223,7 +223,7 @@ public class BindingScopeReviewRegressionTest {
 				"SELECT ?g ?x { VALUES ?g { <urn:g1> <urn:g1> } OPTIONAL { SELECT ?x { GRAPH ?g { ?x <urn:p> <urn:o> } } } }"))
 						.containsExactly("{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:a}", "{g=urn:g1, x=urn:b}",
 								"{g=urn:g1, x=urn:b}");
-		}
+	}
 
 	@Test
 	public void graphVariableIsBoundForZeroLengthAndPositivePathRows() throws Exception {
