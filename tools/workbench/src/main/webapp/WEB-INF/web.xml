@@ -11,6 +11,9 @@
 		<description>Role required for Workbench process-wide LMDB runtime-property mutations.</description>
 		<role-name>rdf4j-admin</role-name>
 	</security-role>
+	<listener>
+		<listener-class>org.eclipse.rdf4j.workbench.security.WorkbenchSessionCookieInitializer</listener-class>
+	</listener>
 	<filter>
 		<filter-name>redirect</filter-name>
 		<filter-class>org.eclipse.rdf4j.workbench.proxy.RedirectFilter</filter-class>
