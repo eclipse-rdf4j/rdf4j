@@ -29,6 +29,8 @@ For memory accounting, report map capacity, resident mapped pages/page cache, Ja
 
 `LmdbSailStore.flush()` flushes buffered additions and namespaces, sends any pending async prepare barrier, commits the value dictionary environment first, then asks the triple environment to commit. The statement environment's native commit is authoritative for visibility of statement edits and advances its logical `dataRevision`. Derived direct adjacency participates in that revision boundary but is not another persistent transaction.
 
+When a public `IsolationLevels.NONE` transaction starts loading an empty statement store, configured adjacency and value-overlay capture and maintenance are deferred before the first native dictionary or statement write. The deferral spans native checkpoints, including checkpoints caused by reads or flushes. Queries use authoritative LMDB while the accelerators are unavailable. Terminal commit or rollback triggers rebuilding from the actual committed data; `NONE` rollback can retain a previously checkpointed prefix. A later writer can cancel a stale overlay scan; terminal cleanup retries the pending rebuild when no native writer or initial import is active. Feature settings, format selection, and configured accelerator capacity/refusal policies retain their existing meaning.
+
 The important failure matrix is:
 
 | Failure point | Durable state that may exist | Safe interpretation/action in source |

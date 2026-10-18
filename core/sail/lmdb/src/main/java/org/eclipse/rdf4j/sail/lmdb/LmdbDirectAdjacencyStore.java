@@ -170,6 +170,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	private int admittedWrites;
 	private volatile long catchUpTargetRevision = -1;
 	private volatile boolean maintenanceUnavailable;
+	/** Suppression spans the public initial import, including committed NONE checkpoints. */
+	private volatile boolean maintenanceDeferred;
 	private volatile long lastCutoverNanos;
 	private volatile long lastCutoverRevisions;
 	private volatile int lastCutoverQueuedCommits;
@@ -1013,12 +1015,12 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * base-owned {@code SharedPartitionLookup}; close rejects new work and queued tasks observe the closed lookup.
 	 */
 	private void scheduleAdaptiveAcceleration(Runnable acceleration) {
-		if (closed) {
+		if (closed || maintenanceDeferred) {
 			return;
 		}
 		try {
 			maintenanceExecutor.execute(() -> {
-				if (closed) {
+				if (closed || maintenanceDeferred) {
 					return;
 				}
 				try {
@@ -1510,7 +1512,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void requestCompaction() {
-		if (closed) {
+		if (closed || maintenanceDeferred) {
 			return;
 		}
 		compactionRequested.set(true);
@@ -1529,7 +1531,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private void runCompactionLoop() {
 		try {
-			while (!closed && compactionRequested.getAndSet(false)) {
+			while (!closed && !maintenanceDeferred && compactionRequested.getAndSet(false)) {
 				long started = System.nanoTime();
 				boolean progressed;
 				try {
@@ -1938,6 +1940,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * of reading squashed history. Refusal leaves the old set published and exact.
 	 */
 	private void consolidateOnce() {
+		if (maintenanceDeferred) {
+			return;
+		}
 		LmdbAdjacencyPublishedState state = retainPublishedState();
 		if (state == null) {
 			return;
@@ -2292,7 +2297,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void scheduleQuiescentRebuild(boolean allowRetry) {
-		if (closed) {
+		if (closed || maintenanceDeferred) {
 			return;
 		}
 		if (!quiescentRebuildPending.compareAndSet(false, true)) {
@@ -2303,7 +2308,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void enqueueQuiescentRebuildStep() {
-		if (closed || !quiescentRebuildPending.get()
+		if (closed || maintenanceDeferred || !quiescentRebuildPending.get()
 				|| !quiescentRebuildTaskScheduled.compareAndSet(false, true)) {
 			return;
 		}
@@ -2361,7 +2366,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * the retired publication and a later release must enqueue the continuation.
 	 */
 	private boolean quiescentRebuild() {
-		if (closed) {
+		if (closed || maintenanceDeferred) {
 			return false;
 		}
 		Runnable stepHook = beforeQuiescentRebuildStepForTest;
@@ -2639,6 +2644,61 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	// lifecycle
 	// ------------------------------------------------------------------
 
+	/** Fence partial coverage and finish pre-existing work before the initial import mutates LMDB. */
+	void deferMaintenanceForInitialImport() {
+		synchronized (rebuildSubmissionLock) {
+			maintenanceDeferred = true;
+			maintenanceUnavailable = true;
+			synchronousUpdatesActivated.set(false);
+			markGap(tripleStore.getDataRevision());
+			Future<?> retry = buildRetryFuture;
+			buildRetryFuture = null;
+			if (retry != null) {
+				retry.cancel(false);
+			}
+			Future<?> build = rebuildFuture;
+			if (build != null && !build.isDone()) {
+				build.cancel(true);
+			}
+		}
+		synchronized (applyQueue) {
+			applyQueue.notifyAll();
+		}
+		awaitMaintenanceBarrier(preparationExecutor);
+		awaitMaintenanceBarrier(compactionExecutor);
+		awaitMaintenanceBarrier(maintenanceExecutor);
+		synchronized (rebuildSubmissionLock) {
+			rebuildPending.set(false);
+			rebuildFuture = null;
+			// An old rebuild may have yielded for a snapshot whose final release happened while paused.
+			// Its tasks have drained; the terminal import rebuild must own a fresh scheduling token.
+			quiescentRebuildPending.set(false);
+			quiescentRebuildTaskScheduled.set(false);
+		}
+		maintenanceUnavailable = true;
+	}
+
+	private void awaitMaintenanceBarrier(ExecutorService executor) {
+		try {
+			executor.submit(() -> {
+			}).get();
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("Interrupted while deferring adjacency maintenance", interrupted);
+		} catch (ExecutionException failure) {
+			throw new IllegalStateException("Unable to defer adjacency maintenance", failure.getCause());
+		}
+	}
+
+	/** Resume only after the terminal owner releases its native/read/writer resources. */
+	void resumeMaintenanceAfterInitialImport() {
+		maintenanceDeferred = false;
+		// A partially entered deferral can leave an older continuation waiting without a task.
+		if (quiescentRebuildPending.get()) {
+			enqueueQuiescentRebuildStep();
+		}
+	}
+
 	/**
 	 * Schedules a repository-local background build. Empty bootstrap enables commit waiting immediately; populated
 	 * bootstrap enables it at exact cutover. Scheduling never waits for construction.
@@ -2647,7 +2707,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		throwIfStrictMaintenanceFailed();
 		Future<?> future;
 		synchronized (rebuildSubmissionLock) {
-			if (closed || options.memoryRefused()) {
+			if (closed || maintenanceDeferred || options.memoryRefused()) {
 				return;
 			}
 			Future<?> retry = buildRetryFuture;
@@ -2898,7 +2958,8 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * {@link LmdbDirectAdjacencyOptions#buildRetryMillis()} and never blocking, since acquisition is on the query path.
 	 */
 	private void requestGapRecovery() {
-		if (closed || options.memoryRefused() || rebuildPending.get() || quiescentRebuildPending.get()
+		if (closed || maintenanceDeferred || options.memoryRefused() || rebuildPending.get()
+				|| quiescentRebuildPending.get()
 				|| unexpectedMaintenanceFailure.get() != null
 				|| maintenanceState == MaintenanceState.CLOSED
 				|| maintenanceState == MaintenanceState.MEMORY_REFUSED
@@ -2919,7 +2980,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	}
 
 	private void buildOnce() {
-		if (closed || options.memoryRefused()) {
+		if (closed || maintenanceDeferred || options.memoryRefused()) {
 			return;
 		}
 		metrics.recordBuildStarted();
@@ -2986,6 +3047,11 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				logger.info("Direct adjacency build is unavailable for this configuration: {}", e.getMessage());
 			}
 		} catch (IOException | RuntimeException e) {
+			if (maintenanceDeferred) {
+				metrics.recordBuildAborted();
+				maintenanceState = MaintenanceState.EMPTY;
+				return;
+			}
 			retryAfterFailure = !options.failOnMaintenanceError();
 			lastBuildFailureDescription = describeFailure(e);
 			metrics.recordBuildAborted();
@@ -3012,7 +3078,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private void scheduleBuildRetry() {
 		synchronized (rebuildSubmissionLock) {
-			if (closed || (buildRetryFuture != null && !buildRetryFuture.isDone())) {
+			if (closed || maintenanceDeferred || (buildRetryFuture != null && !buildRetryFuture.isDone())) {
 				return;
 			}
 			try {
@@ -3043,6 +3109,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 	 * (plan's catch-up steps 1–6). Returns false when the build must abort (overflow gap or continuity failure).
 	 */
 	private boolean catchUpAndPublish(LmdbInMemoryAdjacencyIndex index, long baseRevision, GapMarker capturedGap) {
+		if (maintenanceDeferred) {
+			return false;
+		}
 		List<CompletableFuture<Void>> completions = new ArrayList<>();
 		maintenanceState = MaintenanceState.CATCHING_UP;
 		List<LmdbAdjacencyDeltaGeneration> generations = new ArrayList<>();
@@ -3074,7 +3143,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					catchUpTargetRevision = tripleStore.getDataRevision();
 				}
 
-				if (closed) {
+				if (closed || maintenanceDeferred) {
 					return false;
 				}
 				if (emergencyGap.get().sequence() != capturedGap.sequence()) {
@@ -3089,7 +3158,7 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 					if (appliedRevision == targetRevision) {
 						publicationLock.lock();
 						try {
-							if (closed) {
+							if (closed || maintenanceDeferred) {
 								return false;
 							}
 							if ((capturedGap.fromRevision() != Long.MAX_VALUE
@@ -3454,6 +3523,9 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			throwIfStrictMaintenanceFailed();
 			if (closed) {
 				return fallback(snapshotRevision, FallbackReason.DISABLED, lifetimeId);
+			}
+			if (maintenanceDeferred) {
+				return fallback(snapshotRevision, FallbackReason.BUILDING, lifetimeId);
 			}
 			if (options.memoryRefused()) {
 				return fallback(snapshotRevision, FallbackReason.MEMORY_REFUSED, lifetimeId);

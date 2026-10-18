@@ -574,6 +574,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 					releaseTransactionReadView();
 				}
 			}, () -> {
+				if (releaseCommittedView) {
+					lmdbStore.getBackingStore().finishInitialNoneImport(this, completedWriteAttempt);
+				}
+			}, () -> {
 				if (txnLock != null && txnLock.isActive()) {
 					txnLock.release();
 				}
@@ -607,6 +611,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected void rollbackInternal() throws SailException {
+		WriteAttempt rollbackAttempt = writeAttempt != null ? writeAttempt
+				: lmdbStore.getBackingStore().failedWriterAttempt(this);
 		try (SailClosable writerOwner = lmdbStore.getBackingStore().enterWriterOwner(this)) {
 			// Every cleanup step, including notification of an already committed NONE prefix, must run even
 			// when native abort or branch retirement fails. Preserve the first failure and suppress later ones.
@@ -620,12 +626,15 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			},
 					() -> lmdbStore.getBackingStore().discardNonePending(this),
 					() -> lmdbStore.getBackingStore().rollback(this), super::rollbackInternal,
-					() -> lmdbStore.getBackingStore().completeWriterRollback(this), this::releaseTransactionReadView,
+					() -> lmdbStore.getBackingStore().completeWriterRollback(this),
+					() -> lmdbStore.getBackingStore().finishInitialNoneImport(this, rollbackAttempt),
+					this::releaseTransactionReadView,
 					() -> {
 						if (txnLock != null && txnLock.isActive()) {
 							txnLock.release();
 						}
 					}, this::releaseAdjacencyWrite, this::completeTransactionAdmission,
+					() -> lmdbStore.getBackingStore().rebuildAfterInitialNoneImport(),
 					this::notifyNoneCheckpointRollback);
 		}
 	}

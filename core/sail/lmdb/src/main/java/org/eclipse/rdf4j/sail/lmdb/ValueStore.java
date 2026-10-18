@@ -956,9 +956,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	// An optional exact-read-view accelerator. It owns compressed copies, not LMDB page addresses.
 	private volatile ValueOverlayRegistry compressedValues;
+	/** Logical initial-import lifetime; native checkpoint generation changes do not release it. */
+	private volatile boolean valueOverlayMaintenanceDeferred;
+	private volatile boolean valueOverlayCaptureDeferred;
+	/** Covers explicit synchronous scans as well as the automatically scheduled startup worker. */
+	private final Object valueOverlayBuildAdmission = new Object();
+	private int valueOverlayBuildsInFlight;
+	private volatile boolean valueOverlayBuildAdmissionClosed;
+	private Object initialImportOverlayRebuildRequest;
+	private Object initialImportOverlayRebuildWorker;
+	private Object publiclyReleasedOverlayGeneration;
 	private ValueOverlayRegistry.Mutation compressedValueMutation;
 	private volatile ExecutorService valueOverlayWarmupExecutor;
 	private volatile CompletableFuture<Void> valueOverlayWarmupFuture;
+
+	private record ValueOverlayWarmup(ExecutorService executor, CompletableFuture<Void> future) {
+	}
+
 	private volatile boolean valueOverlayWarmupActive;
 	private volatile long valueOverlayWarmupRefusals;
 	private volatile long valueOverlayWarmupDiscards;
@@ -2521,6 +2535,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 
 		endValueLookupMutation();
+		synchronized (valueOverlayBuildAdmission) {
+			valueOverlayBuildAdmissionClosed = false;
+		}
 		synchronized (writerAdmission) {
 			shuttingDown = false;
 		}
@@ -4441,67 +4458,85 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		Objects.requireNonNull(options);
 		Objects.requireNonNull(cancelled);
-		return readTransaction(env, (stack, txn) -> {
-			Object generation = valueLookupGeneration;
-			if (generation == null || writeTxn != 0) {
-				throw new IllegalStateException("Cannot build a value overlay during dictionary mutation");
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed || env == 0) {
+				throw new IllegalStateException("Value overlay maintenance is unavailable during import or shutdown");
 			}
-			long transactionId = mdb_txn_id(txn);
-			try (CompressedValueOverlay.Builder builder = compressedValues.newBaseBuilder(options)
-					.cancellation(() -> cancelled.getAsBoolean() || valueLookupGeneration != generation)) {
-				PointerBuffer handle = stack.mallocPointer(1);
-				E(mdb_cursor_open(txn, dbi, handle));
-				long cursor = handle.get(0);
-				try {
-					Runnable hook = duringValueOverlayWarmupScanForTest;
-					if (hook != null) {
-						hook.run();
-					}
-					MDBVal key = MDBVal.malloc(stack);
-					MDBVal value = MDBVal.malloc(stack);
-					key.mv_data(stack.bytes(ID_KEY));
-					int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
-					while (rc == MDB_SUCCESS) {
-						ByteBuffer keyBytes = key.mv_data();
-						if (!keyBytes.hasRemaining() || keyBytes.get(keyBytes.position()) != ID_KEY) {
-							break;
+			valueOverlayBuildsInFlight++;
+		}
+		try {
+			return readTransaction(env, (stack, txn) -> {
+				Object generation = valueLookupGeneration;
+				if (valueOverlayMaintenanceDeferred || generation == null || writeTxn != 0) {
+					throw new IllegalStateException("Cannot build a value overlay during dictionary mutation");
+				}
+				long transactionId = mdb_txn_id(txn);
+				try (CompressedValueOverlay.Builder builder = compressedValues.newBaseBuilder(options)
+						.cancellation(() -> cancelled.getAsBoolean() || valueOverlayMaintenanceDeferred
+								|| valueOverlayBuildAdmissionClosed || valueLookupGeneration != generation)) {
+					PointerBuffer handle = stack.mallocPointer(1);
+					E(mdb_cursor_open(txn, dbi, handle));
+					long cursor = handle.get(0);
+					try {
+						Runnable hook = duringValueOverlayWarmupScanForTest;
+						if (hook != null) {
+							hook.run();
 						}
-						long id = data2id(keyBytes);
-						long length = LmdbUtil.mdbValSize(value);
-						if (length > options.maxRecordBytes()) {
-							builder.skipLarge(id, length);
-						} else {
-							byte[] record = new byte[Math.toIntExact(length)];
-							LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), record, record.length);
-							boolean reverseVisible = false;
-							if (builder.reverseHasCapacity()) {
-								// Reclaim scratch on every row instead of growing the outer native stack with the
-								// dataset.
-								try (MemoryStack scratch = stackPush()) {
-									Long liveId = findIdInTransaction(record, false, CoreDatatype.NONE, scratch, txn);
-									reverseVisible = liveId != null && liveId.longValue() == id;
-								}
+						MDBVal key = MDBVal.malloc(stack);
+						MDBVal value = MDBVal.malloc(stack);
+						key.mv_data(stack.bytes(ID_KEY));
+						int rc = mdb_cursor_get(cursor, key, value, MDB_SET_RANGE);
+						while (rc == MDB_SUCCESS) {
+							ByteBuffer keyBytes = key.mv_data();
+							if (!keyBytes.hasRemaining() || keyBytes.get(keyBytes.position()) != ID_KEY) {
+								break;
 							}
-							builder.add(id, record, ValueStoreRecordLayout.family(id, record),
-									ValueStoreRecordLayout.affinity(record), reverseVisible);
+							long id = data2id(keyBytes);
+							long length = LmdbUtil.mdbValSize(value);
+							if (length > options.maxRecordBytes()) {
+								builder.skipLarge(id, length);
+							} else {
+								byte[] record = new byte[Math.toIntExact(length)];
+								LmdbUtil.copyMemoryToByteArray(LmdbUtil.mdbValDataAddress(value), record,
+										record.length);
+								boolean reverseVisible = false;
+								if (builder.reverseHasCapacity()) {
+									// Reclaim scratch on every row instead of growing the outer native stack with the
+									// dataset.
+									try (MemoryStack scratch = stackPush()) {
+										Long liveId = findIdInTransaction(record, false, CoreDatatype.NONE, scratch,
+												txn);
+										reverseVisible = liveId != null && liveId.longValue() == id;
+									}
+								}
+								builder.add(id, record, ValueStoreRecordLayout.family(id, record),
+										ValueStoreRecordLayout.affinity(record), reverseVisible);
+							}
+							rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
 						}
-						rc = mdb_cursor_get(cursor, key, value, MDB_NEXT);
+						if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
+							E(rc);
+						}
+					} finally {
+						mdb_cursor_close(cursor);
 					}
-					if (rc != MDB_SUCCESS && rc != MDB_NOTFOUND) {
-						E(rc);
+					CompressedValueOverlay overlay = builder.finish();
+					CompressedValueOverlay.Stats stats = overlay.stats();
+					if (!compressedValues.publish(generation, transactionId, overlay,
+							() -> !valueOverlayMaintenanceDeferred && !valueOverlayBuildAdmissionClosed
+									&& valueLookupGeneration == generation
+									&& env != 0 && !cancelled.getAsBoolean())) {
+						throw new IOException("Dictionary view changed before value overlay publication");
 					}
-				} finally {
-					mdb_cursor_close(cursor);
+					return stats;
 				}
-				CompressedValueOverlay overlay = builder.finish();
-				CompressedValueOverlay.Stats stats = overlay.stats();
-				if (!compressedValues.publish(generation, transactionId, overlay,
-						() -> valueLookupGeneration == generation && env != 0 && !cancelled.getAsBoolean())) {
-					throw new IOException("Dictionary view changed before value overlay publication");
-				}
-				return stats;
+			});
+		} finally {
+			synchronized (valueOverlayBuildAdmission) {
+				valueOverlayBuildsInFlight--;
+				valueOverlayBuildAdmission.notifyAll();
 			}
-		});
+		}
 	}
 
 	@InternalUseOnly
@@ -4517,11 +4552,18 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	 * awaitValueOverlayReady(...) for a deterministic point after which the warm-up has definitely finished
 	 * (successfully, refused for capacity, or cancelled by a concurrent close/write).
 	 */
-	private void warmConfiguredValueOverlay() {
+	private ValueOverlayWarmup warmConfiguredValueOverlay() {
+		return warmConfiguredValueOverlay(null, null);
+	}
+
+	private ValueOverlayWarmup warmConfiguredValueOverlay(Object request, Object requestedGeneration) {
 		valueOverlayWarmupFailure = null;
+		if (valueOverlayMaintenanceDeferred) {
+			return null;
+		}
 		if (!valueOverlayEnabled) {
 			valueOverlayWarmupFailure = "Value overlay warm-up disabled by configuration";
-			return;
+			return null;
 		}
 		String budgetText = System.getProperty("rdf4j.lmdb.valueOverlay.maxBytes");
 		long budget;
@@ -4532,16 +4574,16 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		} catch (NumberFormatException e) {
 			valueOverlayWarmupFailure = "Value overlay warm-up budget invalid: " + budgetText;
 			logger.warn("Ignoring invalid rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText, e);
-			return;
+			return null;
 		}
 		if (budget == 0) {
 			valueOverlayWarmupFailure = "Value overlay warm-up disabled by zero budget";
-			return;
+			return null;
 		}
 		if (budget < 0) {
 			valueOverlayWarmupFailure = "Value overlay warm-up budget invalid: " + budgetText;
 			logger.warn("Ignoring negative rdf4j.lmdb.valueOverlay.maxBytes value '{}': using LMDB", budgetText);
-			return;
+			return null;
 		}
 		CompressedValueOverlay.Options options;
 		try {
@@ -4550,50 +4592,184 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		} catch (IllegalArgumentException e) {
 			valueOverlayWarmupFailure = "Value overlay warm-up options invalid: " + e.getMessage();
 			logger.warn("Invalid compressed ValueStore overlay warm-up options; using LMDB", e);
+			return null;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			if (valueOverlayMaintenanceDeferred || valueOverlayBuildAdmissionClosed || env == 0
+					|| request != null && (initialImportOverlayRebuildRequest != request
+							|| valueLookupGeneration != requestedGeneration
+							|| publiclyReleasedOverlayGeneration != requestedGeneration)) {
+				return null;
+			}
+			ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
+				Thread thread = new Thread(r, VALUE_OVERLAY_WARMUP_THREAD_NAME);
+				thread.setDaemon(true);
+				return thread;
+			});
+			valueOverlayWarmupExecutor = executor;
+			Object generation = request == null ? valueLookupGeneration : requestedGeneration;
+			CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+				valueOverlayWarmupActive = true;
+				try {
+					if (generation == null || valueLookupGeneration != generation || env == 0) {
+						throw new CancellationException("dictionary view changed before automatic warm-up started");
+					}
+					CompressedValueOverlay.Stats stats = warmCompressedValueOverlay(options,
+							() -> Thread.currentThread().isInterrupted() || valueLookupGeneration != generation);
+					logger.info("Compressed ValueStore overlay: {}", stats);
+				} catch (OverlayCapacityException e) {
+					valueOverlayWarmupRefusals++;
+					valueOverlayWarmupFailure = "Value overlay warm-up refused: " + e.getMessage();
+					// This optional accelerator must not prevent a larger authoritative store from opening.
+					logger.warn("Compressed ValueStore overlay did not fit its native budget; using LMDB", e);
+				} catch (CancellationException e) {
+					recordValueOverlayWarmupCancellation(e);
+					// Expected/benign: the store closed or a write transaction began before the scan finished.
+					logger.debug("Compressed ValueStore overlay warm-up was cancelled; using LMDB", e);
+				} catch (IOException | RuntimeException e) {
+					if (valueLookupGeneration != generation || env == 0 || Thread.currentThread().isInterrupted()) {
+						recordValueOverlayWarmupCancellation(e);
+						logger.debug("Compressed ValueStore overlay warm-up was cancelled; using LMDB", e);
+					} else {
+						valueOverlayWarmupFailure = "Value overlay warm-up failed: " + e.getMessage();
+						logger.warn("Compressed ValueStore overlay warm-up failed; using LMDB", e);
+					}
+				} catch (Error e) {
+					valueOverlayWarmupFailure = "Value overlay warm-up failed: " + e.getMessage();
+					logger.error("Compressed ValueStore overlay warm-up failed with an unrecoverable error; using LMDB",
+							e);
+					throw e;
+				} finally {
+					valueOverlayWarmupActive = false;
+				}
+			}, executor);
+			valueOverlayWarmupFuture = future;
+			return new ValueOverlayWarmup(executor, future);
+		}
+	}
+
+	/** Called before the initial import opens its first dictionary writer. Existing snapshot leases remain valid. */
+	void deferValueOverlayMaintenance() {
+		if (!valueOverlayEnabled) {
 			return;
 		}
-		ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
-			Thread thread = new Thread(r, VALUE_OVERLAY_WARMUP_THREAD_NAME);
-			thread.setDaemon(true);
-			return thread;
-		});
-		valueOverlayWarmupExecutor = executor;
-		Object generation = valueLookupGeneration;
-		valueOverlayWarmupFuture = CompletableFuture.runAsync(() -> {
-			valueOverlayWarmupActive = true;
-			try {
-				if (generation == null || valueLookupGeneration != generation || env == 0) {
-					throw new CancellationException("dictionary view changed before automatic warm-up started");
+		synchronized (valueOverlayBuildAdmission) {
+			valueOverlayMaintenanceDeferred = true;
+			valueOverlayCaptureDeferred = true;
+			initialImportOverlayRebuildRequest = null;
+			publiclyReleasedOverlayGeneration = null;
+			valueOverlayBuildAdmission.notifyAll();
+			// Cancel every builder that captured the same still-committed dictionary before this import.
+			valueLookupGeneration = new Object();
+		}
+		awaitAndStopValueOverlayWarmup();
+		try {
+			synchronized (valueOverlayBuildAdmission) {
+				if (Thread.currentThread().isInterrupted()) {
+					throw new InterruptedException();
 				}
-				CompressedValueOverlay.Stats stats = warmCompressedValueOverlay(options,
-						() -> Thread.currentThread().isInterrupted() || valueLookupGeneration != generation);
-				logger.info("Compressed ValueStore overlay: {}", stats);
-			} catch (OverlayCapacityException e) {
-				valueOverlayWarmupRefusals++;
-				valueOverlayWarmupFailure = "Value overlay warm-up refused: " + e.getMessage();
-				// This optional accelerator must not prevent a larger authoritative store from opening.
-				logger.warn("Compressed ValueStore overlay did not fit its native budget; using LMDB", e);
-			} catch (CancellationException e) {
-				recordValueOverlayWarmupCancellation(e);
-				// Expected/benign: the store closed or a write transaction began before the scan finished.
-				logger.debug("Compressed ValueStore overlay warm-up was cancelled; using LMDB", e);
-			} catch (IOException | RuntimeException e) {
-				if (valueLookupGeneration != generation || env == 0 || Thread.currentThread().isInterrupted()) {
-					recordValueOverlayWarmupCancellation(e);
-					logger.debug("Compressed ValueStore overlay warm-up was cancelled; using LMDB", e);
-				} else {
-					valueOverlayWarmupFailure = "Value overlay warm-up failed: " + e.getMessage();
-					logger.warn("Compressed ValueStore overlay warm-up failed; using LMDB", e);
+				while (valueOverlayBuildsInFlight != 0) {
+					valueOverlayBuildAdmission.wait();
 				}
-			} catch (Error e) {
-				valueOverlayWarmupFailure = "Value overlay warm-up failed: " + e.getMessage();
-				logger.error("Compressed ValueStore overlay warm-up failed with an unrecoverable error; using LMDB",
-						e);
-				throw e;
-			} finally {
-				valueOverlayWarmupActive = false;
 			}
-		}, executor);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("Interrupted while draining value overlay scans", interrupted);
+		}
+		ValueOverlayRegistry registry = compressedValues;
+		if (registry != null) {
+			try {
+				registry.invalidateAndAwaitMaintenance();
+			} catch (InterruptedException interrupted) {
+				Thread.currentThread().interrupt();
+				throw new IllegalStateException("Interrupted while deferring value overlay maintenance", interrupted);
+			}
+		}
+	}
+
+	/** Restore capture under the old writer's admission; scheduling happens after all terminal resources release. */
+	void resumeValueOverlayCapture() {
+		valueOverlayCaptureDeferred = false;
+	}
+
+	void rebuildValueOverlayAfterInitialImport() {
+		synchronized (valueOverlayBuildAdmission) {
+			valueOverlayMaintenanceDeferred = false;
+			if (valueOverlayEnabled && !valueOverlayBuildAdmissionClosed) {
+				initialImportOverlayRebuildRequest = new Object();
+			}
+		}
+		signalValueOverlayWriterCompleted();
+	}
+
+	/** Terminal cleanup retries a committed generation when no native writer or initial import is active. */
+	void signalValueOverlayWriterCompleted() {
+		if (!valueOverlayEnabled) {
+			return;
+		}
+		synchronized (valueOverlayBuildAdmission) {
+			publiclyReleasedOverlayGeneration = valueLookupGeneration;
+			valueOverlayBuildAdmission.notifyAll();
+		}
+		scheduleRequestedInitialImportOverlay();
+	}
+
+	/** Either terminal writer cleanup or cancelled-worker completion can be the event that makes retry possible. */
+	private void scheduleRequestedInitialImportOverlay() {
+		Object request;
+		Object generation;
+		synchronized (valueOverlayBuildAdmission) {
+			request = initialImportOverlayRebuildRequest;
+			if (request == null || initialImportOverlayRebuildWorker != null || valueOverlayMaintenanceDeferred
+					|| valueOverlayBuildAdmissionClosed || env == 0 || valueLookupGeneration == null
+					|| valueLookupGeneration != publiclyReleasedOverlayGeneration) {
+				return;
+			}
+			generation = publiclyReleasedOverlayGeneration;
+			initialImportOverlayRebuildWorker = request;
+		}
+		CompletableFuture<Void> previous = valueOverlayWarmupFuture;
+		ExecutorService previousExecutor = valueOverlayWarmupExecutor;
+		if (previousExecutor != null && (previous == null || previous.isDone())) {
+			previousExecutor.shutdown();
+		}
+		long discardsBefore = valueOverlayWarmupDiscards;
+		ValueOverlayWarmup launched;
+		try {
+			launched = warmConfiguredValueOverlay(request, generation);
+		} catch (RuntimeException | Error failure) {
+			finishRequestedInitialImportOverlay(request, false);
+			throw failure;
+		}
+		if (launched == null) {
+			boolean supersededGeneration;
+			synchronized (valueOverlayBuildAdmission) {
+				supersededGeneration = initialImportOverlayRebuildRequest == request
+						&& !valueOverlayBuildAdmissionClosed
+						&& (valueLookupGeneration != generation || publiclyReleasedOverlayGeneration != generation);
+			}
+			// A newer writer defers this request; configured capacity/refusal remains terminal.
+			finishRequestedInitialImportOverlay(request, supersededGeneration);
+			return;
+		}
+		launched.future().whenComplete((ignored, failure) -> {
+			launched.executor().shutdown();
+			finishRequestedInitialImportOverlay(request, valueOverlayWarmupDiscards > discardsBefore);
+		});
+	}
+
+	private void finishRequestedInitialImportOverlay(Object request, boolean cancelled) {
+		synchronized (valueOverlayBuildAdmission) {
+			if (initialImportOverlayRebuildWorker == request) {
+				initialImportOverlayRebuildWorker = null;
+			}
+			if (!cancelled && initialImportOverlayRebuildRequest == request) {
+				initialImportOverlayRebuildRequest = null;
+			}
+			valueOverlayBuildAdmission.notifyAll();
+		}
+		// An obsolete completion can release the worker token blocking an entirely newer request.
+		scheduleRequestedInitialImportOverlay();
 	}
 
 	private void recordValueOverlayWarmupCancellation(Throwable cause) {
@@ -4613,20 +4789,38 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		if (timeout < 0L) {
 			throw new IllegalArgumentException("timeout must be non-negative");
 		}
-		CompletableFuture<Void> future = valueOverlayWarmupFuture;
-		if (future == null) {
+		long budget = unit.toNanos(timeout);
+		long started = System.nanoTime();
+		while (true) {
+			CompletableFuture<Void> future;
+			boolean expired = false;
+			synchronized (valueOverlayBuildAdmission) {
+				if (initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null) {
+					long remaining = budget - (System.nanoTime() - started);
+					if (remaining > 0L) {
+						TimeUnit.NANOSECONDS.timedWait(valueOverlayBuildAdmission, remaining);
+						continue;
+					}
+					expired = true;
+				}
+				future = valueOverlayWarmupFuture;
+			}
+			if (!expired && future != null) {
+				try {
+					future.get(Math.max(0L, budget - (System.nanoTime() - started)), TimeUnit.NANOSECONDS);
+				} catch (TimeoutException | ExecutionException | CancellationException e) {
+					// Refusal/failure uses LMDB; a requested successor is checked below within the same timeout.
+				}
+				synchronized (valueOverlayBuildAdmission) {
+					if ((initialImportOverlayRebuildRequest != null || initialImportOverlayRebuildWorker != null)
+							&& budget - (System.nanoTime() - started) > 0L) {
+						continue;
+					}
+				}
+			}
 			ValueOverlayRegistry registry = compressedValues;
 			return valueOverlayEnabled && registry != null && registry.isPopulated();
 		}
-		try {
-			future.get(timeout, unit);
-		} catch (TimeoutException | ExecutionException | CancellationException e) {
-			// ExecutionException/CancellationException are defensive only: the task above never rethrows.
-			ValueOverlayRegistry registry = compressedValues;
-			return valueOverlayEnabled && registry != null && registry.isPopulated();
-		}
-		ValueOverlayRegistry registry = compressedValues;
-		return valueOverlayEnabled && registry != null && registry.isPopulated();
 	}
 
 	/** Test/diagnostic-only: true while the automatic warm-up executor exists and its task has not finished. */
@@ -8345,10 +8539,13 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		case SnapshotIRI iri -> {
 			byte[] data = uri2data(snapshot, txn, iri);
 			long found = data == null ? LmdbValue.UNKNOWN_ID : findId(snapshot, txn, data);
-			if (found != LmdbValue.UNKNOWN_ID) { yield found; }
+			if (found != LmdbValue.UNKNOWN_ID) {
+				yield found;
+			}
 			byte[] lexical = new byte[iri.namespaceData().length - 1 + iri.localNameData().length];
 			System.arraycopy(iri.namespaceData(), 1, lexical, 0, iri.namespaceData().length - 1);
-			System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1, iri.localNameData().length);
+			System.arraycopy(iri.localNameData(), 0, lexical, iri.namespaceData().length - 1,
+					iri.localNameData().length);
 			try (MemoryStack stack = stackPush()) {
 				yield findAlternativeIriId(lexical, -1, LmdbValue.UNKNOWN_ID, stack, txn);
 			}
@@ -9757,7 +9954,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	@InternalUseOnly
 	public int compactCompressedValueOverlay() {
 		ValueOverlayRegistry registry = compressedValues;
-		if (!valueOverlayEnabled || registry == null) {
+		if (!valueOverlayEnabled || valueOverlayMaintenanceDeferred || registry == null) {
 			return 0;
 		}
 		if (isWriteTransactionOwner()) {
@@ -9769,7 +9966,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private void beginCompressedValueMutation(long txn) {
 		discardCompressedValueMutation();
 		ValueOverlayRegistry registry = compressedValues;
-		if (valueOverlayEnabled && registry != null && registry.isPopulated()) {
+		if (valueOverlayEnabled && !valueOverlayCaptureDeferred && registry != null && registry.isPopulated()) {
 			compressedValueMutation = registry.begin(mdb_txn_id(txn));
 		}
 	}
@@ -12543,6 +12740,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		}
 		closeInProgress = true;
 		try {
+			synchronized (valueOverlayBuildAdmission) {
+				valueOverlayBuildAdmissionClosed = true;
+				initialImportOverlayRebuildRequest = null;
+				publiclyReleasedOverlayGeneration = null;
+				valueOverlayBuildAdmission.notifyAll();
+			}
 			beginValueLookupMutation();
 			awaitAndStopValueOverlayWarmup();
 			writeCleanRefCountMarker();

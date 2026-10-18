@@ -2607,6 +2607,7 @@ class LmdbSailStore implements SailStore {
 	private final List<ValueStore.PreparedValueBatch> pendingFreshValueBatches = new ArrayList<>();
 	private boolean freshValueSessionInvalidated;
 	private final int bulkOperationSize;
+	private final boolean valueOverlayEnabled;
 	private final boolean preparedStatementBatchesEnabled;
 	private final AlignedWriteBudget alignedWriteBudget;
 	private final AlignedWriteBudget preparedImportBudget;
@@ -5641,6 +5642,14 @@ class LmdbSailStore implements SailStore {
 		recordWriterFailure(owner, attempt, failure, true);
 	}
 
+	/** A failed commit can revoke physical authority while its logical attempt still needs terminal cleanup. */
+	LmdbStoreConnection.WriteAttempt failedWriterAttempt(Object owner) {
+		synchronized (failedWriterTransactions) {
+			FailedWriterTransaction failed = failedWriterTransactions.get(owner);
+			return failed == null ? null : failed.attempt();
+		}
+	}
+
 	private void recordWriterFailure(Object owner, LmdbStoreConnection.WriteAttempt attempt, Throwable failure,
 			boolean retiredCommitAuthority) {
 		if (owner == null || !mayRecordWriterFailure(owner, attempt, retiredCommitAuthority)) {
@@ -6235,6 +6244,14 @@ class LmdbSailStore implements SailStore {
 	 * Constructed from {@link LmdbStoreConfig} settings.
 	 */
 	private final LmdbDirectAdjacencyStore directAdjacency;
+
+	private record InitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
+	}
+
+	/** Protected by sinkStoreAccessLock, independent of the physical NONE chunk and native generation. */
+	private InitialNoneImport initialNoneImport;
+	private boolean initialImportRebuildPending;
+	private volatile boolean initialImportClosing;
 	/** Owned by the current backing transaction, protected by sinkStoreAccessLock. */
 	private boolean adjacencyAdmissionHeld;
 	/** Test-only interleaving hook: runs after planner statistics verify the dataset is open. */
@@ -6336,6 +6353,7 @@ class LmdbSailStore implements SailStore {
 		this.autoGrow = config.getAutoGrow();
 		this.mapGrowthCoordinator = new MapGrowthCoordinator(config.getMapGrowthReadDrainTimeoutMillis());
 		this.bulkOperationSize = config.getBulkOperationSize();
+		this.valueOverlayEnabled = config.getValueOverlayEnabled();
 		this.preparedStatementBatchesEnabled = bulkOperationSize > 0 && !sketchBasedJoinEstimatorEnabled;
 		this.alignedWriteBudget = new AlignedWriteBudget(
 				calculateAlignedWriteStatementLimit(Runtime.getRuntime().maxMemory()));
@@ -7372,16 +7390,81 @@ class LmdbSailStore implements SailStore {
 
 	/** Runs only after the application attempt has released its read views and logical writer admission. */
 	void completePostCommitValueMaintenance() {
-		if (!valueStore.hasRetiredIds()) {
-			return;
-		}
 		try {
-			long horizon = deferValueGcForPinnedReaders()
-					? tripleStore.getTxnManager().minPinnedSnapshotRevision()
-					: Long.MAX_VALUE;
-			recoverRetiredValueIds(horizon, false);
+			if (valueStore.hasRetiredIds()) {
+				long horizon = deferValueGcForPinnedReaders()
+						? tripleStore.getTxnManager().minPinnedSnapshotRevision()
+						: Long.MAX_VALUE;
+				recoverRetiredValueIds(horizon, false);
+			}
 		} catch (IOException | RuntimeException failure) {
 			logger.warn("Unable to reclaim retired LMDB value IDs; durable intents remain for a later retry", failure);
+		} finally {
+			rebuildAfterInitialNoneImport();
+		}
+	}
+
+	/** Claim before either native writer opens: resolving new dictionary values is already accelerator work. */
+	private void beginInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) throws IOException {
+		assert sinkStoreAccessLock.isHeldByCurrentThread();
+		if (initialImportClosing || initialNoneImport != null || attempt == null
+				|| attempt.isolation() != IsolationLevels.NONE || directAdjacency == null && !valueOverlayEnabled
+				|| !tripleStore.isEmpty()) {
+			return;
+		}
+		initialNoneImport = new InitialNoneImport(owner, attempt);
+		// Preserve fan-out statistics and authoritative revision bookkeeping; only the optional collector retires.
+		tripleStore.setDirectAdjacencyCommitHooks(null, null);
+		if (directAdjacency != null) {
+			directAdjacency.deferMaintenanceForInitialImport();
+		}
+		valueStore.deferValueOverlayMaintenance();
+	}
+
+	/** Restore ordinary capture before the old owner releases admission to any subsequent writer. */
+	void finishInitialNoneImport(Object owner, LmdbStoreConnection.WriteAttempt attempt) {
+		sinkStoreAccessLock.lock();
+		try {
+			InitialNoneImport current = initialNoneImport;
+			if (current == null || current.owner() != owner || current.attempt() != attempt) {
+				return;
+			}
+			if (directAdjacency != null) {
+				tripleStore.setDirectAdjacencyCommitHooks(directAdjacency.commitListener(),
+						directAdjacency.newCommitDelta());
+			}
+			valueStore.resumeValueOverlayCapture();
+			initialNoneImport = null;
+			initialImportRebuildPending = true;
+		} finally {
+			sinkStoreAccessLock.unlock();
+		}
+	}
+
+	/** Schedule only after terminal resources release. A newer initial import supersedes this pending request. */
+	void rebuildAfterInitialNoneImport() {
+		if (directAdjacency == null && !valueOverlayEnabled) {
+			return;
+		}
+		sinkStoreAccessLock.lock();
+		try {
+			if (initialImportClosing || initialNoneImport != null || storeTxnStarted.get()) {
+				return;
+			}
+			if (!initialImportRebuildPending) {
+				valueStore.signalValueOverlayWriterCompleted();
+				return;
+			}
+			initialImportRebuildPending = false;
+			Throwable failure = null;
+			if (directAdjacency != null) {
+				directAdjacency.resumeMaintenanceAfterInitialImport();
+				failure = attemptClose(failure, directAdjacency::scheduleQuiescentRebuild);
+			}
+			failure = attemptClose(failure, valueStore::rebuildValueOverlayAfterInitialImport);
+			reportOptionalDerivedFailure(failure);
+		} finally {
+			sinkStoreAccessLock.unlock();
 		}
 	}
 
@@ -7508,7 +7591,7 @@ class LmdbSailStore implements SailStore {
 		Throwable failure = null;
 		try {
 			costModelDataGeneration.incrementAndGet();
-			if (directAdjacency != null) {
+			if (directAdjacency != null && initialNoneImport == null) {
 				try {
 					LmdbDirectAdjacencyCommitDelta.SealedDirectDelta sealed = tripleStore
 							.drainDirectAdjacencyCommitDelta();
@@ -7622,6 +7705,7 @@ class LmdbSailStore implements SailStore {
 				|| sinkStoreAccessLock.isHeldByCurrentThread() || publicationContext.get() != null) {
 			throw new SailException("An active LMDB native/publication owner cannot close its own store");
 		}
+		initialImportClosing = true;
 		Throwable failure = null;
 		failure = attemptClose(failure, () -> NativeLmdbQuerySource.releaseCostModel(valueStore));
 		failure = attemptClose(failure, mapGrowthCoordinator::shutdown);
@@ -9954,6 +10038,13 @@ class LmdbSailStore implements SailStore {
 			ensureNamespacePersistenceCertain();
 			prepareReplayDecision();
 			Object owner = writerOwner();
+			if (nativeCheckpoints && !storeTxnStarted.get()) {
+				try {
+					beginInitialNoneImport(owner, fixedWriteAttempt);
+				} catch (IOException failure) {
+					throw new SailException(failure);
+				}
+			}
 			acquireAdjacencyAdmission();
 			synchronized (storeTxnStarted) {
 				if (storeTxnStarted.get() && storeTransactionOwner != owner) {

@@ -303,6 +303,14 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 			history.removeFirst().close();
 	}
 
+	/** Retire acquisition and finish older derived work before an authoritative initial load starts. */
+	public synchronized void invalidateAndAwaitMaintenance() throws InterruptedException {
+		invalidate();
+		while (maintenanceActive || maintenanceScheduled) {
+			wait();
+		}
+	}
+
 	/**
 	 * Fire-and-forget: maintenanceExecutor never touches the live LMDB env, so shutdownNow() without awaitTermination
 	 * is safe here. ValueStore's own startup-warmup executor is separate and does await termination, since that task
@@ -442,7 +450,7 @@ public final class ValueOverlayRegistry implements AutoCloseable {
 			merged = ValueOverlayDelta.merge(newer, older,
 					deltaOptions(anchor, registry.options, newer.size() + older.size()),
 					Math.min(Math.max(newer.level, older.level) + 1, registry.options.maxLevels - 1),
-					() -> registry.closed || cancel.getAsBoolean());
+					() -> registry.closed || registry.current == null || cancel.getAsBoolean());
 		}
 
 		/**
