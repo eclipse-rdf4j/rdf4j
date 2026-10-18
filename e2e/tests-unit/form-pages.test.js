@@ -232,13 +232,13 @@ test('delete page reports timeout and successful unsafe-delete confirmation', as
         confirmResponses: [true]
     });
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
     const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
+    form.appendChild(id);
+    form.appendChild(feedback);
 
     harness.loadScripts(['delete.js']);
 
@@ -269,13 +269,13 @@ test('delete page asks for the typed id for every repository and keeps a cancell
         confirmResponses: [true, false]
     });
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
     const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
+    form.appendChild(id);
+    form.appendChild(feedback);
     harness.loadScripts(['delete.js']);
     const event = { target: button, preventDefault() {} };
 
@@ -296,13 +296,13 @@ test('delete page asks for the typed id for every repository and keeps a cancell
 test('delete page reports generic server errors', () => {
     const harness = createFormBrowserHarness();
     const form = harness.registerElement('form', { id: 'delete-form' });
-    const button = harness.registerElement('button', { id: 'delete-button' });
+    const button = harness.registerElement('button', { id: 'delete-button', type: 'submit' });
     const id = harness.registerElement('input', { id: 'id', value: 'repo-1' });
     const feedback = harness.registerElement('div', { id: 'delete-feedback' });
     form.appendChild(button);
     harness.document.body.appendChild(form);
-    harness.document.body.appendChild(id);
-    harness.document.body.appendChild(feedback);
+    form.appendChild(id);
+    form.appendChild(feedback);
 
     harness.loadScripts(['delete.js']);
     harness.context.checkIsSafeToDelete({

@@ -1670,13 +1670,35 @@ module workbench {
             </div>`;
         }
 
+        /** Recompute from live controls after events and renders; a password never enters the cached page model. */
+        function syncRepositoryDeletionAction(form: any, model: PageModel): void {
+            if (!form || typeof form.querySelector !== 'function') { return; }
+            const selected = form.querySelector('#id');
+            const password = form.querySelector('#delete-password');
+            const action = form.querySelector('button[type="submit"]');
+            const required = String(meta(model, 'repository-deletion-password-required')) === 'true';
+            const failed = String(meta(model, 'repository-deletion-policy-error')) === 'true';
+            if (action) {
+                action.disabled = !selected || !selected.value || failed || required && (!password || !password.value);
+            }
+        }
+
         /**
          * Delete repository (M6.6, mockup 09): nothing is chosen until the user picks a repository or arrives with
          * `?id=<id>`, the button stays disabled until then, and delete.ts confirms with the typed id.
          */
         function deletePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
-            const options = recordsFromRows(model, model.pickerRows || []).filter((row: any) => text(row.id) !== 'SYSTEM');
+            const pickerRecords = recordsFromRows(model, model.pickerRows || []);
+            // Older page models carry the refusal only in the first picker row. Keep it when paging that row away.
+            if (!text(meta(model, 'error-message'))) {
+                const refusal = pickerRecords.filter((row: any) => text(row['error-message']))[0];
+                if (refusal) { model.metadata['error-message'] = text(refusal['error-message']); }
+            }
+            const options = pickerRecords.filter((row: any) => text(row.id)
+                && text(row.id) !== 'SYSTEM');
+            const passwordRequired = String(meta(model, 'repository-deletion-password-required')) === 'true';
+            const policyFailed = String(meta(model, 'repository-deletion-policy-error')) === 'true';
             if (typeof model.metadata.selectedRepositoryId !== 'string') {
                 // ?id= (a repository list's Delete… item), or the repository whose menu opened the page (C32d).
                 model.metadata.selectedRepositoryId = locationParameter('id')
@@ -1685,7 +1707,8 @@ module workbench {
             const selectedId = text(model.metadata.selectedRepositoryId);
             const selectedRepository = model.metadata.selectedRepository;
             const selectedVisible = options.some((row: any) => text(row.id) === selectedId);
-            return h`<form id="delete-form" class="workbench-island workbench-form-card" action="delete" method="post"
+            return h`${errorCallout(runtime, model)}
+                <form id="delete-form" class="workbench-island workbench-form-card" action="delete" method="post"
                     @submit=${(event: Event) => {
                         const owns = modelOwner(event.currentTarget, model);
                         submitThroughPageScript(event, 'delete.js', 'checkIsSafeToDelete', owns,
@@ -1693,6 +1716,9 @@ module workbench {
                     }}>
                 <div class="workbench-field"><label for="id">Repository</label>
                     <select id="id" name="id" data-workbench-window-picker="repositories" @change=${(event: any) => {
+                        const password = event.target.form.querySelector('#delete-password');
+                        if (password) { password.value = ''; }
+                        syncRepositoryDeletionAction(event.target.form, model);
                         const selected = options.filter((row: any) => text(row.id) === event.target.value)[0];
                         model.metadata.selectedRepositoryId = event.target.value;
                         model.metadata.selectedRepository = selected || null;
@@ -1707,8 +1733,17 @@ module workbench {
                     </select>
                     ${pickerWindow(runtime, model, 'repositories', 'repositories')}
                 </div>
+                ${passwordRequired ? h`<div class="workbench-field"><label for="delete-password">Deletion password</label>
+                    <input id="delete-password" name="delete-password" type="password" autocomplete="off" required
+                        aria-describedby="delete-password-help" @input=${(event: any) => {
+                            syncRepositoryDeletionAction(event.target.form, model);
+                        }} />
+                    <p id="delete-password-help" class="workbench-field__help">Enter the server's repository deletion password.</p>
+                </div>` : ''}
+                ${policyFailed && !pageErrorMessage(model) ? callout(runtime, 'error',
+                    'Unable to determine whether a deletion password is required. Reload this page to try again.') : ''}
                 <div id="delete-actions" class="workbench-form-actions"><button type="submit"
-                        class="workbench-action workbench-action--danger-outline" ?disabled=${!selectedId}>${
+                        class="workbench-action workbench-action--danger-outline" ?disabled=${!selectedId || passwordRequired || policyFailed}>${
                         icon(runtime, 'delete')}<span>Delete repository…</span></button>
                 </div><span id="delete-feedback" class="error" role="alert"></span>
             </form>`;
@@ -4678,6 +4713,9 @@ module workbench {
          */
         function renderPage(template: any, target: any, model: PageModel, regions: RowRegions, runtime: LitRuntime): void {
             runtime.render(template, target);
+            if (model.viewId === 'delete' && target && typeof target.querySelector === 'function') {
+                syncRepositoryDeletionAction(target.querySelector('#delete-form'), model);
+            }
             renderRowRegions(regions);
             renderPageResultTables(model, regions);
         }

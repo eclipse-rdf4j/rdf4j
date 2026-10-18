@@ -864,6 +864,21 @@ test('a POST answered in place replaces the current entry', async () => {
     assert.equal(last[2], base + 'namespaces');
 });
 
+test('programmatic submission resolves after the router finishes rendering its response', async () => {
+    const harness = loadFormRouter();
+    harness.start();
+    const form = fakeForm(harness, { action: 'delete', method: 'post' }, [['id', 'prod']]);
+    let completed = false;
+    const submitted = harness.router.submit(form).then((outcome) => {
+        completed = true;
+        return outcome;
+    });
+    assert.equal(completed, false);
+    harness.respond({ url: base + 'summary', redirected: true, viewId: 'summary' });
+    assert.equal(await submitted, 'committed');
+    assert.equal(harness.router.current().viewId, 'summary');
+});
+
 test('a page answered by a route that is not router-ready is loaded by the browser', async () => {
     const harness = loadFormRouter();
     harness.register('server', { routerReady: false });

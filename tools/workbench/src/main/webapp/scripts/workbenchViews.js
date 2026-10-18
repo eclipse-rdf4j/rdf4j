@@ -1269,13 +1269,38 @@ var workbench;
             }
             return h(__makeTemplateObject(["<div class=\"workbench-form-actions workbench-window-controls\" role=\"group\" aria-label=", ">\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"previous\"\n                    ?disabled=", ">Previous</button>\n                <span role=\"status\">Showing ", "\u2013", " of ", " ", "</span>\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"next\"\n                    ?disabled=", ">Next</button>\n            </div>"], ["<div class=\"workbench-form-actions workbench-window-controls\" role=\"group\" aria-label=", ">\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"previous\"\n                    ?disabled=", ">Previous</button>\n                <span role=\"status\">Showing ", "\u2013", " of ", " ", "</span>\n                <button type=\"button\" class=\"workbench-action workbench-action--secondary\" data-workbench-window-picker=", " data-workbench-window-action=\"next\"\n                    ?disabled=", ">Next</button>\n            </div>"]), label + ' pages', name, start === 0, start + 1, end, total, label, name, end >= total);
         }
+        /** Recompute from live controls after events and renders; a password never enters the cached page model. */
+        function syncRepositoryDeletionAction(form, model) {
+            if (!form || typeof form.querySelector !== 'function') {
+                return;
+            }
+            var selected = form.querySelector('#id');
+            var password = form.querySelector('#delete-password');
+            var action = form.querySelector('button[type="submit"]');
+            var required = String(meta(model, 'repository-deletion-password-required')) === 'true';
+            var failed = String(meta(model, 'repository-deletion-policy-error')) === 'true';
+            if (action) {
+                action.disabled = !selected || !selected.value || failed || required && (!password || !password.value);
+            }
+        }
         /**
          * Delete repository (M6.6, mockup 09): nothing is chosen until the user picks a repository or arrives with
          * `?id=<id>`, the button stays disabled until then, and delete.ts confirms with the typed id.
          */
         function deletePage(runtime, model, context) {
             var h = runtime.html;
-            var options = recordsFromRows(model, model.pickerRows || []).filter(function (row) { return text(row.id) !== 'SYSTEM'; });
+            var pickerRecords = recordsFromRows(model, model.pickerRows || []);
+            // Older page models carry the refusal only in the first picker row. Keep it when paging that row away.
+            if (!text(meta(model, 'error-message'))) {
+                var refusal = pickerRecords.filter(function (row) { return text(row['error-message']); })[0];
+                if (refusal) {
+                    model.metadata['error-message'] = text(refusal['error-message']);
+                }
+            }
+            var options = pickerRecords.filter(function (row) { return text(row.id)
+                && text(row.id) !== 'SYSTEM'; });
+            var passwordRequired = String(meta(model, 'repository-deletion-password-required')) === 'true';
+            var policyFailed = String(meta(model, 'repository-deletion-policy-error')) === 'true';
             if (typeof model.metadata.selectedRepositoryId !== 'string') {
                 // ?id= (a repository list's Delete… item), or the repository whose menu opened the page (C32d).
                 model.metadata.selectedRepositoryId = locationParameter('id')
@@ -1284,10 +1309,15 @@ var workbench;
             var selectedId = text(model.metadata.selectedRepositoryId);
             var selectedRepository = model.metadata.selectedRepository;
             var selectedVisible = options.some(function (row) { return text(row.id) === selectedId; });
-            return h(__makeTemplateObject(["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"], ["<form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"]), function (event) {
+            return h(__makeTemplateObject(["", "\n                <form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                ", "\n                ", "\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"], ["", "\n                <form id=\"delete-form\" class=\"workbench-island workbench-form-card\" action=\"delete\" method=\"post\"\n                    @submit=", ">\n                <div class=\"workbench-field\"><label for=\"id\">Repository</label>\n                    <select id=\"id\" name=\"id\" data-workbench-window-picker=\"repositories\" @change=", "><option value=\"\" disabled ?selected=", ">Choose a repository</option>\n                        ", "\n                        ", "\n                    </select>\n                    ", "\n                </div>\n                ", "\n                ", "\n                <div id=\"delete-actions\" class=\"workbench-form-actions\"><button type=\"submit\"\n                        class=\"workbench-action workbench-action--danger-outline\" ?disabled=", ">", "<span>Delete repository\u2026</span></button>\n                </div><span id=\"delete-feedback\" class=\"error\" role=\"alert\"></span>\n            </form>"]), errorCallout(runtime, model), function (event) {
                 var owns = modelOwner(event.currentTarget, model);
                 submitThroughPageScript(event, 'delete.js', 'checkIsSafeToDelete', owns, function (check) { return check(event, owns); });
             }, function (event) {
+                var password = event.target.form.querySelector('#delete-password');
+                if (password) {
+                    password.value = '';
+                }
+                syncRepositoryDeletionAction(event.target.form, model);
                 var selected = options.filter(function (row) { return text(row.id) === event.target.value; })[0];
                 model.metadata.selectedRepositoryId = event.target.value;
                 model.metadata.selectedRepository = selected || null;
@@ -1297,7 +1327,9 @@ var workbench;
                 }
             }, !selectedId, selectedId && !selectedVisible
                 ? h(__makeTemplateObject(["<option value=", " selected>", "</option>"], ["<option value=", " selected>", "</option>"]), selectedId, selectedRepository
-                    ? text(selectedRepository.id) + ' — ' + text(selectedRepository.description) : selectedId) : '', options.map(function (row) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"], ["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"]), text(row.id), text(row.id) === selectedId, text(row.id), text(row.description)); }), pickerWindow(runtime, model, 'repositories', 'repositories'), !selectedId, icon(runtime, 'delete'));
+                    ? text(selectedRepository.id) + ' — ' + text(selectedRepository.description) : selectedId) : '', options.map(function (row) { return h(__makeTemplateObject(["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"], ["<option value=", " ?selected=", ">\n                            ", " \u2014 ", "</option>"]), text(row.id), text(row.id) === selectedId, text(row.id), text(row.description)); }), pickerWindow(runtime, model, 'repositories', 'repositories'), passwordRequired ? h(__makeTemplateObject(["<div class=\"workbench-field\"><label for=\"delete-password\">Deletion password</label>\n                    <input id=\"delete-password\" name=\"delete-password\" type=\"password\" autocomplete=\"off\" required\n                        aria-describedby=\"delete-password-help\" @input=", " />\n                    <p id=\"delete-password-help\" class=\"workbench-field__help\">Enter the server's repository deletion password.</p>\n                </div>"], ["<div class=\"workbench-field\"><label for=\"delete-password\">Deletion password</label>\n                    <input id=\"delete-password\" name=\"delete-password\" type=\"password\" autocomplete=\"off\" required\n                        aria-describedby=\"delete-password-help\" @input=", " />\n                    <p id=\"delete-password-help\" class=\"workbench-field__help\">Enter the server's repository deletion password.</p>\n                </div>"]), function (event) {
+                syncRepositoryDeletionAction(event.target.form, model);
+            }) : '', policyFailed && !pageErrorMessage(model) ? callout(runtime, 'error', 'Unable to determine whether a deletion password is required. Reload this page to try again.') : '', !selectedId || passwordRequired || policyFailed, icon(runtime, 'delete'));
         }
         /**
          * The change the Namespaces page sent last. The server answers a refused one with the listing and an error
@@ -3472,6 +3504,9 @@ var workbench;
          */
         function renderPage(template, target, model, regions, runtime) {
             runtime.render(template, target);
+            if (model.viewId === 'delete' && target && typeof target.querySelector === 'function') {
+                syncRepositoryDeletionAction(target.querySelector('#delete-form'), model);
+            }
             renderRowRegions(regions);
             renderPageResultTables(model, regions);
         }

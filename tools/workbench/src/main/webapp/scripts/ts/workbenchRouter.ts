@@ -543,7 +543,7 @@ module workbench {
         }
 
         /** Send a form through the router when its action is a route the router shows; false otherwise. */
-        function route(form: any, submitter: any): boolean {
+        function route(form: any, submitter: any, sent?: (result: Promise<Outcome>) => void): boolean {
             const request = formRequest(form, submitter);
             if (!routable(request.action)) {
                 return false;
@@ -553,12 +553,14 @@ module workbench {
                 // A search or filter sent on its own page keeps its field focused on the page shown (C22).
                 const active: any = (window as any).document.activeElement;
                 const sameView = !!currentRoute && viewIdOf(request.action) === currentRoute.viewId;
-                navigate(request.action.href, { history: 'push',
+                const result = navigate(request.action.href, { history: 'push',
                     focus: sameView && active && active.id && form.contains(active) ? active.id : undefined });
+                if (sent) { sent(result); }
                 return true;
             }
-            navigate(request.action.href, { history: 'push',
+            const result = navigate(request.action.href, { history: 'push',
                 body: request.multipart ? request.data : new URLSearchParams(request.data) });
+            if (sent) { sent(result); }
             return true;
         }
 
@@ -582,13 +584,16 @@ module workbench {
          * Submit a form from a script (after a confirmation dialog, for example): through the router when it runs
          * and can show the answer, natively otherwise.
          */
-        export function submit(form: any, submitter?: any): void {
+        export function submit(form: any, submitter?: any): Promise<Outcome> {
             // A delayed confirmation may belong to a page that has already been replaced.
             // Connected helper forms in the document body or context bar remain valid.
-            if (running && form.isConnected === false) { return; }
-            if (!running || !route(form, submitter)) {
+            if (running && form.isConnected === false) { return Promise.resolve<Outcome>('abandoned'); }
+            let result: Promise<Outcome> = null;
+            if (!running || !route(form, submitter, (sent) => { result = sent; })) {
                 form.submit();
+                return Promise.resolve<Outcome>('fallback');
             }
+            return result;
         }
 
         /**
