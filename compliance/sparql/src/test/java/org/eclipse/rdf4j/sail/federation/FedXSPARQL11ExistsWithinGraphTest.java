@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.sail.federation;
 
 import java.io.File;
 import java.util.Collection;
-import java.util.List;
 
 import org.eclipse.rdf4j.federated.FedXConfig;
 import org.eclipse.rdf4j.federated.FedXFactory;
@@ -34,6 +33,8 @@ import org.junit.jupiter.api.io.TempDir;
 
 /** Focuses the W3C regression for EXISTS inside a named graph on FedX. */
 public class FedXSPARQL11ExistsWithinGraphTest extends FedXSPARQL11QueryComplianceTest {
+	private static final String EXISTS_IN_GRAPH_TEST_URI = "http://www.w3.org/2009/sparql/docs/tests/data-sparql11/exists/manifest#exists03";
+
 	@TempDir
 	public File tempFolder;
 
@@ -64,12 +65,15 @@ public class FedXSPARQL11ExistsWithinGraphTest extends FedXSPARQL11QueryComplian
 	@Override
 	@TestFactory
 	public Collection<DynamicTest> tests() {
-		List<DynamicTest> selected = super.tests().stream()
-				.filter(test -> test.getDisplayName().endsWith("Exists within graph pattern"))
-				.toList();
+		Collection<DynamicTest> selected = super.tests();
 		if (selected.size() != 1) {
 			throw new AssertionError("Expected exactly one W3C EXISTS-in-graph case; found " + selected.size());
 		}
 		return selected;
+	}
+
+	@Override
+	protected boolean shouldIncludeTestCase(String testURI) {
+		return EXISTS_IN_GRAPH_TEST_URI.equals(testURI);
 	}
 }

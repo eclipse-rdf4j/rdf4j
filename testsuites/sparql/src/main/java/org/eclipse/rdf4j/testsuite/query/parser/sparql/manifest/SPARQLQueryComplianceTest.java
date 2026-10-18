@@ -118,6 +118,16 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 		// no-op
 	}
 
+	/**
+	 * Allows a specialized compliance suite to select test cases by their manifest identity.
+	 *
+	 * @param testURI the test case URI from the manifest
+	 * @return {@code true} when the test case should be included in this suite
+	 */
+	protected boolean shouldIncludeTestCase(String testURI) {
+		return true;
+	}
+
 	@TestFactory
 	public abstract Collection<DynamicTest> tests();
 
@@ -254,7 +264,7 @@ public abstract class SPARQLQueryComplianceTest extends SPARQLComplianceTest {
 								bs.getValue("resultFile").stringValue(), dataset,
 								Literals.getBooleanValue(ordered, false), bs.hasBinding("laxCardinality"));
 
-						if (!shouldIgnoredTest(testName)) {
+						if (!shouldIgnoredTest(testName) && shouldIncludeTestCase(testURI)) {
 							tests.add(DynamicTest.dynamicTest(displayName, ds11ut::test));
 						}
 					}
