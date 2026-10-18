@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.bulk;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
@@ -42,6 +43,26 @@ class FastNTriplesParserRegressionTest {
 	private static final IRI SUBJECT = VF.createIRI("urn:s");
 	private static final IRI PREDICATE = VF.createIRI("urn:p");
 	private static final String STATEMENT = "<urn:s> <urn:p> <urn:o> .\n";
+
+	@Test
+	void encodesLiteralDatatypesAndLanguageTagsCanonicallyLikeRio() throws IOException {
+		List<String> literals = List.of("\"plain\"", "\"typed\"^^<urn:datatype>", "\"hello\"@en",
+				"\"Bonjour\"@EN-us", "\"שלום\"@he--rtl", "\"a\\nb\"@EN-us--ltr");
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			for (String literal : literals) {
+				String input = "<urn:s> <urn:p> " + literal + " .\n";
+				List<byte[]> actual = new ArrayList<>();
+				new FastNTriplesParser(format, () -> false).parse(new ByteArrayInputStream(input.getBytes(UTF_8)),
+						(subject, predicate, object, context) -> actual.add(object));
+				List<Statement> expected = rio(input, format);
+
+				assertEquals(1, actual.size(), format.getName() + " " + literal);
+				assertEquals(1, expected.size(), format.getName() + " " + literal);
+				assertArrayEquals(CanonicalTermCodec.encode(expected.get(0).getObject()), actual.get(0),
+						format.getName() + " " + literal);
+			}
+		}
+	}
 
 	@Test
 	void preservesStatementAfterInteriorCrAndCommentAtReadBoundary() throws IOException {

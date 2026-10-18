@@ -19,6 +19,9 @@ target/
 tools/packed-algebra-checks/__pycache__/
 /logs/
 /maven-build.log
+/e2e/maven-build.log
+/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/temp*.txt
+/core/sail/lmdb/src/test/java/org/eclipse/rdf4j/sail/lmdb/benchmark/theme-query-benchmark-results/twmp*.txt
 /initial-evidence.txt
 /initial-evidence.*.txt
 /scripts/initial-evidence.txt

@@ -92,6 +92,9 @@ import org.eclipse.rdf4j.sail.lmdb.ValuePosition;
 
 @Experimental
 final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler {
+	/** Every general-path compilation owns its frontier slots, including recursive and sibling paths. */
+	private int nextGeneralPathScope;
+
 	/**
 	 * LATERAL inputs visible while compiling the current right-hand subtree. A subquery can sit below transparent tuple
 	 * operators such as OPTIONAL or UNION, so the lexical frame cannot be inferred from the subquery node alone. Direct
@@ -2390,20 +2393,25 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		}
 		// The step evaluates per frontier node through hidden endpoint slots: like the generic PathIteration's
 		// per-length variable renaming, this decouples the step from constant endpoints and from the row's own
-		// bindings of the endpoint names.
+		// bindings of the endpoint names. Reserve a distinct pair per compilation before compiling the step:
+		// recursive closures must advance independently of their enclosing frontier. '#' cannot occur in a
+		// SPARQL variable name, and the scope suffix keeps these names separate from other general paths.
+		int pathScope = nextGeneralPathScope++;
+		String stepSubjName = "#pathStart" + pathScope;
+		String stepObjName = "#pathEnd" + pathScope;
 		TupleExpr stepExpr = alp.getPathExpression().clone();
-		stepExpr.visit(new org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor<RuntimeException>() {
+		stepExpr.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			public void meet(Var var) {
 				if (subjName.equals(var.getName())) {
-					var.replaceWith(Var.of("#pathStart", true));
+					var.replaceWith(Var.of(stepSubjName, true));
 				} else if (objName.equals(var.getName())) {
-					var.replaceWith(Var.of("#pathEnd", true));
+					var.replaceWith(Var.of(stepObjName, true));
 				}
 			}
 		});
-		int stepSubjSlot = slot("#pathStart");
-		int stepObjSlot = slot("#pathEnd");
+		int stepSubjSlot = slot(stepSubjName);
+		int stepObjSlot = slot(stepObjName);
 		// duplicate-insensitive: the BFS collects endpoints into sets, so step multiplicities are unobservable
 		SlotPlan step = compileTuple(stepExpr, true);
 		if (step == null || step instanceof GenericEvalPlan) {

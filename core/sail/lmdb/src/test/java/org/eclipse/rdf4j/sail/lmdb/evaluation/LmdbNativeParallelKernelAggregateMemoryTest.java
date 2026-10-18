@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.EnumerateDomain
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.Kernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.OutputMods;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -230,24 +231,66 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 
 	@Test
 	void parallelDistinctAdmissionReservesActualSetCapacity() {
-		set("rdf4j.lmdb.parallel.threads", "2");
-		set("rdf4j.lmdb.parallel.maxTasks", "2");
-		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(13_000L, 13_000L);
-		LmdbNativeHashJoin.queryMemoryOverride = manager;
-		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		int workerCount = 2;
+		int roots = 2 * workerCount;
+		set("rdf4j.lmdb.parallel.threads", Integer.toString(workerCount));
+		set("rdf4j.lmdb.parallel.maxTasks", Integer.toString(workerCount));
+		// Domain admission requires two roots per worker. The smallest possible partition has one root and a hint
+		// just above a power of two. Even its rounded table must exceed the budget, independent of work stealing.
+		int expected = DISTINCT_EXPECTED / 2 + 1;
+		int partitionExpected = LmdbNativeParallelKernelAggregate.partitionDistinctExpected(expected, false, 1L, roots);
+		long actualSetBytes = distinctSetBytes(partitionExpected);
+		long budget = actualSetBytes - 1L;
+		LmdbQueryMemoryManager ample = LmdbQueryMemoryManager.createForTesting(4_000_000L, 4_000_000L);
+		LmdbQueryMemoryManager constrained = LmdbQueryMemoryManager.createForTesting(budget, budget);
+		ExecutorService workers = Executors.newFixedThreadPool(workerCount);
+		try {
+			long ampleBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			assertSyntheticDistinctResult(runSyntheticAggregate(ample, workers, roots, true, expected));
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+					.as("the same DISTINCT shape must first prove parallel reachability")
+					.isGreaterThan(ampleBefore);
+			assertThat(ample.peakUsedBytes()).isGreaterThan(budget);
+			assertThat(ample.usedBytes()).isZero();
 
-		try (SailRepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(DISTINCT_QUERY).evaluate()) {
-			assertThat(result.hasNext()).isTrue();
-			BindingSet row = result.next();
-			assertThat(row.getValue("count").stringValue()).isEqualTo(Integer.toString(ROWS));
-			assertThat(result.hasNext()).isFalse();
+			long countBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			List<BindingSet> count = runSyntheticAggregate(constrained, workers, roots, false, expected);
+			assertThat(count).isNotNull().hasSize(1);
+			assertThat(count.get(0).getValue("count").stringValue()).isEqualTo(Integer.toString(roots));
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+					.as("the constrained budget must admit the ordinary parallel worker state")
+					.isGreaterThan(countBefore);
+			long nominalSetBytes = (long) workerCount * partitionExpected * Long.BYTES;
+			assertThat(constrained.peakUsedBytes() + nominalSetBytes)
+					.as("ordinary parallel state plus both nominal DISTINCT payloads must fit the budget")
+					.isLessThan(budget);
+			assertThat(constrained.usedBytes()).isZero();
+
+			long distinctBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+			assertThat(runSyntheticAggregate(constrained, workers, roots, true, expected))
+					.as("one actual DISTINCT table exceeds the entire budget, so admission must decline")
+					.isNull();
+			assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+					.as("a refused DISTINCT attempt must not publish a parallel result")
+					.isEqualTo(distinctBefore);
+			assertThat(constrained.usedBytes()).isZero();
+		} finally {
+			workers.shutdownNow();
+			LmdbNativeHashJoin.queryMemoryOverride = null;
 		}
+	}
 
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("the actual open-addressed DISTINCT table does not fit this query budget")
-				.isEqualTo(parallelBefore);
+	private static long distinctSetBytes(int expected) {
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(Long.MAX_VALUE, Long.MAX_VALUE);
+		long bytes;
+		try (LmdbQueryMemoryManager.QueryLedger ledger = manager.openQuery();
+				KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(ledger);
+				KernelRuntime.LongHashSet set = new KernelRuntime.LongHashSet(expected, null, memory)) {
+			bytes = ledger.usedBytes();
+			assertThat(bytes).isGreaterThan((long) expected * Long.BYTES);
+		}
 		assertThat(manager.usedBytes()).isZero();
+		return bytes;
 	}
 
 	@Test
@@ -457,8 +500,14 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 	}
 
 	private List<BindingSet> runSyntheticDistinct(LmdbQueryMemoryManager manager, ExecutorService workers) {
+		return runSyntheticAggregate(manager, workers, ROWS, true, DISTINCT_EXPECTED);
+	}
+
+	private List<BindingSet> runSyntheticAggregate(LmdbQueryMemoryManager manager, ExecutorService workers,
+			int rootCount, boolean distinct, int distinctExpected) {
+		LmdbNativeHashJoin.queryMemoryOverride = manager;
 		LmdbNativeRowDetachmentTest.FakeStoreSource values = new LmdbNativeRowDetachmentTest.FakeStoreSource();
-		long[] roots = new long[ROWS];
+		long[] roots = new long[rootCount];
 		for (int i = 0; i < roots.length; i++) {
 			roots[i] = values.add(SimpleValueFactory.getInstance().createIRI(EX, "root-" + i));
 		}
@@ -470,25 +519,25 @@ class LmdbNativeParallelKernelAggregateMemoryTest {
 			NativeSlotLayout layout = new NativeSlotLayout(Map.of("root", 0, "value", 1), null);
 			layout.freeze(List.of("root", "value"));
 			BindingSet base = EmptyBindingSet.getInstance();
-			AggregateSpec distinctSpec = AggregateSpec.slot("count", 1, true, AggKind.COUNT);
+			AggregateSpec countSpec = AggregateSpec.slot("count", 1, distinct, AggKind.COUNT);
 			NativeGroupIteration emitter = new NativeGroupIteration(source, SlotPlan.singleton(), layout, new int[0],
-					new AggregateSpec[] { distinctSpec }, false, base, null, null, false, null);
+					new AggregateSpec[] { countSpec }, false, base, null, null, false, null);
 			RowState row = new RowState(source, layout, base);
 			assertThat(emitter.initialize(row)).isTrue();
 
 			Aggregate terminal = new Aggregate(new int[0],
-					new AggregateOutput[] { AggregateOutput.countDistinct(1) }, null, OutputMods.none());
+					new AggregateOutput[] { distinct ? AggregateOutput.countDistinct(1) : AggregateOutput.count(1) },
+					null, OutputMods.none());
 			Kernel kernel = new Kernel(2, List.of(new EnumerateDomain(0, 0), new EnumerateDomain(1, 1)), terminal);
 			KernelGroupLayout groupLayout = new KernelGroupLayout(new int[0],
-					new AggOut[] { new AggOut(distinctSpec, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
+					new AggOut[] { new AggOut(countSpec, LmdbNativeKernelBindings.ENC_LONG_COUNT) });
 			LmdbNativeKernelBindings bindings = new LmdbNativeKernelBindings(
 					new LmdbNativeKernelBindings.AdjacencyRequest[0], new long[0], new int[0],
 					new LmdbNativeKernelBindings.DomainRequest[0], new LmdbNativeKernelBindings.FilterHook[0],
-					new int[0], List.of(), groupLayout, true, DISTINCT_EXPECTED);
+					new int[0], List.of(), groupLayout, true, distinctExpected);
 			LmdbNativeKernelLowering.Lowered lowered = new LmdbNativeKernelLowering.Lowered(kernel, bindings);
 			BoundDomains domains = new BoundDomains(new long[][] { roots, { sharedValue } }, new int[] { 0, 0 },
 					new int[] { roots.length, 1 });
-			LmdbNativeHashJoin.queryMemoryOverride = manager;
 			return LmdbNativeParallelKernelAggregate.tryEvaluate(lowered,
 					new NativeLmdbQuerySource.NativeAdjacency[0],
 					LmdbNativeKernelBindings.VariablePredicateViews.NONE, null, null, domains, SlotPlan.singleton(),

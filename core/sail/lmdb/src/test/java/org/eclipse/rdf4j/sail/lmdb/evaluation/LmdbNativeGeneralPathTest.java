@@ -18,9 +18,11 @@ import java.io.File;
 import java.util.List;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -115,6 +117,35 @@ public class LmdbNativeGeneralPathTest {
 				.containsExactlyInAnyOrderElementsOf(genericRows(query));
 	}
 
+	private void assertNativeRowsMatch(String query, List<BindingSet> generic) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		try {
+			System.setProperty(NATIVE_FLAG, "true");
+			long engagedBefore = GeneralPathPlan.ENGAGED.get();
+			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+			try (SailRepositoryConnection conn = repository.getConnection()) {
+				var prepared = conn.prepareTupleQuery(query);
+				List<BindingSet> nativeRows = QueryResults.asList(prepared.evaluate());
+				assertThat(GeneralPathPlan.ENGAGED.get()).as("the general path must execute:\n%s", query)
+						.isGreaterThan(engagedBefore);
+				assertThat(prepared.explain(Explanation.Level.Telemetry).toString())
+						.as("the path query must execute natively:\n%s", query)
+						.contains("LMDB native physical plan (executed)");
+				assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get())
+						.as("the path must retain native eligibility:\n%s", query)
+						.isEqualTo(islandsBefore);
+				assertThat(nativeRows).as("native vs generic for:\n%s", query)
+						.containsExactlyInAnyOrderElementsOf(generic);
+			}
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
+	}
+
 	private List<BindingSet> assertSameAsGenericWithoutIslands(String query) {
 		List<BindingSet> generic = genericRows(query);
 		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
@@ -151,6 +182,168 @@ public class LmdbNativeGeneralPathTest {
 	public void compoundSequencePlusFromConstant() {
 		assertSameAsGenericAndNative(
 				"SELECT ?o WHERE { <" + EX + "a> (<" + EX + "p>/<" + EX + "q>)+ ?o }");
+	}
+
+	@Test
+	public void nestedCompoundClosureFromConstantKeepsIndependentEndpoints() {
+		addNestedGeneralPathEdges();
+		String query = "SELECT ?o WHERE { <urn:a> ((<urn:p>/<urn:q>)+/<urn:r>)+ ?o } ORDER BY ?o";
+		List<BindingSet> generic = genericRows(query);
+		assertThat(generic).extracting(row -> row.getValue("o").stringValue()).containsExactly("urn:c");
+		assertNativeRowsMatch(query, generic);
+	}
+
+	@Test
+	public void nestedCompoundClosureHonorsFreeAndPreboundEndpoints() {
+		addNestedGeneralPathEdges();
+		String path = "((<urn:p>/<urn:q>)+/<urn:r>)+";
+		String freeQuery = "SELECT ?s ?o WHERE { ?s " + path + " ?o } ORDER BY ?s ?o";
+		List<BindingSet> free = genericRows(freeQuery);
+		assertThat(free).extracting(row -> row.getValue("s").stringValue() + "->" + row.getValue("o"))
+				.containsExactly("urn:a->urn:c", "urn:b->urn:c");
+		assertNativeRowsMatch(freeQuery, free);
+		for (String query : List.of(
+				"SELECT ?s WHERE { ?s " + path + " <urn:c> } ORDER BY ?s",
+				"SELECT ?s ?o WHERE { VALUES ?s { <urn:a> <urn:b> <urn:d> } ?s " + path + " ?o }",
+				"SELECT ?s ?o WHERE { VALUES (?s ?o) { (<urn:a> <urn:c>) (<urn:b> <urn:c>)"
+						+ " (<urn:d> <urn:c>) } ?s " + path + " ?o }")) {
+			List<BindingSet> generic = genericRows(query);
+			assertThat(generic).hasSize(2);
+			assertNativeRowsMatch(query, generic);
+		}
+	}
+
+	@Test
+	public void nestedCompoundClosuresSupportDeeperNestingAndInverseTraversal() {
+		addNestedGeneralPathEdges();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI("urn:c"), vf.createIRI("urn:p"), vf.createIRI("urn:z"));
+			conn.add(vf.createIRI("urn:z"), vf.createIRI("urn:q"), vf.createIRI("urn:f"));
+		}
+		String path = "(<urn:p>/<urn:q>)+";
+		String[] expected = { "urn:c", "urn:z", "urn:f" };
+		String[] nextPredicates = { "r", "p", "q" };
+		for (int depth = 0; depth < nextPredicates.length; depth++) {
+			path = "(" + path + "/<urn:" + nextPredicates[depth] + ">)+";
+			String query = "SELECT ?o WHERE { <urn:a> " + path + " ?o } ORDER BY ?o";
+			List<BindingSet> generic = genericRows(query);
+			assertThat(generic).extracting(row -> row.getValue("o").stringValue()).containsExactly(expected[depth]);
+			assertNativeRowsMatch(query, generic);
+		}
+		String reverse = "SELECT ?s WHERE { <urn:c> (^<urn:r>/(^<urn:q>/^<urn:p>)+)+ ?s } ORDER BY ?s";
+		List<BindingSet> generic = genericRows(reverse);
+		assertThat(generic).extracting(row -> row.getValue("s").stringValue()).containsExactly("urn:a", "urn:b");
+		assertNativeRowsMatch(reverse, generic);
+	}
+
+	@Test
+	public void nestedCompoundClosuresComposeWithStarsAlternativesAndCycles() {
+		addNestedGeneralPathEdges();
+		for (String path : List.of("((<urn:p>/<urn:q>)*/<urn:r>)+",
+				"((<urn:p>/<urn:q>)+/<urn:r>)*", "((<urn:p>/<urn:q>)+/(<urn:r>|<urn:unused>))+",
+				"((<urn:p>/<urn:q>)+/!<urn:p>)+")) {
+			String query = "SELECT ?o WHERE { <urn:a> " + path + " ?o } ORDER BY ?o";
+			List<BindingSet> generic = genericRows(query);
+			assertThat(generic).isNotEmpty();
+			assertNativeRowsMatch(query, generic);
+		}
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI("urn:d"), vf.createIRI("urn:p"), vf.createIRI("urn:x"));
+			conn.add(vf.createIRI("urn:c"), vf.createIRI("urn:p"), vf.createIRI("urn:x"));
+		}
+		String query = "SELECT ?s ?o WHERE { ?s ((<urn:p>/<urn:q>)+/<urn:r>)+ ?o } ORDER BY ?s ?o";
+		List<BindingSet> generic = genericRows(query);
+		assertThat(generic).extracting(row -> row.getValue("s").stringValue())
+				.containsExactly("urn:a", "urn:b", "urn:c", "urn:d");
+		assertNativeRowsMatch(query, generic);
+	}
+
+	@Test
+	public void siblingNestedClosuresComposeWithOptionalUnionAndFilters() {
+		addNestedGeneralPathEdges();
+		String path = "((<urn:p>/<urn:q>)+/<urn:r>)+";
+		for (String query : List.of(
+				"SELECT ?s ?o ?back WHERE { ?s " + path
+						+ " ?o . ?o (^<urn:r>/(^<urn:q>/^<urn:p>)+)+ ?back }",
+				"SELECT ?s ?o WHERE { VALUES ?s { <urn:a> <urn:b> <urn:d> } OPTIONAL { ?s " + path + " ?o } }",
+				"SELECT ?s ?o WHERE { { ?s " + path + " ?o } UNION { ?o (^<urn:r>/(^<urn:q>/^<urn:p>)+)+ ?s } }",
+				"SELECT ?s ?o WHERE { ?s " + path + " ?o FILTER(?s != <urn:b>) }")) {
+			List<BindingSet> generic = genericRows(query);
+			assertThat(generic).isNotEmpty();
+			assertNativeRowsMatch(query, generic);
+		}
+	}
+
+	@Test
+	public void nestedCompoundClosuresComposeWithMinusExistsAndSubqueries() {
+		addNestedGeneralPathEdges();
+		String path = "((<urn:p>/<urn:q>)+/<urn:r>)+";
+		for (String query : List.of(
+				"SELECT ?s ?o WHERE { ?s " + path + " ?o MINUS { VALUES ?s { <urn:b> } } }",
+				"SELECT ?s ?o WHERE { ?s " + path + " ?o FILTER EXISTS { ?s " + path + " <urn:c> } }",
+				"SELECT ?s ?o WHERE { ?s " + path + " ?o FILTER NOT EXISTS { ?s " + path + " <urn:d> } }",
+				"SELECT ?s ?o WHERE { { SELECT ?s ?o WHERE { ?s " + path + " ?o } } }")) {
+			List<BindingSet> generic = genericRows(query);
+			assertThat(generic).isNotEmpty();
+			assertNativeRowsMatch(query, generic);
+		}
+	}
+
+	@Test
+	public void compoundClosureWithZeroOrOneStepKeepsEndpointProjection() {
+		addNestedGeneralPathEdges();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			ValueFactory vf = conn.getValueFactory();
+			conn.add(vf.createIRI("urn:a"), vf.createIRI("urn:r"), vf.createIRI("urn:c"));
+			conn.add(vf.createIRI("urn:b"), vf.createIRI("urn:r"), vf.createIRI("urn:d"));
+		}
+		String query = "SELECT ?o WHERE { <urn:a> ((<urn:p>/<urn:q>)?/<urn:r>)+ ?o } ORDER BY ?o";
+		List<BindingSet> generic = genericRows(query);
+		assertThat(generic).extracting(row -> row.getValue("o").stringValue())
+				.containsExactly("urn:c", "urn:d");
+		assertNativeRowsMatch(query, generic);
+	}
+
+	@Test
+	public void nestedCompoundClosureKeepsNamedGraphScopesIndependent() {
+		ValueFactory vf = repository.getValueFactory();
+		addNestedGeneralPathEdges(vf.createIRI("urn:g1"));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.add(vf.createIRI("urn:a"), vf.createIRI("urn:p"), vf.createIRI("urn:x"), vf.createIRI("urn:g2"));
+			conn.add(vf.createIRI("urn:x"), vf.createIRI("urn:q"), vf.createIRI("urn:d"), vf.createIRI("urn:g2"));
+			conn.add(vf.createIRI("urn:d"), vf.createIRI("urn:r"), vf.createIRI("urn:c"), vf.createIRI("urn:g3"));
+		}
+		String path = "((<urn:p>/<urn:q>)+/<urn:r>)+";
+		String graphQuery = "SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s " + path + " ?o } }";
+		List<BindingSet> generic = genericRows(graphQuery);
+		assertThat(generic).hasSize(2)
+				.allSatisfy(row -> assertThat(row.getValue("g")).isEqualTo(vf.createIRI("urn:g1")));
+		assertNativeRowsMatch(graphQuery, generic);
+		for (String query : List.of(
+				"SELECT ?o WHERE { GRAPH <urn:g1> { <urn:a> " + path + " ?o } }",
+				"SELECT ?o FROM <urn:g1> WHERE { <urn:a> " + path + " ?o }",
+				"SELECT ?g ?o FROM NAMED <urn:g1> WHERE { GRAPH ?g { <urn:a> " + path + " ?o } }",
+				"SELECT ?g ?o WHERE { VALUES ?g { <urn:g1> } GRAPH ?g { <urn:a> " + path + " ?o } }")) {
+			List<BindingSet> scoped = genericRows(query);
+			assertThat(scoped).hasSize(1);
+			assertNativeRowsMatch(query, scoped);
+		}
+	}
+
+	private void addNestedGeneralPathEdges(Resource... contexts) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.begin();
+			ValueFactory vf = conn.getValueFactory();
+			for (String[] triple : List.of(new String[] { "a", "p", "x" },
+					new String[] { "x", "q", "b" }, new String[] { "b", "p", "y" },
+					new String[] { "y", "q", "d" }, new String[] { "d", "r", "c" })) {
+				conn.add(vf.createIRI("urn:" + triple[0]), vf.createIRI("urn:" + triple[1]),
+						vf.createIRI("urn:" + triple[2]), contexts);
+			}
+			conn.commit();
+		}
 	}
 
 	/** Compound sequence step under + driving into a constant end (backward evaluation). */

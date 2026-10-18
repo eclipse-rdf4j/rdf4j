@@ -462,6 +462,7 @@ final class FastNTriplesParser {
 			} else {
 				datatype = RDF_LANGSTRING;
 			}
+			datatypeLength = datatype.length;
 			if (languageEnd == languageStart) {
 				throw error("Expected language tag before base direction", lexicalStart);
 			}

@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
 import java.util.zip.GZIPOutputStream;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
@@ -70,6 +71,47 @@ class LmdbBulkParserRegressionTest {
 					assertEquals(expected, read(target));
 					assertEquals(expected, read(target));
 				}
+			}
+		}
+	}
+
+	@Test
+	void deduplicatesMixedFastAndRioLiteralInputsAfterReopen() throws IOException {
+		String input = "<urn:s> <urn:p> \"plain\" .\n"
+				+ "<urn:s> <urn:p> \"42\"^^<http://www.w3.org/2001/XMLSchema#integer> .\n"
+				+ "<urn:s> <urn:p> \"hello\"@en .\n"
+				+ "<urn:s> <urn:p> \"Bonjour\"@EN-us .\n"
+				+ "<urn:s> <urn:p> \"שלום\"@he--rtl .\n"
+				+ "<urn:s> <urn:p> \"a\\nb\"@EN-us--ltr .\n";
+		Set<Statement> expected = Set.of(
+				VF.createStatement(SUBJECT, PREDICATE, VF.createLiteral("plain")),
+				VF.createStatement(SUBJECT, PREDICATE,
+						VF.createLiteral("42", VF.createIRI("http://www.w3.org/2001/XMLSchema#integer"))),
+				VF.createStatement(SUBJECT, PREDICATE, VF.createLiteral("hello", "en")),
+				VF.createStatement(SUBJECT, PREDICATE, VF.createLiteral("Bonjour", "EN-us")),
+				VF.createStatement(SUBJECT, PREDICATE,
+						VF.createLiteral("שלום", "he", Literal.BaseDirection.RTL)),
+				VF.createStatement(SUBJECT, PREDICATE,
+						VF.createLiteral("a\nb", "EN-us", Literal.BaseDirection.LTR)));
+
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String formatName = format.getName();
+			Path fastInput = temporaryDirectory.resolve("mixed-" + formatName + ".rdf");
+			Path turtleInput = temporaryDirectory.resolve("mixed-" + formatName + ".ttl");
+			Files.writeString(fastInput, input, UTF_8);
+			Files.writeString(turtleInput, input, UTF_8);
+			for (LmdbBulkLoader.ParserMode mode : List.of(LmdbBulkLoader.ParserMode.AUTO,
+					LmdbBulkLoader.ParserMode.RIO)) {
+				String variant = formatName + " " + mode;
+				Path target = target("mixed-literal", format, mode, 1);
+				LmdbBulkLoader.Result result = loader(target, mode, 1).load(List.of(
+						new LmdbBulkLoader.PathInput(fastInput, format, "urn:test:"),
+						new LmdbBulkLoader.PathInput(turtleInput, RDFFormat.TURTLE, "urn:test:")));
+
+				assertEquals(expected.size() * 2L, result.parsedStatements(), variant);
+				assertEquals(expected.size(), result.storedStatements(), variant);
+				assertEquals(expected, read(target), variant);
+				assertEquals(expected, read(target), variant + " after reopen");
 			}
 		}
 	}
