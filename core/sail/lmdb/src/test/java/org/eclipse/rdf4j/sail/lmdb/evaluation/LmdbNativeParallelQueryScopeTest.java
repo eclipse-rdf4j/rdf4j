@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -37,6 +38,8 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Verifies that a query-stable scalar composite sees one query instant in every worker. The expression deliberately
@@ -54,6 +57,7 @@ class LmdbNativeParallelQueryScopeTest {
 			"rdf4j.lmdb.janinoCodegen.enabled",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
+			"rdf4j.lmdb.kernelInterpreter.enabled",
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
 			"rdf4j.lmdb.factorizedTail.enabled",
@@ -99,6 +103,7 @@ class LmdbNativeParallelQueryScopeTest {
 		set("rdf4j.lmdb.janinoCodegen.enabled", "true");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		set("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
+		set("rdf4j.lmdb.kernelInterpreter.enabled", "true");
 		set("rdf4j.lmdb.wcoj.enabled", "false");
 		set("rdf4j.lmdb.factorizedRows.enabled", "false");
 		set("rdf4j.lmdb.factorizedTail.enabled", "false");
@@ -131,19 +136,36 @@ class LmdbNativeParallelQueryScopeTest {
 		previousProperties.clear();
 	}
 
-	@Test
-	void queryStableCompositeSharesNowScopeAcrossConcurrentParallelEvaluations() throws Exception {
+	@ParameterizedTest
+	@ValueSource(strings = { "irAggregateParallel", "irAggregateParallelInterpreted" })
+	void queryStableCompositeSharesNowScopeAcrossConcurrentParallelEvaluations(String strategy) throws Exception {
 		set("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
 		List<Long> expected = counts();
 		assertThat(expected).containsExactlyElementsOf(expectedCounts());
 
 		set("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+		// Each concurrent evaluation owns four workers. Automatic admission may instead choose a serial rival;
+		// this scope contract explicitly exercises both parallel kernels without competing for the same four slots.
+		set("rdf4j.lmdb.parallel.maxTasks", "16");
 		long parallelBefore = LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get();
+		assertConcurrentCounts(strategy);
+
+		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
+				.as("the scoped query-stable composite must be admitted to the parallel aggregate rung")
+				.isGreaterThan(parallelBefore);
+	}
+
+	@Test
+	void automaticConcurrentEvaluationsPreserveQueryStableCountsUnderSharedTaskBudget() throws Exception {
+		assertConcurrentCounts(null);
+	}
+
+	private void assertConcurrentCounts(String strategy) throws Exception {
 		ExecutorService executor = Executors.newFixedThreadPool(4);
 		try {
 			List<Future<List<Long>>> futures = new ArrayList<>();
 			for (int i = 0; i < 4; i++) {
-				futures.add(executor.submit(this::counts));
+				futures.add(executor.submit(() -> counts(strategy)));
 			}
 			for (Future<List<Long>> future : futures) {
 				assertThat(future.get()).containsExactlyElementsOf(expectedCounts());
@@ -151,19 +173,22 @@ class LmdbNativeParallelQueryScopeTest {
 		} finally {
 			executor.shutdownNow();
 		}
-
-		assertThat(LmdbNativeParallelKernelAggregate.PARALLEL_RUNS.get())
-				.as("the scoped query-stable composite must be admitted to the parallel aggregate rung")
-				.isGreaterThan(parallelBefore);
 	}
 
 	private List<Long> counts() {
+		return counts(null);
+	}
+
+	private List<Long> counts(String strategy) {
 		List<Long> counts = new ArrayList<>();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				var result = connection.prepareTupleQuery(QUERY).evaluate()) {
-			while (result.hasNext()) {
-				BindingSet row = result.next();
-				counts.add(((Literal) row.getValue("count")).longValue());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(QUERY);
+			query.setForcedLmdbExecutionStrategy(strategy);
+			try (var result = query.evaluate()) {
+				while (result.hasNext()) {
+					BindingSet row = result.next();
+					counts.add(((Literal) row.getValue("count")).longValue());
+				}
 			}
 		}
 		counts.sort(Long::compareTo);

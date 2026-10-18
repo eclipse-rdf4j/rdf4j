@@ -370,9 +370,15 @@ public class LmdbNativePrimitiveGroupingTest {
 					.isZero();
 
 			String exactQuery = "SELECT ?p (COUNT(?s) AS ?c) WHERE { ?s ?p ?o } GROUP BY ?p";
+			assertNativeMatchesGeneric(repository, exactQuery);
+			List<String> expectedExactRows = rows(repository, exactQuery);
 			long exactRowsBefore = NativeGroupIteration.ORDERED_GROUP_ROWS.get();
-			rows(repository, exactQuery);
-			assertThat(strategy(repository, exactQuery)).isEqualTo("orderedSinglePatternGroups");
+			// Automatic costing can prefer a learned single-slot table. Force the ordered route whose continued
+			// availability this follow-up verifies, after independently checking automatic result parity above.
+			assertThat(rows(repository, exactQuery, "orderedSinglePatternGroups"))
+					.containsExactlyElementsOf(expectedExactRows);
+			assertThat(strategy(repository, exactQuery, "orderedSinglePatternGroups"))
+					.isEqualTo("orderedSinglePatternGroups");
 			assertThat(NativeGroupIteration.ORDERED_GROUP_ROWS.get())
 					.as("a floating fallback must not disable a subsequent exact ordered grouping")
 					.isGreaterThan(exactRowsBefore);
@@ -403,8 +409,14 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	private List<String> rows(SailRepository target, String query) {
+		return rows(target, query, null);
+	}
+
+	private List<String> rows(SailRepository target, String query, String strategy) {
 		try (SailRepositoryConnection connection = target.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(strategy);
+			return QueryResults.asList(prepared.evaluate())
 					.stream()
 					.map(Object::toString)
 					.sorted()
@@ -413,8 +425,14 @@ public class LmdbNativePrimitiveGroupingTest {
 	}
 
 	private String strategy(SailRepository target, String query) {
+		return strategy(target, query, null);
+	}
+
+	private String strategy(SailRepository target, String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = target.getConnection()) {
-			String strategy = findMetric(connection.prepareTupleQuery(query)
+			SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			String strategy = findMetric(prepared
 					.explain(Explanation.Level.Telemetry)
 					.toGenericPlanNode(), "nativeExecutionPath", true);
 			assertThat(strategy).as("expected a nativeExecutionPath metric in the explanation").isNotNull();

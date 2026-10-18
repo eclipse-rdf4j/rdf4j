@@ -79,6 +79,16 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
  */
 public class LmdbStoreConnection extends SailSourceConnection implements SailResultValueExposure {
 
+	/** An owner explicitly closed its result before an already-dispatched worker could activate. */
+	@InternalUseOnly
+	public static final class ReadOperationClosedException extends SailException {
+		private static final long serialVersionUID = 1L;
+
+		private ReadOperationClosedException() {
+			super("The dispatched LMDB read operation has already finished");
+		}
+	}
+
 	/*-----------*
 	 * Constants *
 	 *-----------*/
@@ -3370,8 +3380,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			if (cancellationGeneration != readCancellationGeneration) {
 				throw new SailException("The dispatched LMDB read operation was cancelled");
 			}
-			if (operationAttempt != null && operationAttempt.closed
-					|| observationOwner != null && observationOwner.workerAdmissionClosed) {
+			if (observationOwner != null && observationOwner.workerAdmissionClosed) {
+				throw new ReadOperationClosedException();
+			}
+			if (operationAttempt != null && operationAttempt.closed) {
 				throw new SailException("The dispatched LMDB read operation has already finished");
 			}
 			if (admission == null || admission.generation() != generation
@@ -3387,8 +3399,10 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		public QueryExecutionContext.Activation activate() {
 			throwIfDeadlineExpired(deadline);
 			synchronized (readAttemptLock) {
-				if (operationAttempt != null && operationAttempt.closed
-						|| observationOwner != null && observationOwner.isClosed()) {
+				if (observationOwner != null && observationOwner.isClosed()) {
+					throw new ReadOperationClosedException();
+				}
+				if (operationAttempt != null && operationAttempt.closed) {
 					throw new SailException("The dispatched LMDB read operation has already finished");
 				}
 				checkActive();

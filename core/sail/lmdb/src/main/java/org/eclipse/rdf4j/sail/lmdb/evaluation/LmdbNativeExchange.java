@@ -118,7 +118,22 @@ final class LmdbNativeExchange {
 			throw new IOException("parallel native execution aborted", problem);
 		}
 		if (cancelled.get()) {
-			throw new IOException("parallel native execution cancelled");
+			throw new ExecutionCancelledException(cancelled);
+		}
+	}
+
+	/** Only the exchange's authoritative cooperative cancellation guard creates this outcome. */
+	static final class ExecutionCancelledException extends IOException {
+		private static final long serialVersionUID = 1L;
+		private final AtomicBoolean cancellationSignal;
+
+		private ExecutionCancelledException(AtomicBoolean cancellationSignal) {
+			super("parallel native execution cancelled");
+			this.cancellationSignal = cancellationSignal;
+		}
+
+		boolean belongsTo(AtomicBoolean signal) {
+			return cancellationSignal == signal;
 		}
 	}
 

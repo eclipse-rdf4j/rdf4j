@@ -7731,6 +7731,11 @@ class LmdbSailStore implements SailStore {
 			failure = cleanupFailure;
 			throw cleanupFailure;
 		} finally {
+			// Idle asynchronous rollback can also join an owner and restore its interrupt. A later executor
+			// may already be terminated, so it need not perform an interruptible wait that reports that signal.
+			if (interruption == null && Thread.currentThread().isInterrupted()) {
+				interruption = new InterruptedException("Interrupted during LMDB native shutdown cleanup");
+			}
 			if (interruption != null) {
 				Thread.currentThread().interrupt();
 				InterruptedSailException interruptedClose = new InterruptedSailException(

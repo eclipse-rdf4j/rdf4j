@@ -23,9 +23,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalDouble;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -38,6 +45,8 @@ import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
@@ -50,6 +59,7 @@ import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /** Differential and lifecycle coverage for same-snapshot parallel row pipelines. */
 @Execution(ExecutionMode.SAME_THREAD)
@@ -844,6 +854,198 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(querySource.lazyValueCalls).as("worker filters must resolve through RowState.source").isZero();
 	}
 
+	@ParameterizedTest
+	@CsvSource({ "false,false", "true,false", "false,true", "true,true" })
+	void closingResultCancelsWorkersDeniedBeforeNativeDelegateClose(boolean failWorker, boolean outputBackpressure)
+			throws Exception {
+		CountDownLatch workersEntered = new CountDownLatch(3);
+		CountDownLatch releaseWorkers = new CountDownLatch(1);
+		CountDownLatch delegateCloseEntered = new CountDownLatch(1);
+		CountDownLatch releaseDelegateClose = new CountDownLatch(1);
+		CountDownLatch workerScopesClosed = new CountDownLatch(4);
+		AtomicBoolean gateRegistration = new AtomicBoolean();
+		AtomicInteger activations = new AtomicInteger();
+		AtomicReference<Thread> activeWorker = new AtomicReference<>();
+		AtomicReference<Thread> deniedWorker = new AtomicReference<>();
+		AtomicInteger delegateCloses = new AtomicInteger();
+		IllegalStateException workerFailure = new IllegalStateException("genuine worker activation failure");
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		AtomicReference<Thread> closer = new AtomicReference<>();
+		LmdbStore store = new LmdbStore(new File(dataDir, "close-admission"),
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)) {
+			@Override
+			protected NotifyingSailConnection getConnectionInternal() throws SailException {
+				return new LmdbStoreConnection(this) {
+					@Override
+					protected <T, E extends Exception> CloseableIteration<T> registerIteration(
+							CloseableIteration<T> iteration) {
+						if (!gateRegistration.get()) {
+							return super.registerIteration(iteration);
+						}
+						return super.registerIteration(new IterationWrapper<T>(iteration) {
+							@Override
+							protected void handleClose() {
+								delegateCloses.incrementAndGet();
+								delegateCloseEntered.countDown();
+								awaitCloseOrdering(releaseDelegateClose);
+								super.handleClose();
+							}
+						});
+					}
+				};
+			}
+		};
+		SailRepository guarded = new SailRepository(store);
+		long cancellations = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
+		long failures = LmdbNativeParallelPipelines.WORKER_FAILURES.get();
+		try {
+			try (SailRepositoryConnection original = repository.getConnection();
+					SailRepositoryConnection copy = guarded.getConnection();
+					var statements = original.getStatements(null, null, null)) {
+				copy.begin();
+				copy.add(statements);
+				copy.commit();
+			}
+			try (SailRepositoryConnection connection = guarded.getConnection();
+					var scope = QueryExecutionContext.activateReplaySafepoint(() -> {
+					}, () -> () -> {
+						int activation = activations.incrementAndGet();
+						if (activation == 1) {
+							activeWorker.set(Thread.currentThread());
+						} else if (activation == 3) {
+							deniedWorker.set(Thread.currentThread());
+						}
+						if (activation > 1) {
+							workersEntered.countDown();
+							awaitCloseOrdering(releaseWorkers);
+						}
+						if (failWorker && activation == 2) {
+							// The denied sibling must finish its task (and publish owner cancellation) first.
+							awaitWorkerReturnedToPool(deniedWorker.get());
+							workerScopesClosed.countDown();
+							throw workerFailure;
+						}
+						return workerScopesClosed::countDown;
+					})) {
+				gateRegistration.set(true);
+				SailTupleQuery query = (SailTupleQuery) connection
+						.prepareTupleQuery(outputBackpressure ? highFanoutChain() : chain(""));
+				query.setForcedLmdbExecutionStrategy(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+				try (TupleQueryResult result = query.evaluate()) {
+					assertThat(result.hasNext()).isTrue();
+					assertThat(result.next().getBindingNames()).containsExactlyInAnyOrderElementsOf(outputBackpressure
+							? List.of("subject", "value", "value2", "value3")
+							: List.of("subject", "value"));
+					awaitCloseOrdering(workersEntered);
+					if (outputBackpressure) {
+						awaitNativeOutputBackpressure(activeWorker.get());
+					}
+					closer.set(new Thread(() -> {
+						try {
+							result.close();
+						} catch (Throwable failure) {
+							closeFailure.set(failure);
+						}
+					}, "parallel-result-close-admission"));
+					closer.get().start();
+					if (outputBackpressure) {
+						// An admitted worker defers delegate retirement. Public close returning establishes owner
+						// invalidation while that worker still owns its captured native read scope.
+						closer.get().join(10_000L);
+						assertThat(closer.get().isAlive()).isFalse();
+						assertThat(closeFailure.get()).isNull();
+						assertThat(delegateCloseEntered.getCount()).isEqualTo(1L);
+					} else {
+						awaitCloseOrdering(delegateCloseEntered);
+					}
+					// The result owner is closed, while the native delegate has not yet received cancellation.
+					// Dispatched workers must be denied activation, and that denial is a caller-close outcome.
+					releaseWorkers.countDown();
+					awaitReleasedParallelTasks();
+					awaitCloseOrdering(delegateCloseEntered);
+					releaseDelegateClose.countDown();
+					closer.get().join(10_000L);
+					assertThat(closer.get().isAlive()).isFalse();
+					assertThat(closeFailure.get()).isNull();
+					awaitCloseOrdering(workerScopesClosed);
+				}
+				gateRegistration.set(false);
+				assertThat(connection.size()).isEqualTo(1_200L);
+			}
+			assertThat(activations).hasValue(4);
+			assertThat(delegateCloses).hasValue(1);
+			assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get())
+					.isEqualTo(cancellations + (failWorker ? 0L : 1L));
+			assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get()).isEqualTo(failures + (failWorker ? 1L : 0L));
+			try (var tasks = LmdbNativeParallelPipelines.tryReserveTasks(true, 4)) {
+				assertThat(tasks).as("close releases every worker reservation").isNotNull();
+			}
+		} finally {
+			releaseWorkers.countDown();
+			releaseDelegateClose.countDown();
+			if (closer.get() != null) {
+				closer.get().join(10_000L);
+			}
+			guarded.shutDown();
+		}
+	}
+
+	private static void awaitWorkerReturnedToPool(Thread worker) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (System.nanoTime() < deadline) {
+			if (Arrays.stream(worker.getStackTrace())
+					.anyMatch(frame -> frame.getClassName()
+							.equals("java.util.concurrent.ThreadPoolExecutor")
+							&& frame.getMethodName().equals("getTask"))) {
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		throw new AssertionError("the denied sibling must finish before the genuine worker error");
+	}
+
+	private static void awaitNativeOutputBackpressure(Thread worker) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		while (System.nanoTime() < deadline) {
+			StackTraceElement[] stack = worker.getStackTrace();
+			boolean inNativeOffer = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName()
+							.equals(LmdbNativeParallelPipelines.ParallelRowCursor.class.getName())
+							&& frame.getMethodName().equals("offerOutput"));
+			boolean inBoundedQueueOffer = Arrays.stream(stack)
+					.anyMatch(frame -> frame.getClassName()
+							.equals("java.util.concurrent.ArrayBlockingQueue")
+							&& frame.getMethodName().equals("offer"));
+			if (inNativeOffer && inBoundedQueueOffer && worker.getState() == Thread.State.TIMED_WAITING) {
+				assertThat(LmdbNativeParallelPipelines.OUTPUT_BATCHES.get()).isGreaterThan(1L);
+				return;
+			}
+			Thread.onSpinWait();
+		}
+		throw new AssertionError("the admitted native worker must block on its bounded output queue");
+	}
+
+	private static void awaitReleasedParallelTasks() {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+		LmdbNativeParallelPipelines.TaskReservation reservation;
+		while ((reservation = LmdbNativeParallelPipelines.tryReserveTasks(true, 4)) == null
+				&& System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertThat(reservation).as("every admitted native worker must finish before releasing delegate close")
+				.isNotNull();
+		reservation.close();
+	}
+
+	private static void awaitCloseOrdering(CountDownLatch latch) {
+		try {
+			assertThat(latch.await(10L, TimeUnit.SECONDS)).as("the coordinated close step must finish").isTrue();
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError(failure);
+		}
+	}
+
 	@Test
 	public void earlyCloseCancelsWorkersAndLeavesStoreUsable() {
 		long cancelled = LmdbNativeParallelPipelines.CANCELLED_RUNS.get();
@@ -858,7 +1060,9 @@ public class LmdbNativeParallelPipelinesTest {
 			}
 		}
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(1L);
-		assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get()).isEqualTo(cancelled + 1L);
+		assertThat(LmdbNativeParallelPipelines.CANCELLED_RUNS.get())
+				.as("worker failures: %s", LmdbNativeParallelPipelines.WORKER_FAILURES.get())
+				.isEqualTo(cancelled + 1L);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(1_200L);
 		}

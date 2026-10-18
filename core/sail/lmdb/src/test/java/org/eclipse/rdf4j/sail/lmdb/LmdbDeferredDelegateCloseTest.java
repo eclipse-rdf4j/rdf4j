@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -38,12 +39,86 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 
 class LmdbDeferredDelegateCloseTest {
+	@Test
+	void capturedWorkerIsDeniedWhenOwnerClosesBeforeNativeDelegate(@TempDir Path directory) throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc"));
+		store.init();
+		CountDownLatch delegateCloseEntered = new CountDownLatch(1);
+		CountDownLatch releaseDelegateClose = new CountDownLatch(1);
+		AtomicReference<QueryExecutionContext.ReplayContext> captured = new AtomicReference<>();
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		AtomicInteger closes = new AtomicInteger();
+		AtomicInteger workerCalls = new AtomicInteger();
+		Thread closer = null;
+		try (LmdbStoreConnection connection = (LmdbStoreConnection) store.getConnection();
+				var executor = Executors.newSingleThreadExecutor()) {
+			connection.begin(IsolationLevels.SNAPSHOT);
+			CloseableIteration<String> owner = connection.registerIteration(new Delegate(closes, null) {
+				@Override
+				public boolean hasNext() {
+					captured.set(QueryExecutionContext.captureReplayContext());
+					return true;
+				}
+
+				@Override
+				protected void handleClose() {
+					delegateCloseEntered.countDown();
+					try {
+						assertThat(releaseDelegateClose.await(10, TimeUnit.SECONDS)).isTrue();
+					} catch (InterruptedException failure) {
+						Thread.currentThread().interrupt();
+						throw new AssertionError(failure);
+					}
+					super.handleClose();
+				}
+			});
+			assertThat(owner.hasNext()).isTrue();
+			assertThat(captured.get()).isNotNull();
+			closer = new Thread(() -> {
+				try {
+					owner.close();
+				} catch (Throwable failure) {
+					closeFailure.set(failure);
+				}
+			}, "captured-owner-close");
+			try {
+				closer.start();
+				assertThat(delegateCloseEntered.await(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(closes).hasValue(0);
+				assertThatThrownBy(() -> executor.submit(() -> captured.get().run(workerCalls::incrementAndGet))
+						.get(10, TimeUnit.SECONDS)).isInstanceOf(ExecutionException.class)
+								.hasCauseInstanceOf(SailException.class)
+								.satisfies(failure -> assertThat(failure.getCause())
+										.hasMessage("The dispatched LMDB read operation has already finished"));
+				assertThat(workerCalls).hasValue(0);
+			} finally {
+				releaseDelegateClose.countDown();
+				closer.join(10_000L);
+			}
+			assertThat(closer.isAlive()).isFalse();
+			assertThat(closeFailure.get()).isNull();
+			assertThat(closes).hasValue(1);
+			assertThatThrownBy(() -> captured.get().run(workerCalls::incrementAndGet))
+					.hasMessageContaining("finished");
+			assertThat(workerCalls).hasValue(0);
+			connection.rollback();
+		} finally {
+			releaseDelegateClose.countDown();
+			if (closer != null) {
+				closer.join(10_000L);
+			}
+			store.shutDown();
+		}
+	}
+
 	enum Drain {
 		TRACKED_SUCCESS,
 		TRACKED_FAILURE,

@@ -731,6 +731,63 @@ class LmdbValueGcOwnershipTest {
 
 	@ParameterizedTest
 	@ValueSource(booleans = { false, true })
+	void interruptionRestoredByIdleRollbackSurvivesAlreadyTerminatedExecutors(boolean failRollback) throws Exception {
+		AtomicBoolean interruptRollback = new AtomicBoolean();
+		SailException rollbackFailure = new SailException("idle rollback cleanup failure");
+		LmdbSailStore store = new LmdbSailStore(directory.toFile(), new StoreProperties(directory.toFile()),
+				config().setBulkOperationSize(0), false) {
+			@Override
+			void rollback() {
+				super.rollback();
+				if (interruptRollback.getAndSet(false)) {
+					// Model the interrupt restored by rollbackAsyncTransaction after it has joined its native owner.
+					Thread.currentThread().interrupt();
+					if (failRollback) {
+						throw rollbackFailure;
+					}
+				}
+			}
+		};
+		store.enableMultiThreading = false;
+		AtomicReference<Throwable> closeFailure = new AtomicReference<>();
+		AtomicBoolean interruptRestored = new AtomicBoolean();
+		Thread closer = new Thread(() -> {
+			try {
+				store.close();
+			} catch (Throwable failure) {
+				closeFailure.set(failure);
+			} finally {
+				interruptRestored.set(Thread.currentThread().isInterrupted());
+			}
+		}, "interrupted-idle-close");
+		try (TxnManager.Txn valueReader = store.valueStore().getTxnManager().createReadTxnUntracked();
+				TxnManager.Txn tripleReader = store.getTripleStore().getTxnManager().createReadTxnUntracked()) {
+			var vf = SimpleValueFactory.getInstance();
+			SailSink sink = store.getExplicitSailSource().sink(IsolationLevels.NONE);
+			sink.approve(vf.createIRI("urn:close:idle"), vf.createIRI("urn:close:p"), vf.createLiteral("unflushed"),
+					null);
+			interruptRollback.set(true);
+			closer.start();
+			closer.join(10_000L);
+			assertThat(closer.isAlive()).isFalse();
+			if (failRollback) {
+				assertThat(closeFailure.get()).isSameAs(rollbackFailure);
+				assertThat(rollbackFailure.getSuppressed()).anySatisfy(
+						failure -> assertThat(failure).isInstanceOf(InterruptedSailException.class));
+			} else {
+				assertThat(closeFailure.get()).isInstanceOf(InterruptedSailException.class);
+			}
+			assertThat(interruptRestored.get()).isTrue();
+			assertThat(valueReader.get()).isZero();
+			assertThat(tripleReader.get()).isZero();
+		} finally {
+			closer.join(10_000L);
+			store.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
 	void owningCloseJoinsQueuedWorkerBeforeEndingNativeReaders(boolean interruptClose) throws Exception {
 		writeLegacyProperties();
 		StoreProperties properties = new StoreProperties(directory.toFile());

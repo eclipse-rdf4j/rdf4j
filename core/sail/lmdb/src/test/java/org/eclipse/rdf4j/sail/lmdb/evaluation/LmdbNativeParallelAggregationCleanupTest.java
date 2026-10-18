@@ -30,6 +30,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.model.Value;
@@ -46,6 +47,8 @@ import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class LmdbNativeParallelAggregationCleanupTest {
 	private String previousParallelEnabled;
@@ -731,6 +734,34 @@ class LmdbNativeParallelAggregationCleanupTest {
 		assertThat(producer.closeCalls).isOne();
 		assertThat(problem).isSameAs(scanFailure);
 		assertThat(problem.getSuppressed()).containsExactly(closeFailure);
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,false", "false,true", "true,false", "true,true" })
+	void parallelRowCursorPreservesOtherExchangeCancellation(boolean typedCancellation, boolean producerFailure) {
+		IOException nestedFailure = typedCancellation
+				? (IOException) catchThrowable(() -> LmdbNativeExchange.throwIfAborted(new AtomicReference<>(),
+						new AtomicBoolean(true)))
+				: new IOException("parallel native execution cancelled");
+		long failuresBefore = LmdbNativeParallelPipelines.WORKER_FAILURES.get();
+		ParallelPipelineSource worker = new ParallelPipelineSource(producerFailure ? null : nestedFailure, null);
+		ParallelPipelineSource producer = new ParallelPipelineSource(new long[] { 1L, 7L, 8L, 0L },
+				producerFailure ? nestedFailure : null, null, null, null, null);
+		LmdbNativeParallelPipelines.ParallelRowCursor cursor = parallelTwoPatternRowCursor(worker, producer);
+		try {
+			if (!producerFailure) {
+				cursor.pumpProducer();
+				awaitTaskCount(cursor, 0L);
+			}
+			assertThat(cursor.failure.get()).as("another exchange cannot cancel this pipeline silently")
+					.isSameAs(nestedFailure);
+			assertThat(catchThrowable(cursor::next)).isSameAs(nestedFailure);
+			assertThat(LmdbNativeParallelPipelines.WORKER_FAILURES.get()).isEqualTo(failuresBefore + 1L);
+		} finally {
+			cursor.close();
+		}
+		assertThat(worker.closeCalls).isOne();
+		assertThat(producer.closeCalls).isOne();
 	}
 
 	@Test

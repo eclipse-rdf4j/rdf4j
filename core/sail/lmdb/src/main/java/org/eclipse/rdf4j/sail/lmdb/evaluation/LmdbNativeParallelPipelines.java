@@ -30,6 +30,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbRootScanPartition;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStoreConnection.ReadOperationClosedException;
 
 /**
  * Shared same-snapshot morsel scheduler for native pipelines. The query thread keeps its original source; one sibling
@@ -665,6 +666,7 @@ final class LmdbNativeParallelPipelines {
 		final int plannedPartitionCount;
 		final ArrayBlockingQueue<OutputPage> output;
 		final AtomicReference<Throwable> failure = new AtomicReference<>();
+		final AtomicReference<ReadOperationClosedException> ownerCancellation = new AtomicReference<>();
 		final AtomicReference<Throwable> cleanupFailure = new AtomicReference<>();
 		final AtomicBoolean cancelled = new AtomicBoolean();
 		final Object failureLock = new Object();
@@ -829,9 +831,22 @@ final class LmdbNativeParallelPipelines {
 		}
 
 		void recordTaskFailure(Throwable problem) {
+			if (problem instanceof LmdbNativeExchange.ExecutionCancelledException cancellation
+					&& cancellation.belongsTo(cancelled) && cancelled.get()) {
+				// Only this exchange's cancellation can wake its blocked worker cooperatively. A failure from
+				// nested/foreign execution must retain its ordinary propagation and failure accounting.
+				return;
+			}
+			if (problem instanceof ReadOperationClosedException closedOwner) {
+				// The captured capability is still denied immediately. Caller close can reach the owner before
+				// its native delegate, so retain this cancellation separately from genuine execution failures.
+				ownerCancellation.compareAndSet(null, closedOwner);
+				cancelled.set(true);
+				return;
+			}
 			boolean recorded = false;
 			synchronized (failureLock) {
-				if (!cancelled.get() && failure.compareAndSet(null, problem)) {
+				if ((!cancelled.get() || ownerCancellation.get() != null) && failure.compareAndSet(null, problem)) {
 					addSuppressed(problem, cleanupFailure.get());
 					recorded = true;
 				}
@@ -1092,7 +1107,7 @@ final class LmdbNativeParallelPipelines {
 					return false;
 				}
 				Throwable problem = failure.get();
-				if (problem != null) {
+				if (problem != null || ownerCancellation.get() != null) {
 					close();
 					throwFailure(failureToThrow());
 				}
@@ -1128,7 +1143,11 @@ final class LmdbNativeParallelPipelines {
 
 		private Throwable failureToThrow() {
 			Throwable problem = failure.get();
-			return problem != null ? problem : cleanupFailure.get();
+			if (problem != null) {
+				return problem;
+			}
+			problem = cleanupFailure.get();
+			return problem != null ? problem : ownerCancellation.get();
 		}
 
 		private static void throwFailure(Throwable problem) throws IOException {
