@@ -510,8 +510,7 @@ final class LmdbNativeParallelPipelines {
 		if (consumerRow.source instanceof SyntheticValueSource synthetic) {
 			NativeExecutionContext executionContext = synthetic.executionContext();
 			if (executionContext != null) {
-				return executionContext.genericContext(
-						() -> EvaluationScopedQueryEvaluationContext.create(step.context, step.strategy));
+				return executionContext.genericContext(step.context, step.strategy);
 			}
 		}
 		return EvaluationScopedQueryEvaluationContext.create(step.context, step.strategy);

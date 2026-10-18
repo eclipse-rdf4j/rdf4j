@@ -21,10 +21,10 @@ const REPOSITORY_URL = `${SERVER_BASE_URL}/repositories/${REPOSITORY_ID}`;
 const QUERY_URL = `${WORKBENCH_BASE_URL}/repositories/${REPOSITORY_ID}/query`;
 const NDJSON_ACCEPT = 'application/vnd.rdf4j.workbench+ndjson';
 const QUERY_TIMEOUT_SECONDS = 1;
-// 200^3 = 8,000,000 candidate rows: the server streams about a million rows a second, so a cube of 100^3 sometimes
-// completed in the one second before the timeout and the test saw no timeout at all.
+// 200^3 = 8,000,000 candidate rows: inexpensive rows reach the transport promptly, while the large result keeps
+// both tuple and graph queries active past the timeout. Expensive per-row functions can instead expire before
+// the graph transport's Binary RDF statement buffer fills, producing no partial rows to exercise the renderer.
 const VALUES_PER_DIMENSION = 200;
-const GRAPH_VALUES_PER_DIMENSION = 60;
 let repositoryCreated = false;
 
 test.beforeAll(async ({ request }) => {
@@ -314,16 +314,11 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	await page.locator('#query-options-toggle').click();
 	await page.locator('#query-timeout').fill(String(QUERY_TIMEOUT_SECONDS));
 
-	const subjects = valuesIris('s', GRAPH_VALUES_PER_DIMENSION);
-	const predicates = valuesIris('p', GRAPH_VALUES_PER_DIMENSION);
-	const objects = valuesIris('o', GRAPH_VALUES_PER_DIMENSION);
-	let digest = 'CONCAT(STR(?s), STR(?p), STR(?o))';
-	for (let pass = 0; pass < 12; pass++) {
-		digest = `MD5(${digest})`;
-	}
+	const subjects = valuesIris('s', VALUES_PER_DIMENSION);
+	const predicates = valuesIris('p', VALUES_PER_DIMENSION);
+	const objects = valuesIris('o', VALUES_PER_DIMENSION);
 	const constructQuery = `CONSTRUCT { ?s ?p ?o } WHERE { VALUES ?s { ${subjects} } `
-		+ `VALUES ?p { ${predicates} } VALUES ?o { ${objects} } `
-		+ `BIND(${digest} AS ?digest) FILTER(STRLEN(?digest) = 32) }`;
+		+ `VALUES ?p { ${predicates} } VALUES ?o { ${objects} } }`;
 	await setEditor(page, constructQuery);
 	await page.evaluate(() => {
 		const root = document.getElementById('query-results');
@@ -339,7 +334,38 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	const executionIndex = monitor.executions.length;
 	await page.locator('#exec').click();
 	await expect.poll(() => monitor.executions.length - executionIndex).toBe(1);
-	await page.waitForFunction(() => window.__constructTimeoutRowsWhileBusy > 0, null, { timeout: 20000 });
+	await page.waitForFunction(() => window.__constructTimeoutRowsWhileBusy > 0, null, { timeout: 20000 })
+		.catch(async error => {
+			try {
+				const progress = await page.evaluate(index => {
+					const root = document.getElementById('query-results');
+					const response = window.__queryTimeoutCapturedResponses[index];
+					const records = response && response.complete ? response.body.split(/\r?\n/)
+						.filter(line => line.trim()).map(line => JSON.parse(line))
+						.filter(record => !Array.isArray(record)) : [];
+					const terminal = records[records.length - 1];
+					return {
+						rowsWhileBusy: window.__constructTimeoutRowsWhileBusy,
+						renderedRows: root.querySelectorAll('[data-query-row-index], [data-query-record-index]').length,
+						busy: root.getAttribute('aria-busy'),
+						status: root.querySelector('.query-result-status')?.textContent,
+						responseComplete: !!response && response.complete,
+						streamRows: records.filter(record => record.type === 'rows')
+							.reduce((total, record) => total + record.values.length, 0),
+						terminal: terminal && { type: terminal.type, code: terminal.code, status: terminal.status }
+					};
+				}, executionIndex);
+				const evidence = { ...progress, pageErrors: monitor.errors };
+				console.log(`[query-timeout-construct-progress-failure] ${JSON.stringify(evidence)}`);
+				await testInfo.attach('query-timeout-construct-progress-failure.json', {
+					body: Buffer.from(JSON.stringify(evidence, null, 2)),
+					contentType: 'application/json'
+				});
+			} catch (diagnosticError) {
+				console.log(`[query-timeout-construct-progress-diagnostic-error] ${String(diagnosticError)}`);
+			}
+			throw error;
+		});
 	const graphTimeoutCompleted = await page.waitForFunction(
 		() => document.getElementById('query-results').getAttribute('aria-busy') === 'false',
 		null,
@@ -360,8 +386,8 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	const alert = await page.locator('#query-results [role="alert"]').textContent();
 	const evidence = {
 		queryUrl: QUERY_URL,
-		valuesPerDimension: GRAPH_VALUES_PER_DIMENSION,
-		candidateTriples: GRAPH_VALUES_PER_DIMENSION ** 3,
+		valuesPerDimension: VALUES_PER_DIMENSION,
+		candidateTriples: VALUES_PER_DIMENSION ** 3,
 		rowsWhileBusy: await page.evaluate(() => window.__constructTimeoutRowsWhileBusy),
 		responseStatus: response.status,
 		contentType: response.contentType,
@@ -405,6 +431,15 @@ test('construct timeout leaves visibly incomplete graph statements without downl
 	expect(evidence.requestId).toBe('');
 	expect(monitor.executions[executionIndex].accept).toContain(NDJSON_ACCEPT);
 	expect(monitor.errors).toEqual([]);
+	try {
+		await result.locator('.query-result-status').scrollIntoViewIfNeeded();
+		await testInfo.attach('query-timeout-construct-after-rows.png', {
+			body: await page.screenshot(),
+			contentType: 'image/png'
+		});
+	} catch (diagnosticError) {
+		console.log(`[query-timeout-construct-screenshot-error] ${String(diagnosticError)}`);
+	}
 });
 
 function monitorPage(page) {

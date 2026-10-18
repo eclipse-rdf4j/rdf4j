@@ -17,7 +17,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.TreeMap;
 import java.util.TreeSet;
@@ -33,15 +35,19 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Differential fuzzing of the native LMDB query paths against the generic RDF4J evaluator on the same store (kill
@@ -860,6 +866,96 @@ public class LmdbNativeDifferentialFuzzTest {
 			canonical.add(sorted.toString());
 		}
 		return canonical;
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "automatic", "irKernelWildcard", "irKernelWildcardInterpreted" })
+	public void repeatedVariableJoinRetainsUnionDomainsAndMultiplicity(String execution) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		Map<String, String> previousExecution = new HashMap<>();
+		for (String property : List.of("rdf4j.lmdb.janinoCodegen.enabled", "rdf4j.lmdb.janinoCodegen.synchronous",
+				"rdf4j.lmdb.kernelInterpreter.enabled", "rdf4j.lmdb.janinoCodegen.wildcardPredicates")) {
+			previousExecution.put(property, System.setProperty(property, "true"));
+		}
+		try {
+			for (boolean experimental : new boolean[] { false, true }) {
+				LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true);
+				config.setExperimentalQueryOptimizations(experimental);
+				SailRepository isolated = new SailRepository(new LmdbStore(new File(dataDir, "union-domain-" + experimental),
+						config));
+				try {
+					try (SailRepositoryConnection connection = isolated.getConnection()) {
+						ValueFactory vf = connection.getValueFactory();
+						connection.add(iri(vf, "a"), iri(vf, "loop"), iri(vf, "a"));
+						connection.add(iri(vf, "b"), iri(vf, "loop"), iri(vf, "b"));
+						connection.add(iri(vf, "noise"), iri(vf, "loop"), iri(vf, "outside"));
+						connection.add(iri(vf, "incoming"), iri(vf, "edge"), iri(vf, "a"));
+						connection.add(iri(vf, "excluded"), iri(vf, "edge"), iri(vf, "outside"));
+						connection.add(iri(vf, "a"), iri(vf, "number"), vf.createLiteral(-19));
+					}
+					String body = "?c <" + EX + "loop> ?c . { ?c ?p -19 } UNION { ?b ?p ?c } FILTER(BOUND(?b))";
+					record QueryBag(String where, int copies) {
+					}
+					for (QueryBag test : List.of(new QueryBag(body, 1), new QueryBag("{ " + body + " }", 1),
+							new QueryBag(body + " OPTIONAL { ?b <" + EX + "missing> ?extra }", 1),
+							new QueryBag(body + " MINUS { ?unshared <" + EX + "missing> ?other }", 1),
+							new QueryBag(body + " FILTER EXISTS { ?b ?p ?c }", 1),
+							new QueryBag(body + " FILTER NOT EXISTS { ?b <" + EX + "missing> ?c }", 1),
+							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?c ?p -19 } FILTER(BOUND(?b))", 1),
+							new QueryBag("?c <" + EX + "loop> ?c . { ?b ?p ?c } UNION { ?b ?p ?c } FILTER(BOUND(?b))", 2))) {
+						String query = "SELECT * { " + test.where + " }";
+						for (boolean nativeEngine : new boolean[] { false, true }) {
+							System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEngine));
+							List<String> rows = new ArrayList<>();
+							try (SailRepositoryConnection connection = isolated.getConnection()) {
+								SailTupleQuery prepared = (SailTupleQuery) connection.prepareTupleQuery(query);
+								if (experimental && nativeEngine && !"automatic".equals(execution)) {
+									prepared.setForcedLmdbExecutionStrategy(execution);
+								}
+								try (var results = prepared.evaluate()) {
+								while (results.hasNext()) {
+									BindingSet row = results.next();
+									assertThat(row.getBindingNames()).containsExactlyInAnyOrder("b", "c", "p");
+									rows.add(row.getValue("b").stringValue() + "|" + row.getValue("p").stringValue()
+											+ "|" + row.getValue("c").stringValue());
+								}
+								}
+							}
+							List<String> expected = new ArrayList<>();
+							for (int copy = 0; copy < test.copies; copy++) {
+								expected.addAll(List.of(EX + "a|" + EX + "loop|" + EX + "a",
+										EX + "b|" + EX + "loop|" + EX + "b",
+										EX + "incoming|" + EX + "edge|" + EX + "a"));
+							}
+							assertThat(rows).as("experimental=%s native=%s execution=%s\n%s", experimental, nativeEngine,
+									execution, query)
+								.withFailMessage(() -> {
+									try (SailRepositoryConnection connection = isolated.getConnection()) {
+										return query + "\nactual=" + rows + "\n"
+												+ connection.prepareTupleQuery(query).explain(Explanation.Level.Optimized);
+									}
+								})
+									.containsExactlyInAnyOrderElementsOf(expected);
+						}
+					}
+				} finally {
+					isolated.shutDown();
+				}
+			}
+		} finally {
+			previousExecution.forEach((property, value) -> {
+				if (value == null) {
+					System.clearProperty(property);
+				} else {
+					System.setProperty(property, value);
+				}
+			});
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
+		}
 	}
 
 	@Test

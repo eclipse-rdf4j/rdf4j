@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -58,7 +59,8 @@ public class SailBooleanQuery extends SailQuery implements BooleanQuery {
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.BOOLEAN,
 							getForcedLmdbExecutionStrategy());
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline);
+					BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 				try {
 					bindingsIter1 = sailCon.evaluate(tupleExpr, dataset, getBindings(), getIncludeInferred());
 				} finally {

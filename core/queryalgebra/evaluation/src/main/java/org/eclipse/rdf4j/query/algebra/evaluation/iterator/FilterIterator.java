@@ -57,6 +57,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 public class FilterIterator extends FilterIteration<BindingSet> implements IndexReportingIterator {
 
@@ -64,6 +65,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 	private final EvaluationStrategy strategy;
 	private final Function<BindingSet, BindingSet> retain;
 	private final FilterCondition outcomes;
+	private final BlankNodeAllocationScope allocation;
+	private final Object solutionBoundary = new Object();
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
@@ -97,7 +100,8 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 		}
 
 		QueryEvaluationStep generic = AdaptiveFilterEvaluationStep.filter(context,
-				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics));
+				(bs) -> new FilterIterator(filter, arg.evaluate(bs), ves, strategy, retain, evaluationStatistics,
+						context.getBlankNodeAllocationScope()));
 		QueryEvaluationStep batched = supplyBatchExistsFilter(filter, strategy, context, arg, generic);
 		return batched != null ? batched : generic;
 	}
@@ -201,6 +205,13 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 
 		List<BindingSet> assignmentRows = bindingRows(assignment);
+		QueryValueEvaluationStep preparedCondition = condition;
+		Object boundary = new Object();
+		QueryValueEvaluationStep scopedCondition = row -> {
+			try (var ignored = context.getBlankNodeAllocationScope().visitSolutionOccurrence(row, boundary)) {
+				return preparedCondition.evaluate(row);
+			}
+		};
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, join.getLeftArg(), leftPrepared);
 		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
@@ -215,7 +226,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 				return leftIter;
 			}
-			return new FilteredBindingSetAssignmentJoinIteration(filter, leftIter, assignmentRows, condition,
+			return new FilteredBindingSetAssignmentJoinIteration(filter, leftIter, assignmentRows, scopedCondition,
 					directCondition, strategy, context::createBindingSet, bindingNamesByName, evaluationStatistics,
 					recordFilterOutcomes);
 		};
@@ -304,6 +315,7 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 			EvaluationStrategy strategy, EvaluationStatistics evaluationStatistics) throws QueryEvaluationException {
 		super(iter);
 		this.outcomes = new FilterCondition(filter, evaluationStatistics);
+		this.allocation = BlankNodeAllocationScope.currentOrNew();
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -324,10 +336,11 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
-			EvaluationStatistics evaluationStatistics)
+			EvaluationStatistics evaluationStatistics, BlankNodeAllocationScope allocation)
 			throws QueryEvaluationException {
 		super(iter);
 		this.outcomes = new FilterCondition(filterNode, evaluationStatistics);
+		this.allocation = allocation;
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -421,7 +434,9 @@ public class FilterIterator extends FilterIteration<BindingSet> implements Index
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
-		return outcomes.evaluate(condition, strategy, retain, bindings);
+		try (var ignored = allocation.visitSolutionOccurrence(bindings, solutionBoundary)) {
+			return outcomes.evaluate(condition, strategy, retain, bindings);
+		}
 	}
 
 	public static boolean isPartOfSubQuery(QueryModelNode node) {

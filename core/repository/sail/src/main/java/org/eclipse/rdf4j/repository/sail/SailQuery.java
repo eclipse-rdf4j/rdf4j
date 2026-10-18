@@ -17,6 +17,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
@@ -62,6 +63,15 @@ public abstract class SailQuery extends AbstractParserQuery {
 		return forcedLmdbExecutionStrategy;
 	}
 
+	protected BlankNodeAllocationScope createBlankNodeAllocationScope() {
+		BlankNodeAllocationScope scope = new BlankNodeAllocationScope();
+		scope.bindLocalValueFactory(con.getValueFactory());
+		getParsedQuery().getReservedBNodeIDs().forEach(scope::reserve);
+		scope.reserve(getBindings());
+		scope.reserve(getActiveDataset());
+		return scope;
+	}
+
 	@Override
 	public Explanation explain(Explanation.Level level) {
 
@@ -79,19 +89,21 @@ public abstract class SailQuery extends AbstractParserQuery {
 
 		SailConnection sailCon = getConnection().getSailConnection();
 		String forcedStrategy = getForcedLmdbExecutionStrategy();
-		if (forcedStrategy == null) {
-			Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), timeout);
-			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
-		}
-		SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
-				.set(getParsedQuery().getSourceString(), getQueryType(), forcedStrategy);
-		try {
-			Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
-					getIncludeInferred(), timeout);
-			return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
-		} finally {
-			SlowQueryContextHolder.restore(previous);
+		try (BlankNodeAllocationScope.Activation ignored = createBlankNodeAllocationScope().activate()) {
+			if (forcedStrategy == null) {
+				Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+						getIncludeInferred(), timeout);
+				return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
+			}
+			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
+					.set(getParsedQuery().getSourceString(), getQueryType(), forcedStrategy);
+			try {
+				Explanation explanation = sailCon.explain(level, tupleExpr, getActiveDataset(), getBindings(),
+						getIncludeInferred(), timeout);
+				return con.exposeValue(explanation, SailResultValueExtractor.EXPLANATIONS);
+			} finally {
+				SlowQueryContextHolder.restore(previous);
+			}
 		}
 
 	}

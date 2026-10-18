@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSet> {
 
@@ -117,7 +118,10 @@ public class ExtensionIterator extends ConvertingIteration<BindingSet, BindingSe
 	@Override
 	public BindingSet convert(BindingSet sourceBindings) throws QueryEvaluationException {
 		MutableBindingSet targetBindings = context.createBindingSet(sourceBindings);
-		setter.accept(targetBindings);
-		return targetBindings;
+		try (BlankNodeAllocationScope.SolutionActivation ignored = context.getBlankNodeAllocationScope()
+				.beginSolutionOccurrence(targetBindings)) {
+			setter.accept(targetBindings);
+			return targetBindings;
+		}
 	}
 }

@@ -424,8 +424,12 @@ public interface SyntaxTreeBuilderConstants {
 	/** RegularExpression Id. */
 	int ANNOTATION_CLOSE = 201;
 	/** RegularExpression Id. */
+	int UCHAR = 202;
+	/** RegularExpression Id. */
+	int BNODE_REF = 203;
+	/** RegularExpression Id. */
 	@Experimental
-	int STABLE_INDEX = 202;
+	int STABLE_INDEX = 204;
 
 	/** Lexical state. */
 	int DEFAULT = 0;
@@ -634,6 +638,8 @@ public interface SyntaxTreeBuilderConstants {
 			"\"~\"",
 			"\"{|\"",
 			"\"|}\"",
+			"<UCHAR>",
+			"<BNODE_REF>",
 			"\"stable_index\"",
 	};
 

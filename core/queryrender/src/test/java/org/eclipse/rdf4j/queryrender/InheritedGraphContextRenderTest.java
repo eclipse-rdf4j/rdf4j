@@ -29,30 +29,148 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.SPARQLQueryRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SparqlQueryRenderer;
+import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertAll;
 
 class InheritedGraphContextRenderTest {
 
 	@Test
 	void renderingRestoresCallerGraphAndKeepsSameNamedLocalGraph() throws Exception {
+		List<Executable> matrix = new ArrayList<>();
 		for (int renderer = 0; renderer < 3; renderer++) {
 			for (boolean prepared : new boolean[] { false, true }) {
 				for (boolean nested : new boolean[] { false, true }) {
 					for (boolean paths : new boolean[] { false, true }) {
-						assertRoundTrip(renderer, prepared, nested, paths);
+						int selectedRenderer = renderer;
+						matrix.add(() -> assertRoundTrip(selectedRenderer, prepared, nested, paths));
 					}
 				}
 			}
 		}
+		assertAll("all renderer/preparation/nesting/path combinations", matrix.stream());
+	}
+
+	@Test
+	void renderingPreservesScopedSelectModifiersAndCompositions() throws Exception {
+		String scopedPattern = "?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> }";
+		String distinctSlice = "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { "
+				+ "SELECT DISTINCT ?x ?y { " + scopedPattern + " } ORDER BY ?x ?y OFFSET 1 LIMIT 1 } } }";
+		List<Executable> cases = new ArrayList<>();
+		cases.add(() -> assertRoundTrips("distinct-order-offset-limit", distinctSlice,
+				List.of("{g=urn:g1, x=urn:a, y=urn:b}", "{g=urn:g2, x=urn:b, y=urn:b}")));
+
+		String reduced = "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { "
+				+ "SELECT REDUCED ?x ?y { " + scopedPattern + " } } } }";
+		List<String> scopedRows = List.of(
+				"{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+				"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+		cases.add(() -> assertRoundTrips("reduced-scoped-select", reduced, scopedRows));
+
+		String union = "SELECT ?g ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> OPTIONAL { "
+				+ "{ SELECT ?x ?y { " + scopedPattern + " } } UNION "
+				+ "{ SELECT ?x ?y { " + scopedPattern + " } } } } }";
+		List<String> unionRows = new ArrayList<>(scopedRows);
+		unionRows.addAll(scopedRows);
+		cases.add(() -> assertRoundTrips("union-of-scoped-selects", union, unionRows));
+
+		String join = "SELECT ?g ?seed ?x ?y { GRAPH ?g { ?seed <urn:p> <urn:o> . { "
+				+ "SELECT ?x ?y { " + scopedPattern + " } } } }";
+		cases.add(() -> assertRoundTrips("join-with-scoped-select", join,
+				List.of("{g=urn:g1, seed=urn:a, x=urn:a, y=urn:a}", "{g=urn:g1, seed=urn:a, x=urn:a, y=urn:b}",
+						"{g=urn:g2, seed=urn:b, x=urn:b, y=urn:a}", "{g=urn:g2, seed=urn:b, x=urn:b, y=urn:b}")));
+
+		String exists = "SELECT ?g ?seed { GRAPH ?g { ?seed <urn:p> <urn:o> "
+				+ "FILTER EXISTS { ?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } } } }";
+		cases.add(() -> assertRoundTrips("exists-does-not-export-local-bindings", exists,
+				List.of("{g=urn:g1, seed=urn:a}", "{g=urn:g2, seed=urn:b}")));
+
+		String nestedExists = "SELECT * { GRAPH ?g { ?seed <urn:p> <urn:o> FILTER EXISTS { "
+				+ "SELECT ?x { ?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } FILTER(?y = <urn:b>) } } } }";
+		cases.add(() -> assertRoundTrips("exists-with-nested-scoped-select-does-not-export", nestedExists,
+				List.of("{g=urn:g1, seed=urn:a}", "{g=urn:g2, seed=urn:b}")));
+
+		String nestedNotExists = "SELECT * { GRAPH ?g { ?seed <urn:p> <urn:o> FILTER NOT EXISTS { "
+				+ "SELECT ?x { ?x <urn:p> <urn:o> GRAPH ?g { ?y <urn:p> <urn:o> } FILTER(?y = <urn:b>) } } } }";
+		cases.add(() -> assertRoundTrips("not-exists-with-nested-scoped-select-does-not-export", nestedNotExists,
+				List.of()));
+		assertAll("all scoped SELECT compositions", cases.stream());
+	}
+
+	@Test
+	void renderingPreservesLegacyInheritedContextMetadata() throws Exception {
+		List<String> expected = List.of("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
+				"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+		List<Executable> cases = new ArrayList<>();
+		for (int renderer = 0; renderer < 3; renderer++) {
+			for (boolean prepared : new boolean[] { false, true }) {
+				int selectedRenderer = renderer;
+				cases.add(() -> {
+					TupleExpr expression = legacyGraphShadowQuery();
+					String context = "renderer=" + rendererName(selectedRenderer) + ", prepared=" + prepared;
+					if (prepared) {
+						assertThat(evaluate(expression)).as(context + " source result bag")
+								.containsExactlyInAnyOrderElementsOf(expected);
+					}
+					String rendered = render(selectedRenderer, expression);
+					assertThat(rendered).as(context + " rendered query").doesNotContain("_rdf4j_graph_context_");
+					assertThat(evaluate(parse(rendered))).as(context + "\n" + rendered)
+							.containsExactlyInAnyOrderElementsOf(expected);
+				});
+			}
+		}
+		assertAll("legacy inherited-context compatibility across renderers", cases.stream());
+	}
+
+	private TupleExpr legacyGraphShadowQuery() {
+		ValueFactory vf = SimpleValueFactory.getInstance();
+		Var inheritedContext = Var.of("g");
+		inheritedContext.setGraphContextDepth(1);
+		StatementPattern inherited = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("x"),
+				Var.of("p", vf.createIRI("urn:p")), Var.of("o", vf.createIRI("urn:o")), inheritedContext);
+		StatementPattern local = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("y"),
+				Var.of("p", vf.createIRI("urn:p")), Var.of("o", vf.createIRI("urn:o")), Var.of("g"));
+		ProjectionElemList scopedElements = new ProjectionElemList();
+		scopedElements.addElement(new ProjectionElem("x"));
+		scopedElements.addElement(new ProjectionElem("y"));
+		Projection scopedProjection = new Projection(new Join(inherited, local), scopedElements, true);
+		scopedProjection.setProjectionContext(Var.of("g"));
+
+		MapBindingSet firstGraph = new MapBindingSet();
+		firstGraph.addBinding("g", vf.createIRI("urn:g1"));
+		MapBindingSet secondGraph = new MapBindingSet();
+		secondGraph.addBinding("g", vf.createIRI("urn:g2"));
+		BindingSetAssignment graphValues = new BindingSetAssignment();
+		graphValues.setBindingSets(List.of(firstGraph, secondGraph));
+		ProjectionElemList outputElements = new ProjectionElemList();
+		outputElements.addElement(new ProjectionElem("g"));
+		outputElements.addElement(new ProjectionElem("x"));
+		outputElements.addElement(new ProjectionElem("y"));
+		Projection output = new Projection(new LeftJoin(graphValues, scopedProjection), outputElements, false);
+		output.setSubquery(false);
+		return new QueryRoot(output);
 	}
 
 	private void assertRoundTrip(int renderer, boolean prepared, boolean nested, boolean paths) throws Exception {
@@ -64,18 +182,78 @@ class InheritedGraphContextRenderTest {
 				+ "SELECT ?x ?y { " + inherited + " GRAPH ?g { " + local + " } } } } }");
 		List<String> expected = List.of("{g=urn:g1, x=urn:a, y=urn:a}", "{g=urn:g1, x=urn:a, y=urn:b}",
 				"{g=urn:g2, x=urn:b, y=urn:a}", "{g=urn:g2, x=urn:b, y=urn:b}");
+		String context = "renderer=" + rendererName(renderer) + ", prepared=" + prepared + ", nested=" + nested
+				+ ", paths=" + paths;
 		if (prepared) {
-			assertThat(evaluate(expression)).containsExactlyElementsOf(expected);
-			assertThat(expression.toString()).contains("_rdf4j_graph_context_");
+			assertThat(evaluate(expression)).as(context + " source result bag").containsExactlyElementsOf(expected);
+			List<String> graphSelectorNames = new ArrayList<>();
+			expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Graph graph) {
+					graphSelectorNames.add(graph.getGraphName().getName());
+					super.meet(graph);
+				}
+			});
+			assertThat(graphSelectorNames).as(context + " prepared Graph selectors")
+					.containsExactlyInAnyOrder("g", "g");
 		}
-		String rendered = switch (renderer) {
+		String rendered = render(renderer, expression);
+		assertThat(rendered).as(context + " rendered query").doesNotContain("_rdf4j_graph_context_");
+		assertThat(evaluate(parse(rendered))).as(context + "\n" + rendered).containsExactlyElementsOf(expected);
+	}
+
+	private void assertRoundTrips(String caseName, String query, List<String> expected) throws Exception {
+		assertThat(evaluate(parse(query))).as(caseName + " source result bag")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		List<Executable> roundTrips = new ArrayList<>();
+		for (int renderer = 0; renderer < 3; renderer++) {
+			for (boolean prepared : new boolean[] { false, true }) {
+				final int selectedRenderer = renderer;
+				roundTrips.add(() -> {
+					TupleExpr expression = parse(query);
+					String context = "case=" + caseName + ", renderer=" + rendererName(selectedRenderer)
+							+ ", prepared=" + prepared;
+					if (prepared) {
+						assertThat(evaluate(expression)).as(context + " source result bag")
+								.containsExactlyInAnyOrderElementsOf(expected);
+					}
+					String rendered;
+					try {
+						rendered = render(selectedRenderer, expression);
+					} catch (Exception e) {
+						throw new AssertionError(context + " renderer failed", e);
+					}
+					assertThat(rendered).as(context + " rendered query").doesNotContain("_rdf4j_graph_context_");
+					TupleExpr renderedExpression;
+					try {
+						renderedExpression = parse(rendered);
+					} catch (Exception e) {
+						throw new AssertionError(context + " produced an unparsable query:\n" + rendered, e);
+					}
+					assertThat(evaluate(renderedExpression)).as(context + "\n" + rendered)
+							.containsExactlyInAnyOrderElementsOf(expected);
+				});
+			}
+		}
+		assertAll("case=" + caseName + " renderer/preparation round trips", roundTrips.stream());
+	}
+
+	private String render(int renderer, TupleExpr expression) throws Exception {
+		return switch (renderer) {
 		case 0 -> new TupleExprIRRenderer().render(expression);
 		case 1 -> new SPARQLQueryRenderer().render(new ParsedTupleQuery(expression));
 		case 2 -> new SparqlQueryRenderer().render(new ParsedTupleQuery(expression));
 		default -> throw new AssertionError("Unknown renderer");
 		};
-		assertThat(rendered).doesNotContain("_rdf4j_graph_context_");
-		assertThat(evaluate(parse(rendered))).as(rendered).containsExactlyElementsOf(expected);
+	}
+
+	private String rendererName(int renderer) {
+		return switch (renderer) {
+		case 0 -> TupleExprIRRenderer.class.getSimpleName();
+		case 1 -> SPARQLQueryRenderer.class.getSimpleName();
+		case 2 -> SparqlQueryRenderer.class.getSimpleName();
+		default -> throw new AssertionError("Unknown renderer");
+		};
 	}
 
 	private TupleExpr parse(String query) {

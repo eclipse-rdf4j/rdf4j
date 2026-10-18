@@ -70,6 +70,7 @@ final class FederationGraphSource implements TripleSource {
 			private final Set<Resource> seen = new HashSet<>();
 			private RepositoryConnection connection;
 			private CloseableIteration<Resource> contexts;
+			private EndpointIdentity identity;
 
 			@Override
 			protected Resource getNextElement() {
@@ -78,6 +79,9 @@ final class FederationGraphSource implements TripleSource {
 						if (contexts != null) {
 							while (contexts.hasNext()) {
 								Resource name = contexts.next();
+								if (name != null && !RemoteGraphSnapshot.isScoped(name)) {
+									name = (Resource) identity.incoming(name);
+								}
 								if (name != null && seen.add(name)) {
 									return name;
 								}
@@ -88,6 +92,7 @@ final class FederationGraphSource implements TripleSource {
 							return null;
 						}
 						Endpoint endpoint = endpoints.next();
+						identity = new EndpointIdentity(endpoint, queryInfo);
 						List<Resource> cached = strategy.getRemoteGraphNames(endpoint);
 						if (cached != null) {
 							contexts = new CloseableIteratorIteration<>(cached.iterator());

@@ -35,6 +35,7 @@ import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Namespace;
@@ -544,6 +545,179 @@ class LmdbRepositoryValueExposureTest {
 			FunctionRegistry.getInstance().remove(function);
 			store.shutDown();
 		}
+	}
+
+	@Test
+	void rawFunctionOutputPreservesColdEarlierSnapshotValue(@TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore store = newStore(directory);
+		store.init();
+		String functionIRI = "urn:repository-exposure:raw-cold-input:" + UUID.randomUUID();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				return args[0];
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try (SailConnection raw = store.getConnection()) {
+			Value nativeLeaf;
+			try (CloseableIteration<? extends Statement> source = raw.getStatements(SUBJECT, PREDICATE, null, false)) {
+				assertTrue(source.hasNext());
+				nativeLeaf = source.next().getObject();
+				assertFalse(((LmdbValue) nativeLeaf).isInitialized());
+			}
+			MapBindingSet bindings = new MapBindingSet();
+			bindings.addBinding("provided", nativeLeaf);
+			var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT (<" + functionIRI + ">(?provided) AS ?returned) WHERE {}", null).getTupleExpr();
+			try (CloseableIteration<? extends BindingSet> rows = raw.evaluate(expression, null, bindings, false)) {
+				assertTrue(rows.hasNext());
+				Value returned = rows.next().getValue("returned");
+				assertFalse(((LmdbValue) nativeLeaf).isInitialized(),
+						"capturing a raw function handoff must not initialize an earlier-snapshot value");
+				assertSame(nativeLeaf, returned, "raw function handoff preserves the exact native value");
+				assertFalse(rows.hasNext());
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void scalarApiBNodeRemainsColdUntilItsValueIsUsed(@TempDir File directory) {
+		LmdbStore store = newStore(directory);
+		store.init();
+		BNode supplied = VF.createBNode("repository-exposure:cold-api-bnode");
+		try {
+			try (SailConnection writer = store.getConnection()) {
+				writer.begin();
+				writer.addStatement(SUBJECT, PREDICATE, supplied, CONTEXT);
+				writer.commit();
+			}
+			try (SailConnection connection = store.getConnection()) {
+				Value nativeValue;
+				try (CloseableIteration<? extends Statement> statements = connection.getStatements(SUBJECT, PREDICATE,
+						null, false)) {
+					assertTrue(statements.hasNext());
+					nativeValue = statements.next().getObject();
+					assertFalse(((LmdbValue) nativeValue).isInitialized());
+				}
+
+				MapBindingSet bindings = new MapBindingSet();
+				bindings.addBinding("provided", nativeValue);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+						"SELECT ?copy WHERE { BIND(?provided AS ?copy) }", null).getTupleExpr();
+				try (CloseableIteration<? extends BindingSet> rows = connection.evaluate(expression, null, bindings,
+						false)) {
+					LmdbValue original = (LmdbValue) nativeValue;
+					assertFalse(original.isInitialized(),
+							"query preparation must not decode a cold API BNode before binding capture");
+					assertTrue(rows.hasNext());
+					LmdbValue captured = assertInstanceOf(LmdbValue.class, rows.next().getValue("copy"));
+					assertSame(nativeValue, captured, "identity BIND must preserve the externally owned native node");
+					assertFalse(original.isInitialized(), "reading the result must keep the original native node cold");
+					assertEquals(original.getInternalIdentity(), captured.getInternalIdentity(),
+							"the prepared binding must retain the native dictionary identity");
+					assertFalse(captured.isInitialized(), "an identity BIND must not decode the native BNode");
+					assertFalse(rows.hasNext());
+				}
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void rawFunctionCaptureAcrossStoresRetainsColdOldRevisionCapability(@TempDir File directory) {
+		seed(directory, 1);
+		LmdbStore sourceStore = newStore(directory);
+		sourceStore.init();
+		Value nativeValue;
+		try {
+		try (SailConnection source = sourceStore.getConnection();
+				CloseableIteration<? extends Statement> statements = source.getStatements(SUBJECT, PREDICATE, null,
+						false)) {
+			assertTrue(statements.hasNext());
+		nativeValue = statements.next().getObject();
+		assertFalse(((LmdbValue) nativeValue).isInitialized());
+		assertTrue(((LmdbValue) nativeValue).isExternallyOwned());
+		assertFalse(statements.hasNext());
+		}
+		LmdbValue externalNativeValue = (LmdbValue) nativeValue;
+		assertTrue(externalNativeValue.isExternallyOwned(), "A raw statement value must retain external ownership");
+		assertFalse(externalNativeValue.isInitialized(), "A raw statement value must remain cold before handoff");
+		assertTrue(externalNativeValue.getInternalIdentity().id() != LmdbValue.UNKNOWN_ID,
+				"The cold value must retain its original dictionary identity");
+
+		LmdbStore evaluationStore = newStore(new File(directory, "evaluation-store"));
+		evaluationStore.init();
+		try (LmdbSailStore.DatasetAdmission admission = evaluationStore.getBackingStore()
+				.beginDatasetAdmission(IsolationLevels.READ_COMMITTED, null)) {
+			ValueStore evaluationValues = (ValueStore) evaluationStore.getBackingStore().getValueFactory();
+			Value captured = evaluationValues.valueCapturer(admission.view().valueSnapshot()).apply(nativeValue);
+			assertSame(nativeValue, captured, "Direct result capture must preserve a foreign cold native value");
+			assertFalse(((LmdbValue) nativeValue).isInitialized(),
+					"Direct result capture must not decode a foreign cold native value");
+		}
+		String functionIRI = "urn:repository-exposure:cross-store-cold-input:" + UUID.randomUUID();
+		AtomicReference<Value> functionArgument = new AtomicReference<>();
+		Function function = new Function() {
+			@Override
+			public String getURI() {
+				return functionIRI;
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				functionArgument.set(args[0]);
+				return args[0];
+			}
+		};
+		FunctionRegistry.getInstance().add(function);
+		try (SailConnection evaluation = evaluationStore.getConnection()) {
+			MapBindingSet bindings = new MapBindingSet();
+			bindings.addBinding("provided", nativeValue);
+			var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT (<" + functionIRI + ">(?provided) AS ?returned) WHERE {}", null).getTupleExpr();
+			try (CloseableIteration<? extends BindingSet> rows = evaluation.evaluate(expression, null, bindings, false)) {
+				assertTrue(rows.hasNext());
+				BindingSet result = rows.next();
+				assertSame(nativeValue, functionArgument.get(),
+						"The caller value must remain native until the function reads it");
+				assertSame(nativeValue, result.getValue("returned"),
+						"A foreign store's externally owned cold value retains its identity");
+				assertFalse(((LmdbValue) nativeValue).isInitialized(),
+						"Capturing a cold value must not decode it in the receiving store");
+				assertFalse(rows.hasNext());
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(function);
+			evaluationStore.shutDown();
+		}
+		} finally {
+			sourceStore.shutDown();
+		}
+		assertEquals(VF.createTripleTerm(SUBJECT, PREDICATE,
+				VF.createTripleTerm(SUBJECT, PREDICATE,
+						VF.createLiteral("nested outward value 0", DATATYPE))), nativeValue,
+				"The preserved old-revision identity remains readable after both stores close");
 	}
 
 	@Test

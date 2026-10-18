@@ -114,7 +114,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
-					strategy);
+					strategy, rightPrepared, context.getBlankNodeAllocationScope());
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isOutOfScopeForLeftArgBindings(join.getRightArg(), bindingAnalysis)
 				|| subqueryObservesInjectedBindings(join.getRightArg(), join.getLeftArg().getBindingNames())) {

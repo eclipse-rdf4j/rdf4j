@@ -584,9 +584,60 @@ public class LmdbNativeParallelPipelinesTest {
 
 	@Test
 	public void repeatedVariableShapeKeepsSafeSequentialFallback() {
-		// Repeated-variable equality is represented outside the flat MultiJoin bag. It is therefore deliberately
-		// ineligible for parallel scheduling and must retain the ordinary safe path with generic-result parity.
 		int roots = 128;
+		String query = "SELECT ?subject ?value WHERE { " + repeatedVariableBody(roots) + " }";
+		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
+		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
+
+		// Repeated fields are admitted by several strategies. Verify the actual serial route independently of
+		// automatic costing, then verify the parallel route with the same unequal-field data below.
+		List<String> sequential = rows(query, true, "nestedLoop");
+		assertThat(sequential).hasSize(roots)
+				.containsExactlyElementsOf(rowsWithProperty(NATIVE_FLAG, "false", query));
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery serialQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			serialQuery.setForcedLmdbExecutionStrategy("nestedLoop");
+			assertThat(serialQuery.explain(Explanation.Level.Telemetry).toString())
+					.contains("nativeExecutionPath=nestedLoop");
+		}
+
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore);
+		assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
+				.as("the selected serial route must not engage factorization")
+				.isEqualTo(factorizedBefore);
+		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
+				.as("the selected serial route must not engage the chunk pipeline")
+				.isEqualTo(chunkBefore);
+	}
+
+	@Test
+	public void statefulWitnessKeepsRepeatedVariableQueryOutOfParallelWorkers() {
+		int roots = 128;
+		String query = "SELECT ?subject ?value WHERE { " + repeatedVariableBody(roots)
+				+ " FILTER EXISTS { ?value <" + EX + "repeatedSelectWitness> ?witness } }";
+		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+
+		assertThat(rows(query)).hasSize(roots)
+				.containsExactlyElementsOf(rowsWithProperty(NATIVE_FLAG, "false", query));
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore);
+		assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("stateful-filter");
+		// The witness and the outer query can use serial specialists. Their global counters do not describe
+		// whether this filter was admitted to the parallel worker plan.
+	}
+
+	@Test
+	public void repeatedVariablePatternsKeepEqualityInParallelPipelines() {
+		int roots = 128;
+		String query = "SELECT ?subject ?value WHERE { " + repeatedVariableBody(roots) + " }";
+		long before = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
+		List<String> parallel = rows(query, true, "parallelPipelines");
+		assertThat(parallel).hasSize(roots)
+				.containsExactlyElementsOf(rowsWithProperty(NATIVE_FLAG, "false", query));
+		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isGreaterThan(before);
+	}
+
+	private String repeatedVariableBody(int roots) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI firstPredicate = vf.createIRI(EX, "repeatedSelectFirst");
@@ -600,33 +651,17 @@ public class LmdbNativeParallelPipelinesTest {
 				connection.add(subject, firstPredicate, middle);
 				connection.add(middle, secondPredicate, value);
 				connection.add(value, repeatedPredicate, value);
+				connection.add(value, repeatedPredicate, vf.createIRI(EX, "repeatedSelect/unequal/" + i));
+				connection.add(value, vf.createIRI(EX, "repeatedSelectWitness"), value);
 				connection.add(vf.createIRI(EX, "repeatedSelect/noise/" + i), repeatedPredicate,
 						vf.createIRI(EX, "repeatedSelect/noise/" + i));
 			}
 			connection.commit();
 		}
 
-		String query = "SELECT ?subject ?value WHERE { "
-				+ "?subject <" + EX + "repeatedSelectFirst> ?middle . "
+		return "?subject <" + EX + "repeatedSelectFirst> ?middle . "
 				+ "?middle <" + EX + "repeatedSelectSecond> ?value . "
-				+ "?value <" + EX + "repeatedSelectRepeated> ?value . }";
-		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
-		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
-		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
-
-		List<String> parallel = rowsWithProperty(NativeBatch.ENABLED_PROPERTY, "false", query);
-
-		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore);
-		assertThat(LmdbNativeParallelPipelines.LAST_REJECTION.get()).isEqualTo("not-multi-join");
-		assertThat(LmdbNativeFactorizedRows.ENGAGED.get())
-				.as("the repeated-variable wrapper must not engage flat-bag factorization")
-				.isEqualTo(factorizedBefore);
-		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
-				.as("unsupported repeated-variable shapes must not force the chunk pipeline")
-				.isEqualTo(chunkBefore);
-		assertThat(parallel)
-				.hasSize(roots)
-				.containsExactlyElementsOf(rowsWithProperty(NATIVE_FLAG, "false", query));
+				+ "?value <" + EX + "repeatedSelectRepeated> ?value . ";
 	}
 
 	@Test
@@ -927,9 +962,16 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private List<String> rows(String query, boolean includeInferred) {
+		return rows(query, includeInferred, null);
+	}
+
+	private List<String> rows(String query, boolean includeInferred, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ArrayList<String> rows = new ArrayList<>();
-			var tupleQuery = connection.prepareTupleQuery(query);
+			SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+			if (forcedStrategy != null) {
+				tupleQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
 			tupleQuery.setIncludeInferred(includeInferred);
 			for (BindingSet row : QueryResults.asList(tupleQuery.evaluate())) {
 				rows.add(row.getValue("subject") + "|" + row.getValue("value"));

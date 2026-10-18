@@ -75,6 +75,25 @@ class GraphScopeOptimizerTest {
 	}
 
 	@Test
+	void blankNodeNamedDatasetRetainsPositiveGraphLowering() {
+		Resource graphName = VF.createBNode("named-dataset-graph");
+		CountingTripleSource source = new CountingTripleSource();
+		source.data.add(VF.createStatement(TARGET_GRAPH, P, VF.createIRI("urn:blank-graph-object"), graphName));
+		SimpleDataset dataset = new SimpleDataset();
+		dataset.addNamedGraph(graphName);
+		TupleExpr plan = new QueryRoot(new Graph(Var.of("g", graphName, true, true),
+				new StatementPattern(Var.of("s"), Var.of("p", P, true, true), Var.of("o"))));
+		new GraphScopeOptimizer().optimize(plan, dataset, EmptyBindingSet.getInstance());
+		assertThat(graphs(plan)).isEmpty();
+		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(source, dataset, null);
+		assertThat(evaluate(strategy, plan, EmptyBindingSet.getInstance())).singleElement().satisfies(row -> {
+			assertThat(row.getValue("s")).isEqualTo(TARGET_GRAPH);
+			assertThat(row.getValue("o")).isEqualTo(VF.createIRI("urn:blank-graph-object"));
+		});
+		assertThat(source.contextEnumerations).isZero();
+	}
+
+	@Test
 	void apiBoundPresentGraphAvoidsContextEnumeration() {
 		assertApiBoundGraphSelection(TARGET_GRAPH, 1);
 	}

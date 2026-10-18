@@ -12,7 +12,9 @@
 package org.eclipse.rdf4j.query.algebra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -20,6 +22,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
@@ -65,5 +68,52 @@ class VarProviderCloneHookTest {
 
 		Var cloned = first.clone();
 		assertTrue(first.equals(cloned) && cloned.equals(first), "clones must remain equal under default state");
+	}
+
+	@Test
+	void apiInputOriginDoesNotChangeVariableEqualityOrHashing() {
+		Var original = Var.of("origin", vf.createLiteral("v"), false, false);
+		Var apiInput = original.withApiInputOrigin();
+
+		assertTrue(apiInput.hasApiInputOrigin());
+		assertFalse(original.hasApiInputOrigin());
+		assertEquals(original, apiInput, "origin is occurrence metadata, not variable identity");
+		assertEquals(original.hashCode(), apiInput.hashCode(), "origin must not affect SPI hash compatibility");
+	}
+
+	@Test
+	void cloneCopiesProviderStateBeforeApplyingMetadataToAFreshOccurrence() {
+		Value value = vf.createLiteral("v");
+		KindAwareVar pooled = new KindAwareVar("x", value, false, false, false);
+		pooled.setKind("provider-clone-state");
+		Var.setProvider(new Var.Provider() {
+			@Override
+			public Var newVar(String name, Value value, boolean anonymous, boolean constant, boolean isBNode) {
+				return new KindAwareVar(name, value, anonymous, constant, isBNode);
+			}
+
+			@Override
+			public Var cloneVar(Var original) {
+				return pooled;
+			}
+		});
+
+		try {
+			Var source = new KindAwareVar("x", value, false, false, false);
+			source.setGraphContextDepth(4);
+			source.setVariableScopeChange(true);
+
+			Var clone = source.clone();
+			KindAwareVar kindAwareClone = assertInstanceOf(KindAwareVar.class, clone);
+
+			assertNotSame(pooled, clone, "clone metadata must be applied to a fresh provider subtype occurrence");
+			assertEquals("provider-clone-state", kindAwareClone.getKind(), "provider-managed clone state is retained");
+			assertEquals(4, clone.getGraphContextDepth());
+			assertTrue(clone.isVariableScopeChange());
+			assertEquals(0, pooled.getGraphContextDepth(), "the provider's cached clone must not be mutated");
+			assertFalse(pooled.isVariableScopeChange(), "the provider's cached clone must not be mutated");
+		} finally {
+			Var.resetProvider();
+		}
 	}
 }

@@ -54,6 +54,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.ArrayBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ZeroLengthPathIteration;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvaluationContext {
@@ -131,6 +132,11 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 	@Override
 	public Dataset getDataset() {
 		return context.getDataset();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return context.getBlankNodeAllocationScope();
 	}
 
 	@Override
@@ -493,6 +499,9 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
 					Var replacement = Var.of(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
 							node.isAnonymous(), node.isConstant(), node.isBNode());
+					if (node.hasApiInputOrigin()) {
+						replacement = replacement.withApiInputOrigin();
+					}
 					replacement.setGraphContextDepth(node.getGraphContextDepth());
 					replacement.setVariableScopeChange(node.isVariableScopeChange());
 					node.replaceWith(replacement);

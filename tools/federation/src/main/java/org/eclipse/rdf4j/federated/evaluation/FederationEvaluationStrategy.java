@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.federated.algebra.BoundJoinTupleExpr;
 import org.eclipse.rdf4j.federated.algebra.ConjunctiveFilterExpr;
 import org.eclipse.rdf4j.federated.algebra.EmptyResult;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveGroup;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.ExclusiveTupleExpr;
@@ -107,6 +108,7 @@ import org.eclipse.rdf4j.federated.structures.FedXDataset;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.structures.QueryType;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
+import org.eclipse.rdf4j.federated.util.QueryAlgebraUtil;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
@@ -152,6 +154,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
@@ -405,6 +408,10 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		FederationEvaluationStatistics stats = (FederationEvaluationStatistics) evaluationStatistics;
 		QueryInfo queryInfo = stats.getQueryInfo();
+		LocalBNodeReferences.Analysis originalAnalysis = LocalBNodeReferences.analyze(expr);
+		Set<String> originalReferences = originalAnalysis.ids();
+		Set<String> originalKnownIdentities = originalAnalysis.knownIds();
+		originalKnownIdentities.forEach(queryInfo.getBlankNodeAllocationScope()::reserveKnownID);
 
 		List<Endpoint> members = getMembersFromContext(stats);
 
@@ -427,9 +434,8 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		info.optimize(query);
 
 		// if the federation has a single member only, evaluate the entire query there
-		if (members.size() == 1 && queryInfo.getQuery() != null
-				&& propagateServices(info.getServices())
-				&& queryInfo.getQueryType() != QueryType.UPDATE) {
+		if (members.size() == 1 && queryInfo.getQuery() != null && propagateServices(info.getServices())
+				&& queryInfo.getQueryType() != QueryType.UPDATE && !hasBlankNodeBindings(bindings)) {
 			return new SingleSourceQuery(expr, members.get(0), queryInfo);
 		}
 
@@ -459,6 +465,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				&& info.canDelegateGraphsToSingleSource() && relevantSources.size() == 1
 				&& propagateServices(info.getServices())
 				&& queryInfo.getQueryType() != QueryType.UPDATE && queryInfo.getQueryType() != QueryType.DESCRIBE
+				&& !hasBlankNodeBindings(bindings)
 				&& hasCompleteGraphSourceCoverage(members, relevantSources.iterator().next(), queryInfo, info)) {
 			return new SingleSourceQuery(query, relevantSources.iterator().next(), queryInfo);
 		}
@@ -495,6 +502,16 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		if (log.isTraceEnabled()) {
 			log.trace("Query after Optimization: " + query);
+		}
+		// Inlined input identities keep their binding role when the common evaluator prepares this rewritten tree.
+		queryInfo.getBlankNodeAllocationScope()
+				.rememberReferenceSnapshot(query, originalReferences, originalKnownIdentities,
+						LocalBNodeReferences.analyze(query).structure());
+		if (query instanceof QueryRoot root) {
+			// The deprecated evaluate API unwraps QueryRoot before compiling its projection/operator.
+			queryInfo.getBlankNodeAllocationScope()
+					.rememberReferenceSnapshot(root.getArg(), originalReferences, originalKnownIdentities,
+							LocalBNodeReferences.analyze(root.getArg()).structure());
 		}
 		boolean[] unboundGraph = { false };
 		query.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
@@ -902,6 +919,14 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 	private CloseableIteration<BindingSet> evaluateNativeAtSource(NativeGraphQuery.Prepared prepared, Endpoint endpoint,
 			QueryInfo queryInfo) {
+		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		RemoteGraphSnapshot snapshot = getGraphSnapshot(endpoint);
+		for (Value graph : prepared.selectedGraphIdentities()) {
+			if (snapshot != null && snapshot.excludesSelectedCanonicalGraph(graph)
+					|| identity.isOtherSupportedGraphNamespace(graph)) {
+				return new EmptyIteration<>();
+			}
+		}
 		for (Binding binding : prepared.graphBindings()) {
 			if (!RemoteGraphSnapshot.belongsTo(binding.getValue(), endpoint.getId())) {
 				return new EmptyIteration<>();
@@ -1077,6 +1102,7 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		try {
 			Endpoint source = query.getSource();
+			new EndpointIdentity(source, query.getQueryInfo()).validateQueryConstants(query);
 			return source.getTripleSource()
 					.getStatements(query.getQueryString(), bindings, query.getQueryInfo().getQueryType(),
 							query.getQueryInfo());
@@ -1480,6 +1506,21 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 
 		TripleSource tripleSource = group.getOwnedEndpoint().getTripleSource();
+		if (tripleSource instanceof SailTripleSource local) {
+			if (group.getExclusiveExpressions()
+					.stream()
+					.anyMatch(expression -> requiresLocalEmptyPath(expression, bindings))) {
+				List<TupleExpr> children = new ArrayList<>(group.getExclusiveExpressions().size());
+				group.getExclusiveExpressions().forEach(expression -> children.add(expression.clone()));
+				CloseableIteration<BindingSet> result = evaluate(new NJoin(children, group.getQueryInfo()), bindings);
+				if (group.getFilterExpr() != null) {
+					result = new FilteringIteration(group.getFilterExpr(), result, this);
+				}
+				return group.getBoundFilters() == null ? result
+						: new InsertBindingsIteration(result, group.getBoundFilters());
+			}
+			return local.getStatements(group, bindings);
+		}
 		AtomicBoolean isEvaluated = new AtomicBoolean(false);
 
 		try {
@@ -1541,10 +1582,21 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 				.getEndpointManager()
 				.getEndpoint(expr.getOwner().getEndpointID());
 		TripleSource t = ownedEndpoint.getTripleSource();
+		QueryEvaluationStep localEmptyPath = expr instanceof ExclusiveArbitraryLengthPath path
+				&& path.getMinLength() == 0
+				&& t instanceof SailTripleSource
+						? prepare(new FedXArbitraryLengthPath(path.clone(), expr.getQueryInfo()), context)
+						: null;
 
 		return bindings -> {
+			if (localEmptyPath != null && requiresLocalEmptyPath(expr, bindings)) {
+				return localEmptyPath.evaluate(bindings);
+			}
 			if (NativeGraphQuery.isRequired(expr, bindings)) {
 				return prepareNativeGraphQuery(expr).evaluate(bindings);
+			}
+			if (t instanceof SailTripleSource local) {
+				return local.getStatements((ExclusiveTupleExprRenderer) expr, bindings);
 			}
 			AtomicBoolean isEvaluated = new AtomicBoolean(false);
 			FilterValueExpr filterValueExpr = null; // TODO consider optimization using FilterTuple
@@ -1563,6 +1615,13 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 
 		};
 
+	}
+
+	private static boolean requiresLocalEmptyPath(ExclusiveTupleExpr expression, BindingSet bindings) {
+		return expression instanceof ExclusiveArbitraryLengthPath path && path.getMinLength() == 0
+				&& (QueryStringUtil.containsBlankNode(QueryAlgebraUtil.getVarValue(path.getSubjectVar(), bindings))
+						|| QueryStringUtil
+								.containsBlankNode(QueryAlgebraUtil.getVarValue(path.getObjectVar(), bindings)));
 	}
 
 	/**
@@ -1587,6 +1646,9 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		// we can omit the bound join handling
 		if (bindings.size() == 1) {
 			return evaluate(stmt, bindings.get(0));
+		}
+		if (hasBlankNodeBindings(stmt, bindings)) {
+			return evaluateBindingsIndividually(stmt, bindings, false);
 		}
 
 		FilterValueExpr filterExpr = null;
@@ -1642,6 +1704,9 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 	 */
 	public CloseableIteration<BindingSet> evaluateLeftBoundJoinStatementPattern(
 			StatementTupleExpr stmt, final List<BindingSet> bindings) throws QueryEvaluationException {
+		if (hasBlankNodeBindings(stmt, bindings)) {
+			return evaluateBindingsIndividually(stmt, bindings, true);
+		}
 		if ((!NativeGraphQuery.isRequired((TupleExpr) stmt)
 				&& bindings.stream().anyMatch(row -> NativeGraphQuery.isRequired((TupleExpr) stmt, row)))
 				|| (stmt instanceof StatementPattern statement
@@ -1691,10 +1756,101 @@ public class FederationEvaluationStrategy extends StrictEvaluationStrategy {
 		}
 	}
 
+	private static boolean hasBlankNodeBindings(StatementTupleExpr expression, List<BindingSet> rows) {
+		Set<String> names = expression.getBindingNames();
+		for (BindingSet row : rows) {
+			for (String name : names) {
+				if (QueryStringUtil.containsBlankNode(row.getValue(name))) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
+	private static boolean hasBlankNodeBindings(BindingSet bindings) {
+		for (var binding : bindings) {
+			if (QueryStringUtil.containsBlankNode(binding.getValue())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** VALUES text has no typed identity channel; retain each solution occurrence on the ordinary evaluation path. */
+	private CloseableIteration<BindingSet> evaluateBindingsIndividually(StatementTupleExpr expression,
+			List<BindingSet> rows, boolean optional) {
+		return new LookAheadIteration<>() {
+			private final Iterator<BindingSet> inputs = rows.iterator();
+			private CloseableIteration<BindingSet> current;
+			private BindingSet original;
+			private boolean matched;
+
+			@Override
+			protected BindingSet getNextElement() {
+				try {
+					while (true) {
+						if (current != null) {
+							if (current.hasNext()) {
+								matched = true;
+								return current.next();
+							}
+							current.close();
+							current = null;
+							if (optional && !matched) {
+								return original;
+							}
+						}
+						if (!inputs.hasNext()) {
+							return null;
+						}
+						original = inputs.next();
+						matched = false;
+						current = evaluate(expression, original);
+					}
+				} catch (Throwable failure) {
+					close();
+					throw failure;
+				}
+			}
+
+			@Override
+			protected void handleClose() {
+				if (current != null) {
+					current.close();
+				}
+			}
+		};
+	}
+
 	public CloseableIteration<BindingSet> evaluateTripleRefJoinGroup(TripleRefJoinGroup tripleRefJoinGroup,
 			BindingSet bindings) {
 		if (NativeGraphQuery.isRequired(tripleRefJoinGroup, bindings)) {
 			return prepareNativeGraphQuery(tripleRefJoinGroup).evaluate(bindings);
+		}
+		var sources = tripleRefJoinGroup.getStatementSources();
+		boolean localSource = sources.stream()
+				.anyMatch(source -> federationContext.getEndpointManager()
+						.getEndpoint(source.getEndpointID())
+						.getTripleSource() instanceof SailTripleSource);
+		if (localSource) {
+			WorkerUnionBase<BindingSet> union = federationContext.getManager()
+					.createWorkerUnion(tripleRefJoinGroup.getQueryInfo());
+			for (StatementSource source : sources) {
+				TripleSource tripleSource = federationContext.getEndpointManager()
+						.getEndpoint(source.getEndpointID())
+						.getTripleSource();
+				QueryEvaluationStep step = row -> tripleSource instanceof SailTripleSource local
+						? local.getStatements(tripleRefJoinGroup, row)
+						: tripleSource.getStatements(
+								QueryStringUtil.selectQueryStringTripleRefJoinGroup(tripleRefJoinGroup,
+										row, tripleRefJoinGroup.getExecutionDataset()),
+								row, (FilterValueExpr) null,
+								tripleRefJoinGroup.getQueryInfo());
+				union.addTask(new ParallelUnionOperatorTask(union, step, bindings));
+			}
+			union.run();
+			return union;
 		}
 
 		String preparedQuery = QueryStringUtil.selectQueryStringTripleRefJoinGroup(tripleRefJoinGroup, bindings,

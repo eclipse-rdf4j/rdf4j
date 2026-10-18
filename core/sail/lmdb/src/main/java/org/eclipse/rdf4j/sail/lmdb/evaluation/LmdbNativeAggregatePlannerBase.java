@@ -31,6 +31,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
@@ -130,11 +131,12 @@ abstract class LmdbNativeAggregatePlannerBase {
 	/** Whether this compile produced at least one interior generic island (drives the hybrid plan class). */
 	boolean sawIsland;
 	/**
-	 * M-A3 scope barrier: island every variable-scope-change subtree. Set only on the decline-conversion retry after an
-	 * unsafe nested scope change was detected — the generic engine then owns all scope semantics while the positive
-	 * skeleton stays native.
+	 * Scope barrier: compile nested variable-scope changes against isolated lexical frames. Unsupported boundaries may
+	 * use generic islands only when islands are enabled; semantic native boundaries do not require that fallback.
 	 */
 	boolean islandScopeChanges;
+	/** The tuple root whose lexical frame this planner already owns; its descendants still need scope barriers. */
+	TupleExpr lexicalCompileRoot;
 	/** M-A3 scope barrier: non-well-designed LeftJoins forced to islands (generic bottom-up OPTIONAL scoping). */
 	Set<LeftJoin> forcedIslandLeftJoins = java.util.Collections.emptySet();
 	/**
@@ -1184,17 +1186,25 @@ abstract class LmdbNativeAggregatePlannerBase {
 	}
 
 	ContextConstraint compileContextConstraint(Scope scope, Dataset dataset) {
+		QueryEvaluationContext.ActiveGraph active = context.getActiveGraph();
+		if (active != null && scope == Scope.DEFAULT_CONTEXTS) {
+			Resource physical = active.physicalGraph();
+			long id = physical == null ? NULL_CONTEXT_ID : idOf(physical, ValuePosition.CONTEXT);
+			return id == UNKNOWN ? ContextConstraint.EMPTY : new ContextConstraint(new long[] { id });
+		}
 		if (dataset == null) {
 			return ContextConstraint.UNRESTRICTED;
 		}
-		Set<IRI> graphs;
+		Set<Resource> graphs;
 		boolean emptyGraph;
 		if (scope == Scope.DEFAULT_CONTEXTS) {
-			graphs = dataset.getDefaultGraphs();
-			emptyGraph = graphs.isEmpty() && !dataset.getNamedGraphs().isEmpty();
+			graphs = dataset.getDefaultGraphResources();
+			emptyGraph = graphs.isEmpty()
+					&& (dataset.isExplicitReadDataset() || !dataset.getNamedGraphResources().isEmpty());
 		} else {
-			graphs = dataset.getNamedGraphs();
-			emptyGraph = graphs.isEmpty() && !dataset.getDefaultGraphs().isEmpty();
+			graphs = dataset.getNamedGraphResources();
+			emptyGraph = graphs.isEmpty()
+					&& (dataset.isExplicitReadDataset() || !dataset.getDefaultGraphResources().isEmpty());
 		}
 		if (emptyGraph) {
 			return ContextConstraint.EMPTY;
@@ -1204,7 +1214,7 @@ abstract class LmdbNativeAggregatePlannerBase {
 		}
 		long[] ids = new long[graphs.size()];
 		int size = 0;
-		for (IRI graph : graphs) {
+		for (Resource graph : graphs) {
 			long id;
 			if (graph == null || RDF4J.NIL.equals(graph) || SESAME.NIL.equals(graph)) {
 				id = NULL_CONTEXT_ID;

@@ -43,6 +43,7 @@ import org.eclipse.rdf4j.http.server.repository.BooleanQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.ExplainQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.GraphQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.QueryResultView;
+import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
 import org.eclipse.rdf4j.http.server.repository.TupleQueryResultView;
 import org.eclipse.rdf4j.http.server.repository.resolver.RepositoryResolver;
 import org.eclipse.rdf4j.model.IRI;
@@ -195,6 +196,7 @@ public class DefaultQueryRequestHandler extends AbstractQueryRequestHandler {
 		String baseIRI = request.getParameter(Protocol.BASEURI_PARAM_NAME);
 
 		try {
+			repositoryCon.setQueryParseOptions(RepositoryInterceptor.getQueryParseOptions(request));
 			Query query = repositoryCon.prepareQuery(queryLn, queryString, baseIRI);
 
 			setQueryParameters(request, repositoryCon, query);

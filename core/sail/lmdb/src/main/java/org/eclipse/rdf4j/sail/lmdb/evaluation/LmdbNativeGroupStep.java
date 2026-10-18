@@ -245,7 +245,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			NativeExecutionContext executionContext = ((SyntheticValueSource) evalSource).executionContext();
 			NativeBindingSetValueEvaluator evaluator = executionContext.genericStep(havingDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
+						.genericContext(context, strategy);
 				return LmdbNativeAggregateFilterCompiler.compileSemanticValue(strategy,
 						(ValueExpr) havingDescriptor.pinnedExpr(), new SlotAwareQueryEvaluationContext(scoped, layout));
 			});
@@ -303,7 +303,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 			NativeExecutionContext executionContext = synthetic.executionContext();
 			if (executionContext != null) {
 				return executionContext
-						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
+						.genericContext(context, strategy);
 			}
 		}
 		return EvaluationScopedQueryEvaluationContext.create(context, strategy);
@@ -350,7 +350,7 @@ final class NativeGroupStep implements QueryEvaluationStep, LmdbNativePhysicalPl
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
+						.genericContext(context, strategy);
 				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}

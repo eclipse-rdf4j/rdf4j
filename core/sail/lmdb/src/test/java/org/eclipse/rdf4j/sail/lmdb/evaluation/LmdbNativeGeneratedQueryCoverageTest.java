@@ -29,20 +29,32 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest;
 import org.eclipse.rdf4j.queryrender.SparqlComprehensiveStreamingValidTest.GeneratedQuery;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -51,6 +63,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.JaninoCeilingKernels;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -594,6 +607,177 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		}
 
 		assertThat(failures).as("50-query generated-kernel capability corpus").isEmpty();
+	}
+
+	@Test
+	void detachedGraphRootPublishesOneLogicalNativeInvocation() {
+		ValueFactory factory = repository.getValueFactory();
+		Graph graph = new Graph(new Var("g"), new StatementPattern(new Var("s"),
+				Var.of("predicate", factory.createIRI("http://ex/pA"), true, true), new Var("o")));
+		graph.setRuntimeTelemetryEnabled(true);
+		TripleSource triples = new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return factory;
+			}
+
+			@Override
+			public EmptyIteration<Statement> getStatements(Resource subject, IRI predicate, Value object,
+					Resource... contexts) {
+				return new EmptyIteration<>();
+			}
+		};
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0,
+				new EvaluationStatistics(), false);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			var compiled = strategy.withValuePositions(NativeValuePositionAnalysis.analyze(graph),
+					() -> LmdbNativeAggregateCompiler.compileRoot(graph, new QueryEvaluationContext.Minimal(null),
+							strategy, (NativeLmdbQuerySource) dataset));
+			assertThat(compiled.isSupported()).isTrue();
+			int count = 0;
+			try (var rows = compiled.step().evaluate(EmptyBindingSet.getInstance())) {
+				while (rows.hasNext()) {
+					rows.next();
+					count++;
+				}
+			}
+			assertThat(count).isEqualTo(16);
+			assertThat(graph.getLongMetricActual("nativeInvocationsActual")).isEqualTo(1L);
+			assertThat(graph.getStringMetricActual("nativeExecutionPath")).isNotEmpty();
+		}
+	}
+
+	@Test
+	void fusedGraphRetainsLogicalRuntimeTelemetry() {
+		String query = "SELECT ?s ?o { GRAPH ?g { ?s <http://ex/pA> ?o } }";
+		assertThat(rows(query, true)).isEqualTo(genericRows(query, true));
+		String telemetry = explain(query);
+		assertThat(telemetry).containsPattern("nativeInvocationsActual=[1-9][0-9]*");
+		assertThat(telemetry).contains("LMDB native physical plan (executed)");
+		assertThat(telemetry).contains("nativeExecutionPath=");
+		for (String wrapped : List.of(query,
+				"SELECT (COUNT(*) AS ?n) { GRAPH ?g { ?s <http://ex/pA> ?o . ?s <http://ex/pA> ?copy } }",
+				"SELECT DISTINCT ?s { { SELECT ?s { GRAPH ?g { ?s <http://ex/pA> ?o } } } } ORDER BY ?s LIMIT 3")) {
+			assertThat(rows(wrapped, true)).isEqualTo(genericRows(wrapped, true));
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				GenericPlanNode plan = connection.prepareTupleQuery(wrapped).explain(Explanation.Level.Telemetry)
+						.toGenericPlanNode();
+				GenericPlanNode owner = nativeInvocationNode(plan);
+				assertThat(owner).as(wrapped).isNotNull();
+				assertThat(owner.getLongMetricActual("nativeInvocationsActual")).as(wrapped).isEqualTo(1L);
+				assertThat(owner.getStringMetricActual("nativeExecutionPath")).as(wrapped).isNotEmpty();
+			}
+		}
+		for (String body : List.of("?s <http://ex/pA> ?o . ?s <http://ex/pA> ?copy",
+				"GRAPH ?g { ?s <http://ex/pA> ?o . ?s <http://ex/pA> ?copy }")) {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				GenericPlanNode owner = nativeInvocationNode(connection.prepareTupleQuery("SELECT (COUNT(*) AS ?n) { "
+						+ body + " }").explain(Explanation.Level.Telemetry).toGenericPlanNode());
+				assertThat(owner).as("ordinary and fused aggregate operators retain their own metrics").isNotNull();
+				assertThat(owner.getType()).contains("Group");
+				assertThat(owner.getLongMetricActual("nativeInvocationsActual")).isEqualTo(1L);
+			}
+		}
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			var prepared = connection.prepareTupleQuery(query);
+			prepared.setBinding("g", RDF4J.NIL);
+			GenericPlanNode plan = prepared.explain(Explanation.Level.Telemetry).toGenericPlanNode();
+			assertThat(plan.getLongMetricActual("nativeInvocationsActual"))
+					.as("the invocation-bound alias takes the semantic alternative once").isEqualTo(1L);
+			assertThat(plan.getStringMetricActual("nativeExecutionPath")).isNotEmpty();
+		}
+	}
+
+	private static GenericPlanNode nativeInvocationNode(GenericPlanNode node) {
+		if (node.getLongMetricActual("nativeInvocationsActual") != null) {
+			return node;
+		}
+		if (node.getPlans() != null) {
+			for (GenericPlanNode child : node.getPlans()) {
+				GenericPlanNode owner = nativeInvocationNode(child);
+				if (owner != null) {
+					return owner;
+				}
+			}
+		}
+		return null;
+	}
+
+	@Test
+	void lexicalBoundariesRemainNativeWithGenericIslandsDisabled() {
+		String islands = "rdf4j.lmdb.islands.enabled";
+		String bridge = LmdbNativeKernelLowering.PLAN_BRIDGE_PROPERTY;
+		String previousIslands = System.getProperty(islands);
+		String previousBridge = System.getProperty(bridge);
+		try {
+			System.setProperty(islands, "false");
+			System.setProperty(bridge, "false");
+			for (String query : List.of("""
+					PREFIX ex: <http://ex/>
+					SELECT ?s WHERE {
+					  ?s ex:pB ?value
+					  MINUS {
+					    VALUES ?s { ex:s1 ex:s2 }
+					    ?s ex:pC ?other
+					    FILTER EXISTS {
+					      VALUES ?s { ex:s1 ex:s2 }
+					      { ?s !ex:pA ?pathValue } UNION { ?pathValue !ex:pC ?s }
+					    }
+					  }
+					}
+					""", """
+					PREFIX ex: <http://ex/>
+					SELECT ?s ?o WHERE {
+					  VALUES ?s { ex:s1 ex:s2 }
+					  {
+					    { VALUES ?s { ex:s1 ex:s2 } { GRAPH ?g { ?s ex:pA ?o } } }
+					    UNION { ?other ex:pD ?value }
+					  }
+					}
+					""", """
+					PREFIX ex: <http://ex/>
+					SELECT ?s WHERE {
+					  ?s ex:pB ?value
+					  MINUS {
+					    VALUES ?s { ex:s1 ex:s2 }
+					    GRAPH ?g {
+					      ?s ex:pC ?other
+					      FILTER EXISTS {
+					        VALUES ?s { ex:s1 ex:s2 }
+					        { ?s !ex:pA ?pathValue } UNION { ?pathValue !ex:pC ?s }
+					      }
+					    }
+					  }
+					}
+					""")) {
+				List<String> expected = genericRows(query, true);
+				assertThat(expected).isNotEmpty();
+				long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+				long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+				resetMetricsOnly();
+				List<String> actual = nativeRowsUntilClassified(query, true);
+				String plan = explain(query);
+				Set<StrategyDecline> declines = declineReasons(query);
+				assertThat(actual).as("lexical frame answer parity\n%s", query).isEqualTo(expected);
+				assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
+						.as("semantic boundaries need no generic host\n%s", plan).isZero();
+				assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
+						.as("semantic boundaries need no generic island\n%s", plan).isZero();
+				assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
+						.as("semantic native admission; reasons=%s\n%s", declines, plan).isTrue();
+			}
+		} finally {
+			if (previousIslands == null) {
+				System.clearProperty(islands);
+			} else {
+				System.setProperty(islands, previousIslands);
+			}
+			if (previousBridge == null) {
+				System.clearProperty(bridge);
+			} else {
+				System.setProperty(bridge, previousBridge);
+			}
+		}
 	}
 
 	@Test

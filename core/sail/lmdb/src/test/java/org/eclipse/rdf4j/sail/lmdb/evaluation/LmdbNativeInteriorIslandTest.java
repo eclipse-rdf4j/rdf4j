@@ -16,17 +16,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.io.File;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -35,6 +45,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * Native scope boundaries and the legacy interior-island carrier. Legal subqueries use {@link NativeSubqueryPlan} by
@@ -408,38 +420,103 @@ public class LmdbNativeInteriorIslandTest {
 	}
 
 	/**
-	 * M-A3 decline conversion: a MINUS whose right-side filter references an out-of-scope outer variable trips the
-	 * unsafe-nested-scope check — without the semantic scope tier the whole root is hosted generically; with it the
-	 * scope-change subtree becomes a native evaluation boundary and the rest stays native.
+	 * The native lexical boundary withholds outer row bindings from MINUS, independently of the generic-island switch.
+	 * The right FILTER cannot read the left row's ?o, and its public domain is disjoint from the left domain.
 	 */
-	@Test
-	public void unsafeScopeChangeConvertsToScopedIsland() {
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void unsafeScopeChangeConvertsToScopedIsland(boolean islands) {
 		String query = "SELECT ?s ?o WHERE { ?s <" + EX + "p> ?o "
 				+ "MINUS { ?s2 <" + EX + "q> ?x FILTER(?x < ?o) } }";
-
-		List<String> declinedRows = withoutIslands(() -> {
-			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
-			List<String> declined = rows(query);
-			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore)
-					.as("without islands this root must decline to the generic host (pin: the query exercises the "
-							+ "unsafe-scope path)")
-					.isEqualTo(1);
-			return declined;
-		});
-
-		withIslands(() -> {
+		withProperty(ISLANDS_FLAG, Boolean.toString(islands), () -> {
+			ValueFactory vf = repository.getValueFactory();
+			List<BindingSet> expected = List.of(scopeRow("s1", vf.createLiteral("alpha")),
+					scopeRow("s2", vf.createLiteral("bravo")), scopeRow("s3", vf.createLiteral("charlie")));
 			long compiledBefore = LmdbNativeAggregateCompiler.COMPILED.get();
-			long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
-			List<String> hybrid = rows(query);
-			assertThat(hybrid).containsExactlyInAnyOrderElementsOf(declinedRows);
-			assertThat(hybrid).containsExactlyInAnyOrderElementsOf(genericRows(query));
+			assertNativeScopeRows(query, Map.of(), expected);
 			assertThat(LmdbNativeAggregateCompiler.COMPILED.get() - compiledBefore)
-					.as("the converted root must compile natively (hybrid)")
+					.as("a supported lexical boundary must compile natively in either islands mode")
 					.isGreaterThanOrEqualTo(1);
-			assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore)
-					.as("the scope-change subtree must remain native")
-					.isZero();
+			assertNativeScopeRows(query, Map.of("o", vf.createLiteral("alpha")), List.of(expected.get(0)));
+			assertNativeScopeRows(query, Map.of("s", vf.createIRI(EX, "s2")), List.of(expected.get(1)));
+			assertNativeScopeRows(query, Map.of("o", vf.createLiteral("missing")), List.of());
 		});
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	public void minusLexicalScopePreservesPublicDomainsAndApiInputs(boolean islands) {
+		ValueFactory vf = repository.getValueFactory();
+		IRI p = vf.createIRI(EX, "scopeP");
+		IRI q = vf.createIRI(EX, "scopeQ");
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			conn.begin();
+			conn.add(vf.createIRI(EX, "a"), p, vf.createLiteral("2", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "b"), p, vf.createLiteral("3", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "c"), p, vf.createLiteral("4", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "a"), q, vf.createLiteral("1", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "b"), q, vf.createLiteral("5", XSD.INTEGER));
+			conn.add(vf.createIRI(EX, "d"), q, vf.createLiteral("1", XSD.INTEGER));
+			conn.commit();
+		}
+		List<BindingSet> expected = List.of(scopeRow("a", vf.createLiteral("2", XSD.INTEGER)),
+				scopeRow("b", vf.createLiteral("3", XSD.INTEGER)), scopeRow("c", vf.createLiteral("4", XSD.INTEGER)));
+		String left = "?s <" + p + "> ?o ";
+		String right = "?s <" + q + "> ?x FILTER(?x < ?o)";
+		String body = left + " MINUS { " + right + " }";
+		String query = "SELECT ?s ?o WHERE { " + body + " }";
+		withProperty(ISLANDS_FLAG, Boolean.toString(islands), () -> {
+			// Even a shared subject cannot correlate the unbound filter variable from the current left row.
+			assertScopeRows(query, Map.of(), expected);
+			assertScopeRows("SELECT ?s ?o WHERE { { SELECT ?s ?o WHERE { " + body + " } } }", Map.of(), expected);
+			assertScopeRows("SELECT ?s ?o WHERE { { " + body + " } UNION { " + body + " } }", Map.of(),
+					List.of(expected.get(0), expected.get(1), expected.get(2), expected.get(0), expected.get(1),
+							expected.get(2)));
+			// API inputs reach the lexical right frame as well as constraining the left relation.
+			assertScopeRows(query, Map.of("o", vf.createLiteral("2", XSD.INTEGER)), List.of());
+			assertScopeRows(query, Map.of("o", vf.createLiteral("3", XSD.INTEGER)), List.of(expected.get(1)));
+			// A right-produced ?o joins the public MINUS domain; incompatible values must not remove a left row.
+			assertScopeRows("SELECT ?s ?o WHERE { " + left + " MINUS { ?s <" + q
+					+ "> ?x BIND(3 AS ?o) FILTER(?x < ?o) } }", Map.of(), expected);
+			assertScopeRows("SELECT ?s ?o WHERE { " + left + " MINUS { ?s <" + q
+					+ "> ?x BIND(2 AS ?o) FILTER(?x < ?o) } }", Map.of(), List.of(expected.get(1), expected.get(2)));
+			// Ordinary sibling values constrain the left relation without becoming external API substitutions.
+			// The existing M-F1 root value guard cannot cross a filter that reads its guarded name: retain the
+			// explicit generic-host policy for this shape while checking the exact relational result.
+			long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+			assertScopeRows("SELECT ?s ?o WHERE { VALUES ?o { 2 } " + body + " }", Map.of(), List.of(expected.get(0)));
+			assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore + 1);
+			// Equal numeric values of different RDF datatypes are deliberately incompatible join/MINUS terms.
+			assertScopeRows(query, Map.of("o", vf.createLiteral(3)), List.of());
+			assertScopeRows("SELECT ?s ?o WHERE { " + left + " MINUS { ?s <" + q
+					+ "> ?x BIND(\"2\"^^<" + XSD.INT + "> AS ?o) FILTER(?x < ?o) } }", Map.of(), expected);
+			assertScopeRows("SELECT ?s ?o WHERE { VALUES ?o { \"2\"^^<" + XSD.INT + "> } " + body + " }",
+					Map.of(), List.of());
+		});
+	}
+
+	@Test
+	public void parsedNumericBindAndValuesUseIntegerRatherThanJavaIntTerms() {
+		ValueFactory vf = repository.getValueFactory();
+		Value source = vf.createLiteral(2);
+		assertThat(vf.createLiteral(2).getDatatype()).isEqualTo(XSD.INT);
+		for (String query : List.of("SELECT ?o WHERE { BIND(2 AS ?o) }", "SELECT ?o WHERE { VALUES ?o { 2 } }")) {
+			List<Value> parsed = new ArrayList<>();
+			QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr()
+					.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						public void meet(ValueConstant constant) {
+							parsed.add(constant.getValue());
+						}
+
+						@Override
+						public void meet(BindingSetAssignment assignment) {
+							assignment.getBindingSets().forEach(row -> parsed.add(row.getValue("o")));
+						}
+					});
+			assertThat(parsed).as(query).containsExactly(vf.createLiteral("2", XSD.INTEGER));
+			assertThat(parsed.get(0)).as("numeric equality does not make the RDF terms join-compatible").isNotEqualTo(source);
+		}
 	}
 
 	/**
@@ -548,6 +625,57 @@ public class LmdbNativeInteriorIslandTest {
 					.stream()
 					.map(LmdbNativeInteriorIslandTest::render)
 					.collect(Collectors.toList());
+		}
+	}
+
+	private BindingSet scopeRow(String subject, Value object) {
+		MapBindingSet row = new MapBindingSet();
+		row.addBinding("s", repository.getValueFactory().createIRI(EX, subject));
+		row.addBinding("o", object);
+		return row;
+	}
+
+	private void assertScopeRows(String query, Map<String, Value> inputs, List<BindingSet> expected) {
+		List<BindingSet> nativeRows = scopeBindingRows(query, inputs, true);
+		List<BindingSet> genericRows = scopeBindingRows(query, inputs, false);
+		assertThat(nativeRows).as(() -> query + ", API inputs=" + inputs + "; native=" + nativeRows
+				+ "; generic=" + genericRows + "\nParsed:\n"
+				+ QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr()
+				+ "\nOptimized:\n" + scopeOptimizedPlan(query, inputs))
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(nativeRows).allSatisfy(row -> assertThat(row.getBindingNames()).isEqualTo(Set.of("s", "o")));
+		assertThat(genericRows).as("generic oracle: %s, API inputs=%s", query, inputs)
+				.containsExactlyInAnyOrderElementsOf(expected);
+	}
+
+	private void assertNativeScopeRows(String query, Map<String, Value> inputs, List<BindingSet> expected) {
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		assertScopeRows(query, inputs, expected);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get()).isEqualTo(hostedBefore);
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get()).isEqualTo(islandsBefore);
+	}
+
+	private String scopeOptimizedPlan(String query, Map<String, Value> inputs) {
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var prepared = conn.prepareTupleQuery(query);
+			inputs.forEach(prepared::setBinding);
+			return prepared.explain(Explanation.Level.Optimized).toString();
+		}
+	}
+
+	private List<BindingSet> scopeBindingRows(String query, Map<String, Value> inputs, boolean nativeEvaluation) {
+		String previous = System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEvaluation));
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			var prepared = conn.prepareTupleQuery(query);
+			inputs.forEach(prepared::setBinding);
+			return QueryResults.asList(prepared.evaluate());
+		} finally {
+			if (previous == null) {
+				System.clearProperty(NATIVE_FLAG);
+			} else {
+				System.setProperty(NATIVE_FLAG, previous);
+			}
 		}
 	}
 

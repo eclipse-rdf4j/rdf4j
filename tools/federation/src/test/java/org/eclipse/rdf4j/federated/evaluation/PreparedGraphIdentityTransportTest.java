@@ -13,12 +13,15 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.lang.ref.WeakReference;
@@ -40,6 +43,7 @@ import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
 import org.eclipse.rdf4j.federated.algebra.StatementSource;
 import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.endpoint.EndpointConfiguration;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
@@ -53,6 +57,7 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -65,8 +70,10 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -103,6 +110,7 @@ class PreparedGraphIdentityTransportTest {
 			connection.add(B, P, VF.createLiteral("b"), GRAPH);
 		}
 		queryInfo = mock(QueryInfo.class);
+		when(queryInfo.getBlankNodeAllocationScope()).thenReturn(new BlankNodeAllocationScope());
 		context = mock(FederationContext.class);
 		when(context.getConfig()).thenReturn(new FedXConfig());
 		when(context.getMonitoringService()).thenReturn(mock(Monitoring.class));
@@ -142,6 +150,8 @@ class PreparedGraphIdentityTransportTest {
 	void connectionWrapperPreparationSettingsRemainEffective(String setting) {
 		AtomicInteger preparedCount = new AtomicInteger();
 		Endpoint endpoint = mock(Endpoint.class);
+		when(endpoint.getId()).thenReturn("member");
+		when(endpoint.getRepository()).thenReturn(data);
 		when(endpoint.getConnection()).thenAnswer(invocation -> new RepositoryConnectionWrapper(data,
 				data.getConnection()) {
 			@Override
@@ -214,11 +224,14 @@ class PreparedGraphIdentityTransportTest {
 
 	@Test
 	void standardSparqlRepositoryReportsItsCrossRequestBlankNodeBindingLimit() {
-		SPARQLRepository repository = sparqlRepository(mock(SPARQLProtocolSession.class));
+		SPARQLProtocolSession session = mock(SPARQLProtocolSession.class);
+		SPARQLRepository repository = sparqlRepository(session);
 		try {
 			assertThatThrownBy(() -> source(repository).getStatements(
 					NativeGraphQuery.select(statement("s"), EmptyBindingSet.getInstance()), queryInfo))
-							.hasMessageContaining("BNode references not supported by SPARQL end-points");
+							.isInstanceOf(QueryEvaluationException.class)
+							.hasMessageContaining("no trusted receiving scope and canonical ID mapping");
+			verifyNoInteractions(session);
 		} finally {
 			repository.shutDown();
 		}
@@ -248,8 +261,16 @@ class PreparedGraphIdentityTransportTest {
 		try {
 			try (RepositoryConnection connection = federation.getConnection();
 					var rows = connection.prepareTupleQuery(text).evaluate()) {
-				assertThat(QueryResults.asList(rows)).hasSize(2)
-						.allSatisfy(row -> assertThat(row.getValue("g")).isEqualTo(GRAPH));
+				List<BindingSet> result = QueryResults.asList(rows);
+				assertThat(result).hasSize(2).allSatisfy(row -> {
+					assertThat(row.getValue("g")).isInstanceOf(RemoteBNode.class);
+					RemoteBNode.Provenance provenance = ((RemoteBNode) row.getValue("g")).getProvenance();
+					assertThat(provenance).isNotNull();
+					assertThat(provenance.identityScope()).isNull();
+					assertThat(provenance.canonicalResultID()).isFalse();
+					assertThat(provenance.remoteID()).isEqualTo(GRAPH.getID());
+				});
+				assertThat(result.stream().map(row -> row.getValue("g")).distinct()).hasSize(1);
 			}
 			assertThat(requests).containsExactly(text);
 		} finally {
@@ -260,8 +281,9 @@ class PreparedGraphIdentityTransportTest {
 
 	@Test
 	void plainStatementSourceSelectionPreservesTheExplicitDataset() {
+		Value graph = new EndpointIdentity(endpoint(data), queryInfo).incoming(GRAPH);
 		StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
-				Var.of("p", P, true, true), Var.of("o"), Var.of("g", GRAPH, true, true));
+				Var.of("p", P, true, true), Var.of("o"), Var.of("g", graph, true, true));
 		SparqlTripleSource source = source(data);
 		assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), queryInfo, null)).isTrue();
 		SimpleDataset dataset = new SimpleDataset();
@@ -270,7 +292,7 @@ class PreparedGraphIdentityTransportTest {
 		pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("s"),
 				Var.of("p", P, true, true), Var.of("o"), Var.of("g"));
 		QueryBindingSet bindings = new QueryBindingSet();
-		bindings.addBinding("g", GRAPH);
+		bindings.addBinding("g", graph);
 		assertThat(source.hasStatements(pattern, bindings, queryInfo, null)).isTrue();
 		assertThat(source.hasStatements(pattern, bindings, queryInfo, dataset)).isFalse();
 	}
@@ -302,13 +324,15 @@ class PreparedGraphIdentityTransportTest {
 		assertThat(prepared.queryString()).doesNotContain(QueryStringUtil.BNODE_URI.stringValue());
 		try (var rows = source(data).getStatements(prepared, queryInfo)) {
 			assertThat(QueryResults.asList(rows)).singleElement()
-					.satisfies(row -> assertThat(row.getValue("s")).isEqualTo(GRAPH));
+					.satisfies(row -> assertThat(identity(row.getValue("s"))).isEqualTo(memberValue(data, GRAPH)));
 		}
 	}
 
 	@Test
 	void bindingResolvedGroupsUseTheIdentityPreservingExistenceRoute() {
 		Endpoint endpoint = mock(Endpoint.class);
+		when(endpoint.getId()).thenReturn("member");
+		when(endpoint.getRepository()).thenReturn(data);
 		when(endpoint.getConnection()).thenAnswer(invocation -> data.getConnection());
 		EndpointManager endpoints = mock(EndpointManager.class);
 		when(context.getEndpointManager()).thenReturn(endpoints);
@@ -321,7 +345,7 @@ class PreparedGraphIdentityTransportTest {
 				Var.of("s"), Var.of("p", P, true, true), Var.of("other"), Var.of("g")), owner, queryInfo);
 		ExclusiveGroup group = new ExclusiveGroup(List.of(first, second), first.getOwner(), queryInfo);
 		QueryBindingSet input = new QueryBindingSet();
-		input.addBinding("g", GRAPH);
+		input.addBinding("g", new EndpointIdentity(endpoint, queryInfo).incoming(GRAPH));
 		assertThat(new SparqlTripleSource(endpoint, context).hasStatements(group, input)).isTrue();
 		input.addBinding("s", A);
 		input.addBinding("o", VF.createLiteral("a"));
@@ -356,8 +380,23 @@ class PreparedGraphIdentityTransportTest {
 				statement.addStatementSource(
 						new StatementSource(member.getId(), StatementSource.StatementSourceType.REMOTE));
 			}
+			Endpoint firstMember = federationContext.getFederation()
+					.getMembers()
+					.stream()
+					.filter(member -> member.getRepository() == data)
+					.findFirst()
+					.orElseThrow();
+			Endpoint secondMember = federationContext.getFederation()
+					.getMembers()
+					.stream()
+					.filter(member -> member.getRepository() == second)
+					.findFirst()
+					.orElseThrow();
+			Value firstGraph = new EndpointIdentity(firstMember, info).incoming(GRAPH);
+			Value secondGraph = new EndpointIdentity(secondMember, info).incoming(otherGraph);
+			Value absentGraph = new EndpointIdentity(firstMember, info).incoming(missingGraph);
 			List<BindingSet> bindings = new ArrayList<>();
-			for (BNode graph : List.of(GRAPH, GRAPH, otherGraph, missingGraph)) {
+			for (Value graph : List.of(firstGraph, firstGraph, secondGraph, absentGraph)) {
 				QueryBindingSet input = new QueryBindingSet();
 				input.addBinding("g", graph);
 				bindings.add(input);
@@ -367,13 +406,13 @@ class PreparedGraphIdentityTransportTest {
 					: strategy.evaluateBoundJoinStatementPattern(statement, bindings)) {
 				List<BindingSet> actual = QueryResults.asList(rows);
 				assertThat(actual).hasSize(joinKind.equals("left") ? 6 : 5);
-				assertThat(actual.stream().filter(row -> GRAPH.equals(row.getValue("g"))))
+				assertThat(actual.stream().filter(row -> firstGraph.equals(row.getValue("g"))))
 						.extracting(row -> row.getValue("s"))
 						.containsExactlyInAnyOrder(A, A, B, B);
-				assertThat(actual.stream().filter(row -> otherGraph.equals(row.getValue("g"))))
+				assertThat(actual.stream().filter(row -> secondGraph.equals(row.getValue("g"))))
 						.singleElement()
 						.satisfies(row -> assertThat(row.getValue("s")).isEqualTo(otherSubject));
-				assertThat(actual.stream().filter(row -> missingGraph.equals(row.getValue("g"))))
+				assertThat(actual.stream().filter(row -> absentGraph.equals(row.getValue("g"))))
 						.hasSize(joinKind.equals("left") ? 1 : 0)
 						.allSatisfy(row -> assertThat(row.hasBinding("s")).isFalse());
 			}
@@ -397,17 +436,18 @@ class PreparedGraphIdentityTransportTest {
 			var federationContext = federation.getFederationContext();
 			var strategy = federationContext.createStrategy(null);
 			QueryInfo info = new QueryInfo(null, null, QueryType.SELECT, 0, false, federationContext, strategy, null);
+			Endpoint endpoint = federationContext.getFederation().getMembers().getFirst();
+			Value graph = new EndpointIdentity(endpoint, info).incoming(GRAPH);
 			StatementSourcePattern statement = new StatementSourcePattern(new StatementPattern(
 					StatementPattern.Scope.NAMED_CONTEXTS, Var.of("g"), Var.of("p", P, true, true), Var.of("o"),
-					Var.of("context", GRAPH, true, true)), info);
-			Endpoint endpoint = federationContext.getFederation().getMembers().get(0);
+					Var.of("context", graph, true, true)), info);
 			statement.addStatementSource(
 					new StatementSource(endpoint.getId(), StatementSource.StatementSourceType.REMOTE));
 			QueryBindingSet matched = new QueryBindingSet();
-			matched.addBinding("g", GRAPH);
+			matched.addBinding("g", graph);
 			matched.addBinding("o", VF.createLiteral("graph-term"));
 			QueryBindingSet missing = new QueryBindingSet();
-			missing.addBinding("g", GRAPH);
+			missing.addBinding("g", graph);
 			missing.addBinding("o", VF.createLiteral("missing"));
 			List<BindingSet> inputs = List.of(matched, new QueryBindingSet(matched), missing);
 			try (var rows = joinKind.equals("left") ? strategy.evaluateLeftBoundJoinStatementPattern(statement, inputs)
@@ -476,8 +516,21 @@ class PreparedGraphIdentityTransportTest {
 	}
 
 	private SparqlTripleSource source(Repository repository) {
+		return new SparqlTripleSource(endpoint(repository), context);
+	}
+
+	private Endpoint endpoint(Repository repository) {
 		Endpoint endpoint = mock(Endpoint.class);
+		when(endpoint.getId()).thenReturn("member");
+		when(endpoint.getRepository()).thenReturn(repository);
+		if (repository instanceof HTTPRepository) {
+			EndpointConfiguration configuration = mock(EndpointConfiguration.class);
+			when(configuration.getBNodeIdentityScope()).thenReturn(repository);
+			when(configuration.supportsBlankNodeReferences()).thenReturn(true);
+			when(configuration.supportsCanonicalBNodeIDs()).thenReturn(true);
+			when(endpoint.getEndpointConfiguration()).thenReturn(configuration);
+		}
 		when(endpoint.getConnection()).thenAnswer(invocation -> repository.getConnection());
-		return new SparqlTripleSource(endpoint, context);
+		return endpoint;
 	}
 }

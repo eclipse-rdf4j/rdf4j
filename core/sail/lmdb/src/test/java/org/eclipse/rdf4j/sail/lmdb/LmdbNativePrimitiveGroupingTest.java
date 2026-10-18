@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -106,6 +107,8 @@ public class LmdbNativePrimitiveGroupingTest {
 		disable("rdf4j.lmdb.kernelInterpreter.enabled");
 		disable("rdf4j.lmdb.packedFtree.enabled");
 		disable("rdf4j.lmdb.factorizedTail.enabled");
+		// Worker-local group tables are covered separately below; exact insertion counts here describe one table.
+		disable("rdf4j.lmdb.parallel.enabled");
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -246,19 +249,35 @@ public class LmdbNativePrimitiveGroupingTest {
 				connection.commit();
 			}
 			resetCounters();
+			String query = """
+					SELECT ?p ?o (COUNT(DISTINCT ?s) AS ?c)
+					WHERE { GRAPH ?g { ?s ?p ?o } }
+					GROUP BY ?p ?o
+					""";
+			List<BindingSet> serial;
 			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
-				List<BindingSet> rows = QueryResults.asList(connection.prepareTupleQuery("""
-						SELECT ?p ?o (COUNT(DISTINCT ?s) AS ?c)
-						WHERE { GRAPH ?g { ?s ?p ?o } }
-						GROUP BY ?p ?o
-						""").evaluate());
+				serial = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
 
-				assertThat(rows).hasSize(15)
+				assertThat(serial).hasSize(15)
 						.allSatisfy(row -> assertThat(((Literal) row.getValue("c")).longValue()).isEqualTo(40L));
 			}
 
 			assertThat(NativeGroupIteration.PRIMITIVE_TUPLE_GROUP_ROWS.get()).isEqualTo(600L);
-			assertThat(PrimitiveTupleTable.INSERTIONS.get()).isEqualTo(15L);
+			assertThat(PrimitiveTupleTable.INSERTIONS.get()).withFailMessage(() -> {
+				try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+					return connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+				}
+			}).isEqualTo(15L);
+			String previousParallel = System.setProperty("rdf4j.lmdb.parallel.enabled", "true");
+			long parallelBefore = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
+			try (SailRepositoryConnection connection = contextRepository.getConnection()) {
+				SailTupleQuery parallel = (SailTupleQuery) connection.prepareTupleQuery(query);
+				parallel.setForcedLmdbExecutionStrategy("parallelAggregation");
+				assertThat(QueryResults.asList(parallel.evaluate())).containsExactlyInAnyOrderElementsOf(serial);
+				assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isGreaterThan(parallelBefore);
+			} finally {
+				restoreProperty("rdf4j.lmdb.parallel.enabled", previousParallel);
+			}
 		} finally {
 			try {
 				contextRepository.shutDown();

@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Intersection;
 import org.eclipse.rdf4j.query.algebra.Join;
@@ -73,6 +74,7 @@ final class LmdbNativeAlgebraCensus {
 	private static final Map<Class<? extends TupleExpr>, Kind> CLASSIFICATION = Map.ofEntries(
 			Map.entry(SingletonSet.class, Kind.NATIVE),
 			Map.entry(StatementPattern.class, Kind.NATIVE),
+			Map.entry(Graph.class, Kind.NATIVE),
 			Map.entry(Join.class, Kind.NATIVE),
 			Map.entry(LeftJoin.class, Kind.NATIVE),
 			Map.entry(Union.class, Kind.NATIVE),

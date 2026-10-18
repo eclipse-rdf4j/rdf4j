@@ -18,28 +18,50 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
+import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.SingletonIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
-import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 
 public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	private final Service service;
 	private final Var serviceRef;
 	private final FederatedServiceResolver serviceResolver;
+	private final BlankNodeAllocationScope allocation;
+	private final ValueFactory localFactory;
 
 	public ServiceQueryEvaluationStep(Service service, Var serviceRef, FederatedServiceResolver serviceResolver) {
+		this(service, serviceRef, serviceResolver, new QueryEvaluationContext.Minimal(null),
+				SimpleValueFactory.getInstance());
+	}
+
+	public ServiceQueryEvaluationStep(Service service, Var serviceRef, FederatedServiceResolver serviceResolver,
+			QueryEvaluationContext context, ValueFactory localFactory) {
+		this.allocation = context.getBlankNodeAllocationScope();
+		this.localFactory = localFactory;
 		this.service = service;
 		this.serviceRef = serviceRef;
 		this.serviceResolver = serviceResolver;
@@ -48,15 +70,12 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 		boolean runtimeTelemetryEnabled = isRuntimeTelemetryEnabled(service);
-		String serviceUri;
-		if (serviceRef.hasValue()) {
-			serviceUri = serviceRef.getValue().stringValue();
-		} else {
-			if (bindings != null && bindings.getValue(serviceRef.getName()) != null) {
-				serviceUri = bindings.getBinding(serviceRef.getName()).getValue().stringValue();
-			} else {
-				throw new QueryEvaluationException("SERVICE variables must be bound at evaluation time.");
-			}
+		BindingSet originalBindings = RemoteBNode.originalBindings(bindings);
+		BindingSet resultBindings = originalBindings;
+		Value endpoint = serviceRef.hasValue() ? serviceRef.getValue()
+				: bindings == null ? null : bindings.getValue(serviceRef.getName());
+		if (endpoint == null) {
+			throw new QueryEvaluationException("SERVICE variables must be bound at evaluation time.");
 		}
 
 		long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
@@ -64,25 +83,33 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			incrementLongMetric(service, TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL);
 		}
 		try {
-			FederatedService fs = serviceResolver.getService(serviceUri);
+			SPARQLQueries.initializeServiceReferences(service);
+			TupleExpr body = service.getServiceExpr();
+			QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(body, originalBindings);
+			QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(body);
+			Set<String> visibleNames = SPARQLQueries.getLexicalBindingNames(service.getAskQueryString(),
+					outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : service.getServiceVars());
+			resultBindings = restoreRuntimeBindings(originalBindings,
+					FederatedServiceIdentity.runtimeAssignedInputs(service, originalBindings, visibleNames, analysis));
+			BindingSet invocationBindings = resultBindings;
+			if (!(endpoint instanceof IRI)) {
+				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
+			}
+			FederatedService fs = serviceResolver.getService(endpoint.stringValue());
+			Object receivingScope = fs.getBNodeIdentityScope();
+			boolean referenceSupport = fs.supportsBlankNodeReferences();
+			boolean canonicalIDs = fs.supportsCanonicalBNodeIDs();
+			if (service.containsBNodeReferenceSyntax() && !referenceSupport) {
+				throw new QueryEvaluationException(
+						"Unsupported blank-node identity: receiving SERVICE lacks reference support");
+			}
 
 			// create a copy of the free variables, and remove those for which
 			// bindings are available (we can set them as constraints!)
-			Set<String> freeVars = new HashSet<>(service.getServiceVars());
-			freeVars.removeAll(bindings.getBindingNames());
+			Set<String> freeVars = new HashSet<>(visibleNames);
+			freeVars.removeAll(invocationBindings.getBindingNames());
 
-			// Get bindings from values pre-bound into variables.
-			MapBindingSet allBindings = new MapBindingSet();
-			for (Binding binding : bindings) {
-				allBindings.setBinding(binding.getName(), binding.getValue());
-			}
-
-			Set<Var> boundVars = getBoundVariables(service);
-			for (Var boundVar : boundVars) {
-				freeVars.remove(boundVar.getName());
-				allBindings.setBinding(boundVar.getName(), boundVar.getValue());
-			}
-			bindings = allBindings;
+			bindings = prepareOutgoingBindings(service, invocationBindings, receivingScope, referenceSupport, canonicalIDs);
 			if (runtimeTelemetryEnabled) {
 				addLongMetric(service, TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateRequestBytes(service, bindings, freeVars));
@@ -93,12 +120,13 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			QueryExecutionContext.initializeExternalBindings(bindings);
 
 			// special case: no free variables => perform ASK query
-			if (freeVars.isEmpty()) {
+			if (outputs.possibleOutputsKnown() && freeVars.isEmpty()) {
 				if (runtimeTelemetryEnabled) {
 					incrementLongMetric(service, TelemetryMetricNames.REMOTE_ASK_REQUEST_COUNT_ACTUAL);
 				}
 				boolean exists;
-				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
+				try (var allocationActivation = allocation.activate();
+						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
 					exists = fs.ask(service, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
@@ -108,7 +136,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 
 				// check if triples are available (with inserted bindings)
 				if (exists) {
-					return new SingletonIteration<>(bindings);
+					return new SingletonIteration<>(invocationBindings);
 				} else {
 					return EMPTY_ITERATION;
 				}
@@ -121,14 +149,29 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			CloseableIteration<BindingSet> results = null;
 			try {
-				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
+				try (var allocationActivation = allocation.activate();
+						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
 					results = fs.select(service, freeVars, bindings, baseUri);
 				}
 				QueryExecutionContext.checkpointReplaySafepoint();
 				if (runtimeTelemetryEnabled) {
 					results = trackResponseBytes(service, results);
 				}
+				RemoteBNode.ResponseScope response = RemoteBNode.newResponseScope(allocation, localFactory,
+						receivingScope, canonicalIDs);
+				response.seedOriginalBindings(invocationBindings);
+				results = new ConvertingIteration<BindingSet, BindingSet>(results) {
+					@Override
+					protected BindingSet convert(BindingSet row) {
+						return response.map(row, invocationBindings);
+					}
+				};
 				CloseableIteration<BindingSet> checked = ExternalValuePreparation.checkReplayAfterCalls(results);
+				if (service.isSilent()) {
+					results = null;
+					var completed = Iterations.asList(checked);
+					return new CloseableIteratorIteration<>(completed.iterator());
+				}
 				results = null;
 				return checked;
 			} catch (RuntimeException | Error failure) {
@@ -148,7 +191,7 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 			}
 			// suppress exceptions if silent
 			if (service.isSilent()) {
-				return new SingletonIteration<>(bindings);
+				return new SingletonIteration<>(resultBindings);
 			} else {
 				throw e;
 			}
@@ -159,26 +202,22 @@ public final class ServiceQueryEvaluationStep implements QueryEvaluationStep {
 		}
 	}
 
-	private Set<Var> getBoundVariables(Service service) {
-		BoundVarVisitor visitor = new BoundVarVisitor();
-		visitor.meet(service);
-		return visitor.boundVars;
+	private static BindingSet restoreRuntimeBindings(BindingSet originals, BindingSet runtimeInputs) {
+		MapBindingSet restored = new MapBindingSet(originals.size() + 1);
+		for (Binding binding : originals) {
+			restored.addBinding(binding);
+		}
+		for (Binding binding : runtimeInputs) {
+			restored.addBinding(binding);
+		}
+		return restored;
 	}
 
-	private static class BoundVarVisitor extends AbstractSimpleQueryModelVisitor<RuntimeException> {
-
-		final Set<Var> boundVars = new HashSet<>();
-
-		private BoundVarVisitor() {
-			super(true);
-		}
-
-		@Override
-		public void meet(Var var) {
-			if (var.hasValue()) {
-				boundVars.add(var);
-			}
-		}
+	/** Shared validation for scalar and vectored SERVICE inputs; lexical constants remain receiving-service owned. */
+	public static BindingSet prepareOutgoingBindings(Service service, BindingSet bindings, Object receivingScope,
+			boolean referenceSupport, boolean canonicalIDs) {
+		return FederatedServiceIdentity.prepareBindings(service, bindings, receivingScope, referenceSupport,
+				canonicalIDs);
 	}
 
 	private static void incrementLongMetric(Service service, String metricName) {

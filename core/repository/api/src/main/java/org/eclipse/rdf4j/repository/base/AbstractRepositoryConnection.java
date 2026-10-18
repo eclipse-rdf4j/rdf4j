@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.Update;
 import org.eclipse.rdf4j.repository.Repository;
@@ -68,6 +69,7 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 	private final Repository repository;
 
 	private volatile ParserConfig parserConfig = new ParserConfig();
+	private volatile QueryParseOptions queryParseOptions = QueryParseOptions.DEFAULT;
 
 	private final AtomicBoolean isOpen = new AtomicBoolean(true);
 
@@ -77,6 +79,24 @@ public abstract class AbstractRepositoryConnection implements RepositoryConnecti
 
 	protected AbstractRepositoryConnection(Repository repository) {
 		this.repository = repository;
+	}
+
+	protected boolean supportsQueryParseOptions() {
+		return false;
+	}
+
+	@Override
+	public QueryParseOptions getQueryParseOptions() {
+		return queryParseOptions;
+	}
+
+	@Override
+	public void setQueryParseOptions(QueryParseOptions options) {
+		Objects.requireNonNull(options);
+		if (!options.equals(QueryParseOptions.DEFAULT) && !supportsQueryParseOptions()) {
+			throw new UnsupportedOperationException("This connection does not support the requested syntax policy");
+		}
+		queryParseOptions = options;
 	}
 
 	@Override

@@ -472,7 +472,7 @@ final class NativeScalarPlan {
 		}
 		if (expression instanceof ValueExprTripleRef) {
 			ValueExprTripleRef node = (ValueExprTripleRef) expression;
-			return join(effect(node.getSubjectVar()), effect(node.getPredicateVar()), effect(node.getObjectVar()));
+			return join(effect(node.getSubjectExpr()), effect(node.getPredicateExpr()), effect(node.getObjectExpr()));
 		}
 		if (expression instanceof And) {
 			And node = (And) expression;
@@ -530,7 +530,7 @@ final class NativeScalarPlan {
 			return ((Namespace) expression).getArg();
 		}
 		if (expression instanceof TripleComponent) {
-			return ((TripleComponent) expression).getTripleRefVar();
+			return ((TripleComponent) expression).getTripleTermExpr();
 		}
 		if (expression instanceof IsURI) {
 			return ((IsURI) expression).getArg();
@@ -640,7 +640,7 @@ final class NativeScalarPlan {
 		if (expression instanceof TripleComponent) {
 			TripleComponent component = (TripleComponent) expression;
 			return node("triple-component", component.getRole(),
-					List.of(structuralKey(component.getTripleRefVar(), slots)));
+					List.of(structuralKey(component.getTripleTermExpr(), slots)));
 		}
 		if (expression instanceof Str || expression instanceof Lang || expression instanceof Datatype
 				|| expression instanceof LangDir || expression instanceof Label || expression instanceof LocalName
@@ -658,8 +658,8 @@ final class NativeScalarPlan {
 		}
 		if (expression instanceof ValueExprTripleRef) {
 			ValueExprTripleRef triple = (ValueExprTripleRef) expression;
-			return node("triple-ref", null, List.of(structuralKey(triple.getSubjectVar(), slots),
-					structuralKey(triple.getPredicateVar(), slots), structuralKey(triple.getObjectVar(), slots)));
+			return node("triple-ref", null, List.of(structuralKey(triple.getSubjectExpr(), slots),
+					structuralKey(triple.getPredicateExpr(), slots), structuralKey(triple.getObjectExpr(), slots)));
 		}
 		if (expression instanceof And) {
 			And and = (And) expression;

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.fragment.EffectClass;
 
 @Experimental
@@ -55,7 +56,7 @@ final class LmdbNativeScalarExpressionCompiler {
 	 */
 	private final boolean scopedEvaluation;
 	/** The compile-time generic context, when the caller has one; NOW needs it to build the per-evaluation scope. */
-	private final org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext compileContext;
+	private final QueryEvaluationContext compileContext;
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots) {
@@ -69,7 +70,7 @@ final class LmdbNativeScalarExpressionCompiler {
 
 	LmdbNativeScalarExpressionCompiler(NativeLmdbQuerySource source, LmdbNativeValueCodec codec,
 			LmdbNativeSlotResolver slots, long assuredMask, boolean allowVolatile, boolean scopedEvaluation,
-			org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext compileContext) {
+			QueryEvaluationContext compileContext) {
 		this.source = source;
 		this.codec = codec;
 		this.slots = slots;
@@ -282,15 +283,15 @@ final class LmdbNativeScalarExpressionCompiler {
 				|| !LmdbNativeFunctionLibrary.NOW_URI.equals(entry.uri)) {
 			return null;
 		}
-		org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext capturedCompileContext = compileContext;
+		QueryEvaluationContext capturedCompileContext = compileContext;
 		return value(0L, row -> {
 			SyntheticValueSource scope = row.evaluationScope();
 			NativeExecutionContext executionContext = scope == null ? null : scope.executionContext();
 			if (executionContext == null) {
 				return LmdbNativeValueCodec.DecodedValue.ERROR;
 			}
-			org.eclipse.rdf4j.model.Literal now = executionContext
-					.genericContext(() -> new EvaluationScopedQueryEvaluationContext(capturedCompileContext))
+			Literal now = executionContext
+					.genericContext(capturedCompileContext, null)
 					.getNow();
 			scope.retainQueryScopedValue(now);
 			return LmdbNativeValueCodec.fromValue(now);

@@ -12940,7 +12940,7 @@ class LmdbSailStore implements SailStore {
 		}
 	}
 
-	private final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
+	final class LmdbSailDataset implements SailDataset, NativeLmdbQuerySource {
 
 		private final boolean explicit;
 		private final ReadView readView;

@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /** An immutable active-graph override sharing all query state and binding/value ownership with its delegate. */
 public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationContext {
@@ -72,6 +73,11 @@ public final class ActiveGraphQueryEvaluationContext implements QueryEvaluationC
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
 	}
 
 	@Override

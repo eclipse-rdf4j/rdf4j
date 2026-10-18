@@ -85,7 +85,9 @@ final class LmdbNativeStrategyPreview {
 		if (!QueryExplanationContext.inspectOnce(plan)) {
 			return;
 		}
-		if (plan instanceof NativeSubqueryPlan subquery) {
+		if (plan instanceof NativeGraphPlan graph) {
+			graph.explainStrategies();
+		} else if (plan instanceof NativeSubqueryPlan subquery) {
 			subquery.explainStrategies();
 		} else if (plan instanceof MultiJoinPlan join) {
 			for (SlotPlan child : join.children) {

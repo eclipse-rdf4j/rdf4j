@@ -61,6 +61,9 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	private int graphContextDepth;
 
+	/** True when this valued occurrence was supplied by the caller rather than written as a query constant. */
+	private boolean apiInputOrigin;
+
 	/** Number of SELECT boundaries crossed since this context occurrence's GRAPH was introduced. */
 	@InternalUseOnly
 	public int getGraphContextDepth() {
@@ -75,6 +78,23 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 		}
 		this.graphContextDepth = graphContextDepth;
 		cachedHashCode = 0;
+	}
+
+	/** Returns whether this valued occurrence carries caller-input provenance. */
+	@InternalUseOnly
+	public boolean hasApiInputOrigin() {
+		return apiInputOrigin;
+	}
+
+	/** Returns an isolated provider-aware copy marked as originating from a caller binding. */
+	@InternalUseOnly
+	public Var withApiInputOrigin() {
+		if (!hasValue()) {
+			throw new IllegalStateException("API input origin requires a valued Var occurrence");
+		}
+		Var copy = clone();
+		copy.apiInputOrigin = true;
+		return copy;
 	}
 
 	/*
@@ -319,10 +339,16 @@ public class Var extends AbstractQueryModelNode implements ValueExpr {
 
 	@Override
 	public Var clone() {
-		Var var = Holder.PROVIDER.cloneVar(this);
+		Var var = Holder.PROVIDER.cloneVar(this).intrinsicCopy();
 		var.setVariableScopeChange(this.isVariableScopeChange());
 		var.setGraphContextDepth(graphContextDepth);
+		var.apiInputOrigin = apiInputOrigin;
 		return var;
+	}
+
+	/** Takes a fresh base-class copy after the provider hook, preserving the hook result's runtime subtype and state. */
+	private Var intrinsicCopy() {
+		return (Var) super.clone();
 	}
 
 	/**

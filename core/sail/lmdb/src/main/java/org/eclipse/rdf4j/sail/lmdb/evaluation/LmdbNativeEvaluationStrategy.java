@@ -37,10 +37,10 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.ArrayBindingBasedQueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.AdaptiveFilterEvaluationStep;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPartitionedDistinctIteration;
@@ -283,6 +283,10 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 		return nativeSource;
 	}
 
+	TripleSource graphTripleSource() {
+		return tripleSourceArg;
+	}
+
 	@Override
 	public synchronized void setFederatedServiceResolver(FederatedServiceResolver resolver) {
 		super.setFederatedServiceResolver(resolver);
@@ -342,33 +346,15 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	@Override
-	public QueryEvaluationStep precompile(TupleExpr expr) {
-		return withPreparedTupleExpr(expr, prepared -> {
-			NativeValuePositionAnalysis positions = selectValuePositions(prepared);
-			return withValuePositions(positions, () -> {
-				QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset,
-						tripleSource.getValueFactory(),
-						tripleSource.getComparator());
-				if (prepared instanceof QueryRoot) {
-					String[] allVariables = ArrayBindingBasedQueryEvaluationContext
-							.findAllVariablesUsedInQuery((QueryRoot) prepared);
-					QueryWideVarLayout queryLayout = new QueryWideVarLayout(allVariables);
-					QueryEvaluationContext arrayContext = new ArrayBindingBasedQueryEvaluationContext(context,
-							allVariables,
-							tripleSource.getComparator());
-					context = new LmdbQueryEvaluationContext(arrayContext, queryLayout);
-				}
-				return precompile(prepared, context);
-			});
-		});
+	protected QueryEvaluationContext createArrayBindingContext(QueryEvaluationContext context, String[] allVariables) {
+		return new LmdbQueryEvaluationContext(super.createArrayBindingContext(context, allVariables),
+				new QueryWideVarLayout(allVariables));
 	}
 
 	@Override
-	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
-		return withPreparedTupleExpr(expr, prepared -> {
-			NativeValuePositionAnalysis positions = selectValuePositions(prepared);
-			return withValuePositions(positions, () -> precompileWithPreparedValues(prepared, context));
-		});
+	protected QueryEvaluationStep precompileTupleExpr(TupleExpr expr, QueryEvaluationContext context) {
+		NativeValuePositionAnalysis positions = selectValuePositions(expr);
+		return withValuePositions(positions, () -> precompileWithPreparedValues(expr, context));
 	}
 
 	private QueryEvaluationStep precompileWithPreparedValues(TupleExpr expr, QueryEvaluationContext context) {
@@ -384,7 +370,7 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 				}
 			}
 		}
-		return super.precompile(expr, context);
+		return super.precompileTupleExpr(expr, context);
 	}
 
 	/**
@@ -503,7 +489,12 @@ public final class LmdbNativeEvaluationStrategy extends StrictEvaluationStrategy
 	}
 
 	QueryEvaluationStep genericPrecompile(TupleExpr expr, QueryEvaluationContext context) {
-		return super.precompile(expr, context);
+		if (AdaptiveFilterEvaluationStep.isPlanningContext(context)) {
+			return super.precompileTupleExpr(expr, context);
+		}
+		// Runtime bridges may supply a fresh structural view. Re-enter reservation, capture and planning setup while
+		// selecting the ordinary compiler for this operand; its children can still claim native fragments.
+		return super.precompileGenericTupleExpr(expr, context);
 	}
 
 	EvaluationStatistics evaluationStatistics() {

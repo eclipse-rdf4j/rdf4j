@@ -16,6 +16,7 @@ import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
 
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
@@ -294,6 +295,8 @@ final class NativeExecutionContext implements AutoCloseable {
 	private final ThreadLocal<Set<Object>> initializingNativeStates = ThreadLocal.withInitial(HashSet::new);
 	/** The evaluation-local generic context (owns the query scope: NOW, BNODE labels); created lazily at first use. */
 	private volatile QueryEvaluationContext genericContext;
+	/** Structural identity, rather than context equality or first-use order, selects a subtree's view. */
+	private final Map<QueryEvaluationContext, QueryEvaluationContext> genericContexts = new IdentityHashMap<>();
 	/** The root synthetic source's authority callback for retaining query-scoped representatives such as NOW. */
 	private volatile Consumer<Value> queryScopedValueRegistrar;
 	/** Caller-supplied bindings at the outermost query evaluation, distinct from nested correlation inputs. */
@@ -376,6 +379,30 @@ final class NativeExecutionContext implements AutoCloseable {
 			}
 		}
 		return context;
+	}
+
+	/** Shares query scalar state while retaining the exact structural context of this compiled subtree. */
+	QueryEvaluationContext genericContext(QueryEvaluationContext structural, LmdbNativeEvaluationStrategy strategy) {
+		if (queryScopeOwner != this) {
+			return queryScopeOwner.genericContext(structural, strategy);
+		}
+		synchronized (this) {
+			if (closed) {
+				throw new IllegalStateException("execution context is closed");
+			}
+			QueryEvaluationContext existing = genericContexts.get(structural);
+			if (existing != null) {
+				return existing;
+			}
+			QueryEvaluationContext shared = genericContext(
+					() -> EvaluationScopedQueryEvaluationContext.create(structural, strategy));
+			if (!(shared instanceof EvaluationScopedQueryEvaluationContext scoped)) {
+				throw new IllegalStateException("generic query scope must preserve structural views");
+			}
+			QueryEvaluationContext view = scoped.withStructuralContext(structural);
+			genericContexts.put(structural, view);
+			return view;
+		}
 	}
 
 	/** Returns the already-created query scope without allocating one for a worker that cannot supply its factory. */
@@ -875,6 +902,7 @@ final class NativeExecutionContext implements AutoCloseable {
 		}
 		if (queryScopeOwner == this) {
 			genericContext = null;
+			genericContexts.clear();
 			valueCapturer = null;
 			queryBase = null;
 			evaluationSource = null;

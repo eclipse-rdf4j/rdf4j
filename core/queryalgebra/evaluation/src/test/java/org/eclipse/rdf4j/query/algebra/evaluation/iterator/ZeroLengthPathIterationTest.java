@@ -14,16 +14,22 @@ package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
@@ -36,11 +42,14 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.RDFS;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategy;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -154,6 +163,23 @@ public class ZeroLengthPathIterationTest {
 				RDF.ALT, RDF.ALT, null, bindings, new QueryEvaluationContext.Minimal(null))) {
 			assertTrue(iteration.hasNext());
 			assertEquals(RDF.ALT, iteration.next().getValue("v"));
+		}
+	}
+
+	@Test
+	void statementScanSharesAllocationScopeAfterPreparation() {
+		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
+		when(strategy.getCollectionFactory()).thenReturn(evaluator.getCollectionFactory());
+		AtomicReference<QueryEvaluationContext> scanContext = new AtomicReference<>();
+		when(strategy.precompile(any(TupleExpr.class), any(QueryEvaluationContext.class))).thenAnswer(invocation -> {
+			scanContext.set(invocation.getArgument(1));
+			return (QueryEvaluationStep) bindings -> new EmptyIteration<>();
+		});
+		QueryEvaluationContext parent = new QueryEvaluationContext.Minimal(null);
+		try (ZeroLengthPathIteration iteration = new ZeroLengthPathIteration(strategy, Var.of("s"), Var.of("o"),
+				null, null, null, EmptyBindingSet.getInstance(), parent)) {
+			assertNotNull(scanContext.get());
+			assertSame(parent.getBlankNodeAllocationScope(), scanContext.get().getBlankNodeAllocationScope());
 		}
 	}
 

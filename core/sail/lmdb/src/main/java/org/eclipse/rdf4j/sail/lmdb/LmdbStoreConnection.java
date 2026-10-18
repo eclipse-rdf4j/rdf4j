@@ -1184,17 +1184,18 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return null;
 		}
 		SimpleDataset copy = new SimpleDataset();
-		for (IRI graph : dataset.getDefaultGraphs()) {
-			copy.addDefaultGraph((IRI) detachValue(graph));
+		copy.setExplicitReadDataset(dataset.isExplicitReadDataset());
+		for (Resource graph : dataset.getDefaultGraphResources()) {
+			copy.addDefaultGraph((Resource) detachValue(graph));
 		}
-		for (IRI graph : dataset.getNamedGraphs()) {
-			copy.addNamedGraph((IRI) detachValue(graph));
+		for (Resource graph : dataset.getNamedGraphResources()) {
+			copy.addNamedGraph((Resource) detachValue(graph));
 		}
-		for (IRI graph : dataset.getDefaultRemoveGraphs()) {
-			copy.addDefaultRemoveGraph((IRI) detachValue(graph));
+		for (Resource graph : dataset.getDefaultRemoveGraphResources()) {
+			copy.addDefaultRemoveGraph((Resource) detachValue(graph));
 		}
-		if (dataset.getDefaultInsertGraph() != null) {
-			copy.setDefaultInsertGraph((IRI) detachValue(dataset.getDefaultInsertGraph()));
+		if (dataset.getDefaultInsertGraphResource() != null) {
+			copy.setDefaultInsertGraph((Resource) detachValue(dataset.getDefaultInsertGraphResource()));
 		}
 		return copy;
 	}

@@ -32,6 +32,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -68,7 +69,7 @@ class NativeGraphDatasetSelectionTest {
 							Var.of("s", vf.createIRI("urn:s")), Var.of("p", vf.createIRI("urn:p")),
 							Var.of("o", vf.createLiteral("o")),
 							Var.of("graph", forbidden, true, true));
-					assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), mock(QueryInfo.class),
+					assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), queryInfo(),
 							dataset)).isEqualTo(
 									dataset.getDefaultGraphs().isEmpty() && dataset.getNamedGraphs().isEmpty());
 				}));
@@ -90,9 +91,15 @@ class NativeGraphDatasetSelectionTest {
 			StatementPattern pattern = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS,
 					Var.of("s", vf.createIRI("urn:s")), Var.of("p", vf.createIRI("urn:p")),
 					Var.of("o", vf.createLiteral("object")), Var.of("g"));
-			assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), mock(QueryInfo.class), dataset))
+			assertThat(source.hasStatements(pattern, EmptyBindingSet.getInstance(), queryInfo(), dataset))
 					.isTrue();
 			verify(connection).getContextIDs();
 		}
+	}
+
+	private static QueryInfo queryInfo() {
+		QueryInfo query = mock(QueryInfo.class);
+		when(query.getBlankNodeAllocationScope()).thenReturn(new BlankNodeAllocationScope());
+		return query;
 	}
 }

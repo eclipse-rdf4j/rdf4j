@@ -2925,24 +2925,22 @@ var workbench;
             return parts.join(' ') + ' .';
         }
         queryStream.nquadsStatement = nquadsStatement;
+        /** A reusable Workbench/SPARQL operand; blank node values are raw IDs, never prefixed labels. */
         function exploreResource(term) {
             if (!term) {
                 return '';
             }
             if (term.kind === 'iri') {
-                return '<' + (term.value || '') + '>';
+                return '<' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
             }
             if (term.kind === 'bnode') {
-                var blankNode = term.value || '';
-                return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
+                return '<_:' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
             }
             if (term.kind === 'triple') {
                 return '<<( ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
                     + ' ' + exploreResource(term.object) + ' )>>';
             }
-            return JSON.stringify(term.value || '') + (term.language ? '@' + term.language
-                + (term.direction ? '--' + term.direction : '')
-                : term.datatype ? '^^<' + term.datatype + '>' : '');
+            return nquadsTerm(term);
         }
         queryStream.exploreResource = exploreResource;
         function abbreviatedIri(value, namespaces) {
@@ -2999,8 +2997,7 @@ var workbench;
                 }
             }
             else if (term.kind === 'bnode') {
-                var value = term.value || '';
-                display.label = value.indexOf('_:') === 0 ? value : '_:' + value;
+                display.label = exploreResource(term);
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             }

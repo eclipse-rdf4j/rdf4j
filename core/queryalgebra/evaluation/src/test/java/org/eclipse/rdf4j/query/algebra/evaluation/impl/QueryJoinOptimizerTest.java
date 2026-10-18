@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -22,10 +23,13 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -87,6 +91,7 @@ import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -109,7 +114,100 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				+ "  ex:s1 ex:pred ?v. {" + "   ?s ?p ?o. " + "   optional {"
 				+ "    values ?x {ex:a ex:b ex:c ex:d ex:e ex:f ex:g}. " + "   }" + "  }" + " }" + "}";
 
-		testOptimizer(expectedQuery, query);
+		testOptimizerWithGeneratedConstantNameNormalization(expectedQuery, query);
+	}
+
+	private void testOptimizerWithGeneratedConstantNameNormalization(String expectedQuery, String actualQuery)
+			throws MalformedQueryException, UnsupportedQueryLanguageException {
+		ParsedQuery actual = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, actualQuery, null);
+		QueryRoot actualRoot = new QueryRoot(actual.getTupleExpr());
+		getOptimizer().optimize(actualRoot, null, null);
+
+		ParsedQuery expected = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, expectedQuery, null);
+		QueryRoot expectedRoot = new QueryRoot(expected.getTupleExpr());
+		QueryModelNode[] normalized = normalizeGeneratedConstantNames(expectedRoot, actualRoot);
+		assertQueryModelTrees(normalized[0], normalized[1]);
+	}
+
+	static QueryModelNode[] normalizeGeneratedConstantNames(QueryModelNode first, QueryModelNode second) {
+		Set<String> sourceVariableNames = new HashSet<>();
+		Set<String> existingVariableNames = new HashSet<>();
+		collectVariableNames(first, sourceVariableNames, existingVariableNames);
+		collectVariableNames(second, sourceVariableNames, existingVariableNames);
+
+		Map<String, Value> firstConstants = generatedConstantValues(first, sourceVariableNames);
+		Map<String, Value> secondConstants = generatedConstantValues(second, sourceVariableNames);
+		Set<Value> values = new LinkedHashSet<>(firstConstants.values());
+		values.addAll(secondConstants.values());
+		List<Value> sortedValues = new ArrayList<>(values);
+		sortedValues.sort(Comparator.comparing(NTriplesUtil::toNTriplesString));
+
+		Map<Value, String> canonicalNames = new LinkedHashMap<>();
+		for (int index = 0; index < sortedValues.size(); index++) {
+			String candidate = "__rdf4j_test_constant_" + index;
+			while (existingVariableNames.contains(candidate)) {
+				candidate = "_" + candidate;
+			}
+			canonicalNames.put(sortedValues.get(index), candidate);
+		}
+
+		return new QueryModelNode[] {
+				normalizeGeneratedConstantNames(first, firstConstants, canonicalNames),
+				normalizeGeneratedConstantNames(second, secondConstants, canonicalNames)
+		};
+	}
+
+	private static void collectVariableNames(QueryModelNode expression, Set<String> sourceVariableNames,
+			Set<String> existingVariableNames) {
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				existingVariableNames.add(node.getName());
+				if (!node.isAnonymous()) {
+					sourceVariableNames.add(node.getName());
+				}
+			}
+		});
+	}
+
+	private static Map<String, Value> generatedConstantValues(QueryModelNode expression,
+			Set<String> sourceVariableNames) {
+		Map<String, Value> constants = new LinkedHashMap<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (node.isAnonymous() && node.hasValue()) {
+					assertFalse(sourceVariableNames.contains(node.getName()),
+							"Generated constant name collides with a user variable: " + node.getName());
+					Value prior = constants.putIfAbsent(node.getName(), node.getValue());
+					assertTrue(prior == null || prior.equals(node.getValue()),
+							"Generated constant name maps to different values: " + node.getName());
+				}
+			}
+		});
+		return constants;
+	}
+
+	private static QueryModelNode normalizeGeneratedConstantNames(QueryModelNode expression,
+			Map<String, Value> constants, Map<Value, String> canonicalNames) {
+		QueryModelNode normalized = expression.clone();
+		normalized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var node) {
+				if (node.isAnonymous() && node.hasValue()) {
+					Value value = constants.get(node.getName());
+					if (value != null) {
+						assertEquals(value, node.getValue(),
+								"Generated constant value changed while normalizing: " + node.getName());
+						Var replacement = Var.of(canonicalNames.get(value), node.getValue(), node.isAnonymous(),
+								node.isConstant(), node.isBNode());
+						replacement.setVariableScopeChange(node.isVariableScopeChange());
+						node.replaceWith(replacement);
+					}
+				}
+			}
+		});
+		return normalized;
 	}
 
 	@Test

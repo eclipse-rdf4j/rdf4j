@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.iterator;
 
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -34,6 +35,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
 public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
@@ -61,6 +63,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private CloseableIteration<BindingSet> iter;
 
 	private Set<Value> reportedValues;
+	private final String internalSubject;
+	private final String internalObject;
+	private final String internalSequence;
 
 	private Set<BindingSet> reportedGraphValues;
 
@@ -89,6 +94,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private final boolean subjectConstant;
 	private final boolean objectConstant;
 	private final Var graphContextVar;
+	private final boolean subjectApiInputOrigin;
+	private final boolean objectApiInputOrigin;
 	private final QueryEvaluationContext scanContext;
 	private static final String SCAN_CONTEXT_VAR = "zero_length_internal_context";
 
@@ -106,8 +113,15 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		this.subjectConstant = subjectVar.isConstant();
 		this.objectConstant = objVar.isConstant();
 		this.graphContextVar = contextVar;
+		this.subjectApiInputOrigin = subjectVar.hasApiInputOrigin();
+		this.objectApiInputOrigin = objVar.hasApiInputOrigin();
 		// Temporary statement variables have a private layout and do not receive caller bindings.
 		this.scanContext = new QueryEvaluationContext() {
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				return context.getBlankNodeAllocationScope();
+			}
+
 			@Override
 			public Literal getNow() {
 				return context.getNow();
@@ -134,9 +148,16 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		fixedGraph = contextVar == null ? null
 				: contextVar.hasValue() ? contextVar.getValue()
 						: bindings.getValue(contextVarName);
-		Var startVar = createAnonVar(ANON_SUBJECT_VAR);
-		Var predicate = createAnonVar(ANON_PREDICATE_VAR);
-		Var endVar = createAnonVar(ANON_OBJECT_VAR);
+		Set<String> occupied = new HashSet<>(bindings.getBindingNames());
+		occupied.add(subjectVarName);
+		occupied.add(objectVarName);
+		occupied.add(contextVarName);
+		internalSubject = internalName(ANON_SUBJECT_VAR, occupied);
+		internalObject = internalName(ANON_OBJECT_VAR, occupied);
+		internalSequence = internalName(ANON_SEQUENCE_VAR, occupied);
+		Var startVar = createAnonVar(internalSubject);
+		Var predicate = createAnonVar(internalName(ANON_PREDICATE_VAR, occupied));
+		Var endVar = createAnonVar(internalObject);
 
 		StatementPattern subjects;
 		if (contextVar != null) {
@@ -145,7 +166,10 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			subjects = new StatementPattern(startVar, predicate, endVar);
 		}
 
-		precompile = evaluationStrategy.precompile(subjects, scanContext);
+		try (var ignored = context.getBlankNodeAllocationScope().activate()) {
+			precompile = evaluationStrategy.precompile(subjects,
+					scanContext);
+		}
 		setSubject = context.addBinding(subjectVarName);
 		setObject = context.addBinding(objectVarName);
 		if (contextVar != null) {
@@ -184,9 +208,9 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			if (this.iter == null) {
 				// join with a sequence so we iterate over every entry twice
 				QueryBindingSet bs1 = new QueryBindingSet(1);
-				bs1.addBinding(ANON_SEQUENCE_VAR, SUBJECT);
+				bs1.addBinding(internalSequence, SUBJECT);
 				QueryBindingSet bs2 = new QueryBindingSet(1);
-				bs2.addBinding(ANON_SEQUENCE_VAR, OBJECT);
+				bs2.addBinding(internalSequence, OBJECT);
 				List<BindingSet> seqList = Arrays.<BindingSet>asList(bs1, bs2);
 				iter = new CrossProductIteration(createIteration(), seqList);
 			}
@@ -194,18 +218,23 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 			while (iter.hasNext()) {
 				BindingSet bs = iter.next();
 
-				boolean isSubjOrObj = bs.getValue(ANON_SEQUENCE_VAR).stringValue().equals("subject");
-				String endpointVarName = isSubjOrObj ? ANON_SUBJECT_VAR : ANON_OBJECT_VAR;
+				boolean isSubjOrObj = bs.getValue(internalSequence).stringValue().equals("subject");
+				String endpointVarName = isSubjOrObj ? internalSubject : internalObject;
 				Value v = subj != null ? subj : obj != null ? obj : bs.getValue(endpointVarName);
 				if (subj != null && obj != null && !subj.equals(obj)) {
 					return null;
+				}
+				if ((subj != null || obj != null) && requiresNodeMembership
+						&& !v.equals(bs.getValue(endpointVarName))) {
+					// A runtime-bound endpoint must occur as a subject or object in this specific graph.
+					continue;
 				}
 				Value graph = contextVarName == null ? null : bs.getValue(SCAN_CONTEXT_VAR);
 				if (contextVarName == null ? reportedValues.add(v)
 						: reportedGraphValues.add(new PathIteration.ValuePair(v, v, graph))) {
 					MutableBindingSet next = context.createBindingSet(bindings);
-					if (!addCompatibleBinding(next, subjectVarName, v, setSubject)
-							|| !addCompatibleBinding(next, objectVarName, v, setObject)) {
+					if (!subjectConstant && !addCompatibleBinding(next, subjectVarName, v, setSubject)
+							|| !objectConstant && !addCompatibleBinding(next, objectVarName, v, setObject)) {
 						continue;
 					}
 					if (setContext != null) {
@@ -229,8 +258,11 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		} else {
 			Value identity = subj != null ? subj : obj;
 			if (result != null) {
+				boolean apiInputOrigin = subj != null && obj != null
+						? subjectApiInputOrigin || objectApiInputOrigin
+						: subj != null ? subjectApiInputOrigin : objectApiInputOrigin;
 				if (subj != null && obj != null && !subj.equals(obj)
-						|| requiresNodeMembership && !isGraphNode(identity)) {
+						|| requiresNodeMembership && !isGraphNode(identity, apiInputOrigin)) {
 					result = null;
 				}
 			}
@@ -254,16 +286,31 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 		return iter;
 	}
 
-	private boolean isGraphNode(Value value) {
-		if (value instanceof Resource && containsNode(value, true)) {
-			return true;
+	private static String internalName(String base, Set<String> occupied) {
+		String name = base;
+		for (int suffix = 1; !occupied.add(name); suffix++) {
+			name = base + "_" + suffix;
 		}
-		return containsNode(value, false);
+		return name;
 	}
 
-	private boolean containsNode(Value value, boolean subjectPosition) {
+	private boolean isGraphNode(Value value, boolean apiInputOrigin) {
+		if (value instanceof Resource && containsNode(value, true, apiInputOrigin)) {
+			return true;
+		}
+		return containsNode(value, false, apiInputOrigin);
+	}
+
+	private boolean containsNode(Value value, boolean subjectPosition, boolean apiInputOrigin) {
 		Var subject = subjectPosition ? Var.of(ANON_SUBJECT_VAR, value, true) : createAnonVar(ANON_SUBJECT_VAR);
 		Var object = subjectPosition ? createAnonVar(ANON_OBJECT_VAR) : Var.of(ANON_OBJECT_VAR, value, true);
+		if (apiInputOrigin) {
+			if (subjectPosition) {
+				subject = subject.withApiInputOrigin();
+			} else {
+				object = object.withApiInputOrigin();
+			}
+		}
 		StatementPattern pattern = graphContextVar == null
 				? new StatementPattern(subject, createAnonVar(ANON_PREDICATE_VAR), object)
 				: new StatementPattern(Scope.NAMED_CONTEXTS, subject, createAnonVar(ANON_PREDICATE_VAR), object,
@@ -277,7 +324,8 @@ public class ZeroLengthPathIteration extends LookAheadIteration<BindingSet> {
 	private Var scanGraphVar() {
 		Value value = graphContextVar.hasValue() ? graphContextVar.getValue()
 				: bindings.getValue(graphContextVar.getName());
-		return Var.of(SCAN_CONTEXT_VAR, value, true, graphContextVar.isConstant());
+		Var scanContext = Var.of(SCAN_CONTEXT_VAR, value, true, graphContextVar.isConstant());
+		return graphContextVar.hasApiInputOrigin() ? scanContext.withApiInputOrigin() : scanContext;
 	}
 
 	private boolean addCompatibleBinding(MutableBindingSet target, String name, Value value,

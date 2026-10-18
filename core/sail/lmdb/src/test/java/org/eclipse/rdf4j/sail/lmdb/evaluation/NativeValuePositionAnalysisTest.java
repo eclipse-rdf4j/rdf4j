@@ -18,9 +18,18 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
@@ -203,6 +212,33 @@ class NativeValuePositionAnalysisTest {
 		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(root);
 		TupleExpr clone = island.clone();
 		assertThat(analysis.copySubtree(island, clone).masksFor(clone).get("x")).isEqualTo(5);
+	}
+
+	@Test
+	void physicalGraphLoweringRetainsRolesOutsideADetachedCompileRoot() {
+		Graph graph = new Graph(new Var("g"), new StatementPattern(new Var("s"), new Var("p"), new Var("x")));
+		TupleExpr wholeQuery = new Join(graph,
+				new StatementPattern(new Var("x"), new Var("p2"), new Var("g")));
+		NativeValuePositionAnalysis analysis = NativeValuePositionAnalysis.analyze(wholeQuery);
+		TripleSource source = new TripleSource() {
+			@Override
+			public ValueFactory getValueFactory() {
+				return SimpleValueFactory.getInstance();
+			}
+
+			@Override
+			public EmptyIteration<Statement> getStatements(Resource s, IRI p, Value o,
+					Resource... contexts) {
+				return new EmptyIteration<>();
+			}
+		};
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(source, null, null, 0,
+				new EvaluationStatistics(), false);
+		NativeGraphFusion.Prepared physical = strategy.withValuePositions(analysis,
+				() -> NativeGraphFusion.prepare(graph, null, strategy));
+		assertThat(physical.expression()).isInstanceOf(StatementPattern.class);
+		assertThat(physical.positions().masksFor(physical.expression()).get("g")).isEqualTo(12);
+		assertThat(physical.positions().masksFor(physical.expression()).get("x")).isEqualTo(5);
 	}
 
 	@Test

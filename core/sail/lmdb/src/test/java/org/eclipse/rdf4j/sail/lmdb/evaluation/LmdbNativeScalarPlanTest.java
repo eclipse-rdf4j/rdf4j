@@ -24,17 +24,23 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.And;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.MathExpr;
 import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Regex;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Year;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.numeric.Rand;
@@ -48,6 +54,74 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 class LmdbNativeScalarPlanTest {
+
+	@Test
+	void generalTripleOperandsParticipateInNativeScalarPlanning() {
+		var vf = SimpleValueFactory.getInstance();
+		ValueExprTripleRef triple = new ValueExprTripleRef("triple",
+				new IRIFunction(new Str(Var.of("input"))),
+				new ValueConstant(vf.createIRI("urn:predicate")), new Str(Var.of("input")));
+		for (TripleComponent.Role role : TripleComponent.Role.values()) {
+			NativeScalarPlan plan = NativeScalarPlan.create(new TripleComponent(triple.clone(), role), name -> 0,
+					NativeScalarPlan.ResultKind.VALUE, false, 1L, true, true);
+			assertThat(plan).isNotNull();
+			assertThat(plan.dependencyMask()).isEqualTo(1L);
+		}
+	}
+
+	@Test
+	void generalTripleConstructorOperandsPreserveLexicalPositionAnalysis() {
+		var vf = SimpleValueFactory.getInstance();
+		Extension extension = new Extension(new StatementPattern(Var.of("input"),
+				Var.of("predicate", vf.createIRI("urn:source"), true, true), Var.of("value")));
+		extension.addElement(new ExtensionElem(new ValueExprTripleRef("triple",
+				new IRIFunction(new Str(Var.of("input"))), new ValueConstant(vf.createIRI("urn:predicate")),
+				new Str(Var.of("input"))), "result"));
+		QueryRoot root = new QueryRoot(extension);
+		assertThat(NativeValuePositionAnalysis.analyze(root).masksFor(root).get("input"))
+				.isEqualTo(ValuePosition.SUBJECT);
+	}
+
+	@Test
+	void tripleConstructorVariablesRetainTheirComponentPositions() {
+		Map<String, Integer> masks = positionMasksFor(new ValueExprTripleRef("triple", Var.of("subject"),
+				Var.of("predicate"), Var.of("object")));
+
+		assertThat(masks).containsEntry("subject", ValuePosition.SUBJECT)
+				.containsEntry("predicate", ValuePosition.PREDICATE)
+				.containsEntry("object", ValuePosition.OBJECT);
+	}
+
+	@Test
+	void transformedTripleConstructorOperandsDoNotAssignOutputPositionsToInputs() {
+		var vf = SimpleValueFactory.getInstance();
+		Map<String, Integer> masks = positionMasksFor(new ValueExprTripleRef("triple",
+				new IRIFunction(new Str(Var.of("iriInput"))), new ValueConstant(vf.createIRI("urn:predicate")),
+				new Str(Var.of("objectInput"))));
+
+		assertThat(masks).containsEntry("iriInput", ValuePosition.NONE)
+				.containsEntry("objectInput", ValuePosition.NONE);
+	}
+
+	@Test
+	void nestedTripleConstructorsRetainTheirOwnComponentPositions() {
+		ValueExprTripleRef nested = new ValueExprTripleRef("nested", Var.of("nestedSubject"),
+				Var.of("nestedPredicate"), Var.of("nestedObject"));
+		Map<String, Integer> masks = positionMasksFor(new ValueExprTripleRef("outer", nested,
+				Var.of("outerPredicate"), Var.of("outerObject")));
+
+		assertThat(masks).containsEntry("nestedSubject", ValuePosition.SUBJECT)
+				.containsEntry("nestedPredicate", ValuePosition.PREDICATE)
+				.containsEntry("nestedObject", ValuePosition.OBJECT)
+				.containsEntry("outerPredicate", ValuePosition.PREDICATE)
+				.containsEntry("outerObject", ValuePosition.OBJECT);
+	}
+
+	private static Map<String, Integer> positionMasksFor(ValueExprTripleRef triple) {
+		Extension extension = new Extension(new SingletonSet(), new ExtensionElem(triple, "result"));
+		QueryRoot root = new QueryRoot(extension);
+		return NativeValuePositionAnalysis.analyze(root).masksFor(root);
+	}
 
 	@Test
 	void calendarWorkerDeclinesInlineIdsAndBindsAComputedValueWithoutInlining(@TempDir File directory)

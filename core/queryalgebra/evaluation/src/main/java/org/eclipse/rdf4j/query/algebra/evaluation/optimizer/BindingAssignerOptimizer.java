@@ -119,7 +119,7 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 					}
 				}
 				Var assigned = Var.of(var.getName(), replacement.value(), var.isAnonymous(), substitutedTerm,
-						var.isBNode());
+						var.isBNode()).withApiInputOrigin();
 				assigned.setGraphContextDepth(var.getGraphContextDepth());
 				assigned.setVariableScopeChange(var.isVariableScopeChange());
 				var.replaceWith(assigned);

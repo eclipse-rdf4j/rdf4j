@@ -220,7 +220,7 @@ final class GenericEvalPlan implements SlotPlan {
 
 	private QueryEvaluationStep prepare(NativeExecutionContext execution) {
 		QueryEvaluationContext scoped = execution
-				.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(compileContext, strategy));
+				.genericContext(compileContext, strategy);
 		// M-A2 nested roots: strategy.precompile lets the native compiler claim the island body where its shape is
 		// supported (e.g. a subquery Projection becomes a nested native row root with its own private slot layout
 		// and value catalog; cross-authority ids are re-imported by value at write-back). Unsupported bodies fall

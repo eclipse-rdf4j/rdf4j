@@ -334,7 +334,7 @@ final class LmdbNativeTypeMatrix implements QueryEvaluationStep {
 			QueryEvaluationContext evaluationContext = context;
 			if (source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null) {
 				evaluationContext = synthetic.executionContext()
-						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
+						.genericContext(context, strategy);
 			}
 			QueryEvaluationContext preparedContext = evaluationContext;
 			genericStep = strategy.withValuePositions(valuePositions,

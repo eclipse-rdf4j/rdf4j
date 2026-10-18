@@ -17,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Difference;
@@ -33,28 +34,36 @@ import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 class LmdbGraphPatternImplicationTest {
 
 	@TempDir
 	File dataDir;
 
-	@ParameterizedTest
-	@ValueSource(strings = {
+	static Stream<Arguments> graphPatternConfigurations() {
+		return Stream.of(
 			"GRAPH ?g { ?s <urn:p> ?o }",
 			"GRAPH <urn:g> { ?s <urn:p> ?o }",
 			"{ GRAPH ?g { ?s <urn:p> ?o } } OPTIONAL { ?s <urn:q> ?optional }",
 			"{ GRAPH ?g { ?s <urn:p> ?o } } MINUS { ?s <urn:q> ?excluded }",
 			"{ SELECT ?s ?o { GRAPH ?g { ?s <urn:p> ?o } } }",
 			"{ GRAPH ?g { ?s <urn:p> ?o } } UNION { GRAPH ?g { ?s <urn:p> ?o } }"
-	})
-	void namedGraphDoesNotImplyDefaultGraphExists(String required) throws Exception {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(true));
+		).flatMap(required -> Stream.of(false, true).map(experimental -> Arguments.of(required, experimental)));
+	}
+
+	@ParameterizedTest
+	@MethodSource("graphPatternConfigurations")
+	void namedGraphDoesNotImplyDefaultGraphExists(String required, boolean experimental) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setSketchEstimatorEnabled(experimental);
+		config.setExperimentalQueryOptimizations(experimental);
+		LmdbStore store = new LmdbStore(dataDir, config);
 		SailRepository repository = new SailRepository(store);
 		repository.init();
 		try (var connection = repository.getConnection()) {
@@ -62,14 +71,16 @@ class LmdbGraphPatternImplicationTest {
 			connection.add(vf.createIRI("urn:s"), vf.createIRI("urn:p"), vf.createIRI("urn:o"), vf.createIRI("urn:g"));
 			connection.add(vf.createIRI("urn:noise"), vf.createIRI("urn:q"), vf.createIRI("urn:o"),
 					vf.createIRI("urn:d"));
-			assertTrue(store.awaitSketchesReady(60, TimeUnit.SECONDS));
+			if (experimental) {
+				assertTrue(store.awaitSketchesReady(60, TimeUnit.SECONDS));
+			}
 			String prefix = "SELECT * FROM <urn:d> FROM NAMED <urn:g> WHERE { " + required;
 			try (var rows = connection.prepareTupleQuery(prefix + " FILTER EXISTS { ?s <urn:p> ?o } }").evaluate()) {
 				assertFalse(rows.hasNext(), "Named graph rows cannot prove a default graph probe");
 			}
-			try (var rows = connection.prepareTupleQuery(prefix + " FILTER NOT EXISTS { ?s <urn:p> ?o } }")
-					.evaluate()) {
-				assertTrue(rows.hasNext());
+			var negative = connection.prepareTupleQuery(prefix + " FILTER NOT EXISTS { ?s <urn:p> ?o } }");
+			try (var rows = negative.evaluate()) {
+				assertTrue(rows.hasNext(), () -> negative.explain(Explanation.Level.Optimized).toString());
 			}
 		} finally {
 			repository.shutDown();

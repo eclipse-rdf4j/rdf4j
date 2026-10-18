@@ -19,7 +19,6 @@ import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
-import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 public abstract class Protocol {
 
@@ -516,14 +515,16 @@ public abstract class Protocol {
 	}
 
 	/**
-	 * Encodes a value in a canonical serialized string format, for use in a URL query parameter.
+	 * Encodes a value in a canonical serialized string format, for use in a URL query parameter. Blank node parameters
+	 * retain their complete repository IDs. Nested triple terms use escaped fixed references when an ID cannot be
+	 * represented by an ordinary RDF blank node label.
 	 *
 	 * @param value The value to encode, possibly <var>null</var>.
 	 * @return The protocol-serialized representation of the supplied value, or {@link #NULL_PARAM_VALUE} if the
 	 *         supplied value was <var>null</var>.
 	 */
 	public static String encodeValue(Value value) {
-		return NTriplesUtil.toNTriplesString(value);
+		return ProtocolValueCodec.encode(value, false);
 	}
 
 	/**
@@ -536,7 +537,7 @@ public abstract class Protocol {
 	 */
 	public static Value decodeValue(String encodedValue, ValueFactory valueFactory) {
 		if (encodedValue != null) {
-			return NTriplesUtil.parseValue(encodedValue, valueFactory);
+			return ProtocolValueCodec.decode(encodedValue, valueFactory);
 		}
 
 		return null;
@@ -552,7 +553,11 @@ public abstract class Protocol {
 	 */
 	public static Resource decodeResource(String encodedValue, ValueFactory valueFactory) {
 		if (encodedValue != null) {
-			return NTriplesUtil.parseResource(encodedValue, valueFactory);
+			Value value = decodeValue(encodedValue, valueFactory);
+			if (value instanceof Resource resource) {
+				return resource;
+			}
+			throw new IllegalArgumentException("Not a resource: " + encodedValue);
 		}
 
 		return null;
@@ -568,7 +573,11 @@ public abstract class Protocol {
 	 */
 	public static IRI decodeURI(String encodedValue, ValueFactory valueFactory) {
 		if (encodedValue != null) {
-			return NTriplesUtil.parseURI(encodedValue, valueFactory);
+			Value value = decodeValue(encodedValue, valueFactory);
+			if (value instanceof IRI iri) {
+				return iri;
+			}
+			throw new IllegalArgumentException("Not an IRI: " + encodedValue);
 		}
 
 		return null;

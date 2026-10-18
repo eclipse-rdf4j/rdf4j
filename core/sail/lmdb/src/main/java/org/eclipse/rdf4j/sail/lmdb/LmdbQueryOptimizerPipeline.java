@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.CompareOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConjunctiveConstraintSplitterOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ConstantOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.IterativeEvaluationOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.OrderLimitOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.ParentReferenceChecker;
@@ -48,6 +49,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 	}
 
 	private static final BindingAssignerOptimizer BINDING_ASSIGNER = new BindingAssignerOptimizer();
+	private static final GraphScopeOptimizer GRAPH_SCOPE_OPTIMIZER = new GraphScopeOptimizer();
 	private static final CompareOptimizer COMPARE_OPTIMIZER = new CompareOptimizer();
 	private static final ConjunctiveConstraintSplitterOptimizer CONJUNCTIVE_CONSTRAINT_SPLITTER = new ConjunctiveConstraintSplitterOptimizer();
 	private static final SameTermFilterOptimizer SAME_TERM_FILTER_OPTIMIZER = new SameTermFilterOptimizer();
@@ -76,6 +78,7 @@ public final class LmdbQueryOptimizerPipeline implements QueryOptimizerPipeline 
 		}
 		List<QueryOptimizer> optimizers = List.of(
 				BINDING_ASSIGNER,
+				GRAPH_SCOPE_OPTIMIZER,
 				new ConstantOptimizer(strategy),
 				new RegexAsStringFunctionOptimizer(tripleSource.getValueFactory()),
 				COMPARE_OPTIMIZER,

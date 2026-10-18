@@ -21,6 +21,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.MultiProjection;
@@ -102,6 +103,26 @@ final class NativeValuePositionAnalysis {
 		IdentityHashMap<Group, Map<String, Integer>> copiedInputs = new IdentityHashMap<>();
 		copyScopes(original, copy, copiedScopes, copiedInputs);
 		return new NativeValuePositionAnalysis(copiedScopes, copiedInputs);
+	}
+
+	/**
+	 * Transfers logical roles onto the final physical nodes after positive GRAPH lowering. Such replacements contain
+	 * only statement patterns and joins, so every new node belongs to the replaced graph's lexical scope. Reanalyzing a
+	 * detached replacement would lose uses and aliases outside its compile root.
+	 */
+	NativeValuePositionAnalysis withGraphReplacements(Map<Graph, TupleExpr> replacements) {
+		IdentityHashMap<QueryModelNode, Map<String, Integer>> copiedScopes = new IdentityHashMap<>(scopes);
+		replacements.forEach((graph, replacement) -> {
+			Map<String, Integer> masks = masksFor(graph);
+			replacement.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					copiedScopes.put(node, masks);
+					super.meetNode(node);
+				}
+			});
+		});
+		return new NativeValuePositionAnalysis(copiedScopes, new IdentityHashMap<>(groupInputs));
 	}
 
 	private void copyScopes(QueryModelNode original, QueryModelNode copy,
@@ -233,6 +254,12 @@ final class NativeValuePositionAnalysis {
 		}
 
 		@Override
+		public void meet(Graph node) {
+			position(node.getGraphName(), ValuePosition.CONTEXT);
+			meetNode(node);
+		}
+
+		@Override
 		public void meet(TripleRef node) {
 			position(node.getSubjectVar(), ValuePosition.SUBJECT);
 			position(node.getPredicateVar(), ValuePosition.PREDICATE);
@@ -242,10 +269,25 @@ final class NativeValuePositionAnalysis {
 
 		@Override
 		public void meet(ValueExprTripleRef node) {
-			position(node.getSubjectVar(), ValuePosition.SUBJECT);
-			position(node.getPredicateVar(), ValuePosition.PREDICATE);
-			position(node.getObjectVar(), ValuePosition.OBJECT);
+			if (node.getSubjectExpr()instanceof Var subject) {
+				position(subject, ValuePosition.SUBJECT);
+			}
+			if (node.getPredicateExpr()instanceof Var predicate) {
+				position(predicate, ValuePosition.PREDICATE);
+			}
+			if (node.getObjectExpr()instanceof Var object) {
+				position(object, ValuePosition.OBJECT);
+			}
 			meetNode(node);
+		}
+
+		@Override
+		public void meetOther(QueryModelNode node) {
+			if (node instanceof ValueExprTripleRef tripleRef) {
+				meet(tripleRef);
+			} else {
+				super.meetOther(node);
+			}
 		}
 
 		@Override

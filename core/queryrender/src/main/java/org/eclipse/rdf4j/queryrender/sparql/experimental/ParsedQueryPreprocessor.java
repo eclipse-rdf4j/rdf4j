@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.queryrender.sparql.experimental;
 
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.Stack;
 
@@ -105,6 +106,7 @@ import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
 import org.eclipse.rdf4j.query.parser.ParsedGraphQuery;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.sparql.experimental.SerializableParsedTupleQuery.QueryModifier;
 
 import com.google.common.collect.Lists;
@@ -127,6 +129,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	public SerializableParsedTupleQuery currentQueryProfile = new SerializableParsedTupleQuery();
 
 	public Slice currentSlice = null;
+	private final Map<Projection, Slice> slicesByProjection = new IdentityHashMap<>();
 	public SerializableParsedTupleQuery.QueryModifier currentModifier = null;
 
 	public MultiProjection graphQueryProjection = null;
@@ -217,6 +220,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 		currentQueryProfile.dataset = dataset;
 		currentQueryProfile.subQueriesByProjection.putAll(queriesByProjection);
 		SerializableParsedUpdate queryProfile = new SerializableParsedUpdate();
+		queryProfile.dataset = dataset;
 		queryProfile.subQueriesByProjection.putAll(queriesByProjection);
 		if (currentQueryProfile.whereClause instanceof Extension) {
 			queryProfile.whereClause = ((Extension) currentQueryProfile.whereClause).getArg();
@@ -743,6 +747,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 		currentModifier = null;
 
 		currentQueryProfile.projection = node;
+		currentQueryProfile.limit = slicesByProjection.remove(node);
 		queriesByProjection.put(node, currentQueryProfile);
 
 		super.meet(node);
@@ -818,8 +823,13 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	@Override
 	public void meet(Slice node) throws RuntimeException {
 		currentSlice = node;
-
-		currentQueryProfile.limit = node;
+		Projection projection = RenderUtils.getQueryProjection(node);
+		if (projection == null) {
+			currentQueryProfile.limit = node;
+		} else {
+			// The profile is entered at Projection, after visiting this query's modifier wrappers.
+			slicesByProjection.put(projection, node);
+		}
 		super.meet(node);
 	}
 

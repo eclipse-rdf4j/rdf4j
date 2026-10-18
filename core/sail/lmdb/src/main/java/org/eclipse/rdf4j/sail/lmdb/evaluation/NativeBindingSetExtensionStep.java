@@ -279,8 +279,7 @@ final class NativeBindingSetValueCompiler {
 					? descriptor.precompileValue(strategy, compileContext)
 					: executionContext.genericStep(descriptor, () -> {
 						QueryEvaluationContext scoped = executionContext
-								.genericContext(
-										() -> EvaluationScopedQueryEvaluationContext.create(compileContext, strategy));
+								.genericContext(compileContext, strategy);
 						return descriptor.precompileValue(strategy, scoped);
 					});
 			try {

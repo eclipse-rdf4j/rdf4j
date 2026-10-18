@@ -284,23 +284,13 @@ public class QueryValueEvaluationStepSupplier {
 
 	public static QueryValueEvaluationStep bnode(QueryValueEvaluationStep nodeVes, ValueFactory vf,
 			QueryEvaluationContext context) {
-		try {
-			if (nodeVes.isConstant()) {
-				Value nodeId = nodeVes.evaluate(EmptyBindingSet.getInstance());
-				if (nodeId instanceof Literal) {
-					String nodeLabel = nodeId.stringValue();
-					return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-							bs -> context.getOrCreateBNode(nodeLabel, bs, vf));
-				} else {
-					return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");
-				}
-			} else {
-				return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(
-						bs -> context.getOrCreateBNode(nodeVes.evaluate(bs).stringValue(), bs, vf));
+		return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> {
+			Value value = nodeVes.evaluate(bs);
+			if (!QueryEvaluationUtility.isSimpleLiteral(value)) {
+				throw new ValueExprEvaluationException("BNODE function argument must be a simple string literal");
 			}
-		} catch (ValueExprEvaluationException e) {
-			return new QueryValueEvaluationStep.Fail("BNODE function argument must be a literal");
-		}
+			return context.getOrCreateBNode(((Literal) value).getLabel(), bs, vf);
+		});
 	}
 
 	public static QueryValueEvaluationStep prepareIs(QueryValueEvaluationStep arg, Predicate<Value> is) {

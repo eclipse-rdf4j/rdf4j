@@ -61,6 +61,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_id;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteBuffer;
@@ -116,6 +117,7 @@ import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.QueryExecutionDeadline;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -124,6 +126,7 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
@@ -163,7 +166,16 @@ import org.slf4j.LoggerFactory;
  */
 @Experimental
 @InternalUseOnly
-public class ValueStore extends AbstractValueFactory {
+public class ValueStore extends AbstractValueFactory implements BNodeIdResolver {
+
+	@Override
+	public boolean hasBNodeId(String id) {
+		try {
+			return getId(SimpleValueFactory.getInstance().createBNode(id), false) != LmdbValue.UNKNOWN_ID;
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
 
 	@Experimental
 	@FunctionalInterface
@@ -8614,7 +8626,7 @@ public class ValueStore extends AbstractValueFactory {
 		private final OwnedValueCapturer capturer = new OwnedValueCapturer() {
 			@Override
 			public Value apply(Value value) {
-				return capture(value);
+				return captureExternal(value);
 			}
 
 			@Override
@@ -8728,11 +8740,41 @@ public class ValueStore extends AbstractValueFactory {
 			}
 		}
 
-		private Value capture(ReadSnapshot current, Value value) {
+		/**
+		 * Captures values crossing the query-result boundary without resolving a previously exposed cold native value.
+		 * Lookup preparation remains in {@link #apply(Value)}; it may need a current-generation semantic copy instead.
+		 */
+		private Value captureExternal(Value value) {
 			if (value == null) {
 				return null;
 			}
-			Value owned = capturedBy(current, value);
+			ReadSnapshot current = snapshot;
+			if (current != null) {
+				if (value instanceof PreparedLmdbValue.Prepared prepared
+						&& prepared.state().owner == current.preparationOwner) {
+					// Preserve the established same-owner prepared-value fast path.
+					return value;
+				}
+				if (isNativeOfSnapshot(current, value)) {
+					return value;
+				}
+			}
+			try {
+				return capture(liveSnapshot(), value, true);
+			} catch (IOException failure) {
+				throw new SailException(failure);
+			}
+		}
+
+		private Value capture(ReadSnapshot current, Value value) {
+			return capture(current, value, false);
+		}
+
+		private Value capture(ReadSnapshot current, Value value, boolean preserveExternalColdNativeValues) {
+			if (value == null) {
+				return null;
+			}
+			Value owned = capturedBy(current, value, preserveExternalColdNativeValues);
 			if (owned != null) {
 				return owned;
 			}
@@ -8750,7 +8792,7 @@ public class ValueStore extends AbstractValueFactory {
 						Value child = frame.children[frame.nextChild];
 						Value captured = completed.get(child);
 						if (captured == null) {
-							captured = capturedBy(current, child);
+							captured = capturedBy(current, child, preserveExternalColdNativeValues);
 						}
 						if (captured != null) {
 							frame.capturedChildren[frame.nextChild++] = captured;
@@ -8782,6 +8824,21 @@ public class ValueStore extends AbstractValueFactory {
 			} catch (IOException failure) {
 				throw new SailException(failure);
 			}
+		}
+
+		private Value capturedBy(ReadSnapshot current, Value value, boolean preserveExternalColdNativeValues) {
+			if (preserveExternalColdNativeValues && value instanceof LmdbValue nativeValue
+					&& !(value instanceof PreparedLmdbValue.Prepared) && nativeValue.isExternallyOwned()
+					&& !nativeValue.isInitialized()) {
+				LmdbValue.InternalIdentity identity = nativeValue.getInternalIdentity();
+				if (identity.id() != LmdbValue.UNKNOWN_ID && identity.revision() != null) {
+					// This value already owns the deferred decode capability that made it externally readable. Keep the
+					// exact cold node; initialized/mutable composites and prepared wrappers still follow semantic
+					// capture.
+					return value;
+				}
+			}
+			return capturedBy(current, value);
 		}
 
 		private Value capturedBy(ReadSnapshot current, Value value) {

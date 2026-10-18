@@ -934,7 +934,7 @@ public final class LmdbNativeExpressionCompiler {
 		if (!LmdbNativeValueCodec.nativeTripleTermsEnabled()) {
 			return null;
 		}
-		LmdbNativeCompiledValue arg = compileValue(node.getTripleRefVar());
+		LmdbNativeCompiledValue arg = compileValue(node.getTripleTermExpr());
 		if (arg == null) {
 			return null;
 		}
@@ -959,9 +959,9 @@ public final class LmdbNativeExpressionCompiler {
 		if (!LmdbNativeValueCodec.nativeTripleTermsEnabled()) {
 			return null;
 		}
-		LmdbNativeCompiledValue subject = compileValue(node.getSubjectVar());
-		LmdbNativeCompiledValue predicate = compileValue(node.getPredicateVar());
-		LmdbNativeCompiledValue object = compileValue(node.getObjectVar());
+		LmdbNativeCompiledValue subject = compileValue(node.getSubjectExpr());
+		LmdbNativeCompiledValue predicate = compileValue(node.getPredicateExpr());
+		LmdbNativeCompiledValue object = compileValue(node.getObjectExpr());
 		if (subject == null || predicate == null || object == null) {
 			return null;
 		}

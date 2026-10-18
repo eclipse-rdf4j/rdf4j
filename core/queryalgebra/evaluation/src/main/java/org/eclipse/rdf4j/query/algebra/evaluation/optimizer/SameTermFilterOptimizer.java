@@ -171,9 +171,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (leftValue != null && rightValue != null) {
 				// ConstantOptimizer should have taken care of this
 			} else if (leftValue != null && rightArg instanceof Var) {
-				bindVar((Var) rightArg, leftValue, filter);
+				bindVar((Var) rightArg, leftValue, hasApiInputOrigin(leftArg), filter);
 			} else if (rightValue != null && leftArg instanceof Var) {
-				bindVar((Var) leftArg, rightValue, filter);
+				bindVar((Var) leftArg, rightValue, hasApiInputOrigin(rightArg), filter);
 			} else if (leftArg instanceof Var && rightArg instanceof Var) {
 				// Two unbound variables, rename rightArg to leftArg
 				renameVar((Var) rightArg, (Var) leftArg, filter);
@@ -258,9 +258,13 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			bindingAnalysis.invalidate();
 		}
 
-		private void bindVar(Var var, Value value, Filter filter) {
+		private boolean hasApiInputOrigin(ValueExpr source) {
+			return source instanceof Var variable && variable.hasApiInputOrigin();
+		}
+
+		private void bindVar(Var var, Value value, boolean apiInputOrigin, Filter filter) {
 			// Set the value on all occurences of the variable
-			filter.getArg().visit(new VarBinder(var, value));
+			filter.getArg().visit(new VarBinder(var, value, apiInputOrigin));
 			bindingAnalysis.invalidate();
 		}
 	}
@@ -384,10 +388,13 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		private final Value value;
 
-		public VarBinder(Var variable, Value value) {
+		private final boolean apiInputOrigin;
+
+		public VarBinder(Var variable, Value value, boolean apiInputOrigin) {
 			super(true);
 			this.variable = variable;
 			this.value = value;
+			this.apiInputOrigin = apiInputOrigin;
 		}
 
 		@Override
@@ -395,6 +402,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (var.getName().equals(variable.getName())
 					&& var.getGraphContextDepth() == variable.getGraphContextDepth()) {
 				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode());
+				if (apiInputOrigin) {
+					replacement = replacement.withApiInputOrigin();
+				}
 				replacement.setGraphContextDepth(var.getGraphContextDepth());
 				replacement.setVariableScopeChange(var.isVariableScopeChange());
 				var.replaceWith(replacement);

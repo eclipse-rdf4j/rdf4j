@@ -116,6 +116,8 @@ public final class QueryAlgebraBindingAnalysis {
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
+	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
+	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
@@ -505,7 +507,23 @@ public final class QueryAlgebraBindingAnalysis {
 		return false;
 	}
 
+	/**
+	 * Reuses one evaluator transition for the same edge and input identity within this analysis. Derived frames are
+	 * immutable, and their identity keys output facts; rebuilding a frame would defeat those caches and recursively
+	 * expand already analyzed operands. Distinct input owners remain distinct without hashing or comparing RDF values.
+	 */
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		ChildInputKey key = new ChildInputKey(parent, child, input);
+		ReadOnlyContext cached = childInputCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		ReadOnlyContext result = computeChildInput(parent, child, input);
+		childInputCache.put(key, result);
+		return result;
+	}
+
+	private ReadOnlyContext computeChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
 		if (parent instanceof Graph) {
 			return input;
 		}
@@ -727,6 +745,20 @@ public final class QueryAlgebraBindingAnalysis {
 	 * evaluator restores those inherited values after the optional has been evaluated.
 	 */
 	private ReadOnlyContext leftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
+		// Both OPTIONAL operands and its condition derive from this same withheld-input frame. In particular, the
+		// right transition asks for the left facts again: sharing this frame keeps that lookup identical to the
+		// left transition instead of doubling the entire left subtree at each nested OPTIONAL.
+		OutputKey key = new OutputKey(leftJoin, input);
+		ReadOnlyContext cached = leftJoinInputCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		ReadOnlyContext result = computeLeftJoinInput(leftJoin, input);
+		leftJoinInputCache.put(key, result);
+		return result;
+	}
+
+	private ReadOnlyContext computeLeftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
 		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())) {
 			return input;
 		}
@@ -1710,12 +1742,25 @@ public final class QueryAlgebraBindingAnalysis {
 	private record OutputKey(TupleExpr expression, ReadOnlyContext input) {
 		@Override
 		public boolean equals(Object other) {
-			return other instanceof OutputKey key && expression == key.expression && input.equals(key.input);
+			return other instanceof OutputKey key && expression == key.expression && input == key.input;
 		}
 
 		@Override
 		public int hashCode() {
-			return 31 * System.identityHashCode(expression) + input.hashCode();
+			return 31 * System.identityHashCode(expression) + System.identityHashCode(input);
+		}
+	}
+
+	private record ChildInputKey(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof ChildInputKey key && parent == key.parent && child == key.child && input == key.input;
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * (31 * System.identityHashCode(parent) + System.identityHashCode(child))
+					+ System.identityHashCode(input);
 		}
 	}
 

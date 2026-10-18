@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.TupleQueryResultHandler;
 import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.parser.ParsedTupleQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
@@ -56,7 +57,8 @@ public class SailTupleQuery extends SailQuery implements TupleQuery {
 			SailConnection sailCon = getConnection().getSailConnection();
 			SlowQueryContextHolder.SlowQueryContext previous = SlowQueryContextHolder
 					.set(getParsedQuery().getSourceString(), Query.QueryType.TUPLE, getForcedLmdbExecutionStrategy());
-			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline)) {
+			try (QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(deadline);
+					BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 				try {
 					bindingsIter = sailCon.evaluate(tupleExpr, getActiveDataset(), getBindings(), getIncludeInferred());
 					bindingsIter = getConnection().exposeIteration(bindingsIter, SailResultValueExtractor.BINDING_SETS);

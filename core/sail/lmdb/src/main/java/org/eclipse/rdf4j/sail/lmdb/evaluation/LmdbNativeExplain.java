@@ -25,6 +25,7 @@ final class LmdbNativeExplain {
 	private static final int MAX_REPORTED_DECLINES = 32;
 	private static final Object EXECUTION_PATH_SUMMARY_KEY = new Object();
 	private static final Object STRATEGY_DECLINE_SUMMARY_KEY = new Object();
+	private static final Object LOGICAL_ORIGIN_KEY = new Object();
 
 	static final String ENGINE = "lmdb-native";
 	static final String KIND_AGGREGATE = "aggregate";
@@ -46,12 +47,33 @@ final class LmdbNativeExplain {
 	}
 
 	/**
+	 * Physical compilation copies keep their semantic algebra and reservation authority. Only their diagnostics belong
+	 * to the logical expression exposed by the query explanation. Store a canonical origin on the query-owned copy,
+	 * never in a process-wide registry or a map that hashes algebra values.
+	 */
+	static void bindLogicalOrigin(TupleExpr physical, TupleExpr logical) {
+		TupleExpr origin = logicalOrigin(logical);
+		physical.setQueryModelMetadata(LOGICAL_ORIGIN_KEY, origin);
+		physical.setExecutionSummaryEnabled(origin.isExecutionSummaryEnabled());
+		physical.setRuntimeTelemetryEnabled(origin.isRuntimeTelemetryEnabled());
+	}
+
+	private static TupleExpr logicalOrigin(TupleExpr expression) {
+		if (expression == null) {
+			return null;
+		}
+		Object origin = expression.getQueryModelMetadata(LOGICAL_ORIGIN_KEY);
+		return origin instanceof TupleExpr logical ? logical : expression;
+	}
+
+	/**
 	 * Records the physical path or terminal outcome actually observed, as an "actual" explain metric on the compiled
 	 * expression. Dispatch happens at evaluation time (it depends on the runtime bound mask and execution gates), so it
 	 * cannot be part of the planned physical plan; without this, a regression that silently disqualifies a path such as
 	 * factorization is invisible in {@code explain(Executed)}.
 	 */
 	static void recordExecutionPath(TupleExpr expr, String path) {
+		expr = logicalOrigin(expr);
 		if (expr == null || path == null || !recordsExecutionPaths(expr)) {
 			return;
 		}
@@ -76,6 +98,7 @@ final class LmdbNativeExplain {
 
 	/** Records one attempted strategy's reason for declining this query, as a deterministic distinct summary. */
 	static void recordStrategyDecline(TupleExpr expr, String strategy, String reason) {
+		expr = logicalOrigin(expr);
 		if (expr == null || strategy == null || reason == null || !recordsExecutionPaths(expr)) {
 			return;
 		}
@@ -136,6 +159,7 @@ final class LmdbNativeExplain {
 	/** Begins an execution-local physical-plan witness before specialized path selection. */
 	static LmdbNativeRuntimePlan.Invocation recordRuntimeEntryPlan(TupleExpr expr, SlotPlan plan,
 			NativeSlotLayout layout, long boundMask) {
+		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return null;
 		}
@@ -161,6 +185,7 @@ final class LmdbNativeExplain {
 	}
 
 	static void addRuntimeMetric(TupleExpr expr, String metricName, long delta) {
+		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled() || delta == 0L) {
 			return;
 		}
@@ -171,6 +196,7 @@ final class LmdbNativeExplain {
 	}
 
 	static void setRuntimeMetric(TupleExpr expr, String metricName, long value) {
+		expr = logicalOrigin(expr);
 		if (expr == null || !expr.isRuntimeTelemetryEnabled()) {
 			return;
 		}
@@ -181,6 +207,7 @@ final class LmdbNativeExplain {
 	}
 
 	static void setRuntimeMetric(TupleExpr expr, String metricName, String value) {
+		expr = logicalOrigin(expr);
 		if (expr == null || value == null || !expr.isRuntimeTelemetryEnabled()) {
 			return;
 		}
@@ -214,6 +241,7 @@ final class LmdbNativeExplain {
 	}
 
 	static void mark(TupleExpr expr, String kind, String physicalPlan) {
+		expr = logicalOrigin(expr);
 		markNode(expr, kind, physicalPlan);
 		if (expr instanceof QueryRoot) {
 			markNode(((QueryRoot) expr).getArg(), kind, physicalPlan);
@@ -349,6 +377,9 @@ final class LmdbNativeExplain {
 		if (plan instanceof GenericEvalPlan island) {
 			return "GenericEvalPlan(node=" + island.nodeName + ", outSlots="
 					+ describeSlots(island.outSlots, slotNames) + ")";
+		}
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.describe();
 		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.describe();

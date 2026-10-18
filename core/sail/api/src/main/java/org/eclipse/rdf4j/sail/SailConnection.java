@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail;
 
 import java.util.Comparator;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 
@@ -29,6 +30,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -74,6 +76,14 @@ public interface SailConnection extends AutoCloseable {
 	default Optional<TupleExpr> prepareQuery(QueryLanguage ql, Query.QueryType type, String query,
 			String baseURI) {
 		return Optional.empty();
+	}
+
+	/** Providers may decline nondefault syntax policy and let the repository's core parser handle it. */
+	default Optional<TupleExpr> prepareQuery(QueryLanguage language, Query.QueryType type, String query,
+			String baseURI, QueryParseOptions options) {
+		Objects.requireNonNull(options);
+		return options.equals(QueryParseOptions.DEFAULT) ? prepareQuery(language, type, query, baseURI)
+				: Optional.empty();
 	}
 
 	/**

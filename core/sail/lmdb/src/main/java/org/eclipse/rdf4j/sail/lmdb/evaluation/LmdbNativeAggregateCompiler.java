@@ -290,6 +290,22 @@ final class LmdbNativeAggregateCompiler {
 	private static CompileResult compile(TupleExpr expr, QueryEvaluationContext context,
 			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
 			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
+		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(expr, context.getDataset(), strategy);
+		CompileResult result = strategy.withValuePositions(physical.positions(),
+				() -> compilePhysical(physical.expression(), context, strategy, source, rootEvaluation,
+						inheritedFrameInputNames, inheritedLateralFrameInputNames));
+		if (result.step != null && !physical.guardedSelectors().isEmpty()) {
+			QueryEvaluationStep guarded = new NativeGraphAliasGuardStep(result.step, physical.guardedSelectors(),
+					() -> compile(expr, context, strategy, source, rootEvaluation, inheritedFrameInputNames,
+							inheritedLateralFrameInputNames).step);
+			return new CompileResult(guarded, result.kind, result.capacityExceeded, result.sawIsland);
+		}
+		return result;
+	}
+
+	private static CompileResult compilePhysical(TupleExpr expr, QueryEvaluationContext context,
+			LmdbNativeEvaluationStrategy strategy, NativeLmdbQuerySource source, boolean rootEvaluation,
+			Set<String> inheritedFrameInputNames, Set<String> inheritedLateralFrameInputNames) {
 		LmdbNativeAggregatePlanner compiler = new LmdbNativeAggregatePlanner(context, strategy, source);
 		// Root-host compiles (one evaluate() = one query evaluation) may prepare generic bridges per evaluation;
 		// interior compiles must not — their steps evaluate once per outer input mapping (M-A1a).

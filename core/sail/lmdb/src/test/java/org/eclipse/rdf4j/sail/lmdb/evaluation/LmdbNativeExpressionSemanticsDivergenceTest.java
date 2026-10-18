@@ -219,6 +219,20 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 				.containsExactlyInAnyOrderElementsOf(expected);
 	}
 
+	@Test
+	void nestedTripleComponentExpressionsMatchGenericWithNativeExecution() {
+		String triple = "TRIPLE(IRI(STR(?value)), ex:predicate, COALESCE(?missing, STR(?value)))";
+		for (String comparison : List.of("SUBJECT(" + triple + ") = ?value",
+				"PREDICATE(" + triple + ") = ex:predicate", "OBJECT(" + triple + ") = STR(?value)",
+				"IF(false, SUBJECT(TRIPLE(\"invalid\", ?value, ?value)), ?value) = ?value",
+				"COALESCE(?value, SUBJECT(TRIPLE(\"invalid\", ?value, ?value))) = ?value",
+				"COALESCE(SUBJECT(TRIPLE(\"invalid\", ?value, ?value)), ?value) = ?value")) {
+			String query = "PREFIX ex: <" + EX + "> SELECT ?s WHERE { ?s ex:ref ?value . FILTER("
+					+ comparison + ") }";
+			assertNativeParity(query, subjectRows("r1", "r2"));
+		}
+	}
+
 	private void assertResultParity(String query, List<BindingSet> expected) {
 		assertThat(rows(query, false)).as("generic result bag for:\n%s", query)
 				.containsExactlyInAnyOrderElementsOf(expected);

@@ -32,6 +32,8 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.OwnedValueCapturer;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /** Captures produced binding values once, preserving the context's existing binding layout and getters. */
 final class ValueCapturingQueryEvaluationContext implements QueryEvaluationContext {
@@ -67,7 +69,7 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	public synchronized Value captureConstant(Value value, Function<Value, Value> capturer) {
 		Map<Value, Value> captured = constants.computeIfAbsent(capturer, ignored -> new IdentityHashMap<>());
 		if (!captured.containsKey(value)) {
-			Value owned = delegate.captureConstant(value, capturer);
+			Value owned = RemoteBNode.preserveProvenance(value, delegate.captureConstant(value, capturer));
 			captured.put(value, owned);
 			captured.put(owned, owned);
 			ownedConstants.add(owned);
@@ -98,6 +100,11 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
 	}
 
 	@Override
@@ -151,7 +158,7 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 			return (value, bindings) -> {
 				Value captured = value;
 				if (value != null && value != now && !owned.owns(value) && !ownedConstants.contains(value)) {
-					captured = capturer.apply(value);
+					captured = RemoteBNode.preserveProvenance(value, capturer.apply(value));
 				}
 				setter.accept(captured, bindings);
 			};
@@ -160,7 +167,7 @@ final class ValueCapturingQueryEvaluationContext implements QueryEvaluationConte
 			// Only constant outputs are shared; the original caller values must still be recaptured.
 			Value captured = value;
 			if (value != null && value != now && !ownedConstants.contains(value)) {
-				captured = capturer.apply(value);
+				captured = RemoteBNode.preserveProvenance(value, capturer.apply(value));
 			}
 			setter.accept(captured, bindings);
 		};

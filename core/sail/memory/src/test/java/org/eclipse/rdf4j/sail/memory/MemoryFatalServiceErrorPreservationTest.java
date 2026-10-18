@@ -16,11 +16,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResults;
@@ -45,11 +48,13 @@ import org.junit.jupiter.api.Test;
 public class MemoryFatalServiceErrorPreservationTest {
 
 	private SailRepository repository;
+	private FailingServiceResolver serviceResolver;
 
 	@BeforeEach
 	public void setUp() {
 		repository = new SailRepository(new MemoryStore());
-		repository.setFederatedServiceResolver(new FailingServiceResolver());
+		serviceResolver = new FailingServiceResolver();
+		repository.setFederatedServiceResolver(serviceResolver);
 		repository.init();
 	}
 
@@ -144,9 +149,42 @@ public class MemoryFatalServiceErrorPreservationTest {
 	}
 
 	@Test
-	public void bindingAnEndpointBeforeAnEmptyServiceDriverDoesNotInvokeTheResolver() {
-		assertEquals(0, evaluate("SELECT * WHERE { VALUES ?driver {} "
-				+ "{ BIND(<urn:fail:unused> AS ?service) SERVICE ?service { ?s ?p ?o } } }").size());
+	public void nestedBindingProviderReachesResolverDespiteEmptyOuterInput() {
+		QueryEvaluationException failure = assertThrows(QueryEvaluationException.class,
+				() -> evaluate("SELECT * WHERE { VALUES ?driver {} "
+						+ "{ BIND(<urn:fail:unused> AS ?service) SERVICE ?service { ?s ?p ?o } } }"));
+		assertEquals("service unavailable: urn:fail:unused", failure.getMessage());
+		assertEquals(1, serviceResolver.invocationCount("urn:fail:unused"));
+	}
+
+	@Test
+	public void directSameGroupBindingDoesNotInvokeResolverForEmptyDriver() {
+		String endpoint = "urn:fail:direct-empty-driver";
+		List<BindingSet> rows = evaluate("SELECT * WHERE { VALUES ?driver {} BIND(<" + endpoint
+				+ "> AS ?service) SERVICE ?service { ?s ?p ?o } }");
+		assertEquals(List.of(), rows);
+		assertEquals(0, serviceResolver.invocationCount(endpoint));
+	}
+
+	@Test
+	public void nestedSilentBindingProviderSkipsResolverWhenOuterDriverIsEmpty() {
+		String endpoint = "urn:fail:silent-nested-provider";
+		List<BindingSet> rows = evaluate("SELECT * WHERE { VALUES ?driver {} { BIND(<" + endpoint
+				+ "> AS ?service) SERVICE SILENT ?service { ?s ?p ?o } } }");
+		assertEquals(List.of(), rows);
+		assertEquals(0, serviceResolver.invocationCount(endpoint));
+	}
+
+	@Test
+	public void nestedSilentBindingProviderReturnsOnlyDriverInputsWhenInvoked() {
+		String endpoint = "urn:fail:silent-nested-nonempty-driver";
+		List<BindingSet> rows = evaluate("SELECT ?driver ?service ?s ?p ?o WHERE { VALUES ?driver { 1 } { BIND(<"
+				+ endpoint + "> AS ?service) SERVICE SILENT ?service { ?s ?p ?o } } }");
+		assertEquals(1, rows.size());
+		assertEquals(Set.of("driver", "service"), rows.get(0).getBindingNames());
+		assertEquals(repository.getValueFactory().createLiteral("1", XSD.INTEGER), rows.get(0).getValue("driver"));
+		assertEquals(repository.getValueFactory().createIRI(endpoint), rows.get(0).getValue("service"));
+		assertEquals(1, serviceResolver.invocationCount(endpoint));
 	}
 
 	@Test
@@ -228,8 +266,15 @@ public class MemoryFatalServiceErrorPreservationTest {
 
 	private static final class FailingServiceResolver implements FederatedServiceResolver {
 
+		private final Map<String, Integer> invocationCounts = new HashMap<>();
+
+		private int invocationCount(String endpoint) {
+			return invocationCounts.getOrDefault(endpoint, 0);
+		}
+
 		@Override
 		public FederatedService getService(String serviceUrl) {
+			invocationCounts.merge(serviceUrl, 1, Integer::sum);
 			return new FailingService(serviceUrl);
 		}
 	}

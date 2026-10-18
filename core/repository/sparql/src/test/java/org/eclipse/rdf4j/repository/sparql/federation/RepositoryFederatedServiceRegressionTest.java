@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.repository.sparql.federation;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -29,10 +30,12 @@ import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -52,7 +55,9 @@ import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -138,6 +143,168 @@ class RepositoryFederatedServiceRegressionTest {
 		assertEquals(inputs, actual);
 		verify(remote).close();
 		verify(harness.connection).close();
+	}
+
+	@Test
+	void silentLocalFallbackPropagatesReplaySafepointWhenReadAndCloseThrowSameFailure() throws Exception {
+		Harness harness = new Harness();
+		TupleQueryResult remote = mock(TupleQueryResult.class);
+		when(remote.getBindingNames()).thenReturn(List.of("remote"));
+		QueryExecutionContext.ReplaySafepointException replayFailure = replaySafepointFailure();
+		when(remote.hasNext()).thenThrow(replayFailure);
+		doThrow(replayFailure).when(remote).close();
+		when(harness.query.evaluate()).thenReturn(remote);
+
+		QueryExecutionContext.ReplaySafepointException actual = assertThrows(
+				QueryExecutionContext.ReplaySafepointException.class,
+				() -> evaluate(harness.service, service(statement("s", "o"), "?s <urn:test:p> ?o", true),
+						inputBindings(16)));
+
+		assertSame(replayFailure, actual);
+		verify(remote).close();
+		verify(harness.connection).close();
+	}
+
+	@Test
+	void silentLocalFallbackPreservesReadFailureWhenCloseFailsSeparately() throws Exception {
+		Harness harness = new Harness();
+		TupleQueryResult remote = mock(TupleQueryResult.class);
+		when(remote.getBindingNames()).thenReturn(List.of("remote"));
+		QueryEvaluationException readFailure = new QueryEvaluationException("stream failed");
+		QueryEvaluationException closeFailure = new QueryEvaluationException("close failed");
+		when(remote.hasNext()).thenThrow(readFailure);
+		doThrow(closeFailure).doNothing().when(remote).close();
+		when(harness.query.evaluate()).thenReturn(remote);
+
+		List<BindingSet> inputs = inputBindings(16);
+		List<BindingSet> actual = evaluate(harness.service, service(statement("s", "o"), "?s <urn:test:p> ?o", true),
+				inputs);
+
+		assertEquals(inputs, actual);
+		assertEquals(1, readFailure.getSuppressed().length);
+		assertSame(closeFailure, readFailure.getSuppressed()[0]);
+		verify(remote).close();
+		verify(harness.connection).close();
+	}
+
+	@Test
+	void scalarSelectDoesNotExposeDerivedEndpointOrFixedPredicateBindings() throws Exception {
+		Harness harness = new Harness();
+		Object epoch = new Object();
+		Value alias = canonicalAlias(epoch);
+		harness.service.setBNodeIdentityScope(epoch);
+		harness.service.setBlankNodeReferencesSupported(true);
+		harness.service.setCanonicalBNodeIDsSupported(true);
+		TupleQueryResult remote = tupleResult(List.of(
+				binding("s", VF.createBNode("canonical"), "o", VF.createLiteral("remote"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+
+		Service service = endpointService(
+				new StatementPattern(Var.of("s"), Var.of("p", PREDICATE), Var.of("o")),
+				"?s <urn:test:p> ?o");
+		List<BindingSet> rows = collect(harness.service.select(service, Set.of("s", "o"), binding("s", alias), null));
+
+		assertEquals(1, rows.size());
+		assertEquals(Set.of("s", "o"), rows.get(0).getBindingNames());
+		assertSame(alias, rows.get(0).getValue("s"));
+		assertEquals(VF.createLiteral("remote"), rows.get(0).getValue("o"));
+	}
+
+	@Test
+	void singleRowEvaluatePreservesCallerDomainAndCanonicalAliasAcrossDerivedConstants() throws Exception {
+		Harness harness = new Harness();
+		Object epoch = new Object();
+		Value alias = canonicalAlias(epoch);
+		Value callerPredicate = VF.createIRI("urn:caller:p");
+		Value callerEndpoint = VF.createIRI("urn:caller:endpoint");
+		harness.service.setBNodeIdentityScope(epoch);
+		harness.service.setBlankNodeReferencesSupported(true);
+		harness.service.setCanonicalBNodeIDsSupported(true);
+		TupleQueryResult remote = tupleResult(List.of(
+				binding("s", VF.createBNode("canonical"), "o", VF.createLiteral("remote"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+
+		Service service = endpointService(
+				new StatementPattern(Var.of("s"), Var.of("p", PREDICATE), Var.of("o")),
+				"?s <urn:test:p> ?o");
+		BindingSet input = binding("s", alias, "p", callerPredicate, "endpoint", callerEndpoint);
+		List<BindingSet> rows = evaluate(harness.service, service, List.of(input));
+
+		assertEquals(1, rows.size());
+		BindingSet row = rows.get(0);
+		assertEquals(Set.of("s", "p", "endpoint", "o"), row.getBindingNames());
+		assertSame(alias, row.getValue("s"));
+		assertEquals(callerPredicate, row.getValue("p"));
+		assertEquals(callerEndpoint, row.getValue("endpoint"));
+		assertEquals(VF.createLiteral("remote"), row.getValue("o"));
+	}
+
+	@Test
+	void realLexicalConstantPredicateIsTransportedWithoutChangingCallerResultDomain() throws Exception {
+		Harness harness = new Harness();
+		Object epoch = new Object();
+		Value alias = canonicalAlias(epoch);
+		Value callerEndpoint = VF.createIRI("urn:caller:endpoint");
+		harness.service.setBNodeIdentityScope(epoch);
+		harness.service.setBlankNodeReferencesSupported(true);
+		harness.service.setCanonicalBNodeIDsSupported(true);
+		TupleQueryResult remote = tupleResult(List.of(
+				binding("s", VF.createBNode("canonical"), "o", VF.createLiteral("remote"))));
+		when(harness.query.evaluate()).thenReturn(remote);
+
+		Service service = endpointService(
+				new StatementPattern(Var.of("s"), Var.of("p", PREDICATE), Var.of("o")),
+				"?s ?p ?o");
+		BindingSet input = binding("s", alias, "p", PREDICATE, "endpoint", callerEndpoint);
+		List<BindingSet> rows = collect(harness.service.select(service, service.getServiceVars(), input, null));
+
+		assertEquals(1, rows.size());
+		BindingSet row = rows.get(0);
+		assertEquals(Set.of("s", "p", "endpoint", "o"), row.getBindingNames());
+		assertSame(alias, row.getValue("s"));
+		assertEquals(PREDICATE, row.getValue("p"));
+		assertEquals(callerEndpoint, row.getValue("endpoint"));
+		verify(harness.query).setBinding("p", PREDICATE);
+	}
+
+	@Test
+	void batchedValuesUseActualAskVariablesWhenConstantsTextMentionsTheirNames() throws Exception {
+		Harness harness = new Harness();
+		TupleQueryResult remote = tupleResult(List.of());
+		when(harness.query.evaluate()).thenReturn(remote);
+		IRI endpoint = VF.createIRI("urn:test:endpoint");
+		IRI comment = VF.createIRI("urn:test:comment");
+		Value literal = VF.createLiteral("literal ?p ?endpoint");
+		TupleExpr argument = new Join(
+				new StatementPattern(Var.of("control"), Var.of("p", PREDICATE), Var.of("x")),
+				new Join(
+						new StatementPattern(Var.of("endpoint", endpoint), Var.of("comment", comment),
+								Var.of("literal", literal)),
+						new StatementPattern(Var.of("iri", VF.createIRI("urn:text:?p")), Var.of("comment", comment),
+								Var.of("literal", literal))));
+		String body = "?control <urn:test:p> ?x .\n"
+				+ "<urn:test:endpoint> <urn:test:comment> \"literal ?p ?endpoint\" .\n"
+				+ "# ?p ?endpoint\n"
+				+ "<urn:text:?p> <urn:test:comment> \"literal ?p ?endpoint\" .\n";
+		Service service = new Service(Var.of("endpoint", endpoint), argument, body, Map.of(), null, false);
+		Value callerPredicate = VF.createIRI("urn:caller:p");
+		Value callerEndpoint = VF.createIRI("urn:caller:endpoint");
+		List<BindingSet> inputs = List.of(
+				binding("control", VF.createLiteral("first"), "x", VF.createLiteral("x1"),
+						"p", callerPredicate, "endpoint", callerEndpoint),
+				binding("control", VF.createLiteral("second"), "x", VF.createLiteral("x2"),
+						"p", callerPredicate, "endpoint", callerEndpoint));
+
+		assertEquals(List.of(), evaluate(harness.service, service, inputs));
+
+		ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
+				nullable(String.class));
+		String query = queryCaptor.getValue();
+		int valuesStart = query.indexOf("VALUES (");
+		int valuesEnd = query.indexOf(')', valuesStart);
+		assertTrue(valuesStart >= 0, query);
+		assertEquals("VALUES (?__rowIdx ?control ?x)", query.substring(valuesStart, valuesEnd + 1), query);
 	}
 
 	@Test
@@ -335,12 +502,22 @@ class RepositoryFederatedServiceRegressionTest {
 		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
 				nullable(String.class));
 		assertTrue(queryCaptor.getValue().contains("VALUES (?" + rowVariable + " ?x)"),
-				"row correlation must use a variable distinct from user variables");
+				"row correlation must use a variable distinct from user variables: " + queryCaptor.getValue());
 	}
 
 	private static List<BindingSet> evaluate(RepositoryFederatedService service, Service expression,
 			List<BindingSet> inputs) throws QueryEvaluationException {
 		return collect(service.evaluate(expression, new ListIteration<>(inputs), null));
+	}
+
+	private static QueryExecutionContext.ReplaySafepointException replaySafepointFailure() {
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(
+				() -> {
+					throw new QueryEvaluationException("replay checkpoint");
+				})) {
+			return assertThrows(QueryExecutionContext.ReplaySafepointException.class,
+					QueryExecutionContext::checkpointReplaySafepoint);
+		}
 	}
 
 	private static List<BindingSet> collect(CloseableIteration<BindingSet> result) throws QueryEvaluationException {
@@ -376,6 +553,16 @@ class RepositoryFederatedServiceRegressionTest {
 	private static Service service(TupleExpr argument, String expression, boolean silent) {
 		return new Service(Var.of("service", VF.createIRI("urn:test:endpoint")), argument, expression,
 				Map.of(), null, silent);
+	}
+
+	private static Service endpointService(TupleExpr argument, String expression) {
+		return new Service(Var.of("endpoint", VF.createIRI("urn:test:endpoint")), argument, expression,
+				Map.of(), null, false);
+	}
+
+	private static Value canonicalAlias(Object epoch) {
+		return RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), VF, epoch, true)
+				.map(VF.createBNode("canonical"));
 	}
 
 	private static Service subqueryService(boolean includeRowIdx, boolean silent) {

@@ -537,7 +537,7 @@ final class NativeRowsStep implements QueryEvaluationStep, LmdbNativePhysicalPla
 		if (!genericFallbackDescriptor.shareableAcrossEvaluations()) {
 			return executionContext.genericStep(genericFallbackDescriptor, () -> {
 				QueryEvaluationContext scoped = executionContext
-						.genericContext(() -> EvaluationScopedQueryEvaluationContext.create(context, strategy));
+						.genericContext(context, strategy);
 				return genericFallbackDescriptor.genericPrecompile(strategy, scoped);
 			});
 		}

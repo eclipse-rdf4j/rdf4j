@@ -37,9 +37,18 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
@@ -1649,6 +1658,15 @@ public class LmdbNativePropertyPathTest {
 	}
 
 	@Test
+	public void graphSelectionFramesPathsBeforeNativeTraversal() {
+		String query = q("SELECT ?g ?o WHERE { GRAPH ?g { ex:e ex:p+ ?o . } }");
+		long before = PathPlan.ENGAGED.get();
+		assertThat(rows(query)).containsExactly("[g=" + EX + "g1;o=" + EX + "inGraph]");
+		assertThat(PathPlan.ENGAGED.get()).isGreaterThan(before);
+		assertThat(genericRows(query)).containsExactly("[g=" + EX + "g1;o=" + EX + "inGraph]");
+	}
+
+	@Test
 	public void sameVariableBothEndsRunNatively() {
 		long before = PathPlan.ENGAGED.get();
 		assertSameAsGeneric(q("SELECT ?x WHERE { ?x ex:p+ ?x . }"));
@@ -1676,11 +1694,44 @@ public class LmdbNativePropertyPathTest {
 	public void gatedShapesDoNotEngage() {
 		long before = PathPlan.ENGAGED.get();
 		rows(q("SELECT ?o WHERE { ex:a (ex:p/ex:q)+ ?o . }"));
+		long afterSequence = PathPlan.ENGAGED.get();
 		rows(q("SELECT ?o WHERE { ex:a (!ex:p)+ ?o . }"));
-		rows(q("SELECT ?g ?o WHERE { GRAPH ?g { ex:e ex:p+ ?o . } }"));
+		long afterNegated = PathPlan.ENGAGED.get();
+		// The physical BFS cannot traverse an unresolved context slot. A semantic GRAPH operator instead selects
+		// each graph first, giving its body a fixed active graph; that supported route is checked above.
+		ValueFactory factory = repository.getValueFactory();
+		Var start = Var.of("start", factory.createIRI(EX, "e"), true, true);
+		Var end = new Var("o");
+		Var graph = new Var("g");
+		StatementPattern step = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, start.clone(),
+				Var.of("predicate", factory.createIRI(EX, "p"), true, true), end.clone(), graph.clone());
+		ArbitraryLengthPath path = new ArbitraryLengthPath(StatementPattern.Scope.NAMED_CONTEXTS, start, step, end,
+				graph, 1L);
+		TupleExpr root = new QueryRoot(new Projection(path,
+				new ProjectionElemList(new ProjectionElem("g"), new ProjectionElem("o"))));
+		for (boolean nativeEngine : new boolean[] { false, true }) {
+			assertThat(algebraRows(root, nativeEngine)).containsExactly("[g=" + EX + "g1;o=" + EX + "inGraph]");
+		}
 		assertThat(PathPlan.ENGAGED.get())
-				.as("sequence paths, negated property sets, and graph-variable scoping must fall back")
+				.as("sequence=%s negated=%s graph=%s: unsupported physical path shapes must fall back",
+						afterSequence - before, afterNegated - afterSequence, PathPlan.ENGAGED.get() - afterNegated)
 				.isEqualTo(before);
+	}
+
+	private List<String> algebraRows(TupleExpr root, boolean nativeEngine) {
+		String previous = System.getProperty(NATIVE_FLAG);
+		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEngine));
+		try (SailRepositoryConnection connection = repository.getConnection();
+				var rows = connection.getSailConnection().evaluate(root, null, EmptyBindingSet.getInstance(), true)) {
+			List<String> result = new ArrayList<>();
+			while (rows.hasNext()) {
+				result.add(renderRow(rows.next()));
+			}
+			Collections.sort(result);
+			return result;
+		} finally {
+			restoreProperty(NATIVE_FLAG, previous);
+		}
 	}
 
 	private static final class PathGraphSource implements NativeLmdbQuerySource {

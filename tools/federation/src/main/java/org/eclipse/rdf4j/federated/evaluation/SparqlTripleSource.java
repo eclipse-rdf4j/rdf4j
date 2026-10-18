@@ -121,8 +121,8 @@ public class SparqlTripleSource extends TripleSourceBase {
 
 		} else {
 			/* remote select limit 1 query */
+			String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(stmt, bindings, dataset);
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, queryInfo);
 				applyMaxExecutionTimeUpperBound(query);
@@ -151,9 +151,9 @@ public class SparqlTripleSource extends TripleSourceBase {
 		if (!useASKQueries) {
 
 			/* remote select limit 1 query */
+			String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
+					expr.getExecutionDataset());
 			try (RepositoryConnection conn = endpoint.getConnection()) {
-				String queryString = QueryStringUtil.selectQueryStringLimit1(expr, bindings,
-						expr.getExecutionDataset());
 				TupleQuery query = conn.prepareTupleQuery(QueryLanguage.SPARQL, queryString);
 				configureInference(query, expr.getQueryInfo());
 				applyMaxExecutionTimeUpperBound(query);
@@ -184,13 +184,17 @@ public class SparqlTripleSource extends TripleSourceBase {
 			Resource... contexts) throws RepositoryException,
 			MalformedQueryException, QueryEvaluationException {
 
+		EndpointIdentity identity = new EndpointIdentity(endpoint, queryInfo);
+		Resource subject = (Resource) identity.outgoing(subj);
+		Value object = identity.outgoing(obj);
+		Resource[] targetContexts = identity.outgoing(contexts);
 		return withConnection((conn, resultHolder) -> {
 			monitorRemoteRequest();
 			RepositoryResult<Statement> repoResult = null;
 			try {
-				repoResult = conn.getStatements(subj, pred, obj,
-						queryInfo.getIncludeInferred(), contexts);
-				resultHolder.set(repoResult);
+				repoResult = conn.getStatements(subject, pred, object,
+						queryInfo.getIncludeInferred(), targetContexts);
+				resultHolder.set(identity.statements(repoResult, subj, obj, contexts));
 			} catch (Throwable t) {
 				if (repoResult != null) {
 					repoResult.close();

@@ -2423,7 +2423,7 @@ final class LmdbNativeKernelLowering {
 				return lowerJoinOperand(leftJoin.left, filters, row, false) && lowerOptionalArm(leftJoin.right);
 			}
 			if (plan instanceof GeneralPathPlan || plan instanceof ZeroLengthPathPlan
-					|| plan instanceof NativeSubqueryPlan || plan instanceof RowDistinctPlan
+					|| plan instanceof NativeSubqueryPlan || plan instanceof NativeGraphPlan || plan instanceof RowDistinctPlan
 					|| plan instanceof LateralPlan || plan instanceof TripleTermScanPlan) {
 				return lowerNativeOperator(plan);
 			}
@@ -3787,7 +3787,10 @@ final class LmdbNativeKernelLowering {
 			if (term.hasSlot()) {
 				for (int earlier = 0; earlier < position; earlier++) {
 					if (claimedSlots[earlier] == term.slot) {
-						int repeatColumn = newColumn(term.slot);
+						// UNION/OPTIONAL pins name the logical slot's canonical column. A second occurrence must
+						// have its own scan output even when that slot is pinned; otherwise both fields overwrite
+						// one column and their equality guard becomes a tautology.
+						int repeatColumn = scratchColumn();
 						outCols[position] = repeatColumn;
 						claimedSlots[position] = term.slot;
 						repeats.add(new LmdbNativeKernelIr.FilterCompareId(false, Operand.col(outCols[earlier]),

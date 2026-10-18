@@ -44,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 public class PathIteration extends LookAheadIteration<BindingSet> {
@@ -147,6 +148,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			@Override
 			public Comparator<Value> getComparator() {
 				return context.getComparator();
+			}
+
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				return context.getBlankNodeAllocationScope();
 			}
 
 			@Override
@@ -490,8 +496,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				if (startVarFixed && endVarFixed) {
 
 					Value v = currentVp.getEndValue();
-					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v,
-							false);
+					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v, false, startVar);
 					Var endReplacement = createAnonVar(endVarName, null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
@@ -511,7 +516,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					}
 
 					String varName = varNameAtPathLengthOf(currentLength);
-					Var replacement = createAnonVar(varName, v, true);
+					Var replacement = createAnonVar(varName, v, true, toBeReplaced);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
@@ -776,6 +781,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
 		return Var.of(varName, v, anonymous, false);
+	}
+
+	private Var createAnonVar(String varName, Value value, boolean anonymous, Var source) {
+		Var replacement = createAnonVar(varName, value, anonymous);
+		return value != null && source.hasApiInputOrigin() ? replacement.withApiInputOrigin() : replacement;
 	}
 
 }

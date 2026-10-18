@@ -25,9 +25,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.QueryLanguage;
@@ -35,6 +37,7 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
 import org.eclipse.rdf4j.query.algebra.CompareAny;
 import org.eclipse.rdf4j.query.algebra.Count;
@@ -53,8 +56,10 @@ import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -63,6 +68,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -236,6 +242,46 @@ public class LmdbNativeGenericBridgeScopeTest {
 					.hasValue(2);
 		} finally {
 			execution.close();
+		}
+	}
+
+	@Test
+	void retainedGenericBridgePreservesFixedNestedAndApiReservationsAcrossEvaluations() {
+		ValueFactory unknownFactory = new SimpleValueFactory() {
+			@Override
+			public BNode createBNode() {
+				return createBNode("reserved-bridge-node");
+			}
+		};
+		BNode fixed = unknownFactory.createBNode("reserved-bridge-node");
+		Value nested = unknownFactory.createTripleTerm(unknownFactory.createIRI("urn:s"),
+				unknownFactory.createIRI("urn:p"), fixed);
+		TupleExpr expression = new QueryRoot(new Extension(new SingletonSet(),
+				new ExtensionElem(new FunctionCall(RECORD_LITERAL_NOW_URI, new BNodeGenerator()), "fresh"),
+				new ExtensionElem(new ValueConstant(nested), "fixed"),
+				new ExtensionElem(new Var("api"), "apiCopy")));
+		MapBindingSet input = new MapBindingSet();
+		input.addBinding("api", unknownFactory.createBNode("api-bridge-node"));
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+				new SailDatasetTripleTermSource(unknownFactory, dataset), null, null, 0,
+				new EvaluationStatistics(), false);
+		QueryEvaluationStep generic = strategy.genericOnlyView().precompile(expression.clone());
+		QueryEvaluationStep nativeStep = strategy.precompile(expression.clone());
+		for (int invocation = 0; invocation < 2; invocation++) {
+			assertThatThrownBy(() -> {
+				try (var rows = generic.evaluate(input)) {
+					while (rows.hasNext()) {
+						rows.next();
+					}
+				}
+			}).hasMessage("Unsupported blank-node identity: backend cannot check stored IDs");
+			assertThatThrownBy(() -> {
+				try (var rows = nativeStep.evaluate(input)) {
+					while (rows.hasNext()) {
+						rows.next();
+					}
+				}
+			}).hasMessage("Unsupported blank-node identity: backend cannot check stored IDs");
 		}
 	}
 

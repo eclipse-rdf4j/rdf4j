@@ -12,12 +12,9 @@
 package org.eclipse.rdf4j.federated.evaluation;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -32,7 +29,6 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
-import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -45,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceResolver;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 
@@ -61,6 +58,7 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 	private final Model namedGraphs = new LinkedHashModel();
 	private final Set<TripleTerm> tripleTerms = new LinkedHashSet<>();
 	private final String endpoint;
+	private volatile boolean released;
 
 	private RemoteGraphSnapshot(String endpoint) {
 		this.endpoint = endpoint;
@@ -68,8 +66,9 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 
 	static RemoteGraphSnapshot capture(TupleQuery query, String endpoint, Load load) {
 		RemoteGraphSnapshot snapshot = new RemoteGraphSnapshot(endpoint);
-		Map<BNode, BNode> identities = new HashMap<>();
-		String scope = UUID.randomUUID().toString();
+		RemoteBNode.ResponseScope identities = RemoteBNode.newResponseScope(
+				load.queryInfo.getBlankNodeAllocationScope(),
+				VF, snapshot, false);
 		load.checkOpen();
 		var rows = load.retain(query.evaluate());
 		Throwable failure = null;
@@ -81,10 +80,10 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 				}
 				load.checkOpen();
 				BindingSet row = rows.next();
-				Resource subject = (Resource) snapshot.scope(row.getValue("s"), identities, scope);
+				Resource subject = (Resource) identities.map(row.getValue("s"));
 				IRI predicate = (IRI) row.getValue("p");
-				Value object = snapshot.scope(row.getValue("o"), identities, scope);
-				Resource graph = (Resource) snapshot.scope(row.getValue("g"), identities, scope);
+				Value object = identities.map(row.getValue("o"));
+				Resource graph = (Resource) identities.map(row.getValue("g"));
 				snapshot.collectTripleTerms(subject);
 				snapshot.collectTripleTerms(object);
 				if (graph == null) {
@@ -107,18 +106,6 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 		return QUERY;
 	}
 
-	private Value scope(Value value, Map<BNode, BNode> identities, String scope) {
-		if (value instanceof BNode blank) {
-			return identities.computeIfAbsent(blank,
-					ignored -> new ScopedBNode(scope + "-" + identities.size(), endpoint));
-		}
-		if (value instanceof TripleTerm triple) {
-			return VF.createTripleTerm((Resource) scope(triple.getSubject(), identities, scope), triple.getPredicate(),
-					scope(triple.getObject(), identities, scope));
-		}
-		return value;
-	}
-
 	private void collectTripleTerms(Value value) {
 		if (value instanceof TripleTerm triple && tripleTerms.add(triple)) {
 			collectTripleTerms(triple.getSubject());
@@ -127,29 +114,83 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 	}
 
 	static boolean isScoped(Value value) {
-		return value instanceof ScopedBNode || value instanceof TripleTerm triple
+		return owner(value) != null || value instanceof TripleTerm triple
 				&& (isScoped(triple.getSubject()) || isScoped(triple.getObject()));
 	}
 
 	static boolean belongsTo(Value value, String endpoint) {
-		if (value instanceof ScopedBNode scoped) {
-			return scoped.endpoint.equals(endpoint);
+		RemoteGraphSnapshot owner = owner(value);
+		if (owner != null) {
+			return owner.endpoint.equals(endpoint);
 		}
 		return !(value instanceof TripleTerm triple)
 				|| belongsTo(triple.getSubject(), endpoint) && belongsTo(triple.getObject(), endpoint);
+	}
+
+	private static RemoteGraphSnapshot owner(Value value) {
+		if (value instanceof RemoteBNode remote) {
+			RemoteBNode.Provenance provenance = remote.getProvenance();
+			if (provenance != null && provenance.identityScope()instanceof RemoteGraphSnapshot snapshot) {
+				return snapshot;
+			}
+		}
+		return null;
+	}
+
+	/** Snapshot values can be reused only against the exact live response that supplied their RDF terms. */
+	void validateScopedValue(Value value) {
+		checkOpen();
+		if (value instanceof BNode && owner(value) != this) {
+			throw new QueryEvaluationException(
+					"A snapshot blank node belongs to a different captured endpoint response");
+		}
+		if (value instanceof TripleTerm triple) {
+			validateScopedValue(triple.getSubject());
+			validateScopedValue(triple.getObject());
+		}
+	}
+
+	private void checkOpen() {
+		if (released) {
+			throw new QueryEvaluationException("The captured endpoint response has been released");
+		}
 	}
 
 	List<Resource> graphNames() {
 		return List.copyOf(namedGraphs.contexts());
 	}
 
+	/** A complete live response can exclude a selected canonical graph without transporting it to the endpoint. */
+	boolean excludesSelectedCanonicalGraph(Value graph) {
+		checkOpen();
+		if (!(graph instanceof RemoteBNode remote)) {
+			return false;
+		}
+		RemoteBNode.Provenance provenance = remote.getProvenance();
+		if (provenance == null || !provenance.canonicalResultID() || provenance.identityScope() == null) {
+			return false;
+		}
+		for (Resource candidate : namedGraphs.contexts()) {
+			if (candidate instanceof RemoteBNode captured && RemoteBNode.sameTrustedIdentity(remote, captured)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	CloseableIteration<BindingSet> evaluate(String text, TupleQuery query, BindingSet nativeBindings,
 			FederatedServiceResolver resolver) {
+		checkOpen();
 		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, text, null);
 		Dataset dataset = query.getDataset() == null ? parsed.getDataset() : query.getDataset();
 		QueryBindingSet bindings = new QueryBindingSet(query.getBindings());
 		for (Binding binding : nativeBindings) {
 			bindings.setBinding(binding.getName(), binding.getValue());
+		}
+		for (Binding binding : bindings) {
+			if (isScoped(binding.getValue())) {
+				validateScopedValue(binding.getValue());
+			}
 		}
 		DefaultEvaluationStrategy strategy = new DefaultEvaluationStrategy(this, dataset, resolver);
 		var expression = strategy.optimize(parsed.getTupleExpr(), new EvaluationStatistics(), bindings);
@@ -189,6 +230,7 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 	}
 
 	void release() {
+		released = true;
 		defaultGraph.clear();
 		namedGraphs.clear();
 		tripleTerms.clear();
@@ -297,16 +339,6 @@ final class RemoteGraphSnapshot implements NativeTripleTermSource {
 		public void close() {
 			cancel();
 			finishCurrent();
-		}
-	}
-
-	private static final class ScopedBNode extends SimpleBNode {
-		private static final long serialVersionUID = 1L;
-		private final String endpoint;
-
-		private ScopedBNode(String id, String endpoint) {
-			super(id);
-			this.endpoint = endpoint;
 		}
 	}
 }

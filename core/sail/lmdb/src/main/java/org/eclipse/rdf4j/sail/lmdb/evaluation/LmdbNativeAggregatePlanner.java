@@ -47,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
@@ -245,10 +246,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return census;
 		}
 		if (containsUnsafeNestedVariableScopeChange(group.getArg())) {
-			if (!islandsEnabled) {
-				return null;
-			}
-			// M-A3 decline conversion: island every scope-change subtree so the generic engine owns all scoping
+			// Native semantic boundaries own lexical frames independently of the generic-island fallback.
 			islandScopeChanges = true;
 		}
 		this.requiredAggregateNames = aggregateRequiredNames(group);
@@ -302,7 +300,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		valueGuardsSupported = true;
 		SlotPlan arg;
 		try {
-			arg = compileTuple(group.getArg(), duplicateInsensitive);
+			arg = compileTupleRoot(group.getArg(), duplicateInsensitive);
 			if (arg != null && !pendingValueGuards.isEmpty()) {
 				// M-F1 value-guarded VALUES: sound only when nothing between the VALUES and the root observes the
 				// guarded variable, and the guarded ids never feed grouping/aggregation (id-keyed dedup would
@@ -447,11 +445,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			node = ((Order) node).getArg();
 		}
 		if (containsUnsafeNestedVariableScopeChange(node)) {
-			if (!islandsEnabled) {
-				debugRowRootDecline("unsafe-nested-scope", node);
-				return null;
-			}
-			// M-A3 decline conversion: island every scope-change subtree so the generic engine owns all scoping
+			// Preserve every nested lexical boundary even when generic islands are disabled.
 			islandScopeChanges = true;
 		}
 
@@ -530,7 +524,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		// subtree; the synthetic-var guard keeps raw-id filter shortcuts away from interned target slots
 		allowComputedValueInterning = previousAllowComputedValueInterning || rowPathComputedInternEnabled;
 		try {
-			arg = compileTuple(node, distinct);
+			arg = compileTupleRoot(node, distinct);
 		} finally {
 			allowComputedValueInterning = previousAllowComputedValueInterning;
 		}
@@ -667,7 +661,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			return null;
 		}
 		this.requiredAggregateNames = VarNameCollector.process(node);
-		SlotPlan arg = compileTuple(node, false);
+		SlotPlan arg = compileTupleRoot(node, false);
 		if (arg == null) {
 			return null;
 		}
@@ -1693,6 +1687,18 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 		return visibleInputs.toArray(String[]::new);
 	}
 
+	private SlotPlan compileTupleRoot(TupleExpr expr, boolean duplicateInsensitive) {
+		// The caller already selected this operand's lexical entry frame. Re-entering a semantic subquery for the
+		// operand itself would recurse into the same boundary; only descendant boundaries need new frames.
+		TupleExpr previous = lexicalCompileRoot;
+		lexicalCompileRoot = expr;
+		try {
+			return compileTuple(expr, duplicateInsensitive);
+		} finally {
+			lexicalCompileRoot = previous;
+		}
+	}
+
 	SlotPlan compileTuple(TupleExpr expr, boolean duplicateInsensitive) {
 		Set<String> demotedVisible = demotedIslands.get(expr);
 		if (demotedVisible != null) {
@@ -1702,7 +1708,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				return demoted;
 			}
 		}
-		if (islandScopeChanges && TupleExprs.isVariableScopeChange(expr)) {
+		if (islandScopeChanges && expr != lexicalCompileRoot && TupleExprs.isVariableScopeChange(expr)) {
 			// An unsafe nested scope change must evaluate against its lexical entry frame, never the mutable outer
 			// row. Compile every legal scope boundary as an evaluation-scoped native plan; the legacy island remains
 			// only as the explicit fallback for a boundary the semantic native compiler cannot represent.
@@ -1710,13 +1716,13 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (nativeScope != null) {
 				return nativeScope;
 			}
-			SlotPlan scoped = island(expr);
-			if (scoped != null) {
-				return scoped;
-			}
+			return island(expr);
 		}
 		if (expr instanceof SingletonSet) {
 			return SlotPlan.singleton();
+		}
+		if (expr instanceof Graph graph) {
+			return compileNativeGraph(graph);
 		}
 		if (expr instanceof StatementPattern) {
 			PatternPlan plan = compileStatementPattern((StatementPattern) expr);
@@ -2057,6 +2063,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	 * it. Unknown plan kinds contribute nothing.
 	 */
 	static long subqueryFrameInputMask(SlotPlan plan) {
+		if (plan instanceof NativeGraphPlan graph) {
+			return graph.frameInputMask();
+		}
 		if (plan instanceof NativeSubqueryPlan subquery) {
 			return subquery.frameInputMask();
 		}
@@ -2123,6 +2132,32 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 					.addAll(Arrays.asList(lateralSubqueryFrameInputNames(expr, inheritedLateralFrameInputNames)));
 		}
 		return compileNativeSubquery(expr, frameInputNames.toArray(String[]::new));
+	}
+
+	private SlotPlan compileNativeGraph(Graph graph) {
+		String[] outNames = graph.getBindingNames().toArray(String[]::new);
+		int[] outSlots = new int[outNames.length];
+		for (int i = 0; i < outNames.length; i++) {
+			outSlots[i] = slot(outNames[i]);
+		}
+		Set<String> parameters = new LinkedHashSet<>(context.getSubstitutionBindingNames());
+		parameters.addAll(Arrays.asList(lateralSubqueryFrameInputNames(graph, lateralFrameInputNames)));
+		parameters.addAll(Arrays.asList(lateralSubqueryFrameInputNames(graph, inheritedLateralFrameInputNames)));
+		parameters.retainAll(VarNameCollector.process(graph));
+		String[] frameNames = parameters.toArray(String[]::new);
+		int[] frameSlots = new int[frameNames.length];
+		for (int i = 0; i < frameNames.length; i++) {
+			frameSlots[i] = slot(frameNames[i]);
+		}
+		if (slotNames.size() > MAX_NATIVE_SLOTS) {
+			slotBudgetExceeded = true;
+			return null;
+		}
+		Set<String> lateral = new LinkedHashSet<>(inheritedLateralFrameInputNames);
+		lateral.addAll(lateralFrameInputNames);
+		requiresExecutionContext = true;
+		return new NativeGraphPlan(graph, context, strategy, source, outSlots, outNames, frameSlots, frameNames,
+				inheritedFrameInputNames, lateral);
 	}
 
 	private SlotPlan compileNativeSubquery(TupleExpr expr, String[] frameInputNames) {

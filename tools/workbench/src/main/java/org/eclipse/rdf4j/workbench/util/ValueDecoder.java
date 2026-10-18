@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.workbench.util;
 import java.net.URISyntaxException;
 
 import org.eclipse.rdf4j.common.net.ParsedIRI;
+import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
@@ -67,10 +68,10 @@ class ValueDecoder {
 						String label = value.substring("_:".length());
 						result = factory.createBNode(label);
 					} else if (value.startsWith("<<")) {
-						result = parseTripleTerm(value);
+						result = Protocol.decodeValue(value, factory);
 					} else {
 						if (value.charAt(0) == '<' && value.endsWith(">")) {
-							result = factory.createIRI(value.substring(1, value.length() - 1));
+							result = Protocol.decodeValue(value, factory);
 						} else {
 							if (value.charAt(0) == '"') {
 								result = parseLiteral(value);
@@ -115,61 +116,6 @@ class ValueDecoder {
 		} catch (URISyntaxException e) {
 			return false;
 		}
-	}
-
-	/**
-	 * Parses an RDF 1.2 triple term, {@code <<( s p o )>>}, or the earlier RDF-star form {@code << s p o >>}; terms are
-	 * written in N-Triples syntax and may nest.
-	 */
-	private Value parseTripleTerm(String value) {
-		return NTriplesUtil.parseTriple(toRdf12TripleTermSyntax(value), factory, number -> {
-			throw new IllegalArgumentException("Not an N-Triples term: " + number);
-		});
-	}
-
-	/**
-	 * Rewrites each earlier {@code << ... >>} delimiter as {@code <<( ... )>>}, leaving IRIs and literals as they are.
-	 */
-	private static String toRdf12TripleTermSyntax(String value) {
-		StringBuilder normalized = new StringBuilder(value.length() + 8);
-		int index = 0;
-		while (index < value.length()) {
-			char character = value.charAt(index);
-			if (value.startsWith("<<", index)) {
-				normalized.append("<<(");
-				index += 2;
-				if (index < value.length() && value.charAt(index) == '(') {
-					index++;
-				}
-			} else if (value.startsWith(">>", index)) {
-				int last = normalized.length() - 1;
-				while (last >= 0 && Character.isWhitespace(normalized.charAt(last))) {
-					last--;
-				}
-				if (last < 0 || normalized.charAt(last) != ')') {
-					normalized.append(')');
-				}
-				normalized.append(">>");
-				index += 2;
-			} else if (character == '<') {
-				int end = value.indexOf('>', index);
-				int stop = end < 0 ? value.length() : end + 1;
-				normalized.append(value, index, stop);
-				index = stop;
-			} else if (character == '"') {
-				int end = index + 1;
-				while (end < value.length() && value.charAt(end) != '"') {
-					end += value.charAt(end) == '\\' ? 2 : 1;
-				}
-				int stop = Math.min(value.length(), end + 1);
-				normalized.append(value, index, stop);
-				index = stop;
-			} else {
-				normalized.append(character);
-				index++;
-			}
-		}
-		return normalized.toString();
 	}
 
 	private Value parseLiteral(String value) throws BadRequestException {

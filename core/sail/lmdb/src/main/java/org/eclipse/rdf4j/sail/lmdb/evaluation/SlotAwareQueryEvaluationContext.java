@@ -13,7 +13,9 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.Comparator;
+import java.util.Set;
 import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
@@ -27,6 +29,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /**
  * Context wrapper used when precompiling generic fallback filters over native slot rows: variable names that map to a
@@ -65,6 +68,31 @@ final class SlotAwareQueryEvaluationContext implements QueryEvaluationContext {
 	@Override
 	public Dataset getDataset() {
 		return delegate.getDataset();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
+	}
+
+	@Override
+	public ActiveGraph getActiveGraph() {
+		return delegate.getActiveGraph();
+	}
+
+	@Override
+	public Set<String> getSubstitutionBindingNames() {
+		return delegate.getSubstitutionBindingNames();
+	}
+
+	@Override
+	public boolean hasEnclosingProjection() {
+		return delegate.hasEnclosingProjection();
+	}
+
+	@Override
+	public Consumer<MutableBindingSet> removeBinding(String variableName) {
+		return delegate.removeBinding(variableName);
 	}
 
 	@Override

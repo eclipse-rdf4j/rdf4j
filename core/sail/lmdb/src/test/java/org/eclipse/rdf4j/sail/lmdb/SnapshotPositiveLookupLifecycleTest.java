@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -91,6 +92,27 @@ class SnapshotPositiveLookupLifecycleTest {
 			assertEquals("leaf", leaf.getLabel());
 			assertEquals("en", leaf.getLanguage().orElseThrow());
 			assertEquals(Literal.BaseDirection.RTL, leaf.getBaseDirection());
+		}
+	}
+
+	@Test
+	void captureSnapshotsInitializedNativeCompositeWithMutableForeignChild(@TempDir Path directory) throws Exception {
+		try (Fixture fixture = new Fixture(directory, 3); DirectView view = new DirectView(fixture.values)) {
+			MutableCaptureIRI mutableObject = new MutableCaptureIRI("before");
+			TripleTerm nativeComposite = fixture.values.createTripleTerm(SUBJECT, PREDICATE, mutableObject);
+			LmdbValue nativeValue = assertInstanceOf(LmdbValue.class, nativeComposite);
+			assertTrue(nativeValue.isInitialized());
+			assertEquals(LmdbValue.UNKNOWN_ID, nativeValue.getSemanticVersion(),
+					"A mutable foreign child makes the native composite unstable");
+
+			TripleTerm captured = (TripleTerm) fixture.values.valueCapturer(view.snapshot).apply(nativeComposite);
+			assertNotSame(nativeComposite, captured, "An unstable native composite needs a semantic snapshot");
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue());
+
+			mutableObject.changeLocalName("after");
+			assertEquals("urn:mutable-capture:after", nativeComposite.getObject().stringValue());
+			assertEquals("urn:mutable-capture:before", captured.getObject().stringValue(),
+					"A captured composite must not retain a mutable foreign child");
 		}
 	}
 
@@ -553,6 +575,28 @@ class SnapshotPositiveLookupLifecycleTest {
 		private void assertOutsideTransaction() {
 			assertFalse(Thread.holdsLock(snapshot.txnRef()),
 					"Caller getters must remain outside the native Txn monitor");
+		}
+	}
+
+	private static final class MutableCaptureIRI extends AbstractIRI {
+		private volatile String localName;
+
+		private MutableCaptureIRI(String localName) {
+			this.localName = localName;
+		}
+
+		@Override
+		public String getNamespace() {
+			return "urn:mutable-capture:";
+		}
+
+		@Override
+		public String getLocalName() {
+			return localName;
+		}
+
+		private void changeLocalName(String localName) {
+			this.localName = localName;
 		}
 	}
 
