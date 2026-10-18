@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.workbench.commands;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.io.ByteArrayInputStream;
@@ -36,10 +37,13 @@ import org.eclipse.rdf4j.repository.config.ConfigTemplate;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.sail.config.SailRepositoryConfig;
+import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.w3c.dom.Element;
 import org.w3c.dom.NodeList;
 
@@ -350,6 +354,61 @@ public class CreateServletTest {
 			assertThat(config.getTitle()).isEqualTo("Legacy Test Repository");
 		} catch (RDF4JException | IOException e) {
 			fail(e.getMessage());
+		}
+	}
+
+	@Test
+	public void testLmdbExperimentalQueryOptimizationsCanBeSubmittedAndPersisted() throws Exception {
+		assertLmdbExperimentalSettingsPersist("true", false, false, false,
+				Files.createTempDirectory(datadir.toPath(), "experimental"));
+	}
+
+	@ParameterizedTest
+	@CsvSource(value = {
+			"missing,false,false,false",
+			"false,false,false,false", "false,false,false,true",
+			"false,false,true,false", "false,false,true,true",
+			"false,true,false,false", "false,true,false,true",
+			"false,true,true,false", "false,true,true,true",
+			"true,false,false,true", "true,false,true,false", "true,false,true,true",
+			"true,true,false,false", "true,true,false,true", "true,true,true,false", "true,true,true,true"
+	}, nullValues = "missing")
+	public void testLmdbExperimentalQueryOptimizationsRemainIndependent(String experimental, boolean nativeEvaluation,
+			boolean directAdjacency, boolean valueOverlay, @TempDir Path repositoryDir) throws Exception {
+		assertLmdbExperimentalSettingsPersist(experimental, nativeEvaluation, directAdjacency, valueOverlay,
+				repositoryDir);
+	}
+
+	private void assertLmdbExperimentalSettingsPersist(String experimental, boolean nativeEvaluation,
+			boolean directAdjacency, boolean valueOverlay, Path repositoryDir) throws Exception {
+		LocalRepositoryManager manager = new LocalRepositoryManager(repositoryDir.toFile());
+		CreateServlet createServlet = new CreateServlet();
+		createServlet.setRepositoryManager(manager);
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getTypeParameter()).thenReturn("lmdb");
+		when(request.getParameter("Repository ID")).thenReturn("lmdb-experimental");
+		when(request.getParameter("Repository title")).thenReturn("Experimental settings regression");
+		when(request.getParameter("Experimental Query Optimizations")).thenReturn(experimental);
+		when(request.getParameter("Native query evaluation enabled")).thenReturn(Boolean.toString(nativeEvaluation));
+		when(request.getParameter("Direct adjacency index enabled")).thenReturn(Boolean.toString(directAdjacency));
+		when(request.getParameter("Compressed value overlay enabled")).thenReturn(Boolean.toString(valueOverlay));
+		HttpServletResponse response = mock(HttpServletResponse.class);
+
+		createServlet.doPost(request, response);
+		verify(response).sendRedirect("../lmdb-experimental/summary");
+		manager.shutDown();
+
+		LocalRepositoryManager reopened = new LocalRepositoryManager(repositoryDir.toFile());
+		try {
+			RepositoryConfig config = reopened.getRepositoryConfig("lmdb-experimental");
+			SailRepositoryConfig repositoryConfig = (SailRepositoryConfig) config.getRepositoryImplConfig();
+			LmdbStoreConfig sail = (LmdbStoreConfig) repositoryConfig.getSailImplConfig();
+			assertThat(sail.isExperimentalQueryOptimizations()).isEqualTo(Boolean.parseBoolean(experimental));
+			assertThat(sail.getNativeEvaluationEnabled()).isEqualTo(nativeEvaluation);
+			assertThat(sail.getDirectAdjacencyEnabled()).isEqualTo(directAdjacency);
+			assertThat(sail.getValueOverlayEnabled()).isEqualTo(valueOverlay);
+		} finally {
+			reopened.shutDown();
 		}
 	}
 

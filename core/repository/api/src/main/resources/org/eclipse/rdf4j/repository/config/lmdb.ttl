@@ -69,6 +69,7 @@
          # @workbench.field len=16
          lmdb:forceSync {%Force sync|false|true%} ;
          lmdb:noReadahead {%No readahead|false|true%} ;
+         config:sail.experimentalQueryOptimizations {%Experimental Query Optimizations|false|true%} ;
          lmdb:nativeEvaluationEnabled {%Native query evaluation enabled|false|true%} ;
          lmdb:directAdjacencyEnabled {%Direct adjacency index enabled|false|true%} ;
          lmdb:valueOverlayEnabled {%Compressed value overlay enabled|false|true%} ;
