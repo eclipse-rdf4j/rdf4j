@@ -14,12 +14,16 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.sail.Sail;
+import org.eclipse.rdf4j.sail.StackableSail;
+import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 
 /**
  * The catalogue of execution-strategy names a caller may legally force onto {@link LmdbNativeStrategyArbiter} via
@@ -165,14 +169,25 @@ public final class LmdbNativeForceableStrategies {
 
 	/**
 	 * Every forceable strategy with its description, in a stable presentation order, for callers that render the
-	 * catalogue (the {@code system/lmdb/strategies} endpoint and the Workbench's strategy dropdown).
-	 * {@link #NOT_ACTIVATED} is not included: it is the absence of forcing, not a strategy, and belongs to the
-	 * presentation layer.
+	 * catalogue for a repository that supports native execution. {@link #NOT_ACTIVATED} is not included: it is the
+	 * absence of forcing, not a strategy, and belongs to the presentation layer.
 	 */
 	public static List<Strategy> list() {
 		List<Strategy> strategies = new ArrayList<>(DESCRIPTIONS.size());
 		DESCRIPTIONS.forEach((name, description) -> strategies.add(new Strategy(name, description)));
 		return Collections.unmodifiableList(strategies);
+	}
+
+	/** Returns the catalogue only when the Sail stack's LMDB store currently supports native execution. */
+	public static List<Strategy> list(Sail sail) {
+		Set<Sail> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (sail != null && visited.add(sail)) {
+			if (sail instanceof LmdbStore) {
+				return ((LmdbStore) sail).isNativeQueryEngineEnabled() ? list() : List.of();
+			}
+			sail = sail instanceof StackableSail ? ((StackableSail) sail).getBaseSail() : null;
+		}
+		return List.of();
 	}
 
 	/** A short, human-readable description of {@code tag}, or {@code null} when it is not a forceable strategy. */

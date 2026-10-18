@@ -32,7 +32,6 @@ import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
-import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.Value;
@@ -220,20 +219,7 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 		return new HTTPRepositoryConnection(this, createHTTPClient());
 	}
 
-	/** Lists server-global live LMDB features, preserving this repository's credentials and additional headers. */
-	@Experimental
-	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties() throws RepositoryException {
-		if (!isInitialized()) {
-			init();
-		}
-		try (RDF4JProtocolSession client = createHTTPClient()) {
-			return client.getLmdbRuntimeProperties();
-		} catch (IOException e) {
-			throw new RepositoryException("Could not read LMDB runtime properties", e);
-		}
-	}
-
-	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	/** Lists the strategies available for native execution in this repository. */
 	@Experimental
 	public List<LmdbForceableStrategy> getLmdbForceableStrategies() throws RepositoryException {
 		if (!isInitialized()) {
@@ -243,19 +229,6 @@ public class HTTPRepository extends AbstractRepository implements HttpClientDepe
 			return client.getLmdbForceableStrategies();
 		} catch (IOException e) {
 			throw new RepositoryException("Could not read LMDB forceable execution strategies", e);
-		}
-	}
-
-	/** Updates one server-global live LMDB feature. */
-	@Experimental
-	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled) throws RepositoryException {
-		if (!isInitialized()) {
-			init();
-		}
-		try (RDF4JProtocolSession client = createHTTPClient()) {
-			return client.setLmdbRuntimeProperty(name, enabled);
-		} catch (IOException e) {
-			throw new RepositoryException("Could not update LMDB runtime property", e);
 		}
 	}
 

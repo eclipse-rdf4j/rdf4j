@@ -453,18 +453,15 @@ Also nested inside the `<web-app>` element are definitions of security roles. Th
 </security-role>
 ```
 
-### LMDB runtime property administration
+### LMDB execution strategy selection
 
-The `GET /system/lmdb/properties` endpoint remains readable, including in the default anonymous deployment. Its
-process-wide `POST` mutations require an authenticated container user in the `rdf4j-admin` role and the deliberate
-request header `X-RDF4J-Admin-Request: true`; a missing or different header is rejected with HTTP 403. Map the
-administrator accounts in the servlet containers for both Server and Workbench, and keep CORS allowlisting under
-deployment control.
+Server and Workbench do not expose JVM system-property administration. Configure LMDB properties through the JVM
+startup configuration and use repository configuration to enable the native query engine.
 
-When Workbench proxies this operation to a remote RDF4J Server, the Workbench request must have the
-`rdf4j-admin` role and the Workbench's normal HTTP repository connection must authenticate with `rdf4j-admin` on the
-remote Server as well. The Workbench UI and RDF4J HTTP client send the required header automatically. Other clients
-must send it explicitly along with their normal authenticated request.
+`GET /repositories/{id}/lmdb/strategies` lists native execution strategies for the selected repository, using its normal
+repository routing and access rules. It returns an empty list when native execution is unavailable or disabled.
+Workbench shows the per-query strategy selector only after the selected repository advertises available strategies.
+The empty choice leaves strategy selection to the engine. A forced strategy must still be eligible for the query.
 
 ### User accounts
 

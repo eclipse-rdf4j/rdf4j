@@ -50,7 +50,6 @@ import org.eclipse.rdf4j.http.client.spi.NameValuePair;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.http.client.spi.UriBuilder;
 import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
-import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
 import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.http.protocol.Protocol.Action;
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
@@ -101,9 +100,7 @@ import tools.jackson.databind.ObjectMapper;
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
-	private static final ObjectMapper RUNTIME_PROPERTY_MAPPER = new ObjectMapper();
-	private static final TypeReference<List<LmdbRuntimeProperty>> RUNTIME_PROPERTY_LIST = new TypeReference<>() {
-	};
+	private static final ObjectMapper STRATEGY_MAPPER = new ObjectMapper();
 	private static final TypeReference<List<LmdbForceableStrategy>> FORCEABLE_STRATEGY_LIST = new TypeReference<>() {
 	};
 
@@ -279,33 +276,17 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 		}
 	}
 
-	/** Lists the live LMDB feature catalog exposed by this server. */
-	@Experimental
-	public List<LmdbRuntimeProperty> getLmdbRuntimeProperties()
-			throws IOException, RepositoryException, UnauthorizedException {
-		checkServerURL();
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.get(Protocol.getLmdbRuntimePropertiesLocation(serverURL)))
-						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
-						.build();
-		try (HttpResponse response = executeOK(method)) {
-			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), RUNTIME_PROPERTY_LIST);
-		} catch (RDF4JException e) {
-			throw new RepositoryException(e);
-		}
-	}
-
-	/** Lists the LMDB query-execution strategies this server allows a single query to pin. */
+	/** Lists the strategies available for native execution in the selected repository. */
 	@Experimental
 	public List<LmdbForceableStrategy> getLmdbForceableStrategies()
 			throws IOException, RepositoryException, UnauthorizedException {
-		checkServerURL();
+		checkRepositoryURL();
 		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.get(Protocol.getLmdbForceableStrategiesLocation(serverURL)))
+				HttpRequests.get(Protocol.getLmdbForceableStrategiesLocation(getRepositoryURL())))
 						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
 						.build();
 		try (HttpResponse response = executeOK(method)) {
-			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), FORCEABLE_STRATEGY_LIST);
+			return STRATEGY_MAPPER.readValue(response.getBodyAsStream(), FORCEABLE_STRATEGY_LIST);
 		} catch (RDF4JException e) {
 			throw new RepositoryException(e);
 		}
@@ -330,27 +311,6 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	@Experimental
 	public String getForcedLmdbExecutionStrategy() {
 		return forcedLmdbExecutionStrategy;
-	}
-
-	/** Updates one allowlisted live LMDB feature on this server. */
-	@Experimental
-	public LmdbRuntimeProperty setLmdbRuntimeProperty(String name, boolean enabled)
-			throws IOException, RepositoryException, UnauthorizedException {
-		checkServerURL();
-		List<NameValuePair> params = List.of(NameValuePair.of("name", name),
-				NameValuePair.of("enabled", Boolean.toString(enabled)));
-		HttpRequest method = applyAdditionalHeaders(
-				HttpRequests.post(Protocol.getLmdbRuntimePropertiesLocation(serverURL))
-						.header(Protocol.LMDB_ADMIN_REQUEST_HEADER, "true")
-						.header("Content-Type", Protocol.FORM_MIME_TYPE + "; charset=utf-8")
-						.header(Protocol.ACCEPT_PARAM_NAME, "application/json")
-						.body(HttpRequestBody.ofFormData(params)))
-								.build();
-		try (HttpResponse response = executeOK(method)) {
-			return RUNTIME_PROPERTY_MAPPER.readValue(response.getBodyAsStream(), LmdbRuntimeProperty.class);
-		} catch (RDF4JException e) {
-			throw new RepositoryException(e);
-		}
 	}
 
 	/*-------------------------*

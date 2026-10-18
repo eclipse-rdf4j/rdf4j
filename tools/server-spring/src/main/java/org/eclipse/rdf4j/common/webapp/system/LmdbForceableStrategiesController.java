@@ -13,22 +13,26 @@
 package org.eclipse.rdf4j.common.webapp.system;
 
 import java.io.IOException;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
+import org.eclipse.rdf4j.http.server.repository.RepositoryInterceptor;
+import org.eclipse.rdf4j.repository.DelegatingRepository;
+import org.eclipse.rdf4j.repository.Repository;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeForceableStrategies;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeForceableStrategies.Strategy;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.mvc.Controller;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 
-/**
- * Process-wide, fixed-catalogue endpoint listing the LMDB query-execution strategies a single query may pin via the
- * {@code lmdb-forced-strategy} request parameter. Read-only: unlike the sibling live-property endpoint there is nothing
- * to change here, since forcing is chosen per query rather than set globally.
- */
+/** Lists native execution strategies available in the repository resolved by the normal repository interceptor. */
 @Experimental
 public class LmdbForceableStrategiesController implements Controller {
 
@@ -39,12 +43,31 @@ public class LmdbForceableStrategiesController implements Controller {
 		response.setContentType("application/json");
 
 		if ("GET".equals(request.getMethod())) {
-			write(response, HttpServletResponse.SC_OK, toJson(LmdbNativeForceableStrategies.list()));
+			write(response, HttpServletResponse.SC_OK, toJson(list(RepositoryInterceptor.getRepository(request))));
 		} else {
 			response.setHeader("Allow", "GET");
 			writeError(response, HttpServletResponse.SC_METHOD_NOT_ALLOWED, "Only GET is supported");
 		}
 		return null;
+	}
+
+	private static List<LmdbForceableStrategy> list(Repository repository) {
+		Set<Repository> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		while (repository != null && visited.add(repository)) {
+			if (repository instanceof HTTPRepository) {
+				return ((HTTPRepository) repository).getLmdbForceableStrategies();
+			}
+			if (repository instanceof SailRepository) {
+				return LmdbNativeForceableStrategies.list(((SailRepository) repository).getSail())
+						.stream()
+						.map(strategy -> new LmdbForceableStrategy(strategy.name(), strategy.description()))
+						.toList();
+			}
+			repository = repository instanceof DelegatingRepository
+					? ((DelegatingRepository) repository).getDelegate()
+					: null;
+		}
+		return List.of();
 	}
 
 	private static void writeError(HttpServletResponse response, int status, String message) throws IOException {
@@ -56,13 +79,13 @@ public class LmdbForceableStrategiesController implements Controller {
 		response.getWriter().write(json);
 	}
 
-	private static String toJson(List<Strategy> strategies) {
+	private static String toJson(List<LmdbForceableStrategy> strategies) {
 		StringBuilder json = new StringBuilder(strategies.size() * 128).append('[');
 		for (int i = 0; i < strategies.size(); i++) {
 			if (i > 0) {
 				json.append(',');
 			}
-			Strategy strategy = strategies.get(i);
+			LmdbForceableStrategy strategy = strategies.get(i);
 			json.append("{\"name\":\"")
 					.append(escape(strategy.name()))
 					.append("\",\"description\":\"")

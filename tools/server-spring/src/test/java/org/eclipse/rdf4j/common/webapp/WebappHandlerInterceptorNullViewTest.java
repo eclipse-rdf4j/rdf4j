@@ -21,9 +21,9 @@ import org.springframework.mock.web.MockHttpServletResponse;
 
 /**
  * {@code HandlerInterceptor.postHandle} receives a {@code null} {@code ModelAndView} whenever the handler already wrote
- * the response itself, which is what the extensionless JSON system endpoints such as {@code /system/lmdb/properties}
- * and {@code /system/breaker/status.view} do. The shared webapp interceptors are registered on those mappings, so they
- * must tolerate a {@code null} view instead of failing the request.
+ * the response itself, which is what the extensionless JSON system endpoints such as
+ * {@code /system/breaker/status.view} and {@code /system/breaker/status.view} do. The shared webapp interceptors are
+ * registered on those mappings, so they must tolerate a {@code null} view instead of failing the request.
  */
 class WebappHandlerInterceptorNullViewTest {
 

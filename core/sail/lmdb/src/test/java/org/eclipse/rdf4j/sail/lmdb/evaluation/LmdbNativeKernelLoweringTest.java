@@ -47,7 +47,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.EmptyRecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.LmdbKeyRange;
-import org.eclipse.rdf4j.sail.lmdb.LmdbRuntimeProperties;
 import org.eclipse.rdf4j.sail.lmdb.RecordIterator;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.JaninoKernel;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelContext;
@@ -422,20 +421,12 @@ class LmdbNativeKernelLoweringTest {
 	}
 
 	@Test
-	void mixedBindingCatalogueMatchesTheEffectiveDefault() {
+	void mixedBindingMatchesTheEffectiveDefault() {
 		String property = LmdbNativeKernelLowering.MIXED_BINDING_PROPERTY;
 		String previous = System.getProperty(property);
 		try {
 			System.clearProperty(property);
-			LmdbRuntimeProperties.State state = LmdbRuntimeProperties.list()
-					.stream()
-					.filter(candidate -> property.equals(candidate.name()))
-					.findFirst()
-					.orElseThrow();
 			assertTrue(LmdbNativeKernelLowering.mixedBindingEnabled());
-			assertTrue(state.defaultEnabled());
-			assertTrue(state.enabled());
-			assertFalse(state.explicitlySet());
 		} finally {
 			if (previous == null) {
 				System.clearProperty(property);

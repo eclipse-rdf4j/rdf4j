@@ -126,7 +126,8 @@ final class FastNTriplesParser {
 				if (lineBreakByte == '\r') {
 					if (cursor < read && buffer[cursor] == '\n') {
 						cursor++;
-					} else {
+					} else if (cursor == read) {
+						// Only a CR at the end of this read can pair with the next read's first byte.
 						skipLfAfterCr = true;
 					}
 				}

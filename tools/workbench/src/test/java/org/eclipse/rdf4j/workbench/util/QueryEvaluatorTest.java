@@ -32,6 +32,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -48,9 +49,13 @@ import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
 import org.eclipse.rdf4j.repository.http.HTTPTupleQuery;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.http.HttpServletResponse;
@@ -118,6 +123,43 @@ class QueryEvaluatorTest {
 		verify(builder).link(List.of("info", "_internal/namespaces"));
 		verify(builder).result("optimized plan", "text", "Optimized", "[]");
 		verify(builder).end();
+	}
+
+	@Test
+	void unsupportedRepositoryIgnoresRememberedForcedStrategy() throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getRepository()).thenReturn(new SailRepository(new MemoryStore()));
+		SailTupleQuery query = mock(SailTupleQuery.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		Explanation explanation = mock(Explanation.class);
+		when(query.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.getParameter("lmdb-forced-strategy")).thenReturn("irKernel");
+		QueryEvaluator.INSTANCE.explain(connection, text, request);
+		verify(query, never()).setForcedLmdbExecutionStrategy("irKernel");
+	}
+
+	@Test
+	void forcedStrategyDiscoveryFailurePropagatesInsteadOfChangingExecution() {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryException failure = new RepositoryException("Strategy discovery failed");
+		when(repository.getLmdbForceableStrategies()).thenThrow(failure);
+		HTTPTupleQuery query = mock(HTTPTupleQuery.class);
+		assertThat(assertThrows(RepositoryException.class,
+				() -> explainWithForcedStrategy(query, "irKernel", repository))).isSameAs(failure);
+		verify(query, never()).explain(Explanation.Level.Optimized);
+	}
+
+	@Test
+	void blankForcedStrategyDoesNotDiscoverRemoteCapabilities() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		explainWithForcedStrategy(mock(HTTPTupleQuery.class), "", repository);
+		verify(repository, never()).getLmdbForceableStrategies();
 	}
 
 	@Test
@@ -533,6 +575,14 @@ class QueryEvaluatorTest {
 	}
 
 	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy) throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		when(repository.getLmdbForceableStrategies()).thenReturn(List.of(
+				new LmdbForceableStrategy("irKernel", "Compiled kernel")));
+		explainWithForcedStrategy(tupleQuery, strategy, repository);
+	}
+
+	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy, HTTPRepository repository)
+			throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
@@ -546,6 +596,7 @@ class QueryEvaluatorTest {
 		when(req.getParameter("explain")).thenReturn("Optimized");
 		when(req.getParameter("explain-format")).thenReturn("text");
 		when(req.getParameter("lmdb-forced-strategy")).thenReturn(strategy);
+		when(con.getRepository()).thenReturn(repository);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toString()).thenReturn("optimized plan");

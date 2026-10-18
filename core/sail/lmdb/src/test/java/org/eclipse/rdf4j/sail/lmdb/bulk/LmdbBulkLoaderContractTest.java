@@ -571,6 +571,43 @@ class LmdbBulkLoaderContractTest {
 	}
 
 	@Test
+	void singleWorkerFastParserKeepsStatementsAfterCrAndCommentAtBufferBoundary() throws Exception {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String context = format.equals(RDFFormat.NQUADS) ? " <urn:g>" : "";
+			String first = "<urn:first> <urn:p> <urn:o>" + context + " .\r";
+			String last = "<urn:last> <urn:p> <urn:o>" + context + " .\n";
+			String comment = "#" + "x".repeat(4 * 1024 * 1024 - first.length() - 1);
+			byte[] input = (first + comment + '\n' + last).getBytes(StandardCharsets.UTF_8);
+			for (boolean gzip : List.of(false, true)) {
+				byte[] encoded = input;
+				if (gzip) {
+					ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+					try (GZIPOutputStream output = new GZIPOutputStream(compressed)) {
+						output.write(input);
+					}
+					encoded = compressed.toByteArray();
+				}
+				Path target = temporaryDirectory.resolve(format.getName() + "-cr-boundary-" + gzip);
+				LmdbBulkLoader.Result result = LmdbBulkLoader.builder(target, new LmdbStoreConfig("spoc,psoc"))
+						.parserMode(LmdbBulkLoader.ParserMode.FAST)
+						.workers(1)
+						.partitionCount(2)
+						.build()
+						.load(new ByteArrayInputStream(encoded), "urn:cr-boundary:", format);
+
+				assertThat(result.parsedStatements()).as("%s, gzip=%s", format.getName(), gzip).isEqualTo(2);
+				var vf = SimpleValueFactory.getInstance();
+				Resource graph = format.equals(RDFFormat.NQUADS) ? vf.createIRI("urn:g") : null;
+				assertThat(readStatements(target)).containsExactlyInAnyOrder(
+						vf.createStatement(vf.createIRI("urn:first"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+								graph),
+						vf.createStatement(vf.createIRI("urn:last"), vf.createIRI("urn:p"), vf.createIRI("urn:o"),
+								graph));
+			}
+		}
+	}
+
+	@Test
 	void fastParserReportsMalformedUtf8WithSourceLocation() {
 		ByteArrayOutputStream input = new ByteArrayOutputStream();
 		input.writeBytes("<urn:s> <urn:p> \"".getBytes(StandardCharsets.US_ASCII));

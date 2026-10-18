@@ -286,6 +286,18 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		return factory;
 	}
 
+	/**
+	 * Whether this store's effective evaluation factory supports native LMDB execution. Includes the query-time JVM
+	 * gate and explicit factory overrides, without constructing an evaluation strategy.
+	 */
+	@InternalUseOnly
+	public synchronized boolean isNativeQueryEngineEnabled() {
+		boolean nativeFactory = explicitEvalStratFactory == null ? nativeEvaluationEnabled
+				: explicitEvalStratFactory instanceof LmdbNativeEvaluationStrategyFactory;
+		return nativeFactory && Boolean.parseBoolean(
+				System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true"));
+	}
+
 	public boolean getPageCardinalityEstimator() {
 		return config.getPageCardinalityEstimator();
 	}

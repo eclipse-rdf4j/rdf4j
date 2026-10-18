@@ -34,7 +34,7 @@ Hedging launches a second arm only where a shadow context, candidate cursor hand
 
 `LmdbNativeExplain` and `LmdbNativeAttemptMetrics` record compile, proposal, decline, lowering, candidate-open and actual execution-path details through different events. Read the path actually emitted by a dispatch, not a static candidate list, as evidence that a physical operator ran. Preview invokes no opener, reserves no execution resources, and must not train the model; it records “execution-time binding and admission must still succeed” for candidates that could be selected. Query explanation output is therefore an eligibility/selection preview, not a runtime trace.
 
-Normal dispatch logging includes evaluation/decision id, dispatch point, strategy tag, role and reason. Cost telemetry includes execution route and metrics used by the learning system; debug tracing is a separate direct system property and is not part of the boolean runtime allowlist. Server/Workbench exposure and explanation wire format are covered in [integration plan explanation and telemetry](integration-plan-explanation-and-telemetry.md).
+Normal dispatch logging includes evaluation/decision id, dispatch point, strategy tag, role and reason. Cost telemetry includes execution route and metrics used by the learning system; debug tracing is a direct JVM system property. Server/Workbench exposure and explanation wire format are covered in [integration plan explanation and telemetry](integration-plan-explanation-and-telemetry.md).
 
 ## Illustrative control-flow example (source-only)
 

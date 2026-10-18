@@ -594,7 +594,10 @@ public final class QueryEvaluator {
 		if (queryTimeoutSeconds > 0) {
 			query.setMaxExecutionTime(queryTimeoutSeconds);
 		}
-		applyForcedLmdbExecutionStrategy(query, forcedLmdbExecutionStrategy);
+		if (!Protocol.isLmdbForcedExecutionStrategyUnset(forcedLmdbExecutionStrategy)
+				&& !LmdbStrategies.list(con.getRepository()).isEmpty()) {
+			applyForcedLmdbExecutionStrategy(query, forcedLmdbExecutionStrategy);
+		}
 		return query;
 	}
 

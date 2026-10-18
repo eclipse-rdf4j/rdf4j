@@ -67,7 +67,7 @@ flowchart LR
     A -. access accelerator .-> N
     T --> F
 
-    JVM[JVM-global boolean allowlist] -. sampled by later query/operator boundaries .-> F
+    JVM[JVM startup properties] -. sampled by later query/operator boundaries .-> F
     FORCE[Per-query forced strategy] -. request/query scope .-> F
     CONN[Connection and read snapshots] --> F
     CONN --> N
@@ -106,7 +106,7 @@ make commit, fallback, or result streaming atomic across the boxes.
 | Change join ordering or factorized execution | [Join families](query-joins-and-factors.md#join-planning-starts-with-algebra-boundaries), [packed factorized trees](query-joins-and-factors.md#packed-factorized-trees), and [optimizer/statistics](query-optimizer-and-statistics.md#which-optimizer-pipeline-is-active); compare shared generic safeguards in [evaluator semantics](integration-query-evaluation.md#join-evaluation-when-bind-joins-are-an-as-if-optimization). |
 | Change an access method, path, expression, or code generator | [Physical access](query-physical-access.md), [paths and special operators](query-paths-and-special-operators.md), [expression semantics](query-expression-semantics.md), and [IR/code generation](query-ir-and-codegen.md). |
 | Diagnose cache retention or first-row latency/memory | [Cache ownership and invalidation](query-plan-caches-and-invalidation.md#cache-inventory), [query memory/result lifecycle](query-memory-and-result-lifecycle.md#explicit-query-memory-accounting), and [storage leases](storage-adjacency-lifecycle.md#commit-capture-and-immutable-publication). |
-| Operate LMDB properties, choose a strategy, or use Workbench explain | [Runtime controls and Workbench](integration-runtime-controls-and-workbench.md), then [query configuration](query-configuration.md#runtime-property-registry) and [plan explanation](integration-plan-explanation-and-telemetry.md). |
+| Configure LMDB, choose a strategy, or use Workbench explain | [Runtime controls and Workbench](integration-runtime-controls-and-workbench.md), then [query configuration](query-configuration.md#jvm-properties-and-read-boundaries) and [plan explanation](integration-plan-explanation-and-telemetry.md). |
 | Change persistent encodings, commits, recovery, or derived indexes | [Storage overview](storage-overview.md#read-and-write-boundaries), [value records](storage-values-and-records.md), [transactions](storage-transactions-and-async-writes.md), and [adjacency lifecycle](storage-adjacency-lifecycle.md). |
 | Use or extend the bulk-load command | [Bulk CLI and distribution](integration-bulk-loading.md), then [storage ingestion and recovery](storage-bulk-ingestion-recovery.md). |
 | Trace SPARQL or shared repository behavior | [Language/parser](integration-sparql-language.md), [shared query structures](integration-shared-query-structures.md), [federation](integration-federation-semantics.md), [Sail lifecycle](integration-sail-source-lifecycle.md), and [query lifecycle](integration-query-lifecycle.md). |
@@ -133,7 +133,7 @@ shapes; it does not mean all SPARQL algebra is compiled to native execution.
 | Cost learning and adaptation | Regimes/posteriors, calibration, best-observed state, probes, hedges, censoring, persistence and per-query/process/store ownership. | [Cost learning and adaptation](query-cost-learning-and-adaptation.md#bounded-probes-censoring-and-hedges) |
 | Plan/runtime caches | Compiled plans, kernels, paths, prefix runs, WCOJ and generic-island caches, identity certificates, invalidation, owners and retained memory. | [Cache ownership and invalidation](query-plan-caches-and-invalidation.md#cache-inventory) |
 | Query memory and result lifetime | Query budgets, batch/row representations, native value resolution, first-result boundary, close/cancel ownership and detached results. | [Query memory and result lifecycle](query-memory-and-result-lifecycle.md#explicit-query-memory-accounting) |
-| Runtime property reference | Allowlisted gates, declared defaults and parser modes, sampling points, active-query caveats, and excluded construction/layout controls. | [Query configuration](query-configuration.md#runtime-property-registry); wider HTTP/UI scope in [runtime controls](integration-runtime-controls-and-workbench.md#runtime-property-registry) |
+| Runtime property reference | JVM gates, source defaults and parser modes, sampling points, active-query caveats, and construction/layout controls. | [Query configuration](query-configuration.md#jvm-properties-and-read-boundaries); wider HTTP/UI scope in [runtime controls](integration-runtime-controls-and-workbench.md) |
 | Test and fixture map | Focused source tests grouped by route, optimizer, operator, cache, cancellation, semantics, and compliance. | [Query test map](query-test-map.md) |
 
 Query-specific source inventory and ownership are in
@@ -212,15 +212,14 @@ Asymptotic work, allocations, retained state, and result boundaries are
 described where code establishes them. The guides do not infer a universal
 speedup, full native-SPARQL coverage, or measured memory reduction.
 
-Configuration is scoped explicitly: the runtime-property allowlist is
-JVM-wide; a repository selected in Workbench is not a repository-local
-property scope; forced strategy is per query (with an HTTP client session
-convenience setter applying to subsequent queries on that session); store
-construction/layout and size/budget settings are not live boolean controls.
-Individual consumers sample flags at different boundaries, so a write is not
-a blanket refresh of plans and active queries. The query configuration page
-lists source-backed parser conventions/defaults and notes any source
-discrepancy rather than silently choosing one.
+Configuration is scoped explicitly: JVM properties have process-wide scope and
+are configured outside Server and Workbench. The Workbench strategy selector is
+available only for a selected repository with native execution enabled. Forced
+strategy is per query, with an HTTP client session convenience setter applying
+to subsequent queries on that session. Store construction/layout and size/budget
+settings have separate contracts. Individual consumers sample flags at different
+boundaries, so a JVM property write does not refresh active plans and queries.
+The query configuration page lists source-backed parser conventions and defaults.
 
 The branch comparison and family totals are documented in
 [integration-inventory.md](integration-inventory.md). `CLAUDE.md` appears in

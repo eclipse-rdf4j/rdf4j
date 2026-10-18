@@ -108,9 +108,9 @@ final class LmdbNativeCostCalibration {
 	}
 
 	/**
-	 * Whether learned factors may influence dispatch. Default ON, matching the adaptive model and the runtime-property
-	 * registry: this reader previously used opt-in {@code Boolean.getBoolean} polarity, so the very same property had
-	 * two readers with opposite defaults (bug B3) and the cold-static band compared raw work-rows by default.
+	 * Whether learned factors may influence dispatch. Default ON, matching the adaptive model: this reader previously
+	 * used opt-in {@code Boolean.getBoolean} polarity, so the very same property had two readers with opposite defaults
+	 * (bug B3) and the cold-static band compared raw work-rows by default.
 	 */
 	static boolean enabled() {
 		return !"false".equalsIgnoreCase(System.getProperty(ENABLED_PROPERTY));

@@ -602,7 +602,7 @@ module workbench {
                 compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
                 explainLevel: getNormalizedExplainLevel(<string>$('#explain-level').val()),
                 explainFormat: getNormalizedExplainFormat(<string>$('#explain-format').val()),
-                forcedLmdbExecutionStrategy: <string>$('#lmdb-forced-strategy').val() || ''
+                forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
             };
         }
 
@@ -4516,7 +4516,7 @@ module workbench {
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                     level: getNormalizedExplainLevel(<string>$('#explain-level').val()),
                     format: initialFormat,
-                    forcedLmdbExecutionStrategy: <string>$('#lmdb-forced-strategy').val() || ''
+                    forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : <string>$('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
                     strategyDecisions: initialStrategies,
@@ -4800,155 +4800,65 @@ module workbench {
             updateCompareActionState();
         }
 
-        interface LmdbRuntimePropertyState {
-            name: string;
-            group: string;
-            label: string;
-            description: string;
-            defaultEnabled: boolean;
-            enabled: boolean;
-            explicitlySet: boolean;
-        }
-
-        var lmdbRuntimePropertiesLoaded = false;
-
-        function runtimeToggleError(jqXHR: JQueryXHR): string {
-            var response: any = (<any>jqXHR).responseJSON;
-            return response && response.error
-                ? response.error
-                : 'Runtime toggles are unavailable on the selected server.';
-        }
-
-        function renderLmdbRuntimeProperties(properties: LmdbRuntimePropertyState[]) {
-            var container = $('#lmdb-runtime-properties').empty().attr('aria-busy', 'false');
-            var currentGroup = '';
-            var groupElement: JQuery = null;
-            $.each(properties, function(index: number, property: LmdbRuntimePropertyState) {
-                if (property.group !== currentGroup) {
-                    currentGroup = property.group;
-                    groupElement = $('<section class="lmdb-runtime-group"></section>')
-                        .append($('<h4></h4>').text(currentGroup))
-                        .appendTo(container);
-                }
-                var inputId = 'lmdb-runtime-property-' + index;
-                var checkbox = $('<input type="checkbox" class="lmdb-runtime-switch" />')
-                    .attr('id', inputId)
-                    .attr('aria-describedby', inputId + '-description')
-                    .prop('checked', property.enabled);
-                var row = $('<div class="lmdb-runtime-property"></div>');
-                var copy = $('<div class="lmdb-runtime-property__copy"></div>')
-                    .append($('<label></label>').attr('for', inputId).text(property.label))
-                    .append($('<code></code>').text(property.name))
-                    .append($('<span class="lmdb-runtime-property__description"></span>')
-                        .attr('id', inputId + '-description').text(property.description))
-                    .append($('<span class="lmdb-runtime-property__state"></span>').text(
-                        'Default ' + (property.defaultEnabled ? 'on' : 'off') + ' · '
-                        + (property.explicitlySet ? 'explicitly set' : 'using default')));
-                checkbox.change(function() {
-                    var previous = property.enabled;
-                    var requested = checkbox.prop('checked');
-                    checkbox.prop('disabled', true);
-                    $('#lmdb-runtime-status').text('Applying ' + property.name + ' globally…');
-                    $.ajax({
-                        url: 'query',
-                        type: 'POST',
-                        dataType: 'json',
-                        headers: { 'X-RDF4J-Admin-Request': 'true' },
-                        data: { action: 'set-lmdb-property', name: property.name, enabled: String(requested) }
-                    }).done(function(updated: LmdbRuntimePropertyState) {
-                        property = updated;
-                        checkbox.prop('checked', updated.enabled);
-                        row.find('.lmdb-runtime-property__state').text(
-                            'Default ' + (updated.defaultEnabled ? 'on' : 'off') + ' · explicitly set');
-                        $('#lmdb-runtime-status').text(updated.name + ' applied globally to subsequent queries.');
-                    }).fail(function(jqXHR: JQueryXHR) {
-                        checkbox.prop('checked', previous);
-                        $('#lmdb-runtime-status').text(runtimeToggleError(jqXHR));
-                    }).always(function() {
-                        checkbox.prop('disabled', false);
-                    });
-                });
-                // A compact control owns a complete control row through its wrapping label (spacing system S13);
-                // the visible text label in the copy column also targets the switch.
-                var control = $('<label class="lmdb-runtime-switch-label"></label>')
-                    .attr('aria-label', property.label)
-                    .append(checkbox);
-                row.append(copy).append($('<div class="lmdb-runtime-property__control"></div>').append(control));
-                groupElement.append(row);
-            });
-        }
-
-        export function loadLmdbRuntimeProperties() {
-            $('#lmdb-runtime-properties').attr('aria-busy', 'true').text('Loading runtime features…');
-            $('#lmdb-runtime-status').text('');
-            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-properties' } })
-                .done(function(response: any) {
-                    lmdbRuntimePropertiesLoaded = true;
-                    renderLmdbRuntimeProperties(response.properties || []);
-                })
-                .fail(function(jqXHR: JQueryXHR) {
-                    $('#lmdb-runtime-properties').attr('aria-busy', 'false').text(runtimeToggleError(jqXHR));
-                });
-        }
-
-        function loadLmdbRuntimePropertiesIfPanelOpen(details: any) {
-            if (details.open && !lmdbRuntimePropertiesLoaded) {
-                loadLmdbRuntimeProperties();
-            }
-        }
-
-        export function initializeLmdbRuntimeFeatures() {
-            var details: any = document.getElementById('lmdb-runtime-features');
-            if (!details) {
-                return;
-            }
-            details.addEventListener('toggle', function() {
-                loadLmdbRuntimePropertiesIfPanelOpen(details);
-            });
-            $('#lmdb-runtime-refresh').click(function() {
-                loadLmdbRuntimeProperties();
-            });
-            // The list is collapsed by default so the query settings pane keeps its natural size; a page that renders
-            // it open (or a browser restoring the open state) still loads without waiting for a toggle event.
-            loadLmdbRuntimePropertiesIfPanelOpen(details);
-        }
-
         interface LmdbForceableStrategy {
             name: string;
             description: string;
         }
 
-        /**
-         * Fills the forced-strategy dropdown from the server's own catalogue, so the list cannot drift out of date as
-         * strategies are added or removed. An empty entry is always first and is the default; it is added here rather
-         * than served, because it means "no strategy" rather than naming one, and the whole stack — request parameter,
-         * server, store — reads a blank selection as "do not force anything". A selection already in the URL or in the
-         * workbench cookie is restored once the real options exist.
-         */
+        var lmdbStrategyRequest: JQueryXHR = null;
+        var lmdbStrategyGeneration = 0;
+
+        /** Only the live page's selected repository may enable query forcing. */
         export function loadLmdbForceableStrategies() {
             var select = $('#lmdb-forced-strategy');
             if (select.length === 0) {
                 return;
             }
+            var field = $('#lmdb-forced-strategy-field');
+            var element = select.get(0);
+            var endpoint = queryEndpoint();
+            var generation = ++lmdbStrategyGeneration;
             var preferred = <string>select.data('preferred-value') || <string>select.val() || '';
-            $.ajax({ url: 'query', type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' } })
-                .done(function(response: any) {
-                    var strategies: LmdbForceableStrategy[] = response.strategies || [];
-                    select.empty().append($('<option></option>').attr('value', ''));
-                    $.each(strategies, function(index: number, strategy: LmdbForceableStrategy) {
-                        select.append($('<option></option>')
-                            .attr('value', strategy.name)
-                            .attr('title', strategy.description)
-                            .text(strategy.name));
-                    });
-                    select.val(preferred);
-                    // A remembered strategy the server no longer offers leaves nothing selected: fall back to
-                    // forcing nothing. Tested on selectedIndex rather than on val(), which is '' for the entry
-                    // we want and so cannot be distinguished from "no match" by truthiness.
-                    if (select.prop('selectedIndex') < 0) {
-                        select.val('');
-                    }
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
+            function isCurrent(): boolean {
+                return generation === lmdbStrategyGeneration && endpoint === queryEndpoint()
+                    && document.getElementById('lmdb-forced-strategy') === element;
+            }
+            function clearSelection() {
+                select.empty().append($('<option></option>').attr('value', '')).val('').prop('disabled', true);
+                field.prop('hidden', true);
+            }
+            clearSelection();
+            lmdbStrategyRequest = $.ajax({
+                url: endpoint, type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' }
+            });
+            lmdbStrategyRequest.done(function(response: any) {
+                if (!isCurrent()) {
+                    return;
+                }
+                lmdbStrategyRequest = null;
+                var strategies: LmdbForceableStrategy[] = response.strategies || [];
+                if (!response.available || strategies.length === 0) {
+                    return;
+                }
+                $.each(strategies, function(index: number, strategy: LmdbForceableStrategy) {
+                    select.append($('<option></option>')
+                        .attr('value', strategy.name)
+                        .attr('title', strategy.description)
+                        .text(strategy.name));
                 });
+                var offered = strategies.some(function(strategy) { return strategy.name === preferred; });
+                select.val(offered ? preferred : '').prop('disabled', false);
+                field.prop('hidden', false);
+            }).fail(function() {
+                if (isCurrent()) {
+                    lmdbStrategyRequest = null;
+                    clearSelection();
+                }
+            });
         }
 
         export function initializeLmdbForcedStrategy() {
@@ -5124,7 +5034,6 @@ module workbench {
             setQueryValue($.trim(getQueryValue()));
             initializeExplanationView();
             initializeCompareUi();
-            initializeLmdbRuntimeFeatures();
             initializeLmdbForcedStrategy();
             workbench.tabs.bind(<HTMLElement>outlet.querySelector('#query-output [role="tablist"]'));
             var queryOutput = outlet.querySelector('#query-output');
@@ -5264,6 +5173,11 @@ module workbench {
          * route's dispose and the unit tests use it.
          */
         export function resetState(reason?: 'navigate' | 'pagehide') {
+            ++lmdbStrategyGeneration;
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
             ['primary', 'compare'].forEach(function(controllerKey: ExplainRequestControllerKey) {
                 var uiState = getExplainRequestUiState(controllerKey);
                 clearTimeout(uiState.spinnerDelayTimeoutId);

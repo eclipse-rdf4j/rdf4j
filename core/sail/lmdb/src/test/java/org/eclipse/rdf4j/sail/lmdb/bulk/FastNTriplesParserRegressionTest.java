@@ -15,6 +15,7 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -41,6 +42,104 @@ class FastNTriplesParserRegressionTest {
 	private static final IRI SUBJECT = VF.createIRI("urn:s");
 	private static final IRI PREDICATE = VF.createIRI("urn:p");
 	private static final String STATEMENT = "<urn:s> <urn:p> <urn:o> .\n";
+
+	@Test
+	void preservesStatementAfterInteriorCrAndCommentAtReadBoundary() throws IOException {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String first = statement("first", format) + '\r';
+			String comment = "# comment continued to the read boundary";
+			String input = first + comment + '\n' + statement("last", format) + '\n';
+			List<Statement> actual = new ArrayList<>();
+			long count = new FastNTriplesParser(format, () -> false).parse(
+					chunkedInput(input, first.length() + comment.length()), statementSink(actual));
+
+			assertEquals(2L, count, format.getName());
+			assertEquals(rio(input, format), actual, format.getName());
+		}
+	}
+
+	@Test
+	void preservesStatementsSeparatedByLfAfterInteriorCrAtReadBoundary() throws IOException {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String first = statement("first", format) + '\r';
+			String second = statement("second", format);
+			String input = first + second + '\n' + statement("last", format) + '\n';
+			List<Statement> actual = new ArrayList<>();
+			long count = new FastNTriplesParser(format, () -> false).parse(
+					chunkedInput(input, first.length() + second.length(), 0, 1), statementSink(actual));
+
+			assertEquals(3L, count, format.getName());
+			assertEquals(rio(input, format), actual, format.getName());
+		}
+	}
+
+	@Test
+	void preservesMixedLineEndingsAcrossShortAndEmptyReads() throws IOException {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String first = statement("first", format);
+			String comment = "# comment";
+			String input = first + "\r\n" + comment + '\r' + statement("second", format) + '\n'
+					+ statement("last", format) + "\r\n";
+			List<Statement> expected = rio(input, format);
+			for (int[] chunks : List.of(new int[] { first.length() + 1, 0, 1, 0, 1, 2, 3 },
+					new int[] { first.length() + 2 + comment.length() + 1, 0, 1, 2, 0, 3 },
+					new int[] { 1, 0, 2, 0, 3, 0, 4 }, new int[] { input.length() - 1, 0, 1 })) {
+				List<Statement> actual = new ArrayList<>();
+				long count = new FastNTriplesParser(format, () -> false).parse(chunkedInput(input, chunks),
+						statementSink(actual));
+
+				assertEquals(expected.size(), count, Arrays.toString(chunks));
+				assertEquals(expected, actual, Arrays.toString(chunks));
+			}
+		}
+	}
+
+	@Test
+	void reportsLineNumberAfterInteriorCrAndCommentAtReadBoundary() {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			String first = statement("first", format) + '\r';
+			String comment = "# comment";
+			String input = first + comment + "\n<urn:bad> <urn:p> malformed .\n";
+			RDFParseException failure = assertThrows(RDFParseException.class,
+					() -> new FastNTriplesParser(format, () -> false).parse(
+							chunkedInput(input, first.length() + comment.length(), 0, 1),
+							statementSink(new ArrayList<>())));
+
+			assertEquals(3L, failure.getLineNumber());
+		}
+	}
+
+	@Test
+	void acceptsEmptyInputAndTrailingCrAcrossEmptyReads() throws IOException {
+		for (RDFFormat format : List.of(RDFFormat.NTRIPLES, RDFFormat.NQUADS)) {
+			for (String input : List.of("", "\r", "\n", "\r\n", "# comment\r")) {
+				List<Statement> actual = new ArrayList<>();
+				long count = new FastNTriplesParser(format, () -> false).parse(chunkedInput(input, 0, 1, 0, 1),
+						statementSink(actual));
+
+				assertEquals(0L, count);
+				assertEquals(List.of(), actual);
+			}
+		}
+	}
+
+	private static String statement(String subject, RDFFormat format) {
+		return "<urn:" + subject + "> <urn:p> <urn:o>"
+				+ (format.equals(RDFFormat.NQUADS) ? " <urn:g>" : "") + " .";
+	}
+
+	/** Supplies exact legal short-read boundaries without changing the byte stream or gzip detection. */
+	private static InputStream chunkedInput(String input, int... chunkSizes) {
+		return new BufferedInputStream(new ByteArrayInputStream(input.getBytes(UTF_8))) {
+			private int chunk;
+
+			@Override
+			public synchronized int read(byte[] target, int offset, int length) throws IOException {
+				int size = chunk < chunkSizes.length ? chunkSizes[chunk++] : length;
+				return size == 0 ? 0 : super.read(target, offset, Math.min(size, length));
+			}
+		};
+	}
 
 	@Test
 	void preservesEscapedLiteralLabelWithEscapedDatatype() throws IOException {

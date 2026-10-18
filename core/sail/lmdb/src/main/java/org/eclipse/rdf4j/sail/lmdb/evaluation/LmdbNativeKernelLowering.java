@@ -1668,7 +1668,10 @@ final class LmdbNativeKernelLowering {
 				// missing OPTIONAL match would incorrectly bind the constant-slot variable on the left row.
 				return lowerOptionalGroup(arm);
 			}
-			if (pattern.hasRepeatedSlot() || pattern.namedContextScope || !pattern.p.isConstant()
+			// A pushed-down range replaces the OPTIONAL's FILTER. LeftProbe has no range predicate, so keep
+			// the exact scan and its empty-match/null-extension behavior inside the complete optional arm.
+			if (pattern.range != null || pattern.hasRepeatedSlot() || pattern.namedContextScope
+					|| !pattern.p.isConstant()
 					|| pattern.p.hasSlot() || pattern.c.hasSlot() || pattern.c.isConstant()
 					|| pattern.contexts.isFixed() || pattern.statementOrder != null) {
 				return lowerOptionalGroup(arm);

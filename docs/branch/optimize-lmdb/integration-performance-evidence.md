@@ -131,7 +131,7 @@ records the source revision checked for this guide set. For a current
 performance claim, use a controlled before/after run whose source pair and
 methodology are stated. Do not infer that an implementation is active because
 an experiment or flag exists: inspect planner selection and runtime call
-sites. The query configuration reference marks allowlisted and disabled
+sites. The query configuration reference marks enabled and disabled
 experiments; the native query guides explain which strategy families are
 actually reachable.
 

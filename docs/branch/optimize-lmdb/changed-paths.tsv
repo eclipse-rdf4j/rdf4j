@@ -229,7 +229,6 @@ M	core/http/client/src/main/java/org/eclipse/rdf4j/http/client/RDF4JProtocolSess
 M	core/http/client/src/main/java/org/eclipse/rdf4j/http/client/query/AbstractHTTPQuery.java
 M	core/http/client/src/test/java/org/eclipse/rdf4j/http/client/RDF4JProtocolSessionTest.java
 A	core/http/protocol/src/main/java/org/eclipse/rdf4j/http/protocol/LmdbForceableStrategy.java
-A	core/http/protocol/src/main/java/org/eclipse/rdf4j/http/protocol/LmdbRuntimeProperty.java
 M	core/http/protocol/src/main/java/org/eclipse/rdf4j/http/protocol/Protocol.java
 M	core/model-api/src/main/java/org/eclipse/rdf4j/model/base/CoreDatatype.java
 M	core/model-api/src/main/java/org/eclipse/rdf4j/model/base/CoreDatatypeHelper.java
@@ -1750,10 +1749,8 @@ A	tools/server-boot/src/test/java/org/eclipse/rdf4j/tools/serverboot/LoggingDisp
 M	tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/CommonValuesHandlerInterceptor.java
 M	tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/MessageHandlerInterceptor.java
 A	tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/system/LmdbForceableStrategiesController.java
-A	tools/server-spring/src/main/java/org/eclipse/rdf4j/common/webapp/system/LmdbRuntimePropertiesController.java
 M	tools/server-spring/src/main/java/org/eclipse/rdf4j/http/server/repository/handler/DefaultQueryRequestHandler.java
 A	tools/server-spring/src/test/java/org/eclipse/rdf4j/common/webapp/WebappHandlerInterceptorNullViewTest.java
-A	tools/server-spring/src/test/java/org/eclipse/rdf4j/common/webapp/system/LmdbRuntimePropertiesControllerTest.java
 M	tools/server/src/main/webapp/WEB-INF/common-webapp-system-servlet.xml
 M	tools/server/src/main/webapp/WEB-INF/web.xml
 A	tools/value-overlay/disassemble.py
@@ -1779,7 +1776,6 @@ M	tools/workbench/src/main/webapp/transformations/graph.xsl
 M	tools/workbench/src/main/webapp/transformations/query.xsl
 M	tools/workbench/src/main/webapp/transformations/template.xsl
 M	tools/workbench/src/main/webapp/transformations/tuple.xsl
-A	tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/commands/QueryServletLmdbRuntimePropertyPostTest.java
 M	tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/commands/QueryServletTest.java
 M	tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/transformations/QueryResultTemplateTest.java
 M	tools/workbench/src/test/java/org/eclipse/rdf4j/workbench/transformations/QueryTemplateTest.java

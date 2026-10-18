@@ -150,13 +150,6 @@ public abstract class Protocol {
 	public static final String LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED = "NOT_ACTIVATED";
 
 	/**
-	 * Header required, with value {@code true}, for process-wide LMDB runtime-property mutations. Its non-simple
-	 * request semantics prevent a browser form from issuing the mutation as a cross-site request.
-	 */
-	@Experimental
-	public static final String LMDB_ADMIN_REQUEST_HEADER = "X-RDF4J-Admin-Request";
-
-	/**
 	 * Whether {@code value} of {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME} asks for no forcing at all, leaving
 	 * the store's own strategy selection alone. That is the meaning of {@code null} (no parameter sent), of a blank
 	 * value, and of {@link #LMDB_FORCED_EXECUTION_STRATEGY_NOT_ACTIVATED}.
@@ -373,19 +366,13 @@ public abstract class Protocol {
 		return getServerDir(serverLocation) + PROTOCOL;
 	}
 
-	/** Returns the optional live LMDB property endpoint on an RDF4J Server. */
-	@Experimental
-	public static final String getLmdbRuntimePropertiesLocation(String serverLocation) {
-		return getServerDir(serverLocation) + "system/lmdb/properties";
-	}
-
 	/**
-	 * Returns the optional endpoint listing the LMDB query-execution strategies that may be pinned for a single query
+	 * Returns the repository endpoint listing the LMDB query-execution strategies that may be pinned for a single query
 	 * via {@link #LMDB_FORCED_EXECUTION_STRATEGY_PARAM_NAME}.
 	 */
 	@Experimental
-	public static final String getLmdbForceableStrategiesLocation(String serverLocation) {
-		return getServerDir(serverLocation) + "system/lmdb/strategies";
+	public static final String getLmdbForceableStrategiesLocation(String repositoryLocation) {
+		return getServerDir(repositoryLocation) + "lmdb/strategies";
 	}
 
 	/**

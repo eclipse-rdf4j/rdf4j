@@ -198,8 +198,8 @@ class LmdbNativeAdaptiveCostModelTest {
 	/**
 	 * Learned dispatch, recording, and bounded probing all default ON, each with a one-property opt-out (2026-08-16
 	 * regression fix: with dispatch off, the static ladder decided every contested choice alone and newly added routes
-	 * captured queries they ran 30-190x slower than measured incumbents). The adaptive configuration must agree with
-	 * the {@code LmdbRuntimeProperties} registry on all defaults.
+	 * captured queries they ran 30-190x slower than measured incumbents). These assertions characterize the actual
+	 * adaptive configuration defaults.
 	 */
 	@Test
 	void systemConfigurationDefaultsDispatchProbingAndRecordingOn() {

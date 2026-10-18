@@ -59,11 +59,10 @@ with other LMDB environments.
 
 The Server/Workbench page
 [`server-workbench.md`](../../../site/content/documentation/tools/server-workbench.md)
-adds the runtime-property authorization contract: the process-wide property
-GET, the `rdf4j-admin` role plus exact `X-RDF4J-Admin-Request: true` header
-for POST, and remote Workbench authentication requirements. The complete
-wire/error contract and the distinction between a JVM property and one query's
-forced strategy are in [runtime controls and Workbench](integration-runtime-controls-and-workbench.md).
+describes repository-scoped strategy discovery. Server and Workbench do not expose
+JVM property administration. Native strategy forcing remains a per-query choice for
+repositories with native execution enabled; its discovery and availability contract is in
+[runtime controls and Workbench](integration-runtime-controls-and-workbench.md).
 
 ## Maintenance rules for the tutorial and docs
 

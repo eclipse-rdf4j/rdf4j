@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.JaninoPipelineTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.KernelExecutionTestAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -47,6 +48,8 @@ class LmdbNativeKernelRangeTest {
 			"rdf4j.lmdb.janinoCodegen.thresholdRows",
 			"rdf4j.lmdb.janinoCodegen.synchronous",
 			"rdf4j.lmdb.janinoCodegen.scanSources",
+			"rdf4j.lmdb.kernelInterpreter.enabled",
+			"rdf4j.lmdb.native.rangePushdown",
 			"rdf4j.lmdb.wcoj.enabled",
 			"rdf4j.lmdb.packedFtree.enabled",
 			"rdf4j.lmdb.factorizedRows.enabled",
@@ -74,6 +77,8 @@ class LmdbNativeKernelRangeTest {
 		System.setProperty("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		System.setProperty("rdf4j.lmdb.janinoCodegen.scanSources", "true");
+		System.setProperty("rdf4j.lmdb.kernelInterpreter.enabled", "true");
+		System.setProperty("rdf4j.lmdb.native.rangePushdown", "true");
 		System.setProperty("rdf4j.lmdb.wcoj.enabled", "false");
 		// These tests exercise the generated range route itself. The unified arbiter correctly prefers a specialist
 		// with an overlapping cost interval, so remove those competing proposals from this focused route test.
@@ -160,6 +165,82 @@ class LmdbNativeKernelRangeTest {
 		assertThat(KernelExecutionTestAccess.opened())
 				.as("the assertion must exercise a generated row kernel, not merely a correct fallback")
 				.isPositive();
+	}
+
+	@ParameterizedTest(name = "ranged OPTIONAL preserves null extension with codegen={0}")
+	@CsvSource({ "true", "false" })
+	void rangedOptionalPreservesNullExtension(boolean codegen) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes() + "SELECT ?s ?score WHERE { ?s ex:kind ex:Item . "
+				+ "OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } }";
+		List<String> expected = genericRows(query);
+		assertThat(expected).containsExactly(EX + "item0=0", EX + "item0=0", EX + "item1=1", EX + "item1=1",
+				EX + "item2", EX + "item3", EX + "item4");
+
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		KernelExecutionTestAccess.resetMetrics();
+		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+		assertThat(KernelExecutionTestAccess.opened())
+				.as("the ranged OPTIONAL must execute in the kernel tier")
+				.isPositive();
+		if (codegen) {
+			assertThat(JaninoPipelineTestAccess.opened()).as("the generated OPTIONAL kernel must bind").isPositive();
+		} else {
+			assertThat(JaninoPipelineTestAccess.opened()).as("the interpreted OPTIONAL must not bind a compiled kernel")
+					.isZero();
+		}
+	}
+
+	@ParameterizedTest(name = "ranged OPTIONAL {0} {1} with codegen={2}")
+	@CsvSource({ "<,2,true", "<,2,false", "<=,2,true", "<=,2,false", ">,2,true", ">,2,false",
+			">=,2,true", ">=,2,false", "<,0,true", "<,0,false", ">,4,true", ">,4,false" })
+	void rangedOptionalPreservesBoundsAndMultiplicity(String operator, int boundary, boolean codegen) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		for (String pattern : List.of("?s ex:score ?score", "?score ^ex:score ?s")) {
+			String query = prefixes() + "SELECT ?s ?score WHERE { ?s ex:kind ex:Item . OPTIONAL { " + pattern
+					+ " FILTER(?score " + operator + " " + boundary + ") } }";
+			assertThat(nativeRows(query)).as(query).containsExactlyElementsOf(genericRows(query));
+		}
+	}
+
+	@ParameterizedTest(name = "inverse ranged OPTIONAL preserves bound values with codegen={0}")
+	@CsvSource({ "true", "false" })
+	void rangedOptionalChecksBoundValueBeforeInverseProbe(boolean codegen) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		String query = prefixes() + "PREFIX xsd: <http://www.w3.org/2001/XMLSchema#> "
+				+ "SELECT ?s ?score WHERE { VALUES ?score { \"1\"^^xsd:int \"3\"^^xsd:int } "
+				+ "OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } }";
+		List<String> expected = genericRows(query);
+		assertThat(expected).containsExactly("3", EX + "item1=1", EX + "item1=1");
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		assertThat(nativeRows(query)).containsExactlyElementsOf(expected);
+	}
+
+	@ParameterizedTest(name = "composed ranged OPTIONAL preserves results with codegen={0}")
+	@CsvSource({ "true", "false" })
+	void nestedAndComposedOptionalsPreserveRange(boolean codegen) throws Exception {
+		assertThat(((LmdbStore) repository.getSail()).awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", Boolean.toString(codegen));
+		for (String body : List.of(
+				"?s ex:kind ex:Item OPTIONAL { ?s ex:observation ?observed "
+						+ "OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } }",
+				"?s ex:kind ex:Item OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } "
+						+ "OPTIONAL { ?s ex:observation ?observed FILTER(BOUND(?score)) }",
+				"{ { ?s ex:kind ex:Item } UNION { VALUES ?s { ex:item2 } } } "
+						+ "OPTIONAL { ?s ex:score ?score FILTER(?score <= 2) }",
+				"?s ex:kind ex:Item OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } "
+						+ "MINUS { VALUES ?s { ex:item1 } }",
+				"?s ex:kind ex:Item OPTIONAL { { SELECT ?s ?score WHERE { "
+						+ "?s ex:score ?score FILTER(?score < 2) } } }",
+				"?s ex:kind ex:Item OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } "
+						+ "FILTER NOT EXISTS { ?s ex:score ?other FILTER(?other > 3) }")) {
+			String query = prefixes() + "SELECT ?s ?score WHERE { " + body + " }";
+			assertThat(nativeRows(query)).as(query).containsExactlyElementsOf(genericRows(query));
+		}
+		String aggregate = prefixes() + "SELECT ?s (COUNT(?score) AS ?c) WHERE { ?s ex:kind ex:Item "
+				+ "OPTIONAL { ?s ex:score ?score FILTER(?score < 2) } } GROUP BY ?s";
+		assertThat(nativeRows(aggregate)).containsExactlyElementsOf(genericRows(aggregate));
 	}
 
 	@Test

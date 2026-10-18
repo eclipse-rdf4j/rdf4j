@@ -21,7 +21,7 @@ import static org.mockito.Mockito.when;
 import java.util.List;
 
 import org.eclipse.rdf4j.http.client.RDF4JProtocolSession;
-import org.eclipse.rdf4j.http.protocol.LmdbRuntimeProperty;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
 import org.junit.jupiter.api.Test;
 
 public class HTTPRepositoryTest {
@@ -52,20 +52,15 @@ public class HTTPRepositoryTest {
 	}
 
 	@Test
-	public void liveLmdbPropertiesDelegateAndCloseEachConfiguredSession() throws Exception {
+	public void nativeStrategiesDelegateAndCloseConfiguredSession() throws Exception {
 		RDF4JProtocolSession session = mock(RDF4JProtocolSession.class);
-		LmdbRuntimeProperty property = new LmdbRuntimeProperty("rdf4j.lmdb.test.enabled", "Test", "Test", "Test",
-				true, true, false);
-		when(session.getLmdbRuntimeProperties()).thenReturn(List.of(property));
-		when(session.setLmdbRuntimeProperty(property.name(), false))
-				.thenReturn(new LmdbRuntimeProperty(property.name(), "Test", "Test", "Test", true, false, true));
+		LmdbForceableStrategy strategy = new LmdbForceableStrategy("nestedLoop", "Generic loop");
+		when(session.getLmdbForceableStrategies()).thenReturn(List.of(strategy));
 		TestHTTPRepository repository = new TestHTTPRepository(session);
 
-		assertThat(repository.getLmdbRuntimeProperties()).containsExactly(property);
-		assertThat(repository.setLmdbRuntimeProperty(property.name(), false).enabled()).isFalse();
-		verify(session).getLmdbRuntimeProperties();
-		verify(session).setLmdbRuntimeProperty(property.name(), false);
-		verify(session, org.mockito.Mockito.times(2)).close();
+		assertThat(repository.getLmdbForceableStrategies()).containsExactly(strategy);
+		verify(session).getLmdbForceableStrategies();
+		verify(session).close();
 	}
 
 	@Test
