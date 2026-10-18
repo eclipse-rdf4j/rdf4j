@@ -2267,3 +2267,53 @@ for (const sameServer of [true, false]) {
         assert.equal(harness.log.includes('resume query'), sameServer);
     });
 }
+
+for (const initial of [true, false]) {
+    for (const sameServer of [true, false]) {
+        test(`Query drafts and comparisons retain their route owner (initial=${initial}, same=${sameServer})`, async () => {
+            const queryUrl = 'query?query=SELECT%20%3Fprefilled%20WHERE%20%7B%7D';
+            const harness = loadKeepAliveRouter(initial ? queryUrl : undefined);
+            harness.workbench.app.viewContext = (mount, model, url) => ({ repositoryId: 'repo-1', url,
+                serverIdentity: model.metadata && model.metadata['server-identity'] });
+            const queryPage = (outlet) => {
+                const editor = { query: 'prefilled A', comparison: '', plans: [], compareMode: false };
+                outlet.editor = editor;
+                return {
+                    ready: Promise.resolve(),
+                    suspend() {}, resume() {},
+                    dispose() { editor.disposed = true; }
+                };
+            };
+            harness.workbench.routes.register({ viewId: 'query', routerReady: true, keepAlive: true,
+                scripts: () => [], baseScripts: () => [], mount: ({ outlet }) => queryPage(outlet) });
+            if (initial) {
+                harness.session.model = harness.model('query', { metadata: { 'server-identity': 'sha256:a' } });
+                harness.session.instance = queryPage(harness.currentOutlet());
+            }
+            harness.start();
+            if (!initial) await visit(harness, queryUrl,
+                harness.model('query', { metadata: { 'server-identity': 'sha256:a' } }));
+            const edited = harness.currentOutlet().editor;
+            Object.assign(edited, { query: 'edited B', comparison: 'unsaved C', plans: ['primary', 'comparison'],
+                compareMode: true });
+            await visit(harness, 'types', harness.model('types', { metadata: { 'server-identity': 'sha256:a' } }));
+            harness.workbench.app.loadModel = async () => harness.model('query', {
+                metadata: { 'server-identity': sameServer ? 'sha256:a' : 'sha256:b' } });
+            await harness.router.navigate(base + queryUrl, { history: 'push' });
+            const restored = harness.currentOutlet().editor;
+            if (sameServer) {
+                assert.equal(restored.query, 'edited B', 'URL prefill must not replace the retained draft');
+                assert.equal(restored.comparison, 'unsaved C');
+                assert.deepEqual(restored.plans, ['primary', 'comparison']);
+                assert.equal(restored.compareMode, true);
+                assert.equal(restored.disposed, undefined);
+                assert.equal(restored, edited, 'the same page owns all editor and comparison state');
+            } else {
+                assert.notEqual(restored, edited, 'another server needs a fresh Query page');
+                assert.equal(edited.disposed, true);
+                assert.equal(restored.query, 'prefilled A');
+                assert.equal(restored.comparison, '');
+            }
+        });
+    }
+}

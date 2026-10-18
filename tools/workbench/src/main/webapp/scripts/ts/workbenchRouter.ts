@@ -190,7 +190,7 @@ module workbench {
             key: string;
             instance: routes.RouteInstance;
             model?: any;
-            context?: any;
+            context: any;
         }
 
         let currentRoute: ShownRoute = null;
@@ -785,7 +785,6 @@ module workbench {
             disposeKept('navigate');
             instance.suspend();
             const route = currentRoute;
-            route.context = route.context || app().viewContext(session.mount, route.model, route.url, session.runtime);
             kept = { route, outlet: views().detachOutlet(session.mount), scrollY: (window as any).scrollY };
             // The parked page is not what is loading: the outlet shown instead stays busy until the next page is ready.
             moveBusy(kept.outlet, outlet());
@@ -899,7 +898,8 @@ module workbench {
                 history.replaceState(Object.assign({}, history.state, { wbKey: key }), '');
             }
             currentRoute = { url: url.href, viewId: viewIdOf(url), repositoryId: repositoryIdOf(url), key,
-                instance: started.instance, model: started.model };
+                instance: started.instance, model: started.model,
+                context: app().viewContext(started.mount, started.model, url.href, started.runtime) };
             markRoute(currentRoute.viewId, true);
             windowObject.document.addEventListener('click', onClick, false);
             windowObject.document.addEventListener('submit', onSubmit, false);
