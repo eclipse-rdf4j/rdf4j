@@ -20,6 +20,8 @@ import java.net.MalformedURLException;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.nio.file.InvalidPathException;
+import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -195,9 +197,31 @@ public class LocalRepositoryManager extends RepositoryManager {
 		return new File(getBaseDir(), path);
 	}
 
+	/**
+	 * Resolves the data directory of the repository with the specified ID. The ID is used as a directory name, so it
+	 * must resolve to a direct child of the repositories directory: IDs that are empty, contain path separators or
+	 * {@code ..} segments are rejected, as they would otherwise map to files outside of it.
+	 *
+	 * @throws RepositoryConfigException if the ID does not resolve to a direct child of the repositories directory.
+	 */
 	public File getRepositoryDir(String repositoryID) {
 		File repositoriesDir = resolvePath(REPOSITORIES_DIR);
-		return new File(repositoriesDir, repositoryID);
+		File repositoryDir = new File(repositoriesDir, repositoryID);
+		if (!isDirectChild(repositoriesDir, repositoryDir, repositoryID)) {
+			throw new RepositoryConfigException("Invalid repository ID: " + repositoryID);
+		}
+		return repositoryDir;
+	}
+
+	private static boolean isDirectChild(File parentDir, File dir, String name) {
+		try {
+			Path parent = parentDir.toPath().toAbsolutePath().normalize();
+			Path path = dir.toPath().toAbsolutePath().normalize();
+			return parent.equals(path.getParent()) && path.getFileName() != null
+					&& path.getFileName().toString().equals(name);
+		} catch (InvalidPathException e) {
+			return false;
+		}
 	}
 
 	@Override
