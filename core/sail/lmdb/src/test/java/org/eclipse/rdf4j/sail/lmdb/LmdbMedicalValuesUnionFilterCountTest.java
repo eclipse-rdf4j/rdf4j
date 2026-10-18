@@ -37,10 +37,12 @@ import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.eclipse.rdf4j.sail.lmdb.valueoverlay.CompressedValueOverlay;
+import org.eclipse.rdf4j.sail.lmdb.valueoverlay.OverlayMemoryBudget;
 import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.Isolated;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -54,6 +56,7 @@ import org.junit.jupiter.params.provider.MethodSource;
  * the same ?count as the generic MemoryStore path.
  */
 @ResourceLock(Resources.SYSTEM_PROPERTIES)
+@Isolated("Builds one configured-size value overlay within the shared budget")
 class LmdbMedicalValuesUnionFilterCountTest {
 
 	private static final int REPETITIONS = 6;
@@ -67,18 +70,22 @@ class LmdbMedicalValuesUnionFilterCountTest {
 	private LmdbStore store;
 	private SailRepository lmdbRepository;
 	private SailRepository memoryRepository;
+	private long retainedBefore;
 
 	@BeforeEach
 	void setUp() throws Exception {
 		set("rdf4j.lmdb.janinoCodegen.thresholdRows", "0");
 		set("rdf4j.lmdb.janinoCodegen.synchronous", "true");
 		set("rdf4j.lmdb.directAdjacency.synchronousMaintenance", "true");
-		set("rdf4j.lmdb.valueOverlay.maxBytes", "1073741824");
+		// This fixture builds the committed overlay explicitly. An automatic startup base can remain pinned by
+		// asynchronous delta compaction after invalidation, correctly preventing a second configured-size base.
+		set("rdf4j.lmdb.valueOverlay.maxBytes", "0");
 		set("rdf4j.lmdb.valueOverlay.retained.maxBytes", "268435455");
 		set("rdf4j.lmdb.valueOverlay.reverseSlots", "16777216");
 		set("rdf4j.lmdb.valueOverlay.sharedPrefixes", "true");
 		set("rdf4j.lmdb.valueOverlay.optimalTokenParsing", "true");
 		set("rdf4j.lmdb.valueOverlay.vectorMinSavingPercent", "8");
+		retainedBefore = OverlayMemoryBudget.configuredShared().stats().used();
 
 		Model data = ThemeDataSetGenerator.generateMedicalRecords(
 				ThemeDataSetGenerator.medicalConfig().withPatientCount(600).withPractitionerCount(600));
@@ -93,13 +100,9 @@ class LmdbMedicalValuesUnionFilterCountTest {
 		lmdbRepository = new SailRepository(store);
 		load(lmdbRepository, data);
 		ValueStore valueStore = store.getBackingStore().valueStore();
-		// A concurrent load may cancel the startup snapshot. The readiness result describes that captured view; the
-		// bounded wait still ensures its task has settled before the test builds the committed view below.
+		// The explicit build below exercises the populated compressed overlay under the unchanged shared budget.
 		store.awaitValueOverlayReady(120, TimeUnit.SECONDS);
 		assertFalse(valueStore.isValueOverlayWarmupInProgress(), "startup value overlay warm-up did not settle");
-		// Release any startup publication before building its replacement so the shared retained budget only admits one
-		// configured-size native overlay at a time.
-		valueStore.clearCompressedValueOverlay();
 		CompressedValueOverlay.Stats overlayStats = valueStore.warmCompressedValueOverlay(
 				new CompressedValueOverlay.Options(1L << 30, 1 << 24, 32, 64 << 10, 1 << 20, true, true));
 		assertTrue(overlayStats.records() > 0, "the populated dictionary must install a non-empty value overlay");
@@ -125,6 +128,8 @@ class LmdbMedicalValuesUnionFilterCountTest {
 			if (memoryRepository != null) {
 				memoryRepository.shutDown();
 			}
+			assertEquals(retainedBefore, OverlayMemoryBudget.configuredShared().stats().used(),
+					"the manual overlay fixture must release every shared reservation on shutdown");
 		} finally {
 			savedProperties.forEach((key, value) -> {
 				if (value == null) {
