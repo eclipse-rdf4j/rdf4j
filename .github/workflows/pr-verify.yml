@@ -27,7 +27,7 @@ jobs:
       - name: Check formatting
         run: mvn -B -Pformatting spotless:check
       - name: Check SPARQL AST patches
-        run: python3 scripts/manage-sparql-ast.py check
+        run: python3 scripts/manage-sparql-ast.py --check --online
       - name: Quick compile
         run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
