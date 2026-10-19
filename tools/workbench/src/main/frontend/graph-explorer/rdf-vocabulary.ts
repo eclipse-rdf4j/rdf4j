@@ -238,6 +238,21 @@ export function labelQuery(
  FILTER(isLiteral(?label) && STRLEN(STR(?label)) > 0 && STRLEN(STR(?label)) <= 512)
 } LIMIT 4096`;
 }
+/**
+ * Labels of the Filters panel's values (facet-value-labels.ts): direct label predicates and SKOS-XL labels. Unlike
+ * labelQuery, the values' VALUES sits inside each scoped branch, so a graph scope never makes RDF4J read the scope's
+ * label statements unrestricted.
+ */
+export function valueLabelQuery(ids: string[], properties: readonly string[], scope: GraphScope) {
+  const values = `VALUES ?resource { ${[...new Set(ids)].map(resourceToken).join(" ")} }`;
+  const predicates = [...new Set([...LABEL_PROPERTIES, ...properties])].slice(0, 96).map(iriToken).join(" ");
+  const direct = `${values} VALUES ?labelProperty { ${predicates} } ?resource ?labelProperty ?label .`;
+  const xl = `${values} VALUES ?labelProperty { <${SKOS_XL}prefLabel> <${SKOS_XL}altLabel> } ?resource ?labelProperty ?labelNode . ?labelNode <${SKOS_XL}literalForm> ?label .`;
+  return `SELECT DISTINCT ?resource ?labelProperty ?label WHERE {
+ { ${scoped(direct, scope)} } UNION { ${scoped(xl, scope, "__labelGraph")} }
+ FILTER(isLiteral(?label) && STRLEN(STR(?label)) > 0 && STRLEN(STR(?label)) <= 512)
+} LIMIT 4096`;
+}
 export function vocabularyQuery(properties: string[], scope: GraphScope) {
   // Restrict schema traversal to predicates actually encountered; never scan every property in the store.
   const path =
@@ -412,6 +427,70 @@ export function linkCountQuery(ids: string[], cap: number, scope: GraphScope, fe
  } } GROUP BY ?selected
  }`,
     )
+    .join(" UNION ")} }`;
+}
+
+/**
+ * The Filters panel's repository values (repository-facets.ts) ask for one node at a time inside a UNION, like the
+ * builders above, with two differences: the node's VALUES sits inside the scoped pattern, because RDF4J evaluates a
+ * GRAPH pattern or subquery on its own and would scan it unrestricted, and every subquery is DISTINCT, because the
+ * "all" scope reads a named-graph statement twice (the default graph already includes it). Triple-term objects are
+ * left out: the panel cannot list them as values.
+ */
+function nodeStatements(id: string, predicate: string, scope: GraphScope) {
+  // The FILTER stays outside the scoped pattern: inside it, it opens a scope that RDF4J hash-joins.
+  return `${scoped(`VALUES ?s { ${resourceToken(id)} } ?s ${predicate} ?o .`, scope)} FILTER(!isTRIPLE(?o))`;
+}
+
+function checkedCap(cap: number, maximum: number) {
+  if (!Number.isInteger(cap) || cap < 1 || cap > maximum) throw new Error("Invalid per-node limit.");
+  return cap;
+}
+
+/**
+ * Each node's outgoing statements, at most `perNodeCap` per node: a node that returns fewer is complete, one that
+ * returns exactly the cap is large and is looked at predicate by predicate instead.
+ */
+export function statementsQuery(ids: string[], scope: GraphScope, perNodeCap = 101) {
+  const cap = checkedCap(perNodeCap, 10_000);
+  return `SELECT ?s ?p ?o WHERE { ${ids
+    .map((id) => `{
+ SELECT DISTINCT ?s ?p ?o WHERE {
+ ${nodeStatements(id, "?p", scope)}
+ } LIMIT ${cap}
+ }`)
+    .join(" UNION ")} }`;
+}
+
+/** How many distinct values a large node has per predicate, counted over at most `cap` statements. */
+export function predicateCensusQuery(id: string, scope: GraphScope, cap = 10_001) {
+  return `SELECT ?p (COUNT(?o) AS ?n) WHERE { {
+ SELECT DISTINCT ?p ?o WHERE {
+ ${nodeStatements(id, "?p", scope)}
+ } LIMIT ${checkedCap(cap, 100_000)}
+ } } GROUP BY ?p`;
+}
+
+/** Which of the candidate predicates a node has: a census that stopped at its cap may not have reached them. */
+export function predicateProbeQuery(id: string, predicates: string[], scope: GraphScope) {
+  return `SELECT ?p WHERE { ${predicates
+    .map((predicate) => `{
+ SELECT (${iriToken(predicate)} AS ?p) WHERE {
+ ${nodeStatements(id, iriToken(predicate), scope)}
+ } LIMIT 1
+ }`)
+    .join(" UNION ")} }`;
+}
+
+/** A large node's distinct values for each predicate, at most `cap` per predicate (one past what is listed). */
+export function predicateValuesQuery(id: string, predicates: string[], scope: GraphScope, cap = 1001) {
+  const limit = checkedCap(cap, 10_000);
+  return `SELECT ?p ?o WHERE { ${predicates
+    .map((predicate) => `{
+ SELECT DISTINCT (${iriToken(predicate)} AS ?p) ?o WHERE {
+ ${nodeStatements(id, iriToken(predicate), scope)}
+ } LIMIT ${limit}
+ }`)
     .join(" UNION ")} }`;
 }
 

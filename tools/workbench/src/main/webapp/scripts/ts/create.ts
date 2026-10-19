@@ -450,6 +450,8 @@ function checkOverwrite() {
         });
     }).then(function(submit: boolean) {
         if (submit && owner.isCurrent()) {
+            var additions: any = (workbench as any).graphAdditions;
+            if (additions && additions.repositoryChanged) { additions.repositoryChanged(id); }
             workbench.submitForm(form);
         }
     });

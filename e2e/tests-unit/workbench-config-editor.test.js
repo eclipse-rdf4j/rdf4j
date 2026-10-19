@@ -147,7 +147,7 @@ function configurationPage(reference, turtle = 'typed Turtle configuration') {
             reference === undefined ? null : { kind: 'literal', value: JSON.stringify(reference) }]],
         rowCount: 1, metadata: {} };
     const runtime = { nothing: '', html: (strings, ...values) => ({ strings: Array.from(strings), values }), render() {} };
-    const view = { basePath: '/workbench', repositoryId: 'repo', workbench: { menu: [] } };
+    const view = { basePath: '/workbench', repositoryId: 'repo', serverIdentity: 'server-1', workbench: { menu: [] } };
     return { context, model, template: context.workbench.views.pageTemplate(model, view, runtime) };
 }
 
@@ -437,6 +437,26 @@ for (const [action, message] of [
         await new Promise(setImmediate);
         assert.equal(model.submission.state, 'done');
         assert.equal(model.submission.message, message);
+    });
+}
+
+for (const outcome of ['done', 'failed']) {
+    test('saving marks the repository data as changed when sent and again when it is ' + outcome, async () => {
+        const { context, model, template } = configurationPage();
+        context.workbench.configuration = { save() {} };
+        const marks = [];
+        context.workbench.graphAdditions = { dataChanged(graph) { marks.push(graph); } };
+        let finish;
+        context.workbench.router = { send() { return new Promise((resolve) => (finish = resolve)); } };
+        const submit = handlers(template).find((entry) => /@submit=$/.test(entry.before)).value;
+        submit({ preventDefault() {}, submitter: { value: 'save' },
+            currentTarget: { isConnected: true, closest: () => null } });
+        assert.equal(marks.length, 1, 'marked when the write is sent');
+        assert.deepEqual(JSON.parse(JSON.stringify(marks[0])), { basePath: '/workbench', repositoryId: 'repo', serverIdentity: 'server-1' });
+        finish(outcome);
+        await new Promise(setImmediate);
+        assert.equal(marks.length, 2, 'marked again once the outcome is known, whatever it is');
+        assert.equal(model.submission.state, outcome);
     });
 }
 

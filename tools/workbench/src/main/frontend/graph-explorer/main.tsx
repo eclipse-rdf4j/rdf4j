@@ -88,7 +88,15 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   }
   const root = createRoot(container);
   const controller = new AbortController();
-  const renderExplorer = (identity: string) => root.render(<GraphExplorerApp key={identity} basePath={basePath} repositoryId={repositoryId!} serverIdentity={identity} />);
+  // The Graph servlet's limits, from the page data on the mount (scripts/ts/workbenchViews.ts, graphPage).
+  const limit = (name: string) => {
+    const value = Number(host.dataset[name]);
+    return Number.isInteger(value) && value > 0 ? value : undefined;
+  };
+  const limits = { maxResultRows: limit("maxResultRows"), maxQueryLength: limit("maxQueryLength") };
+  const renderExplorer = (identity: string) => root.render(
+    <GraphExplorerApp key={identity} basePath={basePath} repositoryId={repositoryId!} serverIdentity={identity} limits={limits} />,
+  );
   if (repositoryId && serverIdentity) {
     renderExplorer(serverIdentity);
   } else if (repositoryId) {

@@ -158,22 +158,6 @@ html[data-theme="dark"] .graph-explorer {
   display: none;
 }
 
-/* "Count in the whole repository": a quiet text button under a filter's values. */
-.graph-explorer #graph-explorer-app .facet-source button {
-  min-height: 24px;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: var(--control-radius);
-  color: var(--muted);
-  background: transparent;
-  font: 500 12px/1.2 var(--sans);
-}
-
-.graph-explorer #graph-explorer-app .facet-source button:hover:not(:disabled) {
-  color: var(--accent);
-  background: var(--panel-strong);
-}
-
 /* Pressed toggles and open menus read like a selected segment of a workbench-segmented control. */
 .graph-explorer #graph-explorer-app .workbench-action--secondary:is([aria-pressed="true"], [aria-expanded="true"]),
 .graph-explorer #graph-explorer-app .toolbar-menu[open] > summary {
@@ -1288,14 +1272,29 @@ html[data-theme="dark"] .graph-explorer {
   text-align: center;
 }
 
-.graph-explorer #graph-explorer-app .facet-source {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  padding: 0 0 8px 20px;
+/* Where the values come from, under the Filters heading: loading progress, then Refresh. */
+.graph-explorer #graph-explorer-app .filter-source {
+  margin: 0;
   color: var(--muted);
   font-size: 12px;
+  line-height: 1.4;
+}
+
+.graph-explorer #graph-explorer-app .filter-source .filter-more {
+  display: inline;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+}
+
+/* A filter some nodes have more values for than were loaded. */
+.graph-explorer #graph-explorer-app .facet-note {
+  margin: 0;
+  padding: 0 12px 8px 20px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 /* Active filters as removable chips above the list. */

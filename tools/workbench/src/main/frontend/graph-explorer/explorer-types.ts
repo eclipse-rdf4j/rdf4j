@@ -31,6 +31,7 @@ export type FilterFacetValue = {
   label: string;
   count: number;
   node?: GraphNode;
+  kind?: "iri" | "blank" | "literal";
   visual: { stroke: string; fill: string };
 };
 
@@ -39,7 +40,6 @@ export type RangeDraft = { from: string; to: string };
 export type FilterFacet = Omit<Facet, "values"> & {
   values: FilterFacetValue[];
   maxCount: number;
-  endpointQueryable: boolean;
 };
 
 export type PredicateOption = {
@@ -99,12 +99,6 @@ export type GraphHistorySnapshot = {
   /** The filters (facet id → value ids) and their range texts: Undo puts back what was selected. */
   facetValues: Array<[string, string[]]>;
   rangeDrafts: Array<[string, RangeDraft]>;
-};
-
-export type EndpointFacetValue = {
-  id: string;
-  label: string;
-  count: number;
 };
 
 export type LayoutIntent =

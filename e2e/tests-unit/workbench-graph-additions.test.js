@@ -83,3 +83,26 @@ test('queue producers isolate identical repository IDs by resolved server identi
     assert.equal(graphAdditions.add({ ...context, serverIdentity:undefined }, {kind:'resource',term:'<urn:unknown>'}, storage), 0);
     assert.deepEqual(graphAdditions.pending({ ...context, serverIdentity:undefined }, storage), []);
 });
+
+test('a write through the Workbench gives the repository a new data revision the Graph page watches', () => {
+    const storage = memoryStorage();
+    const key = 'rdf4j-workbench-data-revision:["repository-v2","/wb","server","my repo"]';
+    assert.equal(graphAdditions.dataRevisionKey(context), key);
+    graphAdditions.dataChanged(context, storage);
+    const first = storage.getItem(key);
+    assert.ok(first, 'the revision is written');
+    graphAdditions.dataChanged(context, storage);
+    assert.notEqual(storage.getItem(key), first, 'every write gives a new revision');
+
+    const untracked = memoryStorage();
+    graphAdditions.dataChanged({ basePath: '/wb', repositoryId: 'r' }, untracked);
+    assert.equal(untracked.values.size, 0, 'without a server identity there is no Graph page to tell');
+});
+
+test('creating or deleting a repository changes the data revision of that repository id', () => {
+    const storage = memoryStorage();
+    const app = { getAttribute: (name) => ({ 'data-workbench-base-path': '/wb', 'data-workbench-server-identity': 'server' })[name] ?? null };
+    const document = { getElementById: (id) => (id === 'workbench-app' ? app : null) };
+    graphAdditions.repositoryChanged('my repo', document, storage);
+    assert.ok(storage.getItem('rdf4j-workbench-data-revision:["repository-v2","/wb","server","my repo"]'));
+});

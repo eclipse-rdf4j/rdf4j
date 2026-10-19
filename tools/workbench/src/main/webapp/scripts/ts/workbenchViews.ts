@@ -2825,8 +2825,11 @@ namespace workbench {
          * Lit renders this once and never re-renders it; the explorer owns everything inside the mount element.
          */
         function graphPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
+            // The servlet's limits: results stop at max-result-rows without a marker, so the explorer batches below it.
             return runtime.html`<div id="graph-explorer-mount" class="graph-explorer-mount" data-graph-explorer-mount
-                data-repository-id="${context.repositoryId || ''}"></div>`;
+                data-repository-id="${context.repositoryId || ''}"
+                data-max-query-length="${text(pageValue(model, 'max-query-length'))}"
+                data-max-result-rows="${text(pageValue(model, 'max-result-rows'))}"></div>`;
         }
 
         function explorePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
@@ -3435,9 +3438,18 @@ namespace workbench {
             const router: any = (workbench as any).router;
             // What the server said when it did not accept the write ('' when nothing came back).
             let refusal = '';
+            // The Graph page caches what the repository holds: a write, sent or answered, makes it look again.
+            const markChanged = () => {
+                const additions: any = (workbench as any).graphAdditions;
+                if (additions && typeof additions.dataChanged === 'function') {
+                    additions.dataChanged({ basePath: context.basePath, repositoryId: context.repositoryId,
+                        serverIdentity: context.serverIdentity });
+                }
+            };
             // Lock synchronously, while letting the router read successful controls before rendering disables them.
             submission.state = 'running';
             submission.message = running;
+            markChanged();
             let sent: Promise<string>;
             try {
                 sent = router && typeof router.send === 'function'
@@ -3453,6 +3465,8 @@ namespace workbench {
             (model as any).errorSuperseded = true;
             renderAgain(form, model, context, runtime);
             const complete = (outcome: string) => {
+                // Also when it failed: without an answer nobody knows whether the write happened.
+                markChanged();
                 // 'committed' shows the answer page and 'fallback' loads a document: this page is gone either way.
                 if (outcome === 'committed' || outcome === 'fallback') {
                     return;

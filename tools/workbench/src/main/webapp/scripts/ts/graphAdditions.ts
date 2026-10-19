@@ -164,6 +164,43 @@ namespace workbench {
             return String(context.basePath || '').replace(/\/+$/, '') + '/repositories/'
                 + encodeURIComponent(String(context.repositoryId || '')) + '/graph';
         }
+
+        export var DATA_REVISION_PREFIX = 'rdf4j-workbench-data-revision:';
+
+        /**
+         * The localStorage key whose value changes whenever the Workbench writes to the repository. The Graph page keys
+         * its cached Filters values by it (graph-explorer/data-revision.ts), so a write here makes it load them again.
+         */
+        export function dataRevisionKey(context: GraphContext): string {
+            return DATA_REVISION_PREFIX + scopeOf(context);
+        }
+
+        /** The repository's data may have changed: give it a new revision. Without a server identity nobody watches. */
+        export function dataChanged(context: GraphContext, storage?: QueueStorage | null): void {
+            const target = storage || defaultStorage();
+            if (!target || !context || !context.serverIdentity || !context.repositoryId) {
+                return;
+            }
+            try {
+                target.setItem(dataRevisionKey(context), Date.now().toString(36) + '-' + Math.random().toString(36).slice(2));
+            } catch (error) {
+                // Storage may be full or blocked: the Graph page's cache then expires on its own within the hour.
+            }
+        }
+
+        /** A repository was created or deleted on this Workbench page: its id may now hold other data. */
+        export function repositoryChanged(repositoryId: string, doc?: any, storage?: QueueStorage | null): void {
+            const target = doc || (typeof document !== 'undefined' ? document : null);
+            const app = target && typeof target.getElementById === 'function' ? target.getElementById('workbench-app') : null;
+            if (!app || !repositoryId) {
+                return;
+            }
+            dataChanged({
+                basePath: app.getAttribute('data-workbench-base-path') || '',
+                serverIdentity: app.getAttribute('data-workbench-server-identity'),
+                repositoryId: repositoryId
+            }, storage);
+        }
     }
 }
 

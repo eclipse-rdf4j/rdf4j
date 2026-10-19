@@ -54,6 +54,8 @@ function checkIsSafeToDelete(event: JQueryEventObject, ownsPage?: () => boolean)
 						requireText: String(id)
 					}).then(function(submit: boolean) {
 						if (submit && owns()) {
+							var additions: any = (workbench as any).graphAdditions;
+							if (additions && additions.repositoryChanged) { additions.repositoryChanged(String(id)); }
 							workbench.submitForm(form);
 						}
 					});

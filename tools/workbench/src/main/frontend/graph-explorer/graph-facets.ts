@@ -21,6 +21,9 @@ import {
   normalizedLiteralLanguage,
 } from "./graph-filters.ts";
 import type { GraphEdge, GraphNode, GraphNodeType } from "./graph-types.ts";
+import { BLANK_VALUE_ID, LONG_LITERAL_VALUE_ID } from "./facet-value-ids.ts";
+import { sparqlTermFromNodeId } from "./rdf-terms.ts";
+import { humanizeIri } from "./rdf-vocabulary.ts";
 
 export const TYPE_FACET_ID = "__rdf_type__";
 /** A selected value that no node has: a range that contains none of the loaded values selects nothing. */
@@ -30,6 +33,14 @@ const RANGE_MIN_VALUES = 4;
 
 export type FacetCategory = "kind" | "type" | "predicate" | "datatype" | "language";
 
+/**
+ * A range filter's selection: the bounds are the range texts (use-facet-filters.ts) and nodes match by value, so a
+ * range over thousands of values does not list them in the selection, its undo history or the generated query.
+ */
+export const RANGE_VALUE = "__range__";
+// A range is offered when this share of a predicate's values reads as numbers (or dates).
+const RANGE_SHARE = 0.95;
+
 export type FacetEntry = {
   id: string;
   label: string;
@@ -37,6 +48,8 @@ export type FacetEntry = {
   count: number;
   /** The value's node, for predicate values that are loaded. */
   node?: GraphNode;
+  /** What a value that is not loaded is, for its swatch. */
+  kind?: "iri" | "blank" | "literal";
 };
 
 export type FacetRange = {
@@ -54,22 +67,34 @@ export type Facet = {
   /** Nodes that match every other filter and have some value for this one. */
   coverage: number;
   range?: FacetRange;
+  /** Nodes with more values for this predicate than were loaded: a selection checks them on the server. */
+  incomplete: number;
 };
 
 export type FacetSelection = ReadonlyMap<string, ReadonlySet<string>>;
 
-export type FacetModelInput = {
+/** A node's values from the repository (repository-facets.ts): predicate → values and whether they are all there. */
+export type RepositoryValues = (nodeId: string) =>
+  | { predicates: ReadonlyMap<string, { values: readonly string[]; complete: boolean }> }
+  | undefined;
+
+export type FacetIndexInput = {
   /** The nodes that can be selected (what the canvas draws). */
   nodes: readonly GraphNode[];
   edges: readonly GraphEdge[];
   /** Every loaded node, for the labels of predicate values (literal values included). */
   nodeById: ReadonlyMap<string, GraphNode>;
-  selection: FacetSelection;
   /** The node's types for the Type filter; an empty list leaves the node out of it. */
   typesOf: (node: GraphNode) => readonly GraphNodeType[];
   /** Predicates that are not offered as filters (rdf:type has the Type filter; names are found by search). */
   hiddenPredicates: ReadonlySet<string>;
+  /** Values the repository has for the nodes, loaded or not. */
+  repositoryValues?: RepositoryValues;
+  /** Labels of IRIs that are not loaded: predicates and values. */
+  labelOf?: (id: string) => string | undefined;
 };
+
+export type FacetModelInput = FacetIndexInput & { selection: FacetSelection };
 
 export type FacetModel = {
   facets: Facet[];
@@ -77,18 +102,30 @@ export type FacetModel = {
   matches: Set<string>;
 };
 
-const CATEGORY_ORDER: Record<FacetCategory, number> = { kind: 0, type: 1, predicate: 2, datatype: 3, language: 4 };
+/** What the filters are built from, computed once per change of the data; facetCounts works on it per selection. */
+export type FacetIndex = {
+  nodes: readonly GraphNode[];
+  valuesByNode: Map<string, Map<string, Set<string>>>;
+  allValues: Map<string, Set<string>>;
+  incomplete: Map<string, Set<string>>;
+  valueLabels: Map<string, Map<string, string>>;
+  facetLabels: Map<string, string>;
+  ranges: Map<string, FacetRange>;
+  kinds: Set<string>;
+  nodeById: ReadonlyMap<string, GraphNode>;
+  labelOf?: (id: string) => string | undefined;
+};
 
-/**
- * Faceted filtering over the loaded graph: values are OR within a filter and AND across filters, and the counts of a
- * filter are taken over the nodes that match all the other filters, so each count says how many nodes choosing that
- * value would select. Values (and whole filters) that would select nothing are left out unless they are selected.
- */
-export function facetModel(input: FacetModelInput): FacetModel {
-  const { nodes, edges, nodeById, selection, typesOf, hiddenPredicates } = input;
+const CATEGORY_ORDER: Record<FacetCategory, number> = { kind: 0, type: 1, predicate: 2, datatype: 3, language: 4 };
+const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+
+/** Everything the filters need from the loaded graph and the repository's values, independent of the selection. */
+export function facetIndex(input: FacetIndexInput): FacetIndex {
+  const { nodes, edges, nodeById, typesOf, hiddenPredicates, repositoryValues } = input;
   const valuesByNode = new Map<string, Map<string, Set<string>>>();
   const valueLabels = new Map<string, Map<string, string>>();
-  const facetLabels = new Map<string, Map<string, number>>();
+  const edgeLabels = new Map<string, Map<string, number>>();
+  const incomplete = new Map<string, Set<string>>();
   const add = (nodeId: string, facetId: string, valueId: string, label?: string) => {
     let facets = valuesByNode.get(nodeId);
     if (!facets) valuesByNode.set(nodeId, (facets = new Map()));
@@ -111,17 +148,70 @@ export function facetModel(input: FacetModelInput): FacetModel {
     if (datatype) add(node.id, DATATYPE_FACET_ID, datatype, localName(datatype));
     const language = normalizedLiteralLanguage(node);
     if (language) add(node.id, LANGUAGE_FACET_ID, language, language === NO_LANGUAGE_VALUE_ID ? "No language" : language);
+    // The repository's values for the node, loaded or not: the same value from a loaded link counts once.
+    repositoryValues?.(node.id)?.predicates.forEach((cell, predicate) => {
+      if (hiddenPredicates.has(predicate)) return;
+      cell.values.forEach((value) => add(node.id, predicate, value));
+      if (!cell.complete) {
+        let nodesOf = incomplete.get(predicate);
+        if (!nodesOf) incomplete.set(predicate, (nodesOf = new Set()));
+        nodesOf.add(node.id);
+      }
+    });
   });
   const selectable = new Set(nodes.map((node) => node.id));
   edges.forEach((edge) => {
     if (!selectable.has(edge.source) || hiddenPredicates.has(edge.predicate)) return;
     add(edge.source, edge.predicate, edge.target);
-    let labels = facetLabels.get(edge.predicate);
-    if (!labels) facetLabels.set(edge.predicate, (labels = new Map()));
+    let labels = edgeLabels.get(edge.predicate);
+    if (!labels) edgeLabels.set(edge.predicate, (labels = new Map()));
     labels.set(edge.label, (labels.get(edge.label) ?? 0) + 1);
   });
 
-  const activeFilters = [...selection].filter(([, values]) => values.size > 0);
+  const allValues = new Map<string, Set<string>>();
+  valuesByNode.forEach((facets) =>
+    facets.forEach((values, facetId) => {
+      let union = allValues.get(facetId);
+      if (!union) allValues.set(facetId, (union = new Set()));
+      values.forEach((value) => union!.add(value));
+    }),
+  );
+  const facetLabels = new Map<string, string>();
+  const ranges = new Map<string, FacetRange>();
+  allValues.forEach((values, facetId) => {
+    const category = categoryOf(facetId);
+    facetLabels.set(facetId, facetLabel(facetId, category, edgeLabels.get(facetId), input.labelOf));
+    if (category !== "predicate") return;
+    const range = rangeOf(values, nodeById);
+    if (range) ranges.set(facetId, range);
+  });
+  return { nodes, valuesByNode, allValues, incomplete, valueLabels, facetLabels, ranges, kinds, nodeById, labelOf: input.labelOf };
+}
+
+/**
+ * Faceted filtering: values are OR within a filter and AND across filters, and the counts of a filter are taken over
+ * the nodes that match all the other filters, so each count says how many nodes choosing that value would select.
+ * Values (and whole filters) that would select nothing are left out unless they are selected. A range selection
+ * (RANGE_VALUE) matches the values between `ranges`' bounds; `confirmed` lists nodes the server found to match a
+ * filter whose values were not all loaded for them.
+ */
+export function facetCounts(
+  index: FacetIndex,
+  selection: FacetSelection,
+  options: {
+    ranges?: ReadonlyMap<string, { from: string; to: string }>;
+    confirmed?: ReadonlyMap<string, ReadonlySet<string>>;
+  } = {},
+): FacetModel {
+  const { nodes, valuesByNode, allValues } = index;
+  const activeFilters = [...selection]
+    .filter(([, values]) => values.size > 0)
+    .map(([facetId, values]): [string, ReadonlySet<string>] => {
+      const bounds = options.ranges?.get(facetId);
+      const range = index.ranges.get(facetId);
+      if (!values.has(RANGE_VALUE) || !bounds || !range) return [facetId, values];
+      return [facetId, valuesInRange({ range }, bounds.from, bounds.to)];
+    });
   // The filters each node fails; a node that fails one filter still counts for that filter's own values.
   const failures = new Map<string, string[]>();
   const matches = new Set<string>();
@@ -129,7 +219,10 @@ export function facetModel(input: FacetModelInput): FacetModel {
     const facets = valuesByNode.get(node.id);
     const failed = activeFilters.flatMap(([facetId, selected]) => {
       const values = facets?.get(facetId);
-      return values && [...selected].some((value) => values.has(value)) ? [] : [facetId];
+      if (options.confirmed?.get(facetId)?.has(node.id)) return [];
+      if (!values) return [facetId];
+      for (const value of selected) if (values.has(value)) return [];
+      return [facetId];
     });
     failures.set(node.id, failed);
     if (!failed.length) matches.add(node.id);
@@ -149,44 +242,31 @@ export function facetModel(input: FacetModelInput): FacetModel {
     });
   });
 
-  const allValues = new Map<string, Set<string>>();
-  valuesByNode.forEach((facets) =>
-    facets.forEach((values, facetId) => {
-      let union = allValues.get(facetId);
-      if (!union) allValues.set(facetId, (union = new Set()));
-      values.forEach((value) => union!.add(value));
-    }),
-  );
-
   const facetIds = new Set([...allValues.keys(), ...activeFilters.map(([facetId]) => facetId)]);
   const facets: Facet[] = [];
   facetIds.forEach((facetId) => {
     const selected = selection.get(facetId) ?? new Set<string>();
-    if (facetId === NODE_KIND_FACET_ID && kinds.size < 2 && !selected.size) return;
+    if (facetId === NODE_KIND_FACET_ID && index.kinds.size < 2 && !selected.size) return;
     const category = categoryOf(facetId);
     const facetCounts = counts.get(facetId) ?? new Map<string, number>();
-    const ids = new Set([...facetCounts.keys(), ...[...selected].filter((value) => value !== NO_MATCH_VALUE)]);
+    const ids = new Set([
+      ...facetCounts.keys(),
+      ...[...selected].filter((value) => value !== NO_MATCH_VALUE && value !== RANGE_VALUE),
+    ]);
     const values = [...ids]
-      .map((id) => {
-        const node = category === "predicate" ? nodeById.get(id) : undefined;
-        return {
-          id,
-          label: valueLabels.get(facetId)?.get(id) ?? (node ? displayLabel(node) : id),
-          count: facetCounts.get(id) ?? 0,
-          ...(node ? { node } : {}),
-        };
-      })
+      .map((id) => valueEntry(index, facetId, category, id, facetCounts.get(id) ?? 0))
       .filter((value) => value.count > 0 || selected.has(value.id))
-      .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label));
+      .sort((left, right) => right.count - left.count || collator.compare(left.label, right.label));
     const facetCoverage = coverage.get(facetId) ?? 0;
     if (!facetCoverage && !selected.size) return;
-    const range = category === "predicate" ? rangeOf(allValues.get(facetId) ?? new Set(), nodeById) : undefined;
+    const range = index.ranges.get(facetId);
     facets.push({
       id: facetId,
-      label: facetLabel(facetId, category, facetLabels.get(facetId)),
+      label: index.facetLabels.get(facetId) ?? facetLabel(facetId, category, undefined, index.labelOf),
       category,
       values,
       coverage: facetCoverage,
+      incomplete: index.incomplete.get(facetId)?.size ?? 0,
       ...(range ? { range } : {}),
     });
   });
@@ -194,9 +274,27 @@ export function facetModel(input: FacetModelInput): FacetModel {
     (left, right) =>
       CATEGORY_ORDER[left.category] - CATEGORY_ORDER[right.category] ||
       (left.category === "predicate" ? right.coverage - left.coverage : 0) ||
-      left.label.localeCompare(right.label),
+      collator.compare(left.label, right.label),
   );
   return { facets, matches };
+}
+
+/** The filter model in one call (facetIndex, then facetCounts). */
+export function facetModel(input: FacetModelInput): FacetModel {
+  return facetCounts(facetIndex(input), input.selection);
+}
+
+function valueEntry(index: FacetIndex, facetId: string, category: FacetCategory, id: string, count: number): FacetEntry {
+  const explicit = index.valueLabels.get(facetId)?.get(id);
+  if (explicit !== undefined || category !== "predicate") return { id, label: explicit ?? id, count };
+  const node = index.nodeById.get(id);
+  if (node) return { id, label: displayLabel(node), count, node };
+  if (id === BLANK_VALUE_ID) return { id, label: "Blank node", count, kind: "blank" };
+  if (id === LONG_LITERAL_VALUE_ID) return { id, label: "Long text", count, kind: "literal" };
+  const term = sparqlTermFromNodeId(id);
+  if (term?.type === "literal" || term?.type === "typed-literal") return { id, label: term.value, count, kind: "literal" };
+  if (term?.type === "bnode") return { id, label: "Blank node", count, kind: "blank" };
+  return { id, label: index.labelOf?.(id) ?? humanizeIri(id), count, kind: "iri" };
 }
 
 /** The values of a range filter between `from` and `to` (either may be empty); dates include the whole `to` day. */
@@ -221,13 +319,18 @@ function categoryOf(facetId: string): FacetCategory {
   return "predicate";
 }
 
-function facetLabel(facetId: string, category: FacetCategory, labels?: Map<string, number>) {
+function facetLabel(
+  facetId: string,
+  category: FacetCategory,
+  labels?: Map<string, number>,
+  labelOf?: (id: string) => string | undefined,
+) {
   if (category === "kind") return "Node kind";
   if (category === "type") return "Type";
   if (category === "datatype") return "Datatype";
   if (category === "language") return "Language";
   const common = labels && [...labels].sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))[0];
-  return common?.[0] ?? localName(facetId);
+  return common?.[0] ?? labelOf?.(facetId) ?? humanizeIri(facetId);
 }
 
 function displayLabel(node: GraphNode) {
@@ -238,13 +341,24 @@ function localName(iri: string) {
   return iri.split(/[#/]/).filter(Boolean).at(-1) ?? iri;
 }
 
+/**
+ * A range when at least RANGE_MIN_VALUES values, and RANGE_SHARE of them, read as numbers (or dates): a stray value
+ * does not take the range away; it just cannot be chosen through it. Values that are not loaded read from their ids.
+ */
 function rangeOf(valueIds: ReadonlySet<string>, nodeById: ReadonlyMap<string, GraphNode>): FacetRange | undefined {
   if (valueIds.size < RANGE_MIN_VALUES) return undefined;
-  const literals = [...valueIds].map((id) => nodeById.get(id));
-  if (!literals.every((node) => node?.kind === "literal")) return undefined;
+  const texts: Array<{ id: string; text: string }> = [];
+  for (const id of valueIds) {
+    const text = literalText(id, nodeById);
+    if (text !== undefined) texts.push({ id, text });
+  }
+  if (texts.length < Math.max(RANGE_MIN_VALUES, Math.ceil(valueIds.size * RANGE_SHARE))) return undefined;
   for (const kind of ["number", "date"] as const) {
-    const values = literals.map((node) => ({ id: node!.id, value: literalValue(node!, kind) }));
-    if (values.every(({ value }) => Number.isFinite(value))) {
+    const values = texts.flatMap(({ id, text }) => {
+      const value = parseRangeValue(kind, text);
+      return Number.isFinite(value) ? [{ id, value }] : [];
+    });
+    if (values.length >= Math.max(RANGE_MIN_VALUES, Math.ceil(valueIds.size * RANGE_SHARE))) {
       // Reduced, not spread: a spread of 65,536+ arguments overflows the call stack.
       const min = values.reduce((low, { value }) => Math.min(low, value), Infinity);
       const max = values.reduce((high, { value }) => Math.max(high, value), -Infinity);
@@ -254,8 +368,12 @@ function rangeOf(valueIds: ReadonlySet<string>, nodeById: ReadonlyMap<string, Gr
   return undefined;
 }
 
-function literalValue(node: GraphNode, kind: "number" | "date") {
-  return parseRangeValue(kind, node.termValue ?? node.label);
+/** A literal value's text, from its loaded node or from its id; undefined for anything that is not a literal. */
+function literalText(id: string, nodeById: ReadonlyMap<string, GraphNode>) {
+  const node = nodeById.get(id);
+  if (node) return node.kind === "literal" ? node.termValue ?? node.label : undefined;
+  const term = sparqlTermFromNodeId(id);
+  return term?.type === "literal" || term?.type === "typed-literal" ? term.value : undefined;
 }
 
 /**

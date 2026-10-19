@@ -126,9 +126,10 @@ public class GraphServlet extends TransformationServlet {
 	@Override
 	protected void service(WorkbenchRequest req, HttpServletResponse resp) throws Exception {
 		TupleResultBuilder builder = getTupleResultBuilder(req, resp, resp.getOutputStream());
-		builder.start("id", "readable", "writeable", "max-query-length");
+		// Results stop at max-result-rows without a marker, so the explorer sizes its batches to stay below it.
+		builder.start("id", "readable", "writeable", "max-query-length", "max-result-rows");
 		builder.link(List.of(INFO));
-		builder.result(info.getId(), info.isReadable(), info.isWritable(), maxQueryLength);
+		builder.result(info.getId(), info.isReadable(), info.isWritable(), maxQueryLength, maxResultRows);
 		builder.end();
 	}
 

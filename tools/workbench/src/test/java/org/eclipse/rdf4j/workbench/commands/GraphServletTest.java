@@ -367,12 +367,26 @@ class GraphServletTest {
 				.containsExactly("head", "view", "vars", "links", "rows", "end");
 		assertThat(records.get(1).path("id").asText()).isEqualTo("graph");
 		assertThat(records.get(2).toString()).contains("\"id\"", "\"readable\"", "\"writeable\"",
-				"\"max-query-length\"");
+				"\"max-query-length\"", "\"max-result-rows\"");
 		assertThat(records.get(3).path("values")).extracting(JsonNode::asText).containsExactly("info");
 		JsonNode rows = records.get(4).path("values");
 		assertThat(rows).hasSize(1);
 		String row = rows.get(0).toString();
-		assertThat(row).contains("repo-1").contains("true").contains("false").contains("120");
+		assertThat(row).contains("repo-1").contains("true").contains("false").contains("120").contains("5000");
+	}
+
+	@Test
+	void pageDataTellsTheExplorerAConfiguredRowLimit() throws Exception {
+		// Results are cut off at the row limit without a marker, so the explorer sizes its batches to stay below it.
+		servlet = newServlet("graph-max-query-length", "120", "graph-max-result-rows", "250");
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/graph");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+		MockHttpServletResponse response = new MockHttpServletResponse();
+
+		servlet.service(request, response);
+
+		List<JsonNode> records = response.getContentAsString().lines().map(JSON_MAPPER::readTree).toList();
+		assertThat(records.get(4).path("values").get(0).toString()).contains("250");
 	}
 
 	@Test

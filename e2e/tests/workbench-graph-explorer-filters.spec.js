@@ -96,3 +96,57 @@ test('a search opens the filters that contain a matching value', async ({ page }
     await expect(filterNames(panel)).toHaveText(['works for']);
     await expect(panel.locator('.facet-value', { hasText: 'Globex' })).toBeVisible();
 });
+
+// Filters list what the repository holds for the drawn nodes, not only what is loaded: people loaded with their names
+// only can still be filtered by birthday. A write through the Workbench, in another tab too, brings new values in.
+test('filters offer values that are not loaded, and a write in another tab brings new ones', async ({ page, context, request }) => {
+    const id = uniqueRepositoryId('graph-filter-values');
+    const repositoryUrl = `${serverBaseUrl()}/repositories/${id}`;
+    const people = ['ann 1990-04-01', 'ben 1985-09-12', 'cat 2001-01-30', 'dan 1979-12-24', 'eve 1992-06-15'].map((entry) => {
+        const [name, born] = entry.split(' ');
+        return `ex:${name} a ex:Person ; rdfs:label "${name}" ; ex:birthDate "${born}"^^xsd:date .`;
+    });
+    expect([200, 201, 204]).toContain((await request.put(repositoryUrl, {
+        headers: { 'Content-Type': 'text/turtle' }, data: memoryRepositoryConfiguration(id, 'Graph filter values')
+    })).status());
+    expect([200, 204]).toContain((await request.post(`${repositoryUrl}/statements`, {
+        headers: { 'Content-Type': 'text/turtle' },
+        data: '@prefix ex: <http://example.org/people/> .\n@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .\n'
+            + '@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .\n' + people.join('\n')
+    })).status());
+    try {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.goto(repositoryPageUrl(id, 'graph'));
+        await waitForRoute(page, 'graph');
+        const explorer = page.locator('.graph-explorer');
+        await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
+        await explorer.locator('#sparql').fill('CONSTRUCT { ?person <http://www.w3.org/2000/01/rdf-schema#label> ?name } '
+            + 'WHERE { ?person a <http://example.org/people/Person> ; <http://www.w3.org/2000/01/rdf-schema#label> ?name }');
+        await explorer.getByRole('button', { name: 'Run query', exact: true }).click();
+        await expect(explorer.locator('.graph-node')).toHaveCount(5, { timeout: 30000 });
+        await explorer.getByRole('button', { name: /Filter graph nodes/ }).click();
+        const panel = explorer.locator('#graph-filter-sidebar');
+
+        const born = panel.locator('.filter-facet', { hasText: 'birth date' });
+        await expect(born, 'birthdays are a filter although none is loaded').toBeVisible({ timeout: 30000 });
+        await expect(panel.locator('.filter-source')).toContainText('Values from the repository');
+        await born.locator('summary').click();
+        await born.getByLabel('birth date from').fill('1984-01-01');
+        await born.getByLabel('birth date to').fill('1992-12-31');
+        await expect(panel.locator('.filter-sidebar-header small')).toHaveText('3 of 5 nodes match');
+        await expect(explorer.locator('.graph-node.is-selected')).toHaveCount(3);
+
+        // Add RDF in another tab: this tab hears of the new data revision and loads the values again.
+        const other = await context.newPage();
+        await other.goto(repositoryPageUrl(id, 'add'));
+        await waitForRoute(other, 'add');
+        await other.locator('label[for="source-text"]').click();
+        await other.locator('#text').fill('<http://example.org/people/ann> <http://example.org/people/colour> "green" .');
+        await other.locator('#add-upload-actions input[type="submit"]').click();
+        await expect(other.locator('.workbench-submit-status')).toContainText('Data added');
+        await other.close();
+        await expect(panel.locator('.filter-facet', { hasText: 'colour' })).toBeVisible({ timeout: 30000 });
+    } finally {
+        await deleteRepository(request, serverBaseUrl(), id);
+    }
+});

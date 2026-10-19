@@ -82,7 +82,9 @@ class GraphExplorerBlankNodeTest {
 					assertThat(rows(connection, queries, "seed")).hasSize(5);
 					assertThat(rows(connection, queries, "annotations")).hasSize(2);
 					assertThat(rows(connection, queries, "facets")).hasSize(5);
-					assertThat(rows(connection, queries, "facetCounts")).hasSize(1);
+					// The Filters panel's repository values: the node's three statements, and its one urn:p value.
+					assertThat(rows(connection, queries, "facetStatements")).hasSize(3);
+					assertThat(rows(connection, queries, "facetExact")).hasSize(1);
 					List<BindingSet> links = rows(connection, queries, "links");
 					assertThat(links).hasSize(1);
 					assertThat(links.getFirst().getValue("selected")).isEqualTo(node);

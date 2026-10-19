@@ -15,7 +15,7 @@ import { GRAPH_WIDTH, GRAPH_HEIGHT, NODE_TEXT_LEFT, WEBGL_NODE_THRESHOLD } from 
 import { graphNodePresentation, graphNodeSize, edgeLabelSize, nodeCornerRadius, edgeGeometry, edgePortKey, edgeBendForLane, fitBoxes, computeEdgeLanes, computeEdgePorts, nodeBoundaryPoint, placeEdgeLabels } from "./graph-geometry.ts";
 import { createNodeMetadataSelector, applyGraphPositions, layoutDimensionsChanged } from "./graph-model.ts";
 import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
-import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, EndpointFacetValue, LayoutIntent } from "./explorer-types.ts";
+import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
 import { compactTerm, isSafeSparqlIri, predicateLabel, findBindingValue, bindingsToTriples, tripleEdgeId } from "./graph-terms.ts";
@@ -24,7 +24,7 @@ import { addToSelection, contextMenuScope, selectionKeys, selectionModifier, sel
 import { escapeStep } from "./graph-dismissal.ts";
 import { ARROW_KEYS, nodeInDirection } from "./graph-keyboard.ts";
 import { createBatch, createStarStressBatch } from "./load-batches.ts";
-import { countFacetValues, formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
+import { formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
 import { nodeDetails } from "./node-details.ts";
 import { useStoredWorkspace } from "./use-stored-workspace.ts";
@@ -78,7 +78,8 @@ import {
   STAR_STRESS_ROOT_ID,
 } from "./graph-fixtures";
 import { discoverConnections, connectionQuery } from "./graph-connection-discovery.ts";
-import { mergeFacetValues } from "./facet-values";
+import { useRepositoryFacets } from "./use-repository-facets.ts";
+import { foregroundTracker } from "./foreground-tracker.ts";
 import {
   clientPointToViewport,
   centerTransformOn,
@@ -110,13 +111,19 @@ export type GraphExplorerProps = {
   repositoryId: string;
   /** Credential-free identity of the RDF4J server selected by the backend. */
   serverIdentity: string;
+  /** The Graph servlet's limits (page data): results stop at maxResultRows without saying so. */
+  limits?: { maxResultRows?: number; maxQueryLength?: number };
 };
 
 const EMPTY_LABEL_EVIDENCE: LabelEvidence = { properties: [], languages: [], complete: false };
 
-export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: GraphExplorerProps) {
+export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limits }: GraphExplorerProps) {
   const workspaceScope = repositoryScope(basePath, repositoryId, serverIdentity);
+  // The explorer's own queries go first: the Filters panel's background loading waits while any of them runs.
+  const [foreground] = useState(foregroundTracker);
   const queryRepository = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
+    foreground.track(executeRepositoryQuery(endpoint, query, signal, serverIdentity)), [foreground, serverIdentity]);
+  const backgroundQuery = useCallback((endpoint: string, query: string, signal?: AbortSignal) =>
     executeRepositoryQuery(endpoint, query, signal, serverIdentity), [serverIdentity]);
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [graph, setGraph] = useState<Graph>(() => ({ nodes: [], edges: [], revision: 0 }));
@@ -211,9 +218,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   const graphRequestAbortRef = useRef<AbortController | null>(null);
   const queryRunRef = useRef(0);
   const entitySearchRef = useRef(0);
-  const facetRequestRef = useRef(0);
-  const facetRequestAbortRef = useRef<AbortController | null>(null);
-  useEffect(() => () => facetRequestAbortRef.current?.abort(), []);
   const predicateRequestRef = useRef(0);
 
   const menuStateRef = useRef<ContextMenu | null>(menu);
@@ -633,9 +637,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     queryRunRef.current += 1;
     entitySearchRef.current += 1;
     predicateRequestRef.current += 1;
-    facetRequestRef.current += 1;
-    facetRequestAbortRef.current?.abort();
-    facetRequestAbortRef.current = null;
     setIsQuerying(false);
     setExpandingNodeIds((current) => (current.size ? new Set() : current));
     setIsDiscoveringEdges(false);
@@ -679,7 +680,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     // The filters come back as they were, like the selection.
     setSelectedFacetValues(new Map(snapshot.facetValues.map(([facetId, values]) => [facetId, new Set(values)])));
     restoreRangeDraftsRef.current(new Map(snapshot.rangeDrafts));
-    filters.forgetRepositoryCounts();
     setNamedGroups(
       snapshot.namedGroups.map((group) => ({
         ...group,
@@ -815,6 +815,44 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     [explorer, metadataEpoch],
   );
   const clearManualSelection = useCallback(() => setManualSelectedNodeIds((current) => (current.size ? new Set() : current)), []);
+  // Every value the repository has for the filtered nodes, loaded into the graph or not (use-repository-facets.ts).
+  const filterResourceIds = useMemo(
+    () => filterNodes.filter((node) => isQueryableResource(node.id)).map((node) => node.id),
+    [filterNodes],
+  );
+  const focusResourceIds = useMemo(
+    () => [...(focusedNodeId ? [focusedNodeId] : []), ...manualSelectedNodeIds].filter(isQueryableResource),
+    [focusedNodeId, manualSelectedNodeIds],
+  );
+  const loadedLabel = useCallback((iri: string) => metadataNodeById.get(iri)?.label, [metadataNodeById]);
+  const repositoryFacets = useRepositoryFacets({
+    basePath,
+    repositoryId,
+    serverIdentity,
+    endpoint,
+    execute: backgroundQuery,
+    scope: graphScope as GraphScope,
+    maxRows: limits?.maxResultRows,
+    maxQueryLength: limits?.maxQueryLength,
+    languages,
+    labelProperties,
+    nodeIds: filterResourceIds,
+    focusIds: focusResourceIds,
+    candidates: () => new Set(graphRef.current.edges.map((edge) => edge.predicate)),
+    knownLabel: loadedLabel,
+    foreground,
+  });
+  const facetRepository = useMemo(
+    () => ({
+      valuesOf: repositoryFacets.valuesOf,
+      labelOf: repositoryFacets.labelOf,
+      version: repositoryFacets.version,
+      confirm: repositoryFacets.confirm,
+      wantLabels: repositoryFacets.wantLabels,
+    }),
+    [repositoryFacets.valuesOf, repositoryFacets.labelOf, repositoryFacets.version, repositoryFacets.confirm,
+      repositoryFacets.wantLabels],
+  );
   const filters = useFacetFilters({
     selection: selectedFacetValues,
     setSelection: setSelectedFacetValues,
@@ -825,11 +863,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
     scope: graphScope,
     onChange: clearManualSelection,
     needed: filterSidebarOpen || [...selectedFacetValues.values()].some((values) => values.size > 0),
+    repository: facetRepository,
   });
   rangeDraftsRef.current = filters.rangeDrafts;
   restoreRangeDraftsRef.current = filters.restoreRangeDrafts;
-  // A load that reached its LIMIT may have left values out, so repository-wide counts are worth offering.
-  const graphIsPartial = provenanceBatches.some((batch) => !batch.complete);
   const selectedNodeIds = filters.hasActive ? filters.matches : manualSelectedNodeIds;
   const selectedNodeIdList = useMemo(
     () => [...selectedNodeIds],
@@ -1083,8 +1120,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
   useEffect(() => {
     invalidateAsyncRequests();
     dismissContextMenu(true);
-    facetRequestRef.current += 1;
-    filters.forgetRepositoryCounts();
   }, [dismissContextMenu, endpoint, graphScope, languages, workspaceScope, invalidateAsyncRequests]);
 
   useEffect(() => {
@@ -1136,7 +1171,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
                 : explorer.label(type.value),
           });
         });
-        filters.forgetRepositoryCounts();
         setGraph((current) => ({
           ...current,
           nodes: current.nodes.map((node) => {
@@ -1158,7 +1192,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         ) {
           return;
         }
-        filters.forgetRepositoryCounts();
         setGraph((current) => ({
           ...current,
           nodes: current.nodes.map((node) =>
@@ -1868,7 +1901,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           setFocusedEdgeId(null);
           setHoveredNodeId(null);
           setSelectedFacetValues(new Map());
-          filters.forgetRepositoryCounts();
           setManualSelectedNodeIds(new Set());
           setNamedGroups([]);
           setPathHighlight(null);
@@ -2149,7 +2181,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
             previousNodeIds,
             currentMenu.nodeIds,
           );
-          filters.forgetRepositoryCounts();
           layoutIntentRef.current = {
             mode: "incremental",
             revision: merged.revision,
@@ -2235,7 +2266,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         pushHistory();
         setProvenanceBatches((current) => [...current, batch]);
         const seeded = seedIncrementalNodes(merged, previousNodeIds, expandable);
-        filters.forgetRepositoryCounts();
         layoutIntentRef.current = {
           mode: "incremental",
           revision: seeded.revision,
@@ -2333,7 +2363,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           } else {
             placeOnlyNewNodes(currentGraph, merged);
           }
-          filters.forgetRepositoryCounts();
           setGraph(next);
           if (resourceIds.length === 1) setFocusedNodeId(resourceIds[0]);
           setStatus(`Added ${addedEdges.toLocaleString()} ${addedEdges === 1 ? "statement" : "statements"}.`);
@@ -2521,7 +2550,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
       pushHistory();
       setProvenanceBatches((current) => [...current, batch]);
-      filters.forgetRepositoryCounts();
       localLayoutNodeIdsRef.current = localNodeIds;
       setGraph((current) =>
         mergeTriples(current, missingTriples, false, batch.id),
@@ -3038,43 +3066,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (drag.moved) applyRouting(graphRef.current);
   };
 
-  /** Repository-wide counts of a filter's values for the loaded IRIs, or null when the graph changed meanwhile. */
-  const countFacetInRepository = async (facet: FilterFacet): Promise<EndpointFacetValue[] | null> => {
-    if (!facet.endpointQueryable) return null;
-    const facetGraphRevision = graphRef.current.revision;
-    const facetQueryRun = queryRunRef.current;
-    const sourceIds = [...new Set(graphRef.current.nodes
-      .filter((node) => isQueryableResource(node.id))
-      .map((node) => node.id))];
-    if (!sourceIds.length) return null;
-    const requestId = facetRequestRef.current + 1;
-    facetRequestRef.current = requestId;
-    facetRequestAbortRef.current?.abort();
-    const controller = new AbortController();
-    facetRequestAbortRef.current = controller;
-    const stale = () =>
-      controller.signal.aborted ||
-      facetRequestRef.current !== requestId ||
-      queryRunRef.current !== facetQueryRun ||
-      graphRef.current.revision !== facetGraphRevision;
-    try {
-      const values = await countFacetValues(sourceIds, facet.id, graphScope as GraphScope, languages,
-        (query, signal) => queryRepository(endpoint, query, signal),
-        { signal: controller.signal, isCurrent: () => !stale() });
-      if (!values || stale()) return null;
-      const valueIds = values.map(value => value.id).filter(isQueryableResource);
-      try { await explorer.resolve(valueIds, controller.signal); } catch {}
-      if (stale()) return null;
-      setStatus(`Counted ${facet.label} in the whole repository for the ${sourceIds.length} loaded resources.`);
-      return values.map(value => isQueryableResource(value.id) ? { ...value, label: explorer.label(value.id) } : value);
-    } catch (error) {
-      if (!stale()) setStatus(error instanceof Error ? `Counting failed: ${error.message}` : "Counting failed.");
-      return null;
-    } finally {
-      if (facetRequestAbortRef.current === controller) facetRequestAbortRef.current = null;
-    }
-  };
-
   const createNamedGroup = () => {
     if (!selectedNodeIds.size) return;
     const suggested = `Group ${namedGroups.length + 1}`;
@@ -3274,7 +3265,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     skipLayoutRevisionRef.current = remaining.revision;
     setGraph(remaining);
     applyRouting(remaining);
-    filters.forgetRepositoryCounts();
     setNamedGroups((current) =>
       current.flatMap((group) => {
         const remaining = group.nodeIds.filter((nodeId) => !nodeIds.has(nodeId));
@@ -3309,7 +3299,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     skipLayoutRevisionRef.current = remaining.revision;
     setGraph(remaining);
     applyRouting(remaining);
-    filters.forgetRepositoryCounts();
     setNamedGroups((current) =>
       current.flatMap((group) => {
         const remaining = group.nodeIds.filter((nodeId) => !cluster.has(nodeId));
@@ -3400,7 +3389,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setGraph(stressGraph);
     setProvenanceBatches([createStarStressBatch()]);
     setSelectedFacetValues(new Map());
-    filters.forgetRepositoryCounts();
     setNamedGroups([]);
     setManualSelectedNodeIds(new Set());
     setFocusedNodeId(STAR_STRESS_ROOT_ID);
@@ -3425,7 +3413,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     graphRef.current = next; setGraph(next);
     const fitted = fitBoxes(next.nodes.map(node => ({x:node.x ?? 0,y:node.y ?? 0,width:220,height:50})));
     transformRef.current = fitted; setTransform(fitted);
-    setNamedGroups([]); setProvenanceBatches([]); setSelectedFacetValues(new Map()); filters.forgetRepositoryCounts();
+    setNamedGroups([]); setProvenanceBatches([]); setSelectedFacetValues(new Map());
     setManualSelectedNodeIds(new Set()); setFocusedNodeId(null); setHoveredNodeId(null); setPathHighlight(null);
     setFilterSidebarOpen(false); setInspectorOpen(false); setNavigatorOpen(false); setProvenanceOpen(false); setViewMode("graph");
     setStatus("50,000 nodes and 50,000 edges loaded.");
@@ -3446,7 +3434,6 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     setFocusedNodeId(null);
     setHoveredNodeId(null);
     setSelectedFacetValues(new Map());
-    filters.forgetRepositoryCounts();
     setNamedGroups([]);
     setManualSelectedNodeIds(new Set());
     setPathHighlight(null);
@@ -3537,7 +3524,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           <LabelPreferences languages={languages} onLanguages={updateLanguages} properties={labelProperties}
             onProperties={updateProperties} onResetLanguages={resetLanguages} onResetProperties={resetProperties}
             focusRequest={labelPreferencesRequest} scope={graphScope} onScope={setGraphScope}
-            onRefresh={()=>{clearMetadataCache();setMetadataEpoch(value=>value+1);}} />
+            onRefresh={()=>{clearMetadataCache();repositoryFacets.refresh();setMetadataEpoch(value=>value+1);}} />
         </QueryDrawer>
 
         <section ref={graphPanelRef} className={`graph-panel${isFullscreen ? " is-fullscreen" : ""}`} data-view={viewMode} aria-label="Interactive graph">
@@ -4293,8 +4280,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               matchCount={selectedNodeIds.size}
               nodeCount={filterNodes.length}
               typesLoading={iriTypesLoading}
-              offerRepositoryCounts={graphIsPartial}
-              onCountInRepository={countFacetInRepository}
+              repository={repositoryFacets}
               onClearAll={() => {
                 filters.clear();
                 setManualSelectedNodeIds(new Set());

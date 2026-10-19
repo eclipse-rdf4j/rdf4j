@@ -15,7 +15,8 @@ import { labelQuery, typesQuery, discoveryQuery, expandQuery, linkCountQuery, se
 import { connectionQuery } from "../../../main/frontend/graph-explorer/graph-connection-discovery.ts";
 import { statementTokens, statementAnnotationsQuery } from "../../../main/frontend/graph-explorer/statement-details.ts";
 import { loadedLinksOf } from "../../../main/frontend/graph-explorer/link-counts.ts";
-import { generatedFacetQuery, facetCountQuery } from "../../../main/frontend/graph-explorer/facet-queries.ts";
+import { generatedFacetQuery, exactMatchQuery } from "../../../main/frontend/graph-explorer/facet-queries.ts";
+import { statementsQuery } from "../../../main/frontend/graph-explorer/rdf-vocabulary.ts";
 
 const [raw, scope = "default", loadedJson] = process.argv.slice(2);
 // "iri:<IRI>" anchors the queries on an IRI instead of a certified blank node.
@@ -32,6 +33,7 @@ process.stdout.write(JSON.stringify({
   seed:seedQuery([id],scope,true),
   annotations:statementAnnotationsQuery(statementTokens({source:id,predicate:"urn:p",target:other}),scope,true),
   facets:generatedFacetQuery(new Map([["urn:p",new Set([other])],["http://www.w3.org/2000/01/rdf-schema#label",new Set([sparqlNodeId({type:"literal",value:"Blank resource","xml:lang":"en"})])]]),{wikidata:false,scope}),
-  facetCounts:facetCountQuery([id],"urn:p",scope),
+  facetStatements:statementsQuery([id],scope),
+  facetExact:exactMatchQuery([id],"urn:p",{values:[other]},scope),
   search:entitySearchQuery("Blank resource",[],scope),
 }));

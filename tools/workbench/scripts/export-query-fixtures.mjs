@@ -36,8 +36,14 @@ import {
   linkCountQuery,
   entitySearchQuery,
   seedQuery,
+  statementsQuery,
+  predicateCensusQuery,
+  predicateProbeQuery,
+  predicateValuesQuery,
+  valueLabelQuery,
   LABEL_PROPERTIES,
 } from "../src/main/frontend/graph-explorer/rdf-vocabulary.ts";
+import { exactMatchQuery } from "../src/main/frontend/graph-explorer/facet-queries.ts";
 
 const MENTIONS = { subject: "<urn:ex:six>", predicate: "<urn:ex:mentions>", object: "<urn:ex:seven>" };
 
@@ -78,6 +84,23 @@ export function queryFixtures() {
     ["statement-annotations-classic", statementAnnotationsQuery(MENTIONS, "default", false), 1],
     ["predicate-info", predicateInfoQuery("urn:ex:mentions", "default"), 3],
     ["predicate-usage", predicateUsageQuery("urn:ex:mentions", 10000, "default"), 1],
+    // Repository values of the Filters panel. ex:hub has 300 ex:tag values, one ex:rare and one ex:size; ex:dup's one
+    // ex:dupOf statement is in the default graph and again in urn:ex:graph.
+    ["facet-statements", statementsQuery(["urn:ex:one", "urn:ex:hub"], "default"), 107],
+    ["facet-statements-all", statementsQuery(["urn:ex:dup", "urn:ex:named"], "all"), 3],
+    ["facet-statements-named", statementsQuery(["urn:ex:named", "urn:ex:one"], "urn:ex:graph"), 2],
+    ["facet-statements-triple-terms", statementsQuery(["urn:ex:alice"], "default"), 0],
+    ["facet-census", predicateCensusQuery("urn:ex:hub", "all"), 3],
+    ["facet-probe", predicateProbeQuery("urn:ex:hub", ["urn:ex:rare", "urn:ex:missing"], "default"), 1],
+    ["facet-values", predicateValuesQuery("urn:ex:hub", ["urn:ex:tag", "urn:ex:size"], "all"), 301],
+    ["facet-values-capped", predicateValuesQuery("urn:ex:hub", ["urn:ex:tag", "urn:ex:rare"], "default", 11), 12],
+    ["facet-exact-values", exactMatchQuery(["urn:ex:one", "urn:ex:three", "urn:ex:dup"], "urn:ex:relation",
+      { values: ["urn:ex:two"] }, "all"), 1],
+    ["facet-exact-values-all", exactMatchQuery(["urn:ex:dup", "urn:ex:one"], "urn:ex:dupOf",
+      { values: ["urn:ex:dupTarget"] }, "all"), 1],
+    ["facet-value-labels", valueLabelQuery(["urn:ex:one", "urn:ex:two", "urn:ex:three"], [], "all"), 2],
+    ["facet-exact-range", exactMatchQuery(["urn:ex:hub", "urn:ex:one"], "urn:ex:size",
+      { range: { kind: "number", from: "40", to: "50" } }, "default"), 1],
   ];
 }
 

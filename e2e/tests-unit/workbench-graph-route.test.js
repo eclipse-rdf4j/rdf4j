@@ -152,6 +152,20 @@ test('the graph page has a title, a description, a landing slot and a repository
     assert.match(text, /interactive graph/i);
 });
 
+test('the graph mount tells the explorer the servlet\'s query length and row limits', () => {
+    const { workbench } = loadWorkbench();
+    const mount = {};
+    const model = emptyModel('graph');
+    model.vars = ['id', 'readable', 'writeable', 'max-query-length', 'max-result-rows'];
+    model.rows = [[{ kind: 'literal', value: 'r' }, { kind: 'literal', value: 'true' }, { kind: 'literal', value: 'false' },
+        { kind: 'literal', value: '150000' }, { kind: 'literal', value: '250' }]];
+    model.rowCount = 1;
+    workbench.views.render(mount, model, { basePath: '/wb', repositoryId: 'r', workbench: {} }, fakeRuntime());
+    const text = templateText(mount.template);
+    assert.match(text, /data-max-result-rows="250"/);
+    assert.match(text, /data-max-query-length="150000"/);
+});
+
 test('the repositories table offers a Graph link only when the policy shows the page', () => {
     const { workbench } = loadWorkbench();
     const row = (menuItems) => {
