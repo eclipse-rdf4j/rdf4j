@@ -26,6 +26,7 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.BasicFileAttributes;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -201,6 +202,23 @@ public class LocalRepositoryManager extends RepositoryManager {
 
 	public File getRepositoryDir(String repositoryID) {
 		return requireSafeRepositoryDirectory(repositoryID).toFile();
+	}
+
+	@Override
+	String prepareRepositoryID(String repositoryID) {
+		if (repositoryID == null || repositoryID.isEmpty()) {
+			return repositoryID;
+		}
+		String candidate = Normalizer.normalize(repositoryID, Normalizer.Form.NFC);
+		try {
+			RepositoryIdValidator.validate(candidate);
+		} catch (RepositoryConfigException e) {
+			// The generated component contains only letters, digits, '-', '_' and '.'. A prefix avoids reserved
+			// device names (including extension forms), and a suffix avoids dot segments and trailing dots.
+			candidate = "repository-" + candidate + "-";
+			RepositoryIdValidator.validate(candidate);
+		}
+		return candidate;
 	}
 
 	private Path requireSafeRepositoriesDirectory() {

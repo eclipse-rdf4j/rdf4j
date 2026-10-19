@@ -104,6 +104,46 @@ public class LocalRepositoryManagerTest extends RepositoryManagerTest {
 	}
 
 	@Test
+	void generatesUsableRepositoryIDsFromRestrictedNames() {
+		for (String baseName : new String[] { "con", "con'", "CON.txt", "NUL", "CONIN$", "COM1", "LPT9.log", "report.",
+				".", "..", "\uff23\uff2f\uff2e", "COM\u00b9", "re\u0301pertoire", "\u1100\u1161" }) {
+			String first = subject.getNewRepositoryID(baseName);
+			subject.addRepositoryConfig(
+					new RepositoryConfig(first, new SPARQLRepositoryConfig("https://example.org/sparql")));
+
+			String second = subject.getNewRepositoryID(baseName);
+			subject.addRepositoryConfig(
+					new RepositoryConfig(second, new SPARQLRepositoryConfig("https://example.org/sparql")));
+
+			assertThat(second).as("second ID generated from %s", baseName).isNotEqualTo(first);
+			assertThat(subject.getRepositoryIDs()).containsExactlyInAnyOrder(first, second);
+			subject.removeRepository(first);
+			subject.removeRepository(second);
+		}
+	}
+
+	@Test
+	void generatesDefaultRepositoryIDsForEmptyNames() {
+		for (String baseName : new String[] { null, "", " ", "\"'" }) {
+			assertThat(subject.getNewRepositoryID(baseName)).isEqualTo("repository-2");
+		}
+	}
+
+	@Test
+	void preservesOrdinaryGeneratedRepositoryIDs() {
+		for (String baseName : new String[] { "repository", "repository-1", "repository_1", "repository name",
+				"répertoire" }) {
+			String expected = baseName.replace(' ', '-');
+			assertThat(subject.getNewRepositoryID(baseName)).isEqualTo(expected);
+			subject.addRepositoryConfig(
+					new RepositoryConfig(expected, new SPARQLRepositoryConfig("https://example.org/sparql")));
+			assertThat(subject.getNewRepositoryID(baseName)).isEqualTo(expected + "-2");
+			assertThat(subject.getRepositoryIDs()).containsExactly(expected);
+			subject.removeRepository(expected);
+		}
+	}
+
+	@Test
 	void refusesSymbolicLinkRepositoryDirectoryForReads() throws Exception {
 		createRepositorySymlink();
 
