@@ -32,10 +32,13 @@ final class PackedDphypEnumerator {
 	}
 
 	static boolean enumerate(PackedJoinHypergraph graph, Receiver receiver) {
-		ConnectingEdgeLookup connectingEdges = new ConnectingEdgeLookup(graph);
+		ConnectingEdgeLookup connectingEdges = null;
 		for (int seed = graph.nodeCount() - 1; seed >= 0; seed--) {
 			if (receiver.foundSingleNode(seed)) {
 				return true;
+			}
+			if (connectingEdges == null) {
+				connectingEdges = new ConnectingEdgeLookup(graph);
 			}
 			long seedSet = bit(seed);
 			if (emitCsg(graph, receiver, connectingEdges, seedSet)
@@ -621,6 +624,7 @@ final class PackedDphypEnumerator {
 	private static final class ConnectingEdgeLookup {
 
 		private final PackedJoinHypergraph graph;
+		private final SimpleEdgeIndex simpleEdges;
 		private final ConnectingEdgeIndex connectingEdges;
 		private final int[] denseSingletonEdges;
 		private final int denseStateCount;
@@ -629,6 +633,15 @@ final class PackedDphypEnumerator {
 
 		private ConnectingEdgeLookup(PackedJoinHypergraph graph) {
 			this.graph = graph;
+			simpleEdges = SimpleEdgeIndex.create(graph);
+			if (simpleEdges != null) {
+				connectingEdges = null;
+				denseSingletonEdges = null;
+				denseStateCount = 0;
+				complexIncidenceCounts = null;
+				neighborhoodIndex = null;
+				return;
+			}
 			connectingEdges = ConnectingEdgeIndex.oneWord(graph);
 			denseSingletonEdges = denseSingletonEdges(graph, connectingEdges);
 			denseStateCount = denseSingletonEdges == null ? 0 : 1 << graph.nodeCount();
@@ -637,6 +650,9 @@ final class PackedDphypEnumerator {
 		}
 
 		private int find(long leftNodes, long rightNodes) {
+			if (simpleEdges != null) {
+				return simpleEdges.find(leftNodes, rightNodes);
+			}
 			int lowest = findSingletonEdge(leftNodes, rightNodes, Integer.MAX_VALUE);
 			if (lowest == 0) {
 				return 0;
@@ -694,6 +710,20 @@ final class PackedDphypEnumerator {
 
 		private long neighborhood(long subgraph, long forbidden) {
 			long blocked = subgraph | forbidden;
+			if (simpleEdges != null) {
+				long available = graph.allNodes() & ~blocked;
+				if (available == 0L) {
+					return 0L;
+				}
+				long uncovered = available;
+				for (long rest = subgraph; rest != 0L; rest &= rest - 1L) {
+					uncovered &= ~graph.simpleNeighborhood(Long.numberOfTrailingZeros(rest));
+					if (uncovered == 0L) {
+						return available;
+					}
+				}
+				return available & ~uncovered;
+			}
 			if (neighborhoodIndex.activeEvents() != null) {
 				return neighborhoodIndex.neighborhood(subgraph, blocked);
 			}
@@ -727,6 +757,71 @@ final class PackedDphypEnumerator {
 				}
 			}
 			return result;
+		}
+	}
+
+	/**
+	 * Simple edges use direct adjacency ranks only when every actual incidence row is strictly ordered by opposite
+	 * endpoint ordinal. Uncertified graphs retain the general connecting-edge lookup unchanged.
+	 */
+	private static final class SimpleEdgeIndex {
+
+		private final PackedJoinHypergraph graph;
+		private final ConnectingEdgeIndex incidences;
+
+		private static SimpleEdgeIndex create(PackedJoinHypergraph graph) {
+			for (int edge = 0; edge < graph.edgeCount(); edge++) {
+				if (Long.bitCount(graph.edgeLeft(edge)) != 1 || Long.bitCount(graph.edgeRight(edge)) != 1) {
+					return null;
+				}
+			}
+			int[] previousOpposite = new int[graph.nodeCount()];
+			Arrays.fill(previousOpposite, -1);
+			for (int edge = 0; edge < graph.edgeCount(); edge++) {
+				int left = Long.numberOfTrailingZeros(graph.edgeLeft(edge));
+				int right = Long.numberOfTrailingZeros(graph.edgeRight(edge));
+				if (right <= previousOpposite[left] || left <= previousOpposite[right]) {
+					return null;
+				}
+				previousOpposite[left] = right;
+				previousOpposite[right] = left;
+			}
+			return new SimpleEdgeIndex(graph);
+		}
+
+		private SimpleEdgeIndex(PackedJoinHypergraph graph) {
+			this.graph = graph;
+			incidences = ConnectingEdgeIndex.oneWord(graph);
+		}
+
+		private int find(long leftNodes, long rightNodes) {
+			if (Long.bitCount(leftNodes) > Long.bitCount(rightNodes)) {
+				long swap = leftNodes;
+				leftNodes = rightNodes;
+				rightNodes = swap;
+			}
+			int[] starts = incidences.singletonEdgeStarts();
+			int[] edges = incidences.singletonEdges();
+			int lowest = Integer.MAX_VALUE;
+			for (long rest = leftNodes; rest != 0L; rest &= rest - 1L) {
+				int node = Long.numberOfTrailingZeros(rest);
+				if (starts[node] == starts[node + 1] || edges[starts[node]] >= lowest) {
+					continue;
+				}
+				long neighbors = graph.simpleNeighborhood(node);
+				long crossing = neighbors & rightNodes;
+				if (crossing == 0L) {
+					continue;
+				}
+				/* Certified rows are ordered by opposite ordinal; subtracting one handles bit 63's lower mask. */
+				long lowerOpposites = Long.lowestOneBit(crossing) - 1L;
+				int ordinal = Long.bitCount(neighbors & lowerOpposites);
+				lowest = Math.min(lowest, edges[starts[node] + ordinal]);
+				if (lowest == 0) {
+					return 0;
+				}
+			}
+			return lowest == Integer.MAX_VALUE ? -1 : lowest;
 		}
 	}
 
