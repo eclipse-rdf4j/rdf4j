@@ -158,10 +158,14 @@ public class TracingRepositoryConnection extends RepositoryConnectionWrapper {
 		// matches into the HTTP response - trace it in its own right rather than relying on getStatements().
 		Span span = TracingOperation.startSpan(tracer, config, repositoryId, "GET_STATEMENTS");
 		attachTriplePatternText(span, subj, pred, obj, contexts);
-		CountingRDFHandler countingHandler = new CountingRDFHandler(handler);
+		CountingRDFHandler countingHandler = CountingRDFHandler.wrap(handler);
 		try (Scope scope = span.makeCurrent()) {
 			super.exportStatements(subj, pred, obj, includeInferred, countingHandler, contexts);
-			span.setAttribute(DbOtelAttributes.DB_RESPONSE_RETURNED_ROWS, countingHandler.getCount());
+			if (countingHandler.wasInvoked()) {
+				// not invoked at all means the response bypassed this handler via the HTTP client's passthrough
+				// fast path (see CountingRDFHandler) - no count is available in that case
+				span.setAttribute(DbOtelAttributes.DB_RESPONSE_RETURNED_ROWS, countingHandler.getCount());
+			}
 		} catch (RuntimeException e) {
 			TracingOperation.recordException(e, span);
 			throw e;

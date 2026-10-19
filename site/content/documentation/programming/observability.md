@@ -82,6 +82,8 @@ With one or more context arguments, it's rendered as a quad, with one context te
 
 Unbound subject/predicate/object arguments (`null`) are rendered as a `?subj`/`?pred`/`?obj` variable; bound terms use the same SPARQL-syntax string representation as `db.query.parameter.<name>` above. An explicit `(Resource) null` context argument (meaning "the default/null context specifically", as opposed to no context argument at all, which means "any context") is rendered as `RDF4J.NIL` (`<http://rdf4j.org/schema/rdf4j#nil>`), RDF4J's own vocabulary term for the SPARQL default context, used elsewhere (e.g. by Rio writers) whenever the null context needs an explicit identifier.
 
+For `exportStatements(...)` specifically, no `db.response.returned_rows` is recorded when the supplied `RDFHandler` is a Rio `RDFWriter` talking to an `HTTPRepository`/`SPARQLRepository`: the HTTP client has a "passthrough" fast path that copies the server's response bytes directly into the writer's stream without parsing, for performance and to avoid applying stricter validation than the server itself did. Preserving that fast path means the number of returned rows simply isn't observable in that case; the tracing never parses the response itself just to produce a count.
+
 ### Write operations (`add`/`remove`/`clear`)
 
 Tracing write operations is a separate opt-in from read tracing, since it covers every statement mutation on a `RepositoryConnection` and is more likely to add measurable overhead on write-heavy workloads. Enable it with `captureWriteOperations(true)`:
