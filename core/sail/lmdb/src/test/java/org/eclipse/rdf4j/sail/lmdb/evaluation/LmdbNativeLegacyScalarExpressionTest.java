@@ -110,9 +110,41 @@ class LmdbNativeLegacyScalarExpressionTest {
 		extension.addElement(new ExtensionElem(
 				new In(new Var("left"), values("right", vf.createLiteral(1), vf.createLiteral(2))), "in"));
 
-		assertNativeWithoutIsland(new QueryRoot(extension));
+		TupleExpr genericExpression = new QueryRoot(extension.clone());
+		genericExpression.setRuntimeTelemetryEnabled(true);
+		List<String> genericRows = evaluate(genericExpression, false);
+		long genericEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore;
+		long islandsBefore = LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get();
+		long hostedBefore = LmdbNativeAggregateCompiler.HOSTED_GENERIC.get();
+
+		TupleExpr nativeExpression = new QueryRoot(extension.clone());
+		nativeExpression.setRuntimeTelemetryEnabled(true);
+		long nativeEvaluationsBefore = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get();
+		List<String> nativeRows = evaluate(nativeExpression, true);
+		long nativeEvaluations = NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - nativeEvaluationsBefore;
+		assertThat(nativeRows).containsExactlyInAnyOrderElementsOf(genericRows);
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get())
+				.as("legacy scalar expressions must execute on the semantic native row tier")
+				.isEqualTo(islandsBefore);
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get())
+				.as("legacy scalar expressions must not force a generic root host")
+				.isEqualTo(hostedBefore);
 		Class.forName("org.eclipse.rdf4j.sail.lmdb.evaluation.NativeScalarSubqueryValueEvaluator");
-		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore).isEqualTo(3L);
+		assertThat(NativeScalarSubqueryValueEvaluator.EVALUATIONS.get() - evaluationsBefore)
+				.as(() -> "native scalar evaluator count must remain 3; generic delta=" + genericEvaluations
+						+ " native delta=" + nativeEvaluations
+						+ " genericRows=" + genericRows + " nativeRows=" + nativeRows
+						+ "\ngeneric execution path="
+						+ genericExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
+						+ " declines=" + genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
+						+ " proposals=" + genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
+						+ " adaptive=" + genericExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION)
+						+ "\nnative execution path="
+						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
+						+ " declines=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
+						+ " proposals=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
+						+ " adaptive=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION))
+				.isEqualTo(3L);
 	}
 
 	private BindingSetAssignment values(String name, org.eclipse.rdf4j.model.Value... values) {

@@ -965,7 +965,19 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
 		Set<StrategyDecline> declines = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
-		assertThat(plannedKernels()).as("OPTIONAL UNION query must be recognized by a Janino kernel").isPositive();
+		long planned = plannedKernels();
+		long opened = openedKernels();
+		long declined = declinedKernels();
+		long compilations = LmdbNativeJaninoCodegen.COMPILATIONS.get();
+		long pendingCompiles = LmdbNativeJaninoCodegen.PENDING_COMPILES.get();
+		long compileFailures = LmdbNativeJaninoCodegen.COMPILE_FAILURES.get();
+		assertThat(planned).as(() -> "OPTIONAL UNION query must be recognized by a Janino kernel"
+				+ "; planned=" + planned + " opened=" + opened + " declined=" + declined
+				+ " compilations=" + compilations + " pendingCompiles=" + pendingCompiles
+				+ " compileFailures=" + compileFailures + " declines=" + declines
+				+ "\nTelemetry after the failed assertion's diagnostic explain (which performs a fresh evaluation):\n"
+				+ explain(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY))
+				.isPositive();
 		assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 				.as("stateful OPTIONAL must open a specialized kernel or explicitly remain semantic native; reasons=%s",
 						declines)
