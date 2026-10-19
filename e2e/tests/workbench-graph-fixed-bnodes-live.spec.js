@@ -216,12 +216,12 @@ async function setGraphScope(page, scope) {
 	const preferences = page.locator('.label-preferences');
 	await expect(preferences).toBeVisible();
 	await preferences.locator('summary').click();
-	await preferences.getByLabel('Graph scope').selectOption(scope === 'named' ? 'named' : scope);
+	await preferences.getByLabel('Graphs to explore').selectOption(scope === 'named' ? 'named' : scope);
 	if (scope === 'named') {
 		await preferences.getByLabel('Named graph IRI').fill(blankGraph.reference);
 		await preferences.getByRole('button', { name: 'Use graph' }).click();
 	}
-	await page.getByRole('button', { name: 'Close query workspace' }).click();
+	await page.getByRole('button', { name: 'Close query editor' }).click();
 }
 
 async function findStoredAlice(page, traffic) {
@@ -257,7 +257,7 @@ async function applyBlankBobFacet(page, traffic, scope) {
 		await page.getByRole('button', { name: 'Query editor', exact: true }).click();
 	}
 	await queryWorkspace.locator('.visual-query summary').click();
-	await queryWorkspace.getByRole('button', { name: 'Open in editor' }).click();
+	await queryWorkspace.getByRole('button', { name: 'Copy to the editor' }).click();
 	const query = await queryWorkspace.locator('textarea#sparql').inputValue();
 	expect(query).toContain(bob.reference);
 	expect(query).toContain('SELECT DISTINCT ?source ?predicate ?target');

@@ -95,12 +95,12 @@ test('Values draws literal values and types as nodes', async ({ page }) => {
 
 test('a double-click loads the neighbours of a node', async ({ page }) => {
     const explorer = await openGraphPage(page);
-    await explorer.getByRole('button', { name: 'Query editor' }).click();
+    await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('#sparql').fill(
         'SELECT ?source ?predicate ?target WHERE { BIND(<http://example.org/gestures/alice> AS ?source) ?source ?predicate ?target }');
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.locator('.graph-node')).toHaveCount(2);
-    await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+    await explorer.getByRole('button', { name: 'Close query editor' }).click();
 
     await node(explorer, 'Bob').dblclick();
     await expect(node(explorer, 'Acme')).toBeAttached();
@@ -110,12 +110,12 @@ test('a double-click loads the neighbours of a node', async ({ page }) => {
 /** Alice and Bob only, Bob dragged to where the details card's Explore link appears. */
 async function openWithBobUnderTheCard(page) {
     const explorer = await openGraphPage(page);
-    await explorer.getByRole('button', { name: 'Query editor' }).click();
+    await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('#sparql').fill(
         'SELECT ?source ?predicate ?target WHERE { BIND(<http://example.org/gestures/alice> AS ?source) ?source ?predicate ?target }');
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.locator('.graph-node')).toHaveCount(2);
-    await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+    await explorer.getByRole('button', { name: 'Close query editor' }).click();
     await page.waitForTimeout(800);
     await node(explorer, 'Alice').click();
     const explore = await centre(explorer.locator('.node-details').getByRole('link', { name: 'Explore' }));

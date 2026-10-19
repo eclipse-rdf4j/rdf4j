@@ -234,7 +234,7 @@ test('hiding leaf neighbours leaves every other node where it was', async ({ pag
     const before = await nodePositions(page);
     const viewport = await canvas(page).locator(':scope > g[transform^="translate("]').first().getAttribute('transform');
     await node(page, 'Acme').click({ button: 'right' });
-    await explorer.getByRole('dialog', { name: 'Actions for Acme' }).getByRole('button', { name: 'Hide leaf neighbours' }).click();
+    await explorer.getByRole('dialog', { name: 'Actions for Acme' }).getByRole('button', { name: 'Hide neighbours with no other links' }).click();
     await expect(node(page, 'Anvil')).toHaveCount(0);
     await expect(node(page, 'Rocket')).toHaveCount(0);
     await page.waitForTimeout(1200); // a re-layout would be animating now
@@ -378,7 +378,7 @@ test.describe('the large renderer', () => {
             'CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o FILTER(?p != <http://www.w3.org/2000/01/rdf-schema#label>) }');
         await explorer.getByRole('button', { name: 'Run query' }).click();
         await expect(explorer.getByRole('button', { name: 'Run query' })).toBeEnabled({ timeout: 30000 });
-        await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+        await explorer.getByRole('button', { name: 'Close query editor' }).click();
         await expect(explorer.locator('canvas.large-graph-interactive')).toBeVisible({ timeout: 30000 });
         await expect(explorer.locator('.large-graph-hint')).not.toContainText('Arranging', { timeout: 30000 });
         await page.waitForTimeout(1000);

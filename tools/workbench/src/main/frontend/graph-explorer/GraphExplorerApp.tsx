@@ -749,10 +749,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       dismissContextMenu(true);
       pushHistory();
       showStored(saved);
-      setStatus("Brought up to date with the graph saved in another tab.");
+      setStatus("Updated to the graph saved in another tab.");
     },
     onSaveFailed: () =>
-      setStatus("This browser does not keep the graph: its storage is blocked or full."),
+      setStatus("This browser cannot save the graph (its storage is blocked or full), so it is lost when you leave the page."),
   });
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
@@ -1264,7 +1264,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
                 .replace(/…$/, ".")
             : current,
         );
-        if (result.fixedOverlaps) setStatus(`${result.fixedOverlaps >= 1000 ? 'At least ' : ''}${result.fixedOverlaps} fixed-node clearance conflicts remain. Unpin nodes or organize the whole network to make room.`);
+        if (result.fixedOverlaps) setStatus(`${result.fixedOverlaps >= 1000 ? 'At least ' : ''}${result.fixedOverlaps} ${result.fixedOverlaps === 1 ? 'pair of pinned nodes overlaps' : 'pairs of pinned nodes overlap'}. Unpin some of them, or organize the whole network, to make room.`);
 
         const finishLayoutIntent = () => {
           if (layoutIntentRef.current?.revision === graphSnapshot.revision) {
@@ -1827,7 +1827,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       dismissContextMenu(true);
       // Undo after a replacing query brings back the graph as it is now, groups, selection and focus included.
       const before = makeHistorySnapshot();
-      setStatus("Running SPARQL query…");
+      setStatus("Running the query…");
       const started = performance.now();
 
       try {
@@ -1958,7 +1958,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
           openedAt,
           phase: "error",
           predicates: [],
-          error: "This result has no reusable identifier in this repository.",
+          error: "Relations can only be looked up for resources, not for values or blank nodes without a stable identifier.",
         });
         return;
       }
@@ -2095,7 +2095,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
             ? {
                 ...current,
                 phase: "error",
-                error: error instanceof Error ? error.message : "Could not discover predicates.",
+                error: error instanceof Error ? error.message : "Could not look up the relations.",
               }
             : current,
         );
@@ -2161,8 +2161,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
         }
         setStatus(
           triples.length
-            ? `Added ${triples.length} linked triples through ${option.label} from ${targetCount} ${targetCount === 1 ? "node" : "selected nodes"}.`
-            : `No linked triples found for ${option.label} across the selection.`,
+            ? `Added ${triples.length} ${option.label} ${triples.length === 1 ? "link" : "links"} from ${targetCount} ${targetCount === 1 ? "node" : "selected nodes"}.`
+            : `No ${option.label} links found for the selection.`,
         );
         if (
           queryRunRef.current === expansionRequestId &&
@@ -2446,7 +2446,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
       )
       .map((node) => node.id);
     if (iriIds.length < 2) {
-      setStatus("Load at least two reusable resources before looking for missing relations.");
+      setStatus("Finding links needs at least two loaded resources.");
       return;
     }
 
@@ -2460,16 +2460,16 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
 
     try {
       const result = await discoverConnections(iriIds,(q,signal)=>queryRepository(endpoint,q,signal),graphScope,controller.signal,
-        requests=>setStatus(`Checking loaded resources for missing relations · ${requests} adaptive queries`));
+        requests=>setStatus(`Looking for links between the loaded nodes… (${requests} ${requests === 1 ? "query" : "queries"})`));
       const checkedQueries=result.requests;
-      const limitNotice=result.truncatedSources ? ` ${result.truncatedSources} high-degree resources reached the 4,096-relation safety limit; their checks are partial.` : "";
+      const limitNotice=result.truncatedSources ? ` ${result.truncatedSources} ${result.truncatedSources === 1 ? "resource has" : "resources have"} over 4,096 links, so not all of their links were checked.` : "";
       bindingsToTriples(result.bindings).forEach(triple=>discoveredById.set(tripleEdgeId(triple.source,triple.predicate,triple.target),triple));
 
       if (
         queryRunRef.current !== discoveryRequestId ||
         graphRef.current.revision !== discoveryRevision
       ) {
-        setStatus("The graph changed while checking for missing relations. Run the check again.");
+        setStatus("The graph changed while looking for links. Try again.");
         return;
       }
       const currentGraph = graphRef.current;
@@ -2493,17 +2493,16 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity }: Gra
 
       if (!missingTriples.length) {
         setStatus(
-          `No missing relations were found between the ${iriIds.length} loaded resources after ${checkedQueries} batched queries.${limitNotice}`,
+          `Found no new links between the ${iriIds.length} loaded resources.${limitNotice}`,
         );
         return;
       }
 
-      const provenanceQuery = `# Missing-edge discovery
-# Executed ${checkedQueries} batched queries across ${iriIds.length} loaded resources.
-# Representative batch:
+      const provenanceQuery = `# Find links between loaded nodes
+# Ran ${checkedQueries} queries across ${iriIds.length} loaded resources. The first one:
 ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       const batch = createBatch(
-        "Discovered internal relations",
+        "Links between loaded nodes",
         endpoint,
         provenanceQuery,
         missingTriples.length,
@@ -2528,16 +2527,16 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         mergeTriples(current, missingTriples, false, batch.id),
       );
       setStatus(
-        `Added ${missingTriples.length} missing ${
-          missingTriples.length === 1 ? "relation" : "relations"
-        } between loaded nodes from ${checkedQueries} batched queries.${limitNotice}`,
+        `Added ${missingTriples.length} ${
+          missingTriples.length === 1 ? "link" : "links"
+        } between the loaded nodes.${limitNotice}`,
       );
     } catch (error) {
       if (queryRunRef.current !== discoveryRequestId) return;
       setStatus(
         error instanceof Error
-          ? `Missing-edge discovery failed: ${error.message}`
-          : "Missing-edge discovery failed.",
+          ? `Finding links failed: ${error.message}`
+          : "Finding links failed.",
       );
     } finally {
       if (queryRunRef.current === discoveryRequestId) {
@@ -3066,7 +3065,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       const valueIds = values.map(value => value.id).filter(isQueryableResource);
       try { await explorer.resolve(valueIds, controller.signal); } catch {}
       if (stale()) return null;
-      setStatus(`Counted ${facet.label} in the repository for ${sourceIds.length} loaded resources.`);
+      setStatus(`Counted ${facet.label} in the whole repository for the ${sourceIds.length} loaded resources.`);
       return values.map(value => isQueryableResource(value.id) ? { ...value, label: explorer.label(value.id) } : value);
     } catch (error) {
       if (!stale()) setStatus(error instanceof Error ? `Counting failed: ${error.message}` : "Counting failed.");
@@ -3079,7 +3078,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
   const createNamedGroup = () => {
     if (!selectedNodeIds.size) return;
     const suggested = `Group ${namedGroups.length + 1}`;
-    const name = window.prompt("Name this node group", suggested)?.trim();
+    const name = window.prompt("Name for this group of nodes", suggested)?.trim();
     if (!name) return;
     const color =
       TYPE_PALETTE[namedGroups.length % TYPE_PALETTE.length].stroke;
@@ -3098,7 +3097,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
 
   const findSelectedPath = () => {
     if (selectedNodeIdList.length !== 2) {
-      setStatus("Select exactly two nodes to find the shortest loaded path.");
+      setStatus("Select exactly two nodes to find the shortest path between them.");
       return;
     }
     const result = shortestPathInGraph(
@@ -3108,20 +3107,20 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     );
     if (!result) {
       setPathHighlight(null);
-      setStatus("No path exists between those nodes in the loaded subgraph.");
+      setStatus("No path connects these two nodes in the loaded graph.");
       return;
     }
     setPathHighlight(result);
     setFocusedNodeId(null);
     setStatus(
-      `Highlighted a ${result.edgeIds.size}-edge path in the loaded subgraph.`,
+      `Highlighted the shortest path: ${result.edgeIds.size} ${result.edgeIds.size === 1 ? "link" : "links"}.`,
     );
   };
 
   const selectCommonNeighbours = () => {
     const common = commonNeighborIds(graph, selectedNodeIdList);
     if (!common.size) {
-      setStatus("The selected nodes have no common neighbours in the loaded graph.");
+      setStatus("The selected nodes share no neighbours in the loaded graph.");
       return;
     }
     setSelectedFacetValues(new Map());
@@ -3138,7 +3137,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           .map((edge) => edge.id),
       ),
     });
-    setStatus(`Selected ${common.size} common loaded neighbours.`);
+    setStatus(`Selected the ${common.size} ${common.size === 1 ? "neighbour" : "neighbours"} the nodes share.`);
   };
 
   const runLocalLayout = () => {
@@ -3156,7 +3155,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       revision: current.revision + 1,
     }));
     setLayoutNonce((value) => value + 1);
-    setStatus(`Re-layout is constrained to ${local.size} selected and adjacent nodes.`);
+    setStatus(`Arranging the ${local.size} selected nodes and their neighbours…`);
   };
 
   const updateSelectionFromContext = (
@@ -3299,7 +3298,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     const cluster = leafClusterForNode(drawnGraph, nodeId);
     cluster.delete(nodeId);
     if (!cluster.size) {
-      setStatus("This node has no exclusive leaf neighbours to collapse.");
+      setStatus("No neighbour links only to this node, so there is nothing to hide.");
       return;
     }
     invalidateAsyncRequests();
@@ -3532,7 +3531,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
           onReset={() => setQuery(DEFAULT_QUERY)}
           onUseGeneratedQuery={() => {
             setQuery(filters.generatedQuery);
-            setStatus("Visual constraints copied into the SPARQL editor.");
+            setStatus("The query for the current filters is now in the editor.");
           }}
         >
           <LabelPreferences languages={languages} onLanguages={updateLanguages} properties={labelProperties}
@@ -3607,9 +3606,15 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             layoutBusy={isLayoutComputing}
             layoutNote={layoutSelection ? `Applies to the ${layoutSelection.size} selected nodes` : undefined}
             layoutItems={[
-              { label: "Organize network", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout("network", false) },
+              {
+                label: "Organize network",
+                description: "Start over: hubs in the middle, related nodes together",
+                disabled: !drawnGraph.nodes.length,
+                onSelect: () => refineLayout("network", false),
+              },
               {
                 label: "Hierarchy",
+                description: "Layers that follow the direction of the links",
                 // A selection is arranged on its own (pinned nodes stay put); the whole graph only without pins.
                 disabled: layoutSelection
                   ? [...layoutSelection].filter((id) => !drawnNodeById.get(id)?.pinned).length < 2
@@ -3617,13 +3622,29 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                 title: !layoutSelection && drawnGraph.nodes.some((node) => node.pinned) ? "Unpin nodes to arrange a hierarchy" : undefined,
                 onSelect: () => refineLayout("hierarchy", false),
               },
-              { label: "Square", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout("square", false) },
-              { label: "Tidy current layout", disabled: !drawnGraph.nodes.length, onSelect: () => refineLayout() },
-              { label: "Zoom to selected node", disabled: !focusedNodeId && !selectedNodeIds.size, onSelect: focusReadableNode },
+              {
+                label: "Square",
+                description: "A grid, in the order the nodes stand now",
+                disabled: !drawnGraph.nodes.length,
+                onSelect: () => refineLayout("square", false),
+              },
+              {
+                label: "Tidy current layout",
+                description: "Improve the current arrangement without starting over",
+                disabled: !drawnGraph.nodes.length,
+                onSelect: () => refineLayout(),
+              },
+              {
+                label: "Zoom to selected node",
+                description: "Zoom in until its label is readable",
+                disabled: !focusedNodeId && !selectedNodeIds.size,
+                onSelect: focusReadableNode,
+              },
             ]}
             toolItems={[
               {
                 label: "Paths and groups",
+                description: "Shortest paths, shared neighbours, saved groups",
                 pressed: navigatorOpen,
                 disabled: !graph.nodes.length,
                 onSelect: () => {
@@ -3636,6 +3657,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               },
               {
                 label: "Load history",
+                description: "The queries and expansions that built this graph",
                 pressed: provenanceOpen,
                 disabled: !provenanceBatches.length,
                 onSelect: () => {
@@ -3648,6 +3670,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               },
               {
                 label: isDiscoveringEdges ? "Finding links…" : "Find links between loaded nodes",
+                description: "Ask the repository for links the graph does not show yet",
                 disabled: discoverableIriCount < 2 || isQuerying || isDiscoveringEdges,
                 onSelect: () => void discoverMissingEdges(),
               },
@@ -3722,7 +3745,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                     className="workbench-action workbench-action--secondary"
                     type="button"
                     aria-keyshortcuts="Delete"
-                    title="Hide the selected nodes from this graph (Delete); Undo brings them back"
+                    title="Hide the selected nodes from the graph (Delete). Undo brings them back."
                     disabled={!selectedNodeIds.size}
                     onClick={() => hideNodes(new Set(selectedNodeIds))}
                   >
@@ -3735,7 +3758,10 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
             {!graph.nodes.length && workspaceRestored && !isQuerying && (
               <div className="empty-state">
                 <h3>The graph is empty</h3>
-                <p>Find a resource above, or use Add to graph on the other Workbench pages.</p>
+                <p>
+                  Search the repository with Find above, load a first sample of statements, or use Add to graph on the
+                  Query, Explore, Types and Named Graphs pages.
+                </p>
                 <div className="empty-actions">
                   <button className="workbench-action workbench-action--primary" type="button" onClick={loadFirstStatements}>
                     <Icon name="execute" />
@@ -4313,7 +4339,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               onUseVisualQuery={() => {
                 setQuery(filters.generatedQuery);
                 setQueryPanelOpen(true);
-                setStatus("The facet query is now open in the SPARQL editor.");
+                setStatus("The query for the current filters is now in the editor.");
               }}
               onShowInGraph={(nodeId) => {
                 setViewMode("graph");

@@ -170,23 +170,23 @@ export function DataViews({
         <div className="data-view-title">
           <h3>
             {viewMode === "table"
-              ? "Exact triples"
+              ? "Triples"
               : viewMode === "cards"
-                ? "Entity cards"
+                ? "Resource cards"
                 : viewMode === "matrix"
-                  ? "Adjacency matrix"
+                  ? "Connection matrix"
                   : viewMode === "timeline"
-                    ? "Temporal relationships"
+                    ? "Timeline"
                     : viewMode === "map"
-                      ? "Coordinate map"
+                      ? "Map"
                       : series
                         ? `Distribution of ${series.label}`
-                        : "Predicate distribution"}
+                        : "Relations by frequency"}
           </h3>
           <small>
             {selectedCount
               ? `${selectedCount} selected nodes`
-              : "Loaded subgraph"}
+              : "All loaded nodes"}
           </small>
         </div>
         <div className="data-view-actions">
@@ -205,11 +205,11 @@ export function DataViews({
           <button
             className="workbench-action workbench-action--secondary"
             type="button"
-            title="Open the query for the current facets in the SPARQL editor"
+            title="Open the query that matches the current filters in the query editor"
             onClick={onUseVisualQuery}
           >
             <Icon name="query" />
-            Use visual query
+            Open as query
           </button>
         </div>
       </header>
@@ -332,8 +332,7 @@ export function DataViews({
       {viewMode === "matrix" && (
         <div className="matrix-shell">
           <p className="view-note">
-            Showing {matrixNodes.length} of {viewNodes.length} nodes.
-            Select nodes to build a focused matrix.
+            Showing {matrixNodes.length} of {viewNodes.length} nodes. Select nodes in the graph to choose which ones.
           </p>
           <div
             className="matrix-grid"
@@ -382,7 +381,7 @@ export function DataViews({
         <div className="timeline-shell">
           {timelineEvents.length ? (
             <>
-              <p className="view-note">{timelineEvents.length} dated relations · chronological order{timelineEvents.length > 80 ? " · showing the first 80" : ""}</p>
+              <p className="view-note">{timelineEvents.length} dated links, oldest first{timelineEvents.length > 80 ? " · showing the first 80" : ""}</p>
               {timelineEvents.slice(0, 80).map((event) => {
                 return (
                   <article
@@ -400,8 +399,8 @@ export function DataViews({
             <div className="data-empty">
               <h4>No dates are loaded yet</h4>
               <p>
-                Expand a date-valued predicate or run a query containing
-                xsd:date, xsd:dateTime, or gYear literals.
+                Load statements with date values (xsd:date, xsd:dateTime or xsd:gYear), for example by expanding a
+                node or running a query.
               </p>
             </div>
           )}
@@ -453,7 +452,7 @@ export function DataViews({
                 </button>
               ))}
               <button type="button" aria-pressed={!series} onClick={() => setChosenSeries(PREDICATE_CHART)}>
-                Predicates
+                Relations
               </button>
             </div>
           ) : null}

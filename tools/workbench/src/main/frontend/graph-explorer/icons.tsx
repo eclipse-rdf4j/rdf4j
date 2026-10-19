@@ -13,7 +13,7 @@
 /**
  * Stroke icons in the Workbench's style: 24px paths drawn with currentColor at 1.75px (the workbench-action-icon
  * rule in styles/workbench-refresh.css sizes and strokes them). Where the Workbench has an icon for the same meaning
- * (query, chevron, close, search, settings, explore, copy, execute) the path is the Workbench's own
+ * (query, chevron, close, search, settings, explore, copy, execute, help) the path is the Workbench's own
  * (actionIconCatalog in scripts/ts/workbenchViews.ts).
  */
 const ICON_PATHS = {
@@ -45,6 +45,7 @@ const ICON_PATHS = {
   pin: "M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7",
   statement: "M4 12h12m-4-4 4 4-4 4M20 6v12",
   hide: "M4 4l16 16M10.6 6.1A9 9 0 0 1 12 6c5 0 9 6 9 6a16 16 0 0 1-2.7 3.2M6.6 7.6C4.4 9.2 3 12 3 12s4 6 9 6a8.6 8.6 0 0 0 4.3-1.2M9.9 9.9a3 3 0 0 0 4.2 4.2",
+  help: "M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM9.6 9.6a2.4 2.4 0 1 1 3.4 2.2c-.6.3-1 .8-1 1.5v.3M12 16.5h.01",
 } as const;
 
 export type IconName = keyof typeof ICON_PATHS;

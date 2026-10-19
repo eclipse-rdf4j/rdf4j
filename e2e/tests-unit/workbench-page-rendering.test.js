@@ -2305,14 +2305,91 @@ test('Add lists approved server files as a separate selectable source', () => {
 
     const emptyMarkup = flattenTemplateMarkup(workbench.views.pageTemplate({ ...model, rows: [], rowCount: 0 },
         { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
-    assert.match(emptyMarkup, /No approved server files are available/);
+    assert.match(emptyMarkup, /The import directory on the server has no files/);
     for (const helpMarkup of [markup, emptyMarkup]) {
         assert.match(helpMarkup, /Workbench\/imports/);
         assert.match(helpMarkup, /org\.eclipse\.rdf4j\.appdata\.basedir/);
         assert.match(helpMarkup, /org\.eclipse\.rdf4j\.workbench\.add-file-directory/);
         assert.match(helpMarkup, /WEB-INF\/web\.xml/);
-        assert.match(helpMarkup, /existing[^<]*absolute|absolute[^<]*existing/);
+        assert.match(helpMarkup, /existing, readable directory/);
     }
+});
+
+/**
+ * The help buttons (data-workbench-help) in flattened markup: each one's accessible name, whether the panel it controls
+ * starts hidden, and the panel's text.
+ */
+function helpTips(markup) {
+    return (markup.match(/<button\b[^>]*\bdata-workbench-help\b[^>]*>/g) || []).map((tag) => {
+        const label = (tag.match(/aria-label="([^"]*)"/) || [])[1];
+        const controls = (tag.match(/aria-controls="([^"]*)"/) || [])[1];
+        const at = markup.indexOf('id="' + controls + '"');
+        assert.ok(controls && at >= 0, 'help button ' + label + ' controls a panel');
+        const panelTag = markup.slice(markup.lastIndexOf('<', at), markup.indexOf('>', at) + 1);
+        const body = markup.slice(markup.indexOf('>', at) + 1, markup.indexOf('</div>', at));
+        return { label, hidden: /\shidden[\s>]/.test(panelTag),
+            text: body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), markup: panelTag + body + '</div>' };
+    });
+}
+
+/** The markup a reader sees before opening any help panel. */
+function withoutHelpPanels(markup) {
+    return helpTips(markup).reduce((visible, tip) => visible.replace(tip.markup, ''), markup);
+}
+
+test('a help button on any route gets its popover on the first click, once', () => {
+    const workbench = loadWorkbench();
+    const bound = [];
+    workbench.popover = { bind(button, panel) { bound.push([button, panel]); button.attributes['data-workbench-popover-bound'] = 'true'; } };
+    const panel = { id: 'url-help' };
+    const button = {
+        attributes: { 'aria-controls': 'url-help' },
+        getAttribute(name) { return this.attributes[name]; },
+        closest(selector) { return selector === '[data-workbench-help]' ? button : null; }
+    };
+    const listeners = [];
+    const document = {
+        addEventListener(type, listener, capture) { listeners.push({ type, listener, capture }); },
+        getElementById(id) { return id === 'url-help' ? panel : null; }
+    };
+    workbench.views.installHelpTips(document);
+    workbench.views.installHelpTips(document);
+    assert.equal(listeners.length, 1, 'one delegated listener per document');
+    assert.equal(listeners[0].type, 'click');
+    assert.equal(listeners[0].capture, true, 'binds before the click reaches the button');
+
+    const icon = { closest: (selector) => button.closest(selector) };
+    listeners[0].listener({ target: icon });
+    listeners[0].listener({ target: icon });
+    assert.equal(bound.length, 1, 'a bound button is not bound again');
+    assert.equal(bound[0][0], button);
+    assert.equal(bound[0][1], panel);
+
+    listeners[0].listener({ target: { closest: () => null } });
+    assert.equal(bound.length, 1, 'other clicks are left alone');
+});
+
+test('Add keeps the server-file and URL set-up instructions behind help buttons', () => {
+    const workbench = loadWorkbench();
+    const markup = flattenTemplateMarkup(workbench.views.pageTemplate({
+        viewId: 'add', vars: ['server-file-option'], rows: [['one.ttl']], rowCount: 1, metadata: {}
+    }, { basePath: '/workbench', repositoryId: 'repo-1', workbench: {} }, fakeRuntime()));
+    const tips = helpTips(markup);
+
+    const serverFiles = tips.find((tip) => /server file/i.test(tip.label || ''));
+    assert.ok(serverFiles, 'a help button explains where server files come from');
+    assert.equal(serverFiles.hidden, true, 'its panel starts closed');
+    assert.match(serverFiles.text, /add-file-directory/);
+    assert.match(serverFiles.text, /WEB-INF\/web\.xml/);
+
+    const url = tips.find((tip) => /URL/.test(tip.label || ''));
+    assert.ok(url, 'a help button explains which URLs Workbench may import from');
+    assert.equal(url.hidden, true);
+    assert.match(url.text, /add-url-allowed-origins/);
+
+    const visible = withoutHelpPanels(markup);
+    assert.doesNotMatch(visible, /add-file-directory|appdata\.basedir|add-url-allowed-origins/,
+        'administrator set-up stays out of the form until asked for');
 });
 
 /** Return the event handler attached to a particular template element. */

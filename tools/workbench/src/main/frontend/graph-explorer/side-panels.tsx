@@ -13,6 +13,7 @@ import { useMemo } from "react";
 import type { LoadBatch, NamedGroup } from "./explorer-types.ts";
 import type { GraphEdge, GraphNode } from "./graph-types.ts";
 import { Icon } from "./icons.tsx";
+import { HelpTip } from "./help-tip.tsx";
 
 export type NavigatorPanelProps = {
   selectedIds: readonly string[];
@@ -71,8 +72,18 @@ export function NavigatorPanel({
     >
       <div className="filter-sidebar-header">
         <div>
-          <h3>Paths and groups</h3>
-          <small>{selectedCount} nodes selected</small>
+          <div className="panel-title">
+            <h3>Paths and groups</h3>
+            <HelpTip inline label="How to use paths and groups">
+              <p>Select two nodes to find the shortest path between them and compare the relations they use.</p>
+              <p>Select two or more nodes to select the neighbours they share.</p>
+              <p>Re-layout selection arranges only the selected nodes and their neighbours.</p>
+              <p>Save a selection as a group to select the same nodes again later.</p>
+            </HelpTip>
+          </div>
+          <small>
+            {selectedCount} {selectedCount === 1 ? "node" : "nodes"} selected
+          </small>
         </div>
         <button
           className="workbench-action workbench-action--ghost workbench-action--icon"
@@ -115,12 +126,14 @@ export function NavigatorPanel({
           disabled={!selectedCount}
           onClick={onSaveGroup}
         >
-          Save named group
+          Save as group
         </button>
       </div>
       {pathEdgeCount !== null && (
         <div className="path-summary">
-          <strong>{pathEdgeCount} edge path</strong>
+          <strong>
+            Path of {pathEdgeCount} {pathEdgeCount === 1 ? "link" : "links"}
+          </strong>
           <button className="workbench-action workbench-action--ghost" type="button" onClick={onClearPath}>
             Clear highlight
           </button>
@@ -132,8 +145,8 @@ export function NavigatorPanel({
             {comparison.left?.label} ↔ {comparison.right?.label}
           </h4>
           <div>
-            <span>Shared</span>
-            <p>{comparison.shared.join(" · ") || "No shared predicates"}</p>
+            <span>Both use</span>
+            <p>{comparison.shared.join(" · ") || "No relations in common"}</p>
           </div>
           <div>
             <span>{comparison.left?.label}</span>
@@ -146,7 +159,7 @@ export function NavigatorPanel({
         </section>
       )}
       <section className="named-groups">
-        <h4>Named groups</h4>
+        <h4>Saved groups</h4>
         {namedGroups.map((group) => (
           <article key={group.id}>
             <i style={{ background: group.color }} />
@@ -169,7 +182,7 @@ export function NavigatorPanel({
           </article>
         ))}
         {!namedGroups.length && (
-          <p>Select nodes and save them as a reusable group.</p>
+          <p>Select nodes and save them as a group to select them again later.</p>
         )}
       </section>
     </aside>
@@ -186,7 +199,7 @@ export function LoadHistoryPanel({ batches, onClose }: LoadHistoryPanelProps) {
   return (
     <aside
       className="filter-sidebar workbench-sidebar"
-      aria-label="Graph provenance"
+      aria-label="Load history"
       onClick={(event) => event.stopPropagation()}
     >
       <div className="filter-sidebar-header">
@@ -216,14 +229,14 @@ export function LoadHistoryPanel({ batches, onClose }: LoadHistoryPanelProps) {
               <div>
                 <strong>{batch.label}</strong>
                 <small>
-                  {batch.tripleCount} triples ·{" "}
-                  {batch.complete ? "below query limit" : "limit reached"}
+                  {batch.tripleCount} {batch.tripleCount === 1 ? "statement" : "statements"} ·{" "}
+                  {batch.complete ? "complete" : "limit reached, more may exist"}
                 </small>
               </div>
             </summary>
             <dl>
               <div>
-                <dt>Endpoint</dt>
+                <dt>Source</dt>
                 <dd>{batch.endpoint}</dd>
               </div>
               <div>
@@ -232,7 +245,7 @@ export function LoadHistoryPanel({ batches, onClose }: LoadHistoryPanelProps) {
               </div>
               <div>
                 <dt>Limit</dt>
-                <dd>{batch.limit ?? "none detected"}</dd>
+                <dd>{batch.limit ?? "None in the query"}</dd>
               </div>
             </dl>
             <pre>{batch.query}</pre>

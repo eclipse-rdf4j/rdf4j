@@ -106,11 +106,11 @@ test('guidance dismisses per repository, opens preferences and remains usable on
     await page.setViewportSize({ width: 390, height: 844 });
     const explorer = await load(page);
     const notice = explorer.getByRole('region', { name: 'Label preference guidance', exact: true });
-    await expect(notice).toContainText('multiple label predicates');
-    await expect(notice).toContainText('multiple languages');
+    await expect(notice).toContainText('several label predicates');
+    await expect(notice).toContainText('several languages');
     await notice.getByRole('button', { name: 'Configure labels', exact: true }).click();
     await expect(explorer.getByRole('list', { name: 'Preferred label predicates' })).toBeVisible();
-    await explorer.getByRole('button', { name: 'Close query workspace', exact: true }).click();
+    await explorer.getByRole('button', { name: 'Close query editor', exact: true }).click();
     await notice.getByRole('button', { name: 'Dismiss label guidance', exact: true }).click();
     await expect(notice).toHaveCount(0);
     await page.reload();
@@ -135,7 +135,7 @@ test('configured mismatches guide users even when a common fallback label is dis
     const notice = explorer.getByRole('region', { name: 'Label preference guidance', exact: true });
     await expect(explorer.locator('.graph-node[aria-label^="Alice SKOS."]')).toHaveCount(1);
     await expect(notice).toContainText('preferred label predicates');
-    await expect(notice).toContainText('preferred label languages');
+    await expect(notice).toContainText('your preferred languages');
     await notice.getByRole('button', { name: 'Dismiss label guidance', exact: true }).click();
     await page.reload();
     await waitForRoute(page, 'graph');
@@ -286,8 +286,8 @@ test('checked metadata cache reuse preserves guidance when the graph contains no
     await explorer.getByRole('button', { name: 'Run query', exact: true }).click();
     await expect(explorer.locator('.graph-node[aria-label^="Alice SKOS."]')).toHaveCount(1);
     const notice = explorer.getByRole('region', { name: 'Label preference guidance', exact: true });
-    await expect(notice).toContainText('multiple label predicates');
-    await expect(notice).toContainText('multiple languages');
+    await expect(notice).toContainText('several label predicates');
+    await expect(notice).toContainText('several languages');
     await expect.poll(() => page.evaluate(() => {
         const raw = localStorage.getItem('graph-field-metadata-v4');
         return raw && JSON.parse(raw).some(([key, entry]) => key.endsWith('\nhttps://example.org/labels/alice') && entry.checked);
@@ -308,7 +308,7 @@ test('checked metadata cache reuse preserves guidance when the graph contains no
     await (await rowsReturned).finished();
     await expect(explorer.getByRole('button', { name: 'Run query', exact: true })).toBeEnabled();
     await expect(explorer.locator('.graph-node[aria-label^="Alice SKOS."]')).toHaveCount(1);
-    await expect(notice).toContainText('multiple label predicates');
-    await expect(notice).toContainText('multiple languages');
+    await expect(notice).toContainText('several label predicates');
+    await expect(notice).toContainText('several languages');
     expect(metadataRequests).toBe(0);
 });

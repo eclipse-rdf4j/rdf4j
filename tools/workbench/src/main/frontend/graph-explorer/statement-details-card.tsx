@@ -16,6 +16,7 @@ import { compactTerm } from "./graph-terms.ts";
 import type { GraphEdge, GraphNode } from "./graph-types.ts";
 import { nodeVisual } from "./graph-visuals.ts";
 import { Icon } from "./icons.tsx";
+import { HelpTip } from "./help-tip.tsx";
 import { languageLiteralPresentation } from "./literal-language-presentation.ts";
 import { languageRank } from "./rdf-vocabulary.ts";
 import type { StatementCard } from "./statement-details.ts";
@@ -188,11 +189,22 @@ export function StatementDetailsCard({
       {details.status === "loading" ? <p className="statement-details-note" aria-live="polite">Loading…</p> : null}
       {details.status === "failed" ? <p className="statement-details-note">The statement's details could not be loaded.</p> : null}
       {details.status === "ready" && details.unnamed ? (
-        <p className="statement-details-note">A blank node takes part, so what is said about this statement cannot be looked up.</p>
+        <p className="statement-details-note">
+          This statement involves a blank node, so statements about it cannot be looked up.
+        </p>
       ) : null}
       {cards.length ? (
         <section className="statement-cards" aria-label="About this statement">
-          <h4>About this statement</h4>
+          <div className="panel-title">
+            <h4>About this statement</h4>
+            <HelpTip inline label="What these cards are">
+              <p>Resources the repository uses to say something about this statement:</p>
+              <p>
+                <strong>Reifier</strong>: an RDF 1.2 reifier of the statement. <strong>rdf:Statement</strong>: a classic
+                reification. <strong>Refers to it</strong>: a resource that uses the statement as a triple term.
+              </p>
+            </HelpTip>
+          </div>
           {cards.map((card) => {
             const name = valueText(card.about, labelOf);
             // The card's name is the resource's label; a row that only repeats it says nothing new.

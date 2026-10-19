@@ -15,6 +15,7 @@ import { parseLabelProperties, parseLanguagePreferences } from "./rdf-vocabulary
 import { resourceNodeId } from "./rdf-terms.ts";
 import { labelPropertyCaption } from "./label-policy.ts";
 import { Icon } from "./icons.tsx";
+import { HelpTip } from "./help-tip.tsx";
 
 function PreferenceOrder({ values, name, display, onChange }: {
   values: string[];
@@ -94,69 +95,85 @@ export function LabelPreferences({
   return (
     <details className="label-preferences" ref={disclosure}>
       <summary ref={summary}>
-        <span>Language and data preferences</span>
+        <span>Labels, languages and graphs</span>
         <Icon name="chevron" className="workbench-disclosure-chevron" />
       </summary>
-      <p>
-        Labels use languages first, then predicates in your preferred order.
-        These preferences apply to every repository.
-      </p>
-      <h3>Preferred languages</h3>
-      <PreferenceOrder values={languages} name="Preferred label languages" onChange={onLanguages}
-        display={tag => tag === "und" ? "Untagged" : tag === "*" ? "Any language" : tag} />
-      <div className="preference-input-row">
-        <input
-          aria-label="Language to add"
-          placeholder="nb, en, de…"
-          value={language}
-          onChange={(e) => setLanguage(e.target.value)}
-        />
-        <button
-          className="workbench-action workbench-action--secondary"
-          type="button"
-          disabled={languages.length >= 16 || !language.trim()}
-          onClick={() =>
-            update(() => {
-              onLanguages(
-                parseLanguagePreferences([
-                  ...languages,
-                  ...language.split(/[,\s]+/),
-                ]),
-              );
-              setLanguage("");
-            })
-          }
-        >
-          Add language
+      <div className="label-preferences-body">
+        <p>How nodes are named, and which graphs the explorer reads. These settings apply to every repository.</p>
+        <div className="preference-heading">
+          <h3>Preferred languages</h3>
+          <HelpTip inline label="How labels are chosen">
+            <p>
+              A node's label is picked by language first, then by predicate: the first language in your list that has a
+              label wins, and among its labels the first predicate in your list.
+            </p>
+            <p>
+              Regional variants follow their language (en-GB after en). Untagged labels and other languages are used only
+              when no preferred one exists, unless you move them up.
+            </p>
+            <p>Common label predicates such as rdfs:label and skos:prefLabel are tried after yours.</p>
+          </HelpTip>
+        </div>
+        <PreferenceOrder values={languages} name="Preferred label languages" onChange={onLanguages}
+          display={tag => tag === "und" ? "Untagged" : tag === "*" ? "Any language" : tag} />
+        <div className="preference-input-row">
+          <input
+            aria-label="Language to add"
+            placeholder="nb, en, de…"
+            value={language}
+            onChange={(e) => setLanguage(e.target.value)}
+          />
+          <button
+            className="workbench-action workbench-action--secondary"
+            type="button"
+            disabled={languages.length >= 16 || !language.trim()}
+            onClick={() =>
+              update(() => {
+                onLanguages(
+                  parseLanguagePreferences([
+                    ...languages,
+                    ...language.split(/[,\s]+/),
+                  ]),
+                );
+                setLanguage("");
+              })
+            }
+          >
+            Add language
+          </button>
+        </div>
+        <small>{languages.length} of 16 languages</small>
+        <button className="workbench-action workbench-action--ghost" type="button" onClick={onResetLanguages}>
+          Use browser languages
         </button>
-      </div>
-      <small>
-        {languages.length}/16 · Regional variants follow each language. Untagged
-        and other languages are fallbacks unless placed earlier.
-      </small>
-      <button className="workbench-action workbench-action--ghost" type="button" onClick={onResetLanguages}>
-        Use browser languages
-      </button>
-      <h3>Preferred label predicates</h3>
-      <PreferenceOrder values={properties} name="Preferred label predicates" onChange={onProperties}
-        display={labelPropertyCaption} />
-      <div className="preference-input-row">
-        <input aria-label="Additional label property IRI" placeholder="https://example.org/displayName"
-          value={property} onChange={event => setProperty(event.target.value)} />
-        <button className="workbench-action workbench-action--secondary" type="button"
-          disabled={properties.length >= 64 || !property.trim()} onClick={() => update(() => {
-            onProperties(parseLabelProperties([...properties, property.trim()]));
-            setProperty("");
-          })}>Add predicate</button>
-      </div>
-      <small>{properties.length}/64 · Known label predicates remain fallbacks.</small>
-      <button className="workbench-action workbench-action--ghost" type="button" onClick={onResetProperties}>
-        Use default label predicates
-      </button>
-      <label>
-        Graph scope for exploration
+        <h3>Preferred label predicates</h3>
+        <PreferenceOrder values={properties} name="Preferred label predicates" onChange={onProperties}
+          display={labelPropertyCaption} />
+        <div className="preference-input-row">
+          <input aria-label="Additional label property IRI" placeholder="https://example.org/displayName"
+            value={property} onChange={event => setProperty(event.target.value)} />
+          <button className="workbench-action workbench-action--secondary" type="button"
+            disabled={properties.length >= 64 || !property.trim()} onClick={() => update(() => {
+              onProperties(parseLabelProperties([...properties, property.trim()]));
+              setProperty("");
+            })}>Add predicate</button>
+        </div>
+        <small>{properties.length} of 64 predicates</small>
+        <button className="workbench-action workbench-action--ghost" type="button" onClick={onResetProperties}>
+          Use default label predicates
+        </button>
+        <div className="preference-heading">
+          <h3>Graphs to explore</h3>
+          <HelpTip inline label="Which graphs are read">
+            <p>Find, Expand, labels and filter counts read only the graphs chosen here.</p>
+            <p>
+              In RDF4J stores the default graph usually holds the statements of every named graph too. Choose one named
+              graph to see only its statements.
+            </p>
+          </HelpTip>
+        </div>
         <select
-          aria-label="Graph scope"
+          aria-label="Graphs to explore"
           value={named ? "named" : scope}
           onChange={(e) => {
             setNamed(e.target.value === "named");
@@ -164,39 +181,39 @@ export function LabelPreferences({
             else setGraph(scope === "default" || scope === "all" ? "" : scope);
           }}
         >
-          <option value="default">Endpoint default graph</option>
-          <option value="all">Default and all named graphs</option>
-          <option value="named">A named graph…</option>
+          <option value="default">Default graph</option>
+          <option value="all">Default graph and all named graphs</option>
+          <option value="named">One named graph…</option>
         </select>
-      </label>
-      {named && (
-        <div className="preference-input-row">
-          <input
-            aria-label="Named graph IRI"
-            placeholder="Named graph IRI or <_:id>"
-            value={graph}
-            onChange={(e) => setGraph(e.target.value)}
-          />
-          <button
-            className="workbench-action workbench-action--secondary"
-            type="button"
-            disabled={!graph.trim()}
-            onClick={() =>
-              update(() => {
-                const resource = resourceNodeId(graph.trim());
-                if (!resource) throw new Error("Enter a valid named graph IRI or fixed blank-node reference.");
-                onScope(resource);
-              })
-            }
-          >
-            Use graph
-          </button>
-        </div>
-      )}
-      <button className="workbench-action workbench-action--secondary" type="button" onClick={onRefresh}>
-        Clear cache and refresh labels
-      </button>
-      {error && <p className="preference-error" role="alert">{error}</p>}
+        {named && (
+          <div className="preference-input-row">
+            <input
+              aria-label="Named graph IRI"
+              placeholder="Named graph IRI or <_:id>"
+              value={graph}
+              onChange={(e) => setGraph(e.target.value)}
+            />
+            <button
+              className="workbench-action workbench-action--secondary"
+              type="button"
+              disabled={!graph.trim()}
+              onClick={() =>
+                update(() => {
+                  const resource = resourceNodeId(graph.trim());
+                  if (!resource) throw new Error("Enter a valid named graph IRI or fixed blank-node reference.");
+                  onScope(resource);
+                })
+              }
+            >
+              Use graph
+            </button>
+          </div>
+        )}
+        <button className="workbench-action workbench-action--secondary" type="button" onClick={onRefresh}>
+          Clear cache and refresh labels
+        </button>
+        {error && <p className="preference-error" role="alert">{error}</p>}
+      </div>
     </details>
   );
 }

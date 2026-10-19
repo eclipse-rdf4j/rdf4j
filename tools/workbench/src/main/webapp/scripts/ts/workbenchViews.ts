@@ -285,6 +285,7 @@ namespace workbench {
         remove: 'M5 12h14',
         clear: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm-3 5 6 6m0-6-6 6',
         information: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 7v5m0-8h.01',
+        help: 'M12 4a8 8 0 1 0 0 16 8 8 0 0 0 0-16ZM9.6 9.6a2.4 2.4 0 1 1 3.4 2.2c-.6.3-1 .8-1 1.5v.3M12 16.5h.01',
         modify: 'm4 17 4-4 3 3 7-8m0 0h-5m5 0v5',
         upload: 'M12 16V4m0 0L7 9m5-5 5 5M5 20h14',
         download: 'M12 4v12m0 0 5-5m-5 5-5-5M5 20h14',
@@ -672,6 +673,20 @@ namespace workbench {
             </svg>`;
         }
 
+        /**
+         * A "?" button beside a label that opens a short panel with the details most readers can skip (set-up steps,
+         * edge cases). The panel is a Workbench popover (bound on first click, see installHelpTips): a click elsewhere or
+         * Escape closes it. Keep the content to text and inline elements: no nested blocks other than paragraphs and lists.
+         */
+        function helpTip(runtime: LitRuntime, id: string, label: string, content: any): any {
+            const h = runtime.html;
+            return h`<span class="workbench-help">
+                <button type="button" class="workbench-help__button" data-workbench-help aria-label="${label}" title="${label}"
+                    aria-expanded="false" aria-controls="${id}">${icon(runtime, 'help')}</button>
+                <div id="${id}" class="workbench-popover workbench-help__panel" role="note" hidden>${content}</div>
+            </span>`;
+        }
+
         function statusIcon(runtime: LitRuntime, status: string, label: string): any {
             const h = runtime.html;
             const path = status === 'readable'
@@ -828,11 +843,11 @@ namespace workbench {
                 const link = button.ownerDocument.createElement('a');
                 link.className = button.className + ' is-added';
                 link.setAttribute('href', additions.graphUrl(graph));
-                link.setAttribute('title', 'Added: open the Graph page');
+                link.setAttribute('title', 'Added. Open the Graph page');
                 if (!compact) {
                     link.textContent = 'Open graph';
                 }
-                workbench.icons.decorateButton(link, 'graph', compact ? 'Added: open the Graph page' : 'Open graph');
+                workbench.icons.decorateButton(link, 'graph', compact ? 'Added. Open the Graph page' : 'Open graph');
                 button.replaceWith(link);
             };
             return compact
@@ -1263,6 +1278,29 @@ namespace workbench {
          * opens fixed under its button and follows the button while the page or the box scrolls; otherwise it keeps
          * its place in the row.
          */
+        /**
+         * A help panel opens under its button, starting at the button's left edge; where that would run past the right
+         * edge of the window it ends at the button's right edge instead, and on a narrow window it spans the window.
+         */
+        function placeHelpPanel(button: any, panel: any): void {
+            const view = button.ownerDocument && button.ownerDocument.defaultView;
+            panel.style.left = '';
+            panel.style.right = '';
+            if (!view || typeof button.getBoundingClientRect !== 'function') { return; }
+            const width = button.ownerDocument.documentElement.clientWidth || view.innerWidth;
+            const box = button.getBoundingClientRect();
+            const panelWidth = panel.getBoundingClientRect().width;
+            if (box.left + panelWidth <= width - 12) { return; }
+            if (box.right - panelWidth >= 12) {
+                panel.style.left = 'auto';
+                panel.style.right = '0';
+            } else {
+                // Neither edge fits: span the window, measured from the button's own left edge.
+                panel.style.left = (12 - box.left) + 'px';
+                panel.style.right = 'auto';
+            }
+        }
+
         function placeRowMenu(button: any, panel: any): void {
             const card = button.closest ? button.closest('[data-table-wrap]') : null;
             const scrolling = !!card && card.getAttribute('data-table-wrap') === 'false'
@@ -2283,10 +2321,10 @@ namespace workbench {
                 ? '<' + term.value + '>' : '';
             const addition = !context || !iri ? '' : list.column === 'type'
                 ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { { SELECT ?s WHERE { ?s a '
-                    + iri + ' } LIMIT 50 } ?s ?p ?o }' }, 'Add instances of ' + label + ' to the graph', true)
+                    + iri + ' } LIMIT 50 } ?s ?p ?o }' }, 'Add up to 50 instances of ' + label + ' to the graph', true)
                 : list.column === 'context'
                     ? addToGraphControl(runtime, context, { kind: 'query', query: 'CONSTRUCT { ?s ?p ?o } WHERE { GRAPH ' + iri
-                        + ' { ?s ?p ?o } } LIMIT 200' }, 'Add statements of ' + label + ' to the graph', true)
+                        + ' { ?s ?p ?o } } LIMIT 200' }, 'Add up to 200 statements from ' + label + ' to the graph', true)
                     : '';
             const href = resultExploreHref(term);
             return h`<td data-label=${list.label}>${href
@@ -3470,22 +3508,33 @@ namespace workbench {
                             <label for="file">RDF file</label>${addDropZone(runtime)}
                         </div>
                         <div id="add-source-server-file-panel" class="workbench-field add-source-panel" data-source="server-file" hidden>
-                            <label for="server-file">Approved server file</label>
+                            <div class="workbench-label workbench-help-row"><label for="server-file">File on the server</label>${helpTip(runtime,
+                                'server-file-help', 'About server files', h`<p>Workbench lists the files in its import directory:
+                                    <code>imports</code> in the Workbench application data directory, for example
+                                    <code>Workbench/imports</code> on macOS or <code>workbench/imports</code> on Linux. The
+                                    <code>org.eclipse.rdf4j.appdata.basedir</code> property sets where application data is kept.</p>
+                                <p>To read from another existing, readable directory, start the JVM that runs Workbench with
+                                    <code>-Dorg.eclipse.rdf4j.workbench.add-file-directory=/absolute/directory</code>, or set the
+                                    <code>add-file-directory</code> init parameter of the <code>workbench</code> servlet in
+                                    <code>WEB-INF/web.xml</code>. Restart Workbench afterwards; the JVM property takes precedence.</p>`)}</div>
                             <div class="workbench-select-control"><select id="server-file" name="server-file" disabled required>
                                 <option value="" selected>Choose a file</option>
                                 ${serverFiles.map((row: any) => h`<option value=${text(row['server-file-option'])}>${text(row['server-file-option'])}</option>`)}
                             </select>${icon(runtime, 'chevron', 'workbench-select-chevron')}</div>
-                            <p class="workbench-field__help">By default, Workbench reads files from <code>imports</code> inside its application data directory,
-                                under the shared base selected by <code>org.eclipse.rdf4j.appdata.basedir</code>
-                                (for example, <code>Workbench/imports</code> on macOS or <code>workbench/imports</code> on Linux).</p>
-                            <p class="workbench-field__help">To use another existing, readable absolute directory, add
-                                <code>-Dorg.eclipse.rdf4j.workbench.add-file-directory=/absolute/directory</code> to the startup options of the JVM running Workbench,
-                                or set the <code>add-file-directory</code> init parameter on the <code>workbench</code> servlet in Workbench's <code>WEB-INF/web.xml</code>.
-                                Restart Workbench to apply changes; the JVM property overrides the servlet setting.</p>
-                            ${serverFiles.length ? '' : h`<p class="workbench-field__help">No approved server files are available.</p>`}
+                            <p class="workbench-field__help">${serverFiles.length ? 'Files in the import directory on the server.'
+                                : 'The import directory on the server has no files.'}</p>
                         </div>
                         <div id="add-source-url-panel" class="workbench-field add-source-panel" data-source="url" hidden>
-                            <label for="url">RDF URL</label><input id="url" name="url" type="text" size="48" disabled
+                            <div class="workbench-label workbench-help-row"><label for="url">RDF URL</label>${helpTip(runtime,
+                                'url-help', 'About URL imports', h`<p>The server downloads the URL itself, so it only accepts sites an
+                                    administrator has allowed. To allow one, start the JVM that runs Workbench with
+                                    <code>-Dorg.eclipse.rdf4j.workbench.add-url-allowed-origins=https://data.example.org</code>, or set
+                                    the <code>add-url-allowed-origins</code> init parameter of the <code>workbench</code> servlet in
+                                    <code>WEB-INF/web.xml</code>, then restart Workbench.</p>
+                                <p>List exact origins (scheme, host and optional port), separated by commas and without paths.
+                                    Redirects are not followed, and downloads over 32 MiB are refused unless <code>add-url-max-bytes</code>
+                                    sets another limit.</p>`)}</div>
+                            <input id="url" name="url" type="text" size="48" disabled
                                 @change=${() => invoke('workbench.add.enabledInput', 'url')} />
                         </div>
                         <div id="add-source-text-panel" class="workbench-field add-source-panel" data-source="text" hidden>
@@ -4121,10 +4170,13 @@ namespace workbench {
             };
             return h`<aside id="configuration-reference" class="workbench-config-reference"
                     aria-labelledby="configuration-reference-heading">
-                <h2 id="configuration-reference-heading">Configuration reference</h2>
-                <p class="workbench-field__help">Options for the saved repository and its nested layers, including settings
-                    omitted from the Turtle. Changing a type in your draft does not change this reference.
-                    Examples are reference text; adapt them to the matching configuration node.</p>
+                <div class="workbench-help-row"><h2 id="configuration-reference-heading">Configuration reference</h2>${helpTip(runtime,
+                    'configuration-reference-help', 'About the configuration reference', h`<p>The reference describes the saved
+                        configuration. If you change a type in the editor, save to see the options of the new type.</p>
+                    <p>Each example shows one option on its own. Copy it into the matching part of your configuration, for
+                        example a store option into the <code>config:sail.impl</code> block.</p>`)}</div>
+                <p class="workbench-field__help">Every option this repository and each layer of its store accept, including
+                    options the Turtle does not set.</p>
                 ${groups.length ? h`<div class="workbench-field workbench-config-reference__search">
                     <label for="configuration-reference-search">Find a configuration option</label>
                     <input id="configuration-reference-search" type="search" placeholder="Predicate, description or datatype"
@@ -4144,8 +4196,8 @@ namespace workbench {
                                 .textContent=${vocabulary.iri(group.type)}></code>`
                             : h`<code>${JSON.stringify(group.type)}</code>`}</p>` : ''}
                         ${group.description ? h`<p class="workbench-field__help">${group.description}</p>` : ''}
-                        ${group.complete ? '' : h`<p class="workbench-config-reference__notice">Documentation is incomplete for this
-                            implementation. Extensions may support additional options.</p>`}
+                        ${group.complete ? '' : h`<p class="workbench-config-reference__notice">This implementation may accept
+                            options that are not listed here.</p>`}
                         ${group.options.map((option: any) => h`<article class="workbench-config-reference__option"
                                 data-config-reference-option data-config-reference-search-base=${[groupText, option.predicate,
                                     option.description, option.datatype, option.valueType,
@@ -4155,8 +4207,8 @@ namespace workbench {
                                     list(option.path).join(' '), list(option.examples).join(' ')].join(' ').toLowerCase()}>
                             <h3><code data-config-reference-iri=${option.predicate} title=${iri(option.predicate)}
                                 .textContent=${vocabulary.iri(option.predicate)}></code></h3>
-                            ${option.parameterFamily ? h`<p class="workbench-config-reference__notice">Extensible parameter family;
-                                individual keys depend on the configured implementation.</p>` : ''}
+                            ${option.parameterFamily ? h`<p class="workbench-config-reference__notice">Accepts any key under
+                                this prefix; which keys work depends on the configured implementation.</p>` : ''}
                             ${list(option.path).length ? h`<p class="workbench-config-reference__path">Within ${
                                 list(option.path).map((path: string) => h`<code data-config-reference-iri=${path}
                                     title=${iri(path)} .textContent=${vocabulary.iri(path)}></code>`)}</p>` : ''}
@@ -4182,7 +4234,7 @@ namespace workbench {
                     </details>`;
                 })}</div>
                 <p id="configuration-reference-copy-status" class="workbench-field__help" role="status" aria-live="polite"></p>`
-                    : h`<p class="workbench-field__help">Configuration documentation is unavailable for this response.</p>`}
+                    : h`<p class="workbench-field__help">No reference is available for this configuration.</p>`}
             </aside>`;
         }
 
@@ -4213,8 +4265,7 @@ namespace workbench {
                     @input=${(event: any) => clearSubmission(event, model, context, runtime)}>
                 ${errorCallout(runtime, model)}
                 <p class="workbench-field__help" id="configuration-help">Repository ID: <strong>${context.repositoryId}</strong>.
-                    Keep this ID unchanged. Save and restart closes this repository and opens it with the saved settings.
-                    An initialization error leaves the saved configuration available here for correction.</p>
+                    Keep this ID unchanged in the configuration.</p>
                 <div id="configuration-editor" class="workbench-field"><label for="configuration">Configuration (Turtle)</label>
                     <textarea id="configuration" name="configuration" rows="22" cols="100"
                         .configurationModel=${model} spellcheck="false" aria-describedby="configuration-help">${turtle}</textarea>
@@ -4228,6 +4279,11 @@ namespace workbench {
                         ?disabled=${sending}>${icon(runtime, 'saved')}<span>Save</span></button>
                     <a href="config" class="workbench-action" aria-disabled=${sending ? 'true' : 'false'}
                         @click=${(event: any) => { if (sending) { event.preventDefault(); } }}>Reload saved configuration</a>
+                    ${helpTip(runtime, 'configuration-save-help', 'About saving', h`<p><strong>Save</strong> stores the
+                        configuration. The repository keeps its current settings until it restarts.</p>
+                    <p><strong>Save and restart</strong> stores the configuration, then closes the repository and opens it
+                        again with the new settings.</p>
+                    <p>If the repository fails to start, the saved configuration stays here so you can correct it.</p>`)}
                     ${submissionStatus(runtime, model)}
                 </div>
             </form>${configurationReference(runtime, groups, vocabulary)}</div>`;
@@ -5066,12 +5122,34 @@ namespace workbench {
          * Bind the context bar's repository switcher once per shell: its popover (workbench.popover from template.ts),
          * the lazily loaded repository list, its filter and arrow-key movement.
          */
+        /**
+         * Help buttons (helpTip) on every route, whichever mount rendered them: one listener on the document binds a
+         * button's popover the first time it is clicked. It listens in the capture phase, so the popover's own click
+         * listener, added to the button before the click reaches it, opens the panel for this same click.
+         */
+        export function installHelpTips(document: any): void {
+            const popover: any = (workbench as any).popover;
+            if (!document || !document.addEventListener || document.__rdf4jHelpTips || !popover
+                    || typeof popover.bind !== 'function') {
+                return;
+            }
+            document.__rdf4jHelpTips = true;
+            document.addEventListener('click', (event: any) => {
+                const target = event.target;
+                const button = target && target.closest ? target.closest('[data-workbench-help]') : null;
+                if (!button || button.getAttribute('data-workbench-popover-bound') === 'true') { return; }
+                const panel = document.getElementById(button.getAttribute('aria-controls'));
+                if (panel) { popover.bind(button, panel, { onOpen: (opened: any) => placeHelpPanel(button, opened) }); }
+            }, true);
+        }
+
         export function bindContextBar(appMount: any, context: ViewContext): () => void {
             const document = appMount && appMount.ownerDocument;
             const popover: any = (workbench as any).popover;
             if (!document || !document.getElementById || !popover || typeof popover.bind !== 'function') {
                 return () => {};
             }
+            installHelpTips(document);
             const disposers: Array<() => void> = [];
             const currentId = contextBarState(context).repositoryId;
             disposers.push(popover.bind(document.getElementById('workbench-repository-switcher'),

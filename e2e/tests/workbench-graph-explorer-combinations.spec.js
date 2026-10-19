@@ -81,7 +81,7 @@ async function runQuery(explorer, query) {
     await explorer.locator('#sparql').fill(query);
     await explorer.getByRole('button', { name: 'Run query' }).click();
     await expect(explorer.getByRole('button', { name: 'Run query' })).toBeEnabled({ timeout: 30000 });
-    await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+    await explorer.getByRole('button', { name: 'Close query editor' }).click();
 }
 
 /** The stored graph of this repository, as text, from the browser's database. */
@@ -286,8 +286,8 @@ test('Labels and the graph scope come back after a reload, and a restored focus 
     await explorer.getByRole('button', { name: 'Show all relation labels' }).click();
     await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('.label-preferences > summary').click();
-    await explorer.getByLabel('Graph scope').selectOption('all');
-    await explorer.getByRole('button', { name: 'Close query workspace' }).click();
+    await explorer.getByLabel('Graphs to explore').selectOption('all');
+    await explorer.getByRole('button', { name: 'Close query editor' }).click();
     await node(page, 'Oslo').click();
     await expect.poll(() => storedGraph(page), { timeout: 10000 }).toContain('"scope":"all"');
     await page.reload();
@@ -297,7 +297,7 @@ test('Labels and the graph scope come back after a reload, and a restored focus 
     await expect(explorer.getByRole('button', { name: 'Show all relation labels' })).toHaveAttribute('aria-pressed', 'true');
     await explorer.getByRole('button', { name: 'Query editor', exact: true }).click();
     await explorer.locator('.label-preferences > summary').click();
-    await expect(explorer.getByLabel('Graph scope')).toHaveValue('all');
+    await expect(explorer.getByLabel('Graphs to explore')).toHaveValue('all');
 });
 
 test('RDF 1.2 and blank nodes: badges count only drawable links, blank nodes have names, values have their types',
@@ -320,8 +320,8 @@ test('RDF 1.2 and blank nodes: badges count only drawable links, blank nodes hav
         await explorer.locator('.view-menu > summary').click();
         await explorer.locator('.view-menu-popover button', { hasText: 'Chart' }).click();
         await expect(explorer.locator('.data-view h3')).toHaveText('Distribution of age');
-        await explorer.locator('.chart-series button', { hasText: 'Predicates' }).click();
-        await expect(explorer.locator('.data-view h3')).toHaveText('Predicate distribution');
+        await explorer.locator('.chart-series button', { hasText: 'Relations' }).click();
+        await expect(explorer.locator('.data-view h3')).toHaveText('Relations by frequency');
     });
 
 test('with the keyboard alone: find a node, then open the card of one of its statements, a value one too', async ({ page }) => {

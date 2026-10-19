@@ -104,14 +104,14 @@ export function labelGuidance(policy: LabelPolicy, evidence: LabelEvidence, dism
   const common = evidence.properties.filter(property => commonProperties.has(property));
   const languages = [...new Set(evidence.languages.map(language => (language || "und").toLowerCase()))];
   if (!policy.propertiesConfigured && new Set(common).size > 1)
-    reasons.push({ id: "multiple-properties", text: "Loaded data uses multiple label predicates. Choose which names to prefer." });
+    reasons.push({ id: "multiple-properties", text: "The loaded data names things with several label predicates. Choose which to prefer." });
   if (!policy.languagesConfigured && evidence.properties.some(property => property !== "urn:graph-field:supplied") && languages.length > 1)
-    reasons.push({ id: "multiple-languages", text: "Loaded data uses multiple languages. Choose their preferred order." });
+    reasons.push({ id: "multiple-languages", text: "The loaded labels come in several languages. Choose which to prefer." });
   if (evidence.complete && common.length) {
     if (policy.propertiesConfigured && !evidence.properties.some(property => policy.properties.includes(property)))
-      reasons.push({ id: "unmatched-properties", text: "Loaded labels use other predicates than your preferred label predicates. Common label predicates provide the names shown." });
+      reasons.push({ id: "unmatched-properties", text: "None of the loaded labels use your preferred label predicates, so common ones such as rdfs:label are shown." });
     if (policy.languagesConfigured && languages.length && !languages.some(language => languageRank(language, policy.languages) < policy.languages.length * 100))
-      reasons.push({ id: "unmatched-languages", text: "Loaded labels use other languages than your preferred label languages. Available labels provide the names shown." });
+      reasons.push({ id: "unmatched-languages", text: "None of the loaded labels are in your preferred languages, so labels in other languages are shown." });
   }
   return reasons.filter(reason => !dismissed.includes(reason.id));
 }

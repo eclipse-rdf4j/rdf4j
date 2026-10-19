@@ -1793,6 +1793,89 @@ body.workbench-body .workbench-popover--end {
 	}
 }
 
+/* Help (helpTip in workbenchViews.ts): a "?" beside a label or heading opens a popover with the details most readers
+ * can skip. The row keeps the label's own type styles (workbench-label) and puts the button right after its text. */
+body.workbench-body .workbench-help-row {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+body.workbench-body .workbench-help-row > :is(h2, label) {
+	margin: 0;
+}
+
+body.workbench-body .workbench-form-actions > .workbench-help {
+	align-self: center;
+}
+
+body.workbench-body .workbench-help {
+	position: relative;
+	display: inline-flex;
+	flex: 0 0 auto;
+	vertical-align: middle;
+}
+
+body.workbench-body .workbench-help .workbench-help__button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	box-sizing: border-box;
+	width: 24px;
+	height: 24px;
+	min-height: 0;
+	padding: 0;
+	border: 0;
+	border-radius: 50%;
+	background: transparent;
+	color: var(--workbench-muted);
+	cursor: pointer;
+}
+
+body.workbench-body .workbench-help .workbench-help__button:hover,
+body.workbench-body .workbench-help .workbench-help__button[aria-expanded="true"] {
+	background: var(--workbench-inset);
+	color: var(--workbench-primary);
+}
+
+body.workbench-body .workbench-help .workbench-help__button:focus-visible {
+	outline: 2px solid var(--workbench-focus);
+	outline-offset: 1px;
+}
+
+@media (pointer: coarse) {
+	body.workbench-body .workbench-help .workbench-help__button {
+		width: 32px;
+		height: 32px;
+	}
+}
+
+body.workbench-body .workbench-popover.workbench-help__panel {
+	width: 360px;
+	padding: 12px 14px;
+	color: var(--workbench-ink);
+	font-size: 13px;
+	font-weight: 400;
+	line-height: 1.5;
+	text-align: left;
+	white-space: normal;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-help__panel p {
+	margin: 0;
+}
+
+body.workbench-body .workbench-help__panel p + p {
+	margin-top: 8px;
+}
+
+body.workbench-body .workbench-help__panel code {
+	font-family: var(--workbench-code-font);
+	font-size: 12px;
+}
+
 body.workbench-body .workbench-popover .workbench-kv {
 	padding: 4px 8px;
 }

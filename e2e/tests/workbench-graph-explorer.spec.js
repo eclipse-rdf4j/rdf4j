@@ -48,6 +48,23 @@ test('the sidebar opens an empty Graph page; Load 100 statements draws nodes', a
     expect(await page.locator('.graph-explorer .graph-node').count()).toBeGreaterThan(1);
 });
 
+test('the toolbar help lists the gestures and keys; Escape closes it and nothing else', async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'graph'));
+    await waitForRoute(page, 'graph');
+    const explorer = page.locator('.graph-explorer');
+    const help = explorer.getByRole('button', { name: 'How to use the graph' });
+    await help.click();
+    await expect(help).toHaveAttribute('aria-expanded', 'true');
+    const guide = explorer.getByRole('note').filter({ hasText: 'Double-click a node' });
+    await expect(guide).toBeVisible();
+    await expect(guide).toContainText('never change the repository');
+    await page.keyboard.press('Escape');
+    await expect(guide).toBeHidden();
+    await expect(help).toBeFocused();
+    await expect(help).toHaveAttribute('aria-expanded', 'false');
+});
+
 test('leaving and returning mounts exactly one explorer, keeps the graph and the Workbench shell intact', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto(repositoryPageUrl(REPOSITORY_ID, 'graph'));
@@ -75,7 +92,7 @@ test('the query editor hands the SPARQL over to the Query page', async ({ page }
     await expect(page.locator('.graph-explorer .graph-node').first()).toBeAttached({ timeout: 30000 });
 
     await page.getByRole('button', { name: 'Query editor' }).click();
-    const link = page.locator('.graph-explorer .endpoint-caption a', { hasText: 'Open in Query page' });
+    const link = page.locator('.graph-explorer .endpoint-caption a', { hasText: 'Open on the Query page' });
     await expect(link).toHaveAttribute('href', /\/query\?query=SELECT/);
     await link.click();
     await waitForRoute(page, 'query');

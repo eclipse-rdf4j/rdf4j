@@ -209,7 +209,7 @@ export function FilterPanel({
                 <div className="facet-source">
                   <button
                     type="button"
-                    title="Count these values in the whole repository for the loaded nodes"
+                    title="The loads reached their limit, so these counts may be low. Count the loaded nodes' values in the whole repository."
                     disabled={filters.countingFacetId === facet.id}
                     onClick={() => void filters.countInRepository(facet, onCountInRepository)}
                   >

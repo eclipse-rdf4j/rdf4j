@@ -25,7 +25,7 @@ export function LabelGuidanceNotice({ reasons, onConfigure, onDismiss }: {
         Configure labels
       </button>
       <button type="button" className="workbench-action workbench-action--ghost workbench-action--icon"
-        aria-label="Dismiss label guidance" title="Dismiss label guidance for this repository" onClick={onDismiss}>
+        aria-label="Dismiss label guidance" title="Do not show this again for this repository" onClick={onDismiss}>
         <Icon name="close" />
       </button>
     </div>

@@ -167,7 +167,7 @@ test('named graph scope accepts a fixed blank reference', async ({ page }) => {
     await page.getByRole('button', { name: 'Query editor' }).click();
     const preferences = page.locator('.label-preferences');
     await preferences.locator('summary').click();
-    await preferences.getByLabel('Graph scope').selectOption('named');
+    await preferences.getByLabel('Graphs to explore').selectOption('named');
     await preferences.getByLabel('Named graph IRI').fill('<_:graph>');
     await preferences.getByRole('button', { name: 'Use graph' }).click();
 

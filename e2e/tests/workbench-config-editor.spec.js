@@ -160,12 +160,32 @@ test('ordinary navigation and Back preserve the configuration draft', async ({ p
     await expect.poll(() => editorValue(page)).toBe(draft);
 });
 
+test('help buttons explain saving and the reference, and close with Escape', async ({ page }) => {
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    const saving = page.getByRole('button', { name: 'About saving' });
+    const savingPanel = page.locator('#configuration-save-help');
+    await expect(savingPanel).toBeHidden();
+    await saving.click();
+    await expect(savingPanel).toBeVisible();
+    await expect(savingPanel).toContainText('Save and restart');
+    await page.keyboard.press('Escape');
+    await expect(savingPanel).toBeHidden();
+    await expect(saving).toBeFocused();
+
+    const reference = page.getByRole('button', { name: 'About the configuration reference' });
+    await reference.click();
+    await expect(page.locator('#configuration-reference-help')).toBeVisible();
+    await page.locator('#configuration-reference-heading').click();
+    await expect(page.locator('#configuration-reference-help')).toBeHidden();
+});
+
 test('configuration reference searches saved layers without replacing the draft or editor', async ({ page }) => {
     await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
     await waitForRoute(page, 'config');
     const reference = page.locator('#configuration-reference');
     await expect(reference.getByRole('heading', { name: 'Configuration reference' })).toBeVisible();
-    await expect(reference).toContainText('saved repository');
+    await expect(reference).toContainText('Every option this repository');
     const draft = await editorValue(page) + '\n# A draft survives reference filtering\n';
     await setEditor(page, draft);
     await page.locator('#configuration-editor .CodeMirror').evaluate(element => {

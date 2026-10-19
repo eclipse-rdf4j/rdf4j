@@ -141,7 +141,7 @@ export function NodeDetailsCard({
           <button
             className="workbench-action workbench-action--primary"
             type="button"
-            title="Load the nodes this one links to and from (double-click a node does the same)"
+            title="Load the nodes this one links to and from. Double-clicking the node does the same."
             disabled={expanding}
             onClick={onExpand}
           >
@@ -153,7 +153,7 @@ export function NodeDetailsCard({
           <a
             className="workbench-action workbench-action--secondary"
             href={exploreHref}
-            title="Every statement about this resource, on the Explore page"
+            title="Open the Explore page with every statement about this resource"
           >
             <Icon name="explore" />
             Explore
@@ -164,7 +164,7 @@ export function NodeDetailsCard({
             className="workbench-action workbench-action--secondary workbench-action--icon"
             type="button"
             aria-label={node.pinned ? "Unpin" : "Pin in place"}
-            title={node.pinned ? "Unpin" : "Pin in place"}
+            title={node.pinned ? "Unpin: layouts may move it again" : "Pin in place: layouts leave it where it is"}
             aria-pressed={Boolean(node.pinned)}
             onClick={onTogglePin}
           >
@@ -208,7 +208,9 @@ export function NodeDetailsCard({
                   );
                 })}
                 {group.items.length > DETAILS_ITEM_LIMIT ? (
-                  <small className="node-details-more">+{group.items.length - DETAILS_ITEM_LIMIT}</small>
+                  <small className="node-details-more" title={`${group.items.length - DETAILS_ITEM_LIMIT} more not shown`}>
+                    +{group.items.length - DETAILS_ITEM_LIMIT}
+                  </small>
                 ) : null}
               </dd>
             </div>
@@ -244,7 +246,9 @@ export function NodeDetailsCard({
                   );
                 })}
                 {group.items.length > DETAILS_ITEM_LIMIT ? (
-                  <small className="node-details-more">+{group.items.length - DETAILS_ITEM_LIMIT}</small>
+                  <small className="node-details-more" title={`${group.items.length - DETAILS_ITEM_LIMIT} more not shown`}>
+                    +{group.items.length - DETAILS_ITEM_LIMIT}
+                  </small>
                 ) : null}
               </dd>
             </div>

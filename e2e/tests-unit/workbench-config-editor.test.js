@@ -199,7 +199,7 @@ test('configuration reference renders persisted layers, shapes and nested Turtle
         }] }] });
     const markup = flat(template);
     assert.match(markup, /Configuration reference/);
-    assert.match(markup, /saved repository/i);
+    assert.match(markup, /saved\s+configuration/i);
     assert.match(markup, /Memory store/);
     assert.match(markup, /Layer 1/);
     assert.match(markup, /Configuration path: Sail/);
@@ -210,7 +210,7 @@ test('configuration reference renders persisted layers, shapes and nested Turtle
     assert.ok(attributeValues(template, 'data-config-reference-search-base')[0].includes('urn:legacy:persist'),
         'hidden legacy aliases remain searchable without declaring their namespace');
     assert.deepEqual(attributeValues(template, 'data-config-reference-copy'), ['[] ns:delegate [ ns:persist true ] .']);
-    assert.match(markup, /incomplete/i);
+    assert.match(markup, /may accept\s+options that are not listed here/);
     assert.match(markup, /type="search"/);
     assert.equal(model.rows[0][0].value, 'typed Turtle configuration');
 });
@@ -294,7 +294,7 @@ test('extension parameter examples use a real predicate while documenting the ex
         examplePredicate: 'urn:search:indexDir', examples: ['"index"'], aliases: ['urn:legacy:search:']
     }] }] });
     const markup = flat(template);
-    assert.match(markup, /Extensible parameter family/);
+    assert.match(markup, /Accepts any key under\s+this prefix/);
     assert.doesNotMatch(markup, /Also accepts parameter prefixes/);
     assert.deepEqual(attributeValues(template, 'data-config-reference-copy'), ['[] ns:indexDir "index" .']);
 });
@@ -306,7 +306,7 @@ test('malformed extension documentation leaves the configuration editor availabl
     const markup = flat(context.workbench.views.pageTemplate(model,
         { basePath: '/workbench', repositoryId: 'repo', workbench: { menu: [] } }, runtime));
     assert.match(markup, /typed Turtle configuration/);
-    assert.match(markup, /documentation is unavailable/);
+    assert.match(markup, /No reference is available for this configuration/);
 });
 
 for (const outcome of ['copied', 'unavailable', 'refused']) {
@@ -380,6 +380,42 @@ function flat(template) {
     }
     return template == null || typeof template === 'function' ? '' : String(template);
 }
+
+/** Help buttons (data-workbench-help) in flattened markup with the hidden panel each one controls. */
+function helpTips(markup) {
+    return (markup.match(/<button\b[^>]*\bdata-workbench-help\b[^>]*>/g) || []).map((tag) => {
+        const controls = (tag.match(/aria-controls="([^"]*)"/) || [])[1];
+        const at = markup.indexOf('id="' + controls + '"');
+        assert.ok(controls && at >= 0, 'a help button controls a panel');
+        const panelTag = markup.slice(markup.lastIndexOf('<', at), markup.indexOf('>', at) + 1);
+        const body = markup.slice(markup.indexOf('>', at) + 1, markup.indexOf('</div>', at));
+        return { label: (tag.match(/aria-label="([^"]*)"/) || [])[1], hidden: /\shidden[\s>]/.test(panelTag),
+            text: body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim(), markup: panelTag + body + '</div>' };
+    });
+}
+
+test('the configuration page explains saving and the reference behind help buttons', () => {
+    const { template } = configurationPage({ groups: [{ id: 'repository', title: 'Repository', complete: true,
+        options: [{ predicate: 'urn:test:id', description: 'Identifier.', valueType: 'literal' }] }] });
+    const markup = flat(template);
+    const tips = helpTips(markup);
+
+    const saving = tips.find((tip) => /sav/i.test(tip.label || ''));
+    assert.ok(saving, 'a help button explains Save and Save and restart');
+    assert.equal(saving.hidden, true);
+    assert.match(saving.text, /Save and restart/);
+    assert.match(saving.text, /fails to start|cannot start|does not start/);
+
+    const reference = tips.find((tip) => /reference/i.test(tip.label || ''));
+    assert.ok(reference, 'a help button explains how the reference relates to the draft');
+    assert.equal(reference.hidden, true);
+    assert.match(reference.text, /saved configuration/);
+
+    const visible = tips.reduce((rest, tip) => rest.replace(tip.markup, ''), markup);
+    assert.match(visible, /Repository ID/);
+    assert.doesNotMatch(visible, /initialization error|Changing a type in your draft/,
+        'the details stay out of the page until asked for');
+});
 
 for (const [action, message] of [
     ['save', 'Configuration saved. Restart the repository to apply it.'],

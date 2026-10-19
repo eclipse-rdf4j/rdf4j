@@ -206,6 +206,7 @@ export function NodeMenu({
                         >
                           <span
                             className={`direction ${option.direction}`}
+                            title={option.direction === "outgoing" ? "Outgoing: links from this node" : "Incoming: links to this node"}
                           >
                             {option.direction === "outgoing"
                               ? "OUT"
@@ -215,7 +216,10 @@ export function NodeMenu({
                             {option.label}
                           </span>
                           {option.count !== null && (
-                            <span className="predicate-count">
+                            <span
+                              className="predicate-count"
+                              title={`${option.count.toLocaleString()} of the ${menu.nodeIds.length} selected nodes have this relation`}
+                            >
                               {option.count.toLocaleString()}/
                               {menu.nodeIds.length}
                             </span>
@@ -268,7 +272,7 @@ export function NodeMenu({
                   onHideLeaves();
                 }}
               >
-                <strong>Hide leaf neighbours</strong>
+                <strong>Hide neighbours with no other links</strong>
               </button>
             ) : null}
           </div>
@@ -277,7 +281,7 @@ export function NodeMenu({
               type="button"
               className="is-danger"
               onClick={onHide}
-              title="Hide (Delete); Undo brings it back"
+              title="Hide (Delete). Undo brings it back."
             >
               <Icon name="hide" />
               <strong>

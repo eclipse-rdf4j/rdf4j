@@ -4623,7 +4623,7 @@ namespace workbench {
                 this.addToGraphButton.classList.add('is-added');
                 this.addToGraphButton.textContent = 'Added to graph';
                 decorateWithWorkbenchIcon(this.addToGraphButton, 'graph', 'The results are added to the graph');
-                this.addToGraphButton.setAttribute('title', 'Added: open the Graph page to see the statements');
+                this.addToGraphButton.setAttribute('title', 'Added. Open the Graph page to see the statements');
             }
 
             private createButton(label: string, callback: () => void): any {

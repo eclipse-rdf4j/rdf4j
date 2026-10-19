@@ -63,7 +63,7 @@ current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mj
 | Filter panel (`#graph-filter-sidebar`) | Header with the match count and Clear all; active filters as removable chips (selected fill, primary-tinted border); a search field; one disclosure per filter whose closed summary previews its values (or its min – max), checkbox rows with a count bar in the value's colour, from–to inputs for numbers and dates; "N more filters" as a quiet primary text button. |
 | Data views | Sticky one-row header (title, count, actions); the triple table follows `table.data` (inset header row, soft rules); entity cards are Workbench cards with a type-coloured top rule. |
 | Node actions (`.predicate-menu`) | A `workbench-popover` at the pointer (a bottom sheet below 640px): the node's name, then rows like `workbench-popover__option` (Expand, Details, Expand by relation ▾, selection actions, Hide in danger colour), groups separated by soft rules. |
-| Query drawer | Workbench fields (`workbench-field`, 12px/600 labels, Workbench inputs), `--primary` Run query, bordered disclosures for Visual query and Language preferences. |
+| Query drawer | Workbench fields (`workbench-field`, 12px/600 labels, Workbench inputs), `--primary` Run query, bordered disclosures for the filter query and the label, language and graph settings; "?" help buttons open in the flow (help-tip.tsx). |
 
 ## Layout
 

@@ -285,28 +285,14 @@ html[data-theme="dark"] .graph-explorer {
 
 .graph-explorer #graph-explorer-app .query-head {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 2px;
 }
 
 .graph-explorer #graph-explorer-app .query-head label {
   color: var(--ink);
   font-size: var(--workbench-label-font-size);
   font-weight: 600;
-}
-
-.graph-explorer #graph-explorer-app .query-head span {
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.graph-explorer #graph-explorer-app .query-head code {
-  color: var(--body);
-  font-size: 11px;
 }
 
 .graph-explorer #graph-explorer-app .query-panel textarea {
@@ -378,14 +364,13 @@ html[data-theme="dark"] .graph-explorer {
   margin: 8px 10px 10px;
 }
 
-.graph-explorer #graph-explorer-app .label-preferences[open] {
+/* The body, not the <details>, is the grid: a grid <details> only lays out its summary and ::details-content box.
+   The minmax(0, 1fr) track keeps wide controls from pushing the panel past the drawer. */
+.graph-explorer #graph-explorer-app .label-preferences-body {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
-  padding-bottom: 10px;
-}
-
-.graph-explorer #graph-explorer-app .label-preferences > :not(summary) {
-  margin-inline: 10px;
+  padding: 0 10px 10px;
 }
 
 .graph-explorer #graph-explorer-app .label-preferences :is(p, small) {
@@ -420,6 +405,18 @@ html[data-theme="dark"] .graph-explorer {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* A heading with its help button right after the text. */
+.graph-explorer #graph-explorer-app .preference-heading {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+}
+
+.graph-explorer #graph-explorer-app .label-preferences .preference-heading h3 {
+  margin-top: 0;
 }
 
 .graph-explorer #graph-explorer-app .label-preferences h3 {
@@ -458,7 +455,7 @@ html[data-theme="dark"] .graph-explorer {
   flex: 1;
 }
 
-.graph-explorer #graph-explorer-app .label-preferences > .workbench-action {
+.graph-explorer #graph-explorer-app .label-preferences-body > .workbench-action {
   justify-self: start;
 }
 
@@ -711,6 +708,144 @@ html[data-theme="dark"] .graph-explorer {
 
 .graph-explorer #graph-explorer-app .layout-menu .toolbar-menu-popover {
   width: 240px;
+}
+
+/* Help (help-tip.tsx): a "?" button opens a panel with the details most readers can skip, such as the graph's
+ * gestures and keys. Like the toolbar menus it opens under its button and becomes a bottom sheet on touch screens. */
+.graph-explorer #graph-explorer-app .help-tip {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-button {
+  color: var(--muted);
+}
+
+.graph-explorer #graph-explorer-app .help-tip-button[aria-expanded="true"] {
+  color: var(--accent);
+  background: var(--selected);
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel {
+  position: absolute;
+  z-index: 45;
+  top: calc(100% + 6px);
+  left: 0;
+  box-sizing: border-box;
+  width: 300px;
+  max-width: calc(100vw - 24px);
+  max-height: min(560px, 70dvh);
+  overflow-y: auto;
+  padding: 12px 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  color: var(--ink);
+  background: var(--panel);
+  box-shadow: var(--popover-shadow);
+  font: 400 13px/1.45 var(--sans);
+  letter-spacing: normal;
+  text-align: left;
+  text-transform: none;
+  white-space: normal;
+  transform-origin: top left;
+  animation: popover-enter var(--motion-medium) var(--ease-out) both;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel[hidden] {
+  display: none;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel.is-end {
+  right: 0;
+  left: auto;
+  transform-origin: top right;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel.is-wide {
+  width: 400px;
+}
+
+/* In the side panels, the query drawer and the details cards, which clip what overflows them, the panel opens in the
+ * flow (help-tip.tsx, inline): the help box steps aside and the panel wraps onto its own line under the heading. */
+.graph-explorer #graph-explorer-app .help-tip.is-inline {
+  display: contents;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel.is-inline {
+  position: static;
+  flex: 1 0 100%;
+  width: auto;
+  max-width: none;
+  max-height: none;
+  margin-top: 6px;
+  box-shadow: none;
+}
+
+.graph-explorer #graph-explorer-app :is(.query-head, .preference-heading, .panel-title) {
+  flex-wrap: wrap;
+}
+
+.graph-explorer #graph-explorer-app .panel-title {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+/* A side panel's title takes the header's free width, so its help is as wide as the header beside the close button. */
+.graph-explorer #graph-explorer-app .filter-sidebar-header > div:has(.panel-title) {
+  flex: 1 1 auto;
+}
+
+.graph-explorer #graph-explorer-app .help-tip .help-tip-panel p {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.graph-explorer #graph-explorer-app .help-tip .help-tip-panel p + p {
+  margin-top: 8px;
+}
+
+.graph-explorer #graph-explorer-app .help-tip-panel code {
+  font: 12px/1.4 var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section + .help-guide-section {
+  margin-top: 14px;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section h3 {
+  margin: 0 0 6px;
+  color: var(--muted);
+  font: 600 12px/1.3 var(--sans);
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section dl > div {
+  display: grid;
+  grid-template-columns: minmax(0, 13em) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section dt {
+  font-weight: 600;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section dd {
+  margin: 0;
+}
+
+.graph-explorer #graph-explorer-app .help-guide-section dl + p {
+  margin-top: 8px;
 }
 
 /* "Applies to the 12 selected nodes": a selection makes every layout local. */
@@ -3000,7 +3135,9 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   }
 
   .graph-explorer #graph-explorer-app :is(.toolbar-menu-popover, .view-menu-popover),
-  .graph-explorer #graph-explorer-app .layout-menu .toolbar-menu-popover {
+  .graph-explorer #graph-explorer-app .layout-menu .toolbar-menu-popover,
+  .graph-explorer #graph-explorer-app .help-tip-panel:not(.is-inline),
+  .graph-explorer #graph-explorer-app .help-tip-panel:is(.is-end, .is-wide):not(.is-inline) {
     position: fixed;
     z-index: 55;
     top: auto;

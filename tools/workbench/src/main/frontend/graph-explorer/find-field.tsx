@@ -98,7 +98,7 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository 
         aria-expanded={shown}
         aria-controls={listId}
         aria-activedescendant={shown ? `${listId}-${current}` : undefined}
-        placeholder="Find"
+        placeholder="Find a node or search…"
         value={term}
         onChange={(event) => {
           setTerm(event.target.value);
