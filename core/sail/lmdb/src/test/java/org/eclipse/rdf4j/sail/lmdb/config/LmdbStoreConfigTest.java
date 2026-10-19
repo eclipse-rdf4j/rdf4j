@@ -95,6 +95,45 @@ class LmdbStoreConfigTest {
 	private static final IRI READ_ONLY_REPLAY_MAX_RETRIES = LmdbStoreSchema.READ_ONLY_REPLAY_MAX_RETRIES;
 
 	@Test
+	void legacyReferenceCountRepairDefaultsToDisabled() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThat(config.getLegacyReferenceCountRepairEnabled()).isFalse();
+		Model model = new LinkedHashModel();
+		Resource node = config.export(model);
+		assertThat(model.filter(node, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, null)).isEmpty();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void legacyReferenceCountRepairParsesAndRoundTrips(boolean enabled) {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, Values.literal(enabled));
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(model, node);
+		assertThat(config.getLegacyReferenceCountRepairEnabled()).isEqualTo(enabled);
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = config.export(exported);
+		LmdbStoreConfig reparsed = new LmdbStoreConfig();
+		reparsed.parse(exported, exportedNode);
+		assertThat(reparsed.getLegacyReferenceCountRepairEnabled()).isEqualTo(enabled);
+		assertThat(new LmdbStoreConfig().setLegacyReferenceCountRepairEnabled(enabled)
+				.getLegacyReferenceCountRepairEnabled()).isEqualTo(enabled);
+	}
+
+	@Test
+	void legacyReferenceCountRepairRejectsInvalidAndConflictingValues() {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, Values.literal("sometimes"));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+		model.clear();
+		model.add(node, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, Values.literal(false));
+		model.add(node, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, Values.literal(true));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
 	void backlogDefaultsToAutoAndRejectsNegativeValues() {
 		assertThat(new LmdbStoreConfig().getDirectAdjacencyBacklogMaxBytes()).isZero();
 		assertThatThrownBy(() -> new LmdbStoreConfig().setDirectAdjacencyBacklogMaxBytes(-1))

@@ -71,7 +71,7 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		LmdbCompatibilityFixtures.nativePut(store, "ref_counts", LmdbCompatibilityFixtures.idKey(namespaceId),
 				new byte[] { 99 });
 
-		assertReadableWritableAndReopen(store, "legacy-ref-count-version");
+		assertReadableWritableAndReopen(store, "legacy-ref-count-version", true);
 
 		assertThat(LmdbCompatibilityFixtures.nativeGet(store, "ref_counts",
 				LmdbCompatibilityFixtures.idKey(subjectId)))
@@ -248,6 +248,11 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 	}
 
 	private static void assertReadableWritableAndReopen(Path storeDirectory, String label) throws Exception {
+		assertReadableWritableAndReopen(storeDirectory, label, false);
+	}
+
+	private static void assertReadableWritableAndReopen(Path storeDirectory, String label, boolean repair)
+			throws Exception {
 		Map<String, String> before = LmdbCompatibilityFixtures.snapshot(storeDirectory);
 		StoreProperties discovered = new StoreProperties(storeDirectory.toFile());
 		discovered.load();
@@ -264,7 +269,7 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		var writtenSubject = values.createIRI("urn:legacy601:bootstrap:" + label);
 		var writtenObject = values.createLiteral(label);
 
-		SailRepository repository = new SailRepository(newStore(storeDirectory));
+		SailRepository repository = new SailRepository(newStore(storeDirectory, repair));
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(1L);
@@ -279,7 +284,7 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 			repository.shutDown();
 		}
 
-		repository = new SailRepository(newStore(storeDirectory));
+		repository = new SailRepository(newStore(storeDirectory, repair));
 		repository.init();
 		try (RepositoryConnection connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(2L);
@@ -301,7 +306,12 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 	}
 
 	private static LmdbStore newStore(Path directory) {
-		return new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc"));
+		return newStore(directory, false);
+	}
+
+	private static LmdbStore newStore(Path directory, boolean repair) {
+		return new LmdbStore(directory.toFile(),
+				new LmdbStoreConfig("spoc,posc").setLegacyReferenceCountRepairEnabled(repair));
 	}
 
 	private static void createDatabasePrefix(Path valuesEnvironment, String... databaseNames) throws IOException {

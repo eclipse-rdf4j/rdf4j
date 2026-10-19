@@ -133,6 +133,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean valueHashCacheEnabled = false;
 
+	private boolean legacyReferenceCountRepairEnabled;
+
 	private boolean inlineLiterals = true;
 
 	private boolean orderedNumericIds = true;
@@ -385,6 +387,20 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setValueHashCacheEnabled(boolean valueHashCacheEnabled) {
 		this.valueHashCacheEnabled = valueHashCacheEnabled;
+		return this;
+	}
+
+	/**
+	 * Whether existing format-2 dictionaries reconstruct and validate component reference counts before reclaiming
+	 * unused values. Disabled by default to preserve compatibility with earlier reference-count marker readers.
+	 * Format-6 dictionaries always enable reference-count recovery and integrity checks.
+	 */
+	public boolean getLegacyReferenceCountRepairEnabled() {
+		return legacyReferenceCountRepairEnabled;
+	}
+
+	public LmdbStoreConfig setLegacyReferenceCountRepairEnabled(boolean enabled) {
+		legacyReferenceCountRepairEnabled = enabled;
 		return this;
 	}
 
@@ -781,6 +797,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (valueHashCacheEnabled) {
 			m.add(implNode, LmdbStoreSchema.VALUE_HASH_CACHE_ENABLED, vf.createLiteral(true));
 		}
+		if (legacyReferenceCountRepairEnabled) {
+			m.add(implNode, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, vf.createLiteral(true));
+		}
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
 		}
@@ -892,6 +911,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		}
 
 		try {
+			Literal legacyReferenceCountRepair = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED);
+			if (legacyReferenceCountRepair != null) {
+				setLegacyReferenceCountRepairEnabled(parseBoolean(legacyReferenceCountRepair,
+						LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED));
+			}
+
 			Literal nativeEvaluationEnabledLiteral = singleBooleanLiteral(m, implNode,
 					LmdbStoreSchema.NATIVE_EVALUATION_ENABLED);
 			if (nativeEvaluationEnabledLiteral != null) {

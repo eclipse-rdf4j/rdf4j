@@ -455,6 +455,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 			}
 			if (rc == MDB_SUCCESS) {
 				validateRefCountMarkerSchema(markerValue.mv_data());
+				legacyStructuredRefCountMarker = format.isLegacy();
 			}
 			boolean valid = rc == MDB_SUCCESS && isValidRefCountMarker(markerValue.mv_data(), nativeTransactionId);
 			return new RefCountMarkerStatus(emptyStore, valid, nativeTransactionId);
@@ -930,6 +931,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	private boolean auxiliaryDatabasesInitialized;
 	/** True only after a complete live-owner count establishment or a valid clean-close marker. */
 	private boolean refCountIntegrityEstablished;
+	private final boolean refCountRepairEnabled;
+	/** A known structured marker left by a previous format-2 opener, to be removed when repair is disabled. */
+	private boolean legacyStructuredRefCountMarker;
 	/** Set while a store requires reconstruction; destructive retirement/GC is refused in this state. */
 	private boolean refCountRecoveryRequired;
 	private boolean refCountRecoveryInProgress;
@@ -1154,6 +1158,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		this.dir = dir;
 		this.properties = properties;
 		this.format = Objects.requireNonNull(format);
+		this.refCountRepairEnabled = !format.isLegacy() || config.getLegacyReferenceCountRepairEnabled();
 		this.deferPersistedUnusedRecovery = deferPersistedUnusedRecovery;
 		this.storeConfig = config;
 		this.forceSync = config.getForceSync();
@@ -1220,6 +1225,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	private void initializeAfterOpen(LmdbStoreConfig config) throws IOException {
 		valueStoreInitializationComplete = false;
+		if (!refCountRepairEnabled) {
+			logger.warn("LMDB format-2 component reference-count repair is disabled; historical counts remain "
+					+ "unverified and dictionary reclamation is deferred. Enable "
+					+ "LmdbStoreConfig.setLegacyReferenceCountRepairEnabled(true) or "
+					+ "<http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled> true to repair "
+					+ "existing counts. See https://github.com/eclipse-rdf4j/rdf4j/issues/6095. "
+					+ "Repair writes integrity metadata that earlier reference-count readers cannot read; "
+					+ "reopen with repair disabled before downgrading.");
+		}
 		beginStartupInitialization();
 		try {
 			initializeIdsAndTermIndexes(config);
@@ -1306,7 +1320,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 				freeIdsAvailable = stat.ms_entries() > 0;
 				auxiliaryDatabasesInitialized = true;
 
-				writeRefCountMarker(stack, writeTxn, REFCOUNT_MARKER_DIRTY);
+				if (refCountRepairEnabled) {
+					writeRefCountMarker(stack, writeTxn, REFCOUNT_MARKER_DIRTY);
+				} else if (legacyStructuredRefCountMarker) {
+					// Absence makes the earlier repair reader reconstruct atomically. Never replace an incomplete or
+					// stale reconstruction with its one-byte completion marker.
+					MDBVal marker = MDBVal.calloc(stack).mv_data(stack.bytes(REF_COUNTS_VERSION_KEY));
+					E(mdb_del(writeTxn, refCountsDbi, marker, null));
+					legacyStructuredRefCountMarker = false;
+				}
 			}
 		} catch (IOException | RuntimeException | Error failure) {
 			try {
@@ -1571,6 +1593,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	private void establishRefCountIntegrity() throws IOException {
 		refCountIntegrityEstablished = false;
+		if (!refCountRepairEnabled) {
+			return;
+		}
 		if (!refCountRecoveryRequired) {
 			// A clean marker (or a new empty store) is trusted only while the native environment remains at the exact
 			// transaction whose state was validated. A concurrent writer between startup bootstrap and this check is
@@ -1594,6 +1619,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private void freePersistedUnusedValuesAfterRecovery() throws IOException {
+		if (!refCountRepairEnabled) {
+			return;
+		}
 		if (!refCountIntegrityEstablished) {
 			throw new IOException("Cannot evict unused ValueStore IDs before ref-count integrity is established");
 		}
@@ -2425,6 +2453,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		valueStoreInitializationComplete = false;
 		refCountIntegrityEstablished = false;
 		refCountRecoveryInProgress = false;
+		legacyStructuredRefCountMarker = false;
 		startupMarkerStatus = null;
 		lastTrustedNativeTransactionId = -1L;
 		startupExpectedLastTransactionId = -1L;
@@ -11221,6 +11250,12 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		if (!enableGC()) {
 			return;
 		}
+		if (!refCountRepairEnabled) {
+			// Keep candidates durable while historical counts are untrusted. A later opted-in opener reconstructs
+			// counts and checks authoritative statement liveness before draining this queue.
+			recordRetiredIds(ids, 0L);
+			return;
+		}
 		requireRefCountIntegrity("garbage collect ValueStore IDs");
 		ids = new ArrayList<>(ids);
 		valueIdLivenessChecker.filterUsedIds(ids);
@@ -11281,7 +11316,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 		if (!enableGC() || ids.isEmpty()) {
 			return;
 		}
-		requireRefCountIntegrity("record retired ValueStore IDs");
+		if (refCountRepairEnabled) {
+			requireRefCountIntegrity("record retired ValueStore IDs");
+		}
 		List<Long> capturedIds = List.copyOf(ids);
 		// Finish native preflight before resizing. The continuation owns copied IDs and resolves the current
 		// writer afterward; no retirement cursor or partially applied retirement records cross this boundary.
@@ -11314,7 +11351,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	 * before being reclaimed.
 	 */
 	RetiredValueIdStore.DrainBatch pollRetiredIds(long maxRevisionInclusive, int maxIds) throws IOException {
-		if (!retiredIdStore.hasPending()) {
+		if (!refCountRepairEnabled || !retiredIdStore.hasPending()) {
 			return null;
 		}
 		return readTransaction(env,
@@ -11609,6 +11646,9 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 
 	private void freeUnusedIdsAndValues(MemoryStack stack, long txn, Set<Long> revisionIds,
 			ValueIdLivenessChecker livenessChecker) throws IOException {
+		if (!refCountRepairEnabled) {
+			return;
+		}
 		boolean retiringCohorts = revisionIds != null;
 		MDBVal idVal = MDBVal.calloc(stack);
 		MDBVal revIdVal = MDBVal.calloc(stack);
@@ -12641,7 +12681,8 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver 
 	}
 
 	private void writeCleanRefCountMarker() {
-		if (!valueStoreInitializationComplete || !auxiliaryDatabasesInitialized || !refCountIntegrityEstablished
+		if (!refCountRepairEnabled || !valueStoreInitializationComplete || !auxiliaryDatabasesInitialized
+				|| !refCountIntegrityEstablished
 				|| refCountRecoveryRequired
 				|| refCountRecoveryInProgress || writeTxn != 0 || lastTrustedNativeTransactionId < 0L) {
 			return;

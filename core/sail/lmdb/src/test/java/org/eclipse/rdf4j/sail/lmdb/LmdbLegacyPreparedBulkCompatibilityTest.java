@@ -261,6 +261,7 @@ class LmdbLegacyPreparedBulkCompatibilityTest {
 
 	private LmdbStore store(boolean inline) {
 		return new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc,psoc")
+				.setLegacyReferenceCountRepairEnabled(true)
 				.setTripleTermIndexes("spoc,cspo")
 				.setInlineLiterals(inline)
 				.setBulkOperationSize(4096)

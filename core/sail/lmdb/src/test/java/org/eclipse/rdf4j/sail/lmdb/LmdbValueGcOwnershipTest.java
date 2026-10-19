@@ -981,6 +981,7 @@ class LmdbValueGcOwnershipTest {
 
 	private static LmdbStoreConfig config() {
 		return new LmdbStoreConfig("spoc,posc").setTripleTermIndexes("spoc,cspo")
+				.setLegacyReferenceCountRepairEnabled(true)
 				.setSketchEstimatorEnabled(false)
 				.setAutoGrow(true);
 	}
