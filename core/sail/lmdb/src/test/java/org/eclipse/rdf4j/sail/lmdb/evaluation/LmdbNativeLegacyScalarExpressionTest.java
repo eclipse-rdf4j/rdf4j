@@ -137,13 +137,17 @@ class LmdbNativeLegacyScalarExpressionTest {
 						+ "\ngeneric execution path="
 						+ genericExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
 						+ " declines=" + genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
-						+ " proposals=" + genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
-						+ " adaptive=" + genericExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION)
+						+ " proposals="
+						+ genericExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
+						+ " adaptive="
+						+ genericExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION)
 						+ "\nnative execution path="
 						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.EXECUTION_PATH)
 						+ " declines=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_DECLINES)
-						+ " proposals=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
-						+ " adaptive=" + nativeExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION))
+						+ " proposals="
+						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.STRATEGY_PROPOSAL_COSTS)
+						+ " adaptive="
+						+ nativeExpression.getStringMetricActual(LmdbNativeExplain.ADAPTIVE_COST_DECISION))
 				.isEqualTo(3L);
 	}
 
