@@ -27,6 +27,7 @@ final class PackedBindingFacts {
 	private final int[] nullableInputMaskIds;
 	private final int allSymbolMaskId;
 	private final int[] independentOutputMaskIds;
+	private final int[] ordinaryWriteMaskIds;
 	private final long[] derivedRelationGroupWords;
 	private final int[] scalarDependencyMaskIds;
 	private final int[] scalarEmbeddedReferenceMaskIds;
@@ -45,6 +46,7 @@ final class PackedBindingFacts {
 		protectedInputMaskIds = new int[query.relationCount() + 1];
 		nullableInputMaskIds = new int[query.relationCount() + 1];
 		independentOutputMaskIds = new int[query.relationCount() + 1];
+		ordinaryWriteMaskIds = new int[query.relationCount() + 1];
 		derivedRelationGroupWords = new long[(query.relationCount() >>> 6) + 1];
 		scalarDependencyMaskIds = new int[query.scalarCount() + 1];
 		scalarEmbeddedReferenceMaskIds = new int[query.scalarCount() + 1];
@@ -65,6 +67,7 @@ final class PackedBindingFacts {
 			protectedInputMaskIds[id] = nameSetMask(query.relProtectedInputNames(id));
 			nullableInputMaskIds[id] = nameSetMask(query.relNullableInputNames(id));
 			independentOutputMaskIds[id] = nameSetMask(query.relIndependentOutputNames(id));
+			ordinaryWriteMaskIds[id] = nameSetMask(query.relOrdinaryWriteNames(id));
 		}
 	}
 
@@ -90,6 +93,10 @@ final class PackedBindingFacts {
 
 	int nullableInputMaskId(int id) {
 		return nullableInputMaskIds[id];
+	}
+
+	int ordinaryWriteMaskId(int id) {
+		return ordinaryWriteMaskIds[id];
 	}
 
 	int relationOutputMaskId(int relationId) {
@@ -196,8 +203,6 @@ final class PackedBindingFacts {
 			}
 			switch (query.scalarOperator(scalarId)) {
 			case PackedScalarOp.VARIABLE -> addTerm(query.scalarPayload(scalarId));
-			case PackedScalarOp.VALUE_TRIPLE_REF -> addPayloadTerms(query.scalarPayload(scalarId));
-			case PackedScalarOp.TRIPLE_COMPONENT -> addTerm(query.payloadPrimary(query.scalarPayload(scalarId)));
 			default -> {
 			}
 			}

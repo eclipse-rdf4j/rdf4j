@@ -129,18 +129,20 @@ final class PackedInputFrameScheduling {
 		if (leftCount == 0 || rightCount == 0) {
 			return true;
 		}
-		// Nullable observations preserve their original providers and later competitors. Unlike a proven-absent
-		// read, they may legitimately see an earlier possibly-bound value; unrelated pure factors remain free.
-		int nullableLeft = 0;
+		// Nullable observations and ordinary writes retain their original providers and later competitors.
+		// Writes need this order fence even when the original target was guaranteed or proved absent.
+		int orderedLeft = 0;
 		for (int ordinal = 0; ordinal < leftCount; ordinal++) {
-			nullableLeft = query.unionMasks(nullableLeft, query.relNullableInputMaskId(left[ordinal]));
+			orderedLeft = query.unionMasks(orderedLeft, query.relNullableInputMaskId(left[ordinal]));
+			orderedLeft = query.unionMasks(orderedLeft, query.relOrdinaryWriteMaskId(left[ordinal]));
 		}
-		int nullableRight = 0;
+		int orderedRight = 0;
 		for (int ordinal = 0; ordinal < rightCount; ordinal++) {
-			nullableRight = query.unionMasks(nullableRight, query.relNullableInputMaskId(right[rightOffset + ordinal]));
+			orderedRight = query.unionMasks(orderedRight, query.relNullableInputMaskId(right[rightOffset + ordinal]));
+			orderedRight = query.unionMasks(orderedRight, query.relOrdinaryWriteMaskId(right[rightOffset + ordinal]));
 		}
-		if (query.masksIntersect(nullableLeft, possible(query, right, rightOffset, rightCount))
-				|| query.masksIntersect(nullableRight, possible(query, left, 0, leftCount))) {
+		if (query.masksIntersect(orderedLeft, possible(query, right, rightOffset, rightCount))
+				|| query.masksIntersect(orderedRight, possible(query, left, 0, leftCount))) {
 			for (int leftOrdinal = 0; leftOrdinal < leftCount; leftOrdinal++) {
 				for (int rightOrdinal = 0; rightOrdinal < rightCount; rightOrdinal++) {
 					if (!query.executionOrderAllows(left[leftOrdinal], right[rightOffset + rightOrdinal])) {

@@ -417,7 +417,8 @@ class PackedSearchTest {
 		assertEquals(4, emptyPrefixLeafEstimates.get());
 		assertEquals(3, canonicalJoinRefinements.get(),
 				"Each unchanged canonical JOIN implementation should be refined exactly once");
-		assertEquals(191, result.metrics().workUnits(),
+		// This exact four-factor search admits 168 contextual steps plus 17 incumbent accounting units.
+		assertEquals(168 + 17, result.metrics().workUnits(),
 				"Exact search must account for each distinct contextual bushy continuation while replaying unchanged "
 						+ "canonical provider calls");
 		assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE, result.completionStatus());
@@ -2711,7 +2712,10 @@ class PackedSearchTest {
 			double inputRows = selectedFilter.getArg().getResultSizeEstimate();
 			double filteredRows = inputRows * 0.25d;
 			assertEquals(filteredRows, withFilter.outputRows(), 0.0d, withFilter.selectedPlan()::toString);
-			assertEquals(42.0d, withFilter.totalCost(), 0.0d, withFilter.selectedPlan()::toString);
+			// The isolated type price pays its one-unit startup once and repeats the remaining seven units ten times.
+			double typeReopenWork = 1.0d + (8.0d - 1.0d) * 10.0d;
+			double completeWork = 10.0d + typeReopenWork + 8.0d + 8.0d + 2.0d + 4.0d + 2.0d;
+			assertEquals(completeWork, withFilter.totalCost(), 0.0d, withFilter.selectedPlan()::toString);
 			assertTrue(selectedFilter.getCostEstimate() > selectedFilter.getArg().getCostEstimate(),
 					() -> "Filter evaluation must add work after its assured prefix: " + withFilter.selectedPlan());
 

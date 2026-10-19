@@ -3249,24 +3249,22 @@ namespace workbench {
             return parts.join(' ') + ' .';
         }
 
+        /** A reusable Workbench/SPARQL operand; blank node values are raw IDs, never prefixed labels. */
         export function exploreResource(term: RdfTerm): string {
             if (!term) {
                 return '';
             }
             if (term.kind === 'iri') {
-                return '<' + (term.value || '') + '>';
+                return '<' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
             }
             if (term.kind === 'bnode') {
-                var blankNode = term.value || '';
-                return blankNode.indexOf('_:') === 0 ? blankNode : '_:' + blankNode;
+                return '<_:' + String(term.value || '').replace(/[\u0000-\u0020<>"{}|^`\\]/g, unicodeEscape) + '>';
             }
             if (term.kind === 'triple') {
                 return '<<( ' + exploreResource(term.subject) + ' ' + exploreResource(term.predicate)
                     + ' ' + exploreResource(term.object) + ' )>>';
             }
-            return JSON.stringify(term.value || '') + (term.language ? '@' + term.language
-                + (term.direction ? '--' + term.direction : '')
-                : term.datatype ? '^^<' + term.datatype + '>' : '');
+            return nquadsTerm(term);
         }
 
         function abbreviatedIri(value: string, namespaces: { prefix: string; name: string }[]): string {
@@ -3324,8 +3322,7 @@ namespace workbench {
                     display.externalHref = term.value;
                 }
             } else if (term.kind === 'bnode') {
-                var value = term.value || '';
-                display.label = value.indexOf('_:') === 0 ? value : '_:' + value;
+                display.label = exploreResource(term);
                 display.title = display.label;
                 display.exploreHref = 'explore?resource=' + encodeURIComponent(exploreResource(term));
             } else if (term.kind === 'triple') {

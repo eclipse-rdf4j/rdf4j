@@ -51,6 +51,120 @@ import org.junit.jupiter.params.provider.ValueSource;
 class PackedCostSessionLifecycleTest {
 
 	@ParameterizedTest
+	@ValueSource(strings = { "legacy", "local", "inclusive", "unavailable" })
+	void mutableTraceRestoresExactMetricsAndDigestForEveryCostKind(String kind) {
+		PackedCostEstimate original = traceRestorationCost(kind);
+		original.putPlannedStringMetric("test.currentProviderAnnotation", "retained");
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[0], 0, 0, 1.0d);
+		PackedCostingTraceArena arena = new PackedCostingTraceArena();
+		PackedCostEstimate output = new PackedCostEstimate();
+		output.copyCandidateFrom(original);
+		int event = arena.append(PackedCostingPhase.PHYSICAL_JOIN, 1, context, 0, context,
+				original, output, output.objectivePoint());
+		PackedCostingTrace trace = arena.snapshot();
+		PackedCostEstimate restored = new PackedCostEstimate();
+		restored.setRows(99.0d, 101.0d);
+		restored.putPlannedStringMetric("test.previousDestinationAnnotation", "discarded");
+
+		arena.restore(event, restored);
+
+		assertTraceRestorationCost(original, restored);
+		assertEquals(original.plannedStringMetricCount(), restored.plannedStringMetricCount(),
+				"full restoration must not duplicate its already-recorded derived scope");
+		assertEquals(original.plannedDoubleMetricCount(), restored.plannedDoubleMetricCount());
+		assertEquals(original.plannedStringMetric("plannedCostScope"),
+				restored.plannedStringMetric("plannedCostScope"));
+		assertEquals("retained", restored.plannedStringMetric("test.currentProviderAnnotation"));
+		assertNull(restored.plannedStringMetric("test.previousDestinationAnnotation"));
+		PackedCostingTraceArena roundTrip = new PackedCostingTraceArena();
+		int restoredEvent = roundTrip.append(PackedCostingPhase.PHYSICAL_JOIN, 1, context, 0, context,
+				original, restored, restored.objectivePoint());
+		PackedCostingTrace restoredTrace = roundTrip.snapshot();
+		assertEquals(trace.eventCount(), restoredTrace.eventCount());
+		assertEquals(trace.phase(event), restoredTrace.phase(restoredEvent));
+		assertEquals(trace.relationId(event), restoredTrace.relationId(restoredEvent));
+		assertEquals(trace.digest(event), restoredTrace.digest(restoredEvent));
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "legacy", "local", "inclusive", "unavailable" })
+	void immutableProviderInputRestoresOnlyDerivedMetricsAndExactReplayDigest(String kind) {
+		PackedCostEstimate original = traceRestorationCost(kind);
+		original.putPlannedStringMetric("test.currentProviderAnnotation", "retained");
+		PackedCostContext context = new PackedCostContext();
+		context.reset(new int[0], 0, 0, 1.0d);
+		PackedCostingTraceArena arena = new PackedCostingTraceArena();
+		PackedCostEstimate output = new PackedCostEstimate();
+		output.copyCandidateFrom(original);
+		int event = arena.append(PackedCostingPhase.PHYSICAL_JOIN, 1, context, 0, context,
+				original, output, output.objectivePoint());
+		PackedCostingTrace trace = arena.snapshot();
+		PackedCostEstimate restored = new PackedCostEstimate();
+		restored.setRows(99.0d, 101.0d);
+		restored.putPlannedStringMetric("test.previousDestinationAnnotation", "discarded");
+
+		trace.restoreProviderInputCost(event, restored);
+
+		assertTraceRestorationCost(original, restored);
+		assertNull(restored.plannedStringMetric("test.currentProviderAnnotation"),
+				"provider input must not inherit a prior callback's arbitrary annotations");
+		assertNull(restored.plannedStringMetric("test.previousDestinationAnnotation"));
+		assertEquals(0, restored.plannedDoubleMetricCount());
+		assertEquals(kind.equals("unavailable") ? 0 : 1, restored.plannedStringMetricCount(),
+				"only the derived scope for available telemetry is reconstructed");
+		assertEquals(original.plannedStringMetric("plannedCostScope"),
+				restored.plannedStringMetric("plannedCostScope"));
+		PackedCostEstimate replayOutput = new PackedCostEstimate();
+		replayOutput.copyCandidateFrom(restored);
+		replayOutput.putPlannedStringMetric("test.currentProviderAnnotation", "retained");
+		PackedCostingTraceArena roundTrip = new PackedCostingTraceArena();
+		int replayedEvent = roundTrip.append(PackedCostingPhase.PHYSICAL_JOIN, 1, context, 0, context,
+				restored, replayOutput, replayOutput.objectivePoint());
+		PackedCostingTrace replayedTrace = roundTrip.snapshot();
+		assertEquals(trace.eventCount(), replayedTrace.eventCount());
+		assertEquals(trace.phase(event), replayedTrace.phase(replayedEvent));
+		assertEquals(trace.relationId(event), replayedTrace.relationId(replayedEvent));
+		assertEquals(trace.digest(event), replayedTrace.digest(replayedEvent));
+	}
+
+	private static PackedCostEstimate traceRestorationCost(String kind) {
+		PackedCostEstimate estimate = new PackedCostEstimate();
+		switch (kind) {
+		case "legacy" -> estimate.setRows(2.0d, 3.0d);
+		case "local" -> estimate.setLocalPhysicalCost(3.0d, 1.0d, 2.0d, 4.0d, 5.0d, 6.0d, 7.0d,
+				8.0d, 9.0d, 10.0d);
+		case "inclusive" -> estimate.setInclusivePhysicalCost(3.0d, 1.0d, 2.0d, 4.0d, 5.0d, 6.0d, 7.0d,
+				8.0d, 9.0d, 10.0d);
+		case "unavailable" -> estimate.setLocalScalarPrice(2.0d, 3.0d);
+		default -> throw new AssertionError("unknown fixture cost kind " + kind);
+		}
+		estimate.setOutputRowsPreservingPhysicalCost(2.0d);
+		assertEquals(kind.equals("local") || kind.equals("inclusive"), estimate.hasExplicitPhysicalCost());
+		assertNull(estimate.runtimeFeedbackContract());
+		return estimate;
+	}
+
+	private static void assertTraceRestorationCost(PackedCostEstimate original, PackedCostEstimate restored) {
+		assertEquals(original.outputRows(), restored.outputRows());
+		assertEquals(original.workRows(), restored.workRows());
+		assertEquals(original.costScope(), restored.costScope());
+		assertEquals(original.hasExplicitPhysicalCost(), restored.hasExplicitPhysicalCost());
+		assertEquals(original.replacesChildWork(), restored.replacesChildWork());
+		assertEquals(original.sequentialRows(), restored.sequentialRows());
+		assertEquals(original.randomSeeks(), restored.randomSeeks());
+		assertEquals(original.iteratorOpens(), restored.iteratorOpens());
+		assertEquals(original.expressionEvaluations(), restored.expressionEvaluations());
+		assertEquals(original.hashBuildRows(), restored.hashBuildRows());
+		assertEquals(original.hashProbeRows(), restored.hashProbeRows());
+		assertEquals(original.pathExpansions(), restored.pathExpansions());
+		assertEquals(original.resultRows(), restored.resultRows());
+		assertEquals(original.remoteCalls(), restored.remoteCalls());
+		assertEquals(original.peakMemoryRows(), restored.peakMemoryRows());
+		assertNull(restored.runtimeFeedbackContract());
+	}
+
+	@ParameterizedTest
 	@CsvSource({ "false,snapshot", "true,snapshot", "false,project", "true,project", "false,detach", "true,detach" })
 	void replayPreservesCallerDeclaredPrefixBagFact(boolean describesRows, String route) {
 		PackedCostContext original = new PackedCostContext();

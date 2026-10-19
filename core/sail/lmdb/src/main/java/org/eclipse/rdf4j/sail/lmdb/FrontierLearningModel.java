@@ -15,12 +15,17 @@ import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.OptionalDouble;
+import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.InvocationAggregateView;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
 
 /** Hierarchical Normal-Inverse-Gamma learning over logical truths and physical cost residuals. */
 final class FrontierLearningModel {
@@ -88,6 +93,7 @@ final class FrontierLearningModel {
 	private final Map<String, DimensionCounts> legacyFamilyPriors = new LinkedHashMap<>();
 	private final LinkedHashMap<LogicalPosteriorKey, DimensionCounts> logicalExact = new LinkedHashMap<>();
 	private final LinkedHashMap<PhysicalPosteriorKey, DimensionCounts> physicalExact = new LinkedHashMap<>();
+	private int physicalTableHighWaterEntries;
 	private final LinkedHashMap<LearningApplicability, FeatureCalibration> featureCalibrations = new LinkedHashMap<>();
 	private final LinkedHashMap<LogicalCensorKey, CensoredObservationBounds> logicalCensored = new LinkedHashMap<>();
 	private final LinkedHashMap<PhysicalCensorKey, CensoredObservationBounds> physicalCensored = new LinkedHashMap<>();
@@ -110,12 +116,15 @@ final class FrontierLearningModel {
 	static final class ResolvedCells {
 		private final DimensionCounts logical;
 		private final DimensionCounts physical;
+		private final DimensionCounts physicalSource;
 		private final long generation;
 		private boolean released;
 
-		private ResolvedCells(DimensionCounts logical, DimensionCounts physical, long generation) {
+		private ResolvedCells(DimensionCounts logical, DimensionCounts physical, DimensionCounts physicalSource,
+				long generation) {
 			this.logical = logical;
 			this.physical = physical;
+			this.physicalSource = physicalSource;
 			this.generation = generation;
 		}
 
@@ -124,12 +133,19 @@ final class FrontierLearningModel {
 		}
 
 		boolean sharesPhysicalCell(ResolvedCells other) {
-			return other != null && physical != null && physical == other.physical;
+			return other != null && physical != null && physical == other.physical
+					&& physicalSource == other.physicalSource;
 		}
 	}
 
 	synchronized ResolvedCells resolve(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, boolean resolveLogical, boolean resolvePhysical) {
+		return resolve(logicalKey, physicalKey, applicability, resolveLogical, resolvePhysical, resolvePhysical);
+	}
+
+	synchronized ResolvedCells resolve(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, boolean resolveLogical, boolean resolvePhysical,
+			boolean resolveSource) {
 		if (logicalKey == null || applicability == null || (!resolveLogical && !resolvePhysical)
 				|| resolvePhysical && physicalKey == null) {
 			return null;
@@ -147,7 +163,29 @@ final class FrontierLearningModel {
 			release(logical);
 			return null;
 		}
-		return new ResolvedCells(logical, physical, generation);
+		DimensionCounts physicalSource = resolvePhysical && resolveSource
+				? lease(physicalExact, new PhysicalPosteriorKey(logicalKey, physicalKey.sourceRowsPredictor(),
+						applicability))
+				: null;
+		// SOURCE refusal cannot discard an independently qualified other-dimension lease.
+		return new ResolvedCells(logical, physical, physicalSource, generation);
+	}
+
+	synchronized ResolvedCells resolvePhysical(PhysicalEventKey eventKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, boolean resolveSource) {
+		if (eventKey == null || physicalKey == null || applicability == null) {
+			return null;
+		}
+		DimensionCounts physical = lease(physicalExact,
+				new PhysicalPosteriorKey(new EventPopulation(eventKey), physicalKey, applicability));
+		if (physical == null) {
+			return null;
+		}
+		DimensionCounts source = resolveSource ? lease(physicalExact,
+				new PhysicalPosteriorKey(new EventPopulation(eventKey), physicalKey.sourceRowsPredictor(),
+						applicability))
+				: null;
+		return new ResolvedCells(null, physical, source, generation);
 	}
 
 	synchronized boolean observeResolved(ResolvedCells cells, RuntimeFeedbackContract contract,
@@ -156,15 +194,19 @@ final class FrontierLearningModel {
 				|| cells.generation != generation || observation.statisticalSampleWeight() != 1L) {
 			return false;
 		}
-		LmdbRuntimeFeedbackDescriptor descriptor = contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor typed
-				? typed
+		LmdbLearningFeedbackDescriptor physicalDescriptor = contract
+				.descriptor()instanceof LmdbLearningFeedbackDescriptor typed
+						? typed
+						: null;
+		LmdbRuntimeFeedbackDescriptor descriptor = physicalDescriptor instanceof LmdbRuntimeFeedbackDescriptor logical
+				? logical
 				: null;
 		double rawLogicalCardinality = contract.rawLogicalCardinality();
-		LearningFeatureEnvelope features = descriptor == null
+		LearningFeatureEnvelope features = physicalDescriptor == null
 				? LearningFeatureEnvelope.conventionalRows(
 						finiteNonNegative(rawLogicalCardinality) ? rawLogicalCardinality : 0.0d)
-				: descriptor.featureEnvelope();
-		LearningApplicability applicability = descriptor == null ? null : descriptor.applicability();
+				: physicalDescriptor.featureEnvelope();
+		LearningApplicability applicability = physicalDescriptor == null ? null : physicalDescriptor.applicability();
 		if (applicability != null && !featureCalibration(applicability).admitsObservation(features)) {
 			return false;
 		}
@@ -202,9 +244,11 @@ final class FrontierLearningModel {
 			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.RESULT_ROWS,
 					observation.rawPredictedWork(InvocationAggregateView.RESULT_ROWS),
 					observation.actualWork(InvocationAggregateView.RESULT_ROWS), epoch);
-			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.SOURCE_ROWS_SCANNED,
-					observation.rawPredictedWork(InvocationAggregateView.SOURCE_ROWS),
-					observation.actualWork(InvocationAggregateView.SOURCE_ROWS), epoch);
+			if (cells.physicalSource != null) {
+				posteriorChanged |= observeResidual(cells.physicalSource, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+						observation.rawPredictedWork(InvocationAggregateView.SOURCE_ROWS),
+						observation.actualWork(InvocationAggregateView.SOURCE_ROWS), epoch);
+			}
 			posteriorChanged |= observeResidual(cells.physical, FrontierCostDimension.INDEX_SEEKS,
 					observation.rawPredictedWork(InvocationAggregateView.RANDOM_SEEKS),
 					observation.actualWork(InvocationAggregateView.RANDOM_SEEKS), epoch);
@@ -321,10 +365,14 @@ final class FrontierLearningModel {
 		cells.released = true;
 		release(cells.logical);
 		release(cells.physical);
+		release(cells.physicalSource);
 	}
 
 	synchronized void observe(FrontierLearningKey key, FrontierCostDimension dimension, double predicted,
 			double actual, long epoch) {
+		if (key != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			key = key.sourceRowsPredictor();
+		}
 		if (key == null || dimension == null || !finiteNonNegative(predicted) || !finiteNonNegative(actual)) {
 			return;
 		}
@@ -388,6 +436,9 @@ final class FrontierLearningModel {
 	synchronized void observePhysical(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
 			double predicted, double actual, long epoch) {
+		if (physicalKey != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			physicalKey = physicalKey.sourceRowsPredictor();
+		}
 		if (logicalKey == null || physicalKey == null || applicability == null
 				|| dimension == null || dimension == FrontierCostDimension.OUTPUT_ROWS
 				|| dimension == FrontierCostDimension.SEMI_ANTI_HIT_RATE || features == null
@@ -466,6 +517,9 @@ final class FrontierLearningModel {
 	 * alternatives compared in one search see identical calibration even when observations land concurrently.
 	 */
 	synchronized PosteriorSnapshot posterior(FrontierLearningKey key, FrontierCostDimension dimension) {
+		if (key != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			key = key.sourceRowsPredictor();
+		}
 		if (key == null || dimension == null) {
 			return null;
 		}
@@ -473,7 +527,9 @@ final class FrontierLearningModel {
 		SufficientStatistics family = dimension == FrontierCostDimension.OUTPUT_ROWS
 				? SufficientStatistics.EMPTY
 				: statistics(families.get(key.familyKey(dimension)), dimension, revision);
-		SufficientStatistics legacy = statistics(legacyFamilyPriors.get(key.operatorFamily()), dimension, revision);
+		SufficientStatistics legacy = dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED
+				? SufficientStatistics.EMPTY
+				: statistics(legacyFamilyPriors.get(key.operatorFamily()), dimension, revision);
 		if (child.count == 0L && family.count == 0L && legacy.count == 0L) {
 			return null;
 		}
@@ -537,6 +593,9 @@ final class FrontierLearningModel {
 	synchronized DimensionDecision physicalDecision(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
 			double predicted) {
+		if (physicalKey != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			physicalKey = physicalKey.sourceRowsPredictor();
+		}
 		PhysicalPosteriorKey posteriorKey = logicalKey == null || physicalKey == null || applicability == null
 				? null
 				: new PhysicalPosteriorKey(logicalKey, physicalKey, applicability);
@@ -557,8 +616,119 @@ final class FrontierLearningModel {
 		return new DimensionDecision(gate, estimate);
 	}
 
+	synchronized DimensionDecision physicalDecision(PhysicalEventKey eventKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
+			double predicted) {
+		if (physicalKey != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			physicalKey = physicalKey.sourceRowsPredictor();
+		}
+		PhysicalPopulation population = eventKey == null ? null : new EventPopulation(eventKey);
+		PhysicalPosteriorKey key = population == null || physicalKey == null || applicability == null ? null
+				: new PhysicalPosteriorKey(population, physicalKey, applicability);
+		PosteriorSnapshot snapshot = key == null ? null : exactPosterior(physicalExact.get(key), dimension);
+		boolean differentApplicability = false;
+		if (population != null && physicalKey != null) {
+			for (PhysicalPosteriorKey candidate : physicalExact.keySet()) {
+				if (candidate.population.equals(population) && candidate.physicalKey.equals(physicalKey)
+						&& !candidate.applicability.equals(applicability)) {
+					differentApplicability = true;
+					break;
+				}
+			}
+		}
+		LearningGateDecision gate = gateDecision(applicability, features,
+				snapshot == null ? 0L : snapshot.exactEvidenceCount(), key != null && physicalExact.containsKey(key),
+				differentApplicability);
+		return new DimensionDecision(gate, gate.appliesLearning() ? estimate(snapshot, predicted) : null);
+	}
+
+	synchronized PosteriorSnapshot physicalPosterior(PhysicalEventKey eventKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension) {
+		if (physicalKey != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			physicalKey = physicalKey.sourceRowsPredictor();
+		}
+		if (eventKey == null || physicalKey == null || applicability == null || dimension == null) {
+			return null;
+		}
+		return exactPosterior(physicalExact.get(new PhysicalPosteriorKey(new EventPopulation(eventKey), physicalKey,
+				applicability)), dimension);
+	}
+
+	/** Additional independent-origin payload only; this is an inventory, never an invented global byte quota. */
+	synchronized long independentPhysicalKeyBytes() {
+		Set<Object> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		long[] bytes = { 0L };
+		for (PhysicalPosteriorKey key : physicalExact.keySet()) {
+			if (key.population instanceof EventPopulation event) {
+				if (visited.add(event.key)) {
+					bytes[0] = saturatingAdd(bytes[0], 32L);
+					event.key.accountRetainedMemory((identity, payload) -> {
+						if (!visited.add(identity)) {
+							return false;
+						}
+						bytes[0] = saturatingAdd(bytes[0], payload);
+						return true;
+					});
+				}
+			}
+		}
+		return bytes[0];
+	}
+
+	record PhysicalInventory(int cells, int leasedCells, int independentCells, long modeledBytes) {
+	}
+
+	synchronized PhysicalInventory physicalInventory() {
+		Set<Object> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+		// Conservative backing-table model: HashMap may resize early under collisions before treeification at64.
+		// Track the real entry high-water because clear/eviction release payloads but do not shrink that table.
+		int tableSlots = physicalTableHighWaterEntries == 0 ? 0
+				: Math.max(64, Integer.highestOneBit(physicalTableHighWaterEntries * 2) << 1);
+		long[] bytes = { 48L + (tableSlots == 0 ? 0L : 16L + 8L * tableSlots) };
+		int leased = 0;
+		int independent = 0;
+		RetainedMemoryAccount account = (identity, payload) -> {
+			if (!seen.add(identity)) {
+				return false;
+			}
+			bytes[0] = saturatingAdd(bytes[0], payload);
+			return true;
+		};
+		for (Map.Entry<PhysicalPosteriorKey, DimensionCounts> entry : physicalExact.entrySet()) {
+			PhysicalPosteriorKey key = entry.getKey();
+			DimensionCounts counts = entry.getValue();
+			leased += counts.leases > 0 ? 1 : 0;
+			account.add(entry, 64L); // Linked entry payload, separately from the shared backing table above.
+			account.add(key, 40L);
+			account.add(key.population, 24L);
+			if (key.population instanceof EventPopulation event) {
+				independent++;
+				if (account.add(event.key, 32L)) {
+					event.key.accountRetainedMemory(account);
+				}
+			} else if (key.population instanceof LogicalPopulation logical) {
+				account.add(logical.key, 1024L + 6L * logical.key.externalForm().length());
+			}
+			key.physicalKey.accountRetainedMemory(account);
+			key.applicability.accountRetainedMemory(account);
+			if (account.add(counts, 40L)) {
+				account.add(counts.dimensions, 16L + 8L * counts.dimensions.length);
+				account.add(counts.usedDimensions, 16L + counts.usedDimensions.length);
+				for (MutableStatistics statistics : counts.dimensions) {
+					if (statistics != null) {
+						account.add(statistics, 56L);
+					}
+				}
+			}
+		}
+		return new PhysicalInventory(physicalExact.size(), leased, independent, bytes[0]);
+	}
+
 	synchronized PosteriorSnapshot physicalPosterior(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability, FrontierCostDimension dimension) {
+		if (physicalKey != null && dimension == FrontierCostDimension.SOURCE_ROWS_SCANNED) {
+			physicalKey = physicalKey.sourceRowsPredictor();
+		}
 		if (logicalKey == null || physicalKey == null || applicability == null || dimension == null) {
 			return null;
 		}
@@ -626,7 +796,8 @@ final class FrontierLearningModel {
 			return false;
 		}
 		for (PhysicalPosteriorKey candidate : physicalExact.keySet()) {
-			if (candidate.logicalKey.equals(logicalKey) && candidate.physicalKey.equals(physicalKey)
+			if (candidate.population.equals(new LogicalPopulation(logicalKey))
+					&& candidate.physicalKey.equals(physicalKey)
 					&& !candidate.applicability.equals(applicability)) {
 				return true;
 			}
@@ -850,6 +1021,17 @@ final class FrontierLearningModel {
 	}
 
 	synchronized void writeTo(DataOutputStream out) throws IOException {
+		writeTo(out, false);
+	}
+
+	synchronized boolean requiresPhysicalEventSchema() {
+		return physicalExact.keySet().stream().anyMatch(key -> key.population instanceof EventPopulation);
+	}
+
+	synchronized void writeTo(DataOutputStream out, boolean taggedPhysicalKeys) throws IOException {
+		if (!taggedPhysicalKeys && requiresPhysicalEventSchema()) {
+			throw new IOException("independent physical event requires tagged schema25");
+		}
 		out.writeLong(revision);
 		out.writeInt(exact.size());
 		for (Map.Entry<FrontierLearningKey, DimensionCounts> entry : exact.entrySet()) {
@@ -867,9 +1049,13 @@ final class FrontierLearningModel {
 			entry.getValue().writeTo(out);
 		}
 		out.writeInt(physicalExact.size());
-		for (Map.Entry<PhysicalPosteriorKey, DimensionCounts> entry : physicalExact.entrySet()) {
-			entry.getKey().writeTo(out);
-			entry.getValue().writeTo(out);
+		try (PhysicalEventKey.WriteContext physicalOrigins = taggedPhysicalKeys
+				? new PhysicalEventKey.WriteContext()
+				: null) {
+			for (Map.Entry<PhysicalPosteriorKey, DimensionCounts> entry : physicalExact.entrySet()) {
+				entry.getKey().writeTo(out, taggedPhysicalKeys, physicalOrigins);
+				entry.getValue().writeTo(out);
+			}
 		}
 		out.writeInt(featureCalibrations.size());
 		for (Map.Entry<LearningApplicability, FeatureCalibration> entry : featureCalibrations.entrySet()) {
@@ -898,6 +1084,11 @@ final class FrontierLearningModel {
 	}
 
 	static FrontierLearningModel readFrom(DataInputStream in, boolean includesLeoPlus) throws IOException {
+		return readFrom(in, includesLeoPlus, false);
+	}
+
+	static FrontierLearningModel readFrom(DataInputStream in, boolean includesLeoPlus,
+			boolean taggedPhysicalKeys) throws IOException {
 		FrontierLearningModel model = new FrontierLearningModel();
 		readLegacySections(in, model);
 		int logicalCount = boundedCount(in.readInt(), MAX_KEYS * 4, "logical learning key");
@@ -905,9 +1096,15 @@ final class FrontierLearningModel {
 			model.logicalExact.put(LogicalPosteriorKey.readFrom(in), DimensionCounts.readFrom(in));
 		}
 		int physicalCount = boundedCount(in.readInt(), MAX_KEYS * 4, "physical residual key");
-		for (int index = 0; index < physicalCount; index++) {
-			model.physicalExact.put(PhysicalPosteriorKey.readFrom(in), DimensionCounts.readFrom(in));
+		try (PhysicalEventKey.ReadContext physicalOrigins = taggedPhysicalKeys
+				? new PhysicalEventKey.ReadContext()
+				: null) {
+			for (int index = 0; index < physicalCount; index++) {
+				model.physicalExact.put(PhysicalPosteriorKey.readFrom(in, taggedPhysicalKeys, physicalOrigins),
+						DimensionCounts.readFrom(in));
+			}
 		}
+		model.physicalTableHighWaterEntries = physicalCount;
 		if (includesLeoPlus) {
 			int calibrationCount = boundedCount(in.readInt(), MAX_KEYS * 4, "learning feature calibration");
 			for (int index = 0; index < calibrationCount; index++) {
@@ -978,6 +1175,9 @@ final class FrontierLearningModel {
 		}
 		counts = new DimensionCounts();
 		store.put(key, counts);
+		if (store == physicalExact) {
+			physicalTableHighWaterEntries = Math.max(physicalTableHighWaterEntries, store.size());
+		}
 		return counts;
 	}
 
@@ -1095,16 +1295,55 @@ final class FrontierLearningModel {
 		}
 	}
 
-	private record PhysicalPosteriorKey(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+	private sealed interface PhysicalPopulation permits LogicalPopulation,EventPopulation {
+	}
+
+	private record LogicalPopulation(LogicalLearningKey key) implements PhysicalPopulation {
+		private LogicalPopulation {
+			Objects.requireNonNull(key, "logical population key");
+		}
+	}
+
+	private record EventPopulation(PhysicalEventKey key) implements PhysicalPopulation {
+		private EventPopulation {
+			Objects.requireNonNull(key, "physical event key");
+		}
+	}
+
+	private record PhysicalPosteriorKey(PhysicalPopulation population, PhysicalResidualKey physicalKey,
 			LearningApplicability applicability) {
-		private void writeTo(DataOutputStream out) throws IOException {
-			logicalKey.writeTo(out);
+		private PhysicalPosteriorKey(LogicalLearningKey logicalKey, PhysicalResidualKey physicalKey,
+				LearningApplicability applicability) {
+			this(new LogicalPopulation(logicalKey), physicalKey, applicability);
+		}
+
+		private void writeTo(DataOutputStream out, boolean tagged,
+				PhysicalEventKey.WriteContext physicalOrigins) throws IOException {
+			if (population instanceof LogicalPopulation logical) {
+				if (tagged) {
+					out.writeByte(0);
+				}
+				logical.key.writeTo(out);
+			} else if (population instanceof EventPopulation event && tagged) {
+				out.writeByte(1);
+				event.key.writeTo(out, physicalOrigins);
+			} else {
+				throw new IOException("independent physical event requires tagged schema25");
+			}
 			physicalKey.writeTo(out);
 			applicability.writeTo(out);
 		}
 
-		private static PhysicalPosteriorKey readFrom(DataInputStream in) throws IOException {
-			return new PhysicalPosteriorKey(LogicalLearningKey.readFrom(in), PhysicalResidualKey.readFrom(in),
+		private static PhysicalPosteriorKey readFrom(DataInputStream in, boolean tagged,
+				PhysicalEventKey.ReadContext physicalOrigins) throws IOException {
+			int tag = tagged ? in.readUnsignedByte() : 0;
+			PhysicalPopulation population = switch (tag) {
+			case 0 -> new LogicalPopulation(LogicalLearningKey.readFrom(in));
+			case 1 -> new EventPopulation(
+					PhysicalEventKey.readFrom(in, PhysicalEventKey.MAXIMUM_EVENTS, physicalOrigins));
+			default -> throw new IOException("unknown physical posterior identity tag: " + tag);
+			};
+			return new PhysicalPosteriorKey(population, PhysicalResidualKey.readFrom(in),
 					LearningApplicability.readFrom(in));
 		}
 	}

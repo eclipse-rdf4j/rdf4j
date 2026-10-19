@@ -14,6 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -47,14 +50,22 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadProbe;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
+import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.junit.jupiter.api.Test;
 
 class LmdbEstimationEngineTest {
@@ -706,6 +717,73 @@ class LmdbEstimationEngineTest {
 			return List.of(new EstimateCandidate(bag,
 					new RowEvidence(10.0d, 10.0d, 10.0d, 1.0d, true, IDENTITY, 4L, "prefix-sensitive"),
 					EstimateCandidate.Kind.EXACT_STORAGE, 1L));
+		}
+	}
+
+	@Test
+	void nativeStorageSummaryAndCeilingDeclareInvocationRowsWhenFrontierDoesNotAnswer() throws Exception {
+		for (FrontierEstimatorMode mode : FrontierEstimatorMode.values()) {
+			for (boolean ceiling : new boolean[] { false, true }) {
+				for (boolean unavailable : new boolean[] { false, true }) {
+					StatementPattern pattern = pattern("s", P1, "o");
+					PlanningGraphDomains.capture(pattern, PlanningGraphDomain.defaultGraph());
+					EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+							.withEvidencePolicy(EstimateContext.EvidencePolicy.SNAPSHOT_ONLY);
+					LmdbStatementPatternCardinalitySource cardinalities = mock(
+							LmdbStatementPatternCardinalitySource.class);
+					when(cardinalities.estimateForPlanning(any())).thenAnswer(invocation -> {
+						StatementPattern probe = invocation.getArgument(0);
+						return probe.getPredicateVar().hasValue() ? ceiling ? Double.NaN : 64.0d : 128.0d;
+					});
+					ValueStore values = mock(ValueStore.class);
+					when(values.getId(P1)).thenReturn(7L);
+					LmdbStatisticsService statistics = unavailable ? null : mock(LmdbStatisticsService.class);
+					if (statistics != null) {
+						when(statistics.estimateLeafCurrent(any(FrontierLeafProbe.class))).thenReturn(
+								new FrontierLeafEstimate(1.0d, 0.0d, Double.MAX_VALUE, 0.0d, "declined",
+										FrontierFallbackReason.GENERATION_TOO_STALE));
+					}
+					LmdbStorageEstimatorEvidence source = new LmdbStorageEstimatorEvidence(values, cardinalities,
+							null, null, null, null, null, statistics, mode);
+					List<EstimateCandidate> candidates = source.leafCandidates(pattern, context);
+					assertEquals(1, candidates.size());
+					EstimateCandidate candidate = candidates.getFirst();
+					assertEquals(ceiling ? EstimateCandidate.Kind.HEURISTIC : EstimateCandidate.Kind.STORAGE_SUMMARY,
+							candidate.kind());
+					assertEquals(ceiling ? 128.0d : 64.0d, candidate.estimate().rows());
+					assertEquals(RowScope.PER_INVOCATION, candidate.rowScope());
+					var selected = new EstimateEvidenceResolver().resolveQualified(candidates, context);
+					assertEquals(RowScope.PER_INVOCATION, selected.rowScope());
+					assertEquals(candidate.estimate().rows(), selected.estimate().rows());
+				}
+			}
+		}
+	}
+
+	@Test
+	void qualifiedLeafNormalizationAndSemanticCachePreserveProducerDeclaration() {
+		StatementPattern pattern = pattern("s", P1, "o");
+		for (RowScope scope : RowScope.values()) {
+			LmdbEstimatorEvidenceSource source = new LmdbEstimatorEvidenceSource() {
+				@Override
+				public List<EstimateCandidate> leafCandidates(TupleExpr expression, EstimateContext context) {
+					return List.of(new EstimateCandidate(BagEstimate.heuristic(5.0d, "custom"),
+							new RowEvidence(5.0d, 3.0d, 7.0d, 0.5d, false, IDENTITY, 4L, "custom"),
+							EstimateCandidate.Kind.HEURISTIC, 4L, scope));
+				}
+			};
+			LmdbEstimationEngine engine = new LmdbEstimationEngine(source, new EstimateEvidenceResolver());
+			LmdbEstimatorOptimizationScope cache = new LmdbEstimatorOptimizationScope(
+					mock(LmdbFiniteJoinSurfaceEstimator.class));
+			EstimateContext context = EstimateContext.root(pattern, IDENTITY, 4L)
+					.withInvocationCount(6.0d)
+					.withPrefixEstimate(BagEstimate.heuristic(6.0d, "actual-prefix"));
+			var result = engine.estimateQualified(pattern, context, cache);
+			assertEquals(scope == RowScope.PER_INVOCATION ? RowScope.FOR_CONTEXT : scope, result.rowScope());
+			assertEquals(scope == RowScope.FOR_CONTEXT || scope == RowScope.COMPONENT ? 5.0d : 30.0d,
+					result.estimate().rows());
+			assertEquals(result, engine.estimateQualified(pattern.clone(), context, cache));
+			assertEquals(1, cache.semanticEstimates.size());
 		}
 	}
 }

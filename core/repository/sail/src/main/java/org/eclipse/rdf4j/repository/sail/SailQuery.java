@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.AbstractParserQuery;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
@@ -40,6 +41,15 @@ public abstract class SailQuery extends AbstractParserQuery {
 		return con;
 	}
 
+	protected BlankNodeAllocationScope createBlankNodeAllocationScope() {
+		BlankNodeAllocationScope scope = new BlankNodeAllocationScope();
+		scope.bindLocalValueFactory(con.getValueFactory());
+		getParsedQuery().getReservedBNodeIDs().forEach(scope::reserve);
+		scope.reserve(getBindings());
+		scope.reserve(getActiveDataset());
+		return scope;
+	}
+
 	@Override
 	public Explanation explain(Explanation.Level level) {
 
@@ -49,7 +59,8 @@ public abstract class SailQuery extends AbstractParserQuery {
 		}
 
 		try (QueryExecutionDeadline executionDeadline = startQueryExecutionDeadline(timeout);
-				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(executionDeadline)) {
+				QueryExecutionDeadline.Scope ignored = QueryExecutionDeadline.enter(executionDeadline);
+				BlankNodeAllocationScope.Activation allocation = createBlankNodeAllocationScope().activate()) {
 			QueryOperationContext.throwIfDeadlineExpired();
 			TupleExpr tupleExpr = getParsedQuery().getTupleExpr().clone();
 

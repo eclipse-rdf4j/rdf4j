@@ -641,7 +641,9 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 
 		@Override
 		public long retainedBytes() {
-			return retainedBytes;
+			FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
+			memory.account(template);
+			return saturatedAdd(retainedBytes, memory.bytes());
 		}
 	}
 
@@ -1183,7 +1185,15 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		long refreshWorkBytes = publication.detachedRefreshWork() == null
 				? 0L
 				: publication.detachedRefreshWork().retainedBytes();
-		long publicationBytes = saturatedAdd(publication.retainedBytes(), refreshWorkBytes);
+		FactorCostCacheKey.ProviderRetainedMemory providerMemory = new FactorCostCacheKey.ProviderRetainedMemory();
+		providerMemory.account(publication.executableTemplate());
+		long structuralPublicationBytes = saturatedAdd(publication.retainedBytes(), refreshWorkBytes);
+		// Saturation is not proof that an opt-in payload fits even a Long.MAX_VALUE cache budget.
+		if (providerMemory.bytes() > 0 && (providerMemory.bytes() == Long.MAX_VALUE
+				|| providerMemory.bytes() > Long.MAX_VALUE - structuralPublicationBytes)) {
+			return false;
+		}
+		long publicationBytes = saturatedAdd(structuralPublicationBytes, providerMemory.bytes());
 		if (!enabled() || publicationBytes > maximumRetainedBytes
 				|| !publication.familyKey().equals(publication.exactInvocationKey().familyKey())) {
 			return false;
@@ -1375,8 +1385,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		variants.set(variants.indexOf(oldVariant), replacement);
 		long oldVariantBytes = variantRetainedBytes(oldVariant);
 		long replacementBytes = variantRetainedBytes(replacement);
-		long refreshedRetainedBytes = saturatedAdd(observed.retainedBytes() - oldVariantBytes, replacementBytes);
-		if (refreshedRetainedBytes > maximumRetainedBytes) {
+		long refreshedRetainedBytes = withPortfolioProviderBytes(observed, variants, oldVariantBytes, replacementBytes);
+		if (refreshedRetainedBytes < 0L || refreshedRetainedBytes > maximumRetainedBytes) {
 			return false;
 		}
 		long familyVersionId = familyVersionSequence.incrementAndGet();
@@ -1464,8 +1474,8 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			variants.add(fallback, added);
 		}
 		long additionalBytes = mergeIndex >= 0 ? 0L : publication.retainedBytes();
-		long updatedBytes = saturatedAdd(observed.retainedBytes(), additionalBytes);
-		if (updatedBytes > maximumRetainedBytes) {
+		long updatedBytes = withPortfolioProviderBytes(observed, variants, 0L, additionalBytes);
+		if (updatedBytes < 0L || updatedBytes > maximumRetainedBytes) {
 			return false;
 		}
 		long familyVersionId = familyVersionSequence.incrementAndGet();
@@ -1916,7 +1926,10 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			if (!changed) {
 				return false;
 			}
-			long updatedRetainedBytes = Math.max(0L, observed.retainedBytes() - releasedBytes);
+			long updatedRetainedBytes = withPortfolioProviderBytes(observed, variants, releasedBytes, 0L);
+			if (updatedRetainedBytes < 0L) {
+				return false;
+			}
 			long familyVersionId = familyVersionSequence.incrementAndGet();
 			FamilyVersion updated = new FamilyVersion(familyVersionId, observed.semanticValidity(),
 					observed.semanticDependencies(), new VariantDispatcher(variants), checkpoint,
@@ -2000,6 +2013,46 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 		return List.copyOf(result.subList(0, Math.min(3, result.size())));
 	}
 
+	private static long portfolioProviderBytes(List<PlanVariant> variants) {
+		FactorCostCacheKey.ProviderRetainedMemory memory = new FactorCostCacheKey.ProviderRetainedMemory();
+		for (PlanVariant variant : variants) {
+			accountProvider(variant.champion(), memory);
+			for (PlanVersion challenger : variant.challengers()) {
+				accountProvider(challenger, memory);
+			}
+			for (PlanVersion rollback : variant.rollbackVersions()) {
+				accountProvider(rollback, memory);
+			}
+		}
+		return memory.bytes();
+	}
+
+	private static void accountProvider(PlanVersion plan, FactorCostCacheKey.ProviderRetainedMemory memory) {
+		if (plan.physicalRecipe()instanceof ExactTupleRecipe exact) {
+			memory.account(exact.template);
+		}
+		// Detached refresh work owns stripped PackedPlanRefreshWork sources, not execution descriptors.
+	}
+
+	private static long withPortfolioProviderBytes(FamilyVersion observed, List<PlanVariant> variants,
+			long removedStructuralBytes, long addedStructuralBytes) {
+		long previous = portfolioProviderBytes(observed.dispatcher().variants());
+		long next = portfolioProviderBytes(variants);
+		long structuralBytes = observed.retainedBytes() - previous - removedStructuralBytes;
+		if (structuralBytes < 0L || next == Long.MAX_VALUE) {
+			return -1L;
+		}
+		// Preserve legacy-only saturation behavior. A newly owned provider payload requires an actual finite fit.
+		if (next == 0L) {
+			return saturatedAdd(structuralBytes, addedStructuralBytes);
+		}
+		if (addedStructuralBytes > Long.MAX_VALUE - structuralBytes) {
+			return -1L;
+		}
+		structuralBytes += addedStructuralBytes;
+		return next > Long.MAX_VALUE - structuralBytes ? -1L : structuralBytes + next;
+	}
+
 	private static long variantRetainedBytes(PlanVariant variant) {
 		Set<Long> counted = new HashSet<>();
 		long bytes = retainedPlanBytes(variant.champion(), counted);
@@ -2017,7 +2070,11 @@ final class LmdbPlanDecisionCache implements AutoCloseable {
 			return 0L;
 		}
 		long refreshBytes = plan.detachedRefreshWork() == null ? 0L : plan.detachedRefreshWork().retainedBytes();
-		return saturatedAdd(plan.physicalRecipe().retainedBytes(), refreshBytes);
+		// Exact native recipes are charged structurally here; the whole family shares one provider identity scope.
+		long structuralBytes = plan.physicalRecipe()instanceof ExactTupleRecipe exact
+				? exact.retainedBytes
+				: plan.physicalRecipe().retainedBytes();
+		return saturatedAdd(structuralBytes, refreshBytes);
 	}
 
 	private static Map<Long, RuntimePosterior> retainedChallengerPosteriors(PlanVariant oldVariant,

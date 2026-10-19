@@ -21,19 +21,33 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.algebra.Count;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.GroupElem;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -236,9 +250,9 @@ public class TupleExprIRRendererTest {
 		TupleExpr actual = parseAlgebra(rendered);
 
 		try {
-			assertThat(VarNameNormalizer.normalizeVars(actual.toString()))
+			assertThat(VarNameNormalizer.normalizeModelVariables(actual))
 					.as("Algebra after rendering must be identical to original")
-					.isEqualTo(VarNameNormalizer.normalizeVars(expected.toString()));
+					.isEqualTo(VarNameNormalizer.normalizeModelVariables(expected));
 
 			if (requireStringEquality) {
 				assertThat(rendered).isEqualToNormalizingNewlines(SPARQL_PREFIX + sparql);
@@ -284,8 +298,8 @@ public class TupleExprIRRendererTest {
 				if (!rendered.startsWith("<render failed")) {
 					actualTe = parseAlgebra(rendered);
 
-					if (!VarNameNormalizer.normalizeVars(actual.toString())
-							.equals(VarNameNormalizer.normalizeVars(actualTe.toString()))) {
+					if (!VarNameNormalizer.normalizeModelVariables(actual)
+							.equals(VarNameNormalizer.normalizeModelVariables(actualTe))) {
 						System.out.println("# actual TupleExpr \n" + actual + "\n");
 						System.out.println("# actualTe TupleExpr\n" + actualTe);
 						throw new IllegalStateException(
@@ -304,11 +318,11 @@ public class TupleExprIRRendererTest {
 			writeReportFile(base, "SPARQL_actual", rendered);
 
 			writeReportFile(base, "TupleExpr_expected",
-					expectedTe != null ? VarNameNormalizer.normalizeVars(expectedTe.toString())
+					expectedTe != null ? VarNameNormalizer.normalizeModelVariables(expectedTe)
 							: "<expected TupleExpr unavailable: parse failed>");
 
 			writeReportFile(base, "TupleExpr_actual",
-					actualTe != null ? VarNameNormalizer.normalizeVars(actualTe.toString())
+					actualTe != null ? VarNameNormalizer.normalizeModelVariables(actualTe)
 							: "<actual TupleExpr unavailable: " +
 									"parse failed" + ">");
 
@@ -370,6 +384,396 @@ public class TupleExprIRRendererTest {
 				"  ?who a ex:Person ; foaf:name ?name ; ex:pA [ a ex:Thing ; ex:pB ?x ] .\n" +
 				"}";
 		assertSameSparqlQuery(q, cfg(), false);
+	}
+
+	@Test
+	void constructRoundTripValidationUsesAnonymousConstantValuesNotGeneratedNames() {
+		String query = SPARQL_PREFIX + "CONSTRUCT {\n" +
+				"  ?_const_0 <urn:template_const_marker> \"template _const_0\" .\n" +
+				"  <_:fixed> <urn:fixed_predicate> ?_const_0 .\n" +
+				"} WHERE {\n" +
+				"  { SELECT ?_const_0 WHERE {\n" +
+				"      VALUES ?_const_0 { <urn:value_const_marker> }\n" +
+				"    }\n" +
+				"  }\n" +
+				"  ?_const_0 <urn:alias_predicate> ?who .\n" +
+				"  GRAPH <http://graphs.example/_const_graph> {\n" +
+				"    { { GRAPH ?g0 { ?s ^foaf:name ?o . } } }\n" +
+				"    UNION\n" +
+				"    { ?u1 ex:pD ?v1 . }\n" +
+				"  }\n" +
+				"  ?who a ex:Person ; foaf:name ?name ;\n" +
+				"      <urn:property_const_marker> [ a ex:Thing ; ex:pB \"literal _const_lexical\" ] .\n" +
+				"}";
+		TupleExpr parsedOriginal = parseAlgebra(query);
+		assertAnonymousConstantNameBijection(parsedOriginal);
+		TupleExpr original = withSyntheticAnonymousConstantNames(parsedOriginal);
+		TupleExprIRRenderer.Config uncheckedConfig = cfg();
+		uncheckedConfig.verifyRoundTrip = false;
+		String rendered = new TupleExprIRRenderer(uncheckedConfig).renderConstruct(original, null);
+		TupleExpr reparsed = parseAlgebra(rendered);
+
+		assertAnonymousConstantNameBijection(reparsed);
+		assertThat(anonymousConstantNames(original)).isNotEqualTo(anonymousConstantNames(reparsed));
+		assertThat(anonymousConstantValues(reparsed)).isEqualTo(anonymousConstantValues(original));
+		String originalSource = original.toString();
+		String normalizedOriginal = VarNameNormalizer.normalizeModelVariables(original);
+		assertThat(original.toString()).isEqualTo(originalSource);
+		assertThat(VarNameNormalizer.normalizeModelVariables(original.clone())).isEqualTo(normalizedOriginal);
+		assertThat(VarNameNormalizer.normalizeModelVariables(reparsed)).isEqualTo(normalizedOriginal);
+		assertThat(normalizedOriginal).contains(
+				"http://graphs.example/_const_graph", "\"template _const_0\"", "\"literal _const_lexical\"");
+		assertThat(realVariableNames(original)).contains("_const_0", "who");
+		assertThat(projectionTargetNames(reparsed)).contains("_const_0");
+		assertThat(rendered).contains("?_const_0", "template _const_0", "literal _const_lexical", "<_:fixed>");
+		assertThat(anonymousConstantValues(reparsed)).contains(
+				SimpleValueFactory.getInstance().createIRI("http://graphs.example/_const_graph"),
+				SimpleValueFactory.getInstance().createIRI("urn:property_const_marker"),
+				SimpleValueFactory.getInstance().createLiteral("literal _const_lexical"));
+
+		TupleExprIRRenderer.Config validatingConfig = cfg();
+		validatingConfig.verifyRoundTrip = true;
+		assertThat(new TupleExprIRRenderer(validatingConfig).renderConstruct(original, null)).isEqualTo(rendered);
+
+		assertThat(VarNameNormalizer.normalizeModelVariables(withChangedPropertyConstant(original)))
+				.isNotEqualTo(normalizedOriginal);
+		assertThat(VarNameNormalizer.normalizeModelVariables(withChangedRealVariable(original)))
+				.isNotEqualTo(normalizedOriginal);
+		assertThat(VarNameNormalizer.normalizeModelVariables(withChangedProjectionAlias(original)))
+				.isNotEqualTo(normalizedOriginal);
+		assertThat(VarNameNormalizer.normalizeModelVariables(
+				parseAlgebra("SELECT ?v WHERE { VALUES ?v { <urn:value_original> } }")))
+						.isNotEqualTo(VarNameNormalizer.normalizeModelVariables(
+								parseAlgebra("SELECT ?v WHERE { VALUES ?v { <urn:value_changed> } }")));
+	}
+
+	@Test
+	void typedNormalizationUsesDescribeRoleRatherThanGeneratedNamePrefix() {
+		TupleExpr generatedFirst = parseAlgebra("DESCRIBE <urn:x>");
+		TupleExpr generatedSecond = parseAlgebra("DESCRIBE <urn:x>");
+		String generatedFirstSource = generatedFirst.toString();
+
+		assertThat(anonymousTargetNames(generatedFirst)).hasSize(1);
+		assertThat(anonymousTargetNames(generatedSecond)).hasSize(1);
+		assertThat(anonymousTargetNames(generatedFirst)).isNotEqualTo(anonymousTargetNames(generatedSecond));
+		String normalizedGenerated = VarNameNormalizer.normalizeModelVariables(generatedFirst);
+		assertThat(VarNameNormalizer.normalizeModelVariables(generatedSecond)).isEqualTo(normalizedGenerated);
+		assertThat(generatedFirst.toString()).isEqualTo(generatedFirstSource);
+		assertThat(VarNameNormalizer.normalizeModelVariables(generatedFirst.clone())).isEqualTo(normalizedGenerated);
+
+		TupleExpr genuineDescribeVariable = parseAlgebra(
+				"DESCRIBE ?_describe_user WHERE { BIND(<urn:x> AS ?_describe_user) }");
+		TupleExpr otherGenuineDescribeVariable = parseAlgebra(
+				"DESCRIBE ?_describe_other WHERE { BIND(<urn:x> AS ?_describe_other) }");
+
+		assertThat(anonymousTargetNames(genuineDescribeVariable)).isEmpty();
+		assertThat(VarNameNormalizer.normalizeModelVariables(genuineDescribeVariable))
+				.isNotEqualTo(VarNameNormalizer.normalizeModelVariables(otherGenuineDescribeVariable));
+	}
+
+	@Test
+	void typedNormalizationPreservesAnonymousSymbolRelationshipsForEqualValues() {
+		TupleExpr repeatedSymbol = constantSymbolPattern("anonymous_shared", "anonymous_shared");
+		TupleExpr renamedRepeatedSymbol = constantSymbolPattern("anonymous_repeated", "anonymous_repeated");
+		TupleExpr distinctSymbols = constantSymbolPattern("anonymous_subject", "anonymous_object");
+		TupleExpr renamedDistinctSymbols = constantSymbolPattern("different_subject", "different_object");
+
+		String normalizedRepeated = VarNameNormalizer.normalizeModelVariables(repeatedSymbol);
+		String normalizedDistinct = VarNameNormalizer.normalizeModelVariables(distinctSymbols);
+
+		assertThat(VarNameNormalizer.normalizeModelVariables(renamedRepeatedSymbol)).isEqualTo(normalizedRepeated);
+		assertThat(VarNameNormalizer.normalizeModelVariables(renamedDistinctSymbols)).isEqualTo(normalizedDistinct);
+		assertThat(normalizedDistinct).isNotEqualTo(normalizedRepeated);
+		assertThat(normalizedDistinct).contains("value=urn:shared_constant");
+		assertThat(repeatedSymbol.toString()).contains("anonymous_shared");
+		assertThat(distinctSymbols.toString()).contains("anonymous_subject", "anonymous_object");
+	}
+
+	@Test
+	void typedNormalizationKeepsUnmarkedExtensionTargetWhenItsNameCollidesWithAnonymousConstant() {
+		String userTarget = "_const_7";
+		Value anonymousValue = SimpleValueFactory.getInstance().createIRI("urn:anonymous_constant");
+		TupleExpr expression = new Extension(
+				new StatementPattern(
+						Var.of(userTarget, anonymousValue, true, true),
+						Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:predicate"), false, true),
+						Var.of("object")),
+				new ExtensionElem(
+						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:extension_value")),
+						userTarget));
+		String originalSource = expression.toString();
+
+		String normalized = VarNameNormalizer.normalizeModelVariables(expression);
+
+		assertThat(normalized).contains("ExtensionElem (" + userTarget + ")");
+		assertThat(normalized).contains("name=" + userTarget + ", value=urn:anonymous_constant, anonymous");
+		assertThat(normalized).doesNotContain("name=_const_0");
+		assertThat(expression.toString()).isEqualTo(originalSource);
+	}
+
+	@Test
+	void typedNormalizationAnchorsUnmarkedAggregateAliasWithConflictingAnonymousRole() {
+		String userAlias = "_anon_having_user";
+		Value anonymousValue = SimpleValueFactory.getInstance().createIRI("urn:anonymous_having_collision");
+		Count count = new Count(Var.of("object"));
+		Group group = new Group(new StatementPattern(
+				Var.of(userAlias, anonymousValue, true, true),
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:predicate"), false, true),
+				Var.of("object")));
+		GroupElem groupElem = new GroupElem(userAlias, count.clone());
+		ExtensionElem extensionElem = new ExtensionElem(count.clone(), userAlias);
+		group.addGroupElement(groupElem);
+		TupleExpr expression = new Extension(group, extensionElem);
+		String originalSource = expression.toString();
+
+		String normalized = VarNameNormalizer.normalizeModelVariables(expression);
+
+		assertThat(groupElem.isAnonymousTarget()).isFalse();
+		assertThat(extensionElem.isAnonymousTarget()).isFalse();
+		assertThat(normalized).contains("GroupElem (" + userAlias + ")");
+		assertThat(normalized).contains("ExtensionElem (" + userAlias + ")");
+		assertThat(normalized).contains("name=" + userAlias + ", value=urn:anonymous_having_collision, anonymous");
+		assertThat(expression.toString()).isEqualTo(originalSource);
+	}
+
+	@Test
+	void parserMarksGeneratedTargetsAcrossImplicitHavingAndComposedOrderAggregates() {
+		String query = SPARQL_PREFIX + "SELECT (COUNT(?o) AS ?total) WHERE { ?s ?p ?o . }\n" +
+				"HAVING (COALESCE(MIN(?o), \"fallback\") != \"ignored\")\n" +
+				"ORDER BY IF(COUNT(?o) > 0, MAX(?o), MIN(?o))";
+		TupleExpr first = parseAlgebra(query);
+		TupleExpr second = parseAlgebra(query);
+		Set<String> extensionTargets = anonymousTargetNames(first);
+		Set<String> groupTargets = anonymousGroupTargetNames(first);
+		Set<String> secondExtensionTargets = anonymousTargetNames(second);
+		Set<String> secondGroupTargets = anonymousGroupTargetNames(second);
+		String firstSource = first.toString();
+		String normalizedFirst = VarNameNormalizer.normalizeModelVariables(first);
+
+		assertThat(extensionTargets).isNotEmpty();
+		assertThat(groupTargets).isNotEmpty();
+		assertThat(extensionTargets).containsExactlyInAnyOrderElementsOf(groupTargets);
+		assertThat(extensionTargets).allSatisfy(name -> assertThat(name).contains("_anon_"));
+		assertThat(secondExtensionTargets).containsExactlyInAnyOrderElementsOf(secondGroupTargets);
+		assertThat(secondExtensionTargets).hasSize(extensionTargets.size());
+		assertThat(VarNameNormalizer.normalizeModelVariables(second)).isEqualTo(normalizedFirst);
+		assertThat(first.toString()).isEqualTo(firstSource);
+	}
+
+	@Test
+	void parserMarksGeneratedTargetsInNestedProjectionAggregatesAndGroupExpressions() {
+		String query = SPARQL_PREFIX +
+				"SELECT (COALESCE(MIN(?o), \"fallback\") AS ?minimum) WHERE { ?s ?p ?o . }\n" +
+				"GROUP BY (STR(?s))";
+		TupleExpr first = parseAlgebra(query);
+		TupleExpr second = parseAlgebra(query);
+		Set<String> extensionTargets = anonymousTargetNames(first);
+		Set<String> groupTargets = anonymousGroupTargetNames(first);
+		Set<String> secondExtensionTargets = anonymousTargetNames(second);
+		Set<String> secondGroupTargets = anonymousGroupTargetNames(second);
+
+		assertThat(extensionTargets).hasSizeGreaterThan(groupTargets.size());
+		assertThat(extensionTargets).containsAll(groupTargets);
+		assertThat(secondExtensionTargets).hasSize(extensionTargets.size());
+		assertThat(secondExtensionTargets).containsAll(secondGroupTargets);
+		assertThat(secondGroupTargets).hasSize(groupTargets.size());
+		assertThat(VarNameNormalizer.normalizeModelVariables(second))
+				.isEqualTo(VarNameNormalizer.normalizeModelVariables(first));
+	}
+
+	@Test
+	void typedNormalizationPreservesScopeFlagOnReplacedVariable() {
+		Var scopedConstant = Var.of(
+				"anonymous_scope_constant",
+				SimpleValueFactory.getInstance().createIRI("urn:scope_constant"), true, true);
+		scopedConstant.setVariableScopeChange(true);
+		TupleExpr expression = new StatementPattern(
+				scopedConstant,
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:predicate"), false, true),
+				Var.of("object"));
+		String originalSource = expression.toString();
+		assertThat(originalSource).contains("name=anonymous_scope_constant", "(new scope)");
+
+		String normalized = VarNameNormalizer.normalizeModelVariables(expression);
+
+		assertThat(normalized).contains("name=_const_0, value=urn:scope_constant, anonymous", "(new scope)");
+		assertThat(expression.toString()).isEqualTo(originalSource);
+	}
+
+	private static TupleExpr constantSymbolPattern(String subjectName, String objectName) {
+		Value sharedConstant = SimpleValueFactory.getInstance().createIRI("urn:shared_constant");
+		return new StatementPattern(
+				Var.of(subjectName, sharedConstant, true, true),
+				Var.of("predicate", SimpleValueFactory.getInstance().createIRI("urn:predicate"), false, true),
+				Var.of(objectName, sharedConstant, true, true));
+	}
+
+	private static TupleExpr withSyntheticAnonymousConstantNames(TupleExpr expression) {
+		TupleExpr copy = expression.clone();
+		Map<String, String> generatedNames = new LinkedHashMap<>();
+		copy.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.isAnonymous() && var.hasValue() && var.isConstant()) {
+					String name = generatedNames.computeIfAbsent(var.getName(),
+							ignored -> "__roundtrip_source_constant_" + generatedNames.size());
+					replaceVar(var, name, var.getValue());
+				}
+			}
+		});
+		assertThat(generatedNames).isNotEmpty();
+		return copy;
+	}
+
+	private static List<String> anonymousConstantNames(TupleExpr expression) {
+		List<String> names = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.isAnonymous() && var.hasValue() && var.isConstant()) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return names;
+	}
+
+	private static Set<Value> anonymousConstantValues(TupleExpr expression) {
+		Set<Value> values = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.isAnonymous() && var.hasValue() && var.isConstant()) {
+					values.add(var.getValue());
+				}
+			}
+		});
+		return values;
+	}
+
+	private static Set<String> realVariableNames(TupleExpr expression) {
+		Set<String> names = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.isAnonymous()) {
+					names.add(var.getName());
+				}
+			}
+		});
+		return names;
+	}
+
+	private static TupleExpr withChangedRealVariable(TupleExpr expression) {
+		TupleExpr copy = expression.clone();
+		int[] replacements = { 0 };
+		copy.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (!var.isAnonymous() && "_const_0".equals(var.getName())) {
+					replaceVar(var, "real_alias_changed", var.getValue());
+					replacements[0]++;
+				}
+			}
+		});
+		assertThat(replacements[0]).isPositive();
+		return copy;
+	}
+
+	private static TupleExpr withChangedProjectionAlias(TupleExpr expression) {
+		TupleExpr copy = expression.clone();
+		int[] replacements = { 0 };
+		copy.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ProjectionElem elem) {
+				if ("_const_0".equals(elem.getProjectionAlias().orElse(elem.getName()))) {
+					if (elem.getProjectionAlias().isPresent()) {
+						elem.setProjectionAlias("projection_alias_changed");
+					} else {
+						elem.setName("projection_alias_changed");
+					}
+					replacements[0]++;
+				}
+			}
+		});
+		assertThat(replacements[0]).isPositive();
+		return copy;
+	}
+
+	private static Set<String> projectionTargetNames(TupleExpr expression) {
+		Set<String> targetNames = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ProjectionElem elem) {
+				targetNames.add(elem.getProjectionAlias().orElse(elem.getName()));
+			}
+		});
+		return targetNames;
+	}
+
+	private static TupleExpr withChangedPropertyConstant(TupleExpr expression) {
+		TupleExpr copy = expression.clone();
+		Value originalValue = SimpleValueFactory.getInstance().createIRI("urn:property_const_marker");
+		Value replacement = SimpleValueFactory.getInstance().createIRI("urn:changed_const_marker");
+		int[] replacements = { 0 };
+		copy.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.isAnonymous() && var.hasValue() && var.isConstant()
+						&& originalValue.equals(var.getValue())) {
+					replaceVar(var, var.getName(), replacement);
+					replacements[0]++;
+				}
+			}
+		});
+		assertThat(replacements[0]).isPositive();
+		return copy;
+	}
+
+	private static void assertAnonymousConstantNameBijection(TupleExpr expression) {
+		Map<String, Value> valuesByName = new LinkedHashMap<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var var) {
+				if (var.isAnonymous() && var.hasValue() && var.isConstant()) {
+					Value previousValue = valuesByName.putIfAbsent(var.getName(), var.getValue());
+					assertThat(previousValue).as("one generated constant name has one RDF value")
+							.isIn(null, var.getValue());
+				}
+			}
+		});
+	}
+
+	private static Set<String> anonymousTargetNames(TupleExpr expression) {
+		Set<String> names = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(ExtensionElem extensionElem) {
+				if (extensionElem.isAnonymousTarget()) {
+					names.add(extensionElem.getName());
+				}
+				super.meet(extensionElem);
+			}
+		});
+		return names;
+	}
+
+	private static Set<String> anonymousGroupTargetNames(TupleExpr expression) {
+		Set<String> names = new HashSet<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(GroupElem groupElem) {
+				if (groupElem.isAnonymousTarget()) {
+					names.add(groupElem.getName());
+				}
+				super.meet(groupElem);
+			}
+		});
+		return names;
+	}
+
+	private static void replaceVar(Var var, String name, Value value) {
+		var.replaceWith(Var.of(name, value, var.isAnonymous(), var.isConstant(), var.isBNode()));
 	}
 
 	@RepeatedTest(10)

@@ -1,10 +1,122 @@
+import importlib.util
+import json
+import os
+from pathlib import Path
+import stat
+import tempfile
 import unittest
+from unittest.mock import patch
 
 from run_powercut_campaign import (
     SCENARIOS,
     validate_cutpoint_witness,
     validate_recovery_pair,
 )
+
+
+class GuestWitnessPublicationTests(unittest.TestCase):
+    def load_controller(self, root):
+        (root / "actual-build-classpath-guest.txt").write_text("test-classpath\n", encoding="utf-8")
+        (root / "actual-powercut-scenario.txt").write_text("commit-returned-before-ack\n", encoding="utf-8")
+        controller_path = Path(__file__).parent / "guest/powercut-writer-controller.py"
+        spec = importlib.util.spec_from_file_location("powercut_writer_controller", controller_path)
+        controller = importlib.util.module_from_spec(spec)
+        with patch.dict(os.environ, {"RDF4J_CRASHLAB_RESULTS_DIR": str(root),
+                                    "RDF4J_CRASHLAB_CLASS_DIR": str(root)}):
+            spec.loader.exec_module(controller)
+        return controller
+
+    def test_witness_is_not_visible_before_complete_json_is_fsynced(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            value = {"scenario": "commit-returned-before-ack", "nested": {"rows": [1, "snow-雪"]}}
+            fsync = os.fsync
+            file_forced = False
+            directory_forced = False
+
+            def force(fd):
+                nonlocal file_forced, directory_forced
+                if stat.S_ISREG(os.fstat(fd).st_mode):
+                    self.assertFalse(marker.exists(), "host must not observe a witness before its data is forced")
+                    file_forced = True
+                else:
+                    self.assertTrue(file_forced)
+                    self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), value)
+                    directory_forced = True
+                fsync(fd)
+
+            with patch.object(controller.os, "fsync", side_effect=force):
+                controller.write_exclusive(marker, value)
+            self.assertTrue(file_forced)
+            self.assertTrue(directory_forced)
+            self.assertEqual(json.loads(marker.read_text(encoding="utf-8")), value)
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [
+                "actual-build-classpath-guest.txt", "actual-cutpoint-witness.json", "actual-powercut-scenario.txt",
+            ])
+
+    def test_failed_force_does_not_publish_partial_witness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            with patch.object(controller.os, "fsync", side_effect=OSError("force failed")):
+                with self.assertRaisesRegex(OSError, "force failed"):
+                    controller.write_exclusive(marker, {"scenario": "commit-returned-before-ack"})
+            self.assertFalse(marker.exists())
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [
+                "actual-build-classpath-guest.txt", "actual-powercut-scenario.txt",
+            ])
+
+    def test_preexisting_witness_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            marker.write_text("previous evidence\n", encoding="utf-8")
+            with self.assertRaises(FileExistsError):
+                controller.write_exclusive(marker, {"scenario": "commit-returned-before-ack"})
+            self.assertEqual(marker.read_text(encoding="utf-8"), "previous evidence\n")
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [
+                "actual-build-classpath-guest.txt", "actual-cutpoint-witness.json", "actual-powercut-scenario.txt",
+            ])
+
+    def test_serialization_failure_does_not_publish_partial_witness(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            with self.assertRaises(TypeError):
+                controller.write_exclusive(marker, {"unsupported": object()})
+            self.assertFalse(marker.exists())
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [
+                "actual-build-classpath-guest.txt", "actual-powercut-scenario.txt",
+            ])
+
+    def test_preexisting_dangling_symlink_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            marker.symlink_to("missing-evidence")
+            with self.assertRaises(FileExistsError):
+                controller.write_exclusive(marker, {"scenario": "commit-returned-before-ack"})
+            self.assertTrue(marker.is_symlink())
+            self.assertEqual(os.readlink(marker), "missing-evidence")
+
+    def test_publication_failure_removes_only_owned_temporary_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            controller = self.load_controller(root)
+            marker = root / "actual-cutpoint-witness.json"
+            with patch.object(controller.os, "link", side_effect=OSError("publication failed")):
+                with self.assertRaisesRegex(OSError, "publication failed"):
+                    controller.write_exclusive(marker, {"scenario": "commit-returned-before-ack"})
+            self.assertFalse(marker.exists())
+            self.assertEqual(sorted(path.name for path in root.iterdir()), [
+                "actual-build-classpath-guest.txt", "actual-powercut-scenario.txt",
+            ])
 
 
 class PowerCutContractTests(unittest.TestCase):

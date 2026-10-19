@@ -28,6 +28,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
@@ -4184,6 +4185,193 @@ class StreamingWritePreflightOwnershipTest {
 		return new SailSourceBranch(backing, new DynamicModelFactory(), false);
 	}
 
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void unionPreparationWaitsForReadGuardOnRoutedAncestor() throws Exception {
+		assertRoutedPreparationUnderReadGuard(false, IsolationLevels.SNAPSHOT_READ, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void nestedUnionPreparationWaitsForReadGuardOnRoutedAncestor() throws Exception {
+		assertRoutedPreparationUnderReadGuard(true, IsolationLevels.READ_COMMITTED, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void serializableUnionPreparationWaitsForReadGuardOnRoutedAncestor() throws Exception {
+		assertRoutedPreparationUnderReadGuard(false, IsolationLevels.SERIALIZABLE, false);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void routedPrivateSinkMutationIsRejectedWhileAncestorReadGuardIsHeld() throws Exception {
+		assertRoutedPreparationUnderReadGuard(false, IsolationLevels.SNAPSHOT_READ, true);
+	}
+
+	@Test
+	@Timeout(value = 15, unit = TimeUnit.SECONDS)
+	void routedPrivateValidationReleasesMembershipMonitorBeforeCarrierRetirement() throws Exception {
+		RecordingStreamingSource terminal = new RecordingStreamingSource();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		AtomicReference<Future<?>> retirement = new AtomicReference<>();
+		try (SailSourceBranch parent = branch(terminal);
+				Changeset carrier = (Changeset) parent.sink(IsolationLevels.SNAPSHOT_READ)) {
+			carrier.approve(statement("retired-private-carrier"));
+			parent.validateStreamingChanges(false, false, Set.of(carrier), selected -> {
+				assertThat(selected).containsExactly(carrier);
+				// The selected membership is stable for this callback, but no shared guard may be retained.
+				Future<?> closing = executor.submit(carrier::close);
+				retirement.set(closing);
+				awaitFuture(closing, "a validation callback retiring its private carrier");
+				assertThatThrownBy(selected.getFirst()::statementGeneration)
+						.as("a retired selected carrier cannot validate its former generation")
+						.isInstanceOf(IllegalStateException.class)
+						.hasMessage("The changeset is closed");
+			});
+			parent.validateStreamingChanges(false, false, Set.of(carrier), selected -> assertThat(selected).isEmpty());
+			assertThat(terminal.committed).as("retiring a private carrier never publishes it").isEmpty();
+		} finally {
+			if (retirement.get() != null) {
+				retirement.get().get(5, TimeUnit.SECONDS);
+			}
+			executor.shutdownNow();
+			executor.awaitTermination(5, TimeUnit.SECONDS);
+		}
+	}
+
+	private static void assertRoutedPreparationUnderReadGuard(boolean nested, IsolationLevel level, boolean mutate)
+			throws Exception {
+		RecordingStreamingSource primaryTerminal = new RecordingStreamingSource();
+		RecordingStreamingSource additionalTerminal = new RecordingStreamingSource();
+		RecordingStreamingSource nestedTerminal = new RecordingStreamingSource();
+		CountDownLatch holdReadGuard = new CountDownLatch(1);
+		CountDownLatch readGuardHeld = new CountDownLatch(1);
+		CountDownLatch releaseReadGuard = new CountDownLatch(1);
+		CountDownLatch privateValidationReturned = new CountDownLatch(1);
+		SailSourceBranch primaryParent = branch(primaryTerminal);
+		AtomicReference<Changeset> additionalCarrier = new AtomicReference<>();
+		SailSourceBranch additionalParent = new SailSourceBranch(additionalTerminal, new DynamicModelFactory(), false) {
+			@Override
+			public SailSink sink(IsolationLevel isolation) {
+				Changeset carrier = (Changeset) super.sink(isolation);
+				additionalCarrier.set(carrier);
+				return carrier;
+			}
+
+			@Override
+			void validateStreamingChanges(boolean nonblocking, boolean frontier, Set<Changeset> preparing,
+					Consumer<List<Changeset>> validation) {
+				try {
+					super.validateStreamingChanges(nonblocking, frontier, preparing, validation);
+				} finally {
+					if (!frontier && !preparing.isEmpty() && readGuardHeld.getCount() == 0) {
+						privateValidationReturned.countDown();
+					}
+				}
+			}
+		};
+		SailSourceBranch nestedParent = branch(nestedTerminal);
+		SailSourceBranch primaryChild = branch(primaryParent);
+		SailSourceBranch additionalChild = branch(additionalParent);
+		SailSourceBranch nestedChild = branch(nestedParent);
+		Statement primaryRow = statement("routed-guard-primary");
+		Statement additionalRow = statement("routed-guard-additional");
+		Statement nestedRow = statement("routed-guard-nested");
+		Statement uncovered = statement("routed-guard-uncovered");
+		for (var entry : Map.of(primaryChild, primaryRow, additionalChild, additionalRow,
+				nestedChild, nestedRow).entrySet()) {
+			try (SailSink sink = entry.getKey().sink(level)) {
+				sink.approve(entry.getValue());
+				sink.flush();
+			}
+		}
+		UnionSailSource union = nested
+				? new UnionSailSource(primaryChild, new UnionSailSource(nestedChild, additionalChild))
+				: new UnionSailSource(primaryChild, additionalChild);
+		AtomicReference<Throwable> preparationFailure = new AtomicReference<>();
+		AtomicReference<List<Statement>> primaryRows = new AtomicReference<>();
+		AtomicReference<List<Statement>> additionalRows = new AtomicReference<>();
+		AtomicReference<List<Statement>> nestedRows = new AtomicReference<>();
+		AtomicBoolean heldSiblingGuard = new AtomicBoolean();
+		AtomicBoolean callbackFired = new AtomicBoolean();
+		additionalTerminal.onPreparedWriteOpen = () -> {
+			if (SailModelCleanup.holdsOrdinaryGuard() && callbackFired.compareAndSet(false, true)) {
+				heldSiblingGuard.set(true);
+				holdReadGuard.countDown();
+				await(readGuardHeld, "routed ancestor's concurrent read guard");
+				if (mutate) {
+					additionalCarrier.get().approve(uncovered);
+				}
+			}
+		};
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		Future<?> reader = executor.submit(() -> {
+			await(holdReadGuard, "writer reaches the routed private sink reservation");
+			additionalParent.validateStreamingChanges(false, true, Set.of(), changes -> {
+				readGuardHeld.countDown();
+				await(releaseReadGuard, "routed ancestor's read guard release");
+			});
+		});
+		Future<?> writer = executor.submit(() -> {
+			try (union) {
+				try {
+					union.prepare();
+				} catch (Throwable failure) {
+					preparationFailure.set(failure);
+				}
+				if (preparationFailure.get() == null) {
+					union.flush();
+				}
+			}
+		});
+		try {
+			await(readGuardHeld, "reader holds the exact routed ancestor guard");
+			await(privateValidationReturned, "the writer validates its private sink while the read guard is held");
+		} finally {
+			releaseReadGuard.countDown();
+			try {
+				writer.get(5, TimeUnit.SECONDS);
+				reader.get(5, TimeUnit.SECONDS);
+				if (preparationFailure.get() == null) {
+					try (SailDataset primary = primaryParent.dataset(IsolationLevels.NONE);
+							SailDataset additional = additionalParent.dataset(IsolationLevels.NONE);
+							SailDataset third = nestedParent.dataset(IsolationLevels.NONE)) {
+						primaryRows.set(readAll(primary.getStatements(null, null, null)));
+						additionalRows.set(readAll(additional.getStatements(null, null, null)));
+						nestedRows.set(readAll(third.getStatements(null, null, null)));
+					}
+				}
+			} finally {
+				additionalTerminal.onPreparedWriteOpen = () -> {
+				};
+				primaryParent.close();
+				additionalParent.close();
+				nestedChild.close();
+				nestedParent.close();
+				executor.shutdownNow();
+				executor.awaitTermination(5, TimeUnit.SECONDS);
+			}
+		}
+		assertThat(callbackFired).as("the private sink reservation reached the controlled boundary").isTrue();
+		assertThat(heldSiblingGuard).as("the earlier union sibling retains a prepared branch guard").isTrue();
+		if (mutate) {
+			assertThat(preparationFailure.get())
+					.isInstanceOf(StreamingWritePreflight.InputGenerationConflictException.class);
+			assertThat(primaryTerminal.committed).isEmpty();
+			assertThat(additionalTerminal.committed).isEmpty();
+		} else {
+			assertThat(preparationFailure.get()).as("an unrelated read does not invalidate private carrier preparation")
+					.isNull();
+			// Publishing the transaction branches queues the exact rows in their shared ancestors.
+			assertThat(primaryRows.get()).containsExactly(primaryRow);
+			assertThat(additionalRows.get()).containsExactly(additionalRow);
+			if (nested) {
+				assertThat(nestedRows.get()).containsExactly(nestedRow);
+			}
+		}
+	}
+
 	private static void assertUnknownPendingMutationRejected(String description, Consumer<Changeset> mutation,
 			Consumer<Changeset> activation) throws Exception {
 		RecordingStreamingSource terminal = new RecordingStreamingSource();
@@ -4692,6 +4880,8 @@ class StreamingWritePreflightOwnershipTest {
 		};
 		private volatile Runnable onSinkPreparationRelease = () -> {
 		};
+		private volatile Runnable onPreparedWriteOpen = () -> {
+		};
 		private volatile Runnable onPublicationScopeClose = () -> {
 		};
 		private volatile IntConsumer onPreflightScopeClose = scopeId -> {
@@ -4834,6 +5024,7 @@ class StreamingWritePreflightOwnershipTest {
 		}
 
 		private SailClosable retainPreparedWrite() {
+			onPreparedWriteOpen.run();
 			liveWriteReservations.incrementAndGet();
 			AtomicBoolean released = new AtomicBoolean();
 			return () -> {

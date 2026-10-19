@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Constructor;
@@ -44,14 +45,15 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.QueryJoinOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.OptimizationGoal;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCascadesPlanner;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanningResult;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link QueryJoinOptimizer} must never place a Cartesian product inside a connected join component. Cross products are
- * only legal between components that share no variable (where they are unavoidable), which is the policy the packed
- * planner's hypergraph already enforces. Cost-first ranking is preserved among the legal candidates.
+ * Checks connected-factor ordering in {@link QueryJoinOptimizer} and binary-child connectivity in packed plans for
+ * these connected fixtures. A flattened statement walk checks the heuristic binding sequence; packed bushy plans
+ * require retaining their subtree boundaries. These checks impose no additional production enumeration policy.
  */
 class QueryJoinOptimizerConnectedComponentTest {
 
@@ -104,13 +106,73 @@ class QueryJoinOptimizerConnectedComponentTest {
 								.substring("urn:".length());
 						return byPredicate.getOrDefault(predicate, Double.NaN);
 					});
-			String packedOrder = crossProductOrder(packed.selectedPlan());
+			String packedOrder = crossProductJoinTree(packed.selectedPlan());
 			if (packedOrder != null) {
-				packedCross.put(byPredicate.toString(), packedOrder);
+				packedCross.put(byPredicate.toString(), packedOrder + "\nBinary plan:\n" + packed.selectedPlan());
 			}
 		}
 		assertTrue(qjoCross.isEmpty() && packedCross.isEmpty(),
 				"QueryJoinOptimizer cross products: " + qjoCross + " | packed cross products: " + packedCross);
+	}
+
+	@Test
+	void binaryConnectivityAcceptsConnectedBushyChildrenDespiteAFlatPrefixGap() {
+		TupleExpr plan = new QueryRoot(new Join(sp("d", "p4", "e"),
+				new Join(sp("c", "p3", "d"), new Join(sp("a", "p1", "b"), sp("b", "p2", "c")))));
+		assertEquals("p4 . p3 X p1 . p2", crossProductOrder(plan));
+		assertNull(crossProductJoinTree(plan));
+	}
+
+	@Test
+	void binaryConnectivityFindsAnInternalCrossProductHiddenByAFlatPrefix() {
+		TupleExpr plan = new QueryRoot(new Join(sp("b", "p2", "c"),
+				new Join(sp("a", "p1", "b"), sp("c", "p3", "d"))));
+		assertNull(crossProductOrder(plan));
+		assertEquals("[p1] X [p3]", crossProductJoinTree(plan));
+	}
+
+	@Test
+	void binaryConnectivityChecksBothBushyChildrenAndTheirParent() {
+		TupleExpr plan = new QueryRoot(new Join(
+				new Join(sp("a", "p1", "b"), sp("b", "p2", "c")),
+				new Join(sp("e", "p4", "f"), sp("f", "p5", "g"))));
+		assertEquals("[p1, p2] X [p4, p5]", crossProductJoinTree(plan));
+	}
+
+	@Test
+	void binaryConnectivityIgnoresRepeatedValuedPredicateNames() {
+		for (boolean anonymous : new boolean[] { false, true }) {
+			StatementPattern left = new StatementPattern(Var.of("a"),
+					Var.of("sharedPredicate", VF.createIRI("urn:p"), anonymous, true), Var.of("b"));
+			StatementPattern right = new StatementPattern(Var.of("c"),
+					Var.of("sharedPredicate", VF.createIRI("urn:p"), anonymous, true), Var.of("d"));
+			assertEquals("[p] X [p]", crossProductJoinTree(new QueryRoot(new Join(left, right))));
+		}
+	}
+
+	@Test
+	void binaryConnectivityRecognizesASharedUnboundPredicate() {
+		for (boolean anonymous : new boolean[] { false, true }) {
+			StatementPattern left = new StatementPattern(Var.of("a"), Var.of("predicate", anonymous), Var.of("b"));
+			StatementPattern right = new StatementPattern(Var.of("c"), Var.of("predicate", anonymous), Var.of("d"));
+			assertNull(crossProductJoinTree(new QueryRoot(new Join(left, right))));
+		}
+	}
+
+	@Test
+	void binaryConnectivityRecognizesASharedUnboundContext() {
+		StatementPattern left = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("a"),
+				Var.of("leftPredicate", VF.createIRI("urn:left")), Var.of("b"), Var.of("graph"));
+		StatementPattern right = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("c"),
+				Var.of("rightPredicate", VF.createIRI("urn:right")), Var.of("d"), Var.of("graph"));
+		assertNull(crossProductJoinTree(new QueryRoot(new Join(left, right))));
+	}
+
+	@Test
+	void binaryConnectivityRendersDisconnectedUnboundPredicates() {
+		StatementPattern left = new StatementPattern(Var.of("a"), Var.of("p"), Var.of("b"));
+		StatementPattern right = new StatementPattern(Var.of("c"), Var.of("q"), Var.of("d"));
+		assertEquals("[?p] X [?q]", crossProductJoinTree(new QueryRoot(new Join(left, right))));
 	}
 
 	// ------------------------------------------------------------------ pairwise path (join estimation)
@@ -457,6 +519,51 @@ class QueryJoinOptimizerConnectedComponentTest {
 			bound.addAll(vars);
 		}
 		return cross ? rendered.toString() : null;
+	}
+
+	/** Returns joins with disjoint unbound outputs in these StatementPattern/Join fixtures. */
+	private static String crossProductJoinTree(TupleExpr plan) {
+		List<String> crossProducts = new ArrayList<>();
+		plan.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Join join) {
+				Set<String> shared = unboundPatternOutputs(join.getLeftArg());
+				shared.retainAll(unboundPatternOutputs(join.getRightArg()));
+				if (shared.isEmpty()) {
+					crossProducts.add(connectivityPatternOrder(join.getLeftArg()) + " X "
+							+ connectivityPatternOrder(join.getRightArg()));
+				}
+				super.meet(join);
+			}
+		});
+		return crossProducts.isEmpty() ? null : String.join("; ", crossProducts);
+	}
+
+	private static Set<String> unboundPatternOutputs(TupleExpr expression) {
+		if (expression instanceof StatementPattern pattern) {
+			Set<String> outputs = new HashSet<>();
+			for (Var variable : pattern.getVarList()) {
+				if (!variable.hasValue()) {
+					outputs.add(variable.getName());
+				}
+			}
+			return outputs;
+		}
+		if (expression instanceof Join join) {
+			Set<String> outputs = unboundPatternOutputs(join.getLeftArg());
+			outputs.addAll(unboundPatternOutputs(join.getRightArg()));
+			return outputs;
+		}
+		throw new IllegalArgumentException("Connectivity fixtures require StatementPattern/Join children");
+	}
+
+	private static List<String> connectivityPatternOrder(TupleExpr expression) {
+		List<String> labels = new ArrayList<>();
+		for (StatementPattern pattern : StatementPatternCollector.process(expression)) {
+			Var predicate = pattern.getPredicateVar();
+			labels.add(predicate.hasValue() ? predicate(pattern) : "?" + predicate.getName());
+		}
+		return labels;
 	}
 
 	private static List<String> predicateOrder(TupleExpr plan) {

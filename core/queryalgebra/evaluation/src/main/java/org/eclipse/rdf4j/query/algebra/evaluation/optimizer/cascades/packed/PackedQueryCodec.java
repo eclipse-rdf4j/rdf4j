@@ -438,9 +438,10 @@ final class PackedQueryCodec {
 					retainAnnotations ? algorithmNameId : 0);
 			if (!metadata.attachRelationInputContract(relationId,
 					contract.required().isEmpty() ? 0 : nameSetPayload(contract.required()),
-					contract.protectedReads().isEmpty() ? 0 : nameSetPayload(contract.protectedReads()),
-					contract.nullableReads().isEmpty() ? 0 : nameSetPayload(contract.nullableReads()),
-					contract.independentOutputs().isEmpty() ? 0 : nameSetPayload(contract.independentOutputs()))) {
+					contract.protectedInputs().isEmpty() ? 0 : nameSetPayload(contract.protectedInputs()),
+					contract.nullableInputs().isEmpty() ? 0 : nameSetPayload(contract.nullableInputs()),
+					contract.independentOutputs().isEmpty() ? 0 : nameSetPayload(contract.independentOutputs()),
+					contract.writes().isEmpty() ? 0 : nameSetPayload(contract.writes()))) {
 				throw new UnsupportedCascadesOperatorException(expression.getClass(), path + ".ambiguousInputFrame");
 			}
 			metadata.attachRelationReplaySafety(relationId, replaySafety.getOrDefault(expression, false));
@@ -1093,6 +1094,11 @@ final class PackedQueryCodec {
 		}
 
 		private int servicePayload(Service service) {
+			boolean initialized = service.isBNodeReferenceMetadataInitialized();
+			int referenceMetadata = payloads.internCanonical(PackedPayloadOp.SERVICE_REFERENCE_METADATA,
+					stringSetPayload(service.getReservedBNodeIDs(), false),
+					nameSetPayload(service.getBNodeReferenceVarNames()),
+					(initialized ? 1 : 0) | (service.containsBNodeReferenceSyntax() ? 2 : 0), NO_CHILDREN, 0, 0);
 			Map<String, String> prefixes = service.getPrefixDeclarations();
 			int start = scratchSize;
 			int count = 0;
@@ -1106,7 +1112,7 @@ final class PackedQueryCodec {
 			}
 			int optionFlags = (service.isSilent() ? 1 : 0) | (prefixes != null ? 2 : 0);
 			int options = payloads.internCanonical(PackedPayloadOp.SERVICE_OPTIONS,
-					objects.intern(service.getBaseURI()), optionFlags, 0, scratch, start, count);
+					objects.intern(service.getBaseURI()), optionFlags, referenceMetadata, scratch, start, count);
 			releaseScratch(start);
 			return payloads.internCanonical(PackedPayloadOp.SERVICE, term(service.getServiceRef()),
 					objects.intern(service.getServiceExpressionString()), options, NO_CHILDREN, 0, 0);
@@ -1245,10 +1251,14 @@ final class PackedQueryCodec {
 		private int extensionElement(ExtensionElem element, String path) {
 			int expressionId = scalar(element.getExpr(), path + ".expr");
 			return payloads.internCanonical(PackedPayloadOp.EXTENSION_ELEMENT, bindingName(element.getName()),
-					expressionId, 0, NO_CHILDREN, 0, 0);
+					expressionId, element.isAnonymousTarget() ? 1 : 0, NO_CHILDREN, 0, 0);
 		}
 
 		private int nameSetPayload(Iterable<String> names) {
+			return stringSetPayload(names, true);
+		}
+
+		private int stringSetPayload(Iterable<String> names, boolean bindingNames) {
 			int count = 0;
 			for (String ignored : names) {
 				count++;
@@ -1256,7 +1266,7 @@ final class PackedQueryCodec {
 			int start = reserveScratch(count);
 			int ordinal = 0;
 			for (String name : names) {
-				scratch[start + ordinal++] = bindingName(name);
+				scratch[start + ordinal++] = bindingNames ? bindingName(name) : objects.intern(name);
 			}
 			Arrays.sort(scratch, start, start + count);
 			int payloadId = payloads.internCanonical(PackedPayloadOp.NAME_SET, 0, 0, 0, scratch, start, count);
@@ -1272,7 +1282,8 @@ final class PackedQueryCodec {
 				GroupElem element = group.getGroupElements().get(ordinal);
 				int aggregate = scalar(element.getOperator(), path + ".element[" + ordinal + "].operator");
 				scratch[start + ordinal] = payloads.internCanonical(PackedPayloadOp.GROUP_ELEMENT,
-						bindingName(element.getName()), aggregate, 0, NO_CHILDREN, 0, 0);
+						bindingName(element.getName()), aggregate, element.isAnonymousTarget() ? 1 : 0, NO_CHILDREN, 0,
+						0);
 			}
 			int payloadId = payloads.internCanonical(PackedPayloadOp.GROUP, bindings, 0, 0, scratch, start, count);
 			releaseScratch(start);
@@ -1477,17 +1488,22 @@ final class PackedQueryCodec {
 				return scalarId;
 			}
 			if (expression instanceof ValueExprTripleRef tripleRef) {
-				statementTerms[0] = term(tripleRef.getSubjectVar());
-				statementTerms[1] = term(tripleRef.getPredicateVar());
-				statementTerms[2] = term(tripleRef.getObjectVar());
+				int subject = scalar(tripleRef.getSubjectExpr(), path + ".subject");
+				int predicate = scalar(tripleRef.getPredicateExpr(), path + ".predicate");
+				int object = scalar(tripleRef.getObjectExpr(), path + ".object");
+				statementTerms[0] = subject;
+				statementTerms[1] = predicate;
+				statementTerms[2] = object;
 				int payload = payloads.internCanonical(PackedPayloadOp.VALUE_TRIPLE_REF,
-						objects.intern(cacheIdentityName(tripleRef.getExtVarName())), 0, 0, statementTerms, 0, 3);
-				return scalars.internCanonical(PackedScalarOp.VALUE_TRIPLE_REF, payload, 0, 0, NO_CHILDREN, 0, 0);
+						objects.intern(cacheIdentityName(tripleRef.getExtVarName())), 0, 0, NO_CHILDREN, 0, 0);
+				return scalars.internCanonical(PackedScalarOp.VALUE_TRIPLE_REF, payload, 0, 0, statementTerms, 0, 3);
 			}
 			if (expression instanceof TripleComponent component) {
+				int operand = scalar(component.getTripleTermExpr(), path + ".triple");
 				int payload = payloads.internCanonical(PackedPayloadOp.TRIPLE_COMPONENT,
-						term(component.getTripleRefVar()), component.getRole().ordinal() + 1, 0, NO_CHILDREN, 0, 0);
-				return scalars.internCanonical(PackedScalarOp.TRIPLE_COMPONENT, payload, 0, 0, NO_CHILDREN, 0, 0);
+						0, component.getRole().ordinal() + 1, 0, NO_CHILDREN, 0, 0);
+				unary[0] = operand;
+				return scalars.internCanonical(PackedScalarOp.TRIPLE_COMPONENT, payload, 0, 0, unary, 0, 1);
 			}
 			throw new UnsupportedCascadesOperatorException(expression.getClass(), path);
 		}

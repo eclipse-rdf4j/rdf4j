@@ -314,6 +314,10 @@ final class PackedQuery {
 		return bindingFacts.nullableInputMaskId(relId);
 	}
 
+	int relOrdinaryWriteMaskId(int relId) {
+		return bindingFacts.ordinaryWriteMaskId(relId);
+	}
+
 	int relAssuredMaskId(int relId) {
 		return bindingFacts.relationAssuredMaskId(relId);
 	}
@@ -584,6 +588,10 @@ final class PackedQuery {
 		return metadata.relationNullableInputNames(relId);
 	}
 
+	int relOrdinaryWriteNames(int relId) {
+		return metadata.relationOrdinaryWriteNames(relId);
+	}
+
 	int relReplaySafety(int relId) {
 		return metadata.relationReplaySafety(relId);
 	}
@@ -600,7 +608,9 @@ final class PackedQuery {
 	boolean executionOrderAllows(int left, int right) {
 		boolean conditionalRead = masksIntersect(relNullableInputMaskId(left), relOutputMaskId(right))
 				|| masksIntersect(relNullableInputMaskId(right), relOutputMaskId(left));
-		return !conditionalRead && relationReplayIsSafe(left) && relationReplayIsSafe(right)
+		boolean ordinaryWrite = masksIntersect(relOrdinaryWriteMaskId(left), relOutputMaskId(right))
+				|| masksIntersect(relOrdinaryWriteMaskId(right), relOutputMaskId(left));
+		return !conditionalRead && !ordinaryWrite && relationReplayIsSafe(left) && relationReplayIsSafe(right)
 				|| relSourceFirst(left) != 0 && relSourceFirst(right) != 0
 						&& relSourceLast(left) < relSourceFirst(right);
 	}
@@ -668,7 +678,8 @@ final class PackedQuery {
 				&& relRequiredInputNames(first) == relRequiredInputNames(second)
 				&& relProtectedInputNames(first) == relProtectedInputNames(second)
 				&& relNullableInputNames(first) == relNullableInputNames(second)
-				&& relIndependentOutputNames(first) == relIndependentOutputNames(second);
+				&& relIndependentOutputNames(first) == relIndependentOutputNames(second)
+				&& relOrdinaryWriteNames(first) == relOrdinaryWriteNames(second);
 	}
 
 	int scalarMetricSetId(int scalarId) {

@@ -53,13 +53,13 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
-import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
+import org.eclipse.rdf4j.sail.lmdb.EstimateEvidenceResolver.ResolvedEstimate;
 
 /** Uniform semantic estimator. Physical work is deliberately owned by {@link LmdbAccessCostModel}. */
 final class LmdbEstimationEngine {
@@ -81,7 +81,12 @@ final class LmdbEstimationEngine {
 	}
 
 	BagEstimate estimate(TupleExpr expression, EstimateContext context, LmdbEstimatorOptimizationScope scope) {
-		return new Session(scope).estimate(Objects.requireNonNull(expression, "expression"),
+		return estimateQualified(expression, context, scope).estimate();
+	}
+
+	ResolvedEstimate estimateQualified(TupleExpr expression, EstimateContext context,
+			LmdbEstimatorOptimizationScope scope) {
+		return new Session(scope).estimateQualified(Objects.requireNonNull(expression, "expression"),
 				Objects.requireNonNull(context, "context"));
 	}
 
@@ -113,7 +118,7 @@ final class LmdbEstimationEngine {
 
 	private final class Session {
 
-		private final IdentityHashMap<TupleExpr, Map<ContextKey, BagEstimate>> estimates = new IdentityHashMap<>();
+		private final IdentityHashMap<TupleExpr, Map<EstimationSessionContextKey, ResolvedEstimate>> estimates = new IdentityHashMap<>();
 		private final LmdbEstimatorOptimizationScope scope;
 
 		private Session(LmdbEstimatorOptimizationScope scope) {
@@ -121,11 +126,15 @@ final class LmdbEstimationEngine {
 		}
 
 		private BagEstimate estimate(TupleExpr expression, EstimateContext context) {
+			return estimateQualified(expression, context).estimate();
+		}
+
+		private ResolvedEstimate estimateQualified(TupleExpr expression, EstimateContext context) {
 			context = context.withGraphDomain(PlanningGraphDomains.domain(expression));
-			ContextKey key = ContextKey.from(context);
-			Map<ContextKey, BagEstimate> byContext = estimates.computeIfAbsent(expression,
+			EstimationSessionContextKey key = EstimationSessionContextKey.from(context);
+			Map<EstimationSessionContextKey, ResolvedEstimate> byContext = estimates.computeIfAbsent(expression,
 					ignored -> new LinkedHashMap<>());
-			BagEstimate cached = byContext.get(key);
+			ResolvedEstimate cached = byContext.get(key);
 			if (cached != null) {
 				return cached;
 			}
@@ -139,9 +148,13 @@ final class LmdbEstimationEngine {
 					return cached;
 				}
 			}
-			BagEstimate computed = context.hasNoExecutions()
-					? withMissingVariables(BagEstimate.exact(0.0d, "empty-prefix"), expression)
-					: compose(expression, context);
+			boolean nativeLeaf = expression instanceof StatementPattern || expression instanceof ArbitraryLengthPath
+					|| expression instanceof ZeroLengthPath;
+			ResolvedEstimate computed = context.hasNoExecutions()
+					? new ResolvedEstimate(withMissingVariables(BagEstimate.exact(0.0d, "empty-prefix"), expression),
+							nativeLeaf ? RowScope.FOR_CONTEXT : RowScope.UNKNOWN)
+					: nativeLeaf ? qualifiedLeaf(expression, context)
+							: new ResolvedEstimate(compose(expression, context), RowScope.UNKNOWN);
 			byContext.put(key, computed);
 			if (sharedKey != null) {
 				scope.semanticEstimates.put(sharedKey, computed);
@@ -372,7 +385,7 @@ final class LmdbEstimationEngine {
 		private BagEstimate extend(Extension extension, EstimateContext context) {
 			BagEstimate result = estimate(extension.getArg(), context);
 			for (var element : extension.getElements()) {
-				if (element.getExpr()instanceof Var variable) {
+				if (element.getExpr() instanceof Var variable) {
 					result = EstimateMath.extendAlias(result, variable.getName(), element.getName());
 				} else if (element.getExpr() instanceof ValueConstant) {
 					result = EstimateMath.extendConstant(result, element.getName());
@@ -382,6 +395,16 @@ final class LmdbEstimationEngine {
 				}
 			}
 			return result;
+		}
+
+		private ResolvedEstimate qualifiedLeaf(TupleExpr expression, EstimateContext context) {
+			if (expression instanceof StatementPattern pattern) {
+				BagEstimate finite = finiteBindingLookup(pattern, context);
+				if (finite != null) {
+					return new ResolvedEstimate(withMissingVariables(finite, expression), RowScope.FOR_CONTEXT);
+				}
+			}
+			return resolvedQualifiedLeaf(expression, context, true);
 		}
 
 		private BagEstimate leaf(TupleExpr expression, EstimateContext context) {
@@ -470,31 +493,41 @@ final class LmdbEstimationEngine {
 		}
 
 		private BagEstimate resolvedLeaf(TupleExpr expression, EstimateContext context, boolean conditionOnPrefix) {
-			BagEstimate estimate = evidenceResolver.resolveForDecision(
+			return resolvedQualifiedLeaf(expression, context, conditionOnPrefix).estimate();
+		}
+
+		private ResolvedEstimate resolvedQualifiedLeaf(TupleExpr expression, EstimateContext context,
+				boolean conditionOnPrefix) {
+			ResolvedEstimate resolved = evidenceResolver.resolveQualifiedForDecision(
 					evidenceSource.leafCandidates(expression, context),
 					context, () -> evidenceSource.exactCandidate(expression, context).orElse(null));
-			estimate = withMissingVariables(estimate, expression);
-			if (!conditionOnPrefix) {
-				return estimate;
+			BagEstimate estimate = withMissingVariables(resolved.estimate(), expression);
+			RowScope domain = resolved.rowScope();
+			if (!conditionOnPrefix || domain == RowScope.FOR_CONTEXT || domain == RowScope.COMPONENT) {
+				return new ResolvedEstimate(estimate, domain);
 			}
 			Set<String> shared = contextBindingNames(expression, context);
 			if (!shared.isEmpty()
 					&& (expression instanceof ArbitraryLengthPath || expression instanceof ZeroLengthPath)) {
-				return estimate;
+				return new ResolvedEstimate(estimate, domain);
 			}
 			if (!shared.isEmpty()) {
-				return conditionOnPrefix(estimate, context, shared);
+				return new ResolvedEstimate(conditionOnPrefix(estimate, context, shared),
+						domain == RowScope.PER_INVOCATION ? RowScope.FOR_CONTEXT : domain);
 			}
 			double invocations = Math.max(context.invocationCount(), context.prefixEstimate().rows());
 			if (invocations <= 1.0d) {
-				return estimate;
+				return new ResolvedEstimate(estimate, domain);
 			}
 
 			Map<String, Double> metrics = new LinkedHashMap<>(estimate.metrics());
 			metrics.put("plannedRepeatedInvocations", invocations);
-			return estimate.withRowsPreservingEvidence(saturatingMultiply(estimate.rows(), invocations),
-					saturatingMultiply(estimate.workRows(), invocations), estimate.confidence(), estimate.source(),
-					Map.copyOf(metrics), false);
+			return new ResolvedEstimate(
+					estimate.withRowsPreservingEvidence(saturatingMultiply(estimate.rows(), invocations),
+							saturatingMultiply(estimate.workRows(), invocations), estimate.confidence(),
+							estimate.source(),
+							Map.copyOf(metrics), false),
+					domain == RowScope.PER_INVOCATION ? RowScope.FOR_CONTEXT : domain);
 		}
 
 		private Set<String> contextBindingNames(TupleExpr expression, EstimateContext context) {
@@ -662,31 +695,4 @@ final class LmdbEstimationEngine {
 		return names.isEmpty() ? Set.of() : Set.copyOf(names);
 	}
 
-	private record ContextKey(Object boundMask, Object finiteBindings, PrefixEvidenceKey prefixEvidence,
-			double invocations,
-			Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
-			long snapshotVersion,
-			boolean exactProbePermitted) {
-
-		private static ContextKey from(EstimateContext context) {
-			return new ContextKey(context.boundMask(), context.finiteBindings(),
-					PrefixEvidenceKey.from(context.prefixEstimate()),
-					context.invocationCount(), context.evidencePolicy(), context.graphDomain(),
-					context.estimationTier(),
-					context.snapshotIdentity(),
-					context.snapshotVersion(), context.exactProbePermitted());
-		}
-	}
-
-	private record PrefixEvidenceKey(double rows, double confidence, Map<String, VariableEstimate> variables,
-			Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
-			Map<VariableSetKey, SketchEvidence> sketches,
-			Map<VariableSetKey, SketchEvidence> supportingSketches) {
-
-		private static PrefixEvidenceKey from(BagEstimate prefix) {
-			var evidence = prefix.evidenceProfile();
-			return new PrefixEvidenceKey(evidence.rows(), evidence.confidence(), evidence.variables(),
-					evidence.finiteRelations(), evidence.sketches(), evidence.supportingSketches());
-		}
-	}
 }

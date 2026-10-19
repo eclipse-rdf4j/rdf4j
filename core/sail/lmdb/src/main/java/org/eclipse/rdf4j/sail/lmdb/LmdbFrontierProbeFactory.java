@@ -12,8 +12,10 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -23,6 +25,7 @@ import java.util.Set;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -86,7 +89,7 @@ final class LmdbFrontierProbeFactory {
 	}
 
 	static boolean hasStatementLineage(TupleExpr expression) {
-		return statementLineage(expression) != null;
+		return statementLineages(expression) != null;
 	}
 
 	/**
@@ -98,47 +101,70 @@ final class LmdbFrontierProbeFactory {
 		if (factors == null || anchorOrdinal < 0 || anchorOrdinal >= factors.size()) {
 			return List.of();
 		}
-		List<StatementLineage> lineages = new ArrayList<>(factors.size());
+		List<Set<String>> exposed = new ArrayList<>(factors.size());
 		for (TupleExpr factor : factors) {
-			StatementLineage lineage = statementLineage(factor);
-			if (lineage == null) {
+			List<StatementLineage> surface = statementLineages(factor);
+			if (surface == null) {
 				return List.of();
 			}
-			lineages.add(lineage);
+			Set<String> names = new HashSet<>();
+			for (StatementLineage occurrence : surface) {
+				names.addAll(occurrence.componentMasks().keySet());
+			}
+			exposed.add(names);
 		}
 		boolean[] selected = new boolean[factors.size()];
 		selected[anchorOrdinal] = true;
-		Set<String> reachableBindings = new LinkedHashSet<>(lineages.get(anchorOrdinal).componentMasks().keySet());
+		Set<String> reachable = new HashSet<>(exposed.get(anchorOrdinal));
 		boolean changed;
 		do {
 			changed = false;
-			for (int ordinal = 0; ordinal < lineages.size(); ordinal++) {
-				if (selected[ordinal]
-						|| Collections.disjoint(reachableBindings, lineages.get(ordinal).componentMasks().keySet())) {
-					continue;
+			for (int index = 0; index < factors.size(); index++) {
+				if (!selected[index] && !Collections.disjoint(reachable, exposed.get(index))) {
+					selected[index] = true;
+					reachable.addAll(exposed.get(index));
+					changed = true;
 				}
-				selected[ordinal] = true;
-				reachableBindings.addAll(lineages.get(ordinal).componentMasks().keySet());
-				changed = true;
 			}
 		} while (changed);
 		List<TupleExpr> component = new ArrayList<>();
-		for (int ordinal = 0; ordinal < factors.size(); ordinal++) {
-			if (selected[ordinal]) {
-				component.add(factors.get(ordinal));
+		for (int index = 0; index < factors.size(); index++) {
+			if (selected[index]) {
+				component.add(factors.get(index));
 			}
 		}
-		return List.copyOf(component);
+		return component;
 	}
 
 	static FrontierJoinProbe joinProbe(ValueStore valueStore, StatementPattern left, StatementPattern right,
 			int planeMask) {
-		return joinProbe(valueStore, statementLineage(left), statementLineage(right), planeMask);
+		List<StatementLineage> leftSurface = statementLineages(left);
+		List<StatementLineage> rightSurface = statementLineages(right);
+		return leftSurface != null && rightSurface != null && leftSurface.size() == 1 && rightSurface.size() == 1
+				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask)
+				: null;
 	}
 
 	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, TupleExpr left, TupleExpr right,
 			int planeMask) {
-		return joinProbe(valueStore, statementLineage(left), statementLineage(right), planeMask);
+		List<StatementLineage> leftSurface = statementLineages(left);
+		List<StatementLineage> rightSurface = statementLineages(right);
+		return leftSurface != null && rightSurface != null && leftSurface.size() == 1 && rightSurface.size() == 1
+				? joinProbe(valueStore, leftSurface.getFirst(), rightSurface.getFirst(), planeMask)
+				: null;
+	}
+
+	static FrontierJoinProbe joinProbeForLineage(ValueStore valueStore, List<? extends TupleExpr> factors,
+			int planeMask) {
+		List<StatementLineage> pair = new ArrayList<>(2);
+		for (TupleExpr factor : factors) {
+			List<StatementLineage> surface = statementLineages(factor);
+			if (surface == null || pair.size() + surface.size() > 2) {
+				return null;
+			}
+			pair.addAll(surface);
+		}
+		return pair.size() == 2 ? joinProbe(valueStore, pair.get(0), pair.get(1), planeMask) : null;
 	}
 
 	private static FrontierJoinProbe joinProbe(ValueStore valueStore, StatementLineage left, StatementLineage right,
@@ -182,13 +208,13 @@ final class LmdbFrontierProbeFactory {
 		if (factors == null) {
 			return null;
 		}
-		List<StatementLineage> lineages = new ArrayList<>(factors.size());
+		List<StatementLineage> lineages = new ArrayList<>();
 		for (TupleExpr factor : factors) {
-			StatementLineage lineage = statementLineage(factor);
-			if (lineage == null) {
+			List<StatementLineage> surface = statementLineages(factor);
+			if (surface == null || lineages.size() + surface.size() > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
 				return null;
 			}
-			lineages.add(lineage);
+			lineages.addAll(surface);
 		}
 		return joinLineageProgram(valueStore, lineages, fixedBindings, planeMask);
 	}
@@ -315,36 +341,138 @@ final class LmdbFrontierProbeFactory {
 		return resolved;
 	}
 
-	private static StatementLineage statementLineage(TupleExpr expression) {
-		List<Extension> extensions = new ArrayList<>(2);
-		TupleExpr current = expression;
-		while (current instanceof Extension extension) {
-			extensions.add(extension);
-			current = extension.getArg();
+	static boolean isConnectedLineageSurface(List<? extends TupleExpr> factors) {
+		List<StatementLineage> occurrences = new ArrayList<>();
+		for (TupleExpr factor : factors) {
+			List<StatementLineage> surface = statementLineages(factor);
+			if (surface == null || occurrences.size() + surface.size() > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
+				return false;
+			}
+			occurrences.addAll(surface);
 		}
-		if (!(current instanceof StatementPattern pattern)) {
+		if (occurrences.isEmpty()) {
+			return false;
+		}
+		boolean[] selected = new boolean[occurrences.size()];
+		selected[0] = true;
+		int count = 1;
+		Set<String> reachable = new HashSet<>(occurrences.getFirst().componentMasks().keySet());
+		boolean changed;
+		do {
+			changed = false;
+			for (int index = 1; index < occurrences.size(); index++) {
+				if (!selected[index]
+						&& !Collections.disjoint(reachable, occurrences.get(index).componentMasks().keySet())) {
+					selected[index] = true;
+					count++;
+					reachable.addAll(occurrences.get(index).componentMasks().keySet());
+					changed = true;
+				}
+			}
+		} while (changed);
+		return count == occurrences.size();
+	}
+
+	static int lineagePatternCount(TupleExpr expression) {
+		List<StatementLineage> surface = statementLineages(expression);
+		return surface == null ? 0 : surface.size();
+	}
+
+	static int lineagePatternCount(List<? extends TupleExpr> factors) {
+		int count = 0;
+		for (TupleExpr factor : factors) {
+			int added = lineagePatternCount(factor);
+			if (added == 0 || count + added > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
+				return 0;
+			}
+			count += added;
+		}
+		return count;
+	}
+
+	private static StatementLineage statementLineage(TupleExpr expression) {
+		List<StatementLineage> surface = statementLineages(expression);
+		return surface != null && surface.size() == 1 ? surface.getFirst() : null;
+	}
+
+	/** Complete plain conjunctive/pure-alias statistical representation, never a semantic population proof. */
+	private static List<StatementLineage> statementLineages(TupleExpr expression) {
+		if (expression == null) {
 			return null;
 		}
-		LinkedHashMap<String, Integer> componentMasks = new LinkedHashMap<>();
-		for (int component = 0; component < 4; component++) {
-			String name = joinVariableName(componentVariable(pattern, component));
-			if (name != null) {
-				componentMasks.merge(name, 1 << component, (left, right) -> left | right);
+		ArrayDeque<SurfaceVisit> visits = new ArrayDeque<>();
+		ArrayDeque<List<StatementLineage>> results = new ArrayDeque<>();
+		int patternCount = 0;
+		visits.push(new SurfaceVisit(expression, false));
+		while (!visits.isEmpty()) {
+			SurfaceVisit visit = visits.pop();
+			TupleExpr node = visit.expression();
+			if (node instanceof StatementPattern pattern) {
+				if (++patternCount > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
+					return null;
+				}
+				LinkedHashMap<String, Integer> masks = new LinkedHashMap<>();
+				for (int component = 0; component < 4; component++) {
+					String name = joinVariableName(componentVariable(pattern, component));
+					if (name != null) {
+						masks.merge(name, 1 << component, (left, right) -> left | right);
+					}
+				}
+				List<StatementLineage> leaf = new ArrayList<>(1);
+				leaf.add(new StatementLineage(pattern, masks));
+				results.push(leaf);
+			} else if (node.getClass() == Join.class) {
+				Join join = (Join) node;
+				if (!visit.complete()) {
+					visits.push(new SurfaceVisit(node, true));
+					visits.push(new SurfaceVisit(join.getRightArg(), false));
+					visits.push(new SurfaceVisit(join.getLeftArg(), false));
+				} else {
+					List<StatementLineage> right = results.pop();
+					List<StatementLineage> left = results.pop();
+					if (left.size() + right.size() > MAXIMUM_JOIN_PROGRAM_PATTERNS) {
+						return null;
+					}
+					left.addAll(right);
+					results.push(left);
+				}
+			} else if (node instanceof Extension extension) {
+				if (!visit.complete()) {
+					visits.push(new SurfaceVisit(node, true));
+					visits.push(new SurfaceVisit(extension.getArg(), false));
+				} else {
+					List<StatementLineage> child = results.peek();
+					for (ExtensionElem element : extension.getElements()) {
+						if (!(element.getExpr()instanceof Var source) || source.hasValue() || source.getName() == null
+								|| element.getName() == null || element.getName().isBlank()) {
+							return null;
+						}
+						boolean represented = false;
+						for (StatementLineage occurrence : child) {
+							if (occurrence.componentMasks().containsKey(element.getName())) {
+								return null;
+							}
+							represented |= occurrence.componentMasks().containsKey(source.getName());
+						}
+						if (!represented) {
+							return null;
+						}
+						for (StatementLineage occurrence : child) {
+							Integer mask = occurrence.componentMasks().get(source.getName());
+							if (mask != null) {
+								occurrence.componentMasks().put(element.getName(), mask);
+							}
+						}
+					}
+				}
+			} else {
+				return null;
 			}
 		}
-		for (int extensionIndex = extensions.size() - 1; extensionIndex >= 0; extensionIndex--) {
-			for (ExtensionElem element : extensions.get(extensionIndex).getElements()) {
-				if (!(element.getExpr()instanceof Var source) || source.hasValue() || source.getName() == null
-						|| element.getName() == null || element.getName().isBlank()) {
-					continue;
-				}
-				Integer componentMask = componentMasks.get(source.getName());
-				if (componentMask != null) {
-					componentMasks.put(element.getName(), componentMask);
-				}
-			}
-		}
-		return new StatementLineage(pattern, Collections.unmodifiableMap(componentMasks));
+		return results.pop();
+	}
+
+	private record SurfaceVisit(TupleExpr expression, boolean complete) {
 	}
 
 	private static boolean shareExposedBinding(StatementLineage left, int leftComponent,
@@ -414,6 +542,38 @@ final class LmdbFrontierProbeFactory {
 			}
 		}
 		return -1;
+	}
+
+	/** Complete surface exposure; a component ordinal is meaningful only for a single-occurrence leaf. */
+	static boolean exposesLineageBinding(TupleExpr expression, String variableName) {
+		List<StatementLineage> surface = statementLineages(expression);
+		if (surface == null || variableName == null) {
+			return false;
+		}
+		for (StatementLineage occurrence : surface) {
+			if (occurrence.componentMasks().containsKey(variableName)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	/** Structural boundary eligibility is independent of whether native IDs can form a priceable pair probe. */
+	static boolean lineageSurfacesShareBinding(TupleExpr left, TupleExpr right) {
+		List<StatementLineage> leftSurface = statementLineages(left);
+		List<StatementLineage> rightSurface = statementLineages(right);
+		if (leftSurface == null || rightSurface == null) {
+			return false;
+		}
+		for (StatementLineage leftOccurrence : leftSurface) {
+			for (StatementLineage rightOccurrence : rightSurface) {
+				if (!Collections.disjoint(leftOccurrence.componentMasks().keySet(),
+						rightOccurrence.componentMasks().keySet())) {
+					return true;
+				}
+			}
+		}
+		return false;
 	}
 
 	static int componentIndexForLineage(TupleExpr expression, String variableName) {

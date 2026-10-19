@@ -376,6 +376,7 @@ class LmdbStatementPatternIdNormalizationTest {
 	private static final class ProbeValueStore extends ValueStore {
 		private final List<PatternInputs> inputs;
 		private final ThreadLocal<Integer> planningDepth = ThreadLocal.withInitial(() -> 0);
+		private final ThreadLocal<Integer> statementRequestDepth = ThreadLocal.withInitial(() -> 0);
 		private final Map<Value, AtomicInteger> payloadCalls = new IdentityHashMap<>();
 		private final Map<Value, Integer> payloadLookups = new IdentityHashMap<>();
 		private final List<Value> unknownLookups = new ArrayList<>();
@@ -390,10 +391,22 @@ class LmdbStatementPatternIdNormalizationTest {
 		long getStatementId(ReadSnapshot snapshot, Value value) throws IOException {
 			long id = super.getStatementId(snapshot, value);
 			// Observe the actual native input consumer, including physical-pattern and exact-lookup paths.
-			if (planningDepth.get() == 0) {
+			if (planningDepth.get() == 0 && statementRequestDepth.get() > 0) {
 				inputs.add(new PatternInputs(null, null, value, new Resource[0]));
 			}
 			return id;
+		}
+
+		private SailClosable observeStatementRequest() {
+			int previous = statementRequestDepth.get();
+			statementRequestDepth.set(previous + 1);
+			return () -> {
+				if (previous == 0) {
+					statementRequestDepth.remove();
+				} else {
+					statementRequestDepth.set(previous);
+				}
+			};
 		}
 
 		@Override
@@ -619,15 +632,19 @@ class LmdbStatementPatternIdNormalizationTest {
 								@Override
 								public CloseableIteration<? extends Statement> getStatements(StatementPattern pattern,
 										Resource subject, IRI predicate, Value object, Resource... contexts) {
-									observePatternRequest(subject, predicate, object, contexts);
-									return super.getStatements(pattern, subject, predicate, object, contexts);
+									try (SailClosable ignored = values.observeStatementRequest()) {
+										observePatternRequest(subject, predicate, object, contexts);
+										return super.getStatements(pattern, subject, predicate, object, contexts);
+									}
 								}
 
 								@Override
 								public long getStatementCount(StatementPattern pattern, Resource subject, IRI predicate,
 										Value object, Resource... contexts) {
-									observePatternRequest(subject, predicate, object, contexts);
-									return super.getStatementCount(pattern, subject, predicate, object, contexts);
+									try (SailClosable ignored = values.observeStatementRequest()) {
+										observePatternRequest(subject, predicate, object, contexts);
+										return super.getStatementCount(pattern, subject, predicate, object, contexts);
+									}
 								}
 							});
 				}

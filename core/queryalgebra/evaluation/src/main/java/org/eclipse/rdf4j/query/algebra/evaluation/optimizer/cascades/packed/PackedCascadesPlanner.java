@@ -568,10 +568,43 @@ public final class PackedCascadesPlanner {
 		PackedSearchBudget budget = new PackedSearchBudget(limits);
 		PackedCostSession openedSession = Objects.requireNonNull(
 				costModel.openSession(queryView), "packed cost session");
+		ProviderMemoryBinding providerMemory = new ProviderMemoryBinding(budget);
+		try {
+			openedSession.bindProviderMemory(providerMemory);
+		} catch (RuntimeException | Error failure) {
+			providerMemory.close();
+			try {
+				openedSession.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
 		PackedCostSession proofAware = new ProofAwarePackedCostSession(query, openedSession);
-		try (PackedCostSession costSession = new EventSourcingPackedCostSession(proofAware, query, budget)) {
+		try (providerMemory;
+				PackedCostSession costSession = new EventSourcingPackedCostSession(proofAware, query, budget)) {
 			return compute(query, budget, exploreReorderings, costSession, costModel, encodeNanos,
 					cacheNanos, queryTemplateCacheHit, dominatedSamplesPerStratum, checkpoint);
+		}
+	}
+
+	/** One actual search's borrowed view; even an accidentally retained old callback loses authority on close. */
+	private static final class ProviderMemoryBinding implements PackedProviderMemory, AutoCloseable {
+		private PackedSearchBudget budget;
+
+		ProviderMemoryBinding(PackedSearchBudget budget) {
+			this.budget = budget;
+		}
+
+		@Override
+		public boolean tryReserve(long bytes) {
+			PackedSearchBudget owner = budget;
+			return owner != null && owner.canReserveBytes(bytes) && owner.tryReserveBytes(bytes);
+		}
+
+		@Override
+		public void close() {
+			budget = null;
 		}
 	}
 
@@ -581,7 +614,7 @@ public final class PackedCascadesPlanner {
 			boolean queryTemplateCacheHit, int dominatedSamplesPerStratum, PackedSearchCheckpoint checkpoint) {
 		long searchStart = System.nanoTime();
 		int relationCount = query.relationCount();
-		PackedMemo memo = newQueryLocalMemo(query, budget, costSession, relationCount);
+		PackedMemo memo = newQueryLocalMemo(query, budget, costSession, relationCount, dominatedSamplesPerStratum >= 0);
 		try {
 			long checkpointReplayWorkUnits = 0L;
 			PackedMemo.RestoredContinuationSeed restored = null;
@@ -607,7 +640,7 @@ public final class PackedCascadesPlanner {
 					logger.debug("Packed checkpoint could not be rehydrated; restarting ordinary search",
 							corruptCheckpoint);
 					memo.close();
-					memo = newQueryLocalMemo(query, budget, costSession, relationCount);
+					memo = newQueryLocalMemo(query, budget, costSession, relationCount, dominatedSamplesPerStratum >= 0);
 					restored = null;
 				}
 			}
@@ -697,12 +730,16 @@ public final class PackedCascadesPlanner {
 	}
 
 	private static PackedMemo newQueryLocalMemo(PackedQuery query, PackedSearchBudget budget,
-			PackedCostSession costSession, int relationCount) {
-		return costSession == null
+			PackedCostSession costSession, int relationCount, boolean requireAuditableWinnerReplacements) {
+		PackedMemo memo = costSession == null
 				? PackedMemo.scalarWinnerOnlyQueryLocal(query, query.symbolCount(), relationCount, relationCount, 4,
 						relationCount, relationCount * 2, budget)
 				: PackedMemo.queryLocal(query, query.symbolCount(), relationCount, relationCount, 4, relationCount,
 						relationCount * 2, budget);
+		if (requireAuditableWinnerReplacements) {
+			memo.requireAuditableWinnerReplacements();
+		}
+		return memo;
 	}
 
 	private static PortfolioBuild buildOptimizationDecision(PackedQuery query, PackedMemo memo,

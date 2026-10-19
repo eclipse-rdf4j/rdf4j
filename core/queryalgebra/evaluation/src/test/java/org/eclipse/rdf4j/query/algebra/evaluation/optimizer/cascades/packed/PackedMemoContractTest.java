@@ -21,14 +21,165 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.lang.reflect.Method;
 
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
+import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PackedMemoContractTest {
+
+	@ParameterizedTest
+	@CsvSource({ "scalar,0,1", "scalar,0,2", "scalar,7,1", "scalar,7,2",
+			"physical,7,1", "physical,7,2", "component,0,1", "component,0,2" })
+	void completeScalarPricesSurviveUnavailableChildResourceComposition(String childKind, int context, int dimension) {
+		PackedQuery source = query();
+		PackedQuery query = PackedQueryCodec.encode(new Filter(
+				PackedPlanMaterializer.materialize(source, source.relChild(source.rootRelId(), 0)),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true))));
+		PackedMemo memo = memo(query);
+		int property = memo.anyPropertyId();
+		int childGroup = memo.logicalGroupId(query.relChild(query.rootRelId(), 0));
+		int childPhysical = memo.addPhysicalAlternative(childGroup, PackedRelOp.STATEMENT_PATTERN, 0, property,
+				1, new int[0], 0, 0);
+		PackedCostEstimate child = event(1, 0, 5.0d);
+		if (childKind.equals("scalar")) {
+			child.setLocalScalarPrice(5.0d, 5.0d);
+		} else {
+			child.setLocalPhysicalCost(5.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+			child.setInvocations(1.0d);
+			if (childKind.equals("component")) {
+				child.setComponentOutputRowsPreservingPhysicalCost(5.0d);
+			}
+		}
+		int childMetadata = memo.addPhysicalMetadata(child, 5.0d, 5.0d);
+		int childWinner = memo.offerWinnerWithMetadata(childGroup, property, 0, 0, 0, childPhysical,
+				childMetadata, 1.0d, 5.0d, 5.0d, new int[0], 0, 0);
+		assertFalse(memo.restoreCompleteWinnerPhysicalResources(childWinner, context, 1.0d,
+				new PackedCostEstimate()), "This input cannot authenticate complete resources in the parent domain");
+		int group = memo.logicalGroupId(query.rootRelId());
+		int physical = memo.addPhysicalAlternative(group, PackedRelOp.FILTER, 0, property,
+				2, new int[] { childGroup }, 0, 1);
+		PackedCostEstimate parent = event(2, 0, 2.0d);
+		parent.setLocalPhysicalCost(2.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		parent.setInvocations(1.0d);
+		int metadata = memo.addPhysicalMetadata(parent, 5.0d, 2.0d);
+		int winner = memo.offerWinnerWithMetadata(group, property, 0, context, 0, physical, metadata,
+				3.0d, 7.0d, 7.0d, new int[] { childWinner }, 0, 1);
+		assertEquals(7.0d, memo.winnerTotalCost(winner));
+		assertEquals(3.0d, memo.winnerStartupCost(winner));
+		int vector = memo.winnerCostVectorId(winner);
+		assertTrue(vector > 0);
+		assertFalse(memo.costVectors().isKnown(vector, PackedCostDimensionRegistry.SOURCE_ROW_EVENTS));
+		assertFalse(memo.costVectors().isKnown(vector, PackedCostDimensionRegistry.LEGACY_PEAK_MEMORY_ROWS));
+		assertTrue(memo.costVectors().isKnown(vector, dimension),
+				"Unavailable physical resources cannot erase the independently supplied complete scalar price");
+		assertEquals(dimension == PackedCostDimensionRegistry.STARTUP_WORK ? 3.0d : 7.0d,
+				memo.costVectors().point(vector, dimension));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0", "0,7", "1,0", "1,7" })
+	void unknownMemoryDecisionTraceUsesExactNaNEqualityWithoutDuplicatingCandidates(int tier, int context) {
+		PackedPhysicalMetadataArena metadata = new PackedPhysicalMetadataArena(2);
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		PackedCostEstimate estimate = event(1, 0, 7.0d);
+		estimate.setLocalScalarPrice(4.0d, 7.0d);
+		int metadataId = metadata.append(estimate, 4.0d, 7.0d);
+		assertTrue(Double.isNaN(metadata.peakMemoryRows(metadataId)));
+		int winner = winners.appendContinuationWithMetadata(1, 1, 0, context, 0, tier,
+				1, metadataId, 0, 0.0d, 7.0d, 7.0d, Double.NaN, false, new int[0], 0, 0);
+		PackedDecisionTraceArena trace = new PackedDecisionTraceArena();
+		for (boolean accepted : new boolean[] { false, true }) {
+			trace.append(1, 1, 0, context, 0, 1, metadataId, 0, winner, tier, 0,
+					0.0d, 7.0d, 7.0d, accepted, winners, metadata, new int[0], 0, 0);
+		}
+		assertEquals(1, trace.size());
+		assertTrue(trace.accepted(0));
+		assertTrue(trace.matchesWinner(0, winner, winners, metadata));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,0", "false,7", "true,0", "true,7" })
+	void scalarMemoryUnknownWinnerRetainsPriceButCannotSupplyPhysicalResources(boolean fallback, int context) {
+		PackedQuery query = query();
+		PackedMemo memo = memo(query);
+		int group = memo.logicalGroupId(query.rootRelId());
+		int property = memo.anyPropertyId();
+		int physical = memo.addPhysicalAlternative(group, PackedRelOp.JOIN, 0, property, 1, new int[0], 0, 0);
+		PackedCostEstimate estimate = event(1, 0, 7.0d);
+		estimate.setLocalScalarPrice(4.0d, 7.0d);
+		int metadata = memo.addPhysicalMetadata(estimate, 4.0d, 7.0d);
+		int winner = fallback
+				? memo.offerExecutableFallbackWinnerWithMetadata(group, property, 0, context, 0, physical,
+						metadata, 0, 0.0d, 7.0d, 7.0d, new int[0], 0, 0)
+				: memo.offerWinnerWithMetadata(group, property, 0, context, 0, physical,
+						metadata, 0.0d, 7.0d, 7.0d, new int[0], 0, 0);
+		assertEquals(winner, memo.findWinner(group, property, 0, context, 0));
+		assertEquals(7.0d, memo.winnerTotalCost(winner));
+		assertEquals(4.0d, memo.winnerOutputRows(winner));
+		assertEquals(winner, memo.materializeDecisionTraceCandidate(0));
+		assertEquals(1, memo.winnerCount());
+		PackedCostEstimate restored = new PackedCostEstimate();
+		memo.restoreWinnerPriceMetadata(winner, restored);
+		assertTrue(Double.isNaN(restored.peakMemoryRows()));
+		assertEquals(7.0d, restored.objectivePoint());
+		assertFalse(memo.restoreCompleteWinnerPhysicalResources(winner, context, 1.0d, new PackedCostEstimate()),
+				"A finite scalar price does not manufacture resource authority");
+	}
+
+	@Test
+	void planQualityMaterializesUnknownMemoryAndRebuildsTheActualUnaryEnvelope() {
+		PackedQuery joinQuery = query();
+		PackedQuery query = PackedQueryCodec.encode(new Filter(
+				PackedPlanMaterializer.materialize(joinQuery, joinQuery.rootRelId()),
+				new ValueConstant(SimpleValueFactory.getInstance().createLiteral(true))));
+		PackedMemo memo = memo(query);
+		int property = memo.anyPropertyId();
+		int childGroup = memo.logicalGroupId(query.relChild(query.rootRelId(), 0));
+		int firstPhysical = memo.addPhysicalAlternative(childGroup, PackedRelOp.JOIN, 0, property, 1,
+				new int[0], 0, 0);
+		PackedCostEstimate known = event(1, 0, 5.0d);
+		int knownMetadata = memo.addPhysicalMetadata(known, 5.0d, 5.0d);
+		int selectedChild = memo.offerWinnerWithMetadata(childGroup, property, 0, 0, 0, firstPhysical,
+				knownMetadata, 0.0d, 5.0d, 5.0d, new int[0], 0, 0);
+		int alternativePhysical = memo.addPhysicalAlternative(childGroup, PackedRelOp.JOIN, 0, property, 2,
+				new int[0], 0, 0);
+		PackedCostEstimate alternative = event(2, 0, 9.0d);
+		alternative.setLocalScalarPrice(5.0d, 9.0d);
+		int alternativeMetadata = memo.addPhysicalMetadata(alternative, 5.0d, 9.0d);
+		assertEquals(selectedChild, memo.offerWinnerWithMetadata(childGroup, property, 0, 0, 0,
+				alternativePhysical, alternativeMetadata, 0.0d, 9.0d, 9.0d, new int[0], 0, 0));
+		int group = memo.logicalGroupId(query.rootRelId());
+		int rootPhysical = memo.addPhysicalAlternative(group, PackedRelOp.FILTER, 0, property, 3,
+				new int[] { childGroup }, 0, 1);
+		PackedCostEstimate envelope = event(3, 0, 2.0d);
+		envelope.setLocalScalarPrice(5.0d, 2.0d);
+		int envelopeMetadata = memo.addPhysicalMetadata(envelope, 5.0d, 2.0d);
+		int selectedRoot = memo.offerWinnerWithMetadata(group, property, 0, 0, 0, rootPhysical,
+				envelopeMetadata, 0.0d, 7.0d, 7.0d, new int[] { selectedChild }, 0, 1);
+		PackedMemo.PackedPlanQualityDraft draft = memo.planQualityDraft(selectedRoot, 1);
+		assertEquals(selectedChild, draft.selectedDecisionWinnerId());
+		assertEquals(2, draft.rootCandidateCount());
+		int alternativeWinner = memo.materializeDecisionTraceCandidate(1);
+		assertNotEquals(selectedChild, alternativeWinner);
+		assertEquals(alternativeWinner, memo.materializeDecisionTraceCandidate(1),
+				"Matching a retained NaN-memory trace must not append a duplicate");
+		int replacementRoot = memo.materializeDecisionTraceRootCandidate(selectedRoot, selectedChild, 1);
+		assertEquals(alternativeWinner, memo.winnerChildWinnerId(replacementRoot, 0));
+		assertEquals(11.0d, memo.winnerTotalCost(replacementRoot));
+		assertEquals(7.0d, memo.winnerTotalCost(selectedRoot));
+		PackedCostEstimate restored = new PackedCostEstimate();
+		memo.restoreWinnerPriceMetadata(replacementRoot, restored);
+		assertTrue(Double.isNaN(restored.peakMemoryRows()));
+		assertFalse(memo.restoreCompleteWinnerPhysicalResources(replacementRoot, 0, 1.0d,
+				new PackedCostEstimate()));
+	}
 
 	@Test
 	void baseAndOverlayInsertionAreIdempotentWithPermanentGroups() {
@@ -262,6 +413,91 @@ class PackedMemoContractTest {
 				winnerOnly.firstExactContinuationWinner(winnerOnlyGroup, winnerOnlyProperty, 0, 0, 0));
 		assertEquals(winnerOnlySecond, winnerOnly.nextExactContinuationWinner(winnerOnlyFirst),
 				"winner-only planning has no failed Pareto admission and must retain exact continuation completeness");
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "true,false,0,false", "true,false,7,false", "true,true,0,false", "true,true,7,false",
+			"true,false,0,true", "true,false,7,true", "true,true,0,true", "true,true,7,true",
+			"false,false,0,false", "false,false,7,false", "false,true,0,false", "false,true,7,false",
+			"false,false,0,true", "false,false,7,true", "false,true,0,true", "false,true,7,true" })
+	void onlyRequestedAuditPreservesARecordedIncumbentWhenTheReplacementLacksItsEvent(
+			boolean audit, boolean fallback, int context, boolean scalarMetadata) {
+		PackedQuery query = query();
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedMemo memo = new PackedMemo(query, 130, 16, 16, 16, 16, 32, budget);
+		if (audit) {
+			memo.requireAuditableWinnerReplacements();
+		}
+		int group = memo.logicalGroupId(query.rootRelId());
+		int property = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int firstPhysical = memo.addPhysicalAlternative(group, PackedRelOp.JOIN, 0, property, 7,
+				noChildren, 0, 0);
+		int secondPhysical = memo.addPhysicalAlternative(group, PackedRelOp.JOIN, 0, property, 8,
+				noChildren, 0, 0);
+		int firstMetadata = memo.addPhysicalMetadata(exactEvent(61, 93, 8.0d), 1.0d, 8.0d);
+		int missingEventMetadata = scalarMetadata ? memo.addScalarPhysicalMetadata(1.0d, 5.0d) : 0;
+		int first = fallback
+				? memo.materializeExecutableFallbackWinnerWithMetadata(group, property, 0, context, 0,
+						firstPhysical, firstMetadata, 0, 0.0d, 8.0d, 8.0d, noChildren, 0, 0)
+				: memo.materializeWinnerWithMetadata(group, property, 0, context, 0, firstPhysical,
+						firstMetadata, 0, 0.0d, 8.0d, 8.0d, noChildren, 0, 0);
+		assertTrue(firstMetadata > 0);
+		assertEquals(61, memo.physicalMetadataCostEventId(firstMetadata));
+		budget.markResourceLimitReached();
+		int second = fallback
+				? memo.offerExecutableFallbackWinnerWithMetadata(group, property, 0, context, 0,
+						secondPhysical, missingEventMetadata, 0, 0.0d, 5.0d, 5.0d, noChildren, 0, 0)
+				: memo.offerWinnerWithMetadata(group, property, 0, context, 0, secondPhysical,
+						missingEventMetadata, 0, 0.0d, 5.0d, 5.0d, noChildren, 0, 0);
+		if (audit) {
+			assertEquals(first, second, "the selected actual provider decision must remain auditable");
+			assertEquals(firstPhysical, memo.winnerPhysicalExpressionId(second));
+			assertEquals(8.0d, memo.winnerTotalCost(second));
+		} else {
+			assertNotEquals(first, second, "ordinary scalar admission does not require a provider certificate");
+			assertEquals(secondPhysical, memo.winnerPhysicalExpressionId(second));
+			assertEquals(5.0d, memo.winnerTotalCost(second));
+		}
+		assertEquals(second, memo.findWinner(group, property, 0, context, 0));
+		assertEquals(8.0d, memo.winnerTotalCost(first));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, budget.completionStatus());
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "false,0", "false,7", "true,0", "true,7" })
+	void requestedAuditStillAdmitsAlreadyRecordedBetterScalarAfterAnOptionalResourceStop(
+			boolean fallback, int context) {
+		PackedQuery query = query();
+		PackedSearchBudget budget = new PackedSearchBudget(PackedPlannerLimits.unbounded());
+		PackedMemo memo = new PackedMemo(query, 130, 16, 16, 16, 16, 32, budget);
+		memo.requireAuditableWinnerReplacements();
+		int group = memo.logicalGroupId(query.rootRelId());
+		int property = memo.anyPropertyId();
+		int[] noChildren = new int[0];
+		int firstPhysical = memo.addPhysicalAlternative(group, PackedRelOp.JOIN, 0, property, 7,
+				noChildren, 0, 0);
+		int secondPhysical = memo.addPhysicalAlternative(group, PackedRelOp.JOIN, 0, property, 8,
+				noChildren, 0, 0);
+		int firstMetadata = memo.addPhysicalMetadata(exactEvent(61, 93, 8.0d), 1.0d, 8.0d);
+		int secondMetadata = memo.addPhysicalMetadata(exactEvent(62, 94, 5.0d), 1.0d, 5.0d);
+		int first = fallback
+				? memo.materializeExecutableFallbackWinnerWithMetadata(group, property, 0, context, 0,
+						firstPhysical, firstMetadata, 0, 0.0d, 8.0d, 8.0d, noChildren, 0, 0)
+				: memo.materializeWinnerWithMetadata(group, property, 0, context, 0, firstPhysical,
+						firstMetadata, 0, 0.0d, 8.0d, 8.0d, noChildren, 0, 0);
+		budget.markResourceLimitReached();
+		int second = fallback
+				? memo.offerExecutableFallbackWinnerWithMetadata(group, property, 0, context, 0,
+						secondPhysical, secondMetadata, 0, 0.0d, 5.0d, 5.0d, noChildren, 0, 0)
+				: memo.offerWinnerWithMetadata(group, property, 0, context, 0, secondPhysical,
+						secondMetadata, 0, 0.0d, 5.0d, 5.0d, noChildren, 0, 0);
+		assertNotEquals(first, second);
+		assertEquals(second, memo.findWinner(group, property, 0, context, 0));
+		assertEquals(62, memo.physicalMetadataCostEventId(memo.winnerPhysicalMetadataId(second)));
+		assertEquals(5.0d, memo.winnerTotalCost(second));
+		assertEquals(first, memo.firstExactContinuationWinner(group, property, 0, context, 0));
+		assertEquals(0, memo.nextExactContinuationWinner(first));
 	}
 
 	@Test

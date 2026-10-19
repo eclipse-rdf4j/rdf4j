@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -28,6 +29,7 @@ import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.algebra.Compare;
@@ -105,27 +107,99 @@ class LmdbPackedPlanCacheTest {
 
 	@Test
 	void freshlyParsedCorrelatedAnonymousVariablesReuseCompletePlan(@TempDir File dataDir) {
-		LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
-		SailRepository repository = new SailRepository(store);
-		repository.init();
-		try (var connection = repository.getConnection()) {
-			String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "exact");
+		try {
+			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
 
-			TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Optimized)
-					.tupleExpr();
-			TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
-					.explain(Explanation.Level.Optimized)
-					.tupleExpr();
+				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
 
-			assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
-			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
-			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
-			assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
-			assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
-					"an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template");
+				assertEquals("exact", cold.getStringMetricPlanned("optimizer.cascadesMode"));
+				assertEquals("exact", hot.getStringMetricPlanned("optimizer.cascadesMode"));
+				assertEquals("COMPLETE", cold.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+				assertEquals("COMPLETE", hot.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")),
+						"an equivalent freshly parsed query should reuse the complete revision-safe LMDB plan template");
+			} finally {
+				repository.shutDown();
+			}
 		} finally {
-			repository.shutDown();
+			restoreCascadesMode(previousMode);
+		}
+	}
+
+	@Test
+	void boundedCorrelatedAnonymousQueriesReuseTheHonestIncumbent(@TempDir File dataDir) {
+		String previousMode = System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, "auto");
+		try {
+			LmdbStore store = new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc"));
+			SailRepository repository = new SailRepository(store);
+			repository.init();
+			try (var connection = repository.getConnection()) {
+				String query = ThemeQueryCatalog.queryFor(Theme.SOCIAL_MEDIA, 4);
+				TupleExpr cold = (TupleExpr) connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				TupleExpr hot = (TupleExpr) connection.prepareTupleQuery(query)
+						.explain(Explanation.Level.Optimized)
+						.tupleExpr();
+				assertHonestAutoCacheStatus(cold);
+				assertHonestAutoCacheStatus(hot);
+				assertEquals(cold.getStringMetricPlanned("optimizer.cascadesCompleteness"),
+						hot.getStringMetricPlanned("optimizer.cascadesCompleteness"));
+				assertEquals(cold.getStringMetricPlanned("optimizer.cascadesLimitCauses"),
+						hot.getStringMetricPlanned("optimizer.cascadesLimitCauses"));
+				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.cascadesPlanCacheHit")));
+				assertFalse(Boolean.parseBoolean(cold.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+				assertTrue(Boolean.parseBoolean(hot.getStringMetricPlanned("optimizer.pipelinePlanCacheHit")));
+				try (var rows = connection.prepareTupleQuery(query).evaluate()) {
+					assertTrue(rows.hasNext());
+					assertEquals(0L, assertInstanceOf(Literal.class, rows.next().getValue("count")).longValue(),
+							"the cached correlated query retains its empty-store aggregate bag");
+					assertFalse(rows.hasNext());
+				}
+			} finally {
+				repository.shutDown();
+			}
+		} finally {
+			restoreCascadesMode(previousMode);
+		}
+	}
+
+	private static void assertHonestAutoCacheStatus(TupleExpr root) {
+		assertEquals("auto", root.getStringMetricPlanned("optimizer.cascadesMode"));
+		String status = root.getStringMetricPlanned("optimizer.cascadesCompleteness");
+		String causes = root.getStringMetricPlanned("optimizer.cascadesLimitCauses");
+		if ("COMPLETE".equals(status)) {
+			assertEquals("false", root.getStringMetricPlanned("optimizer.cascadesApproximate"));
+			assertTrue(causes == null || causes.isBlank());
+		} else {
+			assertEquals("BUDGET_EXHAUSTED", status);
+			assertEquals("true", root.getStringMetricPlanned("optimizer.cascadesApproximate"));
+			assertTrue(causes != null && !causes.isBlank());
+			assertFalse(causes.contains("DEADLINE"), "AUTO retains its deterministic limits without a wall deadline");
+		}
+		double ruleWork = root.getDoubleMetricPlanned("optimizer.cascadesRuleWork");
+		assertTrue(ruleWork >= 0.0d && ruleWork <= 4_096.0d, "the existing AUTO rule-work limit stays authoritative");
+	}
+
+	private static void restoreCascadesMode(String previous) {
+		if (previous == null) {
+			System.clearProperty(LmdbCascadesOptimizer.MODE_PROPERTY);
+		} else {
+			System.setProperty(LmdbCascadesOptimizer.MODE_PROPERTY, previous);
 		}
 	}
 

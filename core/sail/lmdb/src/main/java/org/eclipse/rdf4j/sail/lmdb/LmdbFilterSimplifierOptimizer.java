@@ -1102,7 +1102,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	private BindingSetAssignment materializedSmallLiteralFilterAnchor(Filter filter, ValueExpr condition,
 			BindingSetAssignment anchor,
 			Set<String> assuredBindings, Set<String> mandatoryOptionalAnchorBindings) {
-		if (anchor == null) {
+		// Exact stored-term anchors above retain their real representative. A query-term VALUES driver cannot
+		// replace a language literal produced by the input merely because its language tag compares equally.
+		if (anchor == null || containsLanguageTaggedAnchorValue(anchor)) {
 			return null;
 		}
 		if (anchor.getBindingNames().size() != 1) {
@@ -1446,6 +1448,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 
 	private static boolean isPotentialSmallLiteralAnchorValue(Value value) {
 		return LmdbJoinPlanSupport.isSafeValuesAnchorValue(value)
+				|| value instanceof Literal literal && literal.getLanguage().isPresent()
 				|| RdfTermDomain.classify(value).has(RdfTermDomain.Fact.CANONICAL_INTEGER)
 				|| isBooleanLiteral(value)
 				|| isCalendarLiteral(value);
@@ -1460,7 +1463,8 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	/**
 	 * A materialized anchor may replace its condition only when a VALUES term join has exactly the condition's truth
 	 * set. That holds for value equality over guarantee-only constants (the anchor is the value-equal family) and for
-	 * term identity over safe values (IRIs, plain and language-tagged strings: one term per value). Term identity over
+	 * term identity over representation-stable safe values (IRIs and plain strings). Language literals require their
+	 * actual stored representatives before becoming drivers. Term identity over
 	 * numeric / boolean / calendar constants is the remaining case: the anchor is a value-equality superset, so the
 	 * {@code sameTerm} condition must be retained.
 	 */
@@ -1470,6 +1474,19 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 		}
 		String bindingName = singleBindingName(anchor);
 		return bindingName != null && containsGuaranteeOnlyAnchorValue(anchor, bindingName);
+	}
+
+	private static boolean containsLanguageTaggedAnchorValue(BindingSetAssignment anchor) {
+		String bindingName = singleBindingName(anchor);
+		if (bindingName == null) {
+			return false;
+		}
+		for (BindingSet bindingSet : anchor.getBindingSets()) {
+			if (bindingSet.getValue(bindingName) instanceof Literal literal && literal.getLanguage().isPresent()) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private static boolean containsXsdNumericAnchorValue(BindingSetAssignment anchor, String bindingName) {

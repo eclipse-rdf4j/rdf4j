@@ -42,6 +42,8 @@ final class PackedIncumbentSearch {
 	private final PackedCostContext costContext;
 	private final PackedCostEstimate costEstimate;
 	private PackedFilterRules filterRules;
+	private PackedCostEstimate memoizedRightResources;
+	private PackedCostEstimate memoizedRightPriceMetadata;
 	private PackedCostEstimate memoizedOptionalEstimate;
 	private final PackedEvidenceContext inheritedEvidenceContext;
 	private final int[] inheritedPrefix;
@@ -508,7 +510,7 @@ final class PackedIncumbentSearch {
 		int[] containingRegionCounts = new int[regionCount];
 		for (int outerOrdinal = 0; outerOrdinal < regionCount; outerOrdinal++) {
 			for (int innerOrdinal = 0; innerOrdinal < regionCount; innerOrdinal++) {
-				if (regions[outerOrdinal].strictlyContains(regions[innerOrdinal])) {
+				if (regions[outerOrdinal].strictlyContains(regions[innerOrdinal], query)) {
 					containingRegionCounts[innerOrdinal]++;
 				}
 			}
@@ -668,12 +670,12 @@ final class PackedIncumbentSearch {
 		return -1;
 	}
 
-	private static boolean coveredByContainingRegion(PackedJoinEnumerator.RelocatableFilterRegion region,
+	private boolean coveredByContainingRegion(PackedJoinEnumerator.RelocatableFilterRegion region,
 			PackedJoinEnumerator.RelocatableFilterRegion[] orderedRegions, boolean[] ownsContainedRegions,
 			int regionOrdinal) {
 		for (int containingOrdinal = 0; containingOrdinal < regionOrdinal; containingOrdinal++) {
 			if (ownsContainedRegions[containingOrdinal]
-					&& orderedRegions[containingOrdinal].strictlyContains(region)) {
+					&& orderedRegions[containingOrdinal].strictlyContains(region, query)) {
 				return true;
 			}
 		}
@@ -805,9 +807,12 @@ final class PackedIncumbentSearch {
 				&& query.relOperator(logicalExpressionId) == PackedRelOp.LEFT_JOIN
 						? childWinnerIds[1]
 						: 0;
+		int optionalRightInputContextId = 0;
 		if (costSession != null && childCount == 2
 				&& query.relOperator(logicalExpressionId) == PackedRelOp.LEFT_JOIN) {
-			int contextualRightWinnerId = contextualizeOptionalRight(logicalExpressionId, childWinnerIds[0]);
+			long contextualRight = contextualizeOptionalRight(logicalExpressionId, childWinnerIds[0]);
+			int contextualRightWinnerId = (int) contextualRight;
+			optionalRightInputContextId = (int) (contextualRight >>> 32);
 			if (contextualRightWinnerId != 0 && contextualRightWinnerId != childWinnerIds[1]) {
 				childWinnerIds[1] = contextualRightWinnerId;
 				childCost = saturatedAdd(memo.winnerTotalCost(childWinnerIds[0]),
@@ -894,9 +899,7 @@ final class PackedIncumbentSearch {
 						 * local objective to the certified child objective before composing the child vectors.
 						 */
 						double localObjective = costSession.objectiveScore(costEstimate);
-						for (int ordinal = 0; ordinal < childCount; ordinal++) {
-							memo.addWinnerPhysicalCost(childWinnerIds[ordinal], costEstimate);
-						}
+						memo.addWinnerPhysicalCosts(childWinnerIds, 0, childCount, costEstimate);
 						totalCost = saturatedAdd(childCost, localObjective);
 					} else {
 						totalCost = costSession.objectiveScore(costEstimate);
@@ -978,7 +981,8 @@ final class PackedIncumbentSearch {
 		}
 		workUnits++;
 		winnerId = offerMemoizedPositiveOptional(logicalExpressionId, anyPropertyId,
-				independentOptionalRightWinnerId, scalarOperatorCostRefined, retainExactContinuation, winnerId);
+				independentOptionalRightWinnerId, optionalRightInputContextId, scalarOperatorCostRefined,
+				retainExactContinuation, winnerId);
 		return offerIndependentPositiveOptionalHash(logicalExpressionId, anyPropertyId,
 				independentOptionalRightWinnerId, scalarOperatorCostRefined, retainExactContinuation, winnerId);
 	}
@@ -1020,7 +1024,8 @@ final class PackedIncumbentSearch {
 	}
 
 	private int offerMemoizedPositiveOptional(int logicalExpressionId, int anyPropertyId,
-			int independentRightWinnerId, boolean scalarOperatorCostRefined, boolean retainExactContinuation,
+			int independentRightWinnerId, int rightInputContextId, boolean scalarOperatorCostRefined,
+			boolean retainExactContinuation,
 			int incumbentWinnerId) {
 		if (costSession == null
 				|| independentRightWinnerId == 0
@@ -1042,7 +1047,23 @@ final class PackedIncumbentSearch {
 				query.relOutputMaskId(leftRelationId), query.relOutputMaskId(rightRelationId));
 		double leftRows = childRows(0);
 		double rightRows = childRows(1);
-		double rightWork = memo.winnerTotalCost(childWinnerIds[1]);
+		double rightWork = joinEnumerator.contextualChildWork(childWinnerIds[1], leftRows, rightInputContextId);
+		if (!finiteNonNegative(rightWork)) {
+			return incumbentWinnerId;
+		}
+		if (memoizedRightPriceMetadata == null) {
+			memoizedRightPriceMetadata = new PackedCostEstimate();
+			memoizedRightResources = new PackedCostEstimate();
+		}
+		memo.restoreWinnerPriceMetadata(childWinnerIds[1], memoizedRightPriceMetadata);
+		PackedCostEstimate resources = null;
+		if (memoizedRightPriceMetadata.hasExplicitPhysicalCost()) {
+			if (!memo.restoreCompleteWinnerPhysicalResources(childWinnerIds[1], rightInputContextId, leftRows,
+					memoizedRightResources)) {
+				return incumbentWinnerId;
+			}
+			resources = memoizedRightResources;
+		}
 		PackedCostEstimate optionalEstimate = memoizedOptionalEstimate();
 		optionalEstimate.copyCandidateFrom(costEstimate);
 		optionalEstimate.putPlannedDoubleMetric(
@@ -1055,8 +1076,8 @@ final class PackedIncumbentSearch {
 		costContext.setHashJoinMasks(lookupMaskId, compatibilityMaskId);
 		costContext.setOperatorInputs(leftRows, rightRows,
 				winnerEvidenceStateId(childWinnerIds[0]), winnerEvidenceStateId(childWinnerIds[1]));
-		PackedPhysicalJoinCosting.refine(
-				costSession, PackedPhysicalJoinCosting.MEMOIZED_CORRELATED, costContext, optionalEstimate);
+		PackedPhysicalJoinCosting.refineMemoized(costSession, costContext, optionalEstimate,
+				resources, memoizedRightPriceMetadata);
 		double localObjective = costSession.objectiveScore(optionalEstimate);
 		memo.addWinnerPhysicalCost(childWinnerIds[0], optionalEstimate);
 		double outputRows = optionalEstimate.outputRows();
@@ -1145,9 +1166,7 @@ final class PackedIncumbentSearch {
 			PackedPhysicalJoinCosting.refine(
 					costSession, PackedPhysicalJoinCosting.INDEPENDENT_RIGHT_HASH, costContext, costEstimate);
 			double localObjective = costSession.objectiveScore(costEstimate);
-			for (int ordinal = 0; ordinal < 2; ordinal++) {
-				memo.addWinnerPhysicalCost(childWinnerIds[ordinal], costEstimate);
-			}
+			memo.addWinnerPhysicalCosts(childWinnerIds, 0, 2, costEstimate);
 			double totalCost = saturatedAdd(childCost, localObjective);
 			int groupId = logicalGroupId(logicalExpressionId);
 			int physicalExpressionId = memo.addPhysicalAlternative(groupId,
@@ -1749,7 +1768,7 @@ final class PackedIncumbentSearch {
 		costSession.refineOperator(logicalExpressionId, costContext, costEstimate);
 	}
 
-	private int contextualizeOptionalRight(int logicalExpressionId, int leftWinnerId) {
+	private long contextualizeOptionalRight(int logicalExpressionId, int leftWinnerId) {
 		int leftRelationId = query.relChild(logicalExpressionId, 0);
 		int leftAssuredMaskId = query.relAssuredMaskId(leftRelationId);
 		if (query.maskCardinality(leftAssuredMaskId) == 0) {
@@ -1768,10 +1787,15 @@ final class PackedIncumbentSearch {
 				memo.winnerOutputRows(leftWinnerId), winnerEvidenceStateId(leftWinnerId), leftAssuredMaskId,
 				leftAssuredMaskId, query.relSemanticScope(logicalExpressionId),
 				winnerCostEventId(leftWinnerId));
+		// Capture the expected domain before recursive planning can mutate shared prefix scratch.
+		int inputContextId = memo.internEvidenceContext(inheritedPrefix, null, 0, inheritedPrefixCount,
+				memo.winnerOutputRows(leftWinnerId), winnerEvidenceStateId(leftWinnerId), leftAssuredMaskId,
+				leftAssuredMaskId, query.relSemanticScope(logicalExpressionId), winnerCostEventId(leftWinnerId));
 		int winnerId = joinEnumerator.optimizeWithInheritedPrefix(query.relChild(logicalExpressionId, 1),
 				inheritedEvidenceContext);
 		workUnits += joinEnumerator.contextualWorkUnits();
-		return winnerHasMeasuredContextualRows(winnerId) ? winnerId : 0;
+		return winnerHasMeasuredContextualRows(winnerId) ? ((long) inputContextId << 32) | (winnerId & 0xffffffffL)
+				: 0L;
 	}
 
 	private int contextualizeJoinRight(int logicalExpressionId, int leftWinnerId) {

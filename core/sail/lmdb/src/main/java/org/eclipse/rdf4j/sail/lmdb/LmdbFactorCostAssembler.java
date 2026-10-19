@@ -44,6 +44,11 @@ final class LmdbFactorCostAssembler {
 		this.tripleStore = tripleStore;
 	}
 
+	FactorCostEstimate assemble(TupleExpr expression, EstimateContext context,
+			EstimateEvidenceResolver.ResolvedEstimate semantic, boolean exact, LmdbEstimatorOptimizationScope scope) {
+		return assemble(expression, context, semantic.estimate(), exact, scope).withRowScope(semantic.rowScope());
+	}
+
 	FactorCostEstimate assemble(TupleExpr expression, EstimateContext context, BagEstimate semantic, boolean exact) {
 		return assemble(expression, context, semantic, exact, null);
 	}

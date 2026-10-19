@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
@@ -21,8 +22,168 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 class PackedWinnerTableTest {
+
+	@ParameterizedTest
+	@CsvSource({ "0,0,false", "0,7,false", "1,0,false", "1,7,false",
+			"0,0,true", "0,7,true", "1,0,true", "1,7,true" })
+	void unknownMemoryKeepsFinitePricesAndOnlyBreaksAnOtherwiseExactTie(int tier, int context, boolean robust) {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		int unknown = offerMemory(winners, tier, context, 1, 101, 3.0d, 10.0d, 20.0d, Double.NaN, robust);
+		assertTrue(Double.isNaN(winners.peakMemoryRows(unknown)));
+		assertEquals(unknown, winners.find(1, 1, 0, context, 0));
+		assertEquals(unknown, offerMemory(winners, tier, context, 2, 102, 3.0d, 11.0d, 21.0d, 0.0d, robust),
+				"Known memory cannot displace a cheaper scalar price");
+		assertEquals(unknown, offerMemory(winners, tier, context, 2, 102, 4.0d, 10.0d, 20.0d, 0.0d, robust),
+				"Startup precedes estimate completeness");
+		int known = offerMemory(winners, tier, context, 3, 103, 3.0d, 10.0d, 20.0d, 8.0d, robust);
+		assertNotEquals(unknown, known);
+		assertEquals(8.0d, winners.peakMemoryRows(known));
+		int cheaperUnknown = offerMemory(winners, tier, context, 4, 104, 3.0d, 9.0d, 19.0d, Double.NaN, robust);
+		assertNotEquals(known, cheaperUnknown);
+		assertTrue(Double.isNaN(winners.peakMemoryRows(cheaperUnknown)));
+		assertEquals(10.0d, winners.totalCost(unknown), "Earlier winner records remain immutable");
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0", "0,7", "1,0", "1,7" })
+	void memoryTieOrderingIsTransitiveAndIndependentOfOfferOrder(int tier, int context) {
+		int[][] permutations = { { 0, 1, 2 }, { 0, 2, 1 }, { 1, 0, 2 }, { 1, 2, 0 }, { 2, 0, 1 }, { 2, 1, 0 } };
+		double[] memory = { Double.NaN, 8.0d, 2.0d };
+		for (int[] order : permutations) {
+			PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+			for (int ordinal : order) {
+				offerMemory(winners, tier, context, ordinal + 1, ordinal + 101,
+						1.0d, 10.0d, 10.0d, memory[ordinal], false);
+			}
+			int winner = winners.find(1, 1, 0, context, 0);
+			assertEquals(3, winners.physicalExpressionId(winner));
+			assertEquals(2.0d, winners.peakMemoryRows(winner));
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0", "0,7", "1,0", "1,7" })
+	void unknownMemorySurvivesImmutableContinuationRetention(int tier, int context) {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 2, 1);
+		int scalar = offerMemory(winners, tier, context, 10, 101, 1.0d, 5.0d, 5.0d, Double.NaN, false);
+		int continuation = winners.appendContinuationWithMetadata(1, 1, 0, context, 0, tier,
+				11, 102, 0, 1.0d, 7.0d, 7.0d, Double.NaN, false, new int[] { scalar }, 0, 1);
+		assertTrue(winners.markContinuation(continuation));
+		assertEquals(scalar, winners.find(1, 1, 0, context, 0));
+		assertEquals(continuation, winners.firstContinuation(1, 1, 0, context, 0));
+		assertEquals(scalar, winners.childWinnerId(continuation, 0));
+		assertTrue(Double.isNaN(winners.peakMemoryRows(continuation)));
+		assertTrue(winners.matchesCandidate(continuation, tier, 11, 102, 0,
+				1.0d, 7.0d, 7.0d, Double.NaN, false, new int[] { scalar }, 0, 1));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0", "7" })
+	void executableFallbackRefreshPreservesUnknownMemoryAndNewChildIdentity(int context) {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 2, 1);
+		int original = winners.offerExecutableFallbackWithMetadata(1, 1, 0, context, 0, 10, 101, 0,
+				1.0d, 10.0d, 10.0d, Double.NaN, false, new int[] { 7 }, 0, 1);
+		int refreshed = winners.offerExecutableFallbackWithMetadata(1, 1, 0, context, 0, 10, 102, 0,
+				1.0d, 10.0d, 10.0d, Double.NaN, false, new int[] { 8 }, 0, 1);
+		assertNotEquals(original, refreshed);
+		assertEquals(refreshed, winners.find(1, 1, 0, context, 0));
+		assertEquals(101, winners.physicalMetadataId(original));
+		assertEquals(7, winners.childWinnerId(original, 0));
+		assertEquals(102, winners.physicalMetadataId(refreshed));
+		assertEquals(8, winners.childWinnerId(refreshed, 0));
+		assertTrue(Double.isNaN(winners.peakMemoryRows(refreshed)));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0", "0,7", "1,0", "1,7" })
+	void unknownMemoryDoesNotAdmitInvalidPricesOrInvalidKnownMemory(int tier, int context) {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		for (double invalid : new double[] { Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, -1.0d }) {
+			assertThrows(IllegalArgumentException.class,
+					() -> offerMemory(winners, tier, context, 1, 101, 1.0d, 10.0d, 10.0d, invalid, false));
+		}
+		for (double invalid : new double[] { Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY }) {
+			assertThrows(IllegalArgumentException.class,
+					() -> offerMemory(winners, tier, context, 1, 101, invalid, 10.0d, 10.0d, Double.NaN, false));
+			assertThrows(IllegalArgumentException.class,
+					() -> offerMemory(winners, tier, context, 1, 101, 1.0d, invalid, 10.0d, Double.NaN, false));
+			assertThrows(IllegalArgumentException.class,
+					() -> offerMemory(winners, tier, context, 1, 101, 1.0d, 10.0d, invalid, Double.NaN, false));
+		}
+		assertEquals(0, winners.size());
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0", "7" })
+	void costedTierStillPrecedesFallbackWhenOnlyCostedMemoryIsUnknown(int context) {
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1);
+		offerMemory(winners, PackedWinnerTable.EXECUTABLE_FALLBACK, context, 1, 101,
+				0.0d, 1.0d, 1.0d, 0.0d, false);
+		int costed = offerMemory(winners, PackedWinnerTable.COSTED, context, 2, 102,
+				1.0d, 100.0d, 100.0d, Double.NaN, false);
+		assertEquals(PackedWinnerTable.COSTED, winners.comparisonTier(costed));
+		assertEquals(2, winners.physicalExpressionId(costed));
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0,false", "0,7,false", "1,0,false", "1,7,false",
+			"0,0,true", "0,7,true", "1,0,true", "1,7,true" })
+	void latchedResourceStopDoesNotFreezeCompleteScalarImprovements(int tier, int context, boolean robust) {
+		PackedSearchBudget budget = new PackedSearchBudget(new PackedPlannerLimits(
+				Long.MAX_VALUE, Long.MAX_VALUE, 0L));
+		PackedWinnerTable winners = new PackedWinnerTable(2, 2, 2, 1, budget);
+		int original = offerMemory(winners, tier, context, 10, 101, 1.0d, 10.0d, 10.0d, Double.NaN, robust);
+
+		assertFalse(budget.tryReserveBytes(1L));
+		assertTrue(budget.resourceLimitReached());
+		int improved = offerMemory(winners, tier, context, 11, 0,
+				1.0d, 9.0d, 9.0d, Double.NaN, robust);
+		assertNotEquals(original, improved,
+				"the scalar table cannot infer missing provider authority from a shared resource stop");
+		assertEquals(101, winners.physicalMetadataId(original));
+		assertEquals(10.0d, winners.totalCost(original), "existing immutable recipe rows remain unchanged");
+		assertEquals(improved, winners.find(1, 1, 0, context, 0));
+		assertEquals(9.0d, winners.totalCost(improved));
+
+		int ancestor = winners.offerWithMetadata(2, 1, 0, context, 0, 20, 0,
+				1.0d, 10.0d, 10.0d, new int[] { improved }, 0, 1);
+		assertEquals(ancestor, winners.find(2, 1, 0, context, 0));
+		assertEquals(improved, winners.childWinnerId(ancestor, 0));
+		assertEquals(PackedSearchCompletionStatus.INCOMPLETE_RESOURCE_LIMIT, budget.completionStatus());
+		assertEquals(0L, budget.retainedBytes());
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "0,0,false", "0,7,false", "1,0,false", "1,7,false",
+			"0,0,true", "0,7,true", "1,0,true", "1,7,true" })
+	void optionalCapacityOrUnknownQuantitiesDoNotStopValidScalarImprovements(int tier, int context, boolean robust) {
+		PackedSearchBudget budget = new PackedSearchBudget(new PackedPlannerLimits(
+				Long.MAX_VALUE, Long.MAX_VALUE, 0L));
+		PackedWinnerTable winners = new PackedWinnerTable(1, 1, 0, 1, budget);
+		int original = offerMemory(winners, tier, context, 10, 101, 1.0d, 10.0d, 10.0d, 0.0d, robust);
+		assertFalse(budget.canReserveBytes(1L), "a dispensable accelerator may decline without latching search");
+		assertFalse(budget.resourceLimitReached());
+		int improved = offerMemory(winners, tier, context, 11, 0,
+				1.0d, 9.0d, 9.0d, Double.NaN, robust);
+		assertNotEquals(original, improved, "metadata/event absence and UNKNOWN vectors alone are not a stop");
+		assertEquals(improved, winners.find(1, 1, 0, context, 0));
+		assertEquals(0, winners.physicalMetadataId(improved));
+		assertTrue(Double.isNaN(winners.peakMemoryRows(improved)));
+		assertEquals(PackedSearchCompletionStatus.EXACT_COMPLETE, budget.completionStatus());
+	}
+
+	private static int offerMemory(PackedWinnerTable winners, int tier, int context, int physical, int metadata,
+			double startup, double total, double comparison, double memory, boolean robust) {
+		return tier == PackedWinnerTable.COSTED
+				? winners.offerWithMetadata(1, 1, 0, context, 0, physical, metadata, 0,
+						startup, total, comparison, memory, robust, new int[0], 0, 0)
+				: winners.offerExecutableFallbackWithMetadata(1, 1, 0, context, 0, physical, metadata, 0,
+						startup, total, comparison, memory, robust, new int[0], 0, 0);
+	}
 
 	@Test
 	void collidingContinuationBucketsRetainEveryExactGoalAcrossResize() {

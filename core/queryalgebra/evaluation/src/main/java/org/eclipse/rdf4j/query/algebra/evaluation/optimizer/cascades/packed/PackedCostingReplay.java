@@ -29,14 +29,14 @@ public final class PackedCostingReplay {
 		Objects.requireNonNull(currentSession, "currentSession");
 		PackedCostingTrace trace = request.costingTrace();
 		FrontierEvidenceBundle cachedEvidence = request.evidenceBundle();
+		int eventCount = trace.eventCount();
+		if (eventCount == 0) {
+			throw new IllegalStateException("cached plan has no costing events to replay");
+		}
+		int stateHandleCount = trace.stateHandleCount(cachedEvidence.stateCount());
 		EventSourcingPackedCostSession replaySession = EventSourcingPackedCostSession.replaying(currentSession);
 		try {
-			int eventCount = trace.eventCount();
-			if (eventCount == 0) {
-				throw new IllegalStateException("cached plan has no costing events to replay");
-			}
-
-			int[] currentStateByCachedOrdinal = new int[cachedEvidence.stateCount() + 1];
+			int[] currentStateByCachedOrdinal = new int[stateHandleCount + 1];
 			double[] currentRowsByCachedOrdinal = new double[currentStateByCachedOrdinal.length];
 			Arrays.fill(currentRowsByCachedOrdinal, Double.NaN);
 			double[] eventCosts = new double[eventCount + 1];
@@ -149,18 +149,33 @@ public final class PackedCostingReplay {
 			}
 
 			int[] currentRequestedStateIds = new int[cachedEvidence.requestedStateCount()];
+			int[] currentStateByPopulationOrdinal = new int[cachedEvidence.stateCount() + 1];
+			for (int handle = 1; handle < currentStateByCachedOrdinal.length; handle++) {
+				int population = trace.populationOrdinal(handle);
+				if (population != 0 && currentStateByCachedOrdinal[handle] != 0) {
+					currentStateByPopulationOrdinal[population] = currentStateByCachedOrdinal[handle];
+				}
+			}
 			for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
 				int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
 				if (cachedOrdinal != 0) {
-					currentRequestedStateIds[requestIndex] = currentState(cachedOrdinal, currentStateByCachedOrdinal,
+					currentRequestedStateIds[requestIndex] = currentState(cachedOrdinal,
+							currentStateByPopulationOrdinal,
 							eventCount, "detached request");
 				}
 			}
+			int traceRequestOffset = cachedEvidence.requestedStateCount() - trace.stateReferenceCount();
+			PackedCostingTrace replayedTrace = replaySession.snapshotTrace();
+			if (replayedTrace.eventCount() != trace.eventCount()) {
+				throw new IllegalStateException("current costing replay changed event alignment");
+			}
+			// Include current binding-only IDs in the trace request positions, while population positions remain zero.
+			replayedTrace.appendEvidenceStateIds(currentRequestedStateIds, traceRequestOffset);
 			FrontierEvidenceBundle currentEvidence = replaySession.detachEvidence(currentRequestedStateIds);
 			if (currentEvidence.requestedStateCount() != currentRequestedStateIds.length) {
 				throw new IllegalStateException("current Frontier evidence changed replay request alignment");
 			}
-			int[] currentOrdinalByCachedOrdinal = new int[currentStateByCachedOrdinal.length];
+			int[] currentOrdinalByCachedOrdinal = new int[currentStateByPopulationOrdinal.length];
 			for (int requestIndex = 0; requestIndex < currentRequestedStateIds.length; requestIndex++) {
 				int cachedOrdinal = cachedEvidence.requestedStateOrdinal(requestIndex);
 				int currentOrdinal = currentEvidence.requestedStateOrdinal(requestIndex);
@@ -168,11 +183,7 @@ public final class PackedCostingReplay {
 					currentOrdinalByCachedOrdinal[cachedOrdinal] = currentOrdinal;
 				}
 			}
-			PackedCostingTrace replayedTrace = replaySession.snapshotTrace();
-			if (replayedTrace.eventCount() != trace.eventCount()) {
-				throw new IllegalStateException("current costing replay changed event alignment");
-			}
-			int traceRequestOffset = cachedEvidence.requestedStateCount() - trace.stateReferenceCount();
+
 			replayedTrace = replayedTrace.withDetachedStateOrdinals(currentEvidence, traceRequestOffset);
 			return new Result(currentEvidence, replayedTrace, candidateCosts, currentOrdinalByCachedOrdinal,
 					eventEstimates, eventCosts,
@@ -268,44 +279,7 @@ public final class PackedCostingReplay {
 	private static void restoreProviderInput(PackedCostingTrace trace, int eventId, PackedCostEstimate estimate,
 			PackedCostSession currentSession, int[] currentStateByCachedOrdinal,
 			double[] currentRowsByCachedOrdinal) {
-		double rows = trace.providerInputRows(eventId);
-		double work = trace.providerInputWorkRows(eventId);
-		if (finiteNonNegative(rows) && finiteNonNegative(work)) {
-			if (trace.providerInputExplicitPhysicalCost(eventId)) {
-				double sequential = trace.providerInputSequentialRows(eventId);
-				double random = trace.providerInputRandomSeeks(eventId);
-				double opens = trace.providerInputIteratorOpens(eventId);
-				double expressions = trace.providerInputExpressionEvaluations(eventId);
-				double builds = trace.providerInputHashBuildRows(eventId);
-				double probes = trace.providerInputHashProbeRows(eventId);
-				double paths = trace.providerInputPathExpansions(eventId);
-				double results = trace.providerInputResultRows(eventId);
-				double remote = trace.providerInputRemoteCalls(eventId);
-				double peak = trace.providerInputPeakMemoryRows(eventId);
-				if (trace.providerInputCostScope(eventId) == PackedCostEstimate.CostScope.INCLUSIVE) {
-					estimate.setInclusivePhysicalCost(
-							sequential, random, opens, expressions, builds, probes, paths, results, remote, peak);
-				} else {
-					estimate.setLocalPhysicalCost(
-							sequential, random, opens, expressions, builds, probes, paths, results, remote, peak);
-				}
-				if (trace.providerInputComponentRows(eventId)) {
-					estimate.setComponentOutputRowsPreservingPhysicalCost(rows);
-				} else if (trace.providerInputContextualRows(eventId)) {
-					estimate.setContextualOutputRowsPreservingPhysicalCost(rows);
-				} else {
-					estimate.setOutputRowsPreservingPhysicalCost(rows);
-				}
-			} else if (trace.providerInputComponentRows(eventId)) {
-				estimate.setComponentRows(rows, work);
-			} else if (trace.providerInputContextualRows(eventId)) {
-				estimate.setContextualRows(rows, work);
-			} else {
-				estimate.setRows(rows, work);
-			}
-		}
-		estimate.setReplacesChildWork(trace.providerInputReplacesChildWork(eventId));
-		estimate.setDependentSubqueriesCosted(trace.providerInputDependentSubqueriesCosted(eventId));
+		trace.restoreProviderInputCost(eventId, estimate);
 		estimate.setAccess(trace.providerInputLookupMask(eventId), trace.providerInputMissingLookupMask(eventId),
 				trace.providerInputIndexPrefixLength(eventId), trace.providerInputAccessRows(eventId),
 				trace.providerInputInvocations(eventId), stringValue(trace.providerInputIndexName(eventId)),

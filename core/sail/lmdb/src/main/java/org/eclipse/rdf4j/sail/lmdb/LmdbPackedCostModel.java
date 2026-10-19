@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -117,6 +118,7 @@ final class LmdbPackedCostModel
 	private final EvaluationStrategy evaluationStrategy;
 	private final boolean frontierPlanningAllowed;
 	private final FrontierStatisticsView statisticsView;
+	private final PackedQueryView planningQuery;
 	private final boolean unpinnedMappedStatisticsAllowed;
 	private final MappedStatisticsSessionCache mappedStatisticsCache;
 	/** Lazily read store context count ({@link #contextMultiplicity()}); negative until read. */
@@ -142,13 +144,14 @@ final class LmdbPackedCostModel
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed) {
 		this(runtime, executionSnapshotEpoch, datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy,
-				frontierPlanningAllowed, null, true);
+				frontierPlanningAllowed, null, true, null);
 	}
 
 	private LmdbPackedCostModel(LmdbEstimatorRuntime runtime, OptionalLong executionSnapshotEpoch,
 			boolean datasetUsesStoreDefaults, SailDatasetTripleTermSource frontierStatementSource,
 			EvaluationStrategy evaluationStrategy, boolean frontierPlanningAllowed,
-			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed) {
+			FrontierStatisticsView statisticsView, boolean unpinnedMappedStatisticsAllowed,
+			PackedQueryView planningQuery) {
 		this.runtime = runtime;
 		this.executionSnapshotEpoch = executionSnapshotEpoch == null ? OptionalLong.empty() : executionSnapshotEpoch;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
@@ -156,6 +159,7 @@ final class LmdbPackedCostModel
 		this.evaluationStrategy = evaluationStrategy;
 		this.frontierPlanningAllowed = frontierPlanningAllowed;
 		this.statisticsView = statisticsView;
+		this.planningQuery = planningQuery;
 		this.unpinnedMappedStatisticsAllowed = unpinnedMappedStatisticsAllowed;
 		this.mappedStatisticsCache = statisticsView == null ? null : new MappedStatisticsSessionCache();
 	}
@@ -178,14 +182,14 @@ final class LmdbPackedCostModel
 			}
 			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-					view, true);
+					view, true, query);
 			scoped.mappedStatisticsCache.initializeLineageWorkBudget(statementPatternCount(query));
 			return new LmdbFrontierStatisticsCostSession(PackedCostSession.scalar(scoped, query), scoped, view, query,
 					runtime, datasetUsesStoreDefaults);
 		}
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
-				null, false);
+				null, false, query);
 		return PackedCostSession.scalar(conventional, query);
 	}
 
@@ -520,14 +524,14 @@ final class LmdbPackedCostModel
 			return mappedStatisticsCache.leaf(relationId);
 		}
 		TupleExpr expression = query.materializeRelation(relationId);
-		if (!(expression instanceof StatementPattern pattern)) {
+		if (!hasCompleteMappedSurface(expression) || LmdbFrontierProbeFactory.lineagePatternCount(expression) != 1) {
 			if (mappedStatisticsCache != null) {
 				mappedStatisticsCache.storeLeaf(relationId, null);
 			}
 			return null;
 		}
-		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probe(
-				runtime.valueStore(), pattern, FrontierLeafProbe.BOTH_PLANES);
+		FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
+				runtime.valueStore(), expression, FrontierLeafProbe.BOTH_PLANES);
 		if (probe == null) {
 			return null;
 		}
@@ -624,12 +628,12 @@ final class LmdbPackedCostModel
 				continue;
 			}
 			TupleExpr expression = query.materializeRelation(relationId);
-			if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			if (hasCompleteMappedSurface(expression)) {
 				outerFactors.add(expression);
 			}
 		}
 		List<TupleExpr> rhsFactors = new ArrayList<>();
-		if (outerFactors.isEmpty() || !collectMappedConjunctiveFactors(rhs, rhsFactors) || rhsFactors.isEmpty()
+		if (outerFactors.isEmpty() || !collectCompleteMappedFactors(rhs, rhsFactors) || rhsFactors.isEmpty()
 				|| !oneConnectedStatementComponent(outerFactors)
 				|| !oneConnectedStatementComponent(rhsFactors)
 				|| !allCorrelationBindingsExposed(outerFactors, rhsFactors, correlationNames)) {
@@ -676,7 +680,7 @@ final class LmdbPackedCostModel
 
 	private static boolean exposesBinding(List<TupleExpr> factors, String bindingName) {
 		for (TupleExpr factor : factors) {
-			if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+			if (LmdbFrontierProbeFactory.exposesLineageBinding(factor, bindingName)) {
 				return true;
 			}
 		}
@@ -1009,10 +1013,14 @@ final class LmdbPackedCostModel
 
 	private double mappedConjunctiveRows(TupleExpr expression) {
 		List<TupleExpr> factors = new ArrayList<>();
-		if (!collectMappedConjunctiveFactors(expression, factors) || factors.isEmpty()) {
+		if (!collectCompleteMappedFactors(expression, factors) || factors.isEmpty()) {
 			return Double.NaN;
 		}
-		if (factors.size() == 1) {
+		int expandedCount = LmdbFrontierProbeFactory.lineagePatternCount(factors);
+		if (expandedCount == 0) {
+			return Double.NaN;
+		}
+		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
 					runtime.valueStore(), factors.getFirst(), FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
@@ -1030,11 +1038,42 @@ final class LmdbPackedCostModel
 		return estimate.fallbackReason() == FrontierFallbackReason.NONE ? estimate.pointRows() : Double.NaN;
 	}
 
-	private static boolean collectMappedConjunctiveFactors(TupleExpr expression, List<TupleExpr> factors) {
+	private boolean collectCompleteMappedFactors(TupleExpr expression, List<TupleExpr> factors) {
+		if (!hasCompleteMappedSurface(expression)) {
+			return false;
+		}
+		factors.add(expression);
+		return true;
+	}
+
+	private boolean hasCompleteMappedSurface(TupleExpr expression) {
+		if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			return false;
+		}
+		ArrayDeque<TupleExpr> pending = new ArrayDeque<>();
+		pending.push(expression);
+		while (!pending.isEmpty()) {
+			TupleExpr node = pending.pop();
+			if (node instanceof Extension extension) {
+				int relation = planningQuery == null ? 0 : planningQuery.capturedRelationId(node);
+				if (relation == 0 || !planningQuery.isPureBindingAlias(relation)) {
+					return false;
+				}
+				pending.push(extension.getArg());
+			} else if (node.getClass() == Join.class) {
+				Join join = (Join) node;
+				pending.push(join.getLeftArg());
+				pending.push(join.getRightArg());
+			}
+		}
+		return true;
+	}
+
+	private boolean collectMappedConjunctiveFactors(TupleExpr expression, List<TupleExpr> factors) {
 		if (expression == null) {
 			return false;
 		}
-		if (LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+		if (hasCompleteMappedSurface(expression)) {
 			factors.add(expression);
 			return true;
 		}
@@ -1097,7 +1136,7 @@ final class LmdbPackedCostModel
 		int appendedStatementOrdinal = -1;
 		for (int programRelationId : relationIds) {
 			TupleExpr expression = query.materializeRelation(programRelationId);
-			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			if (!hasCompleteMappedSurface(expression)) {
 				continue;
 			}
 			if (programRelationId == relationId) {
@@ -1194,7 +1233,7 @@ final class LmdbPackedCostModel
 				continue;
 			}
 			TupleExpr expression = query.materializeRelation(relationId);
-			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			if (!hasCompleteMappedSurface(expression)) {
 				return null;
 			}
 			statementFactors.add(expression);
@@ -1269,7 +1308,11 @@ final class LmdbPackedCostModel
 		if (view == null) {
 			return null;
 		}
-		if (statementFactors.size() == 1) {
+		int expandedCount = LmdbFrontierProbeFactory.lineagePatternCount(statementFactors);
+		if (expandedCount == 0) {
+			return null;
+		}
+		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
 					runtime.valueStore(), statementFactors.getFirst(), bindings, FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
@@ -1312,6 +1355,12 @@ final class LmdbPackedCostModel
 		if (statisticsView == null || prefixStatementFactors.isEmpty()) {
 			return null;
 		}
+		for (TupleExpr prefixStatement : prefixStatementFactors) {
+			if (LmdbFrontierProbeFactory.lineagePatternCount(prefixStatement) != 1) {
+				// A complete whole program must keep every occurrence and correlation in the full-program route.
+				return null;
+			}
+		}
 		FrontierLeafEstimate appendedRows = mappedLeafEstimate(query, relationId);
 		if (appendedRows == null) {
 			return null;
@@ -1319,10 +1368,13 @@ final class LmdbPackedCostModel
 		FrontierJoinEstimate perLeft = null;
 		int boundaryCount = 0;
 		for (TupleExpr prefixStatement : prefixStatementFactors) {
+			if (!LmdbFrontierProbeFactory.lineageSurfacesShareBinding(prefixStatement, appendedStatement)) {
+				continue;
+			}
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
 					runtime.valueStore(), prefixStatement, appendedStatement, FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
-				continue;
+				return null;
 			}
 			boundaryCount++;
 			if (boundaryCount > 1) {
@@ -1531,12 +1583,16 @@ final class LmdbPackedCostModel
 		if (factors == null || factors.isEmpty()) {
 			return null;
 		}
-		if (factors.size() == 1) {
+		int expandedCount = LmdbFrontierProbeFactory.lineagePatternCount(factors);
+		if (expandedCount == 0) {
+			return null;
+		}
+		if (expandedCount == 1) {
 			return computeMappedLineageEstimate(factors);
 		}
-		if (factors.size() == 2) {
+		if (expandedCount == 2) {
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
-					runtime.valueStore(), factors.get(0), factors.get(1), FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
 				return null;
 			}
@@ -1596,7 +1652,11 @@ final class LmdbPackedCostModel
 		if (factors == null || factors.isEmpty()) {
 			return null;
 		}
-		if (factors.size() == 1) {
+		int expandedCount = LmdbFrontierProbeFactory.lineagePatternCount(factors);
+		if (expandedCount == 0) {
+			return null;
+		}
+		if (expandedCount == 1) {
 			FrontierLeafProbe probe = LmdbFrontierProbeFactory.probeForLineage(
 					runtime.valueStore(), factors.get(0), FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
@@ -1612,9 +1672,9 @@ final class LmdbPackedCostModel
 							estimate.confidence(), estimate.source())
 					: null;
 		}
-		if (factors.size() == 2) {
+		if (expandedCount == 2) {
 			FrontierJoinProbe probe = LmdbFrontierProbeFactory.joinProbeForLineage(
-					runtime.valueStore(), factors.get(0), factors.get(1), FrontierLeafProbe.BOTH_PLANES);
+					runtime.valueStore(), factors, FrontierLeafProbe.BOTH_PLANES);
 			if (probe == null) {
 				return null;
 			}
@@ -1758,14 +1818,14 @@ final class LmdbPackedCostModel
 						: null;
 	}
 
-	private static List<TupleExpr> mappedStatementFactors(PackedQueryView query, int[] relationIds) {
+	private List<TupleExpr> mappedStatementFactors(PackedQueryView query, int[] relationIds) {
 		List<TupleExpr> statements = new ArrayList<>(relationIds.length);
 		for (int relationId : relationIds) {
 			if (relationId <= 0 || relationId > query.relationCount()) {
 				return List.of();
 			}
 			TupleExpr expression = query.materializeRelation(relationId);
-			if (!LmdbFrontierProbeFactory.hasStatementLineage(expression)) {
+			if (!hasCompleteMappedSurface(expression)) {
 				/*
 				 * The child scalar then contains a query-owned relation (for example VALUES) that is absent from the
 				 * mapped statement program. Treating its scalar/base ratio as an independent predicate selectivity can
@@ -1780,8 +1840,7 @@ final class LmdbPackedCostModel
 	}
 
 	private static boolean oneConnectedStatementComponent(List<TupleExpr> statements) {
-		return statements.size() == 1
-				|| LmdbFrontierProbeFactory.connectedLineageComponent(statements, 0).size() == statements.size();
+		return LmdbFrontierProbeFactory.isConnectedLineageSurface(statements);
 	}
 
 	private static MappedRestrictionScale mappedRestrictionScale(EvidenceStateSummary actual,
@@ -2048,6 +2107,14 @@ final class LmdbPackedCostModel
 		}
 	}
 
+	/** Prices an operator with no input population without consulting encoded-child or prefix distributions. */
+	void refineBindingOnlyOperator(PackedQueryView query, int relationId, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (nativeGraphDomain(query, relationId, context) && query.isFilter(relationId)) {
+			setFilterPhysicalCost(context, output);
+		}
+	}
+
 	private void refineLogicalOperator(PackedQueryView query, int relationId, PackedCostContext context,
 			PackedCostEstimate output) {
 		if (relationId <= 0 || relationId > query.relationCount() || query.isStatementPattern(relationId)
@@ -2218,7 +2285,7 @@ final class LmdbPackedCostModel
 		 * A one-statement component already has a query-ready leaf/filter estimate. This transform exists only for the
 		 * correlated case where joined multiplicity makes that leaf-local pass ratio invalid.
 		 */
-		if (component.size() < 2) {
+		if (LmdbFrontierProbeFactory.lineagePatternCount(component) < 2) {
 			return false;
 		}
 		MappedRowsEstimate base = computeMappedBoundLineageEstimate(component, Map.of(), view);
@@ -2300,17 +2367,17 @@ final class LmdbPackedCostModel
 		return distinct;
 	}
 
-	private static List<TupleExpr> mappedFilterComponent(List<TupleExpr> prefixFactors,
+	private List<TupleExpr> mappedFilterComponent(List<TupleExpr> prefixFactors,
 			Set<String> bindingNames) {
 		List<TupleExpr> statementFactors = new ArrayList<>(prefixFactors.size());
 		int anchorOrdinal = -1;
 		for (TupleExpr factor : prefixFactors) {
-			if (!LmdbFrontierProbeFactory.hasStatementLineage(factor)) {
+			if (!hasCompleteMappedSurface(factor)) {
 				continue;
 			}
 			if (anchorOrdinal < 0) {
 				for (String bindingName : bindingNames) {
-					if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+					if (LmdbFrontierProbeFactory.exposesLineageBinding(factor, bindingName)) {
 						anchorOrdinal = statementFactors.size();
 						break;
 					}
@@ -2326,7 +2393,7 @@ final class LmdbPackedCostModel
 		for (String bindingName : bindingNames) {
 			boolean exposed = false;
 			for (TupleExpr factor : component) {
-				if (LmdbFrontierProbeFactory.componentIndexForLineage(factor, bindingName) >= 0) {
+				if (LmdbFrontierProbeFactory.exposesLineageBinding(factor, bindingName)) {
 					exposed = true;
 					break;
 				}
@@ -2940,6 +3007,118 @@ final class LmdbPackedCostModel
 		}
 	}
 
+	/** Qualified native quantities: no inherited population, finite values or sketches enter this producer. */
+	PhysicalFactorCost physicalFallback(PackedQueryView query, int relationId, PackedCostContext context,
+			Set<String> assuredInputs) {
+		if (assuredInputs.isEmpty() || !finiteNonNegative(context.prefixRows())
+				|| !nativeGraphDomain(query, relationId, context)) {
+			return null;
+		}
+		TupleExpr expression = materializeRelation(query, relationId);
+		if (!(expression instanceof StatementPattern) && !(expression instanceof ArbitraryLengthPath)
+				&& !(expression instanceof ZeroLengthPath)) {
+			return null;
+		}
+		JoinFactorCostModel.CostContext physicalContext = JoinFactorCostModel.CostContext.forOptimization(
+				assuredInputs, context.prefixRows(), Double.NaN, true, true, Map.of(), List.of())
+				.withPrefixFactorsDescribeCurrentRows(false)
+				.withUnrelatedPrefixRows(context.unrelatedPrefixRows());
+		JoinFactorCostModel.FactorCostEstimate estimate = runtime.factorCost(expression, physicalContext).orElse(null);
+		if (estimate == null || !finiteNonNegative(estimate.getWorkRows())
+				&& !finiteNonNegative(estimate.getOutputRows())) {
+			return null;
+		}
+		if (expression instanceof StatementPattern && estimate.getRowScope() == JoinFactorCostModel.RowScope.UNKNOWN) {
+			// Preserve the historical statement key-only fallback for undeclared/custom producers.
+			return null;
+		}
+		boolean totalContext = estimate.isRepeatedInvocationsCosted();
+		PackedCostEstimate declared = new PackedCostEstimate();
+		declared.setRows(estimate.getOutputRows(), estimate.getWorkRows());
+		if (expression instanceof StatementPattern) {
+			declared.setAccess(estimate.getLookupComponentMask(), estimate.getMissingLookupComponentMask(),
+					metricInt(estimate, TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH),
+					estimate.getAccessRowsBeforeFilter(), physicalMetric(estimate, "plannedRepeatedInvocations",
+							totalContext ? context.prefixRows() : 1.0d),
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_NAME),
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_ESTIMATE_SOURCE),
+					estimate.getStringMetrics().get(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE));
+			setStatementAccessPhysicalCost(declared);
+		} else {
+			setPropertyPathPhysicalCost(expression, estimate, estimate.getOutputRows(), declared);
+		}
+		double invocations = physicalMetric(estimate, "plannedRepeatedInvocations",
+				totalContext ? context.prefixRows() : 1.0d);
+		if (!unavailableOrNonNegative(invocations)) {
+			return null;
+		}
+		declared.setInvocations(invocations);
+		declared.setReplacesChildWork(true);
+		if (!finiteNonNegative(declared.workRows()) && finiteNonNegative(estimate.getWorkRows())) {
+			// Preserve the producer's scalar price when a genuine typed resource quantity is unavailable.
+			declared.setObjectivePricePreservingPhysicalCost(estimate.getWorkRows());
+		}
+		Map<String, Double> metrics = new LinkedHashMap<>();
+		for (String name : List.of("plannedRepeatedInvocations", "plannedSeeks", "plannedRowsPerInvocation",
+				"plannedMemoryRows", LmdbPropertyPathEstimator.PLANNED_PATH_CANDIDATE_ROWS,
+				LmdbPropertyPathEstimator.PLANNED_PATH_STEP_LOOKUPS,
+				LmdbPropertyPathEstimator.PLANNED_PATH_EXPANSION_ITERATIONS)) {
+			Double value = estimate.getDoubleMetrics().get(name);
+			if (value != null) {
+				metrics.put(name, value);
+			}
+		}
+		String endpoint = propertyPathEndpointMode(expression, assuredInputs);
+		Map<String, String> strings = new LinkedHashMap<>();
+		if (!(expression instanceof StatementPattern)) {
+			strings.put("plannedPropertyPathMethod", "lmdb-property-path");
+			strings.put("plannedPropertyPathEndpointMode", endpoint);
+			strings.put("optimizer.pathEndpointMode", endpoint);
+		}
+		String implementation = estimate.getStringMetrics().get("plannedPhysicalImplementation");
+		if (implementation != null) {
+			strings.put("plannedPhysicalImplementation", implementation);
+		}
+		JoinFactorCostModel.RowScope rowScope = estimate.getRowScope();
+		double rows = estimate.getOutputRows();
+		if (rowScope == JoinFactorCostModel.RowScope.PER_INVOCATION && finiteNonNegative(rows)) {
+			rows = saturatedMultiply(rows, context.prefixRows());
+			rowScope = JoinFactorCostModel.RowScope.FOR_CONTEXT;
+		}
+		return new PhysicalFactorCost(declared, totalContext, Map.copyOf(strings), Map.copyOf(metrics), rows, rowScope);
+	}
+
+	record PhysicalFactorCost(PackedCostEstimate declaration, boolean scalarWorkForContext,
+			Map<String, String> strings, Map<String, Double> metrics, double rows,
+			JoinFactorCostModel.RowScope rowScope) {
+		boolean hasQualifiedRows() {
+			return rowScope != JoinFactorCostModel.RowScope.UNKNOWN && finiteNonNegative(rows);
+		}
+
+		void applyTo(PackedCostEstimate output) {
+			output.replacePhysicalCost(declaration, scalarWorkForContext);
+			if (hasQualifiedRows()) {
+				if (rowScope == JoinFactorCostModel.RowScope.COMPONENT) {
+					output.setComponentOutputRowsPreservingPhysicalCost(rows);
+				} else {
+					output.setContextualOutputRowsPreservingPhysicalCost(rows);
+				}
+			}
+			strings.forEach(output::putPlannedStringMetric);
+			metrics.forEach(output::putPlannedDoubleMetric);
+		}
+	}
+
+	private static boolean unavailableOrNonNegative(double value) {
+		return Double.isNaN(value) || finiteNonNegative(value);
+	}
+
+	private static double physicalMetric(JoinFactorCostModel.FactorCostEstimate estimate, String name,
+			double fallback) {
+		Double value = estimate.getDoubleMetrics().get(name);
+		return value == null ? fallback : value;
+	}
+
 	private boolean estimatePropertyPath(TupleExpr expression, PackedQueryView query, PackedCostContext context,
 			PackedCostEstimate output) {
 		if (!(expression instanceof ArbitraryLengthPath) && !(expression instanceof ZeroLengthPath)) {
@@ -2995,6 +3174,9 @@ final class LmdbPackedCostModel
 		copyFactorDoubleMetrics(pathEstimate, output);
 		if (mappedPath == null) {
 			setPropertyPathPhysicalCost(expression, pathEstimate, rows, output);
+			if (!finiteNonNegative(output.workRows())) {
+				output.setObjectivePricePreservingPhysicalCost(pathEstimate.getWorkRows());
+			}
 		} else {
 			annotateMappedPropertyPath(mappedPath, output);
 			setMappedPropertyPathPhysicalCost(expression, mappedPath, output);
@@ -3032,7 +3214,7 @@ final class LmdbPackedCostModel
 		List<TupleExpr> statementFactors = new ArrayList<>();
 		int anchorOrdinal = -1;
 		for (TupleExpr factor : prefixFactors) {
-			if (!LmdbFrontierProbeFactory.hasStatementLineage(factor)) {
+			if (!hasCompleteMappedSurface(factor)) {
 				continue;
 			}
 			if (anchorOrdinal < 0 && factor.getBindingNames().contains(endpointName)) {
@@ -3221,19 +3403,20 @@ final class LmdbPackedCostModel
 		if (!(expression instanceof ArbitraryLengthPath path)) {
 			return;
 		}
-		double invocations = metric(pathEstimate, "plannedSeeks", 1.0d);
-		double candidateRows = metric(pathEstimate, LmdbPropertyPathEstimator.PLANNED_PATH_CANDIDATE_ROWS, rows);
-		double stepLookups = metric(pathEstimate, LmdbPropertyPathEstimator.PLANNED_PATH_STEP_LOOKUPS,
+		double invocations = physicalMetric(pathEstimate, "plannedSeeks", 1.0d);
+		double candidateRows = physicalMetric(
+				pathEstimate, LmdbPropertyPathEstimator.PLANNED_PATH_CANDIDATE_ROWS, rows);
+		double stepLookups = physicalMetric(pathEstimate, LmdbPropertyPathEstimator.PLANNED_PATH_STEP_LOOKUPS,
 				saturatedAdd(invocations, candidateRows));
 		double identityIterations = path.getMinLength() == 0L ? invocations : 0.0d;
-		double expansionIterations = metric(pathEstimate,
+		double expansionIterations = physicalMetric(pathEstimate,
 				LmdbPropertyPathEstimator.PLANNED_PATH_EXPANSION_ITERATIONS,
 				saturatedAdd(identityIterations, stepLookups));
-		double peakMemoryRows = metric(pathEstimate, "plannedMemoryRows", 0.0d);
-		if (!finiteNonNegative(candidateRows)
-				|| !finiteNonNegative(stepLookups)
-				|| !finiteNonNegative(expansionIterations)
-				|| !finiteNonNegative(peakMemoryRows)) {
+		double peakMemoryRows = physicalMetric(pathEstimate, "plannedMemoryRows", 0.0d);
+		if (!unavailableOrNonNegative(candidateRows)
+				|| !unavailableOrNonNegative(stepLookups)
+				|| !unavailableOrNonNegative(expansionIterations)
+				|| !unavailableOrNonNegative(peakMemoryRows)) {
 			return;
 		}
 		/*
@@ -3242,7 +3425,7 @@ final class LmdbPackedCostModel
 		 * work for zero-length identities and queued frontier expansions. Keeping those primitives separate is
 		 * essential both for winner comparison and for dimension-specific runtime feedback.
 		 */
-		output.setInclusivePhysicalCost(
+		output.setInclusivePhysicalCostPreservingUnknown(
 				candidateRows,
 				stepLookups,
 				expansionIterations,
@@ -3252,7 +3435,7 @@ final class LmdbPackedCostModel
 				expansionIterations,
 				rows,
 				0.0d,
-				peakMemoryRows);
+				peakMemoryRows, pathEstimate.getWorkRows());
 	}
 
 	private boolean estimateConnectedSurface(PackedQueryView query, int relationId, PackedCostContext context,

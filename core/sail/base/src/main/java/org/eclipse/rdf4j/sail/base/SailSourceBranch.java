@@ -1643,7 +1643,7 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 						effectiveOwner = bufferedWriteIntents.getFirst().owner();
 					}
 					if (retainInputs) {
-						for (Changeset change : streamingChangesLocked(effectiveFrontier, preparing)) {
+						for (Changeset change : streamingChanges(effectiveFrontier, preparing)) {
 							StatementInput input = change.statementInput(failure);
 							if (input != null) {
 								retained.add(new StreamingChange(change, input));
@@ -1679,21 +1679,28 @@ class SailSourceBranch implements SailSource, FrozenFlush {
 		}
 	}
 
-	/** Membership and revision checks share the same guard as retirement, with no backend callbacks. */
+	/** Shared frontier membership needs the branch guard; selected private sinks need only pending membership. */
 	void validateStreamingChanges(boolean nonblocking, boolean publicationFrontier, Set<Changeset> preparing,
 			Consumer<List<Changeset>> validation) {
 		try (SailModelCleanup.Scope cleanup = SailModelCleanup.enter()) {
+			if (!publicationFrontier) {
+				// A routed carrier belongs to this operation, not to the ancestor's independently published prefix.
+				// Snapshot its membership under pending, then release that monitor before model validation or cleanup.
+				validation.accept(streamingChanges(false, preparing));
+				return;
+			}
 			lockStreamingSnapshot(nonblocking);
 			try {
-				validation.accept(streamingChangesLocked(publicationFrontier, preparing));
+				validation.accept(streamingChanges(true, preparing));
 			} finally {
 				semaphore.unlock();
 			}
 		}
 	}
 
-	private List<Changeset> streamingChangesLocked(boolean publicationFrontier, Set<Changeset> preparing) {
-		if (frozenBatch != null && publicationFrontier) {
+	/** The caller retains semaphore only when shared publication state is part of the snapshot. */
+	private List<Changeset> streamingChanges(boolean publicationFrontier, Set<Changeset> preparing) {
+		if (publicationFrontier && frozenBatch != null) {
 			return List.copyOf(frozenBatch.captured);
 		}
 		List<Changeset> snapshot = publicationFrontier ? new ArrayList<>(changes) : new ArrayList<>();

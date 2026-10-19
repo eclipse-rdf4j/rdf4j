@@ -13,6 +13,12 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.junit.jupiter.api.Test;
 
 class PackedObjectPoolTest {
@@ -43,5 +49,77 @@ class PackedObjectPoolTest {
 		assertThat(replacementId).isOne();
 		assertThat(pool.size()).isOne();
 		assertThat(pool.value(replacementId)).isSameAs(replacement);
+	}
+
+	@Test
+	void deeplyNestedEqualTripleTermsUseBoundedTraversal() {
+		int depth = 5_000;
+		int[] componentReads = { 0 };
+		TripleTerm first = countingChain(SimpleValueFactory.getInstance().createBNode("local"), depth, componentReads);
+		TripleTerm second = countingChain(SimpleValueFactory.getInstance().createBNode("local"), depth, componentReads);
+		PackedObjectPool pool = new PackedObjectPool(2);
+		int firstId = pool.intern(first);
+
+		assertThat(pool.intern(second)).isEqualTo(firstId);
+		assertThat(componentReads[0]).isPositive().isLessThanOrEqualTo(6 * depth);
+	}
+
+	@Test
+	void equalityAcrossPoolRootsVisitsSharedTriplePairsOnce() {
+		int depth = 128;
+		int[] componentReads = { 0 };
+		TripleTerm firstTail = countingChain(SimpleValueFactory.getInstance().createBNode("local"), depth,
+				componentReads);
+		TripleTerm secondTail = countingChain(SimpleValueFactory.getInstance().createBNode("local"), depth,
+				componentReads);
+		PackedObjectPool first = new PackedObjectPool(2);
+		PackedObjectPool second = new PackedObjectPool(2);
+		first.intern(firstTail);
+		first.intern(new CountingTripleTerm(firstTail, componentReads));
+		second.intern(secondTail);
+		second.intern(new CountingTripleTerm(secondTail, componentReads));
+		componentReads[0] = 0;
+
+		assertThat(first.hasSameValues(second)).isTrue();
+		assertThat(componentReads[0]).isPositive().isLessThanOrEqualTo(6 * (depth + 1));
+	}
+
+	private static TripleTerm countingChain(Value terminal, int depth, int[] componentReads) {
+		Value current = terminal;
+		for (int index = 0; index < depth; index++) {
+			current = new CountingTripleTerm(current, componentReads);
+		}
+		return (TripleTerm) current;
+	}
+
+	private static final class CountingTripleTerm extends AbstractTripleTerm {
+		private static final long serialVersionUID = 1L;
+		private static final Resource SUBJECT = SimpleValueFactory.getInstance().createIRI("urn:subject");
+		private static final IRI PREDICATE = SimpleValueFactory.getInstance().createIRI("urn:predicate");
+		private final Value object;
+		private final int[] componentReads;
+
+		private CountingTripleTerm(Value object, int[] componentReads) {
+			this.object = object;
+			this.componentReads = componentReads;
+		}
+
+		@Override
+		public Resource getSubject() {
+			componentReads[0]++;
+			return SUBJECT;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			componentReads[0]++;
+			return PREDICATE;
+		}
+
+		@Override
+		public Value getObject() {
+			componentReads[0]++;
+			return object;
+		}
 	}
 }

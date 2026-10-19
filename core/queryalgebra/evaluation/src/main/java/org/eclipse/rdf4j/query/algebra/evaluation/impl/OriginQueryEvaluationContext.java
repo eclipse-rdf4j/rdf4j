@@ -27,6 +27,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /** Keeps invocation origins across custom row factories while retaining their existing storage/access contracts. */
 final class OriginQueryEvaluationContext implements QueryEvaluationContext {
@@ -65,6 +66,11 @@ final class OriginQueryEvaluationContext implements QueryEvaluationContext {
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
 	}
 
 	@Override

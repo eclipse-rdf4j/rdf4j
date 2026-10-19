@@ -16,6 +16,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import java.util.Map;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.FactorCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.CostScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
@@ -60,5 +62,23 @@ class JoinFactorCostModelTest {
 		assertEquals(1.0d, vector.workQErrorMax(), 1.0e-9d);
 		assertEquals(0.0d, vector.uncertaintyRows(), 1.0e-9d);
 		assertEquals(1.0d, estimate.getBagEstimate().orElseThrow().confidence(), 1.0e-9d);
+	}
+
+	@Test
+	void rowDeclarationIsIndependentAndSurvivesImmutableBagCopies() {
+		for (RowScope scope : RowScope.values()) {
+			for (CostScope workScope : new CostScope[] { CostScope.PER_INVOCATION, CostScope.TOTAL_FOR_CONTEXT }) {
+				FactorCostEstimate legacy = new FactorCostEstimate(71.0d, 13.0d, Map.of(), Map.of(),
+						true, true, 7, 0, 41.0d, workScope, true);
+				assertEquals(RowScope.UNKNOWN, legacy.getRowScope());
+				FactorCostEstimate declared = legacy.withRowScope(scope).withBag(BagEstimate.exact(13.0d, "bag"));
+				assertEquals(scope, declared.getRowScope());
+				assertEquals(scope, declared.withBag(null).getRowScope());
+				assertEquals(RowScope.UNKNOWN, declared.withRowScope(null).getRowScope());
+				assertEquals(workScope == CostScope.TOTAL_FOR_CONTEXT, declared.isRepeatedInvocationsCosted());
+				assertEquals(71.0d, declared.getWorkRows());
+				assertEquals(13.0d, declared.getOutputRows());
+			}
+		}
 	}
 }

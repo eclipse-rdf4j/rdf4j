@@ -15,6 +15,7 @@ import static org.eclipse.rdf4j.sail.nativerdf.NativeStore.SOFT_FAIL_ON_CORRUPT_
 
 import java.io.File;
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.io.UnsupportedEncodingException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
@@ -38,6 +39,7 @@ import org.eclipse.rdf4j.common.concurrent.locks.ReadWriteLockManager;
 import org.eclipse.rdf4j.common.concurrent.locks.WritePrefReadWriteLockManager;
 import org.eclipse.rdf4j.common.io.ByteArrayUtil;
 import org.eclipse.rdf4j.model.BNode;
+import org.eclipse.rdf4j.model.BNodeIdResolver;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
@@ -80,7 +82,15 @@ import org.slf4j.LoggerFactory;
  *          one release to the next.
  */
 @InternalUseOnly
-public class ValueStore extends SimpleValueFactory implements AutoCloseable {
+public class ValueStore extends SimpleValueFactory implements AutoCloseable, BNodeIdResolver {
+	@Override
+	public boolean hasBNodeId(String id) {
+		try {
+			return getID(SimpleValueFactory.getInstance().createBNode(id)) != NativeValue.UNKNOWN_ID;
+		} catch (IOException failure) {
+			throw new UncheckedIOException(failure);
+		}
+	}
 
 	private static final Logger logger = LoggerFactory.getLogger(ValueStore.class);
 

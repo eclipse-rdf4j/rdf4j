@@ -348,6 +348,7 @@ final class PackedCostingTraceArena {
 		inputFlags |= providerInput.dependentSubqueriesCosted() ? 1 << 4 : 0;
 		inputFlags |= providerInput.hasDependentCostComponents() ? 1 << 5 : 0;
 		inputFlags |= providerInput.hasObjectiveInterval() ? 1 << 6 : 0;
+		inputFlags |= providerInput.hasContextualScalarWork() ? 1 << 7 : 0;
 		providerInputFlags[eventId] = (byte) inputFlags;
 		providerInputGuarantees[eventId] = providerInput.evidenceGuarantee() == null
 				? 0
@@ -369,6 +370,7 @@ final class PackedCostingTraceArena {
 		outputFlagBits |= estimate.dependentSubqueriesCosted() ? 1 << 4 : 0;
 		outputFlagBits |= estimate.hasDependentCostComponents() ? 1 << 5 : 0;
 		outputFlagBits |= estimate.hasObjectiveInterval() ? 1 << 6 : 0;
+		outputFlagBits |= estimate.hasContextualScalarWork() ? 1 << 7 : 0;
 		outputFlags[eventId] = (byte) outputFlagBits;
 		outputRows[eventId] = estimate.outputRows();
 		workRows[eventId] = estimate.workRows();
@@ -449,7 +451,7 @@ final class PackedCostingTraceArena {
 				randomSeeks[eventId], iteratorOpens[eventId], expressionEvaluations[eventId], hashBuildRows[eventId],
 				hashProbeRows[eventId], pathExpansions[eventId], resultRows[eventId], remoteCalls[eventId],
 				peakMemoryRows[eventId], scope, (flags & 1) != 0, (flags & 1 << 3) != 0,
-				componentOutputRows || (flags & 1 << 1) != 0, componentOutputRows);
+				componentOutputRows || (flags & 1 << 1) != 0, componentOutputRows, (flags & 1 << 7) != 0);
 		estimate.setAccess(lookupMasks[eventId], missingLookupMasks[eventId], indexPrefixLengths[eventId],
 				accessRows[eventId], invocations[eventId],
 				providerObject(indexNameIds[eventId], String.class),
@@ -846,6 +848,7 @@ final class PackedCostingTraceArena {
 		flags |= input.dependentSubqueriesCosted() ? 1 << 4 : 0;
 		flags |= input.hasDependentCostComponents() ? 1 << 5 : 0;
 		flags |= input.hasObjectiveInterval() ? 1 << 6 : 0;
+		flags |= input.hasContextualScalarWork() ? 1 << 7 : 0;
 		return (byte) flags;
 	}
 
@@ -969,14 +972,14 @@ final class PackedCostingTraceArena {
 		if (size == 0) {
 			return PackedCostingTrace.empty().project(rootEventIds);
 		}
-		ensureDigestClosure(rootEventIds);
+
 		/*
 		 * Projection only reads the arena. Borrow its primitive columns so the selected-plan path does not first copy
 		 * every explored event into a full detached trace and then copy the winning closure a second time. The phase
 		 * column remains a compact detached length sentinel because PackedCostingTrace derives its event count from it.
 		 */
 		PackedCostingTrace borrowed = trace(false);
-		PackedCostingTrace.Projection projection = borrowed.project(rootEventIds);
+		PackedCostingTrace.Projection projection = borrowed.project(rootEventIds, this::ensureDigest);
 		if (projection.trace() != borrowed) {
 			return projection;
 		}
@@ -1071,7 +1074,9 @@ final class PackedCostingTraceArena {
 				copy(detached, stringMetricNameIds, stringMetricSize),
 				copy(detached, stringMetricValueIds, stringMetricSize),
 				copy(detached, doubleMetricNameIds, doubleMetricSize),
-				copy(detached, doubleMetricValues, doubleMetricSize), objects.snapshotValues());
+				copy(detached, doubleMetricValues, doubleMetricSize), objects.snapshotValues(),
+				copy(detached, providerInputTypedValueStarts, length), copy(detached, typedValueStarts, length),
+				copy(detached, typedValues, typedValueSize));
 	}
 
 	private static byte[] copy(boolean detached, byte[] values, int length) {
@@ -1492,6 +1497,9 @@ final class PackedCostingTraceArena {
 				+ EVENT_DOUBLE_COLUMNS * (long) Double.BYTES
 				+ EVENT_BYTE_COLUMNS;
 		long bytes = Math.multiplyExact(eventCapacity, eventRowBytes);
+		// The live arena projects borrowed raw columns, then detaches; reserve their primitive scratch/map peak.
+		// Standalone dense-trace projection may nest remapping scratch; it is not this arena capture path.
+		bytes = Math.addExact(bytes, Math.multiplyExact(eventCapacity, 27L * Integer.BYTES));
 		bytes = Math.addExact(bytes, Math.multiplyExact(prefixCapacity, (long) Integer.BYTES));
 		bytes = Math.addExact(bytes, Math.multiplyExact(stringMetricCapacity, 2L * Integer.BYTES));
 		bytes = Math.addExact(bytes,

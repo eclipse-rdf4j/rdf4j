@@ -20,9 +20,13 @@ import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.MultiProjection;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -34,19 +38,22 @@ import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 
-/** Immutable boundary facts for actual scalar reads; relational pattern variables are compatibility constraints. */
+/**
+ * Immutable input observations and ordinary row writes; relational pattern variables remain compatibility constraints.
+ */
 final class PackedInputFrameContracts {
 
-	record Contract(Set<String> required, Set<String> protectedReads, Set<String> nullableReads,
-			Set<String> independentOutputs, boolean outputDomainKnown) {
+	record Contract(Set<String> required, Set<String> protectedInputs, Set<String> nullableInputs,
+			Set<String> writes, Set<String> independentOutputs, boolean outputDomainKnown) {
 		boolean isEmpty() {
-			return required.isEmpty() && protectedReads.isEmpty() && nullableReads.isEmpty()
+			return required.isEmpty() && protectedInputs.isEmpty() && nullableInputs.isEmpty() && writes.isEmpty()
 					&& independentOutputs.isEmpty();
 		}
 	}
 
 	private final QueryAlgebraBindingAnalysis analysis;
 	private final Map<TupleExpr, Set<String>> externalReads = new IdentityHashMap<>();
+	private final Map<TupleExpr, Set<String>> ordinaryWrites = new IdentityHashMap<>();
 	private final Map<TupleExpr, Contract> contracts = new IdentityHashMap<>();
 
 	PackedInputFrameContracts(TupleExpr root) {
@@ -55,21 +62,92 @@ final class PackedInputFrameContracts {
 
 	Contract at(TupleExpr expression) {
 		return contracts.computeIfAbsent(expression, node -> {
-			Set<String> reads = reads(node);
+			Set<String> writes = writes(node);
+			Set<String> observations = new HashSet<>(reads(node));
+			observations.addAll(writes);
 			QueryAlgebraBindingAnalysis.ReadOnlyContext input = analysis.contextAt(node);
-			Set<String> required = new HashSet<>(reads);
+			Set<String> required = new HashSet<>(observations);
 			required.retainAll(input.guaranteedNames());
-			Set<String> protectedReads = new HashSet<>();
+			Set<String> protectedInputs = new HashSet<>();
 			if (input.bindingDomainKnown()) {
-				protectedReads.addAll(reads);
-				protectedReads.removeAll(input.maybeBoundNames());
+				protectedInputs.addAll(observations);
+				protectedInputs.removeAll(input.maybeBoundNames());
 			}
-			Set<String> nullableReads = new HashSet<>(reads);
-			nullableReads.removeAll(required);
-			nullableReads.removeAll(protectedReads);
-			return new Contract(Set.copyOf(required), Set.copyOf(protectedReads), Set.copyOf(nullableReads),
+			Set<String> nullableInputs = new HashSet<>(observations);
+			nullableInputs.removeAll(required);
+			nullableInputs.removeAll(protectedInputs);
+			return new Contract(Set.copyOf(required), Set.copyOf(protectedInputs), Set.copyOf(nullableInputs), writes,
 					TupleExprs.independentlyProducedProjectionBindingNames(node),
 					analysis.outputFacts(node).possibleOutputsKnown());
+		});
+	}
+
+	private Set<String> writes(TupleExpr expression) {
+		Set<String> cached = ordinaryWrites.get(expression);
+		if (cached != null) {
+			return cached;
+		}
+		Set<String> result = new HashSet<>();
+		if (expression instanceof Service || expression instanceof MultiProjection
+				|| expression instanceof Projection projection
+						&& !TupleExprs.projectionIncludesParentBindings(projection)) {
+			// These operators emit a separate result frame. Their child assignments cannot overwrite a sibling's
+			// incoming row; closing-projection compatibility is represented by independentOutputs instead.
+		} else if (expression instanceof Projection projection) {
+			Set<String> childWrites = writes(projection.getArg());
+			for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+				String source = element.getName();
+				String target = element.getProjectionAlias().orElse(source);
+				if (!source.equals(target) || childWrites.contains(source)) {
+					result.add(target);
+				}
+			}
+		} else if (expression instanceof Group group) {
+			result.addAll(writes(group.getArg()));
+			result.retainAll(group.getGroupBindingNames());
+			result.addAll(group.getAggregateBindingNames());
+			addOwnScalarWrites(result, expression);
+		} else {
+			for (TupleExpr child : TupleExprs.getChildren(expression)) {
+				result.addAll(writes(child));
+			}
+			if (expression instanceof Extension extension) {
+				for (ExtensionElem element : extension.getElements()) {
+					if (element.getName() != null && TupleExprs.isEvaluatedExtensionElement(element)) {
+						result.add(element.getName());
+					}
+				}
+			}
+			addOwnScalarWrites(result, expression);
+		}
+		cached = Set.copyOf(result);
+		ordinaryWrites.put(expression, cached);
+		return cached;
+	}
+
+	private void addOwnScalarWrites(Set<String> result, TupleExpr expression) {
+		expression.visitChildren(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof ProjectionElem
+						|| node instanceof ExtensionElem element && !TupleExprs.isEvaluatedExtensionElement(element)) {
+					return;
+				}
+				if (node instanceof ValueExpr scalar) {
+					scalar.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+						@Override
+						protected void meetNode(QueryModelNode nested) {
+							if (nested instanceof TupleExpr tuple) {
+								result.addAll(writes(tuple));
+							} else {
+								super.meetNode(nested);
+							}
+						}
+					});
+				} else if (!(node instanceof TupleExpr)) {
+					super.meetNode(node);
+				}
+			}
 		});
 	}
 

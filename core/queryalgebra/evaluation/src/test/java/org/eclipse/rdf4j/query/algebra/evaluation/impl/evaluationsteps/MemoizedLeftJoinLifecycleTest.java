@@ -45,6 +45,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class MemoizedLeftJoinLifecycleTest {
 
@@ -230,6 +232,77 @@ class MemoizedLeftJoinLifecycleTest {
 			assertSame(readFailure, assertThrows(QueryEvaluationException.class, iteration::hasNext));
 			assertEquals(List.of(closeFailure), List.of(readFailure.getSuppressed()));
 			assertEquals(1, right.closes);
+		}
+	}
+
+	@Test
+	void emptyLeftInputDoesNotOpenOrAllocateAnyRightResultPopulation() {
+		TrackingIteration left = new TrackingIteration(List.of());
+		AtomicInteger rightOpens = new AtomicInteger();
+		QueryEvaluationStep step = step(ignored -> left, ignored -> {
+			rightOpens.incrementAndGet();
+			return new TrackingIteration(List.of(detailRow()));
+		});
+		try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+			assertFalse(iteration.hasNext());
+		}
+		assertEquals(0, rightOpens.get(), "RHS startup, scans and result retention are demand driven");
+		assertEquals(1, left.closes);
+	}
+
+	@Test
+	void everyColdNonemptyMemoizedInvocationNeedsItsFirstMiss() {
+		AtomicInteger opens = new AtomicInteger();
+		QueryEvaluationStep step = step(ignored -> new TrackingIteration(List.of(leftRow(), leftRow())),
+				ignored -> {
+					opens.incrementAndGet();
+					return new TrackingIteration(List.of(detailRow()));
+				});
+		for (int invocation = 1; invocation <= 2; invocation++) {
+			List<BindingSet> bag = new ArrayList<>();
+			try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				iteration.forEachRemaining(bag::add);
+			}
+			assertEquals(List.of(detailRow(), detailRow()), bag);
+			assertEquals(invocation, opens.get(), "a cache belongs to one invocation, never an earlier one");
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(ints = { 1, 2 })
+	void boundedKeysRetainOnlyActuallyRequestedRightPopulations(int capacity) {
+		String property = LeftJoinQueryEvaluationStep.MAX_MEMOIZED_KEYS_PROPERTY;
+		String previous = System.setProperty(property, Integer.toString(capacity));
+		try {
+			QueryBindingSet other = new QueryBindingSet(leftRow());
+			other.setBinding("root", SimpleValueFactory.getInstance().createIRI("urn:other"));
+			AtomicInteger opens = new AtomicInteger();
+			List<TrackingIteration> rightScans = new ArrayList<>();
+			QueryEvaluationStep step = step(ignored -> new TrackingIteration(List.of(leftRow(), other, leftRow())),
+					bindings -> {
+						opens.incrementAndGet();
+						QueryBindingSet row = new QueryBindingSet(bindings);
+						row.addBinding("detail", SimpleValueFactory.getInstance().createLiteral("detail"));
+						TrackingIteration scan = new TrackingIteration(List.of(row));
+						rightScans.add(scan);
+						return scan;
+					});
+			List<BindingSet> bag = new ArrayList<>();
+			try (var iteration = step.evaluate(EmptyBindingSet.getInstance())) {
+				iteration.forEachRemaining(bag::add);
+			}
+			assertEquals(3, bag.size());
+			assertEquals(detailRow(), bag.get(0));
+			assertEquals(other.getValue("root"), bag.get(1).getValue("root"));
+			assertEquals(detailRow(), bag.get(2));
+			assertEquals(capacity == 1 ? 3 : 2, opens.get());
+			assertTrue(rightScans.stream().allMatch(scan -> scan.closes == 1));
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
 		}
 	}
 

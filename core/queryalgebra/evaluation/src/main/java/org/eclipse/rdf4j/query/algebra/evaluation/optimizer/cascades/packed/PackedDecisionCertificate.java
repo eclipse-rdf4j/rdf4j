@@ -252,6 +252,18 @@ final class PackedDecisionCertificate {
 		return detachedCandidateState.candidateContinuationDigest(index);
 	}
 
+	/** Physical quantity authority, independent of candidateCostPoint's legacy diagnostic projection. */
+	boolean candidateQuantityKnown(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateQuantityKnown(index, dimensionId);
+	}
+
+	double candidateQuantityPoint(int index, int dimensionId) {
+		checkIndex(index);
+		return detachedCandidateState.candidateQuantityPoint(index, dimensionId);
+	}
+
+	/** Compatibility diagnostic only: scalar CPU and replayed telemetry do not certify physical quantities. */
 	boolean candidateCostKnown(int index, int dimensionId) {
 		checkIndex(index);
 		return detachedCandidateState.candidateCostKnown(index, dimensionId);
@@ -295,6 +307,24 @@ final class PackedDecisionCertificate {
 	long candidateRuleProofMask(int index) {
 		checkIndex(index);
 		return detachedCandidateState.candidateRuleProofMask(index);
+	}
+
+	long detachedQuantityBytes() {
+		return detachedCandidateState.detachedQuantityBytes();
+	}
+
+	long detachedQuantityBytes(PackedProviderRetainedMemory memory) {
+		return detachedCandidateState.detachedQuantityBytes(memory);
+	}
+
+	PackedDecisionCertificate withoutDetachedQuantities() {
+		PackedDetachedDecisionState stripped = detachedCandidateState.withoutDetachedQuantities();
+		return stripped == detachedCandidateState ? this
+				: new PackedDecisionCertificate(rootSelectedEventId, decisionStarts, selectedEventIds,
+						candidateEventIds,
+						candidateStateOrdinals, candidateCosts, candidateEventCosts, lowerBounds, outcomes,
+						comparisonTiers, paretoOutcomes, selectedByPolicy, childComposition, candidateChildStarts,
+						candidateChildEventIds, candidateChildCosts, stripped);
 	}
 
 	long retainedBytes() {

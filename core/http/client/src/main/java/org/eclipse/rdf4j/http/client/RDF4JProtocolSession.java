@@ -70,6 +70,7 @@ import org.eclipse.rdf4j.query.TupleQueryResultHandlerException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
 import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.impl.DatasetUtils;
 import org.eclipse.rdf4j.query.impl.TupleQueryResultBuilder;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.repository.RepositoryException;
@@ -88,11 +89,11 @@ import tools.jackson.databind.ObjectMapper;
 
 /**
  * A {@link SPARQLProtocolSession} subclass which extends the standard SPARQL 1.1 Protocol with additional
- * functionality, as documented in the <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>.
+ * functionality, as documented in the <a href="https://rdf4j.org/documentation/reference/rest-api/">RDF4J REST API</a>.
  *
  * @author Andreas Schwarte
  * @author Jeen Broekstra
- * @see <a href="http://docs.rdf4j.org/rest-api">RDF4J REST API</a>
+ * @see <a href="https://rdf4j.org/documentation/reference/rest-api/">RDF4J REST API</a>
  */
 public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	private static final ObjectMapper EXPLANATION_MAPPER = new ObjectMapper();
@@ -1044,6 +1045,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	protected List<NameValuePair> getQueryMethodParameters(QueryLanguage ql, String query, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 
 		List<NameValuePair> queryParams = new ArrayList<>();
 		queryParams.add(NameValuePair.of(Protocol.QUERY_LANGUAGE_PARAM_NAME, ql.getName()));
@@ -1082,6 +1084,7 @@ public class RDF4JProtocolSession extends SPARQLProtocolSession {
 	protected List<NameValuePair> getUpdateMethodParameters(QueryLanguage ql, String update, String baseURI,
 			Dataset dataset, boolean includeInferred, int maxQueryTime, Binding... bindings) {
 		Objects.requireNonNull(ql, "QueryLanguage may not be null");
+		DatasetUtils.requireRepresentableReadDataset(dataset);
 
 		List<NameValuePair> queryParams = new ArrayList<>();
 

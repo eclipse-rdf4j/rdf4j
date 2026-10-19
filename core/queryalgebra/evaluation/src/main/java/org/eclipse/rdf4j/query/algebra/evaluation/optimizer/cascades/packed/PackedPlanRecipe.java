@@ -895,18 +895,86 @@ final class PackedPlanRecipe {
 	}
 
 	long detachedEvidenceBytes() {
+		return detachedEvidenceBytes(new PackedProviderRetainedMemory());
+	}
+
+	long detachedEvidenceBytes(PackedProviderRetainedMemory providerMemory) {
+		long addedProviderBytes = detachedProviderBytes(providerMemory);
 		long frontierBytes = frontierEvidenceBundle.retainedBytes();
 		long traceBytes = costingTrace.retainedBytes();
 		long evidenceAndTrace = frontierBytes > Long.MAX_VALUE - traceBytes
 				? Long.MAX_VALUE
 				: frontierBytes + traceBytes;
-		long certificateBytes = decisionCertificate.retainedBytes();
+		// The same immutable quantity sidecar can be shared by a recipe revision or checkpoint owner.
+		long certificateBytes = decisionCertificate.retainedBytes() - decisionCertificate.detachedQuantityBytes()
+				+ decisionCertificate.detachedQuantityBytes(providerMemory);
 		long evidenceBytes = evidenceAndTrace > Long.MAX_VALUE - certificateBytes
 				? Long.MAX_VALUE
 				: evidenceAndTrace + certificateBytes;
-		return evidenceBytes > Long.MAX_VALUE - continuationSeed.retainedBytes()
+		long previous = evidenceBytes > Long.MAX_VALUE - continuationSeed.retainedBytes()
 				? Long.MAX_VALUE
 				: evidenceBytes + continuationSeed.retainedBytes();
+		return previous > Long.MAX_VALUE - addedProviderBytes ? Long.MAX_VALUE : previous + addedProviderBytes;
+	}
+
+	long detachedProviderBytes(PackedProviderRetainedMemory providerMemory) {
+		long before = providerMemory.bytes();
+		for (Object value : providerObjects) {
+			if (value instanceof RuntimeFeedbackContract contract
+					&& contract.descriptor().accountRetainedMemory(providerMemory)) {
+				// Conservative 64-bit reference/header model, matching the packed detached-accounting convention.
+				providerMemory.add(providerObjects, 16L + 8L * providerObjects.length);
+				providerMemory.add(runtimeFeedbackContractIds, 16L + 4L * runtimeFeedbackContractIds.length);
+				providerMemory.add(contract, 160L);
+				providerMemory.add(contract.rawPrediction(), 112L);
+				providerMemory.add(contract.appliedPrediction(), 112L);
+				providerMemory.add(contract.rawDependentPrediction(), 96L);
+				providerMemory.add(contract.appliedDependentPrediction(), 96L);
+			}
+		}
+		return providerMemory.bytes() - before;
+	}
+
+	boolean hasRetainedProviderPayload() {
+		for (Object value : providerObjects) {
+			if (value instanceof RuntimeFeedbackContract contract && retainsProviderPayload(contract)) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static boolean retainsProviderPayload(RuntimeFeedbackContract contract) {
+		// The opt-in boolean identifies the payload even when the accounting scope has already seen it.
+		return contract != null && contract.descriptor().accountRetainedMemory((identity, bytes) -> false);
+	}
+
+	long detachedQuantityBytes() {
+		return decisionCertificate.detachedQuantityBytes();
+	}
+
+	long detachedQuantityBytes(PackedProviderRetainedMemory memory) {
+		return decisionCertificate.detachedQuantityBytes(memory);
+	}
+
+	PackedPlanRecipe withoutDetachedQuantities() {
+		PackedDecisionCertificate stripped = decisionCertificate.withoutDetachedQuantities();
+		if (stripped == decisionCertificate) {
+			return this;
+		}
+		// Preserve Frontier/stale eligibility, trace alignment and all scalar diagnostic values.
+		return new PackedPlanRecipe(rootRecipeId, operatorTags, payloadIds, deliveredPropertyIds,
+				implementationForms, sourcePhysicalExpressionIds, sourceLogicalExpressionIds, childStarts, childCounts,
+				childRecipeIds, physicalMetadataPresent, outputRows, workRows, accessRows, invocations, lookupMasks,
+				missingLookupMasks, indexPrefixLengths, indexNameIds, estimateSourceIds, estimateFusionIds,
+				accessModeIds, runtimeFeedbackContractIds, plannedStringMetricStarts, plannedStringMetricCounts,
+				plannedStringMetricNameIds, plannedStringMetricValueIds, plannedDoubleMetricStarts,
+				plannedDoubleMetricCounts,
+				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
+				dependentSubqueryPayloadIds, dependentRootRecipeIds, frontierEvidenceBundle, costingTrace, stripped,
+				cacheValidationEvent, continuationSeed, frontierBundleOrdinals, evidenceGuarantees,
+				evidenceDispositions,
+				costEventIds, providerObjects, ruleProofMask, semanticsCodec);
 	}
 
 	boolean hasDetachedEvidence() {
@@ -915,14 +983,33 @@ final class PackedPlanRecipe {
 	}
 
 	PackedPlanRecipe withoutDetachedEvidence() {
-		if (!hasDetachedEvidence()) {
-			return this;
+		boolean stripProviderPayload = hasRetainedProviderPayload();
+		if (!hasDetachedEvidence() && !stripProviderPayload) {
+			return withoutDetachedQuantities();
+		}
+		Object[] retainedProviderObjects = providerObjects;
+		int[] retainedContractIds = runtimeFeedbackContractIds;
+		if (stripProviderPayload) {
+			retainedProviderObjects = providerObjects.clone();
+			retainedContractIds = runtimeFeedbackContractIds.clone();
+			for (int objectId = 1; objectId < retainedProviderObjects.length; objectId++) {
+				if (retainedProviderObjects[objectId] instanceof RuntimeFeedbackContract contract
+						&& retainsProviderPayload(contract)) {
+					retainedProviderObjects[objectId] = null;
+				}
+			}
+			for (int recipeId = 1; recipeId < retainedContractIds.length; recipeId++) {
+				int objectId = retainedContractIds[recipeId];
+				if (objectId != 0 && retainedProviderObjects[objectId] == null) {
+					retainedContractIds[recipeId] = 0;
+				}
+			}
 		}
 		return new PackedPlanRecipe(rootRecipeId, operatorTags, payloadIds, deliveredPropertyIds,
 				implementationForms, sourcePhysicalExpressionIds, sourceLogicalExpressionIds, childStarts, childCounts,
 				childRecipeIds, physicalMetadataPresent, outputRows, workRows, accessRows, invocations, lookupMasks,
 				missingLookupMasks, indexPrefixLengths, indexNameIds, estimateSourceIds, estimateFusionIds,
-				accessModeIds, runtimeFeedbackContractIds, plannedStringMetricStarts, plannedStringMetricCounts,
+				accessModeIds, retainedContractIds, plannedStringMetricStarts, plannedStringMetricCounts,
 				plannedStringMetricNameIds,
 				plannedStringMetricValueIds, plannedDoubleMetricStarts, plannedDoubleMetricCounts,
 				plannedDoubleMetricNameIds, plannedDoubleMetricValues, dependentOwnerRecipeIds,
@@ -934,7 +1021,7 @@ final class PackedPlanRecipe {
 				continuationSeed,
 				new int[frontierBundleOrdinals.length], evidenceGuarantees, evidenceDispositions,
 				new int[costEventIds.length],
-				providerObjects, ruleProofMask, semanticsCodec);
+				retainedProviderObjects, ruleProofMask, semanticsCodec);
 	}
 
 	int evidenceStateOrdinal(int recipeId) {
@@ -1411,6 +1498,8 @@ final class PackedPlanRecipe {
 			if (evidenceBundle.requestedStateCount() != requestedStateIds.length) {
 				throw new PackedMemoInvariantException("detached Frontier request alignment changed during extraction");
 			}
+			// Event references become trace-local producer handles. Recipe and decision references below remain
+			// optional population ordinals, so a binding-only output cannot acquire a detached population lease.
 			costingTrace = costingTrace.withDetachedStateOrdinals(evidenceBundle, traceStateOffset);
 			for (int recipeId = 1; recipeId <= size; recipeId++) {
 				frontierBundleOrdinals[recipeId] = evidenceBundle.requestedStateOrdinal(recipeId);

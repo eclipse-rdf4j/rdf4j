@@ -172,7 +172,7 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 			QueryEvaluationContext context) {
 		QueryValueEvaluationStep condition;
 		try {
-			condition = strategy.precompile(leftJoin.getCondition(), context);
+			condition = scopedOccurrence(strategy.precompile(leftJoin.getCondition(), context), context);
 		} catch (QueryEvaluationException e) {
 			// A condition that fails to compile can never be true, so the OPTIONAL never matches (as in
 			// FilterIterator).
@@ -181,6 +181,15 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		// Like the ordinary OPTIONAL path, the condition only sees the operands' bindings; incoming bindings of other
 		// names may come from a sibling row and are out of scope.
 		return new ScopedQueryValueEvaluationStep(conditionScopeBindingNames(leftJoin), condition);
+	}
+
+	private static QueryValueEvaluationStep scopedOccurrence(QueryValueEvaluationStep condition,
+			QueryEvaluationContext context) {
+		return row -> {
+			try (var ignored = context.getBlankNodeAllocationScope().beginSolutionOccurrence(row)) {
+				return condition.evaluate(row);
+			}
+		};
 	}
 
 	public LeftJoinQueryEvaluationStep(QueryEvaluationStep right, QueryValueEvaluationStep condition,

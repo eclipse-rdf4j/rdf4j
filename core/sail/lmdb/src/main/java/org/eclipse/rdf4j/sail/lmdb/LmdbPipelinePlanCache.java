@@ -29,6 +29,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -46,6 +47,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 
 /** Store-owned cache of detached, fully optimized LMDB query-plan templates. */
 final class LmdbPipelinePlanCache {
@@ -163,7 +165,7 @@ final class LmdbPipelinePlanCache {
 				bypass = true;
 			} else {
 				misses.incrementAndGet();
-				owner = new Flight(key, FactorCostCacheKey.estimatedRetainedBytes(source));
+				owner = new Flight(key, FactorCostCacheKey.estimatedStructuralRetainedBytes(source));
 				segment.flights.put(key, owner);
 			}
 		}
@@ -241,7 +243,7 @@ final class LmdbPipelinePlanCache {
 				? Long.MAX_VALUE
 				: saturatedAdd(ENTRY_OBJECT_BYTES, saturatedAdd(
 						saturatedMultiply(flight.sourceRetainedBytes, 2L),
-						FactorCostCacheKey.estimatedRetainedBytes(template)));
+						FactorCostCacheKey.estimatedStructuralRetainedBytes(template)));
 		boolean owned;
 		synchronized (segment) {
 			owned = segment.flights.remove(flight.key) == flight;
@@ -250,7 +252,13 @@ final class LmdbPipelinePlanCache {
 			throw new IllegalStateException("pipeline plan cache flight is no longer owned");
 		}
 		boolean retained = template != null && publishDecision(flight.key, template, entryBytes, computation);
-		flight.result.complete(retained ? template : null);
+		// Waiters may retain a completed future after the separately charged family is retired or evicted.
+		TupleExpr flightTemplate = retained ? template : null;
+		if (flightTemplate != null && FactorCostCacheKey.retainsProviderPayload(flightTemplate)) {
+			flightTemplate = flightTemplate.clone();
+			FactorCostCacheKey.stripProviderPayload(flightTemplate);
+		}
+		flight.result.complete(flightTemplate);
 	}
 
 	private static void abandon(Segment segment, Flight flight, Throwable failure) {
@@ -546,32 +554,77 @@ final class LmdbPipelinePlanCache {
 	private record PhysicalProviderIdentity(long predicateRangeVersion) {
 	}
 
-	record DatasetIdentity(boolean present, Set<IRI> defaultRemoveGraphs, IRI defaultInsertGraph,
-			Set<IRI> defaultGraphs, Set<IRI> namedGraphs) {
+	record DatasetIdentity(boolean present, Set<Resource> defaultRemoveGraphs, Resource defaultInsertGraph,
+			Set<Resource> defaultGraphs, Set<Resource> namedGraphs, boolean explicitRead, DatasetKey key) {
 
 		static DatasetIdentity of(Dataset dataset) {
-			return dataset == null
-					? new DatasetIdentity(false, Set.of(), null, Set.of(), Set.of())
-					: new DatasetIdentity(true, immutable(dataset.getDefaultRemoveGraphs()),
-							dataset.getDefaultInsertGraph(), immutable(dataset.getDefaultGraphs()),
-							immutable(dataset.getNamedGraphs()));
+			Set<Resource> remove = dataset == null ? Set.of() : immutable(dataset.getDefaultRemoveGraphResources());
+			Resource insert = dataset == null ? null : dataset.getDefaultInsertGraphResource();
+			Set<Resource> defaults = dataset == null ? Set.of() : immutable(dataset.getDefaultGraphResources());
+			Set<Resource> named = dataset == null ? Set.of() : immutable(dataset.getNamedGraphResources());
+			boolean explicit = dataset != null && dataset.isExplicitReadDataset();
+			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
+			DatasetKey key = new DatasetKey(dataset != null, explicit, entries(remove, capture), capture.of(insert),
+					entries(defaults, capture), entries(named, capture));
+			return new DatasetIdentity(dataset != null, remove, insert, defaults, named, explicit, key);
 		}
 
 		/**
-		 * A {@code null} graph IRI names the store default graph (the null context) in a {@link Dataset}, so it must
-		 * stay part of the identity: a dataset restricted to {@code {null}} reads different data than an unrestricted
-		 * one and, consistent with {@code LmdbCascadesOptimizer.datasetUsesStoreDefaults} and
-		 * {@code LmdbDetachedPlanRefresh}, is planned as a restricted dataset. {@link Set#copyOf} rejects null
-		 * elements, hence the null-tolerant unmodifiable copy; equality stays content based.
+		 * Keep the actual selectors, including the null default context, for detached reconstruction. Private exact
+		 * identity additionally checks imported provenance; raw Resource equality is insufficient for that purpose.
 		 */
-		private static Set<IRI> immutable(Set<IRI> values) {
+		private static Set<Resource> immutable(Set<Resource> values) {
 			return values == null || values.isEmpty()
 					? Set.of()
 					: Collections.unmodifiableSet(new LinkedHashSet<>(values));
 		}
+
+		private static Map<LmdbQueryValueIdentity, Integer> entries(Set<Resource> values,
+				LmdbQueryValueIdentity.Capture capture) {
+			Map<LmdbQueryValueIdentity, Integer> entries = new LinkedHashMap<>();
+			for (Resource value : values) {
+				entries.merge(capture.of(value), 1, Integer::sum);
+			}
+			return Map.copyOf(entries);
+		}
+
+		boolean usesStoreDefaults() {
+			return !explicitRead && defaultGraphs.isEmpty() && namedGraphs.isEmpty();
+		}
+
+		Dataset toDataset() {
+			if (!present) {
+				return null;
+			}
+			SimpleDataset dataset = new SimpleDataset();
+			defaultRemoveGraphs.forEach(dataset::addDefaultRemoveGraph);
+			dataset.setDefaultInsertGraph(defaultInsertGraph);
+			defaultGraphs.forEach(dataset::addDefaultGraph);
+			namedGraphs.forEach(dataset::addNamedGraph);
+			dataset.setExplicitReadDataset(explicitRead);
+			return dataset;
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other || other instanceof DatasetIdentity identity && key.equals(identity.key);
+		}
+
+		@Override
+		public int hashCode() {
+			return key.hashCode();
+		}
 	}
 
-	record BoundValue(String name, Value value) {
+	private record DatasetKey(boolean present, boolean explicitRead, Map<LmdbQueryValueIdentity, Integer> remove,
+			LmdbQueryValueIdentity insert, Map<LmdbQueryValueIdentity, Integer> defaults,
+			Map<LmdbQueryValueIdentity, Integer> named) {
+	}
+
+	record BoundValue(String name, LmdbQueryValueIdentity identity) {
+		Value value() {
+			return identity.value();
+		}
 	}
 
 	record BindingIdentity(List<BoundValue> values) {
@@ -583,8 +636,9 @@ final class LmdbPipelinePlanCache {
 			List<String> names = new ArrayList<>(bindings.getBindingNames());
 			names.sort(String::compareTo);
 			List<BoundValue> values = new ArrayList<>(names.size());
+			LmdbQueryValueIdentity.Capture capture = new LmdbQueryValueIdentity.Capture();
 			for (String name : names) {
-				values.add(new BoundValue(name, bindings.getValue(name)));
+				values.add(new BoundValue(name, capture.of(bindings.getValue(name))));
 			}
 			return new BindingIdentity(List.copyOf(values));
 		}

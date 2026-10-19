@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.GraphQuery;
 import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.Query;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
@@ -77,7 +78,8 @@ public class SailRepositoryConnectionTest {
 	public void testPrepareQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
-		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
+		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any(), eq(QueryParseOptions.DEFAULT)))
+				.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		GraphQuery query = (GraphQuery) subject.prepareQuery("CONSTRUCT WHERE { ?s ?p ?o }");
@@ -102,7 +104,8 @@ public class SailRepositoryConnectionTest {
 	public void testPrepareTupleQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
-		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any())).thenReturn(response);
+		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.TUPLE), any(), any(), eq(QueryParseOptions.DEFAULT)))
+				.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		TupleQuery query = subject.prepareTupleQuery("SELECT * WHERE { ?s ?p ?o }");
@@ -184,7 +187,8 @@ public class SailRepositoryConnectionTest {
 	public void testPrepareGraphQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
-		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any())).thenReturn(response);
+		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.GRAPH), any(), any(), eq(QueryParseOptions.DEFAULT)))
+				.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		GraphQuery query = subject.prepareGraphQuery("CONSTRUCT WHERE { ?s ?p ?o }");
@@ -209,7 +213,9 @@ public class SailRepositoryConnectionTest {
 	public void testPrepareBooleanQuery_bypassed() {
 		TupleExpr expr = mock(TupleExpr.class);
 		Optional<TupleExpr> response = Optional.of(expr);
-		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.BOOLEAN), any(), any())).thenReturn(response);
+		when(sailConnection.prepareQuery(any(), eq(Query.QueryType.BOOLEAN), any(), any(),
+				eq(QueryParseOptions.DEFAULT)))
+						.thenReturn(response);
 		when(sailConnection.evaluate(eq(expr), any(), any(), anyBoolean())).thenReturn(new EmptyIteration<>());
 
 		BooleanQuery query = subject.prepareBooleanQuery("ASK WHERE { ?s ?p ?o }");

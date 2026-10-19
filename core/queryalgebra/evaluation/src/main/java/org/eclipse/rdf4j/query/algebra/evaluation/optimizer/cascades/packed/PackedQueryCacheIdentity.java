@@ -137,6 +137,13 @@ final class PackedQueryCacheIdentity {
 			sink.append(query.relProtectedInputNames(relationId));
 			sink.append(query.relNullableInputNames(relationId));
 			sink.append(query.relIndependentOutputNames(relationId));
+			int writes = query.relOrdinaryWriteNames(relationId);
+			if (writes != 0) {
+				// Preserve the existing identity stream for queries without ordinary writes. The tagged extension
+				// authenticates the new admission fact without expiring unrelated learned recipes.
+				sink.append(0x575249544553L);
+				sink.append(writes);
+			}
 			sink.append(query.relReplaySafety(relationId));
 			sink.append(query.relSourceFirst(relationId));
 			sink.append(query.relSourceLast(relationId));
@@ -184,7 +191,7 @@ final class PackedQueryCacheIdentity {
 		sink.append(0x4f424a45435453L);
 		sink.append(query.objectCount());
 		for (int objectId = 1; objectId <= query.objectCount(); objectId++) {
-			appendObject(sink, query.rawObjectValue(objectId));
+			sink.appendObject(query.rawObjectValue(objectId));
 		}
 
 		sink.append(0x53594d424f4c53L);
@@ -272,12 +279,17 @@ final class PackedQueryCacheIdentity {
 			sink.append(selector.blankNode() ? 1L : 0L);
 			sink.append(selector.value() == null ? 0L : 1L);
 			if (selector.value() != null) {
-				appendObject(sink, selector.value());
+				sink.appendObject(selector.value());
 			}
 		}
 	}
 
 	interface IdentitySink {
+		/** Existing consumers keep precisely the existing typed object stream. */
+		default void appendObject(Object object) {
+			PackedQueryCacheIdentity.appendObject(this, object);
+		}
+
 		void append(long value);
 
 		void append(String value);

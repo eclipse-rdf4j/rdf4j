@@ -125,11 +125,11 @@ public final class ScalarEvaluationEffects {
 			return combineValueExpressions(nary.getArguments());
 		}
 		if (expression instanceof ValueExprTripleRef tripleRef && auditedModelOperator(expression.getClass())) {
-			return combine(effectOf(tripleRef.getSubjectVar()),
-					combine(effectOf(tripleRef.getPredicateVar()), effectOf(tripleRef.getObjectVar())));
+			return combine(effectOf(tripleRef.getSubjectExpr()),
+					combine(effectOf(tripleRef.getPredicateExpr()), effectOf(tripleRef.getObjectExpr())));
 		}
 		if (expression instanceof TripleComponent component && auditedModelOperator(expression.getClass())) {
-			return effectOf(component.getTripleRefVar());
+			return effectOf(component.getTripleTermExpr());
 		}
 		return Effect.UNKNOWN;
 	}

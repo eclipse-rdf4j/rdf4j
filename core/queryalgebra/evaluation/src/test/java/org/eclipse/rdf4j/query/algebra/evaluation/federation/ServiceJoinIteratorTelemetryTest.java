@@ -16,6 +16,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Collections;
@@ -63,6 +65,7 @@ class ServiceJoinIteratorTelemetryTest {
 				(Consumer<Runnable>) rootPublisher::set);
 
 		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.preservesBNodeResultProvenance()).thenReturn(true);
 		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI())))
 				.thenReturn(new CloseableIteratorIteration<>(List.of(EmptyBindingSet.getInstance()).iterator()));
 		FederatedServiceResolver resolver = mock(FederatedServiceResolver.class);
@@ -79,6 +82,9 @@ class ServiceJoinIteratorTelemetryTest {
 				iterator.next();
 			}
 		}
+
+		verify(federatedService).evaluate(eq(service), any(), eq(service.getBaseURI()));
+		verify(strategy, never()).evaluate(eq(service), any(BindingSet.class));
 
 		assertThat(service.getLongMetricActual(TelemetryMetricNames.REMOTE_REQUEST_COUNT_ACTUAL))
 				.as("vectored SERVICE counters must remain execution-local before root close")
@@ -116,8 +122,8 @@ class ServiceJoinIteratorTelemetryTest {
 		when(strategy.evaluate(eq(service), any(BindingSet.class)))
 				.thenAnswer(invocation -> serviceStep.evaluate(invocation.getArgument(1)));
 
-		BindingSet first = singleBindingSet("serviceRef", "http://example.com/service-1");
-		BindingSet second = singleBindingSet("serviceRef", "http://example.com/service-2");
+		BindingSet first = singleEndpointBindingSet("serviceRef", "http://example.com/service-1");
+		BindingSet second = singleEndpointBindingSet("serviceRef", "http://example.com/service-2");
 		try (ServiceJoinIterator iterator = new ServiceJoinIterator(
 				new CloseableIteratorIteration<>(List.of(first, second).iterator()),
 				service,
@@ -162,7 +168,7 @@ class ServiceJoinIteratorTelemetryTest {
 		when(strategy.evaluate(eq(service), any(BindingSet.class)))
 				.thenAnswer(invocation -> serviceStep.evaluate(invocation.getArgument(1)));
 
-		BindingSet leftBindings = singleBindingSet("serviceRef", "http://example.com/service");
+		BindingSet leftBindings = singleEndpointBindingSet("serviceRef", "http://example.com/service");
 		try (ServiceJoinIterator iterator = new ServiceJoinIterator(
 				new CloseableIteratorIteration<>(List.of(leftBindings).iterator()),
 				service,
@@ -264,6 +270,7 @@ class ServiceJoinIteratorTelemetryTest {
 
 		ClosingIteration result = new ClosingIteration();
 		FederatedService federatedService = mock(FederatedService.class);
+		when(federatedService.preservesBNodeResultProvenance()).thenReturn(true);
 		when(federatedService.evaluate(eq(service), any(), eq(service.getBaseURI()))).thenReturn(result);
 		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
 		when(strategy.getService("http://example.com/service")).thenReturn(federatedService);
@@ -306,6 +313,12 @@ class ServiceJoinIteratorTelemetryTest {
 	private static BindingSet singleBindingSet(String name, String value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createLiteral(value));
+		return bindingSet;
+	}
+
+	private static BindingSet singleEndpointBindingSet(String name, String value) {
+		MapBindingSet bindingSet = new MapBindingSet();
+		bindingSet.addBinding(name, SimpleValueFactory.getInstance().createIRI(value));
 		return bindingSet;
 	}
 }

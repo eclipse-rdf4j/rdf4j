@@ -190,11 +190,15 @@ class LmdbAASQuery2CascadesHypergraphPlanningTest {
 				TupleExpr propertyValue = unwrapUnary(factors.get(propValue));
 				assertTrue(propertyValue instanceof StatementPattern,
 						() -> "Property value factor must remain a statement lookup: " + propertyValue);
-				assertTrue("directLookup".equals(propertyValue.getStringMetricPlanned("plannedIndexAccessMode")),
-						() -> "Property value factor must retain direct-lookup costing; workUnits="
+				assertEquals("prefixScan", propertyValue.getStringMetricPlanned("plannedIndexAccessMode"),
+						() -> "Property value factor must retain its subject/predicate range; workUnits="
 								+ optimized.getDoubleMetricPlanned("optimizer.cascadesWorkUnits") + ", searchNanos="
 								+ optimized.getDoubleMetricPlanned("optimizer.cascadesSearchNanos") + ", completeness="
 								+ optimized.getStringMetricPlanned("optimizer.cascadesCompleteness") + ":\n" + plan);
+				assertEquals("[S, P]",
+						propertyValue.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS));
+				assertEquals(2.0d,
+						propertyValue.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH), 0.0d);
 				assertTrue(propertyValue.getDoubleMetricPlanned("plannedAccessRows") <= 1.0d,
 						() -> "Bound property value access must stay constant-work: " + propertyValue);
 				assertTrue(LmdbCascadesOptimizer.PLANNER_ID

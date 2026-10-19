@@ -21,7 +21,6 @@ import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLongArray;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
@@ -32,6 +31,7 @@ import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
@@ -51,6 +51,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
+import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -108,6 +109,8 @@ import org.eclipse.rdf4j.query.algebra.Not;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.Order;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.Reduced;
@@ -188,6 +191,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.GroupIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.MultiProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.PathIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ProjectionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.BindingScopeAnalysis;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
@@ -200,9 +204,12 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Default SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given {@link TripleSource},
@@ -229,6 +236,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	private volatile boolean valueCapturerInitialized;
 
 	protected final Dataset dataset;
+	private final BlankNodeAllocationScope blankNodes;
+	private final ThreadLocal<int[]> compilationDepth = ThreadLocal.withInitial(() -> new int[1]);
 
 	protected FederatedServiceResolver serviceResolver;
 
@@ -357,6 +366,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			TupleFunctionRegistry tupleFunctionRegistry) {
 		this.tripleSource = tripleSource;
 		this.dataset = dataset;
+		this.blankNodes = BlankNodeAllocationScope.currentOrNew();
+		if (tripleSource != null) {
+			this.blankNodes.bindLocalValueFactory(tripleSource.getValueFactory());
+		}
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
 		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
@@ -400,11 +413,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
+		return optimizeWithBNodePreflight(expr, bindings, () -> {
+			for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
+				optimizer.optimize(expr, dataset, bindings);
+			}
+			return expr;
+		});
+	}
 
-		for (QueryOptimizer optimizer : pipeline.getOptimizers()) {
-			optimizer.optimize(expr, dataset, bindings);
+	/** Reserves original identity roles before optimization, including a subclass's cached-plan lookup. */
+	@InternalUseOnly
+	protected final TupleExpr optimizeWithBNodePreflight(TupleExpr originalExpression, BindingSet bindings,
+			Supplier<TupleExpr> optimization) {
+		LocalBNodeReferences.Analysis original = LocalBNodeReferences.analyze(originalExpression);
+		Set<String> references = blankNodes.getReferenceSnapshot(originalExpression, original.structure());
+		if (references == null) {
+			references = original.ids();
 		}
-		return expr;
+		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(originalExpression, original.structure());
+		if (knownIds == null) {
+			knownIds = original.knownIds();
+		}
+		references.forEach(blankNodes::reserve);
+		knownIds.forEach(blankNodes::reserveKnownID);
+		blankNodes.reserve(dataset);
+		blankNodes.reserve(bindings);
+
+		TupleExpr optimized = optimization.get();
+		blankNodes.rememberReferenceSnapshot(optimized, references, knownIds,
+				LocalBNodeReferences.analyze(optimized).structure());
+		return optimized;
 	}
 
 	@Deprecated(forRemoval = true) // this method is still in use and I think that there is quite a lot of work left
@@ -543,14 +581,36 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryEvaluationStep precompile(TupleExpr expr) {
-		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
-				tripleSource.getComparator());
+		QueryEvaluationContext context;
+		try (var ignored = blankNodes.activate()) {
+			context = new QueryEvaluationContext.Minimal(dataset, tripleSource.getValueFactory(),
+					tripleSource.getComparator());
+		}
 		if (expr instanceof QueryRoot && !hasUnknownBindingSetColumns(expr)) {
+			// Array layout preparation replaces Vars. Validate external mutations before this trusted rewrite,
+			// then carry the original fixed roles to the rewritten tree instead of upgrading inlined bindings.
+			LocalBNodeReferences.Analysis before = LocalBNodeReferences.analyze(expr);
+			Set<String> references = blankNodes.getReferenceSnapshot(expr, before.structure());
+			if (references == null) {
+				references = before.ids();
+			}
+			Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expr, before.structure());
+			if (knownIds == null) {
+				knownIds = before.knownIds();
+			}
 			String[] allVariables = ArrayBindingBasedQueryEvaluationContext
 					.findAllVariablesUsedInQuery((QueryRoot) expr);
+			blankNodes.rememberReferenceSnapshot(expr, references, knownIds,
+					LocalBNodeReferences.analyze(expr).structure());
 			context = new ArrayBindingBasedQueryEvaluationContext(context, allVariables, tripleSource.getComparator());
 		}
 		return precompile(expr, context);
+	}
+
+	private QueryEvaluationContext scalarContext() {
+		try (var ignored = blankNodes.activate()) {
+			return new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator());
+		}
 	}
 
 	private static boolean hasUnknownBindingSetColumns(TupleExpr expression) {
@@ -567,8 +627,44 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	@Override
 	public QueryValueEvaluationStep precompile(ValueExpr expr) {
-		return precompile(expr,
-				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()));
+		return precompile(expr, scalarContext());
+	}
+
+	@Override
+	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+		int[] depth = compilationDepth.get();
+		depth[0]++;
+		try {
+			if (depth[0] == 1) {
+				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
+			}
+			return precompileTuple(expr, context);
+		} finally {
+			if (--depth[0] == 0) {
+				compilationDepth.remove();
+			}
+		}
+	}
+
+	private void reserveLocalValues(QueryModelNode expression, BlankNodeAllocationScope scope) {
+		if (tripleSource != null) {
+			scope.bindLocalValueFactory(tripleSource.getValueFactory());
+		}
+		scope.reserve(dataset);
+		if (expression == null) {
+			return;
+		}
+		LocalBNodeReferences.Analysis current = LocalBNodeReferences.analyze(expression);
+		Set<String> originalReferences = blankNodes.getReferenceSnapshot(expression, current.structure());
+		if (originalReferences == null) {
+			originalReferences = current.ids();
+		}
+		Set<String> knownIds = blankNodes.getKnownIdentitySnapshot(expression, current.structure());
+		originalReferences.forEach(scope::reserve);
+		if (knownIds != null) {
+			knownIds.forEach(scope::reserveKnownID);
+		}
+		current.knownIds().forEach(scope::reserveKnownID);
 	}
 
 	@Override
@@ -586,8 +682,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		}
 	}
 
-	@Override
-	public QueryEvaluationStep precompile(TupleExpr expr, QueryEvaluationContext context) {
+	private QueryEvaluationStep precompileTuple(TupleExpr expr, QueryEvaluationContext context) {
 		RuntimeFeedbackCompilation compilation = runtimeFeedbackCompilation.get();
 		boolean compilationRoot = compilation == null;
 		if (compilationRoot) {
@@ -690,7 +785,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 				|| expr instanceof TupleFunctionCall) {
 			QueryEvaluationStep producer = prepared;
 			Set<String> produced = Set.copyOf(expr.getBindingNames());
-			prepared = bindings -> BindingSetOrigin.produced(producer.evaluate(bindings), produced);
+			List<Var> variables;
+			if (expr instanceof ZeroLengthPath path) {
+				variables = path.getVarList();
+			} else if (expr instanceof ArbitraryLengthPath path) {
+				variables = path.getContextVar() == null ? List.of(path.getSubjectVar(), path.getObjectVar())
+						: List.of(path.getSubjectVar(), path.getObjectVar(), path.getContextVar());
+			} else if (expr instanceof TripleRef reference) {
+				variables = reference.getVarList();
+			} else {
+				variables = ((TupleFunctionCall) expr).getResultVars();
+			}
+			prepared = bindings -> {
+				BindingSet input = BindingSetOrigin.materializeParameters(bindings, variables, context);
+				return BindingSetOrigin.produced(producer.evaluate(input), produced, input);
+			};
 		}
 		AdaptiveFilterEvaluationStep.recordPrepared(context, expr, prepared);
 		return prepared;
@@ -961,7 +1070,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryEvaluationStep arguments = precompile(node.getArg(), context);
 		Set<String> produced = Set.copyOf(node.getBindingNames());
 		return bindings -> BindingSetOrigin.produced(
-				new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments), produced);
+				new GroupIterator(DefaultEvaluationStrategy.this, node, bindings, context, arguments), produced,
+				bindings);
 	}
 
 	protected QueryEvaluationStep prepare(Intersection node, QueryEvaluationContext context)
@@ -986,12 +1096,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(MultiProjection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationStep arg = precompile(node.getArg(), context);
+		Set<String> parameterSources = ProjectionIterator.parameterSources(node.getArg(), node.getProjections());
+		QueryEvaluationStep arg = precompile(node.getArg(),
+				projectionSubstitutionContext(context, node.getProjections()));
 		return bindings -> {
 			CloseableIteration<BindingSet> evaluate = null;
 			try {
 				evaluate = arg.evaluate(bindings);
-				return new MultiProjectionIterator(node, evaluate, bindings);
+				return new MultiProjectionIterator(node, evaluate, bindings, parameterSources);
 			} catch (Throwable t) {
 				if (evaluate != null) {
 					evaluate.close();
@@ -1003,8 +1115,25 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Projection node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryEvaluationStep temp = precompile(node.getArg(), context);
+		QueryEvaluationStep temp = precompile(node.getArg(),
+				projectionSubstitutionContext(context, List.of(node.getProjectionElemList())));
 		return new ProjectionQueryEvaluationStep(node, temp, context);
+	}
+
+	private static QueryEvaluationContext projectionSubstitutionContext(QueryEvaluationContext context,
+			List<ProjectionElemList> projections) {
+		if (context.getSubstitutionBindingNames().isEmpty()) {
+			return context;
+		}
+		Set<String> visible = new HashSet<>();
+		for (ProjectionElemList projection : projections) {
+			for (ProjectionElem element : projection.getElements()) {
+				visible.add(element.getName());
+			}
+		}
+		visible.retainAll(context.getSubstitutionBindingNames());
+		return visible.equals(context.getSubstitutionBindingNames()) ? context
+				: new BindingSubstitutionQueryEvaluationContext(context, visible);
 	}
 
 	protected QueryEvaluationStep prepare(QueryRoot node, QueryEvaluationContext context)
@@ -1047,7 +1176,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryEvaluationStep prepare(Service service, QueryEvaluationContext context)
 			throws QueryEvaluationException {
 		Var serviceRef = service.getServiceRef();
-		return captureResultValues(new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver));
+		return captureResultValues(new ServiceQueryEvaluationStep(service, serviceRef, serviceResolver, context,
+				tripleSource.getValueFactory()));
 	}
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
@@ -1162,7 +1292,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		for (String name : bindings.getBindingNames()) {
 			Value value = bindings.getValue(name);
 			if (value != null) {
-				Value replacement = capturer.apply(value);
+				Value replacement = RemoteBNode.preserveProvenance(value, capturer.apply(value));
 				if (replacement != value) {
 					if (captured == null) {
 						// Initial API and external rows may contain columns outside the query's fixed array layout.
@@ -1411,6 +1541,21 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryValueEvaluationStep precompile(ValueExpr expr,
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		int[] depth = compilationDepth.get();
+		depth[0]++;
+		try {
+			if (depth[0] == 1) {
+				reserveLocalValues(expr, context.getBlankNodeAllocationScope());
+			}
+			return precompileValue(expr, context);
+		} finally {
+			if (--depth[0] == 0) {
+				compilationDepth.remove();
+			}
+		}
+	}
+
+	private QueryValueEvaluationStep precompileValue(ValueExpr expr, QueryEvaluationContext context) {
 		QueryValueEvaluationStep prepared;
 		if (expr instanceof Var) {
 			prepared = prepare((Var) expr, context);
@@ -1586,10 +1731,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Override
 	public Value evaluate(ValueExpr expr, BindingSet bindings)
 			throws QueryEvaluationException {
-		return precompile(expr,
-				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset,
-						tripleSource.getComparator()))
-								.evaluate(bindings);
+		try (var ignored = blankNodes.beginSolutionOccurrence(bindings)) {
+			return precompile(expr, scalarContext()).evaluate(bindings);
+		}
 	}
 
 	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
@@ -1626,7 +1770,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			QueryValueEvaluationStep nodeVes = precompile(nodeIdExpr, context);
 			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf, context);
 		} else {
-			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> vf.createBNode());
+			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> {
+				context.getBlankNodeAllocationScope().reserve(bs);
+				return context.getBlankNodeAllocationScope().createBNode(vf);
+			});
 		}
 	}
 
@@ -2129,9 +2276,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	@Deprecated(forRemoval = true)
 	public Value evaluate(Regex node, BindingSet bindings)
 			throws QueryEvaluationException {
-		return prepare(node,
-				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()))
-						.evaluate(bindings);
+		return prepare(node, scalarContext()).evaluate(bindings);
 	}
 
 	/**
@@ -2512,69 +2657,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 		}
 
-		Set<String> pathVariables = new HashSet<>();
-		subQuery.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
-			@Override
-			public void meet(Exists nested) {
-				// A nested invocation captures its own binding domain, including bindings produced by this body.
-			}
-
-			@Override
-			public void meet(ZeroLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
-			}
-
-			@Override
-			public void meet(ArbitraryLengthPath path) {
-				addEndpoint(path.getSubjectVar());
-				addEndpoint(path.getObjectVar());
-				super.meet(path);
-			}
-
-			@Override
-			public void meetOther(QueryModelNode node) {
-				if (node instanceof ZeroLengthPath path) {
-					meet(path);
-				} else if (node instanceof ArbitraryLengthPath path) {
-					meet(path);
-				} else {
-					super.meetOther(node);
-				}
-			}
-
-			private void addEndpoint(Var endpoint) {
-				if (!endpoint.isConstant()) {
-					pathVariables.add(endpoint.getName());
-				}
-			}
-		});
-		if (pathVariables.isEmpty()) {
-			return new ExistsQueryValueEvaluationStep(
-					FilterIterator.existsProbeFunction(subQuery, precompile(subQuery, context), this, context));
-		}
-
-		Set<String> referencedNames = Set.copyOf(pathVariables);
-		var variants = new ConcurrentHashMap<Set<String>, Function<BindingSet, CloseableIteration<BindingSet>>>();
-		Function<BindingSet, CloseableIteration<BindingSet>> probe = bindings -> {
-			Set<String> domain = new HashSet<>();
-			for (String name : referencedNames) {
-				if (bindings.getValue(name) != null) {
-					domain.add(name);
-				}
-			}
-			// Cache prepared code by domain, never values. Each variant has immutable substitution provenance, so
-			// concurrent/lazy invocations cannot change another invocation's interpretation of its path endpoints.
-			Function<BindingSet, CloseableIteration<BindingSet>> variant = variants.computeIfAbsent(Set.copyOf(domain),
-					names -> {
-						QueryEvaluationContext substituted = new BindingSubstitutionQueryEvaluationContext(context,
-								names);
-						return FilterIterator.existsProbeFunction(subQuery, precompile(subQuery, substituted), this,
-								substituted);
-					});
-			return variant.apply(bindings);
-		};
-		return new ExistsQueryValueEvaluationStep(probe);
+		return new ExistsQueryValueEvaluationStep(
+				FilterIterator.existsProbeFunction(subQuery, precompile(subQuery, context), this, context));
 	}
 
 	@Override
@@ -2624,16 +2708,24 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(ValueExprTripleRef node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryValueEvaluationStep subject = precompile(node.getSubjectVar(), context);
-		QueryValueEvaluationStep predicate = precompile(node.getPredicateVar(), context);
-		QueryValueEvaluationStep object = precompile(node.getObjectVar(), context);
-		ValueFactory valueFactory = tripleSource.getValueFactory();
-		return new ValueExprTripleRefEvaluationStep(subject, valueFactory, predicate, object);
-
+		QueryValueEvaluationStep subject = precompile(node.getSubjectExpr(), context);
+		QueryValueEvaluationStep predicate = precompile(node.getPredicateExpr(), context);
+		QueryValueEvaluationStep object = precompile(node.getObjectExpr(), context);
+		// Constructing a structural value is a read expression, not backend dictionary admission.
+		QueryValueEvaluationStep triple = new ValueExprTripleRefEvaluationStep(subject,
+				SimpleValueFactory.getInstance(), predicate, object);
+		Function<Value, Value> capturer = valueCapturer();
+		if (capturer == null) {
+			return triple;
+		}
+		return bindings -> {
+			Value value = triple.evaluate(bindings);
+			return RemoteBNode.preserveProvenance(value, capturer.apply(value));
+		};
 	}
 
 	protected QueryValueEvaluationStep prepare(TripleComponent expr, QueryEvaluationContext context) {
-		QueryValueEvaluationStep tripleTerm = precompile(expr.getTripleRefVar(), context);
+		QueryValueEvaluationStep tripleTerm = precompile(expr.getTripleTermExpr(), context);
 		return new ValueExprTripleTermComponentEvaluationStep(tripleTerm, expr.getRole());
 	}
 

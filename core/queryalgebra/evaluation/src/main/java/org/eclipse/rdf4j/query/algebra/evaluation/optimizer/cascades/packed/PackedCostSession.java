@@ -31,6 +31,14 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDi
 public interface PackedCostSession extends AutoCloseable {
 
 	/**
+	 * Binds the current search's borrowed optional retention owner before any provider callback. Old providers ignore
+	 * this view; independently retained provider identities must fail closed when NONE is bound. Never retain the view
+	 * in a recipe, replay checkpoint or feedback descriptor. The provider clears it when its session closes.
+	 */
+	default void bindProviderMemory(PackedProviderMemory memory) {
+	}
+
+	/**
 	 * Routes one estimate according to whether its context has a retained prefix.
 	 */
 	default void estimate(int relationId, PackedCostContext context, PackedCostEstimate output) {
@@ -201,6 +209,10 @@ final class ScalarPackedCostSession implements PackedCostSession {
 /** Records each completed provider invocation before its estimate can enter winner metadata. */
 @PackedHotPath
 final class EventSourcingPackedCostSession implements PackedCostSession {
+	@Override
+	public void bindProviderMemory(PackedProviderMemory memory) {
+		delegate.bindProviderMemory(Objects.requireNonNull(memory, "provider memory"));
+	}
 
 	private final PackedCostSession delegate;
 	private final PackedCostingTraceArena trace;
@@ -358,19 +370,25 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
 		 */
 		PackedPhysicalJoinCosting.stampImplementation(implementation, output);
 		PackedCostContext invocationContext = prepareInvocation(context, output, true);
-		int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation, invocationContext,
-				providerInput);
-		if (retainedEventId != 0) {
-			trace.restore(retainedEventId, output);
-			return;
-		}
+		int previous = invocationContext.setPhysicalJoinImplementation(implementation);
 		try {
-			delegate.refineIntermediateJoin(invocationContext, output);
-			trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInputSourceStateId,
-					invocationContext, providerInput, output,
-					providerObjective(output));
-		} catch (FrontierMemoryLimitException insufficientMemory) {
-			throw resourceLimit(insufficientMemory);
+			int retainedEventId = trace.findInvocation(PackedCostingPhase.PHYSICAL_JOIN, implementation,
+					invocationContext,
+					providerInput);
+			if (retainedEventId != 0) {
+				trace.restore(retainedEventId, output);
+				return;
+			}
+			try {
+				delegate.refineIntermediateJoin(invocationContext, output);
+				trace.append(PackedCostingPhase.PHYSICAL_JOIN, implementation, context, providerInputSourceStateId,
+						invocationContext, providerInput, output,
+						providerObjective(output));
+			} catch (FrontierMemoryLimitException insufficientMemory) {
+				throw resourceLimit(insufficientMemory);
+			}
+		} finally {
+			invocationContext.setPhysicalJoinImplementation(previous);
 		}
 	}
 
@@ -479,6 +497,10 @@ final class EventSourcingPackedCostSession implements PackedCostSession {
  * provider API.
  */
 final class ProofAwarePackedCostSession implements PackedCostSession {
+	@Override
+	public void bindProviderMemory(PackedProviderMemory memory) {
+		delegate.bindProviderMemory(Objects.requireNonNull(memory, "provider memory"));
+	}
 
 	private final PackedQuery query;
 	private final PackedCostSession delegate;

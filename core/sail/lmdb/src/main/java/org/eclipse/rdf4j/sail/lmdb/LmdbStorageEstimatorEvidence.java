@@ -18,7 +18,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalDouble;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
@@ -38,6 +37,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterValuesAnchorSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -162,6 +162,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		}
 		if (cardinalities != null && !frontierAnswered) {
 			LmdbFrontierLeafAnswer.storageFallback(cardinalities, statisticsMode, frontier, pattern, context)
+					.map(fallback -> fallback.withRowScope(RowScope.PER_INVOCATION))
 					.ifPresent(candidates::add);
 		}
 		if (synopsis != null) {
@@ -201,7 +202,7 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 						.withSketchRelation(Set.of(name),
 								new ExactDistinctCountSketch(boundedDistinct, candidate.estimate().rows()));
 				candidates.set(index, new EstimateCandidate(enriched, candidate.evidence(), candidate.kind(),
-						candidate.freshness()));
+						candidate.freshness(), candidate.rowScope()));
 			}
 		}
 	}
@@ -589,7 +590,10 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 
 	private static EstimateCandidate candidate(TupleExpr expression, double rows, RowEvidence evidence,
 			EstimateCandidate.Kind kind, DistributionSketch distribution, Set<String> distributionVariables) {
-		return EstimateCandidate.of(expression, rows, evidence, kind, distribution, distributionVariables);
+		EstimateCandidate result = EstimateCandidate.of(expression, rows, evidence, kind, distribution,
+				distributionVariables);
+		// The native statement owner supplies standalone storage quantities. Other algebra leaves stay undeclared.
+		return expression instanceof StatementPattern ? result.withRowScope(RowScope.PER_INVOCATION) : result;
 	}
 
 	static QuadProbe probe(StatementPattern pattern, EstimateContext context) {
@@ -687,13 +691,5 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		return Double.isFinite(rows) && rows >= 0.0d;
 	}
 
-	private record ExactDistinctCountSketch(double distinctRows, double rowMass) implements DistributionSketch {
-		@Override
-		public OptionalDouble totalRows() {
-			return OptionalDouble.of(rowMass);
-		}
-	}
 
-	private record MissingIriComparison(String variableName, IRI constant) {
-	}
 }

@@ -13,7 +13,9 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -39,15 +41,21 @@ final class LmdbSemanticPopulationProof {
 	private final Map<Node, Integer> interned = new HashMap<>();
 	private Node[] nodes = new Node[64];
 	private int nodeCount;
+	private int bindingNodeCount;
 	private final int[] joinLeft;
 	private final int[] joinRight;
 	private final boolean[] joinChecked;
 	private final byte[] repeatability;
+	private final byte[] relationBindingWriteFree;
 	private final Map<Integer, Long> atoms = new TreeMap<>();
 	private final Map<Integer, Long> pending = new HashMap<>();
 	private final Map<Integer, Byte> visits = new HashMap<>();
 	private int[] stack = new int[64];
 	private int[] order = new int[64];
+	private byte[] bindingWriteFree = new byte[64];
+	private int bindingChecked;
+	private int[] bindingVisits = new int[64];
+	private int bindingVisit;
 
 	LmdbSemanticPopulationProof(PackedQueryView query, int maximumStates) {
 		this.query = query;
@@ -56,6 +64,7 @@ final class LmdbSemanticPopulationProof {
 		this.joinRight = new int[joinLeft.length];
 		this.joinChecked = new boolean[joinLeft.length];
 		this.repeatability = new byte[joinLeft.length];
+		this.relationBindingWriteFree = new byte[joinLeft.length];
 	}
 
 	int isolated(int relation, PackedCostContext context, PackedCostEstimate output) {
@@ -84,6 +93,23 @@ final class LmdbSemanticPopulationProof {
 			}
 		}
 		return whole(relation, nodes[leftProof].frame());
+	}
+
+	/** Authenticates supplied populations before logical pricing without interning an output proof. */
+	boolean operatorInputsMatch(int relation, int leftProof, int rightProof, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (output.hasComponentOutputRows() || leftProof == 0
+				|| !frame(context).equals(nodes[leftProof].frame()) || query.childCount(relation) == 0
+				|| !matches(leftProof, query.childRelationId(relation, 0))) {
+			return false;
+		}
+		// Match the protected operator() contract, including an omitted owned correlated SEMI/ANTI RHS.
+		if (query.childCount(relation) > 1 && (!query.isSemiJoin(relation) && !query.isAntiJoin(relation)
+				|| context.rightInputEvidenceStateId() != 0)) {
+			return rightProof != 0 && nodes[leftProof].frame().equals(nodes[rightProof].frame())
+					&& matches(rightProof, query.childRelationId(relation, 1));
+		}
+		return true;
 	}
 
 	int append(int prefixProof, int relation, PackedCostContext context, PackedCostEstimate output) {
@@ -127,6 +153,167 @@ final class LmdbSemanticPopulationProof {
 		return proof != 0 && !output.hasComponentOutputRows() && nodes[proof].frame().equals(frame(context));
 	}
 
+	/** A selection preserves bindings without certifying the population selected from its actual input. */
+	int selectionBindingSource(int relation, int inputSource, PackedCostContext context, PackedCostEstimate output) {
+		return compatibleContext(inputSource, context, output) && query.isFilter(relation)
+				&& !query.isSemiJoin(relation) && !query.isAntiJoin(relation) && query.childCount(relation) == 1
+				&& repeatable(group(relation)) ? inputSource : 0;
+	}
+
+	/** An unordered binding union is safe only when both actual operands have no ordinary writes. */
+	int joinBindingSources(int left, int right, PackedCostContext context, PackedCostEstimate output) {
+		return compatibleContext(left, context, output) && compatibleContext(right, context, output)
+				&& bindingWriteFree(left) && bindingWriteFree(right) ? join(left, right) : 0;
+	}
+
+	/**
+	 * Projects only S/P/O assurances. This is neither a population identity nor context-domain authority. Scratch and
+	 * cached write facts are bounded by the existing G+2S proof arena; repeated DAG tails are visited once per lookup.
+	 */
+	int assuredStatementMask(int source, int statement, PackedCostContext context, PackedCostEstimate output) {
+		if (!compatibleContext(source, context, output) || !safeBindingProjection(source)) {
+			return 0;
+		}
+		if (++bindingVisit == 0) {
+			Arrays.fill(bindingVisits, 0);
+			bindingVisit = 1;
+		}
+		int mask = 0;
+		int top = 0;
+		stack[top++] = source;
+		while (top > 0 && mask != 7) {
+			int id = stack[--top];
+			if (bindingVisits[id] == bindingVisit) {
+				continue;
+			}
+			bindingVisits[id] = bindingVisit;
+			Node node = nodes[id];
+			if (node.kind() == WHOLE) {
+				for (int component = 0; component < 3; component++) {
+					if (query.relationAssuresStatementComponent(node.group(), statement, component)) {
+						mask |= 1 << component;
+					}
+				}
+			} else {
+				if (top + 2 > stack.length) {
+					stack = Arrays.copyOf(stack, Math.min(maximumNodes + 1, stack.length << 1));
+				}
+				stack[top++] = node.left();
+				stack[top++] = node.right();
+			}
+		}
+		return mask;
+	}
+
+	Set<String> assuredPhysicalBindings(int source, int factor, PackedCostContext context, PackedCostEstimate output) {
+		if (!compatibleContext(source, context, output) || !safeBindingProjection(source)) {
+			return Set.of();
+		}
+		Set<String> assured = new LinkedHashSet<>();
+		Set<String> inputs = query.bindingNames(query.materializeRelation(factor));
+		if (++bindingVisit == 0) {
+			Arrays.fill(bindingVisits, 0);
+			bindingVisit = 1;
+		}
+		int top = 0;
+		stack[top++] = source;
+		while (top > 0) {
+			int id = stack[--top];
+			if (bindingVisits[id] == bindingVisit) {
+				continue;
+			}
+			bindingVisits[id] = bindingVisit;
+			Node node = nodes[id];
+			if (node.kind() == WHOLE) {
+				for (String name : inputs) {
+					if (query.relationAssuresBinding(node.group(), name)) {
+						assured.add(name);
+					}
+				}
+			} else {
+				if (top + 2 > stack.length) {
+					stack = Arrays.copyOf(stack, Math.min(maximumNodes + 1, stack.length << 1));
+				}
+				stack[top++] = node.left();
+				stack[top++] = node.right();
+			}
+		}
+		return Set.copyOf(assured);
+	}
+
+	// Binding-origin readers borrow semantic nodes. These accessors grant no population certificate.
+	int retainedNodeCount() {
+		return nodeCount + bindingNodeCount;
+	}
+
+	int originNodeLimit() {
+		return maximumNodes;
+	}
+
+	boolean reserveBindingNodes(int count) {
+		if (count < 0 || count > maximumNodes - nodeCount - bindingNodeCount) {
+			return false;
+		}
+		bindingNodeCount += count;
+		return true;
+	}
+
+	int originRelation(int source) {
+		return nodes[source].kind() == WHOLE ? nodes[source].group() : 0;
+	}
+
+	int originLeft(int source) {
+		return nodes[source].kind() == BAG_JOIN ? nodes[source].left() : 0;
+	}
+
+	int originRight(int source) {
+		return nodes[source].kind() == BAG_JOIN ? nodes[source].right() : 0;
+	}
+
+	/** Binding-only borrowing preserves structural scope and exact correlation/inherited-input identity. */
+	boolean originBindingFrameMatches(int source, PackedCostContext context) {
+		if (source <= 0 || source > nodeCount) {
+			return false;
+		}
+		Frame captured = nodes[source].frame();
+		return captured.correlation() == context.correlationMaskId()
+				&& context.hasSameStructuralScope(captured.semanticScope())
+				&& captured.assuredGroup() == originAssuredGroup(context);
+	}
+
+	boolean originRepeatable(int relation) {
+		return repeatable(group(relation));
+	}
+
+	int originAssuredGroup(PackedCostContext context) {
+		return context.assuredBindingRelationId() == 0 ? 0 : group(context.assuredBindingRelationId());
+	}
+
+	private boolean safeBindingProjection(int source) {
+		// A WHOLE operator retains its sequential write frame. The BAG union rule remains strictly write-free.
+		return bindingWriteFree(source) || source != 0 && nodes[source].kind() == WHOLE
+				&& query.hasOnlyPureBindingAliasWrites(nodes[source].group());
+	}
+
+	private boolean bindingWriteFree(int source) {
+		// Interned operands precede their parent, so each immutable DAG node needs only one audit.
+		while (bindingChecked < nodeCount) {
+			int id = ++bindingChecked;
+			Node node = nodes[id];
+			boolean safe = node.kind() == WHOLE ? relationBindingWriteFree(node.group())
+					: bindingWriteFree[node.left()] == 1 && bindingWriteFree[node.right()] == 1;
+			bindingWriteFree[id] = safe ? (byte) 1 : (byte) 2;
+		}
+		return source != 0 && bindingWriteFree[source] == 1;
+	}
+
+	private boolean relationBindingWriteFree(int relation) {
+		if (relationBindingWriteFree[relation] == 0) {
+			relationBindingWriteFree[relation] = query.hasOrdinaryBindingWrites(relation) ? (byte) 2 : (byte) 1;
+		}
+		return relationBindingWriteFree[relation] == 1;
+	}
+
 	/** Returns a temporary exact multiplicity inventory. No inventory is retained per dense state. */
 	Map<Integer, Long> semanticAtoms(int proof) {
 		if (proof == 0 || !collect(proof, 0, false)) {
@@ -153,12 +340,14 @@ final class LmdbSemanticPopulationProof {
 		if (existing != null) {
 			return existing;
 		}
-		if (nodeCount >= maximumNodes) {
+		if (nodeCount + bindingNodeCount >= maximumNodes) {
 			return 0;
 		}
 		int id = ++nodeCount;
 		if (id == nodes.length) {
 			nodes = Arrays.copyOf(nodes, Math.min(maximumNodes + 1, nodes.length << 1));
+			bindingWriteFree = Arrays.copyOf(bindingWriteFree, nodes.length);
+			bindingVisits = Arrays.copyOf(bindingVisits, nodes.length);
 		}
 		nodes[id] = node;
 		interned.put(node, id);

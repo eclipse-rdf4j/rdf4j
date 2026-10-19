@@ -97,6 +97,25 @@ final class PackedSearchCheckpoint {
 		return continuationRecipe;
 	}
 
+	PackedSearchCheckpoint withoutRetainedProviderPayload() {
+		if (!continuationRecipe.hasRetainedProviderPayload()) {
+			return withoutDetachedQuantities();
+		}
+		return new PackedSearchCheckpoint(familyIdentity, phase, completionStatus,
+				continuationRecipe.withoutDetachedEvidence(), phaseCursors, retainedCandidateFingerprints,
+				continuationKeys, openWorklist, structuralPruningRecords, costPruningRecords,
+				costPruningEvidenceGenerations, costPruningMargins, 0L, 0L, cumulativeWorkUnits);
+	}
+
+	PackedSearchCheckpoint withoutDetachedQuantities() {
+		PackedPlanRecipe stripped = continuationRecipe.withoutDetachedQuantities();
+		return stripped == continuationRecipe ? this
+				: new PackedSearchCheckpoint(familyIdentity, phase, completionStatus, stripped, phaseCursors,
+						retainedCandidateFingerprints, continuationKeys, openWorklist, structuralPruningRecords,
+						costPruningRecords, costPruningEvidenceGenerations, costPruningMargins, 0L, 0L,
+						cumulativeWorkUnits);
+	}
+
 	long cumulativeWorkUnits() {
 		return cumulativeWorkUnits;
 	}

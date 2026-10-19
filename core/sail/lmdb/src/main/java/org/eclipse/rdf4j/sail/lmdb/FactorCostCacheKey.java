@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -33,6 +34,8 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 
 final class FactorCostCacheKey {
@@ -59,6 +62,7 @@ final class FactorCostCacheKey {
 			return new DetachedFactorFingerprint("null", 64L);
 		}
 		TupleExpr detached = factor.clone();
+		stripProviderPayload(detached);
 		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor();
 		detached.visit(retainedBytes);
 		return new DetachedFactorFingerprint(
@@ -73,6 +77,97 @@ final class FactorCostCacheKey {
 		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor();
 		factor.visit(retainedBytes);
 		return retainedBytes.retainedBytes();
+	}
+
+	/**
+	 * Structural part for native publication: the family charges its provider payload separately in one shared scope.
+	 */
+	static long estimatedStructuralRetainedBytes(TupleExpr factor) {
+		if (factor == null) {
+			return 64L;
+		}
+		RetainedBytesVisitor retainedBytes = new RetainedBytesVisitor(false);
+		factor.visit(retainedBytes);
+		return retainedBytes.retainedBytes();
+	}
+
+	static final class ProviderRetainedMemory implements RuntimeFeedbackDescriptor.RetainedMemoryAccount {
+		private final IdentityHashMap<Object, Boolean> seen = new IdentityHashMap<>();
+		private long bytes;
+
+		@Override
+		public boolean add(Object identity, long modeledBytes) {
+			if (identity == null || seen.put(identity, Boolean.TRUE) != null) {
+				return false;
+			}
+			if (modeledBytes < 0L) {
+				throw new IllegalArgumentException("negative retained provider bytes");
+			}
+			bytes = saturatedAdd(bytes, modeledBytes);
+			return true;
+		}
+
+		void account(RuntimeFeedbackContract contract) {
+			if (contract != null && contract.descriptor().accountRetainedMemory(this)) {
+				add(contract, 160L);
+				add(contract.rawPrediction(), 112L);
+				add(contract.appliedPrediction(), 112L);
+				add(contract.rawDependentPrediction(), 96L);
+				add(contract.appliedDependentPrediction(), 96L);
+			}
+		}
+
+		void account(TupleExpr tree) {
+			tree.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				protected void meetNode(QueryModelNode node) {
+					account(node.getRuntimeFeedbackContract());
+					super.meetNode(node);
+				}
+			});
+		}
+
+		long bytes() {
+			return bytes;
+		}
+	}
+
+	static boolean retainsProviderPayload(TupleExpr tree) {
+		boolean[] retained = { false };
+		tree.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (retained[0]) {
+					return;
+				}
+				RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+				retained[0] = contract != null
+						&& contract.descriptor().accountRetainedMemory((identity, bytes) -> false);
+				if (!retained[0]) {
+					super.meetNode(node);
+				}
+			}
+		});
+		return retained[0];
+	}
+
+	/** Removes only optional provider payload from an already detached structural/executable cache owner. */
+	static void stripProviderPayload(TupleExpr detached) {
+		detached.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+				if (contract != null && contract.descriptor().accountRetainedMemory((identity, bytes) -> false)) {
+					node.setRuntimeFeedbackContract(null);
+					// An absent modern contract must never revive the independently audited legacy admission path.
+					if (node.getStringMetricPlanned(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS) == null) {
+						node.setStringMetricPlanned(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS,
+								"unavailable");
+					}
+				}
+				super.meetNode(node);
+			}
+		});
 	}
 
 	static Object uncachedFactorFingerprint(TupleExpr factor, LmdbEstimatorOptimizationScope scope) {
@@ -454,10 +549,24 @@ final class FactorCostCacheKey {
 
 	private static final class RetainedBytesVisitor extends AbstractQueryModelVisitor<RuntimeException> {
 
+		private final boolean includeProviderPayload;
+
+		RetainedBytesVisitor() {
+			this(true);
+		}
+
+		RetainedBytesVisitor(boolean includeProviderPayload) {
+			this.includeProviderPayload = includeProviderPayload;
+		}
+
 		private long retainedBytes = 256L;
+		private final ProviderRetainedMemory providerMemory = new ProviderRetainedMemory();
 
 		@Override
 		protected void meetNode(QueryModelNode node) {
+			if (includeProviderPayload) {
+				providerMemory.account(node.getRuntimeFeedbackContract());
+			}
 			retainedBytes = saturatedAdd(retainedBytes,
 					saturatedAdd(192L, stringBytes(node.getClass().getName())));
 			if (node instanceof Var var) {
@@ -493,7 +602,7 @@ final class FactorCostCacheKey {
 		}
 
 		private long retainedBytes() {
-			return retainedBytes;
+			return saturatedAdd(retainedBytes, providerMemory.bytes());
 		}
 	}
 

@@ -16,6 +16,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Exact applicability contract under which one logical or physical observation may be reused. */
 final class LearningApplicability {
 
@@ -62,6 +64,14 @@ final class LearningApplicability {
 					Long.parseUnsignedLong(fields[6], 16));
 		} catch (IllegalArgumentException malformed) {
 			return null;
+		}
+	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		if (account.add(this, 88L)) {
+			account.add(conditionalFeatureBucket, 40L + 2L * conditionalFeatureBucket.length());
+			account.add(externalForm, 40L + 2L * externalForm.length());
+			account.add(digest, 40L + 2L * digest.length());
 		}
 	}
 

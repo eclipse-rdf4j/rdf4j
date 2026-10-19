@@ -21,9 +21,13 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceProfile;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceStateSummary;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableSetKey;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 
 record SemanticEstimateCacheKey(Object expression, Set<String> boundNames,
@@ -188,5 +192,35 @@ record FiniteBranchRowsCacheKey(List<Object> factors, boolean decisionDriven) {
 		}
 		// The fingerprint list is freshly built and never escapes this key; no defensive copy needed.
 		return new FiniteBranchRowsCacheKey(fingerprints, decisionDriven);
+	}
+}
+
+record EstimationSessionContextKey(Object boundMask, Object finiteBindings,
+		EstimationSessionPrefixEvidenceKey prefixEvidence,
+		double invocations,
+		Object evidencePolicy, Object graphDomain, Object estimationTier, Object snapshotIdentity,
+		long snapshotVersion,
+		boolean exactProbePermitted) {
+
+	static EstimationSessionContextKey from(EstimateContext context) {
+		return new EstimationSessionContextKey(context.boundMask(), context.finiteBindings(),
+				EstimationSessionPrefixEvidenceKey.from(context.prefixEstimate()),
+				context.invocationCount(), context.evidencePolicy(), context.graphDomain(),
+				context.estimationTier(),
+				context.snapshotIdentity(),
+				context.snapshotVersion(), context.exactProbePermitted());
+	}
+}
+
+record EstimationSessionPrefixEvidenceKey(double rows, double confidence,
+		Map<String, VariableEstimate> variables,
+		Map<VariableSetKey, FiniteRelationEstimate> finiteRelations,
+		Map<VariableSetKey, SketchEvidence> sketches,
+		Map<VariableSetKey, SketchEvidence> supportingSketches) {
+
+	static EstimationSessionPrefixEvidenceKey from(BagEstimate prefix) {
+		var evidence = prefix.evidenceProfile();
+		return new EstimationSessionPrefixEvidenceKey(evidence.rows(), evidence.confidence(), evidence.variables(),
+				evidence.finiteRelations(), evidence.sketches(), evidence.supportingSketches());
 	}
 }

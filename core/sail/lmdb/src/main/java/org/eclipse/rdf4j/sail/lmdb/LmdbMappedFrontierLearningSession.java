@@ -22,6 +22,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 
@@ -35,11 +36,13 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.BindingMask;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderMemory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorKey.UnkeyableOperatorException;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 
 /**
  * Query-local learning bridge for a directly queryable V2 statistics generation. It deliberately derives all identities
@@ -51,7 +54,41 @@ final class LmdbMappedFrontierLearningSession {
 	private static final double PREDICTIVE_UPPER_Z_999 = 3.2905267314919255d;
 	private static final String EXECUTION_MODE = "mapped-statistics-v2";
 	private static final long SEMANTIC_POPULATION_MODEL_EPOCH = 2L;
+	private static final Set<String> PHYSICAL_PREDICTION_ANNOTATIONS = physicalPredictionAnnotations();
 
+	private static Set<String> physicalPredictionAnnotations() {
+		Set<String> names = new LinkedHashSet<>();
+		String[] suffixes = { "raw", "corrected", "predictiveLower", "predictiveUpper", "posteriorLogMean",
+				"posteriorLogMeanVariance", "posteriorPredictiveVariance", "posteriorPrecision", "exactEvidence",
+				"familyEvidence", "legacyEvidence", "gate.outcome", "gate.exactCellObservations",
+				"gate.calibrationObservations" };
+		for (FrontierCostDimension dimension : FrontierCostDimension.values()) {
+			if (dimension == FrontierCostDimension.OUTPUT_ROWS
+					|| dimension == FrontierCostDimension.SEMI_ANTI_HIT_RATE) {
+				continue;
+			}
+			String prefix = "optimizer.frontierLeo." + dimension.name().toLowerCase(Locale.ROOT) + '.';
+			for (String suffix : suffixes) {
+				names.add(prefix + suffix);
+			}
+		}
+		names.add("optimizer.frontierLeo.work_rows.raw");
+		names.add("optimizer.frontierLeoPhysicalDimensionCount");
+		names.add("optimizer.frontierLeoPhysicalPriceAdmission");
+		names.add("optimizer.lifecycleEnforced");
+		names.add("optimizer.lifecycleEligible");
+		names.add("optimizer.lifecycleLastGood");
+		names.add("optimizer.lifecycleComparisonCost");
+		names.add("optimizer.lifecycleRegressionLimit");
+		names.add("optimizer.lifecycleLastGoodPhysicalDigest");
+		names.add("optimizer.lifecycleState");
+		names.add("optimizer.lifecycleReason");
+		names.add("optimizer.lifecycleAdmissionReason");
+		return Set.copyOf(names);
+	}
+
+	private final LmdbPhysicalEventOrigins physicalOrigins;
+	private final Map<IndependentDimensionKey, FrontierLearningModel.DimensionDecision> independentPosteriors = new HashMap<>();
 	private final LmdbEstimatorRuntime runtime;
 	private final PackedQueryView query;
 	private final boolean datasetUsesStoreDefaults;
@@ -64,10 +101,17 @@ final class LmdbMappedFrontierLearningSession {
 	private final LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin[] relationOrigins;
 	private final BitSet[] operatorRelationGroups;
 	private final HashMap<String, Object> pinnedPosteriors = new HashMap<>();
+	private FrontierLearningModel.DimensionEstimate[] pendingPhysical;
 	private final Map<Integer, List<SemanticBinding>> semanticBindings = new HashMap<>();
 
 	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
 			boolean datasetUsesStoreDefaults) {
+		this(runtime, query, datasetUsesStoreDefaults, new LmdbPhysicalEventOrigins(query, datasetUsesStoreDefaults));
+	}
+
+	LmdbMappedFrontierLearningSession(LmdbEstimatorRuntime runtime, PackedQueryView query,
+			boolean datasetUsesStoreDefaults, LmdbPhysicalEventOrigins physicalOrigins) {
+		this.physicalOrigins = physicalOrigins;
 		this.runtime = runtime;
 		this.query = query;
 		this.datasetUsesStoreDefaults = datasetUsesStoreDefaults;
@@ -172,7 +216,22 @@ final class LmdbMappedFrontierLearningSession {
 		apply(0, relations, context, output, populationQualified, false, false, semanticAtoms, populationQualified);
 	}
 
+	void bindProviderMemory(PackedProviderMemory memory) {
+		physicalOrigins.bind(memory);
+	}
+
+	void close() {
+		physicalOrigins.close();
+		independentPosteriors.clear();
+	}
+
 	void refresh(PackedCostEstimate output) {
+		if (output != null && output.runtimeFeedbackContract() != null
+				&& output.runtimeFeedbackContract()
+						.descriptor()instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
+			output.setRuntimeFeedbackContract(independentContract(physical, output));
+			return;
+		}
 		if (output == null || !(output.runtimeFeedbackContract() != null
 				&& output.runtimeFeedbackContract().descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return;
@@ -264,6 +323,128 @@ final class LmdbMappedFrontierLearningSession {
 		refresh(output);
 	}
 
+	void applyIndependentPhysical(int relation, PhysicalEventKey.Origin origin, PackedCostContext context,
+			PackedCostEstimate output) {
+		RuntimeFeedbackContract previous = output.runtimeFeedbackContract();
+		if (previous != null && (previous.descriptor() instanceof LmdbPhysicalEventFeedbackDescriptor
+				|| previous.descriptor() == TelemetryDescriptor.INSTANCE)) {
+			// A public candidate copy transports the previous event's contract. This callback must authenticate and
+			// describe its own output, including refusal; it cannot retain that contract after a frame/extent decline.
+			output.setRuntimeFeedbackContract(null);
+		}
+		if (origin == null || output.runtimeFeedbackContract() != null || !finiteNonNegative(output.outputRows())
+				|| !(output.hasExplicitPhysicalCost() || output.hasDependentCostComponents())) {
+			return;
+		}
+		// Covers new descriptor/vector/key/memo records and their bounded key-string construction before retention.
+		String algorithm = firstNonBlank(output.plannedStringMetric("optimizer.semiAntiAlgorithm"),
+				output.plannedStringMetric("optimizer.physicalJoinImplementation"),
+				output.plannedStringMetric("plannedPhysicalImplementation"),
+				relation == 0 ? "join" : query.isFilter(relation) ? "filter" : "operator");
+		String index = firstNonBlank(output.indexName(), "none");
+		String mode = firstNonBlank(output.accessMode(), "none");
+		String declaredImplementation = output.plannedStringMetric("plannedPhysicalImplementation");
+		String joinImplementation = output.plannedStringMetric("optimizer.physicalJoinImplementation");
+		long stringUnits = (long) algorithm.length() + index.length() + mode.length()
+				+ (declaredImplementation == null ? 0L : declaredImplementation.length())
+				+ (joinImplementation == null ? 0L : joinImplementation.length());
+		if (!physicalOrigins.reserve(8192L + stringUnits * 64L)) {
+			return;
+		}
+		String currentFrame = physicalOrigins.frame(relation, context, output);
+		if (currentFrame == null) {
+			return;
+		}
+		PhysicalEventKey key = new PhysicalEventKey(origin, currentFrame);
+		LearningFeatureEnvelope features = featureEnvelope(relation, context, output, false, relation == 0);
+		String bucket = (features.hasKnownRangeWidth() ? "range:known" : "range:unknown")
+				+ "|guarantee:" + (output.evidenceGuarantee() == null ? EvidenceGuarantee.SCALAR_FALLBACK
+						: output.evidenceGuarantee()).name().toLowerCase(Locale.ROOT);
+		// Exact source/frame are in eventKey. Applicability fingerprints are hints only for that already exact key.
+		LearningApplicability applicability = new LearningApplicability(0L, 0L, bucket,
+				Math.max(0L, revisions.dataRevision()), Math.max(0L, revisions.frontierRevision()),
+				SEMANTIC_POPULATION_MODEL_EPOCH);
+		String normalized = algorithm.toLowerCase(Locale.ROOT);
+		double capacity = output.plannedDoubleMetric("optimizer.semiAntiCacheCapacity", Double.NaN);
+		PhysicalResidualKey physical = PhysicalResidualKey.of(algorithm, learningAccessKernel(output),
+				index + ':' + mode, output.invocations() > 1.0d || context.correlationMaskId() != 0
+						? "dependent-reopen"
+						: "single-open",
+				normalized.contains("memo") ? "memoized" : normalized.contains("material") ? "materialized" : "none",
+				!Double.isFinite(capacity) ? "none"
+						: capacity <= 64.0d ? "small" : capacity <= 4096.0d ? "medium" : "large",
+				normalized.contains("material") ? bucket : "none", "exact-event-frame|execution:" + EXECUTION_MODE);
+		boolean completeRight = context.hasMemoizedJoinResourcePrediction();
+		if (completeRight) {
+			physical = physical.memoizedRightResourcePredictor();
+		}
+		if (!physical.fitsPersistedFields() || !physical.sourceRowsPredictor().fitsPersistedFields()) {
+			return;
+		}
+		IndependentIdentity identity = new IndependentIdentity(key, applicability, physical, features, completeRight);
+		if (context.hasPhysicalJoinRefinement()) {
+			clearSupersededPhysicalAnnotations(output);
+		}
+		output.putPlannedStringMetric("optimizer.learningApplicability", applicability.externalForm());
+		output.putPlannedStringMetric("optimizer.learningApplicabilityDigest", applicability.digest());
+		output.putPlannedStringMetric("optimizer.physicalResidualKey", physical.externalForm());
+		output.putPlannedStringMetric("optimizer.physicalResidualKeyDigest", physical.digest());
+		LmdbOperatorFeedbackStats feedback = runtime.feedback();
+		if (feedback != null) {
+			applyPhysicalCorrections(identity, output, feedback);
+		}
+		boolean perOpenAccess = relation > 0 && (query.isStatementPattern(relation)
+				|| query.isBindingSetAssignment(relation) || query.isArbitraryLengthPath(relation)
+				|| query.isZeroLengthPath(relation));
+		declineLogicalPopulation(output);
+		output.setRuntimeFeedbackContract(independentContract(new LmdbPhysicalEventFeedbackDescriptor(key,
+				applicability, physical, features, perOpenAccess), output));
+	}
+
+	void ensureTelemetry(PackedCostEstimate output) {
+		if (output.runtimeFeedbackContract() != null || !finiteNonNegative(output.outputRows())
+				|| !finiteNonNegative(output.workRows())) {
+			return;
+		}
+		declineLogicalPopulation(output);
+		double point = finiteNonNegative(output.objectivePoint()) ? output.objectivePoint() : output.workRows();
+		RuntimeFeedbackContract.PredictionVector vector = new RuntimeFeedbackContract.PredictionVector(
+				output.outputRows(), output.workRows(), output.resultRows(), output.sequentialRows(),
+				output.randomSeeks(), output.iteratorOpens(), output.expressionEvaluations(), output.hashBuildRows(),
+				output.hashProbeRows(), output.pathExpansions(), output.remoteCalls(), output.peakMemoryRows());
+		output.setRuntimeFeedbackContract(new RuntimeFeedbackContract(TelemetryDescriptor.INSTANCE, vector, vector,
+				Double.NaN, Double.NaN, dependentPrediction(output, true), dependentPrediction(output, false),
+				point, point, point, Double.POSITIVE_INFINITY, RuntimeFeedbackContract.SemanticKind.ORDINARY,
+				algorithm(output), access(output), 0, 0L, 0L, 0L, 0));
+	}
+
+	private static void declineLogicalPopulation(PackedCostEstimate output) {
+		output.removePlannedStringMetric("optimizer.frontierLogicalGroupKey");
+		output.putPlannedStringMetric(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS, "unavailable");
+	}
+
+	private enum TelemetryDescriptor implements RuntimeFeedbackDescriptor {
+		INSTANCE
+	}
+
+	private RuntimeFeedbackContract independentContract(LmdbPhysicalEventFeedbackDescriptor descriptor,
+			PackedCostEstimate output) {
+		double perOpen = output.plannedDoubleMetric("plannedRowsPerInvocation", Double.NaN);
+		double exposure = descriptor.perOpenAccess() && finiteNonNegative(perOpen)
+				? finiteNonNegative(output.invocations()) && output.invocations() > 0.0d ? output.invocations() : 1.0d
+				: 0.0d;
+		double point = finiteNonNegative(output.objectivePoint()) ? output.objectivePoint()
+				: finiteNonNegative(output.workRows()) ? output.workRows() : 0.0d;
+		long epoch = Math.max(0L, revisions.dataRevision());
+		return new RuntimeFeedbackContract(descriptor, predictionVector(descriptor, output, true, exposure),
+				predictionVector(descriptor, output, false, exposure), Double.NaN, Double.NaN,
+				dependentPrediction(output, true), dependentPrediction(output, false), point, point, point,
+				Double.POSITIVE_INFINITY, RuntimeFeedbackContract.SemanticKind.ORDINARY, algorithm(output),
+				access(output),
+				descriptor.physicalKey().hashCode(), epoch, epoch, Math.max(0L, revisions.leoRevision()),
+				RuntimeFeedbackContract.ADMIT_PHYSICAL);
+	}
+
 	private Identity identity(int relationId, int[] relations, PackedCostContext context, PackedCostEstimate output,
 			boolean ownInput, Map<Integer, Long> semanticAtoms) {
 		LogicalBasis basis = relationId > 0 && relationId <= query.relationCount()
@@ -330,13 +511,35 @@ final class LmdbMappedFrontierLearningSession {
 		FrontierLearningKey legacy = FrontierLearningKey.of(basis.operator(),
 				"MAPPED_V2@" + fixedHex(fnv(basis.canonicalExpression())), layout, correlationFingerprint,
 				learningAccessKernel(output), output.indexName(), output.accessMode());
+		boolean completeRightResources = context != null && context.hasMemoizedJoinResourcePrediction();
+		FrontierLearningKey legacyPhysical = legacy;
+		if (completeRightResources) {
+			physicalKey = physicalKey.memoizedRightResourcePredictor();
+			legacyPhysical = legacy.memoizedRightResourcePredictor();
+		}
 		return new Identity(legacy, logicalKey, applicability, physicalKey, logicalOrigin(relationId, relations),
-				features, basis.expression());
+				features, basis.expression(), legacyPhysical, completeRightResources,
+				context != null && context.hasPhysicalJoinRefinement());
+	}
+
+	/** Fixed accepted cleanup policy for an actually superseded physical declaration. */
+	static void clearSupersededPhysicalAnnotations(PackedCostEstimate output) {
+		output.removePlannedMetrics(PHYSICAL_PREDICTION_ANNOTATIONS);
 	}
 
 	private void stamp(int relationId, Identity identity, PackedCostEstimate output, boolean exactFactEligible,
 			boolean logicalPopulationQualified) {
+		if (identity.implementationReplacement()) {
+			// The concrete provider has just declared this implementation's fresh vector. Old physical residual
+			// and lifecycle annotations describe a superseded implementation; logical evidence remains valid.
+			clearSupersededPhysicalAnnotations(output);
+		}
 		output.putPlannedStringMetric("optimizer.frontierLearningKey", identity.legacyKey().externalForm());
+		output.putPlannedStringMetric("optimizer.frontierPhysicalLearningKey",
+				identity.legacyPhysicalKey().externalForm());
+		if (identity.completeRightResources()) {
+			output.putPlannedDoubleMetric("optimizer.frontierLeo.work_rows.raw", output.objectivePoint());
+		}
 		output.putPlannedStringMetric("optimizer.logicalLearningKey", identity.logicalKey().externalForm());
 		output.putPlannedStringMetric("optimizer.logicalLearningKeyDigest", identity.logicalKey().digest());
 		output.putPlannedStringMetric("optimizer.learningApplicability", identity.applicability().externalForm());
@@ -354,7 +557,7 @@ final class LmdbMappedFrontierLearningSession {
 				? FilterSurfaceKey.generalized(filter)
 				: null;
 		LmdbRuntimeFeedbackDescriptor descriptor = new LmdbRuntimeFeedbackDescriptor(
-				identity.legacyKey(), identity.legacyKey(), identity.logicalKey(), identity.applicability(),
+				identity.legacyKey(), identity.legacyPhysicalKey(), identity.logicalKey(), identity.applicability(),
 				identity.physicalKey(), identity.origin(), identity.features(), exactFilter, generalizedFilter);
 		output.setRuntimeFeedbackContract(runtimeFeedbackContract(descriptor, output, logicalPopulationQualified));
 	}
@@ -372,7 +575,17 @@ final class LmdbMappedFrontierLearningSession {
 	}
 
 	private FrontierLearningModel.DimensionEstimate physicalEstimate(LmdbOperatorFeedbackStats feedback,
-			Identity identity, FrontierCostDimension dimension, double predicted, PackedCostEstimate output) {
+			PhysicalIdentity supplied, FrontierCostDimension dimension, double predicted, PackedCostEstimate output) {
+		if (supplied instanceof IndependentIdentity identity) {
+			IndependentDimensionKey key = new IndependentDimensionKey(identity.eventKey(), identity.physicalKey(),
+					identity.applicability(), dimension, identity.features(), Double.doubleToLongBits(predicted));
+			FrontierLearningModel.DimensionDecision decision = independentPosteriors.computeIfAbsent(key,
+					ignored -> feedback.physicalDimensionDecision(identity.eventKey(), identity.physicalKey(),
+							identity.applicability(), dimension, identity.features(), predicted));
+			annotateLearningGate(output, dimension, decision.gate());
+			return decision.estimate();
+		}
+		Identity identity = (Identity) supplied;
 		String key = "physical|" + identity.logicalKey().externalForm() + '|' + identity.physicalKey().externalForm()
 				+ '|' + identity.applicability().externalForm() + '|' + dimension.ordinal() + '|'
 				+ featureMemoSuffix(identity.features(), predicted);
@@ -383,8 +596,15 @@ final class LmdbMappedFrontierLearningSession {
 		return decision.estimate();
 	}
 
-	private int applyPhysicalCorrections(Identity identity, PackedCostEstimate output,
+	private int applyPhysicalCorrections(PhysicalIdentity identity, PackedCostEstimate output,
 			LmdbOperatorFeedbackStats feedback) {
+		if (!output.hasExplicitPhysicalCost()) {
+			return 0;
+		}
+		if (identity.completeRightResources() && pendingPhysical == null) {
+			pendingPhysical = new FrontierLearningModel.DimensionEstimate[FrontierCostDimension.REMOTE_CALLS.ordinal()
+					+ 1];
+		}
 		double sequential = correctedPhysical(identity, FrontierCostDimension.SOURCE_ROWS_SCANNED,
 				output.sequentialRows(), output, feedback);
 		double seeks = correctedPhysical(identity, FrontierCostDimension.INDEX_SEEKS,
@@ -409,8 +629,22 @@ final class LmdbMappedFrontierLearningSession {
 				+ changed(output.pathExpansions(), paths) + changed(output.resultRows(), results)
 				+ changed(output.remoteCalls(), remote);
 		if (corrections == 0) {
+			annotatePendingPhysical(identity, output);
 			return 0;
 		}
+		double retainedPrice = output.objectivePoint();
+		if (identity.completeRightResources()) {
+			double oldProjection = physicalCostObjective.score(output);
+			double correctedProjection = physicalCostObjective.score(output.indexName(), sequential, seeks, opens,
+					expressions, hashBuild, hashProbe, paths, results, remote, output.peakMemoryRows());
+			retainedPrice += correctedProjection - oldProjection;
+			if (!finiteNonNegative(retainedPrice)) {
+				output.putPlannedStringMetric("optimizer.frontierLeoPhysicalPriceAdmission",
+						"rejected-incommensurate-whole-price");
+				return 0;
+			}
+		}
+		annotatePendingPhysical(identity, output);
 		if (output.costScope() == PackedCostEstimate.CostScope.INCLUSIVE) {
 			output.setInclusivePhysicalCost(sequential, seeks, opens, expressions, hashBuild, hashProbe, paths,
 					results, remote, output.peakMemoryRows());
@@ -418,11 +652,17 @@ final class LmdbMappedFrontierLearningSession {
 			output.setLocalPhysicalCost(sequential, seeks, opens, expressions, hashBuild, hashProbe, paths,
 					results, remote, output.peakMemoryRows());
 		}
+		if (identity.completeRightResources()) {
+			output.setObjectivePricePreservingPhysicalCost(retainedPrice);
+		}
 		return corrections;
 	}
 
-	private double correctedPhysical(Identity identity, FrontierCostDimension dimension, double predicted,
+	private double correctedPhysical(PhysicalIdentity identity, FrontierCostDimension dimension, double predicted,
 			PackedCostEstimate output, LmdbOperatorFeedbackStats feedback) {
+		if (identity.completeRightResources()) {
+			pendingPhysical[dimension.ordinal()] = null;
+		}
 		if (!finiteNonNegative(predicted)) {
 			return predicted;
 		}
@@ -431,12 +671,63 @@ final class LmdbMappedFrontierLearningSession {
 		if (estimate == null) {
 			return predicted;
 		}
-		annotateDimensionCorrection(output, dimension, predicted, estimate);
+		if (identity.completeRightResources()) {
+			pendingPhysical[dimension.ordinal()] = estimate;
+		} else {
+			annotateDimensionCorrection(output, dimension, predicted, estimate);
+		}
 		return estimate.correctedValue();
 	}
 
+	private void annotatePendingPhysical(PhysicalIdentity identity, PackedCostEstimate output) {
+		if (!identity.completeRightResources()) {
+			return;
+		}
+		if (pendingPhysical[FrontierCostDimension.SOURCE_ROWS_SCANNED.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.SOURCE_ROWS_SCANNED, output.sequentialRows(),
+					pendingPhysical[FrontierCostDimension.SOURCE_ROWS_SCANNED.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.INDEX_SEEKS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.INDEX_SEEKS, output.randomSeeks(),
+					pendingPhysical[FrontierCostDimension.INDEX_SEEKS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.ITERATOR_OPENS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.ITERATOR_OPENS, output.iteratorOpens(),
+					pendingPhysical[FrontierCostDimension.ITERATOR_OPENS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.EXPRESSION_EVALUATIONS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.EXPRESSION_EVALUATIONS,
+					output.expressionEvaluations(),
+					pendingPhysical[FrontierCostDimension.EXPRESSION_EVALUATIONS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.HASH_BUILD_ROWS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.HASH_BUILD_ROWS, output.hashBuildRows(),
+					pendingPhysical[FrontierCostDimension.HASH_BUILD_ROWS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.HASH_PROBE_ROWS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.HASH_PROBE_ROWS, output.hashProbeRows(),
+					pendingPhysical[FrontierCostDimension.HASH_PROBE_ROWS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.PATH_EXPANSIONS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.PATH_EXPANSIONS, output.pathExpansions(),
+					pendingPhysical[FrontierCostDimension.PATH_EXPANSIONS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.RESULT_ROWS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.RESULT_ROWS, output.resultRows(),
+					pendingPhysical[FrontierCostDimension.RESULT_ROWS.ordinal()]);
+		}
+		if (pendingPhysical[FrontierCostDimension.REMOTE_CALLS.ordinal()] != null) {
+			annotateDimensionCorrection(output, FrontierCostDimension.REMOTE_CALLS, output.remoteCalls(),
+					pendingPhysical[FrontierCostDimension.REMOTE_CALLS.ordinal()]);
+		}
+	}
+
 	private void applyLifecycle(Identity identity, PackedCostEstimate output, LmdbOperatorFeedbackStats feedback) {
-		double point = physicalCostObjective.score(output);
+		if (!output.hasExplicitPhysicalCost()) {
+			return;
+		}
+		double point = identity.completeRightResources() ? output.objectivePoint()
+				: physicalCostObjective.score(output);
 		if (!finiteNonNegative(point)) {
 			return;
 		}
@@ -492,9 +783,15 @@ final class LmdbMappedFrontierLearningSession {
 			regressionLimit = Double.POSITIVE_INFINITY;
 		}
 		RuntimeFeedbackContract.SemanticKind semantic = semanticKind(descriptor, output);
-		int flags = RuntimeFeedbackContract.ADMIT_PHYSICAL | RuntimeFeedbackContract.ORIGIN_CERTIFIED;
+		int flags = RuntimeFeedbackContract.ORIGIN_CERTIFIED;
+		if (output.hasExplicitPhysicalCost() || output.hasDependentCostComponents()) {
+			flags |= RuntimeFeedbackContract.ADMIT_PHYSICAL;
+		}
 		if (logicalPopulationQualified) {
-			flags |= RuntimeFeedbackContract.ADMIT_LOGICAL | RuntimeFeedbackContract.ADMIT_LIFECYCLE;
+			flags |= RuntimeFeedbackContract.ADMIT_LOGICAL;
+			if (output.hasExplicitPhysicalCost()) {
+				flags |= RuntimeFeedbackContract.ADMIT_LIFECYCLE;
+			}
 		}
 		if (logicalPopulationQualified && semantic == RuntimeFeedbackContract.SemanticKind.FILTER) {
 			flags |= RuntimeFeedbackContract.ADMIT_FILTER;
@@ -529,10 +826,18 @@ final class LmdbMappedFrontierLearningSession {
 
 	private static RuntimeFeedbackContract.PredictionVector predictionVector(
 			LmdbRuntimeFeedbackDescriptor descriptor, PackedCostEstimate output, boolean raw) {
+		return predictionVector(descriptor, output, raw, immutableOpenExposure(descriptor, output));
+	}
+
+	private static RuntimeFeedbackContract.PredictionVector predictionVector(
+			LmdbLearningFeedbackDescriptor descriptor, PackedCostEstimate output, boolean raw, double exposure) {
 		double totalRows = predictionDimension(output, FrontierCostDimension.OUTPUT_ROWS, output.outputRows(), raw);
-		double exposure = immutableOpenExposure(descriptor, output);
 		boolean perOpen = exposure > 0.0d;
 		double rows = perOpen ? perOpenRows(output, totalRows, raw, exposure) : totalRows;
+		if (!output.hasExplicitPhysicalCost()) {
+			return new RuntimeFeedbackContract.PredictionVector(rows, Double.NaN, Double.NaN, Double.NaN,
+					Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN);
+		}
 		double source = perOpen(predictionDimension(output, FrontierCostDimension.SOURCE_ROWS_SCANNED,
 				output.sequentialRows(), raw), exposure, perOpen);
 		double seeks = perOpen(predictionDimension(output, FrontierCostDimension.INDEX_SEEKS,
@@ -554,8 +859,11 @@ final class LmdbMappedFrontierLearningSession {
 				output.remoteCalls(), raw), exposure, perOpen);
 		double memory = predictionDimension(output, FrontierCostDimension.MEMORY_SPILL_WORK,
 				output.peakMemoryRows(), raw);
-		double work = raw ? sumKnown(source, seeks, opens, expressions, hashBuild, hashProbe, paths, results, remote)
-				: perOpen(output.workRows(), exposure, perOpen);
+		double work = descriptor.physicalKey().usesMemoizedRightResourcePredictor()
+				? raw ? output.plannedDoubleMetric("optimizer.frontierLeo.work_rows.raw", output.objectivePoint())
+						: output.objectivePoint()
+				: raw ? sumKnown(source, seeks, opens, expressions, hashBuild, hashProbe, paths, results, remote)
+						: perOpen(output.workRows(), exposure, perOpen);
 		return new RuntimeFeedbackContract.PredictionVector(rows, work, results, source, seeks, opens, expressions,
 				hashBuild, hashProbe, paths, remote, memory);
 	}
@@ -1190,6 +1498,26 @@ final class LmdbMappedFrontierLearningSession {
 		return "0".repeat(16 - hex.length()) + hex;
 	}
 
+	private interface PhysicalIdentity {
+		LearningApplicability applicability();
+
+		PhysicalResidualKey physicalKey();
+
+		LearningFeatureEnvelope features();
+
+		boolean completeRightResources();
+	}
+
+	private record IndependentIdentity(PhysicalEventKey eventKey, LearningApplicability applicability,
+			PhysicalResidualKey physicalKey, LearningFeatureEnvelope features, boolean completeRightResources)
+			implements PhysicalIdentity {
+	}
+
+	private record IndependentDimensionKey(PhysicalEventKey eventKey, PhysicalResidualKey physicalKey,
+			LearningApplicability applicability, FrontierCostDimension dimension, LearningFeatureEnvelope features,
+			long predictedBits) {
+	}
+
 	private record LogicalBasis(TupleExpr expression, String operator, String canonicalExpression,
 			String childGroups, String visibleVariables, String semantics, String datasetScope,
 			LogicalLearningKey uncorrelatedKey) {
@@ -1198,6 +1526,7 @@ final class LmdbMappedFrontierLearningSession {
 	private record Identity(FrontierLearningKey legacyKey, LogicalLearningKey logicalKey,
 			LearningApplicability applicability, PhysicalResidualKey physicalKey,
 			LmdbRuntimeFeedbackDescriptor.LogicalGroupOrigin origin, LearningFeatureEnvelope features,
-			TupleExpr expression) {
+			TupleExpr expression, FrontierLearningKey legacyPhysicalKey, boolean completeRightResources,
+			boolean implementationReplacement) implements PhysicalIdentity {
 	}
 }

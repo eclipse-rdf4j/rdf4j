@@ -55,8 +55,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
-import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignmentKeyability;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
@@ -78,6 +78,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationE
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -361,12 +363,12 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 
 			List<BindingSet> rows = new ArrayList<>();
 			for (int index = 0; index < 1_025; index++) {
-				QueryBindingSet row = new QueryBindingSet();
-				row.addBinding("branchName", VF.createLiteral("Missing Branch " + index));
-				rows.add(row);
+				rows.add(new ListBindingSet(List.of("branchName"), VF.createLiteral("Missing Branch " + index)));
 			}
 			BindingSetAssignment branchNames = new BindingSetAssignment();
 			branchNames.setBindingSets(rows);
+			assertTrue(BindingSetAssignmentKeyability.canInspect(branchNames),
+					"The oversized VALUES fixture must reach the finite-domain limit with an audited stable source");
 			StatementPattern name = new StatementPattern(Var.of("branch"), Var.of("namePredicate", LIB_NAME),
 					Var.of("branchName"));
 			StatementPattern plannedName = planStatementPattern(store, new Join(branchNames, name), LIB_NAME,
@@ -1128,10 +1130,14 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 								+ explanation);
 
 				double plannedAccessRows = namePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_ACCESS_ROWS);
-				assertEquals("directLookup",
+				assertEquals("prefixScan",
 						namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
-						"A finite generated literal domain should use direct index lookup instead of a predicate scan. "
-								+ "metrics=" + namePattern);
+						"The generated P,O prefix should remain a prefix scan because subject and context do not complete "
+								+ "the native SPOC key. metrics=" + namePattern);
+				assertEquals(2.0d,
+						namePattern.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH), 0.0d,
+						"The generated literal lookup should use the selected two-component P,O index prefix. metrics="
+								+ namePattern);
 				assertEquals("[P, O]",
 						namePattern.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 						"A finite generated literal domain should bind predicate and object for the name lookup. "
@@ -1360,11 +1366,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> bindingSets = new ArrayList<>();
 		for (int i = 1; i <= ASSEMBLY_COUNT; i++) {
-			QueryBindingSet bindingSet = new QueryBindingSet();
-			bindingSet.addBinding("assemblyName", VF.createLiteral("Assembly " + i));
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(List.of("assemblyName"), VF.createLiteral("Assembly " + i)));
 		}
 		assignment.setBindingSets(bindingSets);
+		assertTrue(BindingSetAssignmentKeyability.canInspect(assignment), "Constant assembly VALUES must be stable");
 		return assignment;
 	}
 
@@ -1412,11 +1417,10 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> bindingSets = new ArrayList<>();
 		for (String value : List.of("Branch 0", "Branch 1")) {
-			QueryBindingSet bindingSet = new QueryBindingSet();
-			bindingSet.addBinding("branchName", VF.createLiteral(value));
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(List.of("branchName"), VF.createLiteral(value)));
 		}
 		assignment.setBindingSets(bindingSets);
+		assertTrue(BindingSetAssignmentKeyability.canInspect(assignment), "Constant branch VALUES must be stable");
 		return assignment;
 	}
 
@@ -1424,21 +1428,21 @@ class LmdbFiniteValuesJoinSurfacePlanningTest {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		List<BindingSet> bindingSets = new ArrayList<>(values.length);
 		for (Value value : values) {
-			QueryBindingSet bindingSet = new QueryBindingSet();
-			bindingSet.addBinding(bindingName, value);
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(List.of(bindingName), value));
 		}
 		assignment.setBindingSets(bindingSets);
+		assertTrue(BindingSetAssignmentKeyability.canInspect(assignment), "Constant VALUES must be stable");
 		return assignment;
 	}
 
 	private static BindingSetAssignment mixedBindingAssignment(String bindingName, Value value, boolean boundRowFirst) {
-		QueryBindingSet bound = new QueryBindingSet();
-		bound.addBinding(bindingName, value);
-		QueryBindingSet undef = new QueryBindingSet();
+		BindingSet bound = new ListBindingSet(List.of(bindingName), value);
+		BindingSet undef = EmptyBindingSet.getInstance();
 
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(boundRowFirst ? List.of(bound, undef) : List.of(undef, bound));
+		assertTrue(BindingSetAssignmentKeyability.canInspect(assignment),
+				"The nullable VALUES fixture must test UNDEF with an audited stable source");
 		return assignment;
 	}
 

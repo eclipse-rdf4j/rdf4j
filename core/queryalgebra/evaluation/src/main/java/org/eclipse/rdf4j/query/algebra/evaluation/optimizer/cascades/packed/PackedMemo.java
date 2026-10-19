@@ -51,10 +51,12 @@ final class PackedMemo implements AutoCloseable {
 	private final PackedSearchBudget budget;
 	private final PackedCostVectorArena costVectors;
 	private final PackedCostAlgebra costAlgebra;
+	private final PackedCostCompletionArena costCompletions;
 	private final PackedContinuationKeyArena continuationKeys;
 	private final PackedCandidateArena candidates;
 	private final PackedParetoFrontierArena paretoFrontiers;
 	private final boolean retainPlanQualityState;
+	private boolean requireAuditableWinnerReplacements;
 	private final PackedProofSetArena ruleProofSets = new PackedProofSetArena();
 	private final PackedDependentPlans dependentPlans = new PackedDependentPlans();
 	private PackedCostEstimate dependentCostScratch;
@@ -69,6 +71,10 @@ final class PackedMemo implements AutoCloseable {
 	private int[] physicalSourceLogicalExpressionIds;
 	private long[] overlayLogicalRuleMasks;
 	private int[] physicalMetadataCostVectorIds;
+	private int[] physicalMetadataCostCompletionIds;
+	private int[] costInputFrameScratch = EMPTY_IDS;
+	private int activeCostInputFrame;
+	private int activeCostInputFrameSize;
 	private int[] candidateIdsByWinner;
 	private int[] childCostVectorScratch;
 	private int[] evidenceContextScratch = new int[32];
@@ -142,6 +148,7 @@ final class PackedMemo implements AutoCloseable {
 			decisionTrace = new PackedDecisionTraceArena();
 			costVectors = new PackedCostVectorArena(budget);
 			costAlgebra = new PackedCostAlgebra(costVectors);
+			costCompletions = new PackedCostCompletionArena(budget, costVectors, costAlgebra);
 			continuationKeys = new PackedContinuationKeyArena(budget);
 			candidates = new PackedCandidateArena(budget);
 			paretoFrontiers = new PackedParetoFrontierArena(budget, candidates, costVectors);
@@ -152,6 +159,7 @@ final class PackedMemo implements AutoCloseable {
 			decisionTrace = null;
 			costVectors = null;
 			costAlgebra = null;
+			costCompletions = null;
 			continuationKeys = null;
 			candidates = null;
 			paretoFrontiers = null;
@@ -168,7 +176,13 @@ final class PackedMemo implements AutoCloseable {
 		nextPhysicalExpression = new int[Math.max(2, expectedPhysicalAlternatives + 1)];
 		physicalSourceLogicalExpressionIds = new int[Math.max(2, expectedPhysicalAlternatives + 1)];
 		overlayLogicalRuleMasks = new long[Math.max(2, expectedLogicalAlternatives + 1)];
+		physicalMetadataCostCompletionIds = EMPTY_IDS;
 		seedBaseGroups();
+	}
+
+	/** The existing audit consumer requires the selected incumbent to retain its actual provider decision. */
+	void requireAuditableWinnerReplacements() {
+		requireAuditableWinnerReplacements = retainPlanQualityState;
 	}
 
 	@Override
@@ -892,6 +906,11 @@ final class PackedMemo implements AutoCloseable {
 		}
 		ensurePhysicalMetadataCostVectorCapacity(metadataId);
 		physicalMetadataCostVectorIds[metadataId] = costVectorId;
+		int completion = plannerCostCompletionId(estimate);
+		if (costCompletions.isProgram(completion)
+				&& Double.compare(costCompletions.objective(completion), fallbackWork) == 0) {
+			registerPhysicalCostCompletion(metadataId, completion);
+		}
 		registerEvidenceState(metadataId, estimate);
 		return metadataId;
 	}
@@ -977,7 +996,9 @@ final class PackedMemo implements AutoCloseable {
 				|| hasExecutableFallbackChild(childWinnerIds, childOffset, childCount);
 		double peakMemoryRows = physicalMetadataId == 0 ? 0.0d
 				: physicalMetadata.peakMemoryRows(physicalMetadataId);
-		int winnerId = lifecycleExcluded
+		int retainedAuditable = auditableIncumbentForIncompleteReplacement(groupId, requiredPropertyId,
+				semanticRowGoalId, inputContextId, costPolicyId, physicalMetadataId);
+		int winnerId = retainedAuditable != 0 ? retainedAuditable : lifecycleExcluded
 				? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
 						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
 						startupCost, totalCost, lifecycleComparisonCost,
@@ -1074,7 +1095,9 @@ final class PackedMemo implements AutoCloseable {
 				&& !lifecycleExcluded;
 		double peakMemoryRows = physicalMetadataId == 0 ? 0.0d
 				: physicalMetadata.peakMemoryRows(physicalMetadataId);
-		int winnerId = verifiedLastGood
+		int retainedAuditable = auditableIncumbentForIncompleteReplacement(groupId, requiredPropertyId,
+				semanticRowGoalId, inputContextId, costPolicyId, physicalMetadataId);
+		int winnerId = retainedAuditable != 0 ? retainedAuditable : verifiedLastGood
 				? winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
 						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
 						lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds, childOffset,
@@ -1115,6 +1138,19 @@ final class PackedMemo implements AutoCloseable {
 		return materializedWinnerId;
 	}
 
+	private int auditableIncumbentForIncompleteReplacement(int groupId, int requiredPropertyId,
+			int semanticRowGoalId, int inputContextId, int costPolicyId, int physicalMetadataId) {
+		if (!requireAuditableWinnerReplacements
+				|| physicalMetadataId != 0 && physicalMetadata.costEventId(physicalMetadataId) != 0) {
+			return 0;
+		}
+		int incumbent = winners.find(groupId, requiredPropertyId, semanticRowGoalId, inputContextId, costPolicyId);
+		// Missing metadata/events cannot displace a certificate that this caller explicitly needs. A global
+		// Pareto/resource stop alone says nothing about an already-retained candidate's scalar completeness.
+		// No prior auditable winner means mandatory construction still proceeds and the audit stays honest.
+		return incumbent != 0 && selectedTraceForWinner(incumbent) >= 0 ? incumbent : 0;
+	}
+
 	private int retainParetoCandidate(int groupId, int requiredPropertyId, int semanticRowGoalId,
 			int inputContextId, int costPolicyId, int physicalExpressionId, int physicalMetadataId,
 			double startupCost, double totalCost, int[] childWinnerIds, int childOffset, int childCount) {
@@ -1135,10 +1171,7 @@ final class PackedMemo implements AutoCloseable {
 		int evidenceDispositionCode = 0;
 		int evidenceGuaranteeCode = 0;
 		if (physicalMetadataId == 0) {
-			costVectors.resetBuilderToZero();
-			costVectors.setBuilderExact(PackedCostDimensionRegistry.STARTUP_WORK, startupCost);
-			costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, totalCost);
-			costVectorId = costVectors.internBuilder();
+			costVectorId = legacyScalarCarrierVectorId(startupCost, totalCost);
 		} else {
 			costVectorId = physicalMetadataId < physicalMetadataCostVectorIds.length
 					? physicalMetadataCostVectorIds[physicalMetadataId]
@@ -1166,13 +1199,36 @@ final class PackedMemo implements AutoCloseable {
 		if (costVectorId == 0) {
 			return 0;
 		}
-		if (physicalMetadataId != 0 && childCount != 0
+		int quantityVectorId = physicalMetadataId == 0 ? costCompletions.unknownQuantities()
+				: physicalMetadataQuantityVectorId(physicalMetadataId);
+		double quantityPopulation = pricedWinnerPopulation(physicalMetadataId, inputContextId);
+		int completed = physicalMetadataId < physicalMetadataCostCompletionIds.length
+				? physicalMetadataCostCompletionIds[physicalMetadataId]
+				: 0;
+		boolean qualifiedCompletion = costCompletions.isProgram(completed)
+				&& costCompletions.inputContext(completed) == inputContextId
+				&& Double.compare(costCompletions.objective(completed), totalCost) == 0;
+		if (qualifiedCompletion) {
+			quantityVectorId = costCompletions.vectorId(completed);
+			// The diagnostic CPU column keeps the complete scalar price. It is never completion/Pareto authority.
+			costVectorId = legacyCompletedDiagnosticVectorId(quantityVectorId, totalCost);
+			quantityPopulation = costCompletions.invocations(completed);
+		}
+		if (!qualifiedCompletion && physicalMetadataId != 0 && childCount != 0
 				&& physicalMetadata.hasExplicitPhysicalCost(physicalMetadataId)
 				&& physicalMetadata.costScope(physicalMetadataId) == PackedCostEstimate.CostScope.LOCAL) {
-			costVectorId = composeCandidateCostVector(costVectorId, childWinnerIds, childOffset, childCount);
-			if (costVectorId == 0) {
+			costVectorId = composeLegacyCandidateCostVector(costVectorId, inputContextId,
+					physicalMetadata.invocations(physicalMetadataId), startupCost, totalCost,
+					childWinnerIds, childOffset, childCount);
+			// Metadata vectors have no authenticated parent callback frame. Preserve legacy diagnostics only.
+			quantityVectorId = costCompletions.unknownQuantities();
+			if (costVectorId == 0 || quantityVectorId == 0) {
 				return 0;
 			}
+		}
+		if (costVectorId == 0 || quantityVectorId == 0 || budget.resourceLimitReached()) {
+			// Optional diagnostic/quantity retention may refuse growth; the scalar incumbent remains executable.
+			return 0;
 		}
 		boolean exactExtensionalContinuation = evidenceStateId != 0
 				&& evidenceGuaranteeCode == EvidenceGuarantee.DATABASE_EXACT.ordinal() + 1
@@ -1201,8 +1257,9 @@ final class PackedMemo implements AutoCloseable {
 				parentCandidateId = candidateIdsByWinner[childWinnerId];
 			}
 		}
-		int candidateId = candidates.append(groupId, continuationKeyId,
-				physicalDeliveredPropertyId(physicalExpressionId), costVectorId, evidenceStateId, parentCandidateId,
+		int candidateId = candidates.appendWithQuantities(groupId, continuationKeyId,
+				physicalDeliveredPropertyId(physicalExpressionId), costVectorId, quantityVectorId, quantityPopulation,
+				evidenceStateId, parentCandidateId,
 				physicalExpressionId, totalCost);
 		if (candidateId == 0) {
 			return 0;
@@ -1212,8 +1269,8 @@ final class PackedMemo implements AutoCloseable {
 		return offerResult == PackedParetoFrontierArena.OfferResult.RESOURCE_LIMIT ? 0 : candidateId;
 	}
 
-	private int composeCandidateCostVector(int localCostVectorId, int[] childWinnerIds, int childOffset,
-			int childCount) {
+	private int composeLegacyCandidateCostVector(int localCostVectorId, int inputContextId, double invocations,
+			double startupCost, double totalCost, int[] childWinnerIds, int childOffset, int childCount) {
 		if (childCostVectorScratch.length < childCount) {
 			childCostVectorScratch = Arrays.copyOf(childCostVectorScratch,
 					grownCapacity(childCostVectorScratch.length, childCount - 1));
@@ -1227,8 +1284,38 @@ final class PackedMemo implements AutoCloseable {
 			}
 			childCostVectorScratch[ordinal] = candidates.costVectorId(childCandidateId);
 		}
+		for (int ordinal = 0; ordinal < childCount; ordinal++) {
+			if (!canAddWinnerPhysicalCost(childWinnerIds[childOffset + ordinal], inputContextId, invocations)) {
+				// The legacy diagnostic carrier is never the quantity view used for proof or later completion.
+				return legacyScalarCarrierVectorId(startupCost, totalCost);
+			}
+		}
 		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localCostVectorId,
 				childCostVectorScratch, 0, childCount, 1L);
+	}
+
+	/** Compatibility-only projection. Callers must pair this with an independent, all-unknown quantity view. */
+	private int legacyCompletedDiagnosticVectorId(int quantities, double total) {
+		if (quantities == 0) {
+			return 0;
+		}
+		costVectors.resetBuilderToUnknown();
+		for (int axis = 1; axis <= PackedCostDimensionRegistry.dimensionCount(); axis++) {
+			if (axis != PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK && costVectors.isKnown(quantities, axis)) {
+				costVectors.setBuilderInterval(axis, costVectors.lower(quantities, axis),
+						costVectors.point(quantities, axis), costVectors.upper(quantities, axis),
+						costVectors.lineageId(quantities, axis));
+			}
+		}
+		costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, total);
+		return costVectors.internBuilder();
+	}
+
+	private int legacyScalarCarrierVectorId(double startupCost, double totalCost) {
+		costVectors.resetBuilderToUnknown();
+		costVectors.setBuilderExact(PackedCostDimensionRegistry.STARTUP_WORK, startupCost);
+		costVectors.setBuilderExact(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, totalCost);
+		return costVectors.internBuilder();
 	}
 
 	private void associateWinnerCandidate(int winnerId, int candidateId) {
@@ -1268,9 +1355,19 @@ final class PackedMemo implements AutoCloseable {
 		return continuationKeys;
 	}
 
+	/** Reserves optional detached quantity storage before allocation; refusal leaves that export all unknown. */
+	boolean reserveDetachedQuantityBytes(long bytes) {
+		return budget.canReserveBytes(bytes) && budget.tryReserveBytes(bytes);
+	}
+
 	int candidateCostVectorId(int candidateId) {
 		requirePlanQualityState();
 		return candidates.costVectorId(candidateId);
+	}
+
+	int candidateQuantityVectorId(int candidateId) {
+		requirePlanQualityState();
+		return candidates.quantityVectorId(candidateId);
 	}
 
 	int candidateContinuationKeyId(int candidateId) {
@@ -1283,6 +1380,18 @@ final class PackedMemo implements AutoCloseable {
 		return candidateId == 0 ? 0 : candidates.costVectorId(candidateId);
 	}
 
+	int winnerQuantityVectorId(int winnerId) {
+		int candidate = winnerCandidateId(winnerId);
+		return candidate == 0 ? 0 : candidates.quantityVectorId(candidate);
+	}
+
+	private int physicalMetadataQuantityVectorId(int metadata) {
+		int vector = physicalMetadataCostVectorId(metadata);
+		return vector == 0 ? 0
+				: costCompletions.declaredQuantities(vector,
+						physicalMetadata.hasExplicitPhysicalCost(metadata));
+	}
+
 	int physicalMetadataCostVectorId(int metadataId) {
 		if (!retainPlanQualityState || metadataId <= 0 || metadataId >= physicalMetadataCostVectorIds.length) {
 			return 0;
@@ -1290,56 +1399,331 @@ final class PackedMemo implements AutoCloseable {
 		return physicalMetadataCostVectorIds[metadataId];
 	}
 
+	/** Immutable declaration/diagnostic snapshot, including the legacy scalar CPU carrier. */
 	int physicalCostVectorId(PackedCostEstimate estimate) {
 		return retainPlanQualityState ? costVectors.importEstimate(estimate) : 0;
 	}
 
-	int completeUnaryPhysicalCostVectorId(int metadataId, int childVectorId) {
-		int localVectorId = physicalMetadataCostVectorId(metadataId);
-		if (localVectorId == 0
-				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
-				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
-			return localVectorId;
-		}
-		if (childVectorId == 0) {
+	int winnerCostCompletionId(int winnerId) {
+		if (!retainPlanQualityState || winnerId <= 0) {
 			return 0;
 		}
-		childCostVectorScratch[0] = childVectorId;
-		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
-				childCostVectorScratch, 0, 1, 1L);
+		int metadata = winnerPhysicalMetadataId(winnerId);
+		int context = winnerInputContextId(winnerId);
+		int completion = metadata < physicalMetadataCostCompletionIds.length
+				? physicalMetadataCostCompletionIds[metadata]
+				: 0;
+		if (costCompletions.isProgram(completion) && costCompletions.inputContext(completion) == context
+				&& Double.compare(costCompletions.objective(completion), winnerTotalCost(winnerId)) == 0) {
+			return completion;
+		}
+		// A contextual atomic winner may still be priced for one open. Its input rows never certify its work domain.
+		double population = pricedWinnerPopulation(metadata, context);
+		int vector = 0;
+		if (metadata != 0 && hasCompleteWinnerPhysicalVector(winnerId)
+				&& (context != 0 || Double.compare(physicalMetadata.invocations(metadata), 1.0d) == 0)) {
+			vector = winnerQuantityVectorId(winnerId);
+		}
+		return costCompletions.completeProgram(costCompletions.withObjective(vector, winnerTotalCost(winnerId)),
+				context, population, winnerTotalCost(winnerId));
+	}
+
+	private double pricedWinnerPopulation(int metadata, int context) {
+		if (context == 0) {
+			return 1.0d;
+		}
+		if (metadata == 0) {
+			return Double.NaN;
+		}
+		if (physicalMetadata.hasContextualScalarWork(metadata) && !physicalMetadata.hasExplicitPhysicalCost(metadata)) {
+			// This explicit scalar flag declares a whole-prefix price; contextual ROW alone does not.
+			int offset = sequences.value(context, 1) == EXACT_EVIDENCE_CONTEXT_VERSION ? 6 : 8;
+			long bits = (long) sequences.value(context, offset) << 32
+					| Integer.toUnsignedLong(sequences.value(context, offset + 1));
+			return Double.longBitsToDouble(bits);
+		}
+		double profilePopulation = physicalMetadata.dependentInvocationCount(metadata);
+		if (Double.isFinite(profilePopulation) && profilePopulation > 0.0d) {
+			return profilePopulation;
+		}
+		double population = physicalMetadata.invocations(metadata);
+		if (Double.isFinite(population) && population > 0.0d) {
+			return population;
+		}
+		double opens = physicalMetadata.iteratorOpens(metadata);
+		return physicalMetadata.hasExplicitPhysicalCost(metadata) && Double.isFinite(opens) && opens > 0.0d
+				? opens
+				: 1.0d;
+	}
+
+	int captureFactorPhysicalCost(PackedCostEstimate estimate, PackedCostContext context, int parentCompletion,
+			int actualInputContext, boolean atomic) {
+		estimate.setPlannerCostCompletion(0L, 0, 0);
+		estimate.setPlannerOperatorInputFrame(0);
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		costCompletions.invalidateSource();
+		activeCostInputFrameSize = 0;
+		int frame = internCostInputFrame(context);
+		if (frame == 0) {
+			return 0;
+		}
+		int vector = physicalCostVectorId(estimate);
+		int quantityVector = costCompletions.declaredQuantities(vector, estimate.hasExplicitPhysicalCost());
+		int completion = costCompletions.source(quantityVector, frame, parentCompletion, actualInputContext,
+				context.prefixRows(), estimate, atomic);
+		estimate.setPlannerCostCompletion(costCompletions.owner(), completion, vector);
+		return frame;
+	}
+
+	void captureUnaryPhysicalCost(PackedCostEstimate estimate, PackedCostContext context, int child) {
+		estimate.setPlannerCostCompletion(0L, 0, 0);
+		estimate.setPlannerOperatorInputFrame(0);
+		if (!retainPlanQualityState) {
+			return;
+		}
+		costCompletions.invalidateSource();
+		activeCostInputFrameSize = 0;
+		int frame = internCostInputFrame(context);
+		int declaration = physicalCostVectorId(estimate);
+		int vector = costCompletions.declaredQuantities(declaration, estimate.hasExplicitPhysicalCost());
+		int source = frame == 0 ? 0 : costCompletions.unarySource(vector, frame, child, estimate);
+		estimate.setPlannerCostCompletion(costCompletions.owner(), source, declaration);
+		estimate.setPlannerOperatorInputFrame(frame);
+	}
+
+	int plannerCostCompletionId(PackedCostEstimate estimate) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		int completion = estimate.plannerCostCompletionId(costCompletions.owner());
+		return completion != 0 && costCompletions.vectorId(completion) != 0
+				&& estimate.plannerCostDeclarationUnchanged()
+				&& estimate.plannerCostDeclarationVectorId() == physicalCostVectorId(estimate)
+						? completion
+						: 0;
+	}
+
+	int completeAtomicCostCompletion(PackedCostEstimate estimate, int inputContext, double invocations,
+			double partitions, double completeObjective) {
+		return retainPlanQualityState ? costCompletions.atomicProgram(plannerCostCompletionId(estimate),
+				inputContext, invocations, partitions, completeObjective) : 0;
+	}
+
+	int completeUnaryCostCompletion(int metadata, int child, double completeObjective) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		int complete = costCompletions.completeUnary(0, child, false, completeObjective);
+		registerPhysicalCostCompletion(metadata, complete);
+		return complete;
+	}
+
+	int completeUnaryCostCompletion(int metadata, PackedCostEstimate estimate, int child,
+			PackedCostContext actualInput, double completeObjective) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		int frame = estimate.plannerOperatorInputFrame();
+		int source = matchesCostInputFrame(frame, actualInput) ? plannerCostCompletionId(estimate) : 0;
+		int complete = costCompletions.completeUnary(physicalMetadataQuantityVectorId(metadata), estimate,
+				child, source, frame, completeObjective);
+		registerPhysicalCostCompletion(metadata, complete);
+		return complete;
+	}
+
+	int completeBinaryCostCompletion(int metadata, PackedCostEstimate estimate, int left, int right,
+			double completeObjective) {
+		int completion = completeBinaryCostCompletion(estimate, left, right, completeObjective);
+		registerPhysicalCostCompletion(metadata, completion);
+		return completion;
+	}
+
+	int completeBinaryCostCompletion(PackedCostEstimate estimate, int left, int right, double completeObjective) {
+		if (!retainPlanQualityState) {
+			return 0;
+		}
+		int completion = costCompletions.completeBinary(
+				costCompletions.declaredQuantities(physicalCostVectorId(estimate),
+						estimate.hasExplicitPhysicalCost()),
+				estimate, left, right,
+				estimate.plannerRightInputFrame(), estimate.plannerRightSourceCompletion(),
+				estimate.plannerJoinImplementation(),
+				estimate.plannerRightPartitions(), completeObjective);
+		estimate.setPlannerCostCompletion(costCompletions.owner(), completion, physicalCostVectorId(estimate));
+		return completion;
+	}
+
+	boolean equalCompletedCost(int left, int right) {
+		return retainPlanQualityState && costCompletions.comparable(left, right)
+				&& PackedCostOrder.equal(costVectors, costCompletions.vectorId(left), costCompletions.objective(left),
+						costCompletions.vectorId(right), costCompletions.objective(right));
+	}
+
+	boolean dominatesCompletedCost(int left, int right) {
+		return retainPlanQualityState && costCompletions.comparable(left, right)
+				&& PackedCostOrder.dominates(costVectors, costCompletions.vectorId(left),
+						costCompletions.objective(left),
+						costCompletions.vectorId(right), costCompletions.objective(right));
+	}
+
+	private void registerPhysicalCostCompletion(int metadata, int completion) {
+		if (!retainPlanQualityState || metadata <= 0 || completion == 0) {
+			return;
+		}
+		if (metadata >= physicalMetadataCostCompletionIds.length) {
+			int capacity = Math.max(2, physicalMetadataCostCompletionIds.length);
+			while (capacity <= metadata) {
+				if (capacity > Integer.MAX_VALUE >>> 1) {
+					budget.markResourceLimitReached();
+					return;
+				}
+				capacity <<= 1;
+			}
+			if (!budget.tryReserveBytes((long) (capacity - physicalMetadataCostCompletionIds.length) * Integer.BYTES)) {
+				return;
+			}
+			physicalMetadataCostCompletionIds = Arrays.copyOf(physicalMetadataCostCompletionIds, capacity);
+		}
+		physicalMetadataCostCompletionIds[metadata] = completion;
+	}
+
+	private int internCostInputFrame(PackedCostContext context) {
+		int count = context.prefixRelationCount();
+		int required = 21 + count;
+		if (required < count) {
+			budget.markResourceLimitReached();
+			return 0;
+		}
+		if (costInputFrameScratch.length < required) {
+			int capacity = Math.max(32, costInputFrameScratch.length);
+			while (capacity < required) {
+				if (capacity > Integer.MAX_VALUE >>> 1) {
+					budget.markResourceLimitReached();
+					return 0;
+				}
+				capacity <<= 1;
+			}
+			if (!budget.tryReserveBytes((long) (capacity - costInputFrameScratch.length) * Integer.BYTES)) {
+				return 0;
+			}
+			costInputFrameScratch = Arrays.copyOf(costInputFrameScratch, capacity);
+		}
+		int cursor = 0;
+		costInputFrameScratch[cursor++] = count;
+		for (int i = 0; i < count; i++) {
+			costInputFrameScratch[cursor++] = context.prefixRelationId(i);
+		}
+		costInputFrameScratch[cursor++] = context.evidenceStateId();
+		costInputFrameScratch[cursor++] = context.bindingLayoutId();
+		costInputFrameScratch[cursor++] = context.correlationMaskId();
+		costInputFrameScratch[cursor++] = context.semanticScopeMaskId();
+		costInputFrameScratch[cursor++] = context.assuredBindingRelationId();
+		costInputFrameScratch[cursor++] = context.prefixRelationsDescribeRows() ? 1 : 0;
+		costInputFrameScratch[cursor++] = context.leftInputEvidenceStateId();
+		costInputFrameScratch[cursor++] = context.rightInputEvidenceStateId();
+		costInputFrameScratch[cursor++] = context.hashLookupMaskId();
+		costInputFrameScratch[cursor++] = context.hashCompatibilityMaskId();
+		cursor = appendCostFrameDouble(cursor, context.prefixRows());
+		cursor = appendCostFrameDouble(cursor, context.unrelatedPrefixRows());
+		cursor = appendCostFrameDouble(cursor, context.leftInputRows());
+		cursor = appendCostFrameDouble(cursor, context.rightInputRows());
+		costInputFrameScratch[cursor++] = context.hasPhysicalJoinRefinement() ? 1 : 0;
+		costInputFrameScratch[cursor++] = context.hasMemoizedJoinResourcePrediction() ? 1 : 0;
+		if (activeCostInputFrame == Integer.MAX_VALUE) {
+			budget.markResourceLimitReached();
+			return 0;
+		}
+		activeCostInputFrameSize = cursor;
+		return ++activeCostInputFrame;
+	}
+
+	boolean matchesCostInputLeft(int frame, int[] relations, int count, double rows, int evidenceState) {
+		if (frame == 0 || frame != activeCostInputFrame || activeCostInputFrameSize < 21
+				|| costInputFrameScratch[0] != count || costInputFrameScratch[count + 1] != evidenceState) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			if (costInputFrameScratch[ordinal + 1] != relations[ordinal]) {
+				return false;
+			}
+		}
+		long bits = (long) costInputFrameScratch[count + 11] << 32
+				| Integer.toUnsignedLong(costInputFrameScratch[count + 12]);
+		return bits == Double.doubleToLongBits(rows);
+	}
+
+	boolean matchesCostInputFrame(int frame, PackedCostContext actual) {
+		int count = actual.prefixRelationCount();
+		if (frame == 0 || frame != activeCostInputFrame || activeCostInputFrameSize != count + 21
+				|| costInputFrameScratch[0] != count) {
+			return false;
+		}
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			if (costInputFrameScratch[ordinal + 1] != actual.prefixRelationId(ordinal)) {
+				return false;
+			}
+		}
+		int at = count + 1;
+		return costInputFrameScratch[at] == actual.evidenceStateId()
+				&& costInputFrameScratch[at + 1] == actual.bindingLayoutId()
+				&& costInputFrameScratch[at + 2] == actual.correlationMaskId()
+				&& costInputFrameScratch[at + 3] == actual.semanticScopeMaskId()
+				&& costInputFrameScratch[at + 4] == actual.assuredBindingRelationId()
+				&& costInputFrameScratch[at + 5] == (actual.prefixRelationsDescribeRows() ? 1 : 0)
+				&& costInputFrameScratch[at + 6] == actual.leftInputEvidenceStateId()
+				&& costInputFrameScratch[at + 7] == actual.rightInputEvidenceStateId()
+				&& costInputFrameScratch[at + 8] == actual.hashLookupMaskId()
+				&& costInputFrameScratch[at + 9] == actual.hashCompatibilityMaskId()
+				&& matchesCostFrameDouble(at + 10, actual.prefixRows())
+				&& matchesCostFrameDouble(at + 12, actual.unrelatedPrefixRows())
+				&& matchesCostFrameDouble(at + 14, actual.leftInputRows())
+				&& matchesCostFrameDouble(at + 16, actual.rightInputRows())
+				&& costInputFrameScratch[at + 18] == (actual.hasPhysicalJoinRefinement() ? 1 : 0)
+				&& costInputFrameScratch[at + 19] == (actual.hasMemoizedJoinResourcePrediction() ? 1 : 0);
+	}
+
+	private boolean matchesCostFrameDouble(int at, double value) {
+		long bits = (long) costInputFrameScratch[at] << 32
+				| Integer.toUnsignedLong(costInputFrameScratch[at + 1]);
+		return bits == Double.doubleToLongBits(value);
+	}
+
+	private int appendCostFrameDouble(int cursor, double value) {
+		long bits = Double.doubleToLongBits(value);
+		costInputFrameScratch[cursor++] = (int) (bits >>> 32);
+		costInputFrameScratch[cursor++] = (int) bits;
+		return cursor;
+	}
+
+	/** Legacy bare-vector diagnostics; only proof-bearing cost completions authorize continuation pruning. */
+	int completeUnaryPhysicalCostVectorId(int metadataId, int childVectorId) {
+		return completeBareChildPhysicalCostVectorId(metadataId);
 	}
 
 	int completeBinaryPhysicalCostVectorId(int metadataId, int firstChildVectorId, int secondChildVectorId) {
-		int localVectorId = physicalMetadataCostVectorId(metadataId);
-		if (localVectorId == 0
-				|| !physicalMetadata.hasExplicitPhysicalCost(metadataId)
+		return completeBareChildPhysicalCostVectorId(metadataId);
+	}
+
+	private int completeBareChildPhysicalCostVectorId(int metadataId) {
+		int vectorId = physicalMetadataCostVectorId(metadataId);
+		if (vectorId == 0 || !physicalMetadata.hasExplicitPhysicalCost(metadataId)
 				|| physicalMetadata.costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
-			return localVectorId;
+			return vectorId;
 		}
-		if (firstChildVectorId == 0 || secondChildVectorId == 0) {
-			return 0;
-		}
-		childCostVectorScratch[0] = firstChildVectorId;
-		childCostVectorScratch[1] = secondChildVectorId;
-		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
-				childCostVectorScratch, 0, 2, 1L);
+		// Child vector IDs retain resource axes, but no invocation/frame witness. LOCAL composition is unavailable.
+		return 0;
 	}
 
 	int completeBinaryPhysicalCostVectorId(PackedCostEstimate estimate, int firstChildVectorId,
 			int secondChildVectorId) {
-		int localVectorId = physicalCostVectorId(estimate);
-		if (localVectorId == 0
-				|| !estimate.hasExplicitPhysicalCost()
+		int vectorId = physicalCostVectorId(estimate);
+		if (vectorId == 0 || !estimate.hasExplicitPhysicalCost()
 				|| estimate.costScope() == PackedCostEstimate.CostScope.INCLUSIVE) {
-			return localVectorId;
+			return vectorId;
 		}
-		if (firstChildVectorId == 0 || secondChildVectorId == 0) {
-			return 0;
-		}
-		childCostVectorScratch[0] = firstChildVectorId;
-		childCostVectorScratch[1] = secondChildVectorId;
-		return costAlgebra.compose(PackedCostAlgebra.CompositionMode.SEQUENTIAL_SUM, localVectorId,
-				childCostVectorScratch, 0, 2, 1L);
+		return 0;
 	}
 
 	boolean equalCostVector(int leftVectorId, int rightVectorId) {
@@ -1581,7 +1965,100 @@ final class PackedMemo implements AutoCloseable {
 	}
 
 	void addWinnerPhysicalCost(int winnerId, PackedCostEstimate estimate) {
-		addWinnerPhysicalCostRecursive(winnerId, estimate);
+		addWinnerPhysicalCost(winnerId, estimate, 0, 1.0d);
+	}
+
+	void addWinnerPhysicalCost(int winnerId, PackedCostEstimate estimate, int expectedContext, double invocations) {
+		if (!estimate.hasExplicitPhysicalCost()) {
+			return;
+		}
+
+		if (canAddWinnerPhysicalCost(winnerId, expectedContext, invocations)) {
+			addWinnerPhysicalCostRecursive(winnerId, estimate);
+		}
+	}
+
+	void addWinnerPhysicalCosts(int[] winnerIds, int offset, int count, PackedCostEstimate estimate) {
+		if (!estimate.hasExplicitPhysicalCost()) {
+			return;
+		}
+
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			if (!canAddWinnerPhysicalCost(winnerIds[offset + ordinal], 0, 1.0d)) {
+				return;
+			}
+		}
+		for (int ordinal = 0; ordinal < count; ordinal++) {
+			addWinnerPhysicalCostRecursive(winnerIds[offset + ordinal], estimate);
+		}
+	}
+
+	void addWinnerPhysicalCosts(int first, int firstContext, double firstInvocations,
+			int second, int secondContext, double secondInvocations, PackedCostEstimate estimate) {
+		if (!estimate.hasExplicitPhysicalCost()) {
+			return;
+		}
+
+		if (canAddWinnerPhysicalCost(first, firstContext, firstInvocations)
+				&& canAddWinnerPhysicalCost(second, secondContext, secondInvocations)) {
+			addWinnerPhysicalCostRecursive(first, estimate);
+			addWinnerPhysicalCostRecursive(second, estimate);
+		}
+	}
+
+	boolean restoreCompleteWinnerPhysicalResources(int winnerId, int expectedContext, double invocations,
+			PackedCostEstimate destination) {
+		if (!canAddWinnerPhysicalCost(winnerId, expectedContext, invocations)) {
+			return false;
+		}
+		destination.clear();
+		destination.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		addWinnerPhysicalCostRecursive(winnerId, destination);
+		destination.setInvocations(invocations);
+		return true;
+	}
+
+	void restoreWinnerPriceMetadata(int winnerId, PackedCostEstimate destination) {
+		destination.clear();
+		int metadata = winnerPhysicalMetadataId(winnerId);
+		if (metadata != 0) {
+			physicalMetadata.restorePhysicalCost(metadata, destination);
+		}
+	}
+
+	private boolean canAddWinnerPhysicalCost(int winnerId, int expectedContext, double invocations) {
+		return hasCompleteWinnerPhysicalVector(winnerId)
+				&& winnerInputContextId(winnerId) == expectedContext
+				&& Double.compare(physicalMetadata.invocations(winnerPhysicalMetadataId(winnerId)), invocations) == 0;
+	}
+
+	private boolean hasCompleteWinnerPhysicalVector(int winnerId) {
+		if (winnerId <= 0) {
+			return false;
+		}
+		int metadata = winnerPhysicalMetadataId(winnerId);
+		return metadata != 0 && physicalMetadata.hasExplicitPhysicalCost(metadata)
+				&& completeResourceAxes(metadata)
+				&& !physicalMetadata.hasComponentOutputRows(metadata)
+				&& (physicalMetadata.costScope(metadata) == PackedCostEstimate.CostScope.INCLUSIVE
+						|| winnerChildCount(winnerId) == 0);
+	}
+
+	private boolean completeResourceAxes(int metadata) {
+		return knownResourceAxis(physicalMetadata.sequentialRows(metadata))
+				&& knownResourceAxis(physicalMetadata.randomSeeks(metadata))
+				&& knownResourceAxis(physicalMetadata.iteratorOpens(metadata))
+				&& knownResourceAxis(physicalMetadata.expressionEvaluations(metadata))
+				&& knownResourceAxis(physicalMetadata.hashBuildRows(metadata))
+				&& knownResourceAxis(physicalMetadata.hashProbeRows(metadata))
+				&& knownResourceAxis(physicalMetadata.pathExpansions(metadata))
+				&& knownResourceAxis(physicalMetadata.resultRows(metadata))
+				&& knownResourceAxis(physicalMetadata.remoteCalls(metadata))
+				&& knownResourceAxis(physicalMetadata.peakMemoryRows(metadata));
+	}
+
+	private static boolean knownResourceAxis(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
 	}
 
 	void publishDependentPlanInput(int winnerId, int outerBindingMaskId, PackedCostEstimate destination) {
@@ -1590,9 +2067,11 @@ final class PackedMemo implements AutoCloseable {
 		}
 		PackedCostEstimate dependentCost = dependentCostScratch();
 		dependentCost.clear();
-		dependentCost.setLocalPhysicalCost(
-				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
-		addWinnerPhysicalCostRecursive(winnerId, dependentCost);
+		if (hasCompleteWinnerPhysicalVector(winnerId)) {
+			dependentCost.setLocalPhysicalCost(
+					0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+			addWinnerPhysicalCostRecursive(winnerId, dependentCost);
+		}
 		double priorCount = destination.plannedDoubleMetric("optimizer.dependentCostEventCount", 0.0d);
 		if (priorCount == 0.0d) {
 			int metadataId = winnerPhysicalMetadataId(winnerId);
@@ -1625,10 +2104,13 @@ final class PackedMemo implements AutoCloseable {
 				winnerStartupCost(winnerId));
 		PackedCostEstimate dependentReopen = dependentReopenScratch();
 		dependentReopen.clear();
-		dependentReopen.setLocalPhysicalCost(
-				0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		boolean collectReopenPhysical = canCollectOuterIndependentPhysicalCost(winnerId, outerBindingMaskId);
+		if (collectReopenPhysical) {
+			dependentReopen.setLocalPhysicalCost(
+					0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		}
 		double reopenObjective = collectOuterIndependentReopenCost(
-				winnerId, outerBindingMaskId, dependentReopen);
+				winnerId, outerBindingMaskId, dependentReopen, collectReopenPhysical);
 		if (reopenObjective > 0.0d) {
 			destination.putPlannedDoubleMetric("plannedDependentSubqueryContainsOuterIndependentWork", 1.0d);
 			addDependentMetric(destination, "plannedDependentSubqueryReopenSequentialRows",
@@ -1678,16 +2160,30 @@ final class PackedMemo implements AutoCloseable {
 		return dependentReopenScratch;
 	}
 
+	private boolean canCollectOuterIndependentPhysicalCost(int winnerId, int outerMask) {
+		if (!winnerDependsOnOuterBindings(winnerId, outerMask)) {
+			return hasCompleteWinnerPhysicalVector(winnerId);
+		}
+		for (int ordinal = 0; ordinal < winnerChildCount(winnerId); ordinal++) {
+			if (!canCollectOuterIndependentPhysicalCost(winnerChildWinnerId(winnerId, ordinal), outerMask)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private double collectOuterIndependentReopenCost(int winnerId, int outerBindingMaskId,
-			PackedCostEstimate destination) {
+			PackedCostEstimate destination, boolean collectPhysical) {
 		if (!winnerDependsOnOuterBindings(winnerId, outerBindingMaskId)) {
-			addWinnerPhysicalCostRecursive(winnerId, destination);
+			if (collectPhysical) {
+				addWinnerPhysicalCostRecursive(winnerId, destination);
+			}
 			return winnerTotalCost(winnerId);
 		}
 		double objective = 0.0d;
 		for (int ordinal = 0; ordinal < winnerChildCount(winnerId); ordinal++) {
 			objective = saturatedAdd(objective, collectOuterIndependentReopenCost(
-					winnerChildWinnerId(winnerId, ordinal), outerBindingMaskId, destination));
+					winnerChildWinnerId(winnerId, ordinal), outerBindingMaskId, destination, collectPhysical));
 		}
 		return objective;
 	}
@@ -1728,7 +2224,9 @@ final class PackedMemo implements AutoCloseable {
 	private static void addDependentMetric(PackedCostEstimate destination, String name, double value) {
 		double prior = destination.plannedDoubleMetric(name, 0.0d);
 		double sum = prior + value;
-		destination.putPlannedDoubleMetric(name, Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE);
+		destination.putPlannedDoubleMetric(name, Double.isNaN(prior) || Double.isNaN(value)
+				? Double.NaN
+				: Double.isFinite(sum) && sum >= 0.0d ? sum : Double.MAX_VALUE);
 	}
 
 	private boolean winnerContainsPlannedMetric(int winnerId, String name, String value) {
@@ -1749,11 +2247,10 @@ final class PackedMemo implements AutoCloseable {
 
 	private void addWinnerPhysicalCostRecursive(int winnerId, PackedCostEstimate estimate) {
 		int metadataId = winnerPhysicalMetadataId(winnerId);
-		if (metadataId == 0 || !physicalMetadata.hasExplicitPhysicalCost(metadataId)) {
-			estimate.addChildPhysicalCost(winnerTotalCost(winnerId), 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
-					0.0d);
-			return;
+		if (!hasCompleteWinnerPhysicalVector(winnerId)) {
+			throw new PackedMemoInvariantException("physical vector aggregation requires a complete supplied vector");
 		}
+
 		estimate.addChildPhysicalCost(
 				physicalMetadata.sequentialRows(metadataId),
 				physicalMetadata.randomSeeks(metadataId),

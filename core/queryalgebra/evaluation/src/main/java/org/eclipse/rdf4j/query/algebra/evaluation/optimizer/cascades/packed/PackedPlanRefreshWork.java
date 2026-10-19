@@ -54,6 +54,7 @@ public final class PackedPlanRefreshWork {
 		this.semanticsCodec = Objects.requireNonNull(semanticsCodec, "statement semantics codec");
 		this.preparedSource = semanticsCodec
 				.cloneWithSemantics(Objects.requireNonNull(preparedSource, "preparedSource"));
+		PackedPlanCache.stripProviderPayload(this.preparedSource);
 		this.goal = Objects.requireNonNull(goal, "goal");
 		this.limits = Objects.requireNonNull(limits, "limits");
 		this.structuralLocator = Objects.requireNonNull(structuralLocator, "structuralLocator");

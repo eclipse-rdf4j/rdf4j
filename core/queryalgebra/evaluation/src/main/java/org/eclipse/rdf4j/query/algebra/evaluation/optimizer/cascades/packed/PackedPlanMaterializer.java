@@ -417,8 +417,10 @@ final class PackedPlanMaterializer {
 
 	private static ExtensionElem extensionElement(PackedQuery query, int payloadId) {
 		requirePayload(query, payloadId, PackedPayloadOp.EXTENSION_ELEMENT);
-		return new ExtensionElem(scalar(query, query.payloadSecondary(payloadId)),
+		ExtensionElem element = new ExtensionElem(scalar(query, query.payloadSecondary(payloadId)),
 				(String) query.objectValue(query.payloadPrimary(payloadId)));
+		element.setAnonymousTarget((query.payloadFlags(payloadId) & 1) != 0);
+		return element;
 	}
 
 	private static Set<String> nameSet(PackedQuery query, int payloadId) {
@@ -437,8 +439,10 @@ final class PackedPlanMaterializer {
 		for (int ordinal = 0; ordinal < query.payloadChildCount(payloadId); ordinal++) {
 			int elementId = requirePayload(query, query.payloadChild(payloadId, ordinal),
 					PackedPayloadOp.GROUP_ELEMENT);
-			group.addGroupElement(new GroupElem((String) query.objectValue(query.payloadPrimary(elementId)),
-					(AggregateOperator) scalar(query, query.payloadSecondary(elementId))));
+			GroupElem element = new GroupElem((String) query.objectValue(query.payloadPrimary(elementId)),
+					(AggregateOperator) scalar(query, query.payloadSecondary(elementId)));
+			element.setAnonymousTarget((query.payloadFlags(elementId) & 1) != 0);
+			group.addGroupElement(element);
 		}
 		return group;
 	}
@@ -499,10 +503,26 @@ final class PackedPlanMaterializer {
 						(String) query.objectValue(query.payloadSecondary(entryId)));
 			}
 		}
-		return new Service(term(query, query.payloadPrimary(payloadId)),
+		String body = (String) query.objectValue(query.payloadSecondary(payloadId));
+		// The constructor extracts one outer SERVICE wrapper. Supplying the stored body directly would extract
+		// a nested SERVICE again when that request is the first expression in the body.
+		Service service = new Service(term(query, query.payloadPrimary(payloadId)),
 				relation(query, recipe, relChild(query, recipe, nodeId, 0)),
-				(String) query.objectValue(query.payloadSecondary(payloadId)), prefixes,
+				"SERVICE <urn:rdf4j:packed-service-body> {" + body + "}", prefixes,
 				(String) query.objectValue(query.payloadPrimary(optionsId)), (optionFlags & 1) != 0);
+		int referencesId = requirePayload(query, query.payloadFlags(optionsId),
+				PackedPayloadOp.SERVICE_REFERENCE_METADATA);
+		Set<String> ids = nameSet(query, query.payloadPrimary(referencesId));
+		Set<String> names = nameSet(query, query.payloadSecondary(referencesId));
+		int referenceFlags = query.payloadFlags(referencesId);
+		if ((referenceFlags & 1) != 0) {
+			service.setBNodeReferenceMetadata(ids, names, (referenceFlags & 2) != 0);
+		} else {
+			service.setReservedBNodeIDs(ids);
+			service.setBNodeReferenceVarNames(names);
+			service.setContainsBNodeReferenceSyntax((referenceFlags & 2) != 0);
+		}
+		return service;
 	}
 
 	private static TupleFunctionCall tupleFunction(PackedQuery query, int payloadId) {
@@ -628,8 +648,8 @@ final class PackedPlanMaterializer {
 				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 1)),
 				scalarNullable(query, recipe, ownerRecipeId, query.scalarChild(scalarId, 2)));
 		case PackedScalarOp.FUNCTION_CALL -> functionCall(query, recipe, ownerRecipeId, scalarId);
-		case PackedScalarOp.VALUE_TRIPLE_REF -> valueTripleRef(query, query.scalarPayload(scalarId));
-		case PackedScalarOp.TRIPLE_COMPONENT -> tripleComponent(query, query.scalarPayload(scalarId));
+		case PackedScalarOp.VALUE_TRIPLE_REF -> valueTripleRef(query, recipe, ownerRecipeId, scalarId);
+		case PackedScalarOp.TRIPLE_COMPONENT -> tripleComponent(query, recipe, ownerRecipeId, scalarId);
 		default -> throw new PackedMemoInvariantException("unknown packed scalar opcode "
 				+ query.scalarOperator(scalarId));
 		};
@@ -637,16 +657,21 @@ final class PackedPlanMaterializer {
 		return result;
 	}
 
-	private static ValueExprTripleRef valueTripleRef(PackedQuery query, int payloadId) {
+	private static ValueExprTripleRef valueTripleRef(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		int payloadId = query.scalarPayload(scalarId);
 		requirePayload(query, payloadId, PackedPayloadOp.VALUE_TRIPLE_REF);
 		return new ValueExprTripleRef((String) query.objectValue(query.payloadPrimary(payloadId)),
-				term(query, query.payloadChild(payloadId, 0)), term(query, query.payloadChild(payloadId, 1)),
-				term(query, query.payloadChild(payloadId, 2)));
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 1),
+				scalarChild(query, recipe, ownerRecipeId, scalarId, 2));
 	}
 
-	private static TripleComponent tripleComponent(PackedQuery query, int payloadId) {
+	private static TripleComponent tripleComponent(PackedQuery query, PackedPlanRecipe recipe, int ownerRecipeId,
+			int scalarId) {
+		int payloadId = query.scalarPayload(scalarId);
 		requirePayload(query, payloadId, PackedPayloadOp.TRIPLE_COMPONENT);
-		return new TripleComponent(term(query, query.payloadPrimary(payloadId)),
+		return new TripleComponent(scalarChild(query, recipe, ownerRecipeId, scalarId, 0),
 				TripleComponent.Role.values()[query.payloadSecondary(payloadId) - 1]);
 	}
 

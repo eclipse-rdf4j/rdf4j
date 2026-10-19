@@ -44,9 +44,12 @@ public class LmdbEvaluationStrategy extends DefaultEvaluationStrategy {
 	@Override
 	public TupleExpr optimize(TupleExpr expr, EvaluationStatistics evaluationStatistics, BindingSet bindings) {
 		LmdbValueIdFilter.preserveEffectiveKinds(expr);
-		return optimizerPipeline instanceof LmdbQueryOptimizerPipeline lmdbPipeline
-				? lmdbPipeline.optimize(expr, dataset, bindings)
-				: super.optimize(expr, evaluationStatistics, bindings);
+		if (optimizerPipeline instanceof LmdbQueryOptimizerPipeline lmdbPipeline) {
+			return expr == null ? lmdbPipeline.optimize(null, dataset, bindings)
+					: optimizeWithBNodePreflight(expr, bindings,
+							() -> lmdbPipeline.optimize(expr, dataset, bindings));
+		}
+		return super.optimize(expr, evaluationStatistics, bindings);
 	}
 
 	@Override

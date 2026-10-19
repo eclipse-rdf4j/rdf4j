@@ -276,8 +276,9 @@ final class LmdbEstimatorRuntime {
 				return cached;
 			}
 		}
-		BagEstimate semantic = semanticEstimate(expression, context);
-		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, semantic,
+		EstimateEvidenceResolver.ResolvedEstimate qualified = engine.estimateQualified(expression, context, scope);
+		BagEstimate semantic = qualified.estimate();
+		FactorCostEstimate result = factorCostAssembler.assemble(expression, context, qualified,
 				LmdbEstimateClassification.databaseExact(semantic), scope);
 		result = finiteDerivedFactorCost(expression, cost, semantic, result, scope).orElse(result);
 		Optional<FactorCostEstimate> estimate = Optional.of(result);

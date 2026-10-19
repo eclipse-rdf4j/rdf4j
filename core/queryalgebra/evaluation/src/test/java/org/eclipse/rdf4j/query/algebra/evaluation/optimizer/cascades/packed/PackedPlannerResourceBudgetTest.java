@@ -623,4 +623,18 @@ class PackedPlannerResourceBudgetTest {
 			throw new AssertionError("resource-accounted planning method became inaccessible on " + type.getName(), e);
 		}
 	}
+
+	@Test
+	void costingLineageScratchIsIncludedInEveryReservedEventCapacity() {
+		long small = PackedCostingTraceArena.requiredBytesForCapacity(16, 16, 16, 16, 16, 32);
+		long large = PackedCostingTraceArena.requiredBytesForCapacity(32, 16, 16, 16, 16, 32);
+		assertThat(large - small).isGreaterThanOrEqualTo(16L * 27L * Integer.BYTES);
+		PackedSearchBudget budget = new PackedSearchBudget(
+				new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE, small - 1L));
+		PackedCostingTraceArena arena = new PackedCostingTraceArena(budget);
+		PackedCostContext context = new PackedCostContext();
+		assertThat(arena.append(PackedCostingPhase.LEAF, 1, context, 0, context,
+				new PackedCostEstimate(), new PackedCostEstimate(), 1.0d)).isZero();
+		assertThat(arena.snapshot().eventCount()).isZero();
+	}
 }

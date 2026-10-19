@@ -22,4 +22,18 @@ import org.eclipse.rdf4j.common.annotation.Experimental;
  */
 @Experimental
 public interface RuntimeFeedbackDescriptor {
+	/**
+	 * Reports whether this descriptor owns additional provider payload and adds that detached payload to the caller's
+	 * identity-based accounting scope. Existing descriptors have no additional payload under this optional contract.
+	 * Values must be resource-free; the query session is not an accounting identity and must never survive here.
+	 */
+	default boolean accountRetainedMemory(RetainedMemoryAccount account) {
+		return false;
+	}
+
+	@FunctionalInterface
+	interface RetainedMemoryAccount {
+		/** Adds one actual retained object once; false means this same object was already accounted. */
+		boolean add(Object identity, long modeledBytes);
+	}
 }

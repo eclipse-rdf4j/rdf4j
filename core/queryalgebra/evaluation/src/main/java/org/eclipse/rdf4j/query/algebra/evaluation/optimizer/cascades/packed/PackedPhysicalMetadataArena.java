@@ -29,6 +29,25 @@ final class PackedPhysicalMetadataArena {
 	private static final int CONTEXTUAL_OUTPUT_ROWS = 1 << 2;
 	private static final int COMPONENT_OUTPUT_ROWS = 1 << 3;
 	private static final int VIRTUAL_COST_SCOPE_METRIC = 1 << 4;
+	private static final int CONTEXTUAL_SCALAR_WORK = 1 << 5;
+	private static final int TYPED_DEPENDENT_PROFILE = 1 << 6;
+	private static final String[] DEPENDENT_NAMES = {
+			"optimizer.dependentStartupOnce",
+			"optimizer.dependentInvocationCount",
+			"optimizer.dependentHitProbability",
+			"optimizer.dependentFirstMatchWork",
+			"optimizer.dependentExhaustionWork",
+			"optimizer.dependentRebindWork",
+			"optimizer.dependentCloseWork",
+			"optimizer.dependentOutputWork",
+			"optimizer.dependentDistinctKeyMisses",
+			"optimizer.dependentCacheHits",
+			"optimizer.dependentCacheMisses",
+			"optimizer.dependentCacheEvictions",
+			"optimizer.dependentMaterializationBuilds",
+			"optimizer.dependentMaterializationLookups",
+			"optimizer.dependentMemorySpillWork"
+	};
 	private static final int LIFECYCLE_ENFORCED = 1;
 	private static final int LIFECYCLE_ELIGIBLE = 1 << 1;
 	private static final int LIFECYCLE_LAST_GOOD = 1 << 2;
@@ -183,6 +202,14 @@ final class PackedPhysicalMetadataArena {
 		boolean virtualCostScopeMetric = hasVirtualCostScopeMetric(estimate, stringMetricCount);
 		int storedStringMetricCount = stringMetricCount - (virtualCostScopeMetric ? 1 : 0);
 		int doubleMetricCount = estimate.plannedDoubleMetricCount();
+		if (estimate.hasDependentCostComponents()) {
+			doubleMetricCount = DEPENDENT_NAMES.length;
+			for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+				if (dependentMetricOrdinal(estimate.plannedDoubleMetricName(ordinal)) < 0) {
+					doubleMetricCount++;
+				}
+			}
+		}
 		if (!initialCapacityReserved || !ensureAppendCapacity(metadataId,
 				plannedStringMetricSize + stringMetricCount,
 				storedPlannedStringMetricSize + storedStringMetricCount,
@@ -195,16 +222,16 @@ final class PackedPhysicalMetadataArena {
 		}
 		outputRows[metadataId] = finiteNonNegative(estimate.outputRows(), fallbackRows);
 		workRows[metadataId] = finiteNonNegative(estimate.workRows(), fallbackWork);
-		double sequential = finiteNonNegative(estimate.sequentialRows(), workRows[metadataId]);
-		double seeks = finiteNonNegative(estimate.randomSeeks(), 0.0d);
-		double opens = finiteNonNegative(estimate.iteratorOpens(), 0.0d);
-		double evaluations = finiteNonNegative(estimate.expressionEvaluations(), 0.0d);
-		double buildRows = finiteNonNegative(estimate.hashBuildRows(), 0.0d);
-		double probeRows = finiteNonNegative(estimate.hashProbeRows(), 0.0d);
-		double expansions = finiteNonNegative(estimate.pathExpansions(), 0.0d);
-		double producedRows = finiteNonNegative(estimate.resultRows(), 0.0d);
-		double calls = finiteNonNegative(estimate.remoteCalls(), 0.0d);
-		double peakRows = finiteNonNegative(estimate.peakMemoryRows(), 0.0d);
+		double sequential = finiteNonNegative(estimate.sequentialRows(), Double.NaN);
+		double seeks = finiteNonNegative(estimate.randomSeeks(), Double.NaN);
+		double opens = finiteNonNegative(estimate.iteratorOpens(), Double.NaN);
+		double evaluations = finiteNonNegative(estimate.expressionEvaluations(), Double.NaN);
+		double buildRows = finiteNonNegative(estimate.hashBuildRows(), Double.NaN);
+		double probeRows = finiteNonNegative(estimate.hashProbeRows(), Double.NaN);
+		double expansions = finiteNonNegative(estimate.pathExpansions(), Double.NaN);
+		double producedRows = finiteNonNegative(estimate.resultRows(), Double.NaN);
+		double calls = finiteNonNegative(estimate.remoteCalls(), Double.NaN);
+		double peakRows = finiteNonNegative(estimate.peakMemoryRows(), Double.NaN);
 		double objectivePoint = finiteNonNegative(estimate.objectivePoint(), workRows[metadataId]);
 		double objectiveLower = Math.min(objectivePoint,
 				finiteNonNegative(estimate.objectiveLower(), objectivePoint));
@@ -348,6 +375,8 @@ final class PackedPhysicalMetadataArena {
 				| (estimate.dependentSubqueriesCosted() ? DEPENDENT_SUBQUERIES_COSTED : 0)
 				| (estimate.hasContextualOutputRows() ? CONTEXTUAL_OUTPUT_ROWS : 0)
 				| (estimate.hasComponentOutputRows() ? COMPONENT_OUTPUT_ROWS : 0)
+				| (estimate.hasContextualScalarWork() ? CONTEXTUAL_SCALAR_WORK : 0)
+				| (estimate.hasDependentCostComponents() ? TYPED_DEPENDENT_PROFILE : 0)
 				| (virtualCostScopeMetric ? VIRTUAL_COST_SCOPE_METRIC : 0));
 	}
 
@@ -461,6 +490,18 @@ final class PackedPhysicalMetadataArena {
 		return (physicalCostFlags[metadataId] & DEPENDENT_SUBQUERIES_COSTED) != 0;
 	}
 
+	boolean hasContextualScalarWork(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & CONTEXTUAL_SCALAR_WORK) != 0;
+	}
+
+	double dependentInvocationCount(int metadataId) {
+		checkId(metadataId);
+		return (physicalCostFlags[metadataId] & TYPED_DEPENDENT_PROFILE) == 0
+				? Double.NaN
+				: plannedDoubleMetricValues[plannedDoubleMetricStarts[metadataId] + 1];
+	}
+
 	boolean hasContextualOutputRows(int metadataId) {
 		checkId(metadataId);
 		return (physicalCostFlags[metadataId] & CONTEXTUAL_OUTPUT_ROWS) != 0;
@@ -473,21 +514,11 @@ final class PackedPhysicalMetadataArena {
 
 	void restorePhysicalCost(int metadataId, PackedCostEstimate estimate) {
 		checkId(metadataId);
-		if (hasExplicitPhysicalCost(metadataId)) {
-			if (costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE) {
-				estimate.setInclusivePhysicalCost(sequentialRows(metadataId), randomSeeks(metadataId),
-						iteratorOpens(metadataId), expressionEvaluations(metadataId), hashBuildRows(metadataId),
-						hashProbeRows(metadataId), pathExpansions(metadataId), resultRows(metadataId),
-						remoteCalls(metadataId), peakMemoryRows(metadataId));
-			} else {
-				estimate.setLocalPhysicalCost(sequentialRows(metadataId), randomSeeks(metadataId),
-						iteratorOpens(metadataId), expressionEvaluations(metadataId), hashBuildRows(metadataId),
-						hashProbeRows(metadataId), pathExpansions(metadataId), resultRows(metadataId),
-						remoteCalls(metadataId), peakMemoryRows(metadataId));
-			}
-		} else {
-			estimate.setReplacesChildWork(costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE);
-		}
+		estimate.restorePhysicalCostAxes(workRows[metadataId], sequentialRows(metadataId), randomSeeks(metadataId),
+				iteratorOpens(metadataId), expressionEvaluations(metadataId), hashBuildRows(metadataId),
+				hashProbeRows(metadataId), pathExpansions(metadataId), resultRows(metadataId), remoteCalls(metadataId),
+				peakMemoryRows(metadataId), costScope(metadataId), hasExplicitPhysicalCost(metadataId));
+		estimate.setReplacesChildWork(costScope(metadataId) == PackedCostEstimate.CostScope.INCLUSIVE);
 		if (hasComponentOutputRows(metadataId)) {
 			estimate.setComponentOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
 		} else if (hasContextualOutputRows(metadataId)) {
@@ -495,9 +526,29 @@ final class PackedPhysicalMetadataArena {
 		} else {
 			estimate.setOutputRowsPreservingPhysicalCost(outputRows[metadataId]);
 		}
+		estimate.setContextualScalarWork((physicalCostFlags[metadataId] & CONTEXTUAL_SCALAR_WORK) != 0);
 		estimate.setDependentSubqueriesCosted(dependentSubqueriesCosted(metadataId));
 		estimate.setObjectiveInterval(objectiveLowerBound(metadataId), objectivePointCost(metadataId),
 				objectiveUpperBound(metadataId));
+		if ((physicalCostFlags[metadataId] & TYPED_DEPENDENT_PROFILE) != 0) {
+			int start = plannedDoubleMetricStarts[metadataId];
+			estimate.setDependentCostComponents(
+					plannedDoubleMetricValues[start + 0],
+					plannedDoubleMetricValues[start + 1],
+					plannedDoubleMetricValues[start + 2],
+					plannedDoubleMetricValues[start + 3],
+					plannedDoubleMetricValues[start + 4],
+					plannedDoubleMetricValues[start + 5],
+					plannedDoubleMetricValues[start + 6],
+					plannedDoubleMetricValues[start + 7],
+					plannedDoubleMetricValues[start + 8],
+					plannedDoubleMetricValues[start + 9],
+					plannedDoubleMetricValues[start + 10],
+					plannedDoubleMetricValues[start + 11],
+					plannedDoubleMetricValues[start + 12],
+					plannedDoubleMetricValues[start + 13],
+					plannedDoubleMetricValues[start + 14]);
+		}
 	}
 
 	double accessRows(int metadataId) {
@@ -521,6 +572,9 @@ final class PackedPhysicalMetadataArena {
 		}
 		ensureAnnotationColumns();
 		invocations[metadataId] = pricedInvocations;
+		if (!hasExplicitPhysicalCost(metadataId)) {
+			physicalCostFlags[metadataId] |= CONTEXTUAL_SCALAR_WORK;
+		}
 	}
 
 	int evidenceStateId(int metadataId) {
@@ -649,12 +703,50 @@ final class PackedPhysicalMetadataArena {
 
 		plannedDoubleMetricStarts[metadataId] = plannedDoubleMetricSize;
 		plannedDoubleMetricCounts[metadataId] = doubleCount;
-		for (int ordinal = 0; ordinal < doubleCount; ordinal++) {
-			plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects
-					.intern(estimate.plannedDoubleMetricName(ordinal));
-			plannedDoubleMetricValues[plannedDoubleMetricSize] = estimate.plannedDoubleMetricValue(ordinal);
-			plannedDoubleMetricSize++;
+		if (estimate.hasDependentCostComponents()) {
+			for (int ordinal = 0; ordinal < DEPENDENT_NAMES.length; ordinal++) {
+				plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects.intern(DEPENDENT_NAMES[ordinal]);
+				plannedDoubleMetricValues[plannedDoubleMetricSize++] = dependentMetricValue(estimate, ordinal);
+			}
 		}
+		for (int ordinal = 0; ordinal < estimate.plannedDoubleMetricCount(); ordinal++) {
+			String name = estimate.plannedDoubleMetricName(ordinal);
+			if (estimate.hasDependentCostComponents() && dependentMetricOrdinal(name) >= 0) {
+				continue;
+			}
+			plannedDoubleMetricNameIds[plannedDoubleMetricSize] = objects.intern(name);
+			plannedDoubleMetricValues[plannedDoubleMetricSize++] = estimate.plannedDoubleMetricValue(ordinal);
+		}
+	}
+
+	private static int dependentMetricOrdinal(String name) {
+		for (int ordinal = 0; ordinal < DEPENDENT_NAMES.length; ordinal++) {
+			if (DEPENDENT_NAMES[ordinal].equals(name)) {
+				return ordinal;
+			}
+		}
+		return -1;
+	}
+
+	private static double dependentMetricValue(PackedCostEstimate estimate, int ordinal) {
+		return switch (ordinal) {
+		case 0 -> estimate.startupOnceWork();
+		case 1 -> estimate.dependentInvocationCount();
+		case 2 -> estimate.hitProbability();
+		case 3 -> estimate.firstMatchWork();
+		case 4 -> estimate.exhaustionWork();
+		case 5 -> estimate.rebindWork();
+		case 6 -> estimate.closeWork();
+		case 7 -> estimate.outputWork();
+		case 8 -> estimate.distinctKeyMisses();
+		case 9 -> estimate.cacheHits();
+		case 10 -> estimate.cacheMisses();
+		case 11 -> estimate.cacheEvictions();
+		case 12 -> estimate.materializationBuilds();
+		case 13 -> estimate.materializationLookups();
+		case 14 -> estimate.memorySpillWork();
+		default -> throw new IndexOutOfBoundsException("dependent component ordinal " + ordinal);
+		};
 	}
 
 	private int plannedStringMetricIndex(int metadataId, int ordinal) {

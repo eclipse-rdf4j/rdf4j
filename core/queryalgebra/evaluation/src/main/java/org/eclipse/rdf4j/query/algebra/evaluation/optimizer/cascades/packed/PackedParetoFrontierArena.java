@@ -100,21 +100,19 @@ final class PackedParetoFrontierArena {
 			return OfferResult.INSERTED;
 		}
 
-		int candidateVectorId = candidates.costVectorId(candidateId);
 		for (int ordinal = 0; ordinal < frontierSizes[frontierId]; ordinal++) {
 			int retainedCandidateId = candidateId(frontierId, ordinal);
-			int retainedVectorId = candidates.costVectorId(retainedCandidateId);
-			if (equalVector(retainedVectorId, candidateVectorId)) {
+			if (equalCandidate(retainedCandidateId, candidateId)) {
 				return OfferResult.DUPLICATE;
 			}
-			if (dominates(retainedVectorId, candidateVectorId)) {
+			if (dominatesCandidate(retainedCandidateId, candidateId)) {
 				return OfferResult.DOMINATED;
 			}
 		}
 
 		if (frontierSizes[frontierId] == 1) {
 			int retainedCandidateId = firstCandidateIds[frontierId];
-			if (dominates(candidateVectorId, candidates.costVectorId(retainedCandidateId))) {
+			if (dominatesCandidate(candidateId, retainedCandidateId)) {
 				firstCandidateIds[frontierId] = candidateId;
 				return OfferResult.REPLACED_BY_PROOF;
 			}
@@ -135,7 +133,7 @@ final class PackedParetoFrontierArena {
 
 		boolean replaces = false;
 		for (int entryId = headEntryIds[frontierId]; entryId != 0; entryId = nextEntryIds[entryId]) {
-			if (dominates(candidateVectorId, candidates.costVectorId(entryCandidateIds[entryId]))) {
+			if (dominatesCandidate(candidateId, entryCandidateIds[entryId])) {
 				replaces = true;
 				break;
 			}
@@ -157,7 +155,7 @@ final class PackedParetoFrontierArena {
 		int retainedCount = 0;
 		for (int entryId = headEntryIds[frontierId]; entryId != 0;) {
 			int nextEntryId = nextEntryIds[entryId];
-			if (dominates(candidateVectorId, candidates.costVectorId(entryCandidateIds[entryId]))) {
+			if (dominatesCandidate(candidateId, entryCandidateIds[entryId])) {
 				if (replacementEntryId == 0) {
 					replacementEntryId = entryId;
 				} else {
@@ -225,12 +223,22 @@ final class PackedParetoFrontierArena {
 		return entryCandidateIds[entryId];
 	}
 
-	private boolean equalVector(int leftVectorId, int rightVectorId) {
-		return vectors.equalVector(leftVectorId, rightVectorId);
+	private boolean sameQuantityDomain(int left, int right) {
+		double population = candidates.quantityPopulation(left);
+		return Double.isFinite(population) && population >= 0.0d
+				&& Double.compare(population, candidates.quantityPopulation(right)) == 0;
 	}
 
-	private boolean dominates(int leftVectorId, int rightVectorId) {
-		return vectors.dominates(leftVectorId, rightVectorId);
+	private boolean equalCandidate(int left, int right) {
+		return sameQuantityDomain(left, right) && PackedCostOrder.equal(vectors,
+				candidates.quantityVectorId(left), candidates.objectiveScore(left),
+				candidates.quantityVectorId(right), candidates.objectiveScore(right));
+	}
+
+	private boolean dominatesCandidate(int left, int right) {
+		return sameQuantityDomain(left, right) && PackedCostOrder.dominates(vectors,
+				candidates.quantityVectorId(left), candidates.objectiveScore(left),
+				candidates.quantityVectorId(right), candidates.objectiveScore(right));
 	}
 
 	private int createFrontier(long hash, int cellId, int continuationKeyId) {

@@ -22,6 +22,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EstimateMath;
@@ -93,7 +94,7 @@ final class LmdbPropertyPathEstimator {
 					distinctSubjects, distinctObjects, subjectBound, objectBound, context, SOURCE), work);
 			result.add(new EstimateCandidate(estimate, evidence,
 					direct.kind(),
-					direct.freshness()));
+					direct.freshness(), subjectBound || objectBound ? RowScope.FOR_CONTEXT : RowScope.PER_INVOCATION));
 		}
 		return List.copyOf(result);
 	}
@@ -128,7 +129,7 @@ final class LmdbPropertyPathEstimator {
 				context.snapshotVersion(), "lmdb-zero-length-path");
 		return List.of(new EstimateCandidate(bag(subject, object, rows, distinctSubjects, distinctObjects, false,
 				false, context, "lmdb-zero-length-path"), evidence, EstimateCandidate.Kind.SYNOPSIS,
-				context.snapshotVersion()));
+				context.snapshotVersion(), RowScope.FOR_CONTEXT));
 	}
 
 	private EstimateCandidate exact(ZeroLengthPath path, double rows, EstimateContext context) {
@@ -137,7 +138,8 @@ final class LmdbPropertyPathEstimator {
 		RowEvidence evidence = new RowEvidence(rows, rows, rows, 1.0d, true, context.snapshotIdentity(),
 				context.snapshotVersion(), "zero-length-path");
 		return new EstimateCandidate(estimate.withRowsPreservingEvidence(rows, rows, 1.0d, "zero-length-path",
-				estimate.metrics(), true), evidence, EstimateCandidate.Kind.FINITE_RELATION, context.snapshotVersion());
+				estimate.metrics(), true), evidence, EstimateCandidate.Kind.FINITE_RELATION, context.snapshotVersion(),
+				RowScope.FOR_CONTEXT);
 	}
 
 	private EstimateCandidate heuristic(ArbitraryLengthPath path, EstimateContext context) {
@@ -145,7 +147,8 @@ final class LmdbPropertyPathEstimator {
 				bound(path.getSubjectVar(), context), bound(path.getObjectVar(), context), context, SOURCE);
 		RowEvidence evidence = new RowEvidence(1.0d, 0.0d, Double.MAX_VALUE, 0.0d, false,
 				context.snapshotIdentity(), context.snapshotVersion(), SOURCE);
-		return new EstimateCandidate(estimate, evidence, EstimateCandidate.Kind.HEURISTIC, context.snapshotVersion());
+		return new EstimateCandidate(estimate, evidence, EstimateCandidate.Kind.HEURISTIC, context.snapshotVersion(),
+				RowScope.PER_INVOCATION);
 	}
 
 	private EstimateCandidate uncertainEquality(ZeroLengthPath path, EstimateContext context) {
@@ -158,7 +161,7 @@ final class LmdbPropertyPathEstimator {
 				"lmdb-zero-length-path");
 		return new EstimateCandidate(estimate, evidence,
 				synopsis == null ? EstimateCandidate.Kind.HEURISTIC : EstimateCandidate.Kind.SYNOPSIS,
-				context.snapshotVersion());
+				context.snapshotVersion(), RowScope.FOR_CONTEXT);
 	}
 
 	private double endpointDistinct(StatementPattern step, EstimateContext context, int projectedComponent,

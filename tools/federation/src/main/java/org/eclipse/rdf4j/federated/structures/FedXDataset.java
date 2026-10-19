@@ -17,6 +17,7 @@ import java.util.HashSet;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.query.Dataset;
 
 /**
@@ -100,4 +101,28 @@ public class FedXDataset implements Dataset {
 		return delegate.getNamedGraphs();
 	}
 
+	@Override
+	public boolean isExplicitReadDataset() {
+		return delegate != null && delegate.isExplicitReadDataset();
+	}
+
+	@Override
+	public Set<Resource> getDefaultGraphResources() {
+		return delegate == null ? Set.of() : delegate.getDefaultGraphResources();
+	}
+
+	@Override
+	public Set<Resource> getNamedGraphResources() {
+		return delegate == null ? Set.of() : delegate.getNamedGraphResources();
+	}
+
+	@Override
+	public Set<Resource> getDefaultRemoveGraphResources() {
+		return delegate == null ? Set.of() : delegate.getDefaultRemoveGraphResources();
+	}
+
+	@Override
+	public Resource getDefaultInsertGraphResource() {
+		return delegate == null ? null : delegate.getDefaultInsertGraphResource();
+	}
 }

@@ -16,12 +16,14 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedProviderMemory;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceIntervalKind;
@@ -36,6 +38,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierMemoryL
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateArena;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateKey;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 
 /** Bounded packed adapter whose lifetime owns one generation-consistent mapped statistics view. */
@@ -47,11 +50,14 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 
 	private final PackedCostSession delegate;
 	private final LmdbPackedCostModel mappedCostModel;
+	private final LmdbEstimatorRuntime runtime;
 	private final FrontierStatisticsView statistics;
 	private final PackedQueryView query;
 	private final LmdbMappedFrontierLearningSession learning;
+	private final LmdbPhysicalEventOrigins physicalOrigins;
 	private final LmdbMappedSemiAntiCosting semiAntiCosting;
 	private final LmdbSemanticPopulationProof semanticProofs;
+	private final LmdbBindingAssurance bindings;
 	private final AtomicBoolean closed = new AtomicBoolean();
 	private MappedEvidenceState[] states = new MappedEvidenceState[64];
 	private int stateCount;
@@ -63,27 +69,58 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		this.mappedCostModel = Objects.requireNonNull(mappedCostModel, "mappedCostModel");
 		this.statistics = Objects.requireNonNull(statistics, "statistics");
 		this.query = Objects.requireNonNull(query, "query");
+		this.runtime = Objects.requireNonNull(runtime, "runtime");
+		this.physicalOrigins = new LmdbPhysicalEventOrigins(query, datasetUsesStoreDefaults);
 		this.learning = new LmdbMappedFrontierLearningSession(
-				Objects.requireNonNull(runtime, "runtime"), query, datasetUsesStoreDefaults);
+				this.runtime, query, datasetUsesStoreDefaults, physicalOrigins);
 		this.semiAntiCosting = new LmdbMappedSemiAntiCosting(mappedCostModel, query);
 		this.semanticProofs = new LmdbSemanticPopulationProof(query, MAXIMUM_MAPPED_EVIDENCE_STATES);
+		this.bindings = new LmdbBindingAssurance(query, semanticProofs);
+	}
+
+	@Override
+	public void bindProviderMemory(PackedProviderMemory memory) {
+		physicalOrigins.bind(memory);
+		delegate.bindProviderMemory(memory);
+	}
+
+	private void completePhysical(byte kind, int relation, PackedCostContext context, PackedCostEstimate output) {
+		completePhysical(kind, relation, context, output, false);
+	}
+
+	private void completePhysical(byte kind, int relation, PackedCostContext context, PackedCostEstimate output,
+			boolean authenticatedRetainedCandidate) {
+		PhysicalEventKey.Origin origin = physicalOrigins.complete(kind, relation, context, output,
+				authenticatedRetainedCandidate);
+		learning.applyIndependentPhysical(relation, origin, context, output);
+		learning.ensureTelemetry(output);
 	}
 
 	@Override
 	public void estimateLeaf(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		delegate.estimateLeaf(relationId, context, output);
-		int proof = canAttachState() ? semanticProofs.isolated(relationId, context, output) : 0;
+		int proof = canAttachState(output) ? semanticProofs.isolated(relationId, context, output) : 0;
 		learning.applyLeaf(relationId, context, output, semanticProofs.unconditioned(proof));
-		attachState(output, new int[] { relationId }, proof);
+		attachState(output, new int[] { relationId }, proof, proof, 0, relationId);
+		completePhysical(PhysicalEventKey.LEAF, relationId, context, output);
 	}
 
 	@Override
 	public void appendFactor(int relationId, PackedCostContext context, PackedCostEstimate output) {
 		MappedEvidenceState prefix = state(context.evidenceStateId());
-		if (context.prefixRelationCount() > 0 && (prefix == null
+		if (prefix != null && prefix.bindingOnly() || context.prefixRelationCount() > 0 && (prefix == null
 				|| !semanticProofs.describesPrefix(prefix.semanticProof(), context, output))) {
 			learning.applyAppend(relationId, EMPTY_RELATIONS, context, output);
 			clearEvidenceState(output);
+			if (describePhysicalBindings(relationId, prefix, context, output)) {
+				output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
+				output.setEvidenceDisposition(FrontierStateDisposition.BOUND_ONLY);
+				if (canAttachState(output)) {
+					int origin = bindings.append(prefix.bindingSource(), relationId, context);
+					attachState(output, EMPTY_RELATIONS, 0, origin, context.evidenceStateId(), relationId);
+				}
+			}
+			completePhysical(PhysicalEventKey.APPEND, relationId, context, output);
 			return;
 		}
 		delegate.appendFactor(relationId, context, output);
@@ -95,31 +132,56 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		relations = canonicalRelations(relations);
 		boolean completePrefixOutput = context.prefixRelationCount() == 0
 				|| output.hasContextualOutputRows() && !output.hasComponentOutputRows();
-		int proof = canAttachState() && completePrefixOutput
+		int proof = canAttachState(output) && completePrefixOutput
 				? prefix == null ? semanticProofs.isolated(relationId, context, output)
 						: semanticProofs.append(prefix.semanticProof(), relationId, context, output)
 				: 0;
 		learning.applyAppend(relationId, relations, context, output);
 		attachState(output, completePrefixOutput ? relations : EMPTY_RELATIONS, proof);
+		completePhysical(PhysicalEventKey.APPEND, relationId, context, output);
 	}
 
 	@Override
 	public void refineOperator(int relationId, PackedCostContext context, PackedCostEstimate output) {
-		delegate.refineOperator(relationId, context, output);
 		boolean innerJoin = query.isInnerJoin(relationId);
 		MappedEvidenceState input = state(innerJoin || context.leftInputEvidenceStateId() != 0
 				? context.leftInputEvidenceStateId()
 				: context.evidenceStateId());
 		MappedEvidenceState right = state(context.rightInputEvidenceStateId());
-		int proof = canAttachState() && input != null ? semanticProofs.operator(relationId, input.semanticProof(),
+		// Preserve the historical scalar lane only when no population identity was supplied at all.
+		boolean legacyNoState = context.evidenceStateId() == 0 && context.leftInputEvidenceStateId() == 0
+				&& context.rightInputEvidenceStateId() == 0 && output.evidenceStateId() == 0;
+		boolean logicalInputsMatch = legacyNoState || input != null
+				&& !lacksPopulation(context.rightInputEvidenceStateId())
+				&& semanticProofs.operatorInputsMatch(relationId, input.semanticProof(),
+						right == null ? 0 : right.semanticProof(), context, output);
+		if (!logicalInputsMatch) {
+			// A genuine proof still needs the encoded child/frame identity before whole logical feedback.
+			mappedCostModel.refineBindingOnlyOperator(query, relationId, context, output);
+		} else {
+			delegate.refineOperator(relationId, context, output);
+		}
+		int proof = canAttachState(output) && input != null ? semanticProofs.operator(relationId, input.semanticProof(),
 				right == null ? 0 : right.semanticProof(), context, output) : 0;
 		boolean populationQualified = semanticProofs.unconditioned(proof);
+		int bindingSource = proof;
+		if (bindingSource == 0 && canAttachState(output) && input != null) {
+			MappedEvidenceState candidate = state(context.evidenceStateId());
+			if (innerJoin && retainsAppend(candidate, input, right, context, output)) {
+				attachRetainedState(output, context.evidenceStateId(), candidate, candidate.bindingSource());
+				completePhysical(PhysicalEventKey.OPERATOR, relationId, context, output);
+				return;
+			}
+			bindingSource = innerJoin
+					? right == null ? 0 : bindings.join(input.bindingSource(), right.bindingSource(), context)
+					: bindings.selection(relationId, input.bindingSource(), context);
+		}
 		boolean inputInventoryComplete = input != null
 				&& semanticProofs.compatibleContext(input.semanticProof(), context, output)
 				&& semanticProofs.describes(input.semanticProof(), input.relations());
 		semiAntiCosting.refine(relationId, inputInventoryComplete ? input.relations() : EMPTY_RELATIONS,
 				inputInventoryComplete ? input.summary() : null, context, output, populationQualified);
-		learning.applyOperator(relationId, input == null ? EMPTY_RELATIONS : input.relations(),
+		learning.applyOperator(relationId, inputInventoryComplete ? input.relations() : EMPTY_RELATIONS,
 				context, output, populationQualified);
 		if (innerJoin) {
 			int[] relations = input != null && right != null ? union(input.relations(), right.relations()) : null;
@@ -127,33 +189,62 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 					&& semanticProofs.describes(right.semanticProof(), right.relations())
 					&& semanticProofs.describes(proof, relations);
 			// A real whole JOIN is an opaque statistical factor when a SET cannot describe both supplied bags.
-			attachState(output, complete ? relations : new int[] { relationId }, proof);
+			attachState(output, complete ? relations : new int[] { relationId }, proof, bindingSource);
 		} else if (input != null) {
-			attachState(output, input.relations(), proof);
+			int[] relations = semanticProofs.describes(proof, input.relations())
+					? input.relations()
+					: new int[] { relationId };
+			attachState(output, relations, proof, bindingSource);
 		} else {
 			clearEvidenceState(output);
 		}
+		completePhysical(PhysicalEventKey.OPERATOR, relationId, context, output);
 	}
 
 	@Override
 	public void refineIntermediateJoin(PackedCostContext context, PackedCostEstimate output) {
 		boolean physicalEvent = output.plannedStringMetric("optimizer.physicalJoinImplementation") != null;
+		RuntimeFeedbackContract incomingCandidateFeedback = physicalEvent
+				&& (context.evidenceStateId() != 0 || context.leftInputEvidenceStateId() != 0
+						|| context.rightInputEvidenceStateId() != 0 || output.evidenceStateId() != 0)
+								? output.runtimeFeedbackContract()
+								: null;
 		delegate.refineIntermediateJoin(context, output);
 		MappedEvidenceState candidate = state(context.evidenceStateId());
 		MappedEvidenceState left = state(context.leftInputEvidenceStateId());
 		MappedEvidenceState right = state(context.rightInputEvidenceStateId());
 		int[] joinedRelations = left != null && right != null
-				? union(left.relations(), right.relations())
+				? left.bindingOnly() || right.bindingOnly() ? EMPTY_RELATIONS
+						: union(left.relations(), right.relations())
 				: null;
-		int joinedProof = canAttachState() && left != null && right != null
+		int joinedProof = canAttachState(output) && left != null && right != null
 				? semanticProofs.join(left.semanticProof(), right.semanticProof())
 				: 0;
 		if (!semanticProofs.compatibleContext(joinedProof, context, output)) {
 			joinedProof = 0;
 		}
+		int bindingSource = joinedProof;
+		boolean noSuppliedChildren = context.leftInputEvidenceStateId() == 0
+				&& context.rightInputEvidenceStateId() == 0;
+		if (noSuppliedChildren && candidate != null && finiteNonNegative(output.outputRows())
+				&& bindings.compatible(candidate.bindingSource(), context)
+				&& (!output.hasComponentOutputRows()
+						|| candidate.bindingOnly() && compatibleRowExtent(candidate, context, output))) {
+			bindingSource = candidate.bindingSource();
+		}
 		boolean retainedCandidate = candidate != null
-				&& semanticProofs.compatibleContext(candidate.semanticProof(), context, output)
-				&& (joinedRelations == null || semanticProofs.equivalent(candidate.semanticProof(), joinedProof));
+				&& (candidate.bindingOnly()
+						? bindings.compatible(candidate.bindingSource(), context)
+								&& (noSuppliedChildren ? compatibleRowExtent(candidate, context, output)
+										: retainsAppend(candidate, left, right, context, output))
+						: semanticProofs.compatibleContext(candidate.semanticProof(), context, output)
+								&& (joinedRelations == null
+										|| semanticProofs.equivalent(candidate.semanticProof(), joinedProof)));
+		if (retainedCandidate && candidate.bindingOnly()) {
+			bindingSource = candidate.bindingSource();
+		} else if (bindingSource == 0 && canAttachState(output) && left != null && right != null) {
+			bindingSource = bindings.join(left.bindingSource(), right.bindingSource(), context);
+		}
 		if (retainedCandidate) {
 			restoreRetainedEvidence(output, candidate);
 		}
@@ -168,14 +259,28 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 					? candidate.relations()
 					: joinedRelations;
 			if (retainedCandidate) {
+				attachRetainedState(output, context.evidenceStateId(), candidate, bindingSource);
+			} else if (noSuppliedChildren && bindingSource != 0) {
 				attachExistingState(output, context.evidenceStateId());
+			} else if (left != null && right != null) {
+				attachState(output, joinedRelations, joinedProof, bindingSource);
+			} else {
+				clearEvidenceState(output);
 			}
 			if (physicalRelations != null) {
 				int proof = retainedCandidate ? candidate.semanticProof() : joinedProof;
 				learning.applyPhysicalIntermediateJoin(physicalRelations, context, output,
 						semanticProofs.semanticAtoms(proof), semanticProofs.unconditioned(proof));
 			}
+			if (output.evidenceStateId() == 0 && incomingCandidateFeedback != null
+					&& output.runtimeFeedbackContract() == incomingCandidateFeedback
+					&& incomingCandidateFeedback.descriptor() instanceof LmdbRuntimeFeedbackDescriptor) {
+				// This modern candidate was declined. Its unchanged prior event contract cannot authorize
+				// the current physical event; a freshly produced contract and true legacy callbacks stay intact.
+				output.setRuntimeFeedbackContract(null);
+			}
 			refineMappedPhysicalJoinCost(context, output);
+			completePhysical(PhysicalEventKey.JOIN, 0, context, output, retainedCandidate);
 			return;
 		}
 		if (left != null && right != null && joinedProof != 0
@@ -186,8 +291,9 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 					right.relations(), right.summary(), context.prefixRelationsDescribeRows(), output)) {
 				learning.applyIntermediateJoin(joinedRelations, context, output,
 						semanticProofs.semanticAtoms(joinedProof), semanticProofs.unconditioned(joinedProof));
-				attachState(output, joinedRelations, joinedProof);
+				attachState(output, joinedRelations, joinedProof, bindingSource);
 				refineMappedPhysicalJoinCost(context, output);
+				completePhysical(PhysicalEventKey.JOIN, 0, context, output);
 				return;
 			}
 		}
@@ -195,19 +301,24 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 			learning.applyIntermediateJoin(candidate.relations(), context, output,
 					semanticProofs.semanticAtoms(candidate.semanticProof()),
 					semanticProofs.unconditioned(candidate.semanticProof()));
-			attachExistingState(output, context.evidenceStateId());
+			attachRetainedState(output, context.evidenceStateId(), candidate, bindingSource);
 			refineMappedPhysicalJoinCost(context, output);
+			completePhysical(PhysicalEventKey.JOIN, 0, context, output, true);
 			return;
 		}
 		if (left != null && right != null) {
 			learning.applyIntermediateJoin(joinedRelations, context, output,
 					semanticProofs.semanticAtoms(joinedProof), semanticProofs.unconditioned(joinedProof));
-			attachState(output, joinedRelations, joinedProof);
+			attachState(output, joinedRelations, joinedProof, bindingSource);
 		} else {
 			learning.applyIntermediateJoin(EMPTY_RELATIONS, context, output, Map.of(), false);
 			clearEvidenceState(output);
+			if (noSuppliedChildren && bindingSource != 0) {
+				attachExistingState(output, context.evidenceStateId());
+			}
 		}
 		refineMappedPhysicalJoinCost(context, output);
+		completePhysical(PhysicalEventKey.JOIN, 0, context, output);
 	}
 
 	private static void refineMappedPhysicalJoinCost(PackedCostContext context, PackedCostEstimate output) {
@@ -279,7 +390,8 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		int[] uniqueStateIds = new int[evidenceStateIds.length];
 		int uniqueCount = 0;
 		for (int stateId : evidenceStateIds) {
-			if (stateId <= 0 || stateId > stateCount || localStateIds[stateId] != 0) {
+			if (stateId <= 0 || stateId > stateCount || states[stateId].semanticProof() == 0
+					|| localStateIds[stateId] != 0) {
 				continue;
 			}
 			localStateIds[stateId] = -1;
@@ -320,6 +432,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		if (!closed.compareAndSet(false, true)) {
 			return;
 		}
+		learning.close();
 		try {
 			delegate.close();
 		} finally {
@@ -327,8 +440,19 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		}
 	}
 
-	private boolean canAttachState() {
-		return stateCount < MAXIMUM_MAPPED_EVIDENCE_STATES;
+	private boolean lacksPopulation(int stateId) {
+		MappedEvidenceState supplied = state(stateId);
+		return stateId != 0 && (supplied == null || supplied.semanticProof() == 0);
+	}
+
+	/** Read-only accounting of the single shared origin-node reservation. */
+	int originNodeCount() {
+		return semanticProofs.retainedNodeCount();
+	}
+
+	private boolean canAttachState(PackedCostEstimate output) {
+		// Refused outputs must not spend proof nodes reserved by the G+2S attached-state bound.
+		return stateCount < MAXIMUM_MAPPED_EVIDENCE_STATES && finiteNonNegative(output.outputRows());
 	}
 
 	private static void clearEvidenceState(PackedCostEstimate output) {
@@ -336,9 +460,74 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedFrontierFactorCount", 0.0d);
 	}
 
+	private boolean describePhysicalBindings(int relation, MappedEvidenceState prefix, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (prefix == null || output.hasComponentOutputRows() && !prefix.bindingOnly()) {
+			return false;
+		}
+		Set<String> inputs = bindings.assuredInputs(prefix.bindingSource(), relation, context);
+		LmdbPackedCostModel.PhysicalFactorCost physical = mappedCostModel.physicalFallback(
+				query, relation, context, inputs);
+		if (physical != null) {
+			LmdbMappedFrontierLearningSession.clearSupersededPhysicalAnnotations(output);
+			physical.applyTo(output);
+			return physical.hasQualifiedRows();
+		}
+		if (!query.isStatementPattern(relation) || output.hasComponentOutputRows()) {
+			return false;
+		}
+		int assured = 0;
+		for (int component = 0; component < 3; component++) {
+			String name = query.statementPatternName(relation, component);
+			if (name != null && inputs.contains(name)) {
+				assured |= 1 << component;
+			}
+		}
+		if (assured == 0) {
+			return false;
+		}
+		int mask = assured;
+		for (int component = 0; component < 4; component++) {
+			if (query.statementPatternValue(relation, component) != null) {
+				mask |= 1 << component;
+			}
+		}
+		// This describes the key only. The isolated rows, LOCAL/INCLUSIVE work, NaN access population and already
+		// priced invocation domain remain unchanged; none of this grants a logical or runtime feedback lease.
+		runtime.describePackedAccessPath(mask, output.accessRows(), output.invocations(), output.estimateSource(),
+				output);
+		return false;
+	}
+
+	private void attachRetainedState(PackedCostEstimate output, int stateId, MappedEvidenceState candidate,
+			int bindingSource) {
+		if (candidate.bindingSource() == bindingSource
+				&& (!candidate.bindingOnly() || candidate.rowExtent() == rowExtent(output)
+						&& candidate.summary().pointRows() == output.outputRows())) {
+			attachExistingState(output, stateId);
+		} else {
+			attachState(output, candidate.relations(), candidate.semanticProof(), bindingSource,
+					candidate.originatingLeft(), candidate.appendedFactor());
+		}
+	}
+
 	private void attachState(PackedCostEstimate output, int[] relations, int semanticProof) {
+		attachState(output, relations, semanticProof, semanticProof);
+	}
+
+	private void attachState(PackedCostEstimate output, int[] relations, int semanticProof, int bindingSource) {
+		attachState(output, relations, semanticProof, bindingSource, 0, 0);
+	}
+
+	private void attachState(PackedCostEstimate output, int[] relations, int semanticProof, int bindingSource,
+			int originatingLeft, int appendedFactor) {
 		clearEvidenceState(output);
-		if (!finiteNonNegative(output.outputRows()) || relations.length == 0
+		boolean bindingOnly = semanticProof == 0 && bindingSource != 0;
+		if (bindingOnly) {
+			relations = EMPTY_RELATIONS;
+			output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
+		}
+		if (!finiteNonNegative(output.outputRows()) || relations.length == 0 && !bindingOnly
 				|| stateCount >= MAXIMUM_MAPPED_EVIDENCE_STATES) {
 			return;
 		}
@@ -346,16 +535,42 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		if (stateId == states.length) {
 			states = Arrays.copyOf(states, states.length << 1);
 		}
-		states[stateId] = new MappedEvidenceState(relations.clone(), evidenceSummary(output),
-				output.estimateSource(), output.estimateFusion(), semanticProof);
+		states[stateId] = new MappedEvidenceState(relations.length == 0 ? EMPTY_RELATIONS : relations.clone(),
+				evidenceSummary(output),
+				output.estimateSource(), output.estimateFusion(), semanticProof,
+				bindingSource, originatingLeft, appendedFactor, rowExtent(output));
 		attachExistingState(output, stateId);
 	}
 
 	private void attachExistingState(PackedCostEstimate output, int stateId) {
-		if (state(stateId) == null) {
+		if (state(stateId) == null || !finiteNonNegative(output.outputRows())
+				|| output.hasComponentOutputRows() && !state(stateId).bindingOnly()
+						&& state(stateId).bindingSource() != 0) {
+			clearEvidenceState(output);
 			return;
 		}
 		output.setEvidenceStateId(stateId);
+		if (state(stateId).bindingOnly()) {
+			output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
+			// No detached or runtime population lease may survive a transition into binding-only lineage.
+			if (output.runtimeFeedbackContract() != null) {
+				RuntimeFeedbackContract contract = output.runtimeFeedbackContract();
+				int flags = contract.admissionFlags() & ~(RuntimeFeedbackContract.ADMIT_LOGICAL
+						| RuntimeFeedbackContract.ADMIT_LIFECYCLE | RuntimeFeedbackContract.ADMIT_FILTER
+						| RuntimeFeedbackContract.ADMIT_SEMI_ANTI | RuntimeFeedbackContract.DATABASE_EXACT
+						| RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE);
+				if (flags != contract.admissionFlags()) {
+					output.setRuntimeFeedbackContract(new RuntimeFeedbackContract(contract.descriptor(),
+							contract.rawPrediction(), contract.appliedPrediction(), contract.rawLogicalCardinality(),
+							contract.appliedLogicalCardinality(), contract.rawDependentPrediction(),
+							contract.appliedDependentPrediction(), contract.objectiveLower(), contract.objectivePoint(),
+							contract.objectiveUpper(), contract.regressionLimit(), contract.semanticKind(),
+							contract.algorithm(), contract.access(), contract.physicalImplementationId(),
+							contract.dataEpoch(),
+							contract.catalogEpoch(), contract.modelEpoch(), flags));
+				}
+			}
+		}
 		if (output.evidenceGuarantee() == null) {
 			output.setEvidenceGuarantee(EvidenceGuarantee.SCALAR_FALLBACK);
 		}
@@ -487,7 +702,39 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		output.putPlannedDoubleMetric("plannedFrontierConfidence", summary.confidence());
 	}
 
+	private static byte rowExtent(PackedCostEstimate output) {
+		return output.hasComponentOutputRows() ? (byte) 2 : output.hasContextualOutputRows() ? (byte) 1 : 0;
+	}
+
+	private boolean retainsAppend(MappedEvidenceState candidate, MappedEvidenceState left,
+			MappedEvidenceState right, PackedCostContext context, PackedCostEstimate output) {
+		return candidate != null && candidate.bindingOnly() && left != null && right != null
+				&& candidate.originatingLeft() == context.leftInputEvidenceStateId()
+				&& candidate.originatingLeft() != 0 && candidate.appendedFactor() != 0
+				&& candidate.appendedFactor() == right.appendedFactor() && right.originatingLeft() == 0
+				&& candidate.rowExtent() != 0 && compatibleRowExtent(candidate, context, output)
+				&& bindings.compatible(candidate.bindingSource(), context);
+	}
+
+	private static boolean compatibleRowExtent(MappedEvidenceState candidate, PackedCostContext context,
+			PackedCostEstimate output) {
+		if (candidate.rowExtent() == rowExtent(output)) {
+			return candidate.summary().pointRows() == output.outputRows();
+		}
+		// The packed component composer owns this sole normalization. Lineage is authenticated separately.
+		if (candidate.rowExtent() != 2 || rowExtent(output) != 1
+				|| !finiteNonNegative(context.unrelatedPrefixRows())) {
+			return false;
+		}
+		double product = candidate.summary().pointRows() * context.unrelatedPrefixRows();
+		return output.outputRows() == (Double.isFinite(product) ? product : Double.MAX_VALUE);
+	}
+
 	private record MappedEvidenceState(int[] relations, EvidenceStateSummary summary, String estimateSource,
-			String estimateFusion, int semanticProof) {
+			String estimateFusion, int semanticProof, int bindingSource, int originatingLeft, int appendedFactor,
+			byte rowExtent) {
+		boolean bindingOnly() {
+			return semanticProof == 0 && bindingSource != 0;
+		}
 	}
 }

@@ -16,8 +16,10 @@ import java.util.Collections;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierStateDisposition;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
@@ -32,6 +34,17 @@ public final class PackedCostEstimate {
 		LOCAL,
 		INCLUSIVE
 	}
+
+	private long plannerCostCompletionOwner;
+	private int plannerCostCompletionId;
+	private int plannerCostDeclarationVectorId;
+	private int plannerCostDeclarationFlags;
+	private double plannerCostDeclaredInvocations;
+	private int plannerRightInputFrame;
+	private int plannerOperatorInputFrame;
+	private int plannerRightSourceCompletion;
+	private int plannerJoinImplementation;
+	private double plannerRightPartitions;
 
 	private double outputRows;
 	private double workRows;
@@ -51,6 +64,7 @@ public final class PackedCostEstimate {
 	private double accessRows;
 	private double invocations;
 	private boolean contextualOutputRows;
+	private boolean contextualScalarWork;
 	private boolean componentOutputRows;
 	private int evidenceStateId;
 	private EvidenceGuarantee evidenceGuarantee;
@@ -121,6 +135,16 @@ public final class PackedCostEstimate {
 		plannedStringMetricCount = 0;
 		plannedDoubleMetricCount = 0;
 		plannedMetricsContainCostEventTelemetry = false;
+		plannerCostCompletionOwner = 0L;
+		plannerCostCompletionId = 0;
+		plannerCostDeclarationVectorId = 0;
+		plannerCostDeclarationFlags = 0;
+		plannerCostDeclaredInvocations = Double.NaN;
+		plannerRightInputFrame = 0;
+		plannerOperatorInputFrame = 0;
+		plannerRightSourceCompletion = 0;
+		plannerJoinImplementation = 0;
+		plannerRightPartitions = Double.NaN;
 		outputRows = Double.NaN;
 		workRows = Double.NaN;
 		sequentialRows = Double.NaN;
@@ -139,6 +163,7 @@ public final class PackedCostEstimate {
 		accessRows = Double.NaN;
 		invocations = 1.0d;
 		contextualOutputRows = false;
+		contextualScalarWork = false;
 		componentOutputRows = false;
 		evidenceStateId = 0;
 		evidenceGuarantee = null;
@@ -160,6 +185,14 @@ public final class PackedCostEstimate {
 		accessMode = null;
 		replacesChildWork = false;
 		dependentSubqueriesCosted = false;
+		clearDependentComponents();
+		objectiveLower = Double.NaN;
+		objectivePoint = Double.NaN;
+		objectiveUpper = Double.NaN;
+		runtimeFeedbackContract = null;
+	}
+
+	private void clearDependentComponents() {
 		explicitDependentCostComponents = false;
 		startupOnceWork = Double.NaN;
 		dependentInvocationCount = Double.NaN;
@@ -176,10 +209,47 @@ public final class PackedCostEstimate {
 		materializationBuilds = Double.NaN;
 		materializationLookups = Double.NaN;
 		memorySpillWork = Double.NaN;
-		objectiveLower = Double.NaN;
-		objectivePoint = Double.NaN;
-		objectiveUpper = Double.NaN;
+	}
+
+	/** A complete weighted price with genuinely unavailable resource quantities. */
+	void setLocalScalarPrice(double rows, double price) {
+		outputRows = rows;
+		restorePhysicalCostAxes(price, Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN,
+				Double.NaN, Double.NaN, Double.NaN, Double.NaN, Double.NaN, CostScope.LOCAL, false);
+		replacesChildWork = false;
+		contextualScalarWork = false;
+		clearDependentComponents();
+		objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
 		runtimeFeedbackContract = null;
+	}
+
+	/** Retains an independently priced objective without relabeling it as a resource dimension. */
+	@InternalUseOnly
+	public void setObjectivePricePreservingPhysicalCost(double price) {
+		if (!Double.isFinite(price) || price < 0.0d) {
+			throw new IllegalArgumentException("objective price must be finite and non-negative");
+		}
+		workRows = price;
+		setObjectiveInterval(price, price, price);
+	}
+
+	void restorePhysicalCostAxes(double work, double sequential, double seeks, double opens, double expressions,
+			double builds, double probes, double paths, double results, double remote, double peak,
+			CostScope scope, boolean explicit) {
+		workRows = work;
+		sequentialRows = sequential;
+		randomSeeks = seeks;
+		iteratorOpens = opens;
+		expressionEvaluations = expressions;
+		hashBuildRows = builds;
+		hashProbeRows = probes;
+		pathExpansions = paths;
+		resultRows = results;
+		remoteCalls = remote;
+		peakMemoryRows = peak;
+		costScope = scope;
+		explicitPhysicalCost = explicit;
+		physicalCostTelemetry = true;
 	}
 
 	public void setRows(double outputRows, double workRows) {
@@ -195,6 +265,7 @@ public final class PackedCostEstimate {
 		setScalarPhysicalCost(workRows);
 		contextualOutputRows = true;
 		componentOutputRows = false;
+		contextualScalarWork = Double.isFinite(workRows) && workRows >= 0.0d;
 	}
 
 	/**
@@ -391,6 +462,7 @@ public final class PackedCostEstimate {
 		this.peakMemoryRows = physicalDimension(peakMemoryRows, "peak memory rows");
 		this.costScope = costScope;
 		explicitPhysicalCost = true;
+		contextualScalarWork = false;
 		replacesChildWork = costScope == CostScope.INCLUSIVE;
 		workRows = saturatedAdd(this.sequentialRows, this.randomSeeks);
 		workRows = saturatedAdd(workRows, this.iteratorOpens);
@@ -404,6 +476,7 @@ public final class PackedCostEstimate {
 	}
 
 	private void setScalarPhysicalCost(double workRows) {
+		contextualScalarWork = false;
 		if (!Double.isFinite(workRows) || workRows < 0.0d) {
 			this.workRows = workRows;
 			sequentialRows = workRows;
@@ -476,6 +549,17 @@ public final class PackedCostEstimate {
 		publishPhysicalCostMetrics();
 	}
 
+	/** Whether the scalar work price already covers the complete supplied invocation domain. */
+	boolean hasContextualScalarWork() {
+		return contextualScalarWork;
+	}
+
+	/** Restores or certifies the independently priced work domain; row-only setters never call this. */
+	void setContextualScalarWork(boolean contextualScalarWork) {
+		this.contextualScalarWork = contextualScalarWork && !explicitPhysicalCost
+				&& Double.isFinite(workRows) && workRows >= 0.0d;
+	}
+
 	public void setOutputRowsPreservingPhysicalCost(double outputRows) {
 		this.outputRows = outputRows;
 		contextualOutputRows = false;
@@ -494,11 +578,106 @@ public final class PackedCostEstimate {
 		componentOutputRows = true;
 	}
 
+	/**
+	 * Declares inclusive resource quantities that may be unavailable. The independent producer price may also be
+	 * unavailable and is used only when a work quantity is unknown; it never fills a resource axis. Existing
+	 * finite-only setters stay strict.
+	 */
+	@InternalUseOnly
+	public void setInclusivePhysicalCostPreservingUnknown(double sequentialRows, double randomSeeks,
+			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
+			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows, double price) {
+		if (!Double.isNaN(price)) {
+			physicalDimension(price, "independent physical price");
+		}
+		sequentialRows = physicalDimensionOrUnknown(sequentialRows);
+		randomSeeks = physicalDimensionOrUnknown(randomSeeks);
+		iteratorOpens = physicalDimensionOrUnknown(iteratorOpens);
+		expressionEvaluations = physicalDimensionOrUnknown(expressionEvaluations);
+		hashBuildRows = physicalDimensionOrUnknown(hashBuildRows);
+		hashProbeRows = physicalDimensionOrUnknown(hashProbeRows);
+		pathExpansions = physicalDimensionOrUnknown(pathExpansions);
+		resultRows = physicalDimensionOrUnknown(resultRows);
+		remoteCalls = physicalDimensionOrUnknown(remoteCalls);
+		peakMemoryRows = physicalDimensionOrUnknown(peakMemoryRows);
+		boolean unknownWork = Double.isNaN(sequentialRows)
+				|| Double.isNaN(randomSeeks)
+				|| Double.isNaN(iteratorOpens)
+				|| Double.isNaN(expressionEvaluations)
+				|| Double.isNaN(hashBuildRows)
+				|| Double.isNaN(hashProbeRows)
+				|| Double.isNaN(pathExpansions)
+				|| Double.isNaN(resultRows)
+				|| Double.isNaN(remoteCalls);
+		double work = 0.0d;
+		work = saturatedAdd(work, sequentialRows);
+		work = saturatedAdd(work, randomSeeks);
+		work = saturatedAdd(work, iteratorOpens);
+		work = saturatedAdd(work, expressionEvaluations);
+		work = saturatedAdd(work, hashBuildRows);
+		work = saturatedAdd(work, hashProbeRows);
+		work = saturatedAdd(work, pathExpansions);
+		work = saturatedAdd(work, resultRows);
+		work = saturatedAdd(work, remoteCalls);
+		restorePhysicalCostAxes(unknownWork ? price : work, sequentialRows, randomSeeks, iteratorOpens,
+				expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions, resultRows, remoteCalls,
+				peakMemoryRows, CostScope.INCLUSIVE, true);
+		contextualScalarWork = false;
+		replacesChildWork = true;
+		if (Double.isNaN(price)) {
+			objectiveLower = objectivePoint = objectiveUpper = Double.NaN;
+			removePhysicalObjectiveMetrics();
+		} else if (unknownWork) {
+			setObjectiveInterval(price, price, price);
+		}
+		publishPhysicalCostMetrics();
+	}
+
+	/**
+	 * Replaces only a supported physical declaration. Logical ROW, provenance, proof and admission stay with the
+	 * caller. A scalar complete price has unavailable resource quantities; it cannot become a SOURCE counter.
+	 */
+	@InternalUseOnly
+	public void replacePhysicalCost(PackedCostEstimate declared, boolean scalarWorkForContext) {
+		if (declared == null) {
+			throw new NullPointerException("physical declaration");
+		}
+		boolean typed = declared.explicitPhysicalCost;
+		restorePhysicalCostAxes(declared.workRows,
+				typed ? declared.sequentialRows : Double.NaN,
+				typed ? declared.randomSeeks : Double.NaN,
+				typed ? declared.iteratorOpens : Double.NaN,
+				typed ? declared.expressionEvaluations : Double.NaN,
+				typed ? declared.hashBuildRows : Double.NaN,
+				typed ? declared.hashProbeRows : Double.NaN,
+				typed ? declared.pathExpansions : Double.NaN,
+				typed ? declared.resultRows : Double.NaN,
+				typed ? declared.remoteCalls : Double.NaN,
+				typed ? declared.peakMemoryRows : Double.NaN,
+				declared.costScope, typed);
+		replacesChildWork = declared.replacesChildWork;
+		setContextualScalarWork(scalarWorkForContext);
+		invocations = declared.invocations;
+		accessRows = declared.accessRows;
+		lookupComponentMask = declared.lookupComponentMask;
+		missingLookupComponentMask = declared.missingLookupComponentMask;
+		indexPrefixLength = declared.indexPrefixLength;
+		indexName = declared.indexName;
+		accessMode = declared.accessMode;
+		copyDependentComponentsFrom(declared);
+		// Objective fields and their immutable metric transport belong to the same physical declaration.
+		removePhysicalObjectiveMetrics();
+		if (Double.isFinite(objectivePoint)) {
+			setObjectiveInterval(objectiveLower, objectivePoint, objectiveUpper);
+		}
+		publishPhysicalCostMetrics();
+	}
+
 	void restoreCostingTraceOutput(double outputRows, double workRows, double sequentialRows, double randomSeeks,
 			double iteratorOpens, double expressionEvaluations, double hashBuildRows, double hashProbeRows,
 			double pathExpansions, double resultRows, double remoteCalls, double peakMemoryRows, CostScope costScope,
 			boolean explicitPhysicalCost, boolean replacesChildWork, boolean contextualOutputRows,
-			boolean componentOutputRows) {
+			boolean componentOutputRows, boolean contextualScalarWork) {
 		clear();
 		this.outputRows = outputRows;
 		this.workRows = workRows;
@@ -517,7 +696,15 @@ public final class PackedCostEstimate {
 		this.replacesChildWork = replacesChildWork;
 		this.contextualOutputRows = contextualOutputRows;
 		this.componentOutputRows = componentOutputRows;
+		setContextualScalarWork(contextualScalarWork);
 		physicalCostTelemetry = Double.isFinite(sequentialRows) && sequentialRows >= 0.0d;
+	}
+
+	/** Reconstructs derived telemetry for raw provider input, which does not replay stored metric bundles. */
+	void restoreCostingTraceProviderInputMetrics() {
+		if (physicalCostTelemetry) {
+			publishPhysicalCostMetrics();
+		}
 	}
 
 	void restoreCostingTraceDependentComponents(double startupOnceWork, double dependentInvocationCount,
@@ -618,6 +805,7 @@ public final class PackedCostEstimate {
 		accessRows = source.accessRows;
 		invocations = source.invocations;
 		contextualOutputRows = source.contextualOutputRows;
+		contextualScalarWork = source.contextualScalarWork;
 		componentOutputRows = source.componentOutputRows;
 		evidenceStateId = source.evidenceStateId;
 		evidenceGuarantee = source.evidenceGuarantee;
@@ -642,6 +830,73 @@ public final class PackedCostEstimate {
 		copyPlannedMetricsFrom(source);
 		physicalCostTelemetry = source.physicalCostTelemetry;
 		copyCostEventTelemetryFrom(source);
+		plannerCostCompletionOwner = source.plannerCostCompletionOwner;
+		plannerCostCompletionId = source.plannerCostCompletionId;
+		plannerCostDeclarationVectorId = source.plannerCostDeclarationVectorId;
+		plannerCostDeclarationFlags = source.plannerCostDeclarationFlags;
+		plannerCostDeclaredInvocations = source.plannerCostDeclaredInvocations;
+		plannerRightInputFrame = source.plannerRightInputFrame;
+		plannerOperatorInputFrame = source.plannerOperatorInputFrame;
+		plannerRightSourceCompletion = source.plannerRightSourceCompletion;
+		plannerJoinImplementation = source.plannerJoinImplementation;
+		plannerRightPartitions = source.plannerRightPartitions;
+	}
+
+	void setPlannerCostCompletion(long owner, int id, int declarationVectorId) {
+		plannerCostCompletionOwner = owner;
+		plannerCostCompletionId = id;
+		plannerCostDeclarationVectorId = declarationVectorId;
+		plannerCostDeclarationFlags = plannerDeclarationFlags();
+		plannerCostDeclaredInvocations = invocations;
+	}
+
+	boolean plannerCostDeclarationUnchanged() {
+		return plannerCostDeclarationFlags == plannerDeclarationFlags()
+				&& Double.compare(plannerCostDeclaredInvocations, invocations) == 0;
+	}
+
+	private int plannerDeclarationFlags() {
+		return (hasComponentOutputRows() ? 1 : 0) | (hasDependentCostComponents() ? 2 : 0)
+				| (costScope == CostScope.INCLUSIVE ? 4 : 0);
+	}
+
+	int plannerCostDeclarationVectorId() {
+		return plannerCostDeclarationVectorId;
+	}
+
+	int plannerCostCompletionId(long owner) {
+		return plannerCostCompletionOwner == owner ? plannerCostCompletionId : 0;
+	}
+
+	void setPlannerOperatorInputFrame(int frame) {
+		plannerOperatorInputFrame = frame;
+	}
+
+	int plannerOperatorInputFrame() {
+		return plannerOperatorInputFrame;
+	}
+
+	void setPlannerRightExecution(int inputFrame, int sourceCompletion, int implementation, double partitions) {
+		plannerRightInputFrame = inputFrame;
+		plannerRightSourceCompletion = sourceCompletion;
+		plannerJoinImplementation = implementation;
+		plannerRightPartitions = partitions;
+	}
+
+	int plannerRightInputFrame() {
+		return plannerRightInputFrame;
+	}
+
+	int plannerRightSourceCompletion() {
+		return plannerRightSourceCompletion;
+	}
+
+	int plannerJoinImplementation() {
+		return plannerJoinImplementation;
+	}
+
+	double plannerRightPartitions() {
+		return plannerRightPartitions;
 	}
 
 	private void copyPlannedMetricsFrom(PackedCostEstimate source) {
@@ -875,6 +1130,79 @@ public final class PackedCostEstimate {
 	}
 
 	/**
+	 * Removes exact provider-owned annotation names, preserving all other metrics and every typed estimate field.
+	 * Compacts the two existing tables once, with no per-call allocation or capacity change.
+	 */
+	@InternalUseOnly
+	public void removePlannedMetrics(Set<String> names) {
+		if (names == null) {
+			throw new NullPointerException("metric names");
+		}
+		if (names.isEmpty()) {
+			return;
+		}
+		compactPlannedMetrics(names, false);
+	}
+
+	private void removePhysicalObjectiveMetrics() {
+		compactPlannedMetrics(null, true);
+	}
+
+	private void compactPlannedMetrics(Set<String> names, boolean physicalObjectiveMetrics) {
+		boolean removed = false;
+		int retained = 0;
+		for (int index = 0; index < plannedStringMetricCount; index++) {
+			if (!shouldRemovePlannedMetric(plannedStringMetricNames[index], names, physicalObjectiveMetrics)) {
+				plannedStringMetricNames[retained] = plannedStringMetricNames[index];
+				plannedStringMetricValues[retained++] = plannedStringMetricValues[index];
+			}
+		}
+		if (retained != plannedStringMetricCount) {
+			Arrays.fill(plannedStringMetricNames, retained, plannedStringMetricCount, null);
+			Arrays.fill(plannedStringMetricValues, retained, plannedStringMetricCount, null);
+			plannedStringMetricCount = retained;
+			rebuildPlannedStringMetricTable();
+			removed = true;
+		}
+		retained = 0;
+		for (int index = 0; index < plannedDoubleMetricCount; index++) {
+			if (!shouldRemovePlannedMetric(plannedDoubleMetricNames[index], names, physicalObjectiveMetrics)) {
+				plannedDoubleMetricNames[retained] = plannedDoubleMetricNames[index];
+				plannedDoubleMetricValues[retained++] = plannedDoubleMetricValues[index];
+			}
+		}
+		if (retained != plannedDoubleMetricCount) {
+			Arrays.fill(plannedDoubleMetricNames, retained, plannedDoubleMetricCount, null);
+			Arrays.fill(plannedDoubleMetricValues, retained, plannedDoubleMetricCount, 0.0d);
+			plannedDoubleMetricCount = retained;
+			Arrays.fill(plannedDoubleMetricSlots, 0);
+			int mask = plannedDoubleMetricSlots.length - 1;
+			for (int index = 0; index < retained; index++) {
+				int slot = PackedPrimitiveHash.slot(metricNameHash(plannedDoubleMetricNames[index]),
+						plannedDoubleMetricSlots.length);
+				while (plannedDoubleMetricSlots[slot] != 0) {
+					slot = slot + 1 & mask;
+				}
+				plannedDoubleMetricSlots[slot] = index + 1;
+			}
+			removed = true;
+		}
+		if (removed && plannedMetricsContainCostEventTelemetry) {
+			recomputePlannedMetricsContainCostEventTelemetry();
+		}
+	}
+
+	private static boolean shouldRemovePlannedMetric(String name, Set<String> names, boolean physicalObjectiveMetrics) {
+		if (!physicalObjectiveMetrics) {
+			return names.contains(name);
+		}
+		return switch (name) {
+		case "optimizer.objectiveLower", "optimizer.objectivePoint", "optimizer.objectiveUpper" -> true;
+		default -> false;
+		};
+	}
+
+	/**
 	 * Retains a provider-specific planned double metric on the selected physical operator.
 	 * <p>
 	 * Reusing a metric name replaces its prior value. A null name is ignored, matching the query-model metadata
@@ -1075,6 +1403,34 @@ public final class PackedCostEstimate {
 		return outputRows;
 	}
 
+	/**
+	 * Physical WORK derived solely from the explicit additive resource declaration. The legacy workRows slot may carry
+	 * an independently calibrated objective; neither that price nor a scope/ROW annotation declares WORK. Derivation
+	 * keeps copy, metadata and event restoration on the same authority without a second mutable flag.
+	 */
+	double physicalWorkRows() {
+		if (!explicitPhysicalCost || !knownPhysicalWork(sequentialRows) || !knownPhysicalWork(randomSeeks)
+				|| !knownPhysicalWork(iteratorOpens) || !knownPhysicalWork(expressionEvaluations)
+				|| !knownPhysicalWork(hashBuildRows) || !knownPhysicalWork(hashProbeRows)
+				|| !knownPhysicalWork(pathExpansions) || !knownPhysicalWork(resultRows)
+				|| !knownPhysicalWork(remoteCalls)) {
+			return Double.NaN;
+		}
+		double work = saturatedAdd(sequentialRows, randomSeeks);
+		work = saturatedAdd(work, iteratorOpens);
+		work = saturatedAdd(work, expressionEvaluations);
+		work = saturatedAdd(work, hashBuildRows);
+		work = saturatedAdd(work, hashProbeRows);
+		work = saturatedAdd(work, pathExpansions);
+		work = saturatedAdd(work, resultRows);
+		return saturatedAdd(work, remoteCalls);
+	}
+
+	private static boolean knownPhysicalWork(double value) {
+		return Double.isFinite(value) && value >= 0.0d;
+	}
+
+	/** Legacy scalar diagnostic/price projection; physical quantity consumers use physicalWorkRows. */
 	public double workRows() {
 		return workRows;
 	}
@@ -1083,7 +1439,8 @@ public final class PackedCostEstimate {
 		return costScope;
 	}
 
-	boolean hasExplicitPhysicalCost() {
+	@InternalUseOnly
+	public boolean hasExplicitPhysicalCost() {
 		return explicitPhysicalCost;
 	}
 
@@ -1455,6 +1812,10 @@ public final class PackedCostEstimate {
 
 	private static long metricNameHash(String name) {
 		return PackedPrimitiveHash.finish(Integer.toUnsignedLong(name.hashCode()));
+	}
+
+	private static double physicalDimensionOrUnknown(double value) {
+		return Double.isNaN(value) ? value : physicalDimension(value, "physical resource quantity");
 	}
 
 	private static double physicalDimension(double value, String name) {

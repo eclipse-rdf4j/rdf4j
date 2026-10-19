@@ -100,6 +100,7 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 	private final Group group;
 
 	private final QueryEvaluationContext context;
+	private final Object solutionBoundary = new Object();
 
 	private final QueryEvaluationStep arguments;
 
@@ -345,7 +346,10 @@ public class GroupIterator extends AbstractCloseableIteratorIteration<BindingSet
 					entries.put(key, entry);
 				}
 
-				entry.addSolution(sol, aggregates);
+				try (var ignored = context.getBlankNodeAllocationScope()
+						.visitSolutionOccurrence(sol, solutionBoundary)) {
+					entry.addSolution(sol, aggregates);
+				}
 				aggregateEvalCount += aggregates.size();
 			}
 			Collection<Entry> values = entries.values();

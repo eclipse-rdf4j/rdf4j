@@ -213,6 +213,7 @@ This is the closed-world production manifest. Runtime guards, proof lineage, del
 | PAYLOAD_OPERATOR | payload:BINDING_SET_ASSIGNMENT | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode BINDING_SET_ASSIGNMENT |
 | PAYLOAD_OPERATOR | payload:SERVICE | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SERVICE |
 | PAYLOAD_OPERATOR | payload:SERVICE_OPTIONS | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SERVICE_OPTIONS |
+| PAYLOAD_OPERATOR | payload:SERVICE_REFERENCE_METADATA | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode SERVICE_REFERENCE_METADATA |
 | PAYLOAD_OPERATOR | payload:PREFIX_ENTRY | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode PREFIX_ENTRY |
 | PAYLOAD_OPERATOR | payload:TUPLE_FUNCTION | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode TUPLE_FUNCTION |
 | PAYLOAD_OPERATOR | payload:PLANNED_METRICS | IMPLEMENTED | org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPayloadOp | lossless packed payload opcode PLANNED_METRICS |

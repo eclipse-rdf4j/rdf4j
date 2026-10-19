@@ -498,7 +498,9 @@ public final class BindingScopeAnalysis {
 			return bindings;
 		}
 		if (names.isEmpty()) {
-			return EmptyBindingSet.getInstance();
+			return BindingSetOrigin.of(bindings).hasParameters()
+					? BindingSetOrigin.with(EmptyBindingSet.getInstance(), BindingSetOrigin.of(bindings))
+					: EmptyBindingSet.getInstance();
 		}
 		boolean complete = true;
 		for (String name : bindings.getBindingNames()) {
@@ -517,7 +519,9 @@ public final class BindingScopeAnalysis {
 			}
 		}
 		BindingSetOrigin.copy(bindings, retained);
-		return retained.isEmpty() ? EmptyBindingSet.getInstance() : retained;
+		return retained.isEmpty() && !BindingSetOrigin.of(retained).hasParameters()
+				? EmptyBindingSet.getInstance()
+				: retained;
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------

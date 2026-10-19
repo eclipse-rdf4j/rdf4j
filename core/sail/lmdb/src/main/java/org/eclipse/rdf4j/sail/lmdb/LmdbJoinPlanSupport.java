@@ -504,7 +504,13 @@ final class LmdbJoinPlanSupport {
 		if (!(value instanceof Literal)) {
 			return false;
 		}
-		CoreDatatype coreDatatype = ((Literal) value).getCoreDatatype();
+		Literal literal = (Literal) value;
+		// Language-tag case is ignored by RDF equality, but LANG and a produced binding expose its spelling.
+		// A query-term driver therefore needs an actual stored representative, just as value-equal lexical variants do.
+		if (literal.getLanguage().isPresent()) {
+			return true;
+		}
+		CoreDatatype coreDatatype = literal.getCoreDatatype();
 		if (coreDatatype.isXSDDatatype()) {
 			CoreDatatype.XSD xsdDatatype = coreDatatype.asXSDDatatypeOrNull();
 			return xsdDatatype.isNumericDatatype() || xsdDatatype.isCalendarDatatype()

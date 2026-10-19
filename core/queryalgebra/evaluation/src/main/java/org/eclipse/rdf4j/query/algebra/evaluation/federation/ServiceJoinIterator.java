@@ -20,13 +20,19 @@ import java.util.function.LongConsumer;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.ConvertingIteration;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.JoinIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ExternalValuePreparation;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLQueries;
 import org.eclipse.rdf4j.repository.sparql.federation.JoinExecutorBase;
 
 /**
@@ -46,6 +52,8 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	protected Service service;
 
 	protected EvaluationStrategy strategy;
+	private final QueryEvaluationStep scalarRight;
+	private final BlankNodeAllocationScope allocation;
 
 	/**
 	 * Construct a service join iteration to use vectored evaluation. The constructor automatically starts evaluation.
@@ -58,9 +66,23 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 	 */
 	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
 			BindingSet bindings, EvaluationStrategy strategy) throws QueryEvaluationException {
+		this(leftIter, service, bindings, strategy, input -> strategy.evaluate(service, input));
+	}
+
+	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
+			BindingSet bindings, EvaluationStrategy strategy, QueryEvaluationStep scalarRight)
+			throws QueryEvaluationException {
+		this(leftIter, service, bindings, strategy, scalarRight, BlankNodeAllocationScope.currentOrNew());
+	}
+
+	public ServiceJoinIterator(CloseableIteration<BindingSet> leftIter, Service service,
+			BindingSet bindings, EvaluationStrategy strategy, QueryEvaluationStep scalarRight,
+			BlankNodeAllocationScope allocation) {
 		super(leftIter, service, bindings);
 		this.service = service;
 		this.strategy = strategy;
+		this.scalarRight = scalarRight;
+		this.allocation = allocation;
 		run();
 	}
 
@@ -73,27 +95,24 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			Var serviceRef = service.getServiceRef();
 			fallbackEvaluation = !serviceRef.hasValue();
 
-			String serviceUri;
-			if (serviceRef.hasValue()) {
-				serviceUri = serviceRef.getValue().stringValue();
-			} else {
-				// case 2: the service ref is not defined beforehand
-				// => use a fallback to the naive evaluation.
-				// exceptions occurring here must NOT be silenced!
-				while (!isClosed() && leftIter.hasNext()) {
-					QueryExecutionContext.checkpointReplaySafepoint();
-					BindingSet leftBindings = leftIter.next();
-					if (runtimeTelemetryEnabled) {
-						addLongMetric(service, deferredTelemetry, EVALUATE,
-								TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL, 1L);
-					}
-					CloseableIteration<BindingSet> result;
-					try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
-						result = strategy.evaluate(service, leftBindings);
-					}
-					addResultAfterReplaySafepoint(result, false, deferredTelemetry);
-				}
+			if (!serviceRef.hasValue() || service.isSilent()) {
+				addScalarResults(deferredTelemetry);
 				return;
+			}
+			SPARQLQueries.initializeServiceReferences(service);
+			if (!(serviceRef.getValue() instanceof IRI)) {
+				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
+			}
+			FederatedService fs = strategy.getService(serviceRef.getValue().stringValue());
+			if (!fs.preservesBNodeResultProvenance()) {
+				addScalarResults(deferredTelemetry);
+				return;
+			}
+			Object receivingScope = fs.getBNodeIdentityScope();
+			boolean referenceSupport = fs.supportsBlankNodeReferences();
+			boolean canonicalIDs = fs.supportsCanonicalBNodeIDs();
+			if (service.containsBNodeReferenceSyntax() && !referenceSupport) {
+				throw new QueryEvaluationException("Receiving SERVICE does not support blank-node references");
 			}
 
 			// use vectored evaluation
@@ -106,13 +125,21 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 						TelemetryMetricNames.REMOTE_BYTES_SENT_ACTUAL,
 						estimateUtf8Bytes(service.getServiceExpressionString()));
 			}
-			FederatedService fs = strategy.getService(serviceUri);
 			long started = runtimeTelemetryEnabled ? System.nanoTime() : 0L;
 			try {
 				CloseableIteration<BindingSet> result;
 				ExternalValuePreparation.initializeQueryModel(service);
-				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation.initializeBindings(leftIter);
-				try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
+				CloseableIteration<BindingSet> checkedInputs = new ConvertingIteration<>(leftIter) {
+					@Override
+					protected BindingSet convert(BindingSet input) {
+						return ServiceQueryEvaluationStep.prepareOutgoingBindings(service, input, receivingScope,
+								referenceSupport, canonicalIDs);
+					}
+				};
+				CloseableIteration<BindingSet> externalBindings = ExternalValuePreparation
+						.initializeBindings(checkedInputs);
+				try (var active = allocation.activate();
+						QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
 					result = fs.evaluate(service, externalBindings, service.getBaseURI());
 				}
 				addResultAfterReplaySafepoint(result, runtimeTelemetryEnabled, deferredTelemetry);
@@ -130,6 +157,34 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 				}
 			}
 			throw e;
+		}
+	}
+
+	private void addScalarResults(Object[] deferredTelemetry) {
+		// Enqueue one lazy join, rather than one result per input, so a long input cannot fill the queue in the
+		// constructor.
+		QueryEvaluationStep request = input -> {
+			addLongMetric(service, deferredTelemetry, EVALUATE,
+					TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL, 1L);
+			try (QueryExecutionContext.Activation ignored = QueryExecutionContext.deferReplaySafepoints()) {
+				return scalarRight.evaluate(input);
+			}
+		};
+		addResultAfterReplaySafepoint(JoinIterator.getInstance(ignored -> leftIter, request, bindings), false,
+				deferredTelemetry);
+	}
+
+	@Override
+	public BindingSet getNextElement() {
+		try {
+			return super.getNextElement();
+		} catch (RuntimeException failure) {
+			// Deferred work has the same exception envelope as work handed through the executor queue.
+			ExternalValuePreparation.closeWithSuppressed(this, failure);
+			throw failure instanceof QueryEvaluationException ? failure : new QueryEvaluationException(failure);
+		} catch (Error failure) {
+			ExternalValuePreparation.closeWithSuppressed(this, failure);
+			throw failure;
 		}
 	}
 

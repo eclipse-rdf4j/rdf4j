@@ -86,7 +86,7 @@ public class JoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else if (join.getRightArg() instanceof Service) {
 			eval = bindings -> new ServiceJoinIterator(leftPrepared.evaluate(bindings),
 					(Service) join.getRightArg(), bindings,
-					strategy);
+					strategy, rightPrepared, context.getBlankNodeAllocationScope());
 			join.setAlgorithm(ServiceJoinIterator.class.getSimpleName());
 		} else if (isHashJoinHint(join)) {
 			HashJoinBindingContract contract = HashJoinBindingContract.from(join.getLeftArg(), join.getRightArg());

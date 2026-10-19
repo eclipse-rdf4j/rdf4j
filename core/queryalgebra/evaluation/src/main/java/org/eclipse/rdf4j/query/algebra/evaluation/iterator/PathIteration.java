@@ -46,6 +46,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.SimpleBinding;
 
 public class PathIteration extends LookAheadIteration<BindingSet> {
@@ -241,6 +242,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			@Override
 			public Comparator<Value> getComparator() {
 				return context.getComparator();
+			}
+
+			@Override
+			public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+				return context.getBlankNodeAllocationScope();
 			}
 
 			@Override

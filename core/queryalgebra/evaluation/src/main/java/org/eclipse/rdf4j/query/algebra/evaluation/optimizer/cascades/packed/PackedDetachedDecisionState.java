@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
 
-/** Immutable primitive snapshot of the Pareto state behind every detached decision candidate. */
+/** Immutable scalar diagnostics and a separate authenticated quantity proof for detached decision candidates. */
 final class PackedDetachedDecisionState {
 
 	private static final int DIMENSION_COUNT = PackedCostDimensionRegistry.dimensionCount();
@@ -36,8 +36,9 @@ final class PackedDetachedDecisionState {
 
 	private static final PackedDetachedDecisionState EMPTY = new PackedDetachedDecisionState(new byte[0],
 			new long[0], new double[0], new double[0], new double[0], new int[0], new long[0], new int[0],
-			new long[0], new long[0]);
+			new long[0], new long[0], PackedDetachedCostQuantities.empty());
 
+	private final PackedDetachedCostQuantities quantities;
 	private final byte[] complete;
 	private final long[] costKnownMasks;
 	private final double[] costLower;
@@ -51,7 +52,9 @@ final class PackedDetachedDecisionState {
 
 	private PackedDetachedDecisionState(byte[] complete, long[] costKnownMasks, double[] costLower,
 			double[] costPoint, double[] costUpper, int[] costLineageIds, long[] costVectorDigests,
-			int[] continuationFields, long[] continuationDigests, long[] ruleProofMasks) {
+			int[] continuationFields, long[] continuationDigests, long[] ruleProofMasks,
+			PackedDetachedCostQuantities quantities) {
+		this.quantities = quantities;
 		this.complete = complete;
 		this.costKnownMasks = costKnownMasks;
 		this.costLower = costLower;
@@ -94,6 +97,7 @@ final class PackedDetachedDecisionState {
 			if (candidateId == 0) {
 				continue;
 			}
+			// Preserve the existing scalar diagnostic API separately from the physical quantity export below.
 			int vectorId = memo.candidateCostVectorId(candidateId);
 			int continuationKeyId = memo.candidateContinuationKeyId(candidateId);
 			if (vectorId == 0 || continuationKeyId == 0) {
@@ -138,7 +142,8 @@ final class PackedDetachedDecisionState {
 			continuationDigests[candidate] = continuationDigest(continuationFields, continuationBase);
 		}
 		return new PackedDetachedDecisionState(complete, knownMasks, lower, point, upper, lineageIds,
-				vectorDigests, continuationFields, continuationDigests, proofMasks);
+				vectorDigests, continuationFields, continuationDigests, proofMasks,
+				PackedDetachedCostQuantities.capture(memo, candidateIds));
 	}
 
 	ReplayUpdate withReplayedCostEvents(PackedCostingTrace cachedTrace, PackedCostingTrace currentTrace,
@@ -150,6 +155,11 @@ final class PackedDetachedDecisionState {
 				|| cachedTrace.eventCount() != currentTrace.eventCount()) {
 			throw new IllegalArgumentException("replayed cost events are not aligned with the decision state");
 		}
+		// A replay does not rerun the planner's qualified DAG composition. Only an unchanged, full declaration/unit
+		// transcript can retain that proof. Any change drops the quantity sidecar; diagnostic deltas below never
+		// enter it and cannot mint known axes. The certificate carries the independently replayed objective.
+		PackedDetachedCostQuantities replayedQuantities = quantities == PackedDetachedCostQuantities.empty()
+				|| cachedTrace.sameQuantityTranscript(currentTrace) ? quantities : PackedDetachedCostQuantities.empty();
 		double[] replayedLower = costLower.clone();
 		double[] replayedPoint = costPoint.clone();
 		double[] replayedUpper = costUpper.clone();
@@ -157,7 +167,7 @@ final class PackedDetachedDecisionState {
 		long[] replayedDigests = costVectorDigests.clone();
 		int[] replayedContinuationFields = continuationFields.clone();
 		long[] replayedContinuationDigests = continuationDigests.clone();
-		long changedDimensionMask = 0L;
+		long changedDimensionMask = replayedQuantities == quantities ? 0L : quantities.dimensionMask();
 		for (int candidate = 0; candidate < complete.length; candidate++) {
 			if (complete[candidate] == 0) {
 				throw new IllegalStateException("cannot replay an incomplete detached decision candidate " + candidate);
@@ -206,13 +216,42 @@ final class PackedDetachedDecisionState {
 					replayedPoint, replayedUpper, replayedLineageIds, costBase);
 		}
 		PackedDetachedDecisionState state = changedDimensionMask == 0L
-				&& Arrays.equals(replayedContinuationDigests, continuationDigests) ? this
+				&& Arrays.equals(replayedContinuationDigests, continuationDigests)
+				&& replayedQuantities == quantities ? this
 						: new PackedDetachedDecisionState(complete, costKnownMasks, replayedLower, replayedPoint,
 								replayedUpper,
 								replayedLineageIds, replayedDigests, replayedContinuationFields,
 								replayedContinuationDigests,
-								ruleProofMasks);
+								ruleProofMasks, replayedQuantities);
 		return new ReplayUpdate(state, changedDimensionMask);
+	}
+
+	long detachedQuantityBytes() {
+		return quantities.retainedBytes();
+	}
+
+	long detachedQuantityBytes(PackedProviderRetainedMemory memory) {
+		long bytes = quantities.retainedBytes();
+		return bytes != 0L && memory.add(quantities, bytes) ? bytes : 0L;
+	}
+
+	PackedDetachedDecisionState withoutDetachedQuantities() {
+		return quantities == PackedDetachedCostQuantities.empty() ? this
+				: new PackedDetachedDecisionState(complete, costKnownMasks, costLower, costPoint, costUpper,
+						costLineageIds, costVectorDigests, continuationFields, continuationDigests, ruleProofMasks,
+						PackedDetachedCostQuantities.empty());
+	}
+
+	boolean candidateQuantityKnown(int candidate, int dimension) {
+		checkComplete(candidate);
+		checkDimension(dimension);
+		return quantities.known(candidate, dimension);
+	}
+
+	double candidateQuantityPoint(int candidate, int dimension) {
+		checkComplete(candidate);
+		checkDimension(dimension);
+		return quantities.point(candidate, dimension);
 	}
 
 	int candidateCount() {
@@ -282,7 +321,8 @@ final class PackedDetachedDecisionState {
 		bytes = saturatedAdd(bytes, (long) costVectorDigests.length * Long.BYTES);
 		bytes = saturatedAdd(bytes, (long) continuationFields.length * Integer.BYTES);
 		bytes = saturatedAdd(bytes, (long) continuationDigests.length * Long.BYTES);
-		return saturatedAdd(bytes, (long) ruleProofMasks.length * Long.BYTES);
+		bytes = saturatedAdd(bytes, (long) ruleProofMasks.length * Long.BYTES);
+		return saturatedAdd(bytes, quantities.retainedBytes());
 	}
 
 	private int continuationField(int candidate, int field) {

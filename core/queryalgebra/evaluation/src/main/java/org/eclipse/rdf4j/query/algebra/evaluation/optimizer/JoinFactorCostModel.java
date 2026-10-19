@@ -35,6 +35,14 @@ import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
  */
 public interface JoinFactorCostModel {
 
+	/** Explicit semantic output quantity domain, independent of physical work and exactness. */
+	enum RowScope {
+		UNKNOWN,
+		PER_INVOCATION,
+		FOR_CONTEXT,
+		COMPONENT
+	}
+
 	enum EstimationTier {
 		CHEAP,
 		STANDARD,
@@ -493,6 +501,7 @@ public interface JoinFactorCostModel {
 		private final int missingLookupComponentMask;
 		private final double accessRowsBeforeFilter;
 		private final CostScope costScope;
+		private final RowScope rowScope;
 		private final boolean exactOutputRows;
 		private final EstimateVector estimateVector;
 		private final org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.EstimateVector normalizedEstimateVector;
@@ -555,6 +564,15 @@ public interface JoinFactorCostModel {
 				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
 				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
 				CostScope costScope, boolean exactOutputRows, BagEstimate bagEstimate) {
+			this(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath, directLookup,
+					lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter, costScope, exactOutputRows,
+					bagEstimate, RowScope.UNKNOWN);
+		}
+
+		private FactorCostEstimate(double workRows, double outputRows, Map<String, String> stringMetrics,
+				Map<String, Double> doubleMetrics, boolean physicalAccessPath, boolean directLookup,
+				int lookupComponentMask, int missingLookupComponentMask, double accessRowsBeforeFilter,
+				CostScope costScope, boolean exactOutputRows, BagEstimate bagEstimate, RowScope rowScope) {
 			this.workRows = workRows;
 			this.outputRows = outputRows;
 			this.stringMetrics = stringMetrics == null || stringMetrics.isEmpty()
@@ -576,6 +594,7 @@ public interface JoinFactorCostModel {
 			this.missingLookupComponentMask = missingLookupComponentMask;
 			this.accessRowsBeforeFilter = accessRowsBeforeFilter;
 			this.costScope = costScope == null ? CostScope.PER_INVOCATION : costScope;
+			this.rowScope = rowScope == null ? RowScope.UNKNOWN : rowScope;
 			double bagConfidence = alignedBagConfidence(bagEstimate, this.outputRows);
 			/*
 			 * Exactness is a proof: the caller's explicit flag or a bag whose rows were counted (BagEstimate#isExact)
@@ -616,6 +635,19 @@ public interface JoinFactorCostModel {
 
 		public double getWorkRows() {
 			return workRows;
+		}
+
+		public RowScope getRowScope() {
+			return rowScope;
+		}
+
+		public FactorCostEstimate withRowScope(RowScope scope) {
+			RowScope normalized = scope == null ? RowScope.UNKNOWN : scope;
+			return normalized == rowScope ? this
+					: new FactorCostEstimate(workRows, outputRows, stringMetrics,
+							doubleMetrics, physicalAccessPath, directLookup, lookupComponentMask,
+							missingLookupComponentMask,
+							accessRowsBeforeFilter, costScope, exactOutputRows, bagEstimate, normalized);
 		}
 
 		public double getOutputRows() {
@@ -681,7 +713,7 @@ public interface JoinFactorCostModel {
 			}
 			return new FactorCostEstimate(workRows, outputRows, stringMetrics, doubleMetrics, physicalAccessPath,
 					directLookup, lookupComponentMask, missingLookupComponentMask, accessRowsBeforeFilter,
-					costScope, exactOutputRows, normalized);
+					costScope, exactOutputRows, normalized, rowScope);
 		}
 
 		private BagEstimate normalizeBagEstimate(BagEstimate bagEstimate) {

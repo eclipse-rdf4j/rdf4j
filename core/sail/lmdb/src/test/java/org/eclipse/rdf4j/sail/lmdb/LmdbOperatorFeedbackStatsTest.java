@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
+import static org.mockito.Mockito.mock;
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
@@ -64,6 +65,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.RuntimeFeedbackTarget;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoOperatorLearningPolicy;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanCandidate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoPlanRanking;
@@ -225,8 +229,20 @@ class LmdbOperatorFeedbackStatsTest {
 		stats.recordOperatorOutcome(observed);
 
 		assertTrue(frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false) > 100.0d);
-		assertTrue(
-				frontierCorrection(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false) < 1_000.0d);
+		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				"Unqualified legacy explanation metrics do not declare source-row quantities");
+		Join typed = join("s", "x", "o");
+		completeCostFeedback(typed, 400, 100, 1_100, 650);
+		typed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		typed.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-persistence");
+		typed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-persistence");
+		typed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		typed.setDoubleMetricPlanned("plannedCostSequentialRows", 1_000.0d);
+		typed.setSourceRowsScannedActual(250L);
+		var descriptor = declareSourceObservation(typed, 100.0d, 100.0d, 1_000.0d, 1_000.0d, false);
+		stats.recordOperatorOutcome(typed);
+		assertTrue(typedPhysicalCorrection(stats, descriptor, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+				1_000.0d) < 1_000.0d);
 		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.HASH_PROBE_ROWS, 50.0d, false),
 				"No hash-probe counter was recorded");
 
@@ -235,8 +251,8 @@ class LmdbOperatorFeedbackStatsTest {
 		byte[] currentVersion = Files.readAllBytes(sidecar);
 		assertEquals(24, ByteBuffer.wrap(currentVersion).getInt());
 		LmdbOperatorFeedbackStats reloaded = persistentStats(estimatorPath);
-		assertTrue(frontierCorrection(reloaded, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-				false) < 1_000.0d, "Current-version feedback must preserve the compatibility posterior");
+		assertTrue(typedPhysicalCorrection(reloaded, descriptor, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+				1_000.0d) < 1_000.0d, "Current-version feedback must preserve the declared source posterior");
 
 		// Version 23 learned corrections with a linear EWMA, counted invalid samples and keyed colliding operator
 		// fingerprints; a sidecar in that format is dropped once and relearned rather than reinterpreted.
@@ -572,6 +588,95 @@ class LmdbOperatorFeedbackStatsTest {
 	}
 
 	@Test
+	void declaredSourceObservationUsesCurrentProducerAndKeepsPriceIndependent(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		FrontierLearningKey legacy = FrontierLearningKey.of(
+				"join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 40, 80, 500, 250);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", legacy.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-source-control");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-source-control");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		observed.setDoubleMetricPlanned("optimizer.costEventRows", 80.0d);
+		observed.setDoubleMetricPlanned("optimizer.costEventSequentialRows", 500.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw", 100.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.source_rows_scanned.raw", 1_000.0d);
+		observed.setSourceRowsScannedActual(250L);
+
+		var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(), observed.clone());
+		PackedCostEstimate prediction = new PackedCostEstimate();
+		prediction.setRows(80.0d, 500.0d);
+		prediction.setLocalPhysicalCost(500.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		prediction.setObjectivePricePreservingPhysicalCost(500.0d);
+		prediction.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.raw", 100.0d);
+		prediction.putPlannedDoubleMetric("optimizer.frontierLeo.source_rows_scanned.raw", 1_000.0d);
+		var session = new LmdbMappedFrontierLearningSession(mock(LmdbEstimatorRuntime.class), call.query(), true);
+		var context = PackedCostTestSupport.prefixContext(new int[0], 0, 1.0d, 0);
+		session.applyOperator(call.operatorRelationId(), new int[] { call.operatorRelationId() }, context, prediction,
+				false);
+		RuntimeFeedbackContract contract = prediction.runtimeFeedbackContract();
+		assertNotNull(contract);
+		assertTrue(contract.admits(RuntimeFeedbackContract.ADMIT_PHYSICAL));
+		assertFalse(contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+		assertEquals(1_000.0d, contract.rawPrediction().sourceRows());
+		assertEquals(500.0d, contract.appliedPrediction().sourceRows());
+		assertEquals(500.0d, contract.objectivePoint());
+		observed.setRuntimeFeedbackContract(contract);
+		var descriptor = (LmdbRuntimeFeedbackDescriptor) contract.descriptor();
+
+		stats.recordOperatorOutcome(observed);
+
+		var posterior = stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED);
+		assertNotNull(posterior);
+		FrontierLearningModel expected = new FrontierLearningModel();
+		expected.observePhysical(descriptor.logicalKey(), descriptor.physicalKey(), descriptor.applicability(),
+				FrontierCostDimension.SOURCE_ROWS_SCANNED, descriptor.featureEnvelope(), 1_000.0d, 250.0d, 1L);
+		var expectedPosterior = expected.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED);
+		assertNotNull(expectedPosterior);
+		assertEquals(FrontierLearningModel.estimate(expectedPosterior, 1_000.0d).correctedValue(),
+				FrontierLearningModel.estimate(posterior, 1_000.0d).correctedValue(), 1.0e-12);
+		assertTrue(frontierCorrectionMissing(stats, legacy, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				"current typed identity cannot publish into an explanation-only compatibility key");
+	}
+
+	@Test
+	void legacySourceAdmissionAuditRetainsExactObservationSequence(@TempDir Path tempDir) throws Exception {
+		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
+		FrontierLearningKey key = FrontierLearningKey.of(
+				"join", "JOIN", 17L, 23L, "spoc-prefix", "spoc", "prefix");
+		Join observed = join("s", "x", "o");
+		completeCostFeedback(observed, 40, 80, 500, 250);
+		observed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.frontierPhysicalLearningKey", key.externalForm());
+		observed.setStringMetricPlanned("optimizer.costEventDigest", "event-corrected");
+		observed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-corrected");
+		observed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		observed.setDoubleMetricPlanned("optimizer.costEventRows", 80.0d);
+		observed.setDoubleMetricPlanned("optimizer.costEventSequentialRows", 500.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw", 100.0d);
+		observed.setDoubleMetricPlanned("optimizer.frontierLeo.source_rows_scanned.raw", 1_000.0d);
+		observed.setSourceRowsScannedActual(250L);
+		assertNull(observed.getRuntimeFeedbackContract());
+
+		stats.recordOperatorOutcome(observed);
+
+		FrontierLearningModel oneObservation = new FrontierLearningModel();
+		oneObservation.observe(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 40.0d, 1L);
+		FrontierLearningModel twoObservations = new FrontierLearningModel();
+		twoObservations.observe(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 40.0d, 1L);
+		twoObservations.observe(key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, 250.0d, 1L);
+		double actual = frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false);
+		double one = oneObservation.correct(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).orElseThrow();
+		double two = twoObservations.correct(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).orElseThrow();
+		assertEquals(one, actual, 1.0e-12);
+		assertTrue(two > one, "one additional observation advances existing revision-based evidence aging");
+		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false));
+	}
+
+	@Test
 	void frontierLearningObservesRawPredictionsWithoutFeedingCorrectionsBack(@TempDir Path tempDir)
 			throws Exception {
 		LmdbOperatorFeedbackStats stats = new LmdbOperatorFeedbackStats(estimatorPath(tempDir));
@@ -594,15 +699,33 @@ class LmdbOperatorFeedbackStatsTest {
 
 		FrontierLearningModel expected = new FrontierLearningModel();
 		expected.observe(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, 40.0d, 1L);
-		expected.observe(key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, 250.0d, 1L);
 		assertEquals(
 				expected.correct(key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false).orElseThrow(),
 				frontierCorrection(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
 				1.0e-12,
 				"Cardinality feedback must calibrate the raw transform, not its prior LEO correction");
+		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false));
+		Join typed = join("s", "x", "o");
+		completeCostFeedback(typed, 40, 80, 500, 250);
+		typed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		typed.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-raw");
+		typed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-raw");
+		typed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		typed.setDoubleMetricPlanned("optimizer.costEventRows", 80.0d);
+		typed.setDoubleMetricPlanned("optimizer.costEventSequentialRows", 500.0d);
+		typed.setDoubleMetricPlanned("optimizer.frontierLeo.output_rows.raw", 100.0d);
+		typed.setDoubleMetricPlanned("optimizer.frontierLeo.source_rows_scanned.raw", 1_000.0d);
+		typed.setSourceRowsScannedActual(250L);
+		var descriptor = declareSourceObservation(typed, 100.0d, 80.0d, 1_000.0d, 500.0d, false);
+		stats.recordOperatorOutcome(typed);
+		expected.observePhysical(descriptor.logicalKey(), descriptor.physicalKey(), descriptor.applicability(),
+				FrontierCostDimension.SOURCE_ROWS_SCANNED, descriptor.featureEnvelope(), 1_000.0d, 250.0d, 2L);
 		assertEquals(
-				expected.correct(key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false).orElseThrow(),
-				frontierCorrection(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				FrontierLearningModel.estimate(expected.physicalPosterior(descriptor.logicalKey(),
+						descriptor.physicalKey(), descriptor.applicability(),
+						FrontierCostDimension.SOURCE_ROWS_SCANNED),
+						1_000.0d).correctedValue(),
+				typedPhysicalCorrection(stats, descriptor, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d),
 				1.0e-12,
 				"Physical feedback must calibrate raw access work, not its prior LEO correction");
 	}
@@ -836,8 +959,30 @@ class LmdbOperatorFeedbackStatsTest {
 							+ " something incoherent");
 			assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.RESULT_ROWS, 100.0d, false),
 					"RESULT_ROWS shares the invocation basis of the cumulative row total");
-			assertTrue(frontierCorrection(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d,
-					false) < 1_000.0d, "Physical dimensions stay total-vs-total and keep recording");
+			assertTrue(
+					frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false));
+			Join typedRoot = join("s", "x", "o");
+			TupleExpr typedScan = typedRoot.getRightArg();
+			completeCostFeedback(typedScan, 4_000, 100.0d, 1_100.0d, 650.0d);
+			typedScan.setCostFeedbackCloseCountActual(0L);
+			typedScan.setLongMetricActual(TelemetryMetricNames.EXHAUSTED_CLOSE_COUNT_ACTUAL, 0L);
+			typedScan.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+			typedScan.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-unknown-invocations");
+			typedScan.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-unknown-invocations");
+			typedScan.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+			typedScan.setDoubleMetricPlanned("optimizer.costEventRows", 100.0d);
+			typedScan.setDoubleMetricPlanned("plannedCostResultRows", 100.0d);
+			typedScan.setDoubleMetricPlanned("plannedCostSequentialRows", 1_000.0d);
+			typedScan.setSourceRowsScannedActual(250L);
+			completeCostFeedback(typedRoot, 4_000, 4_000.0d, 5_000.0d, 5_000.0d);
+			var descriptor = declareSourceObservation(typedScan, 100.0d, 100.0d, 1_000.0d, 1_000.0d, true);
+			stats.observe(typedRoot, true);
+			assertNull(stats.logicalPosterior(descriptor.logicalKey(), descriptor.applicability(),
+					FrontierCostDimension.OUTPUT_ROWS));
+			assertNull(stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+					descriptor.applicability(), FrontierCostDimension.RESULT_ROWS));
+			assertTrue(typedPhysicalCorrection(stats, descriptor, FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					1_000.0d) < 1_000.0d, "Physical dimensions stay total-vs-total and keep recording");
 		} finally {
 			restoreProperty(LmdbOperatorFeedbackStats.REINVOKED_ROWS_NORMALIZATION_PROPERTY, previous);
 		}
@@ -1243,6 +1388,23 @@ class LmdbOperatorFeedbackStatsTest {
 						+ " hash-join kernel's key");
 		assertFalse(frontierCorrectionMissing(stats, key, FrontierCostDimension.OUTPUT_ROWS, 100.0d, false),
 				"Join cardinality is algorithm-independent and stays recorded");
+		Join typed = join("s", "x", "o");
+		completeCostFeedback(typed, 400, 100, 1_100, 650);
+		typed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		typed.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-drift");
+		typed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-drift");
+		typed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		typed.setStringMetricPlanned("optimizer.physicalJoinImplementation", "independent-hash");
+		typed.setDoubleMetricPlanned("plannedCostSequentialRows", 1_000.0d);
+		typed.setSourceRowsScannedActual(250L);
+		typed.setAlgorithm("JoinIterator");
+		var descriptor = declareSourceObservation(typed, 100.0d, 100.0d, 1_000.0d, 1_000.0d, true);
+		stats.recordOperatorOutcome(typed);
+		assertNull(stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED));
+		assertNotNull(stats.logicalPosterior(descriptor.logicalKey(), descriptor.applicability(),
+				FrontierCostDimension.OUTPUT_ROWS));
+
 	}
 
 	@Test
@@ -1262,8 +1424,25 @@ class LmdbOperatorFeedbackStatsTest {
 		observed.setAlgorithm("HashJoinIteration");
 
 		stats.recordOperatorOutcome(observed);
+		assertTrue(frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+				"Matching algorithms do not qualify a source quantity from explanation metrics alone");
 
-		assertFalse(frontierCorrectionMissing(stats, key, FrontierCostDimension.SOURCE_ROWS_SCANNED, 1_000.0d, false),
+		// Independent observations preserve the ordinary once-per-node publication rule.
+		Join typed = join("s", "x", "o");
+		completeCostFeedback(typed, 400, 100, 1_100, 650);
+		typed.setStringMetricPlanned("optimizer.frontierLearningKey", key.externalForm());
+		typed.setStringMetricPlanned("optimizer.costEventDigest", "event-declared-match");
+		typed.setStringMetricPlanned("optimizer.frontierStateDigest", "state-declared-match");
+		typed.setStringMetricPlanned("plannedFrontierGuarantee", "measure_unbiased");
+		typed.setStringMetricPlanned("optimizer.physicalJoinImplementation", "independent-hash");
+		typed.setDoubleMetricPlanned("plannedCostSequentialRows", 1_000.0d);
+		typed.setSourceRowsScannedActual(250L);
+		typed.setAlgorithm("HashJoinIteration");
+		var descriptor = declareSourceObservation(typed, 100.0d, 100.0d, 1_000.0d, 1_000.0d, false);
+		stats.recordOperatorOutcome(typed);
+
+		assertNotNull(stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), FrontierCostDimension.SOURCE_ROWS_SCANNED),
 				"Matching planned and executed algorithms must keep recording physical dimensions");
 	}
 
@@ -2642,6 +2821,55 @@ class LmdbOperatorFeedbackStatsTest {
 		java.util.OptionalDouble optional = (java.util.OptionalDouble) correction;
 		assertTrue(optional.isPresent(), "The observed Frontier dimension should have a posterior correction");
 		return optional.getAsDouble();
+	}
+
+	private static LmdbRuntimeFeedbackDescriptor declareSourceObservation(TupleExpr observed,
+			double rawRows, double appliedRows, double rawSource, double appliedSource, boolean logicalPopulation) {
+		PackedQueryView query;
+		int relation;
+		if (observed instanceof StatementPattern pattern) {
+			var call = PackedCostTestSupport.statementLeaf(PlanningGraphDomain.defaultGraph(), pattern.clone());
+			query = call.query();
+			relation = call.relationId();
+		} else {
+			var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(), observed.clone());
+			query = call.query();
+			relation = call.operatorRelationId();
+		}
+		PackedCostEstimate prediction = new PackedCostEstimate();
+		prediction.setRows(appliedRows, observed.getCostFeedbackExpectedWorkRows());
+		prediction.setLocalPhysicalCost(appliedSource, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		prediction.setObjectivePricePreservingPhysicalCost(observed.getCostFeedbackExpectedWorkRows());
+		prediction.putPlannedDoubleMetric("optimizer.frontierLeo.output_rows.raw", rawRows);
+		prediction.putPlannedDoubleMetric("optimizer.frontierLeo.source_rows_scanned.raw", rawSource);
+		prediction.putPlannedStringMetric("optimizer.physicalJoinImplementation",
+				observed.getStringMetricPlanned("optimizer.physicalJoinImplementation"));
+		var session = new LmdbMappedFrontierLearningSession(mock(LmdbEstimatorRuntime.class), query, true);
+		var context = PackedCostTestSupport.prefixContext(new int[0], 0, 1.0d, 0);
+		if (observed instanceof StatementPattern) {
+			session.applyLeaf(relation, context, prediction, logicalPopulation);
+		} else {
+			session.applyOperator(relation, new int[] { relation }, context, prediction, logicalPopulation);
+		}
+		RuntimeFeedbackContract contract = prediction.runtimeFeedbackContract();
+		assertNotNull(contract);
+		assertTrue(contract.admits(RuntimeFeedbackContract.ADMIT_PHYSICAL));
+		assertEquals(logicalPopulation, contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+		assertEquals(rawSource, contract.rawPrediction().sourceRows());
+		assertEquals(appliedSource, contract.appliedPrediction().sourceRows());
+		assertEquals(observed.getCostFeedbackExpectedWorkRows(), contract.objectivePoint());
+		observed.setRuntimeFeedbackContract(contract);
+		return (LmdbRuntimeFeedbackDescriptor) contract.descriptor();
+	}
+
+	private static double typedPhysicalCorrection(LmdbOperatorFeedbackStats stats,
+			LmdbRuntimeFeedbackDescriptor descriptor, FrontierCostDimension dimension, double predicted) {
+		var posterior = stats.physicalPosterior(descriptor.logicalKey(), descriptor.physicalKey(),
+				descriptor.applicability(), dimension);
+		assertNotNull(posterior, "The declared current physical quantity must have a posterior");
+		var estimate = FrontierLearningModel.estimate(posterior, predicted);
+		assertNotNull(estimate);
+		return estimate.correctedValue();
 	}
 
 	private static double frontierCorrection(LmdbOperatorFeedbackStats stats, FrontierLearningKey key,

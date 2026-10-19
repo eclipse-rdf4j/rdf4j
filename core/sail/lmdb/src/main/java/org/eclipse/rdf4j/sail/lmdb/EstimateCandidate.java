@@ -16,12 +16,21 @@ import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
 import org.eclipse.rdf4j.sail.lmdb.estimation.RowEvidence;
 
-record EstimateCandidate(BagEstimate estimate, RowEvidence evidence, Kind kind, long freshness) {
+record EstimateCandidate(BagEstimate estimate, RowEvidence evidence, Kind kind, long freshness, RowScope rowScope) {
+
+	EstimateCandidate(BagEstimate estimate, RowEvidence evidence, Kind kind, long freshness) {
+		this(estimate, evidence, kind, freshness, RowScope.UNKNOWN);
+	}
+
+	EstimateCandidate withRowScope(RowScope scope) {
+		return new EstimateCandidate(estimate, evidence, kind, freshness, scope);
+	}
 
 	enum Kind {
 		EXACT_STORAGE,
@@ -37,6 +46,7 @@ record EstimateCandidate(BagEstimate estimate, RowEvidence evidence, Kind kind, 
 		evidence = Objects.requireNonNull(evidence, "evidence");
 		kind = Objects.requireNonNull(kind, "kind");
 		freshness = Math.max(0L, freshness);
+		rowScope = rowScope == null ? RowScope.UNKNOWN : rowScope;
 	}
 
 	/** Builds a candidate whose bag estimate binds every variable of {@code expression} to {@code rows}. */

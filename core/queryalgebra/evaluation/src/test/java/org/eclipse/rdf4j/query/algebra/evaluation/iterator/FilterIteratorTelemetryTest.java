@@ -79,6 +79,61 @@ class FilterIteratorTelemetryTest {
 	private static final String DISTINCT_MATCHED_KEYS_ESTIMATE = "actualSemiAntiDistinctMatchedCorrelationKeysEstimate";
 	private static final String DISTINCT_UNMATCHED_KEYS_ESTIMATE = "actualSemiAntiDistinctUnmatchedCorrelationKeysEstimate";
 
+	private record RuntimeSubtreeProbe(Set<String> substitutionBindingNames, Value outerX, Value outerThreshold,
+			List<Value> substitutedThresholds) {
+	}
+
+	private record RuntimeSubtreeInput(Value x, Value threshold) {
+	}
+
+	private static final class RecordingRuntimeEvaluationStrategy extends DefaultEvaluationStrategy {
+		private final QueryEvaluationContext enclosingContext;
+		private final AtomicInteger runtimeCompilations = new AtomicInteger();
+		private final AtomicInteger runtimeEvaluations = new AtomicInteger();
+		private final List<RuntimeSubtreeProbe> runtimeProbes = new ArrayList<>();
+
+		private RecordingRuntimeEvaluationStrategy(QueryEvaluationContext enclosingContext) {
+			super(new EmptyTripleSource(), null);
+			this.enclosingContext = enclosingContext;
+		}
+
+		@Override
+		public QueryEvaluationStep precompileRuntimeSubtree(TupleExpr expression, QueryEvaluationContext context) {
+			assertThat(context).isNotSameAs(enclosingContext);
+			Set<String> substitutionBindingNames = Set.copyOf(context.getSubstitutionBindingNames());
+			assertThat(substitutionBindingNames).containsExactlyInAnyOrder("x", "threshold");
+			List<Value> substitutedThresholds = substitutedThresholds(expression);
+			runtimeCompilations.incrementAndGet();
+			QueryEvaluationStep compiled = super.precompileRuntimeSubtree(expression, context);
+			return bindings -> {
+				Value outerX = bindings.getValue("x");
+				Value outerThreshold = bindings.getValue("threshold");
+				assertThat(outerX).isNotNull();
+				assertThat(outerThreshold).isNotNull();
+				assertThat(substitutedThresholds).isNotEmpty().containsOnly(outerThreshold);
+				runtimeProbes.add(new RuntimeSubtreeProbe(substitutionBindingNames, outerX, outerThreshold,
+						substitutedThresholds));
+				runtimeEvaluations.incrementAndGet();
+				return compiled.evaluate(bindings);
+			};
+		}
+	}
+
+	private static List<Value> substitutedThresholds(TupleExpr expression) {
+		if (expression instanceof Union union) {
+			List<Value> values = new ArrayList<>(substitutedThresholds(union.getLeftArg()));
+			values.addAll(substitutedThresholds(union.getRightArg()));
+			return List.copyOf(values);
+		}
+		assertThat(expression).isInstanceOf(Filter.class);
+		Compare condition = (Compare) ((Filter) expression).getCondition();
+		assertThat(condition.getLeftArg()).isInstanceOf(Var.class);
+		Var threshold = (Var) condition.getLeftArg();
+		assertThat(threshold.getName()).isEqualTo("threshold");
+		assertThat(threshold.hasValue()).isTrue();
+		return List.of(threshold.getValue());
+	}
+
 	@Test
 	void evaluationStatisticsExposesSeparateSemiAntiObservationSurface() throws Exception {
 		Class<?> observationType = Class.forName(
@@ -945,51 +1000,16 @@ class FilterIteratorTelemetryTest {
 				bindingSet("x", second, "threshold", low),
 				bindingSet("x", first, "threshold", high),
 				bindingSet("x", second, "threshold", high)));
-		BindingSetAssignment right = assignment("x", first);
-		Filter subquery = new Filter(right,
-				new Compare(Var.of("threshold"), new ValueConstant(low), CompareOp.GE));
+		Filter lowBranch = new Filter(assignment("x", first),
+				new Compare(Var.of("threshold"), new ValueConstant(low), CompareOp.EQ));
+		Filter highBranch = new Filter(assignment("x", second),
+				new Compare(Var.of("threshold"), new ValueConstant(high), CompareOp.EQ));
+		Union subquery = new Union(lowBranch, highBranch);
 		Not notExists = new Not(new Exists(subquery));
 		Filter filter = new Filter(left, notExists);
 		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "materialized-hash");
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
-		AtomicInteger rightEvaluations = new AtomicInteger();
-		AtomicInteger substitutedCompilations = new AtomicInteger();
-		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
-		QueryEvaluationStep rightStep = bindings -> {
-			rightEvaluations.incrementAndGet();
-			Value matched = low.equals(bindings.getValue("threshold")) ? first : second;
-			return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", matched)).iterator());
-		};
-		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
-		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		// runtime subtrees (per-probe substituted EXISTS bodies) compile through the interface default, which
-		// delegates to the stubbed precompile
-		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), eq(context))).thenCallRealMethod();
-		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
-			TupleExpr expression = invocation.getArgument(0);
-			if (expression == left) {
-				return leftStep;
-			}
-			if (expression == subquery) {
-				return rightStep;
-			}
-
-			assertThat(expression).isInstanceOf(Filter.class).isNotSameAs(subquery);
-			Compare substitutedCondition = (Compare) ((Filter) expression).getCondition();
-			assertThat(substitutedCondition.getLeftArg()).isInstanceOf(Var.class);
-			Value substitutedThreshold = ((Var) substitutedCondition.getLeftArg()).getValue();
-			assertThat(substitutedThreshold).isIn(low, high);
-			substitutedCompilations.incrementAndGet();
-			return (QueryEvaluationStep) bindings -> {
-				rightEvaluations.incrementAndGet();
-				Value matched = low.equals(substitutedThreshold) ? first : second;
-				if (!matched.equals(bindings.getValue("x"))) {
-					return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
-				}
-				return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", matched)).iterator());
-			};
-		});
-		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) notExists), eq(context));
+		RecordingRuntimeEvaluationStrategy strategy = new RecordingRuntimeEvaluationStrategy(context);
 
 		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
 
@@ -1001,8 +1021,16 @@ class FilterIteratorTelemetryTest {
 		assertThat(results).containsExactly(
 				bindingSet("x", second, "threshold", low),
 				bindingSet("x", first, "threshold", high));
-		assertThat(substitutedCompilations).hasValue(4);
-		assertThat(rightEvaluations).hasValue(4);
+		assertThat(strategy.runtimeCompilations).hasValue(4);
+		assertThat(strategy.runtimeEvaluations).hasValue(4);
+		assertThat(strategy.runtimeProbes).hasSize(4).allSatisfy(probe -> {
+			assertThat(probe.substitutionBindingNames()).containsExactlyInAnyOrder("x", "threshold");
+			assertThat(probe.substitutedThresholds()).containsOnly(probe.outerThreshold());
+		});
+		assertThat(strategy.runtimeProbes)
+				.extracting(probe -> new RuntimeSubtreeInput(probe.outerX(), probe.outerThreshold()))
+				.containsExactly(new RuntimeSubtreeInput(first, low), new RuntimeSubtreeInput(second, low),
+						new RuntimeSubtreeInput(first, high), new RuntimeSubtreeInput(second, high));
 	}
 
 	// REINFORCE: an EXISTS subquery outside the compatibility-safe allowlist (here a nested FILTER) is evaluated by
@@ -1029,38 +1057,7 @@ class FilterIteratorTelemetryTest {
 		filter.setStringMetricPlanned("optimizer.filterAlgorithmHint", "memoized-correlated");
 		filter.setRuntimeTelemetryEnabled(true);
 		QueryEvaluationContext context = new QueryEvaluationContext.Minimal(null);
-		AtomicInteger substitutedCompilations = new AtomicInteger();
-		AtomicInteger probes = new AtomicInteger();
-		QueryEvaluationStep leftStep = ignored -> new CloseableIteratorIteration<>(left.getBindingSets().iterator());
-		QueryEvaluationStep sharedRightStep = ignored -> {
-			throw new AssertionError("the shared subquery step must not be probed when substitution is required");
-		};
-		QueryValueEvaluationStep conditionStep = ignored -> BooleanLiteral.FALSE;
-		EvaluationStrategy strategy = mock(EvaluationStrategy.class);
-		// runtime subtrees (per-probe substituted EXISTS bodies) compile through the interface default, which
-		// delegates to the stubbed precompile
-		when(strategy.precompileRuntimeSubtree(any(TupleExpr.class), eq(context))).thenCallRealMethod();
-		when(strategy.precompile(any(TupleExpr.class), eq(context))).thenAnswer(invocation -> {
-			TupleExpr expression = invocation.getArgument(0);
-			if (expression == left) {
-				return leftStep;
-			}
-			if (expression == subquery) {
-				return sharedRightStep;
-			}
-			assertThat(expression).isInstanceOf(Filter.class).isNotSameAs(subquery);
-			Var substituted = (Var) ((Compare) ((Filter) expression).getCondition()).getLeftArg();
-			assertThat(substituted.getValue()).isIn(low, high);
-			substitutedCompilations.incrementAndGet();
-			return (QueryEvaluationStep) bindings -> {
-				probes.incrementAndGet();
-				if (low.equals(substituted.getValue()) && first.equals(bindings.getValue("x"))) {
-					return new CloseableIteratorIteration<>(List.of(singleBindingSet("x", first)).iterator());
-				}
-				return new CloseableIteratorIteration<>(List.<BindingSet>of().iterator());
-			};
-		});
-		doReturn(conditionStep).when(strategy).precompile(eq((ValueExpr) exists), eq(context));
+		RecordingRuntimeEvaluationStrategy strategy = new RecordingRuntimeEvaluationStrategy(context);
 
 		QueryEvaluationStep step = FilterIterator.supply(filter, strategy, context);
 
@@ -1072,8 +1069,16 @@ class FilterIteratorTelemetryTest {
 		assertThat(results).containsExactly(
 				bindingSet("x", first, "threshold", low),
 				bindingSet("x", first, "threshold", low));
-		assertThat(substitutedCompilations).hasValue(4);
-		assertThat(probes).hasValue(4);
+		assertThat(strategy.runtimeCompilations).hasValue(4);
+		assertThat(strategy.runtimeEvaluations).hasValue(4);
+		assertThat(strategy.runtimeProbes).hasSize(4).allSatisfy(probe -> {
+			assertThat(probe.substitutionBindingNames()).containsExactlyInAnyOrder("x", "threshold");
+			assertThat(probe.substitutedThresholds()).containsOnly(probe.outerThreshold());
+		});
+		assertThat(strategy.runtimeProbes)
+				.extracting(probe -> new RuntimeSubtreeInput(probe.outerX(), probe.outerThreshold()))
+				.containsExactly(new RuntimeSubtreeInput(first, low), new RuntimeSubtreeInput(first, low),
+						new RuntimeSubtreeInput(second, high), new RuntimeSubtreeInput(second, high));
 		assertThat(filter.getStringMetricActual("actualSemiAntiAlgorithm")).isEqualTo("streaming-correlated");
 		assertThat(filter.getStringMetricActual("actualSemiAntiRuntimeDisposition"))
 				.isEqualTo("compiled-specialized");

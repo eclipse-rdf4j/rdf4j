@@ -12,6 +12,8 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import java.util.Arrays;
+import java.util.Objects;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FrontierEvidenceBundle;
@@ -23,6 +25,8 @@ final class PackedCostingTrace {
 
 	private static final PackedCostingTrace EMPTY = emptyTrace();
 
+	// Null is the legacy population-ordinal encoding. New snapshots retain dense trace handles separately.
+	private final int[] populationOrdinalsByHandle;
 	private final byte[] phases;
 	private final byte[] contextFlags;
 	private final int[] relationIds;
@@ -109,6 +113,9 @@ final class PackedCostingTrace {
 	private final int[] doubleMetricNameIds;
 	private final double[] doubleMetricValues;
 	private final Object[] objects;
+	private final int[] providerInputTypedValueStarts;
+	private final int[] typedValueStarts;
+	private final double[] typedValues;
 
 	PackedCostingTrace(byte[] phases, byte[] contextFlags, int[] relationIds, long[] contextFingerprints,
 			int[] prefixStarts, int[] prefixCounts, int[] prefixRelationIds, double[] prefixRows,
@@ -142,7 +149,67 @@ final class PackedCostingTrace {
 			int[] estimateFusionIds, long[] digestHigh, long[] digestLow, int[] stringMetricStarts,
 			int[] stringMetricCounts, int[] doubleMetricStarts, int[] doubleMetricCounts,
 			int[] stringMetricNameIds, int[] stringMetricValueIds, int[] doubleMetricNameIds,
-			double[] doubleMetricValues, Object[] objects) {
+			double[] doubleMetricValues, Object[] objects, int[] providerInputTypedValueStarts, int[] typedValueStarts,
+			double[] typedValues) {
+		this(phases, contextFlags, relationIds, contextFingerprints, prefixStarts, prefixCounts, prefixRelationIds,
+				prefixRows, unrelatedPrefixRows, assuredBindingRelationIds, inputStateIds, leftStateIds, rightStateIds,
+				inputSourceStateIds, leftSourceStateIds, rightSourceStateIds, outputStateIds, bindingLayoutIds,
+				correlationMaskIds, semanticScopeMaskIds, hashLookupMaskIds, hashCompatibilityMaskIds, leftInputRows,
+				rightInputRows, providerInputRows, providerInputWorkRows, providerInputSequentialRows,
+				providerInputRandomSeeks, providerInputIteratorOpens, providerInputExpressionEvaluations,
+				providerInputHashBuildRows, providerInputHashProbeRows, providerInputPathExpansions,
+				providerInputResultRows,
+				providerInputRemoteCalls, providerInputPeakMemoryRows, providerInputAccessRows,
+				providerInputInvocations,
+				providerInputCostEventIds, providerInputStateIds, providerInputSourceStateIds, providerInputLookupMasks,
+				providerInputMissingLookupMasks, providerInputIndexPrefixLengths, providerInputIndexNameIds,
+				providerInputAccessModeIds, providerInputEstimateSourceIds, providerInputEstimateFusionIds,
+				providerInputCostScopes, providerInputFlags, providerInputGuarantees, providerInputDispositions,
+				outputCostScopes, outputFlags, guarantees, dispositions, outputRows, workRows, objectiveCosts,
+				sequentialRows,
+				randomSeeks, iteratorOpens, expressionEvaluations, hashBuildRows, hashProbeRows, pathExpansions,
+				resultRows,
+				remoteCalls, peakMemoryRows, accessRows, invocations, indexNameIds, accessModeIds, estimateSourceIds,
+				estimateFusionIds, digestHigh, digestLow, stringMetricStarts, stringMetricCounts, doubleMetricStarts,
+				doubleMetricCounts, stringMetricNameIds, stringMetricValueIds, doubleMetricNameIds, doubleMetricValues,
+				objects, providerInputTypedValueStarts, typedValueStarts, typedValues, null);
+	}
+
+	PackedCostingTrace(byte[] phases, byte[] contextFlags, int[] relationIds, long[] contextFingerprints,
+			int[] prefixStarts, int[] prefixCounts, int[] prefixRelationIds, double[] prefixRows,
+			double[] unrelatedPrefixRows,
+			int[] assuredBindingRelationIds, int[] inputStateIds, int[] leftStateIds, int[] rightStateIds,
+			int[] inputSourceStateIds, int[] leftSourceStateIds, int[] rightSourceStateIds,
+			int[] outputStateIds, int[] bindingLayoutIds, int[] correlationMaskIds, int[] semanticScopeMaskIds,
+			int[] hashLookupMaskIds, int[] hashCompatibilityMaskIds,
+			double[] leftInputRows, double[] rightInputRows, double[] providerInputRows,
+			double[] providerInputWorkRows, double[] providerInputSequentialRows,
+			double[] providerInputRandomSeeks, double[] providerInputIteratorOpens,
+			double[] providerInputExpressionEvaluations, double[] providerInputHashBuildRows,
+			double[] providerInputHashProbeRows, double[] providerInputPathExpansions,
+			double[] providerInputResultRows, double[] providerInputRemoteCalls,
+			double[] providerInputPeakMemoryRows,
+			double[] providerInputAccessRows, double[] providerInputInvocations,
+			int[] providerInputCostEventIds, int[] providerInputStateIds, int[] providerInputSourceStateIds,
+			int[] providerInputLookupMasks,
+			int[] providerInputMissingLookupMasks, int[] providerInputIndexPrefixLengths,
+			int[] providerInputIndexNameIds, int[] providerInputAccessModeIds,
+			int[] providerInputEstimateSourceIds, int[] providerInputEstimateFusionIds,
+			byte[] providerInputCostScopes, byte[] providerInputFlags, byte[] providerInputGuarantees,
+			byte[] providerInputDispositions, byte[] outputCostScopes, byte[] outputFlags,
+			byte[] guarantees, byte[] dispositions,
+			double[] outputRows, double[] workRows, double[] objectiveCosts, double[] sequentialRows,
+			double[] randomSeeks,
+			double[] iteratorOpens, double[] expressionEvaluations, double[] hashBuildRows, double[] hashProbeRows,
+			double[] pathExpansions, double[] resultRows, double[] remoteCalls, double[] peakMemoryRows,
+			double[] accessRows,
+			double[] invocations, int[] indexNameIds, int[] accessModeIds, int[] estimateSourceIds,
+			int[] estimateFusionIds, long[] digestHigh, long[] digestLow, int[] stringMetricStarts,
+			int[] stringMetricCounts, int[] doubleMetricStarts, int[] doubleMetricCounts,
+			int[] stringMetricNameIds, int[] stringMetricValueIds, int[] doubleMetricNameIds,
+			double[] doubleMetricValues, Object[] objects, int[] providerInputTypedValueStarts, int[] typedValueStarts,
+			double[] typedValues, int[] populationOrdinalsByHandle) {
+		this.populationOrdinalsByHandle = populationOrdinalsByHandle;
 		this.phases = phases;
 		this.contextFlags = contextFlags;
 		this.relationIds = relationIds;
@@ -229,6 +296,9 @@ final class PackedCostingTrace {
 		this.doubleMetricNameIds = doubleMetricNameIds;
 		this.doubleMetricValues = doubleMetricValues;
 		this.objects = objects;
+		this.providerInputTypedValueStarts = providerInputTypedValueStarts;
+		this.typedValueStarts = typedValueStarts;
+		this.typedValues = typedValues;
 	}
 
 	static PackedCostingTrace empty() {
@@ -257,7 +327,8 @@ final class PackedCostingTrace {
 				eventInts, eventInts, eventInts, eventInts,
 				eventLongs, eventLongs,
 				eventInts, eventInts, eventInts, eventInts,
-				new int[0], new int[0], new int[0], new double[0], new Object[0]);
+				new int[0], new int[0], new int[0], new double[0], new Object[0], new int[1], new int[1],
+				new double[0]);
 	}
 
 	int eventCount() {
@@ -265,10 +336,25 @@ final class PackedCostingTrace {
 	}
 
 	Projection project(int[] rootEventIds) {
+		return project(rootEventIds, ignored -> {
+		});
+	}
+
+	Projection project(int[] rootEventIds, IntConsumer retainEvent) {
 		int oldEventCount = eventCount();
 		int[] eventMapping = new int[oldEventCount + 1];
 		if (oldEventCount == 0) {
 			return new Projection(this, eventMapping);
+		}
+		int[] referencedStates = referencedStates();
+		int[] producers = new int[referencedStates.length];
+		for (int event = 1; event <= oldEventCount; event++) {
+			if (outputStateIds[event] != 0) {
+				int state = Arrays.binarySearch(referencedStates, outputStateIds[event]);
+				if (producers[state] == 0) {
+					producers[state] = event;
+				}
+			}
 		}
 		boolean[] retained = new boolean[oldEventCount + 1];
 		int[] pending = new int[oldEventCount];
@@ -284,6 +370,22 @@ final class PackedCostingTrace {
 		}
 		while (pendingCount != 0) {
 			int eventId = pending[--pendingCount];
+			retainEvent.accept(eventId);
+			for (int role = 0; role < 9; role++) {
+				if (role == 6) {
+					continue; // An output is produced by this event, never an input dependency.
+				}
+				int state = stateColumn(role)[eventId];
+				if (state == 0) {
+					continue;
+				}
+				int producer = producers[Arrays.binarySearch(referencedStates, state)];
+				// Missing origins remain unresolved and replay refuses them. Never retain a future producer.
+				if (producer != 0 && producer < eventId && !retained[producer]) {
+					retained[producer] = true;
+					pending[pendingCount++] = producer;
+				}
+			}
 			int dependency = providerInputCostEventIds[eventId];
 			if (dependency < 0 || dependency > oldEventCount) {
 				throw new PackedMemoInvariantException("costing event " + eventId
@@ -360,6 +462,20 @@ final class PackedCostingTrace {
 		for (int eventId = 1; eventId < length; eventId++) {
 			projectedProviderInputCostEventIds[eventId] = eventMapping[projectedProviderInputCostEventIds[eventId]];
 		}
+		int[] projectedProviderTypedStarts = select(providerInputTypedValueStarts, eventMapping, length);
+		int[] projectedTypedStarts = select(typedValueStarts, eventMapping, length);
+		int retainedTypedCount = 0;
+		for (int event = 1; event < length; event++) {
+			retainedTypedCount += projectedProviderTypedStarts[event] == 0 ? 0 : 18;
+			retainedTypedCount += projectedTypedStarts[event] == 0 ? 0 : 18;
+		}
+		double[] projectedTypedValues = new double[retainedTypedCount];
+		int typedOffset = 0;
+		for (int event = 1; event < length; event++) {
+			typedOffset = copyTypedBlock(projectedProviderTypedStarts, event, projectedTypedValues, typedOffset);
+			typedOffset = copyTypedBlock(projectedTypedStarts, event, projectedTypedValues, typedOffset);
+		}
+
 		PackedCostingTrace projected = new PackedCostingTrace(
 				select(phases, eventMapping, length), select(contextFlags, eventMapping, length),
 				select(relationIds, eventMapping, length),
@@ -413,7 +529,12 @@ final class PackedCostingTrace {
 				select(digestLow, eventMapping, length), projectedStringMetricStarts,
 				projectedStringMetricCounts, projectedDoubleMetricStarts, projectedDoubleMetricCounts,
 				projectedStringMetricNameIds, projectedStringMetricValueIds, projectedDoubleMetricNameIds,
-				projectedDoubleMetricValues, objectProjection.values());
+				projectedDoubleMetricValues, objectProjection.values(), projectedProviderTypedStarts,
+				projectedTypedStarts,
+				projectedTypedValues);
+		if (populationOrdinalsByHandle != null) {
+			projected = projected.withPopulationHandleMapping(populationOrdinalsByHandle);
+		}
 		return new Projection(projected, eventMapping);
 	}
 
@@ -435,6 +556,45 @@ final class PackedCostingTrace {
 			}
 		}
 		return total;
+	}
+
+	private int copyTypedBlock(int[] starts, int event, double[] target, int offset) {
+		int encoded = starts[event];
+		if (encoded != 0) {
+			System.arraycopy(typedValues, encoded - 1, target, offset, 18);
+			starts[event] = offset + 1;
+			offset += 18;
+		}
+		return offset;
+	}
+
+	void restoreProviderInputCost(int event, PackedCostEstimate estimate) {
+		checkEventId(event);
+		estimate.restoreCostingTraceOutput(providerInputRows[event], providerInputWorkRows[event],
+				providerInputSequentialRows[event], providerInputRandomSeeks[event], providerInputIteratorOpens[event],
+				providerInputExpressionEvaluations[event], providerInputHashBuildRows[event],
+				providerInputHashProbeRows[event],
+				providerInputPathExpansions[event], providerInputResultRows[event], providerInputRemoteCalls[event],
+				providerInputPeakMemoryRows[event], providerInputCostScope(event),
+				providerInputExplicitPhysicalCost(event),
+				providerInputReplacesChildWork(event), providerInputContextualRows(event),
+				providerInputComponentRows(event),
+				providerInputContextualScalarWork(event));
+		estimate.restoreCostingTraceProviderInputMetrics();
+		estimate.setDependentSubqueriesCosted(providerInputDependentSubqueriesCosted(event));
+		int flags = Byte.toUnsignedInt(providerInputFlags[event]);
+		int start = providerInputTypedValueStarts[event] - 1;
+		if ((flags & 1 << 5) != 0) {
+			estimate.restoreCostingTraceDependentComponents(typedValues[start], typedValues[start + 1],
+					typedValues[start + 2], typedValues[start + 3], typedValues[start + 4], typedValues[start + 5],
+					typedValues[start + 6], typedValues[start + 7], typedValues[start + 8], typedValues[start + 9],
+					typedValues[start + 10], typedValues[start + 11], typedValues[start + 12], typedValues[start + 13],
+					typedValues[start + 14]);
+		}
+		if ((flags & 1 << 6) != 0) {
+			estimate.restoreCostingTraceObjective(typedValues[start + 15], typedValues[start + 16],
+					typedValues[start + 17]);
+		}
 	}
 
 	private static void copySelectedRanges(int[] source, int[] starts, int[] counts, int[] eventMapping,
@@ -762,6 +922,11 @@ final class PackedCostingTrace {
 		return (providerInputFlags[eventId] & 1 << 2) != 0;
 	}
 
+	boolean providerInputContextualScalarWork(int eventId) {
+		checkEventId(eventId);
+		return (providerInputFlags[eventId] & 1 << 7) != 0;
+	}
+
 	boolean providerInputReplacesChildWork(int eventId) {
 		checkEventId(eventId);
 		return (providerInputFlags[eventId] & 1 << 3) != 0;
@@ -1028,34 +1193,114 @@ final class PackedCostingTrace {
 		if (requestOffset < 0 || requestOffset > bundle.requestedStateCount() - stateReferenceCount()) {
 			throw new IndexOutOfBoundsException("costing-trace detached evidence alignment");
 		}
-		int[] detachedInput = new int[inputStateIds.length];
-		int[] detachedInputSource = new int[inputSourceStateIds.length];
-		int[] detachedLeft = new int[leftStateIds.length];
-		int[] detachedLeftSource = new int[leftSourceStateIds.length];
-		int[] detachedRight = new int[rightStateIds.length];
-		int[] detachedRightSource = new int[rightSourceStateIds.length];
-		int[] detachedOutput = new int[outputStateIds.length];
-		int[] detachedProviderInput = new int[providerInputStateIds.length];
-		int[] detachedProviderInputSource = new int[providerInputSourceStateIds.length];
+		int[] states = referencedStates();
+		int[] populations = new int[states.length + 1];
+		int[][] handles = new int[9][eventCount() + 1];
 		int next = requestOffset;
-		for (int eventId = 1; eventId <= eventCount(); eventId++) {
-			detachedInput[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedInputSource[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedLeft[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedLeftSource[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedRight[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedRightSource[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedOutput[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedProviderInput[eventId] = bundle.requestedStateOrdinal(next++);
-			detachedProviderInputSource[eventId] = bundle.requestedStateOrdinal(next++);
+		for (int event = 1; event <= eventCount(); event++) {
+			for (int role = 0; role < 9; role++) {
+				int state = stateColumn(role)[event];
+				int ordinal = bundle.requestedStateOrdinal(next++);
+				if (state != 0) {
+					int handle = Arrays.binarySearch(states, state) + 1;
+					handles[role][event] = handle;
+					if (populations[handle] != 0 && populations[handle] != ordinal) {
+						throw new PackedMemoInvariantException(
+								"one producer state has inconsistent population ordinals");
+					}
+					populations[handle] = ordinal;
+				}
+			}
 		}
-		return copyWithStates(detachedInput, detachedInputSource, detachedLeft, detachedLeftSource, detachedRight,
-				detachedRightSource, detachedOutput, detachedProviderInput, detachedProviderInputSource);
+		return copyWithStates(handles[0], handles[1], handles[2], handles[3], handles[4], handles[5],
+				handles[6], handles[7], handles[8], populations);
+	}
+
+	private PackedCostingTrace withPopulationHandleMapping(int[] oldMapping) {
+		int[] states = referencedStates();
+		int[] populations = new int[states.length + 1];
+		int[][] handles = new int[9][eventCount() + 1];
+		for (int index = 0; index < states.length; index++) {
+			populations[index + 1] = oldMapping[states[index]];
+		}
+		for (int event = 1; event <= eventCount(); event++) {
+			for (int role = 0; role < 9; role++) {
+				int state = stateColumn(role)[event];
+				handles[role][event] = state == 0 ? 0 : Arrays.binarySearch(states, state) + 1;
+			}
+		}
+		return copyWithStates(handles[0], handles[1], handles[2], handles[3], handles[4], handles[5],
+				handles[6], handles[7], handles[8], populations);
+	}
+
+	/** Validates every reference before replay allocates mappings; legacy bounds come only from its bundle. */
+	int stateHandleCount(int populationStateCount) {
+		if (populationStateCount < 0 || populationStateCount == Integer.MAX_VALUE) {
+			throw new IllegalStateException("invalid authenticated population state count");
+		}
+		int handleCount = populationStateCount;
+		if (populationOrdinalsByHandle != null) {
+			if (populationOrdinalsByHandle.length == 0 || populationOrdinalsByHandle[0] != 0
+					|| populationOrdinalsByHandle.length - 1 > stateReferenceCount()) {
+				throw new IllegalStateException("invalid costing trace producer-handle mapping");
+			}
+			handleCount = populationOrdinalsByHandle.length - 1;
+			for (int population : populationOrdinalsByHandle) {
+				if (population < 0 || population > populationStateCount) {
+					throw new IllegalStateException("costing trace references an invalid population ordinal");
+				}
+			}
+		}
+		for (int event = 1; event <= eventCount(); event++) {
+			for (int role = 0; role < 9; role++) {
+				int reference = stateColumn(role)[event];
+				if (reference < 0 || reference > handleCount) {
+					throw new IllegalStateException("costing event " + event
+							+ " has an invalid state reference in role " + role);
+				}
+			}
+		}
+		return handleCount;
+	}
+
+	int populationOrdinal(int handle) {
+		return populationOrdinalsByHandle == null ? handle : populationOrdinalsByHandle[handle];
+	}
+
+	private int[] referencedStates() {
+		int[] references = new int[stateReferenceCount()];
+		appendEvidenceStateIds(references, 0);
+		Arrays.sort(references);
+		int count = 0;
+		for (int state : references) {
+			if (state < 0) {
+				throw new PackedMemoInvariantException("negative costing producer state");
+			}
+			if (state != 0 && (count == 0 || references[count - 1] != state)) {
+				references[count++] = state;
+			}
+		}
+		return Arrays.copyOf(references, count);
+	}
+
+	private int[] stateColumn(int role) {
+		return switch (role) {
+		case 0 -> inputStateIds;
+		case 1 -> inputSourceStateIds;
+		case 2 -> leftStateIds;
+		case 3 -> leftSourceStateIds;
+		case 4 -> rightStateIds;
+		case 5 -> rightSourceStateIds;
+		case 6 -> outputStateIds;
+		case 7 -> providerInputStateIds;
+		case 8 -> providerInputSourceStateIds;
+		default -> throw new IndexOutOfBoundsException("costing-state role " + role);
+		};
 	}
 
 	private PackedCostingTrace copyWithStates(int[] inputStates, int[] inputSourceStates, int[] leftStates,
 			int[] leftSourceStates, int[] rightStates, int[] rightSourceStates, int[] outputStates,
-			int[] providerInputStates, int[] providerInputSourceStates) {
+			int[] providerInputStates, int[] providerInputSourceStates, int[] populationOrdinals) {
 		return new PackedCostingTrace(phases, contextFlags, relationIds, contextFingerprints, prefixStarts,
 				prefixCounts,
 				prefixRelationIds, prefixRows, unrelatedPrefixRows, assuredBindingRelationIds, inputStates, leftStates,
@@ -1079,7 +1324,8 @@ final class PackedCostingTrace {
 				peakMemoryRows,
 				accessRows, invocations, indexNameIds, accessModeIds, estimateSourceIds, estimateFusionIds, digestHigh,
 				digestLow, stringMetricStarts, stringMetricCounts, doubleMetricStarts, doubleMetricCounts,
-				stringMetricNameIds, stringMetricValueIds, doubleMetricNameIds, doubleMetricValues, objects);
+				stringMetricNameIds, stringMetricValueIds, doubleMetricNameIds, doubleMetricValues, objects,
+				providerInputTypedValueStarts, typedValueStarts, typedValues, populationOrdinals);
 	}
 
 	private Object object(int objectId) {
@@ -1099,8 +1345,264 @@ final class PackedCostingTrace {
 		return PackedCostingTraceArena.digestString(digestHigh[eventId], digestLow[eventId]);
 	}
 
+	/**
+	 * Reuse of a completed quantity proof requires the entire retained callback declaration and unit transcript to
+	 * remain unchanged. A replay re-evaluates prices but does not reconstruct the planner's qualified DAG algebra.
+	 * Scalar workRows, objective intervals, and untyped metric telemetry therefore never supply quantity authority.
+	 * Dense state handles, their population mapping, source aliases, every stored context coordinate, raw provider
+	 * input, typed dependent profiles and all declared physical axes are compared. Any mismatch conservatively removes
+	 * the detached quantity sidecar; no partial event delta is a proof for a whole subtree quantity.
+	 */
+	boolean sameQuantityTranscript(PackedCostingTrace other) {
+		if (other == null || eventCount() != other.eventCount()) {
+			return false;
+		}
+		if (!Arrays.equals(phases, other.phases)) {
+			return false;
+		}
+		if (!Arrays.equals(contextFlags, other.contextFlags)) {
+			return false;
+		}
+		if (!Arrays.equals(relationIds, other.relationIds)) {
+			return false;
+		}
+		if (!Arrays.equals(prefixCounts, other.prefixCounts)) {
+			return false;
+		}
+		if (!Arrays.equals(prefixRelationIds, other.prefixRelationIds)) {
+			return false;
+		}
+		if (!Arrays.equals(prefixStarts, other.prefixStarts)) {
+			return false;
+		}
+		if (!Arrays.equals(prefixRows, other.prefixRows)) {
+			return false;
+		}
+		if (!Arrays.equals(unrelatedPrefixRows, other.unrelatedPrefixRows)) {
+			return false;
+		}
+		if (!Arrays.equals(assuredBindingRelationIds, other.assuredBindingRelationIds)) {
+			return false;
+		}
+		if (!Arrays.equals(inputStateIds, other.inputStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(leftStateIds, other.leftStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(rightStateIds, other.rightStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(inputSourceStateIds, other.inputSourceStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(leftSourceStateIds, other.leftSourceStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(rightSourceStateIds, other.rightSourceStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(outputStateIds, other.outputStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(bindingLayoutIds, other.bindingLayoutIds)) {
+			return false;
+		}
+		if (!Arrays.equals(correlationMaskIds, other.correlationMaskIds)) {
+			return false;
+		}
+		if (!Arrays.equals(semanticScopeMaskIds, other.semanticScopeMaskIds)) {
+			return false;
+		}
+		if (!Arrays.equals(hashLookupMaskIds, other.hashLookupMaskIds)) {
+			return false;
+		}
+		if (!Arrays.equals(hashCompatibilityMaskIds, other.hashCompatibilityMaskIds)) {
+			return false;
+		}
+		if (!Arrays.equals(leftInputRows, other.leftInputRows)) {
+			return false;
+		}
+		if (!Arrays.equals(rightInputRows, other.rightInputRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputRows, other.providerInputRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputSequentialRows, other.providerInputSequentialRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputRandomSeeks, other.providerInputRandomSeeks)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputIteratorOpens, other.providerInputIteratorOpens)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputExpressionEvaluations, other.providerInputExpressionEvaluations)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputHashBuildRows, other.providerInputHashBuildRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputHashProbeRows, other.providerInputHashProbeRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputPathExpansions, other.providerInputPathExpansions)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputResultRows, other.providerInputResultRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputRemoteCalls, other.providerInputRemoteCalls)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputPeakMemoryRows, other.providerInputPeakMemoryRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputAccessRows, other.providerInputAccessRows)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputInvocations, other.providerInputInvocations)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputCostEventIds, other.providerInputCostEventIds)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputStateIds, other.providerInputStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputSourceStateIds, other.providerInputSourceStateIds)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputLookupMasks, other.providerInputLookupMasks)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputMissingLookupMasks, other.providerInputMissingLookupMasks)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputIndexPrefixLengths, other.providerInputIndexPrefixLengths)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputCostScopes, other.providerInputCostScopes)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputGuarantees, other.providerInputGuarantees)) {
+			return false;
+		}
+		if (!Arrays.equals(providerInputDispositions, other.providerInputDispositions)) {
+			return false;
+		}
+		if (!Arrays.equals(outputCostScopes, other.outputCostScopes)) {
+			return false;
+		}
+		if (!Arrays.equals(guarantees, other.guarantees)) {
+			return false;
+		}
+		if (!Arrays.equals(dispositions, other.dispositions)) {
+			return false;
+		}
+		if (!Arrays.equals(outputRows, other.outputRows)) {
+			return false;
+		}
+		if (!Arrays.equals(sequentialRows, other.sequentialRows)) {
+			return false;
+		}
+		if (!Arrays.equals(randomSeeks, other.randomSeeks)) {
+			return false;
+		}
+		if (!Arrays.equals(iteratorOpens, other.iteratorOpens)) {
+			return false;
+		}
+		if (!Arrays.equals(expressionEvaluations, other.expressionEvaluations)) {
+			return false;
+		}
+		if (!Arrays.equals(hashBuildRows, other.hashBuildRows)) {
+			return false;
+		}
+		if (!Arrays.equals(hashProbeRows, other.hashProbeRows)) {
+			return false;
+		}
+		if (!Arrays.equals(pathExpansions, other.pathExpansions)) {
+			return false;
+		}
+		if (!Arrays.equals(resultRows, other.resultRows)) {
+			return false;
+		}
+		if (!Arrays.equals(remoteCalls, other.remoteCalls)) {
+			return false;
+		}
+		if (!Arrays.equals(peakMemoryRows, other.peakMemoryRows)) {
+			return false;
+		}
+		if (!Arrays.equals(accessRows, other.accessRows)) {
+			return false;
+		}
+		if (!Arrays.equals(invocations, other.invocations)) {
+			return false;
+		}
+		for (int event = 1; event <= eventCount(); event++) {
+			// Objective presence (bit 6) is independent of physical/dependent declarations and execution units.
+			if (((providerInputFlags[event] ^ other.providerInputFlags[event]) & ~(1 << 6)) != 0
+					|| ((outputFlags[event] ^ other.outputFlags[event]) & ~(1 << 6)) != 0
+					|| !sameProfile(providerInputFlags[event], providerInputTypedValueStarts[event],
+							other, other.providerInputTypedValueStarts[event])
+					|| !sameProfile(outputFlags[event], typedValueStarts[event], other,
+							other.typedValueStarts[event])) {
+				return false;
+			}
+			if (!Objects.equals(object(providerInputIndexNameIds[event]),
+					other.object(other.providerInputIndexNameIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(providerInputAccessModeIds[event]),
+					other.object(other.providerInputAccessModeIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(providerInputEstimateSourceIds[event]),
+					other.object(other.providerInputEstimateSourceIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(providerInputEstimateFusionIds[event]),
+					other.object(other.providerInputEstimateFusionIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(indexNameIds[event]), other.object(other.indexNameIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(accessModeIds[event]), other.object(other.accessModeIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(estimateSourceIds[event]), other.object(other.estimateSourceIds[event]))) {
+				return false;
+			}
+			if (!Objects.equals(object(estimateFusionIds[event]), other.object(other.estimateFusionIds[event]))) {
+				return false;
+			}
+		}
+		// A changed population lease is a different quantity domain, even at equal numeric ROW.
+		if (!Arrays.equals(populationOrdinalsByHandle, other.populationOrdinalsByHandle)) {
+			return false;
+		}
+		return true;
+	}
+
+	private boolean sameProfile(byte flags, int start, PackedCostingTrace other, int otherStart) {
+		if ((flags & 1 << 5) == 0) {
+			return true;
+		}
+		// The first fifteen typed values are declarations; the final three are independent objective intervals.
+		for (int axis = 0; axis < 15; axis++) {
+			if (Double.doubleToLongBits(typedValues[start - 1 + axis]) != Double
+					.doubleToLongBits(other.typedValues[otherStart - 1 + axis])) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	long retainedBytes() {
-		return (long) (phases.length + contextFlags.length) * Byte.BYTES
+		return (populationOrdinalsByHandle == null ? 0L : (long) populationOrdinalsByHandle.length * Integer.BYTES)
+				+ (long) (phases.length + contextFlags.length) * Byte.BYTES
 				+ (long) providerInputCostScopes.length * Byte.BYTES
 				+ (long) providerInputFlags.length * Byte.BYTES
 				+ (long) providerInputGuarantees.length * Byte.BYTES
@@ -1124,7 +1626,8 @@ final class PackedCostingTrace {
 						+ indexNameIds.length + accessModeIds.length + estimateSourceIds.length
 						+ estimateFusionIds.length + stringMetricStarts.length + stringMetricCounts.length
 						+ doubleMetricStarts.length + doubleMetricCounts.length + stringMetricNameIds.length
-						+ stringMetricValueIds.length + doubleMetricNameIds.length)
+						+ stringMetricValueIds.length + doubleMetricNameIds.length
+						+ providerInputTypedValueStarts.length + typedValueStarts.length)
 						* Integer.BYTES
 				+ (long) (contextFingerprints.length + digestHigh.length + digestLow.length) * Long.BYTES
 				+ (long) (prefixRows.length + unrelatedPrefixRows.length + leftInputRows.length + rightInputRows.length
@@ -1141,7 +1644,7 @@ final class PackedCostingTrace {
 						+ iteratorOpens.length + expressionEvaluations.length + hashBuildRows.length
 						+ hashProbeRows.length + pathExpansions.length + resultRows.length + remoteCalls.length
 						+ peakMemoryRows.length
-						+ accessRows.length + invocations.length + doubleMetricValues.length)
+						+ accessRows.length + invocations.length + doubleMetricValues.length + typedValues.length)
 						* Double.BYTES
 				+ (long) objects.length * Long.BYTES;
 	}

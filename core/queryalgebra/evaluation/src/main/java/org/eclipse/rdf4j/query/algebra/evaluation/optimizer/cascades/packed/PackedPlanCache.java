@@ -201,6 +201,28 @@ public final class PackedPlanCache {
 		return fingerprint.finish();
 	}
 
+	static TupleExpr structuralSnapshot(TupleExpr source) {
+		TupleExpr snapshot = source.clone();
+		stripProviderPayload(snapshot);
+		return snapshot;
+	}
+
+	static void stripProviderPayload(TupleExpr snapshot) {
+		// These snapshots authenticate source structure, not feedback. The decision is the sole cache payload owner.
+		snapshot.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (PackedPlanRecipe.retainsProviderPayload(node.getRuntimeFeedbackContract())) {
+					node.setRuntimeFeedbackContract(null);
+					if (node.getStringMetricPlanned("optimizer.frontierSemanticPopulation") == null) {
+						node.setStringMetricPlanned("optimizer.frontierSemanticPopulation", "unavailable");
+					}
+				}
+				super.meetNode(node);
+			}
+		});
+	}
+
 	private static long mix64(long value) {
 		long mixed = value + 0x9e3779b97f4a7c15L;
 		mixed = (mixed ^ mixed >>> 30) * 0xbf58476d1ce4e5b9L;
@@ -404,7 +426,7 @@ public final class PackedPlanCache {
 				PackedPlannerLimits planningLimits) {
 			this.fingerprint = fingerprint;
 			this.context = context;
-			sourceSnapshot = source.clone();
+			sourceSnapshot = structuralSnapshot(source);
 			this.sourceIdentity = sourceIdentity;
 			this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 			this.query = query;
@@ -507,7 +529,28 @@ public final class PackedPlanCache {
 		}
 
 		private long evidenceBytes() {
-			return recipe.hasDetachedEvidence() ? optimizationDecision.retainedBytes() : 0L;
+			return recipe.hasDetachedEvidence() || optimizationDecision.hasRetainedProviderPayload()
+					? optimizationDecision.retainedBytes()
+					: optimizationDecision.retainedQuantityBytes();
+		}
+
+		private PlanEntry completedFlightDisposition() {
+			// A completed future is a separate owner and may outlive the charged entry's retirement/replacement.
+			// Default descriptors keep the prior identity/metadata behavior. New payloads use the audited detached
+			// refusal copy, including every candidate and a distinct checkpoint continuation, without mutating callers.
+			return recipe.hasRetainedProviderPayload() || optimizationDecision.hasRetainedProviderPayload()
+					? withoutDetachedEvidence()
+					: withoutDetachedQuantities();
+		}
+
+		private PlanEntry withoutDetachedQuantities() {
+			PackedPlanRecipe stripped = recipe.withoutDetachedQuantities();
+			PackedOptimizationDecision strippedDecision = optimizationDecision.withoutDetachedQuantities();
+			if (stripped == recipe && strippedDecision == optimizationDecision) {
+				return this;
+			}
+			return new PlanEntry(fingerprint, context, sourceSnapshot, sourceIdentity, familyIdentity, query, stripped,
+					strippedDecision, outputRows, totalCost, completionStatus, retainedBytes, planningLimits);
 		}
 
 		private PlanEntry withoutDetachedEvidence() {
@@ -533,7 +576,7 @@ public final class PackedPlanCache {
 				PackedQueryCacheIdentity sourceIdentity, PackedQuery query) {
 			this.fingerprint = fingerprint;
 			this.context = context;
-			sourceSnapshot = source.clone();
+			sourceSnapshot = structuralSnapshot(source);
 			this.sourceIdentity = sourceIdentity;
 			this.query = query;
 		}
@@ -595,7 +638,7 @@ public final class PackedPlanCache {
 				PackedPlannerLimits planningLimits) {
 			this.fingerprint = fingerprint;
 			this.context = context;
-			sourceSnapshot = source.clone();
+			sourceSnapshot = structuralSnapshot(source);
 			this.sourceIdentity = sourceIdentity;
 			this.familyIdentity = familyIdentity == null ? null : familyIdentity.detached();
 			this.planningLimits = planningLimits;
@@ -749,14 +792,14 @@ public final class PackedPlanCache {
 			putPlan(planEntry);
 			putQuery(queryEntry);
 			removeFlight(flight);
-			flight.result.complete(planEntry);
+			flight.result.complete(planEntry.completedFlightDisposition());
 			notifyAll();
 		}
 
 		private synchronized void publishTransient(Flight flight, PlanEntry planEntry, QueryEntry queryEntry) {
 			putQuery(queryEntry);
 			removeFlight(flight);
-			flight.result.complete(planEntry);
+			flight.result.complete(planEntry.completedFlightDisposition());
 			notifyAll();
 		}
 
@@ -766,7 +809,7 @@ public final class PackedPlanCache {
 			notifyAll();
 		}
 
-		private void putPlan(PlanEntry entry) {
+		private PlanEntry putPlan(PlanEntry entry) {
 			int start = slot(entry.fingerprint.low() ^ entry.context.planHash(), plans.length);
 			int target = victim(plans, planFrequencies, start);
 			PlanEntry replaced = plans[target];
@@ -777,6 +820,7 @@ public final class PackedPlanCache {
 			plans[target] = admitted;
 			retainedEvidenceBytes += admitted.evidenceBytes();
 			planFrequencies[target] = 1;
+			return admitted;
 		}
 
 		private PlanEntry admitEvidence(PlanEntry entry, int target) {
@@ -787,7 +831,7 @@ public final class PackedPlanCache {
 			if (evidenceBudgetBytes == 0L || evidenceBytes > evidenceBudgetBytes) {
 				return entry.withoutDetachedEvidence();
 			}
-			while (retainedEvidenceBytes + evidenceBytes > evidenceBudgetBytes) {
+			while (retainedEvidenceBytes > evidenceBudgetBytes - evidenceBytes) {
 				int victim = evidenceVictim(target);
 				if (victim < 0) {
 					return entry.withoutDetachedEvidence();

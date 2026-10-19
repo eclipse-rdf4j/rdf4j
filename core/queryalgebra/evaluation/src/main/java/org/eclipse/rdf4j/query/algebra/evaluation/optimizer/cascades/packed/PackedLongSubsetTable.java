@@ -43,7 +43,7 @@ final class PackedLongSubsetTable {
 	private int[] transitionMetadataIds;
 	private int[] operatorMetadataIds;
 	private int[] exactContinuationIdentityIds;
-	private int[] costVectorIds;
+	private int[] costCompletionIds;
 	private byte[] physicalImplementations;
 	private byte[] paretoActiveStates;
 	private int[] tableSlots;
@@ -90,7 +90,7 @@ final class PackedLongSubsetTable {
 			transitionMetadataIds = new int[0];
 			operatorMetadataIds = new int[0];
 			exactContinuationIdentityIds = new int[0];
-			costVectorIds = new int[0];
+			costCompletionIds = new int[0];
 			physicalImplementations = new byte[0];
 			paretoActiveStates = new byte[0];
 			tableSlots = new int[0];
@@ -118,7 +118,7 @@ final class PackedLongSubsetTable {
 		transitionMetadataIds = new int[rowCapacity];
 		operatorMetadataIds = new int[rowCapacity];
 		exactContinuationIdentityIds = new int[rowCapacity];
-		costVectorIds = new int[rowCapacity];
+		costCompletionIds = new int[rowCapacity];
 		physicalImplementations = new byte[rowCapacity];
 		paretoActiveStates = new byte[rowCapacity];
 		tableSlots = new int[tableCapacity];
@@ -178,22 +178,22 @@ final class PackedLongSubsetTable {
 	int offerRetainedContinuation(long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int appendedFactorOrdinal,
 			long neighborMask, int appendedFactorWinnerId, int transitionMetadataId, int operatorMetadataId,
-			int physicalImplementation, int exactContinuationIdentityId, int costVectorId) {
+			int physicalImplementation, int exactContinuationIdentityId, int costCompletionId) {
 		return offerRetainedCandidate(mask, outputRows, totalCost, contributionRows, evidenceStateId,
 				preferenceRank, parentStateId, 0, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId,
 				transitionMetadataId, operatorMetadataId, physicalImplementation, exactContinuationIdentityId,
-				costVectorId, 0, 0);
+				costCompletionId, 0, 0);
 	}
 
 	private int offerRetainedCandidate(long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, long neighborMask, int appendedFactorWinnerId, int transitionMetadataId,
-			int operatorMetadataId, int physicalImplementation, int exactContinuationIdentityId, int costVectorId,
+			int operatorMetadataId, int physicalImplementation, int exactContinuationIdentityId, int costCompletionId,
 			int contextualRightWinnerId, int prefixSnapshotId) {
 		if (mask == 0L) {
 			throw new IllegalArgumentException("a sparse join subset must not be empty");
 		}
-		if (evidenceStateId < 0 || exactContinuationIdentityId < 0 || costVectorId < 0
+		if (evidenceStateId < 0 || exactContinuationIdentityId < 0 || costCompletionId < 0
 				|| contextualRightWinnerId < 0 || prefixSnapshotId < 0
 				|| !Double.isFinite(totalCost) || totalCost < 0.0d) {
 			throw new IllegalArgumentException("invalid sparse continuation state");
@@ -203,7 +203,7 @@ final class PackedLongSubsetTable {
 		}
 		int equivalentStateId = findEquivalentRetained(mask, parentStateId, rightChildStateId,
 				appendedFactorOrdinal, appendedFactorWinnerId, outputRows, totalCost, contributionRows,
-				evidenceStateId, physicalImplementation, exactContinuationIdentityId, costVectorId,
+				evidenceStateId, physicalImplementation, exactContinuationIdentityId, costCompletionId,
 				transitionMetadataId, operatorMetadataId, preferenceRank);
 		if (equivalentStateId != 0) {
 			return equivalentStateId;
@@ -229,7 +229,7 @@ final class PackedLongSubsetTable {
 		writeDerivedState(stateId, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
 				parentStateId, rightChildStateId, appendedFactorOrdinal, neighborMask, appendedFactorWinnerId,
 				transitionMetadataId, operatorMetadataId, physicalImplementation, exactContinuationIdentityId,
-				costVectorId, contextualRightWinnerId, prefixSnapshotId);
+				costCompletionId, contextualRightWinnerId, prefixSnapshotId);
 		paretoActiveStates[stateId] = 1;
 		nextMaskStateIds[stateId] = headSlots[slot];
 		headSlots[slot] = stateId;
@@ -262,19 +262,19 @@ final class PackedLongSubsetTable {
 	int offerRetainedBushy(long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int leftChildStateId, int rightChildStateId,
 			long neighborMask, int operatorMetadataId, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId) {
+			int exactContinuationIdentityId, int costCompletionId) {
 		return offerRetainedBushy(mask, outputRows, totalCost, contributionRows, evidenceStateId, preferenceRank,
 				leftChildStateId, rightChildStateId, neighborMask, operatorMetadataId, physicalImplementation,
-				exactContinuationIdentityId, costVectorId, 0, 0);
+				exactContinuationIdentityId, costCompletionId, 0, 0);
 	}
 
 	int offerRetainedBushy(long mask, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int leftChildStateId, int rightChildStateId,
 			long neighborMask, int operatorMetadataId, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId, int contextualRightWinnerId, int prefixSnapshotId) {
+			int exactContinuationIdentityId, int costCompletionId, int contextualRightWinnerId, int prefixSnapshotId) {
 		return offerRetainedCandidate(mask, outputRows, totalCost, contributionRows, evidenceStateId,
 				preferenceRank, leftChildStateId, rightChildStateId, -1, neighborMask, 0, 0,
-				operatorMetadataId, physicalImplementation, exactContinuationIdentityId, costVectorId,
+				operatorMetadataId, physicalImplementation, exactContinuationIdentityId, costCompletionId,
 				contextualRightWinnerId, prefixSnapshotId);
 	}
 
@@ -376,18 +376,18 @@ final class PackedLongSubsetTable {
 
 	int findEquivalentRetained(long mask, int parentStateId, int rightChildStateId, int appendedFactorOrdinal,
 			int appendedFactorWinnerId, double outputRows, double totalCost, double contributionRows,
-			int evidenceStateId, int physicalImplementation, int exactContinuationIdentityId, int costVectorId) {
+			int evidenceStateId, int physicalImplementation, int exactContinuationIdentityId, int costCompletionId) {
 		return findEquivalentRetained(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
 				appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
-				physicalImplementation, exactContinuationIdentityId, costVectorId, 0, 0, 0);
+				physicalImplementation, exactContinuationIdentityId, costCompletionId, 0, 0, 0);
 	}
 
 	private int findEquivalentRetained(long mask, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, int appendedFactorWinnerId, double outputRows, double totalCost,
 			double contributionRows, int evidenceStateId, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId, int transitionMetadataId, int operatorMetadataId,
+			int exactContinuationIdentityId, int costCompletionId, int transitionMetadataId, int operatorMetadataId,
 			int preferenceRank) {
-		if (exactContinuationIdentityId < 0 || costVectorId < 0) {
+		if (exactContinuationIdentityId < 0 || costCompletionId < 0) {
 			throw new IllegalArgumentException("exact continuation identity must be non-negative");
 		}
 		if (equivalenceSlots.length == 0) {
@@ -395,16 +395,16 @@ final class PackedLongSubsetTable {
 		}
 		long hash = equivalenceHash(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
 				appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
-				physicalImplementation, exactContinuationIdentityId, costVectorId, transitionMetadataId,
+				physicalImplementation, exactContinuationIdentityId, costCompletionId, transitionMetadataId,
 				operatorMetadataId);
 		int equivalentStateId = equivalenceSlots[findEquivalentSlot(hash, mask, parentStateId, rightChildStateId,
 				appendedFactorOrdinal, appendedFactorWinnerId, outputRows, totalCost, contributionRows,
-				evidenceStateId, physicalImplementation, exactContinuationIdentityId, costVectorId,
+				evidenceStateId, physicalImplementation, exactContinuationIdentityId, costCompletionId,
 				transitionMetadataId, operatorMetadataId)];
 		return equivalentStateId != 0 ? equivalentStateId
 				: findDominatingState(mask, parentStateId, rightChildStateId, appendedFactorOrdinal,
 						appendedFactorWinnerId, outputRows, totalCost, contributionRows, evidenceStateId,
-						preferenceRank, physicalImplementation, exactContinuationIdentityId, costVectorId);
+						preferenceRank, physicalImplementation, exactContinuationIdentityId, costCompletionId);
 	}
 
 	int size() {
@@ -481,9 +481,9 @@ final class PackedLongSubsetTable {
 		return operatorMetadataIds[stateId];
 	}
 
-	int costVectorId(int stateId) {
+	int costCompletionId(int stateId) {
 		checkStateId(stateId);
-		return costVectorIds[stateId];
+		return costCompletionIds[stateId];
 	}
 
 	int physicalImplementation(int stateId) {
@@ -505,7 +505,7 @@ final class PackedLongSubsetTable {
 	private int findEquivalentSlot(long hash, long mask, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, int appendedFactorWinnerId, double outputRows, double totalCost,
 			double contributionRows, int evidenceStateId, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId, int transitionMetadataId, int operatorMetadataId) {
+			int exactContinuationIdentityId, int costCompletionId, int transitionMetadataId, int operatorMetadataId) {
 		int slot = PackedPrimitiveHash.slot(hash, equivalenceSlots.length);
 		while (true) {
 			int stateId = equivalenceSlots[slot];
@@ -517,7 +517,7 @@ final class PackedLongSubsetTable {
 					&& Double.compare(rows[stateId], outputRows) == 0
 					&& Double.compare(costs[stateId], totalCost) == 0
 					&& Double.compare(appendedContributionRows[stateId], contributionRows) == 0
-					&& equivalentPhysicalCost(stateId, costVectorId, transitionMetadataId, operatorMetadataId)
+					&& equivalentPhysicalCost(stateId, costCompletionId, transitionMetadataId, operatorMetadataId)
 					&& Byte.toUnsignedInt(physicalImplementations[stateId]) == physicalImplementation) {
 				return slot;
 			}
@@ -530,13 +530,13 @@ final class PackedLongSubsetTable {
 				appendedFactorOrdinals[stateId], appendedFactorWinnerIds[stateId], rows[stateId], costs[stateId],
 				appendedContributionRows[stateId], evidenceStateIds[stateId],
 				Byte.toUnsignedInt(physicalImplementations[stateId]), exactContinuationIdentityIds[stateId],
-				costVectorIds[stateId], transitionMetadataIds[stateId], operatorMetadataIds[stateId]);
+				costCompletionIds[stateId], transitionMetadataIds[stateId], operatorMetadataIds[stateId]);
 		equivalenceHashes[stateId] = hash;
 		int slot = findEquivalentSlot(hash, masks[stateId], parentStateIds[stateId], rightChildStateIds[stateId],
 				appendedFactorOrdinals[stateId], appendedFactorWinnerIds[stateId], rows[stateId], costs[stateId],
 				appendedContributionRows[stateId], evidenceStateIds[stateId],
 				Byte.toUnsignedInt(physicalImplementations[stateId]), exactContinuationIdentityIds[stateId],
-				costVectorIds[stateId], transitionMetadataIds[stateId], operatorMetadataIds[stateId]);
+				costCompletionIds[stateId], transitionMetadataIds[stateId], operatorMetadataIds[stateId]);
 		if (equivalenceSlots[slot] != 0) {
 			throw new PackedMemoInvariantException("duplicate sparse continuation escaped equivalence lookup");
 		}
@@ -547,7 +547,7 @@ final class PackedLongSubsetTable {
 	private static long equivalenceHash(long mask, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, int appendedFactorWinnerId, double outputRows, double totalCost,
 			double contributionRows, int evidenceStateId, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId, int transitionMetadataId, int operatorMetadataId) {
+			int exactContinuationIdentityId, int costCompletionId, int transitionMetadataId, int operatorMetadataId) {
 		long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask);
 		if (exactContinuationIdentityId != 0) {
 			hash = PackedPrimitiveHash.step(hash, -1);
@@ -562,9 +562,9 @@ final class PackedLongSubsetTable {
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(totalCost));
 		hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(contributionRows));
 		hash = PackedPrimitiveHash.step(hash, evidenceStateId);
-		if (costVectorId != 0) {
+		if (costCompletionId != 0) {
 			hash = PackedPrimitiveHash.step(hash, -2);
-			hash = PackedPrimitiveHash.step(hash, costVectorId);
+			hash = PackedPrimitiveHash.step(hash, costCompletionId);
 		} else {
 			hash = PackedPrimitiveHash.step(hash, -3);
 			hash = PackedPrimitiveHash.step(hash, transitionMetadataId);
@@ -574,10 +574,10 @@ final class PackedLongSubsetTable {
 		return PackedPrimitiveHash.finish(hash);
 	}
 
-	private boolean equivalentPhysicalCost(int stateId, int costVectorId, int transitionMetadataId,
+	private boolean equivalentPhysicalCost(int stateId, int costCompletionId, int transitionMetadataId,
 			int operatorMetadataId) {
-		if (costVectorId != 0 || costVectorIds[stateId] != 0) {
-			return costVectorId != 0 && costVectorIds[stateId] == costVectorId;
+		if (costCompletionId != 0 || costCompletionIds[stateId] != 0) {
+			return costCompletionId != 0 && costCompletionIds[stateId] == costCompletionId;
 		}
 		return transitionMetadataIds[stateId] == transitionMetadataId
 				&& operatorMetadataIds[stateId] == operatorMetadataId;
@@ -586,8 +586,8 @@ final class PackedLongSubsetTable {
 	private int findDominatingState(long mask, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, int appendedFactorWinnerId, double outputRows, double totalCost,
 			double contributionRows, int evidenceStateId, int preferenceRank, int physicalImplementation,
-			int exactContinuationIdentityId, int costVectorId) {
-		if (memo == null || costVectorId == 0) {
+			int exactContinuationIdentityId, int costCompletionId) {
+		if (memo == null || costCompletionId == 0) {
 			return 0;
 		}
 		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, mask));
@@ -598,8 +598,8 @@ final class PackedLongSubsetTable {
 							appendedFactorWinnerId, outputRows, contributionRows, evidenceStateId,
 							physicalImplementation, exactContinuationIdentityId)
 					&& scalarPolicyNoWorse(costs[stateId], preferenceRanks[stateId], totalCost, preferenceRank)
-					&& (memo.equalCostVector(costVectorIds[stateId], costVectorId)
-							|| memo.dominatesCostVector(costVectorIds[stateId], costVectorId))) {
+					&& (memo.equalCompletedCost(costCompletionIds[stateId], costCompletionId)
+							|| memo.dominatesCompletedCost(costCompletionIds[stateId], costCompletionId))) {
 				return stateId;
 			}
 			stateId = nextMaskStateIds[stateId];
@@ -608,7 +608,7 @@ final class PackedLongSubsetTable {
 	}
 
 	private void deactivateDominatedStates(int stateId) {
-		if (memo == null || costVectorIds[stateId] == 0) {
+		if (memo == null || costCompletionIds[stateId] == 0) {
 			return;
 		}
 		long hash = PackedPrimitiveHash.finish(PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, masks[stateId]));
@@ -624,8 +624,8 @@ final class PackedLongSubsetTable {
 							preferenceRanks[retained])) {
 				continue;
 			}
-			if (memo.equalCostVector(costVectorIds[stateId], costVectorIds[retained])
-					|| memo.dominatesCostVector(costVectorIds[stateId], costVectorIds[retained])) {
+			if (memo.equalCompletedCost(costCompletionIds[stateId], costCompletionIds[retained])
+					|| memo.dominatesCompletedCost(costCompletionIds[stateId], costCompletionIds[retained])) {
 				paretoActiveStates[retained] = 0;
 			}
 		}
@@ -688,7 +688,7 @@ final class PackedLongSubsetTable {
 	private void writeDerivedState(int stateId, double outputRows, double totalCost, double contributionRows,
 			int evidenceStateId, int preferenceRank, int parentStateId, int rightChildStateId,
 			int appendedFactorOrdinal, long neighborMask, int appendedFactorWinnerId, int transitionMetadataId,
-			int operatorMetadataId, int physicalImplementation, int exactContinuationIdentityId, int costVectorId,
+			int operatorMetadataId, int physicalImplementation, int exactContinuationIdentityId, int costCompletionId,
 			int contextualRightWinnerId, int prefixSnapshotId) {
 		rows[stateId] = outputRows;
 		costs[stateId] = totalCost;
@@ -705,7 +705,7 @@ final class PackedLongSubsetTable {
 		transitionMetadataIds[stateId] = transitionMetadataId;
 		operatorMetadataIds[stateId] = operatorMetadataId;
 		exactContinuationIdentityIds[stateId] = exactContinuationIdentityId;
-		costVectorIds[stateId] = costVectorId;
+		costCompletionIds[stateId] = costCompletionId;
 		physicalImplementations[stateId] = (byte) physicalImplementation;
 	}
 
@@ -799,7 +799,7 @@ final class PackedLongSubsetTable {
 		int[] nextTransitionMetadataIds = Arrays.copyOf(transitionMetadataIds, newCapacity);
 		int[] nextOperatorMetadataIds = Arrays.copyOf(operatorMetadataIds, newCapacity);
 		int[] nextExactContinuationIdentityIds = Arrays.copyOf(exactContinuationIdentityIds, newCapacity);
-		int[] nextCostVectorIds = Arrays.copyOf(costVectorIds, newCapacity);
+		int[] nextCostVectorIds = Arrays.copyOf(costCompletionIds, newCapacity);
 		byte[] nextPhysicalImplementations = Arrays.copyOf(physicalImplementations, newCapacity);
 		byte[] nextParetoActiveStates = Arrays.copyOf(paretoActiveStates, newCapacity);
 		masks = nextMasks;
@@ -821,7 +821,7 @@ final class PackedLongSubsetTable {
 		transitionMetadataIds = nextTransitionMetadataIds;
 		operatorMetadataIds = nextOperatorMetadataIds;
 		exactContinuationIdentityIds = nextExactContinuationIdentityIds;
-		costVectorIds = nextCostVectorIds;
+		costCompletionIds = nextCostVectorIds;
 		physicalImplementations = nextPhysicalImplementations;
 		paretoActiveStates = nextParetoActiveStates;
 		return true;

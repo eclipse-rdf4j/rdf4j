@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /** An immutable EXISTS substitution domain, retaining the delegate's binding layout and shared query state. */
 final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluationContext {
@@ -71,6 +72,11 @@ final class BindingSubstitutionQueryEvaluationContext implements QueryEvaluation
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
 	}
 
 	@Override

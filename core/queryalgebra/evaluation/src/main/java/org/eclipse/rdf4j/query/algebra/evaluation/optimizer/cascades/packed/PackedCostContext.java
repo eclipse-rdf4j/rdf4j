@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 
 /** Borrowed, allocation-free view of the ordered physical prefix available to a factor. */
 @Experimental
@@ -29,6 +30,7 @@ public final class PackedCostContext {
 	private int semanticScopeMaskId;
 	private int hashLookupMaskId;
 	private int hashCompatibilityMaskId;
+	private int physicalJoinImplementation;
 	private boolean prefixRelationsDescribeRows;
 	private double prefixRows;
 	private double unrelatedPrefixRows;
@@ -62,6 +64,7 @@ public final class PackedCostContext {
 		semanticScopeMaskId = 0;
 		hashLookupMaskId = 0;
 		hashCompatibilityMaskId = 0;
+		physicalJoinImplementation = 0;
 		prefixRelationsDescribeRows = true;
 		prefixRows = Double.isFinite(rows) && rows >= 0.0d ? rows : 1.0d;
 		unrelatedPrefixRows = Double.NaN;
@@ -82,6 +85,7 @@ public final class PackedCostContext {
 		semanticScopeMaskId = context.semanticScopeMaskId;
 		hashLookupMaskId = context.hashLookupMaskId;
 		hashCompatibilityMaskId = context.hashCompatibilityMaskId;
+		physicalJoinImplementation = 0;
 		prefixRelationsDescribeRows = context.prefixRelationsDescribeRows;
 		prefixRows = context.prefixRows;
 		unrelatedPrefixRows = context.unrelatedPrefixRows;
@@ -98,6 +102,16 @@ public final class PackedCostContext {
 		this.bindingLayoutId = bindingLayoutId;
 		this.correlationMaskId = correlationMaskId;
 		this.semanticScopeMaskId = semanticScopeMaskId;
+	}
+
+	/**
+	 * Compares structural scope boundaries while retaining input-observation facts in their original coordinates.
+	 * Input-frame observations have separate required/protected/nullable/write admission contracts; they do not create
+	 * a structural scope boundary. Correlation and actual inherited-binding identity remain separate checks.
+	 */
+	public boolean hasSameStructuralScope(int capturedSemanticScopeFlags) {
+		return PackedNodeMetadataArena.structuralScopeFlags(semanticScopeMaskId) == PackedNodeMetadataArena
+				.structuralScopeFlags(capturedSemanticScopeFlags);
 	}
 
 	void setEvidenceStateId(int evidenceStateId) {
@@ -131,6 +145,24 @@ public final class PackedCostContext {
 		rightInputRows = finiteNonNegativeOrNaN(rightRows);
 		leftInputEvidenceStateId = leftEvidenceStateId;
 		rightInputEvidenceStateId = rightEvidenceStateId;
+	}
+
+	int setPhysicalJoinImplementation(int implementation) {
+		int previous = physicalJoinImplementation;
+		physicalJoinImplementation = implementation;
+		return previous;
+	}
+
+	/** True only during a concrete physical-join provider callback, never from its display annotations. */
+	@InternalUseOnly
+	public boolean hasPhysicalJoinRefinement() {
+		return physicalJoinImplementation != 0;
+	}
+
+	/** True only during the actual memoized physical-join provider callback. */
+	@InternalUseOnly
+	public boolean hasMemoizedJoinResourcePrediction() {
+		return physicalJoinImplementation == PackedPhysicalJoinCosting.MEMOIZED_CORRELATED;
 	}
 
 	void setHashJoinMasks(int lookupMaskId, int compatibilityMaskId) {

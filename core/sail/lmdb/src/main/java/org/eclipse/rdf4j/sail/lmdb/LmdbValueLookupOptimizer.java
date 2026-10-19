@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingSetAssignment
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -70,7 +71,7 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 				lookup = capture(value);
 				lookups.put(value, lookup);
 			}
-			if (statementInput && !lookup.lookupAttempted && lookup.value instanceof LmdbValue) {
+			if (statementInput && !lookup.lookupAttempted && lookup.nativeValue != null) {
 				lookup = resolve(lookup);
 				lookups.put(value, lookup);
 			}
@@ -83,7 +84,7 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 				return;
 			}
 			Lookup lookup = lookup(node.getValue(), node.getParentNode() instanceof StatementPattern);
-			if (!(lookup.value instanceof LmdbValue lmdbValue)) {
+			if (lookup.nativeValue == null) {
 				return;
 			}
 			if (lookup.value == node.getValue() && node instanceof LmdbValueVar nativeVar
@@ -91,7 +92,7 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 					&& nativeVar.isLmdbValueResolved() == lookup.resolved) {
 				return;
 			}
-			replaceVar(node, LmdbValueVar.from(node, lmdbValue, lookup.knownValue, lookup.resolved));
+			replaceVar(node, LmdbValueVar.from(node, lookup.value, lookup.knownValue, lookup.resolved));
 		}
 
 		@Override
@@ -161,24 +162,28 @@ final class LmdbValueLookupOptimizer implements QueryOptimizer {
 
 	private Lookup capture(Value value) {
 		try {
-			return new Lookup(valueStore.getLmdbValue(value), null, false, false);
+			LmdbValue nativeValue = valueStore.getLmdbValue(value);
+			// Dictionary specialization is private state; the public RDF value must retain imported provenance.
+			Value publicValue = nativeValue == value ? value : RemoteBNode.preserveProvenance(value, nativeValue);
+			return new Lookup(publicValue, nativeValue, null, false, false);
 		} catch (IllegalArgumentException e) {
-			return new Lookup(value, null, false, false);
+			return new Lookup(value, null, null, false, false);
 		}
 	}
 
 	private Lookup resolve(Lookup captured) {
-		LmdbValue lmdbValue = (LmdbValue) captured.value;
+		LmdbValue lmdbValue = captured.nativeValue;
 		try {
 			long id = valueStore.getId(lmdbValue);
 			LmdbValue knownValue = id == LmdbValue.UNKNOWN_ID ? null : lmdbValue;
-			return new Lookup(lmdbValue, knownValue, true, true);
+			return new Lookup(captured.value, lmdbValue, knownValue, true, true);
 		} catch (IOException e) {
 			log.debug("Unable to resolve LMDB value id for {}", lmdbValue, e);
-			return new Lookup(lmdbValue, null, false, true);
+			return new Lookup(captured.value, lmdbValue, null, false, true);
 		}
 	}
 
-	private record Lookup(Value value, LmdbValue knownValue, boolean resolved, boolean lookupAttempted) {
+	private record Lookup(Value value, LmdbValue nativeValue, LmdbValue knownValue, boolean resolved,
+			boolean lookupAttempted) {
 	}
 }

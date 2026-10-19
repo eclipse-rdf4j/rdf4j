@@ -26,6 +26,7 @@ final class PackedJoinEnumerator {
 
 	private static final class CompletedCorrelatedLattice {
 
+		private final int sourceRootRelationId;
 		private final int semanticScopeId;
 		private final int executionDomainId;
 		private final int[] factors;
@@ -55,7 +56,8 @@ final class PackedJoinEnumerator {
 		private final byte[] physicalImplementations;
 		private final byte[] exactStateKeys;
 
-		private CompletedCorrelatedLattice(int semanticScopeId, int executionDomainId, int[] factors,
+		private CompletedCorrelatedLattice(int sourceRootRelationId, int semanticScopeId, int executionDomainId,
+				int[] factors,
 				int[] canonicalFactorIds, int[] filters, int[] canonicalFilterIds, int[] factorWinnerIds,
 				int stateCount, int[] bestStateIds, int[] stateKeys,
 				double[] rows,
@@ -67,6 +69,7 @@ final class PackedJoinEnumerator {
 				int[] transitionMetadataIds, int[] operatorMetadataIds, int[] costEventIds,
 				byte[] evidenceGuarantees, byte[] evidenceDispositions, byte[] physicalImplementations,
 				byte[] exactStateKeys) {
+			this.sourceRootRelationId = sourceRootRelationId;
 			this.semanticScopeId = semanticScopeId;
 			this.executionDomainId = executionDomainId;
 			this.factors = factors;
@@ -152,7 +155,7 @@ final class PackedJoinEnumerator {
 		private int[] operatorMetadataIds;
 		private int[] costEventIds;
 		private int[] exactContinuationIdentityIds;
-		private int[] costVectorIds;
+		private int[] costCompletionIds;
 		private double[] rows;
 		private double[] costs;
 		private double[] appendedContributionRows;
@@ -190,7 +193,7 @@ final class PackedJoinEnumerator {
 				operatorMetadataIds = new int[0];
 				costEventIds = new int[0];
 				exactContinuationIdentityIds = new int[0];
-				costVectorIds = new int[0];
+				costCompletionIds = new int[0];
 				rows = new double[0];
 				costs = new double[0];
 				appendedContributionRows = new double[0];
@@ -215,7 +218,7 @@ final class PackedJoinEnumerator {
 			operatorMetadataIds = new int[initialCapacity];
 			costEventIds = new int[initialCapacity];
 			exactContinuationIdentityIds = new int[initialCapacity];
-			costVectorIds = new int[initialCapacity];
+			costCompletionIds = new int[initialCapacity];
 			rows = new double[initialCapacity];
 			costs = new double[initialCapacity];
 			appendedContributionRows = new double[initialCapacity];
@@ -228,14 +231,14 @@ final class PackedJoinEnumerator {
 		private int addSingleton(int ordinal, int winnerId, double outputRows, double cost, int evidenceStateId,
 				int costEventId, long digest) {
 			return addSingleton(ordinal, winnerId, outputRows, cost, evidenceStateId, costEventId, 0,
-					memo.winnerCostVectorId(winnerId), digest);
+					memo.winnerCostCompletionId(winnerId), digest);
 		}
 
 		private int addSingleton(int ordinal, int winnerId, double outputRows, double cost, int evidenceStateId,
-				int costEventId, int exactContinuationIdentityId, int costVectorId, long digest) {
+				int costEventId, int exactContinuationIdentityId, int costCompletionId, long digest) {
 			int subset = 1 << ordinal;
 			int stateId = append(subset, 0, subset, winnerId, outputRows, cost, outputRows, evidenceStateId, 0, 0,
-					costEventId, 0, 0, 0, 0, exactContinuationIdentityId, costVectorId, digest);
+					costEventId, 0, 0, 0, 0, exactContinuationIdentityId, costCompletionId, digest);
 			if (stateId != 0) {
 				singletonStateIds[ordinal] = stateId;
 			}
@@ -246,8 +249,8 @@ final class PackedJoinEnumerator {
 				double outputRows, double cost, double contributionRows, int evidenceStateId,
 				int transitionMetadataId, int operatorMetadataId, int costEventId, int physicalImplementation,
 				int rightChildStateId, int contextualRightWinnerId, int prefixSnapshotId,
-				int exactContinuationIdentityId, int costVectorId, long digest) {
-			if (exactContinuationIdentityId < 0 || costVectorId < 0) {
+				int exactContinuationIdentityId, int costCompletionId, long digest) {
+			if (exactContinuationIdentityId < 0 || costCompletionId < 0) {
 				throw new IllegalArgumentException("dense continuation identity must be non-negative");
 			}
 			int stateId = size + 1;
@@ -269,7 +272,7 @@ final class PackedJoinEnumerator {
 			operatorMetadataIds[stateId] = operatorMetadataId;
 			costEventIds[stateId] = costEventId;
 			exactContinuationIdentityIds[stateId] = exactContinuationIdentityId;
-			costVectorIds[stateId] = costVectorId;
+			costCompletionIds[stateId] = costCompletionId;
 			digests[stateId] = digest;
 			physicalImplementations[stateId] = (byte) physicalImplementation;
 			paretoActiveStates[stateId] = 1;
@@ -371,13 +374,13 @@ final class PackedJoinEnumerator {
 			if (Double.compare(costs[leftStateId], costs[rightStateId]) > 0) {
 				return false;
 			}
-			int leftVectorId = costVectorIds[leftStateId];
-			int rightVectorId = costVectorIds[rightStateId];
-			if (leftVectorId == 0 && rightVectorId == 0) {
-				return true;
+			int leftVectorId = costCompletionIds[leftStateId];
+			int rightVectorId = costCompletionIds[rightStateId];
+			if (leftVectorId == 0 || rightVectorId == 0) {
+				return false;
 			}
-			return memo.equalCostVector(leftVectorId, rightVectorId)
-					|| memo.dominatesCostVector(leftVectorId, rightVectorId);
+			return memo.equalCompletedCost(leftVectorId, rightVectorId)
+					|| memo.dominatesCompletedCost(leftVectorId, rightVectorId);
 		}
 
 		/**
@@ -445,7 +448,7 @@ final class PackedJoinEnumerator {
 			int[] nextOperatorMetadataIds = Arrays.copyOf(operatorMetadataIds, nextCapacity);
 			int[] nextCostEventIds = Arrays.copyOf(costEventIds, nextCapacity);
 			int[] nextExactContinuationIdentityIds = Arrays.copyOf(exactContinuationIdentityIds, nextCapacity);
-			int[] nextCostVectorIds = Arrays.copyOf(costVectorIds, nextCapacity);
+			int[] nextCostCompletionIds = Arrays.copyOf(costCompletionIds, nextCapacity);
 			double[] nextRows = Arrays.copyOf(rows, nextCapacity);
 			double[] nextCosts = Arrays.copyOf(costs, nextCapacity);
 			double[] nextAppendedContributionRows = Arrays.copyOf(appendedContributionRows, nextCapacity);
@@ -465,7 +468,7 @@ final class PackedJoinEnumerator {
 			operatorMetadataIds = nextOperatorMetadataIds;
 			costEventIds = nextCostEventIds;
 			exactContinuationIdentityIds = nextExactContinuationIdentityIds;
-			costVectorIds = nextCostVectorIds;
+			costCompletionIds = nextCostCompletionIds;
 			rows = nextRows;
 			costs = nextCosts;
 			appendedContributionRows = nextAppendedContributionRows;
@@ -506,7 +509,7 @@ final class PackedJoinEnumerator {
 		private int[] costEventIds;
 		private int[] continuationContextIds;
 		private int[] exactContinuationIdentityIds;
-		private int[] costVectorIds;
+		private int[] costCompletionIds;
 		private long[] equivalenceHashes;
 		private int[] equivalenceTable;
 		private int[] leftDeepTransitionTable;
@@ -541,7 +544,7 @@ final class PackedJoinEnumerator {
 				costEventIds = new int[0];
 				continuationContextIds = new int[0];
 				exactContinuationIdentityIds = new int[0];
-				costVectorIds = new int[0];
+				costCompletionIds = new int[0];
 				equivalenceHashes = new long[0];
 				equivalenceTable = new int[0];
 				leftDeepTransitionTable = new int[0];
@@ -569,7 +572,7 @@ final class PackedJoinEnumerator {
 			costEventIds = new int[candidateCapacity];
 			continuationContextIds = new int[candidateCapacity];
 			exactContinuationIdentityIds = new int[candidateCapacity];
-			costVectorIds = new int[candidateCapacity];
+			costCompletionIds = new int[candidateCapacity];
 			equivalenceHashes = new long[candidateCapacity];
 			equivalenceTable = new int[equivalenceTableCapacity];
 			leftDeepTransitionTable = new int[equivalenceTableCapacity];
@@ -581,17 +584,17 @@ final class PackedJoinEnumerator {
 		}
 
 		private int addSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows, double cost,
-				int evidenceStateId, int costVectorId) {
+				int evidenceStateId, int costCompletionId) {
 			return append(nodeSetId, 0, 0, factorOrdinal, winnerId, outputRows, cost, outputRows, evidenceStateId,
-					0, 0, costVectorId);
+					0, 0, costCompletionId);
 		}
 
 		private int addContextualSingleton(int nodeSetId, int factorOrdinal, int winnerId, double outputRows,
 				double cost, double contributionRows, int evidenceStateId, int costEventId,
-				int continuationContextId, int exactContinuationIdentityId, int costVectorId) {
+				int continuationContextId, int exactContinuationIdentityId, int costCompletionId) {
 			return appendContextual(nodeSetId, 0, 0, factorOrdinal, winnerId, outputRows, cost, contributionRows,
 					evidenceStateId, 0, 0, costEventId, 0, continuationContextId,
-					exactContinuationIdentityId, costVectorId);
+					exactContinuationIdentityId, costCompletionId);
 		}
 
 		private int append(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
@@ -604,82 +607,82 @@ final class PackedJoinEnumerator {
 
 		private int append(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
 				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
-				int evidenceStateId, int operatorMetadataId, int physicalImplementation, int costVectorId) {
+				int evidenceStateId, int operatorMetadataId, int physicalImplementation, int costCompletionId) {
 			return append(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, 0, operatorMetadataId,
-					0, physicalImplementation, costVectorId);
+					0, physicalImplementation, costCompletionId);
 		}
 
 		private int appendWithExactContinuationIdentity(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, double outputRows, double cost,
 				double appendedContributionRows, int evidenceStateId, int operatorMetadataId,
-				int physicalImplementation, int exactContinuationIdentityId, int costVectorId) {
+				int physicalImplementation, int exactContinuationIdentityId, int costCompletionId) {
 			return appendWithExactContinuationIdentity(nodeSetId, leftChildStateId, rightChildStateId,
 					leafFactorOrdinal, leafWinnerId, outputRows, cost, appendedContributionRows, evidenceStateId,
-					operatorMetadataId, physicalImplementation, exactContinuationIdentityId, costVectorId, 0, 0);
+					operatorMetadataId, physicalImplementation, exactContinuationIdentityId, costCompletionId, 0, 0);
 		}
 
 		private int appendWithExactContinuationIdentity(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, double outputRows, double cost,
 				double appendedContributionRows, int evidenceStateId, int operatorMetadataId,
-				int physicalImplementation, int exactContinuationIdentityId, int costVectorId,
+				int physicalImplementation, int exactContinuationIdentityId, int costCompletionId,
 				int contextualRightWinnerId, int prefixSnapshotId) {
 			if (contextualRightWinnerId != 0 || prefixSnapshotId != 0) {
 				return appendState(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 						outputRows, cost, appendedContributionRows, evidenceStateId, 0, operatorMetadataId, 0,
-						physicalImplementation, 0, exactContinuationIdentityId, costVectorId,
+						physicalImplementation, 0, exactContinuationIdentityId, costCompletionId,
 						contextualRightWinnerId, prefixSnapshotId);
 			}
 			if (exactContinuationIdentityId == 0) {
 				return append(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 						outputRows, cost, appendedContributionRows, evidenceStateId, operatorMetadataId,
-						physicalImplementation, costVectorId);
+						physicalImplementation, costCompletionId);
 			}
 			return appendContextual(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, 0, operatorMetadataId, 0,
-					physicalImplementation, 0, exactContinuationIdentityId, costVectorId);
+					physicalImplementation, 0, exactContinuationIdentityId, costCompletionId);
 		}
 
 		private int append(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
 				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
 				int evidenceStateId, int transitionMetadataId, int operatorMetadataId, int costEventId,
-				int physicalImplementation, int costVectorId) {
+				int physicalImplementation, int costCompletionId) {
 			return appendState(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
-					operatorMetadataId, costEventId, physicalImplementation, 0, 0, costVectorId);
+					operatorMetadataId, costEventId, physicalImplementation, 0, 0, costCompletionId);
 		}
 
 		private int appendContextual(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, double outputRows, double cost,
 				double appendedContributionRows, int evidenceStateId, int transitionMetadataId,
 				int operatorMetadataId, int costEventId, int physicalImplementation, int continuationContextId,
-				int exactContinuationIdentityId, int costVectorId) {
+				int exactContinuationIdentityId, int costCompletionId) {
 			if (continuationContextId <= 0 && exactContinuationIdentityId <= 0) {
 				throw new IllegalArgumentException("contextual wide state requires a continuation context");
 			}
 			return appendState(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
 					operatorMetadataId, costEventId, physicalImplementation, continuationContextId,
-					exactContinuationIdentityId, costVectorId);
+					exactContinuationIdentityId, costCompletionId);
 		}
 
 		private int appendState(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
 				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
 				int evidenceStateId, int transitionMetadataId, int operatorMetadataId, int costEventId,
 				int physicalImplementation, int continuationContextId, int exactContinuationIdentityId,
-				int costVectorId) {
+				int costCompletionId) {
 			return appendState(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					outputRows, cost, appendedContributionRows, evidenceStateId, transitionMetadataId,
 					operatorMetadataId, costEventId, physicalImplementation, continuationContextId,
-					exactContinuationIdentityId, costVectorId, 0, 0);
+					exactContinuationIdentityId, costCompletionId, 0, 0);
 		}
 
 		private int appendState(int nodeSetId, int leftChildStateId, int rightChildStateId, int leafFactorOrdinal,
 				int leafWinnerId, double outputRows, double cost, double appendedContributionRows,
 				int evidenceStateId, int transitionMetadataId, int operatorMetadataId, int costEventId,
 				int physicalImplementation, int continuationContextId, int exactContinuationIdentityId,
-				int costVectorId, int contextualRightWinnerId, int prefixSnapshotId) {
-			if (costVectorId < 0 || contextualRightWinnerId < 0 || prefixSnapshotId < 0) {
+				int costCompletionId, int contextualRightWinnerId, int prefixSnapshotId) {
+			if (costCompletionId < 0 || contextualRightWinnerId < 0 || prefixSnapshotId < 0) {
 				throw new IllegalArgumentException("wide cost-vector identity must be non-negative");
 			}
 			if (!ensureSubsetCapacity(nodeSetId + 1)) {
@@ -687,7 +690,7 @@ final class PackedJoinEnumerator {
 			}
 			int equivalent = findEquivalent(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal,
 					leafWinnerId, continuationContextId, exactContinuationIdentityId, evidenceStateId, outputRows,
-					cost, appendedContributionRows, physicalImplementation, costVectorId, transitionMetadataId,
+					cost, appendedContributionRows, physicalImplementation, costCompletionId, transitionMetadataId,
 					operatorMetadataId);
 			if (equivalent != 0) {
 				return equivalent;
@@ -712,12 +715,12 @@ final class PackedJoinEnumerator {
 			costEventIds[stateId] = costEventId;
 			continuationContextIds[stateId] = continuationContextId;
 			exactContinuationIdentityIds[stateId] = exactContinuationIdentityId;
-			costVectorIds[stateId] = costVectorId;
+			costCompletionIds[stateId] = costCompletionId;
 			paretoActiveStates[stateId] = 1;
 			long equivalenceHash = equivalenceHash(nodeSetId, leftChildStateId, rightChildStateId,
 					leafFactorOrdinal, leafWinnerId, continuationContextId, exactContinuationIdentityId,
 					evidenceStateId, outputRows, cost, appendedContributionRows, physicalImplementation,
-					costVectorId, transitionMetadataId, operatorMetadataId);
+					costCompletionId, transitionMetadataId, operatorMetadataId);
 			equivalenceHashes[stateId] = equivalenceHash;
 			physicalImplementations[stateId] = (byte) physicalImplementation;
 			nextSubsetStateIds[stateId] = subsetHeads[nodeSetId];
@@ -769,34 +772,34 @@ final class PackedJoinEnumerator {
 		private int findEquivalentWithExactContinuationIdentity(int nodeSetId, int leftChildStateId,
 				int rightChildStateId, int leafFactorOrdinal, int leafWinnerId, int evidenceStateId,
 				double outputRows, double cost, double appendedContributionRows, int physicalImplementation,
-				int exactContinuationIdentityId, int costVectorId) {
+				int exactContinuationIdentityId, int costCompletionId) {
 			return findEquivalent(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal, leafWinnerId,
 					0, exactContinuationIdentityId, evidenceStateId, outputRows, cost, appendedContributionRows,
-					physicalImplementation, costVectorId, 0, 0);
+					physicalImplementation, costCompletionId, 0, 0);
 		}
 
 		private int findEquivalentContextual(int nodeSetId, int continuationContextId,
 				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation, int costVectorId) {
+				double appendedContributionRows, int physicalImplementation, int costCompletionId) {
 			if (continuationContextId <= 0 && exactContinuationIdentityId <= 0) {
 				throw new IllegalArgumentException("contextual wide lookup requires a continuation context");
 			}
 			return findEquivalent(nodeSetId, 0, 0, -1, 0, continuationContextId, exactContinuationIdentityId,
 					evidenceStateId, outputRows, cost, appendedContributionRows, physicalImplementation,
-					costVectorId, 0, 0);
+					costCompletionId, 0, 0);
 		}
 
 		private int findEquivalent(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, int continuationContextId,
 				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation, int costVectorId,
+				double appendedContributionRows, int physicalImplementation, int costCompletionId,
 				int transitionMetadataId, int operatorMetadataId) {
 			if (equivalenceTable.length == 0) {
 				return 0;
 			}
 			long hash = equivalenceHash(nodeSetId, leftChildStateId, rightChildStateId, leafFactorOrdinal,
 					leafWinnerId, continuationContextId, exactContinuationIdentityId, evidenceStateId, outputRows,
-					cost, appendedContributionRows, physicalImplementation, costVectorId, transitionMetadataId,
+					cost, appendedContributionRows, physicalImplementation, costCompletionId, transitionMetadataId,
 					operatorMetadataId);
 			int slot = PackedPrimitiveHash.slot(hash, equivalenceTable.length);
 			while (true) {
@@ -805,7 +808,7 @@ final class PackedJoinEnumerator {
 					return findDominatingState(nodeSetId, leftChildStateId, rightChildStateId,
 							leafFactorOrdinal, leafWinnerId, continuationContextId, exactContinuationIdentityId,
 							evidenceStateId, outputRows, cost, appendedContributionRows, physicalImplementation,
-							costVectorId);
+							costCompletionId);
 				}
 				if (paretoActiveStates[existing] != 0 && equivalenceHashes[existing] == hash
 						&& nodeSetIds[existing] == nodeSetId
@@ -816,7 +819,7 @@ final class PackedJoinEnumerator {
 						&& Double.compare(rows[existing], outputRows) == 0
 						&& Double.compare(costs[existing], cost) == 0
 						&& Double.compare(contributionRows[existing], appendedContributionRows) == 0
-						&& equivalentPhysicalCost(existing, costVectorId, transitionMetadataId, operatorMetadataId)
+						&& equivalentPhysicalCost(existing, costCompletionId, transitionMetadataId, operatorMetadataId)
 						&& Byte.toUnsignedInt(physicalImplementations[existing]) == physicalImplementation) {
 					return existing;
 				}
@@ -890,7 +893,7 @@ final class PackedJoinEnumerator {
 			costEventIds = Arrays.copyOf(costEventIds, nextCapacity);
 			continuationContextIds = Arrays.copyOf(continuationContextIds, nextCapacity);
 			exactContinuationIdentityIds = Arrays.copyOf(exactContinuationIdentityIds, nextCapacity);
-			costVectorIds = Arrays.copyOf(costVectorIds, nextCapacity);
+			costCompletionIds = Arrays.copyOf(costCompletionIds, nextCapacity);
 			equivalenceHashes = Arrays.copyOf(equivalenceHashes, nextCapacity);
 			if (nextTableCapacity != equivalenceTable.length) {
 				int[] nextTable = new int[nextTableCapacity];
@@ -979,7 +982,7 @@ final class PackedJoinEnumerator {
 		private static long equivalenceHash(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, int continuationContextId,
 				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation, int costVectorId,
+				double appendedContributionRows, int physicalImplementation, int costCompletionId,
 				int transitionMetadataId, int operatorMetadataId) {
 			long hash = PackedPrimitiveHash.step(PackedPrimitiveHash.SEED, nodeSetId);
 			if (exactContinuationIdentityId != 0) {
@@ -998,9 +1001,9 @@ final class PackedJoinEnumerator {
 			hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(outputRows));
 			hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(cost));
 			hash = PackedPrimitiveHash.step(hash, Double.doubleToLongBits(appendedContributionRows));
-			if (costVectorId != 0) {
+			if (costCompletionId != 0) {
 				hash = PackedPrimitiveHash.step(hash, -3);
-				hash = PackedPrimitiveHash.step(hash, costVectorId);
+				hash = PackedPrimitiveHash.step(hash, costCompletionId);
 			} else {
 				hash = PackedPrimitiveHash.step(hash, -4);
 				hash = PackedPrimitiveHash.step(hash, transitionMetadataId);
@@ -1009,10 +1012,10 @@ final class PackedJoinEnumerator {
 			return PackedPrimitiveHash.finish(PackedPrimitiveHash.step(hash, physicalImplementation));
 		}
 
-		private boolean equivalentPhysicalCost(int stateId, int costVectorId, int transitionMetadataId,
+		private boolean equivalentPhysicalCost(int stateId, int costCompletionId, int transitionMetadataId,
 				int operatorMetadataId) {
-			if (costVectorId != 0 || costVectorIds[stateId] != 0) {
-				return costVectorId != 0 && costVectorIds[stateId] == costVectorId;
+			if (costCompletionId != 0 || costCompletionIds[stateId] != 0) {
+				return costCompletionId != 0 && costCompletionIds[stateId] == costCompletionId;
 			}
 			return transitionMetadataIds[stateId] == transitionMetadataId
 					&& operatorMetadataIds[stateId] == operatorMetadataId;
@@ -1021,8 +1024,8 @@ final class PackedJoinEnumerator {
 		private int findDominatingState(int nodeSetId, int leftChildStateId, int rightChildStateId,
 				int leafFactorOrdinal, int leafWinnerId, int continuationContextId,
 				int exactContinuationIdentityId, int evidenceStateId, double outputRows, double cost,
-				double appendedContributionRows, int physicalImplementation, int costVectorId) {
-			if (memo == null || costVectorId == 0 || nodeSetId >= subsetHeads.length) {
+				double appendedContributionRows, int physicalImplementation, int costCompletionId) {
+			if (memo == null || costCompletionId == 0 || nodeSetId >= subsetHeads.length) {
 				return 0;
 			}
 			for (int stateId = subsetHeads[nodeSetId]; stateId != 0; stateId = nextSubsetStateIds[stateId]) {
@@ -1031,8 +1034,8 @@ final class PackedJoinEnumerator {
 								leafWinnerId, continuationContextId, exactContinuationIdentityId,
 								evidenceStateId, outputRows, appendedContributionRows, physicalImplementation)
 						&& Double.compare(costs[stateId], cost) <= 0
-						&& (memo.equalCostVector(costVectorIds[stateId], costVectorId)
-								|| memo.dominatesCostVector(costVectorIds[stateId], costVectorId))) {
+						&& (memo.equalCompletedCost(costCompletionIds[stateId], costCompletionId)
+								|| memo.dominatesCompletedCost(costCompletionIds[stateId], costCompletionId))) {
 					return stateId;
 				}
 			}
@@ -1040,7 +1043,7 @@ final class PackedJoinEnumerator {
 		}
 
 		private void deactivateDominatedStates(int stateId) {
-			if (memo == null || costVectorIds[stateId] == 0) {
+			if (memo == null || costCompletionIds[stateId] == 0) {
 				return;
 			}
 			for (int retained = subsetHeads[nodeSetIds[stateId]]; retained != 0; retained = nextSubsetStateIds[retained]) {
@@ -1053,8 +1056,8 @@ final class PackedJoinEnumerator {
 						|| Double.compare(costs[stateId], costs[retained]) > 0) {
 					continue;
 				}
-				if (memo.equalCostVector(costVectorIds[stateId], costVectorIds[retained])
-						|| memo.dominatesCostVector(costVectorIds[stateId], costVectorIds[retained])) {
+				if (memo.equalCompletedCost(costCompletionIds[stateId], costCompletionIds[retained])
+						|| memo.dominatesCompletedCost(costCompletionIds[stateId], costCompletionIds[retained])) {
 					paretoActiveStates[retained] = 0;
 				}
 			}
@@ -1134,7 +1137,7 @@ final class PackedJoinEnumerator {
 		private int[] transitionMetadataIds;
 		private int[] operatorMetadataIds;
 		private int[] costEventIds;
-		private int[] costVectorIds;
+		private int[] costCompletionIds;
 		private int[] parentStates;
 		private int[] exploredNodeMasks;
 		private int[] appendedFactorBits;
@@ -1176,7 +1179,7 @@ final class PackedJoinEnumerator {
 				transitionMetadataIds = new int[0];
 				operatorMetadataIds = new int[0];
 				costEventIds = new int[0];
-				costVectorIds = new int[0];
+				costCompletionIds = new int[0];
 				parentStates = new int[0];
 				exploredNodeMasks = new int[0];
 				appendedFactorBits = new int[0];
@@ -1207,7 +1210,7 @@ final class PackedJoinEnumerator {
 			transitionMetadataIds = new int[initialCapacity];
 			operatorMetadataIds = new int[initialCapacity];
 			costEventIds = new int[initialCapacity];
-			costVectorIds = new int[initialCapacity];
+			costCompletionIds = new int[initialCapacity];
 			parentStates = new int[initialCapacity];
 			exploredNodeMasks = new int[initialCapacity];
 			appendedFactorBits = new int[initialCapacity];
@@ -1295,8 +1298,8 @@ final class PackedJoinEnumerator {
 		private void retainParetoState(int stateId, int key, PackedMemo memo) {
 			paretoActiveStates[stateId] = 1;
 			int evidenceStateId = evidenceStateIds[stateId];
-			int costVectorId = costVectorIds[stateId];
-			if (evidenceStateId == 0 || costVectorId == 0 || !exactComposableState(stateId)) {
+			int costCompletionId = costCompletionIds[stateId];
+			if (evidenceStateId == 0 || costCompletionId == 0 || !exactComposableState(stateId)) {
 				return;
 			}
 			for (int retainedState = stateHeads[key]; retainedState != 0; retainedState = nextStateIds[retainedState]) {
@@ -1306,14 +1309,14 @@ final class PackedJoinEnumerator {
 						|| Double.doubleToLongBits(rows[retainedState]) != Double.doubleToLongBits(rows[stateId])) {
 					continue;
 				}
-				int retainedVectorId = costVectorIds[retainedState];
+				int retainedVectorId = costCompletionIds[retainedState];
 				/*
 				 * Equal cost vectors keep the continuation with the smaller content digest, never the one that happened
 				 * to be enumerated first.
 				 */
-				boolean equal = memo.equalCostVector(retainedVectorId, costVectorId);
+				boolean equal = memo.equalCompletedCost(retainedVectorId, costCompletionId);
 				if (equal && (!displaceable(retainedState) || compareDigests(retainedState, stateId) < 0)
-						|| !equal && memo.dominatesCostVector(retainedVectorId, costVectorId)) {
+						|| !equal && memo.dominatesCompletedCost(retainedVectorId, costCompletionId)) {
 					paretoActiveStates[stateId] = 0;
 					return;
 				}
@@ -1323,8 +1326,8 @@ final class PackedJoinEnumerator {
 						&& exactComposableState(retainedState)
 						&& evidenceStateIds[retainedState] == evidenceStateId
 						&& Double.doubleToLongBits(rows[retainedState]) == Double.doubleToLongBits(rows[stateId])
-						&& (memo.dominatesCostVector(costVectorId, costVectorIds[retainedState])
-								|| memo.equalCostVector(costVectorId, costVectorIds[retainedState])
+						&& (memo.dominatesCompletedCost(costCompletionId, costCompletionIds[retainedState])
+								|| memo.equalCompletedCost(costCompletionId, costCompletionIds[retainedState])
 										&& displaceable(retainedState)
 										&& compareDigests(stateId, retainedState) < 0)) {
 					paretoActiveStates[retainedState] = 0;
@@ -1345,8 +1348,9 @@ final class PackedJoinEnumerator {
 						&& exactComposableState(retainedState)
 						&& evidenceStateIds[retainedState] == evidenceStateIds[stateId]
 						&& Double.doubleToLongBits(rows[retainedState]) == Double.doubleToLongBits(rows[stateId])
-						&& (memo.equalCostVector(costVectorIds[retainedState], costVectorIds[stateId])
-								|| memo.dominatesCostVector(costVectorIds[retainedState], costVectorIds[stateId]))) {
+						&& (memo.equalCompletedCost(costCompletionIds[retainedState], costCompletionIds[stateId])
+								|| memo.dominatesCompletedCost(costCompletionIds[retainedState],
+										costCompletionIds[stateId]))) {
 					return retainedState;
 				}
 			}
@@ -1391,7 +1395,7 @@ final class PackedJoinEnumerator {
 			transitionMetadataIds = Arrays.copyOf(transitionMetadataIds, nextCapacity);
 			operatorMetadataIds = Arrays.copyOf(operatorMetadataIds, nextCapacity);
 			costEventIds = Arrays.copyOf(costEventIds, nextCapacity);
-			costVectorIds = Arrays.copyOf(costVectorIds, nextCapacity);
+			costCompletionIds = Arrays.copyOf(costCompletionIds, nextCapacity);
 			parentStates = Arrays.copyOf(parentStates, nextCapacity);
 			exploredNodeMasks = Arrays.copyOf(exploredNodeMasks, nextCapacity);
 			appendedFactorBits = Arrays.copyOf(appendedFactorBits, nextCapacity);
@@ -1419,7 +1423,7 @@ final class PackedJoinEnumerator {
 			System.arraycopy(source.transitionMetadataIds, 0, transitionMetadataIds, 0, length);
 			System.arraycopy(source.operatorMetadataIds, 0, operatorMetadataIds, 0, length);
 			System.arraycopy(source.costEventIds, 0, costEventIds, 0, length);
-			System.arraycopy(source.costVectorIds, 0, costVectorIds, 0, length);
+			System.arraycopy(source.costCompletionIds, 0, costCompletionIds, 0, length);
 			System.arraycopy(source.parentStates, 0, parentStates, 0, length);
 			System.arraycopy(source.exploredNodeMasks, 0, exploredNodeMasks, 0, length);
 			System.arraycopy(source.appendedFactorBits, 0, appendedFactorBits, 0, length);
@@ -1452,8 +1456,9 @@ final class PackedJoinEnumerator {
 					&& Arrays.equals(canonicalMembers, other.canonicalMembers);
 		}
 
-		boolean strictlyContains(RelocatableFilterRegion other) {
-			if (semanticScopeId != other.semanticScopeId
+		boolean strictlyContains(RelocatableFilterRegion other, PackedQuery query) {
+			if (PackedNodeMetadataArena.structuralScopeFlags(semanticScopeId) != PackedNodeMetadataArena
+					.structuralScopeFlags(other.semanticScopeId)
 					|| executionDomainId != other.executionDomainId
 					|| canonicalMembers.length <= other.canonicalMembers.length) {
 				return false;
@@ -1470,7 +1475,13 @@ final class PackedJoinEnumerator {
 				}
 				containingOrdinal++;
 			}
-			return true;
+			if (semanticScopeId == other.semanticScopeId) {
+				return true;
+			}
+			int factorSet = memberSet(factorRelationIds, other.factorRelationIds);
+			return factorSet != 0 && Integer.bitCount(factorSet) == other.factorRelationIds.length
+					&& retainedPrefixFrameIsIndependent(query, rootRelationId, factorRelationIds,
+							other.rootRelationId, other.canonicalMembers);
 		}
 	}
 
@@ -1847,6 +1858,8 @@ final class PackedJoinEnumerator {
 	private final PackedSearchBudget budget;
 	private final PackedCostSession costSession;
 	private PackedCostContext costContext;
+	private PackedCostEstimate memoizedRightResources;
+	private PackedCostEstimate memoizedRightPriceMetadata;
 	private PackedCostEstimate costEstimate;
 	private PackedCostEstimate scheduledFilterCandidateEstimate;
 	private PackedCostEstimate bestGreedyEstimate;
@@ -1858,6 +1871,7 @@ final class PackedJoinEnumerator {
 	private PackedCostEstimate contextualDefaultEstimate;
 	private PackedCostEstimate composedMetadataEstimate;
 	private PackedCostEstimate dependentReopenEstimate;
+	private PackedCostEstimate contextualChildEstimate;
 	private PackedEvidenceContext dependentEvidenceContext;
 	private LeftDeepOrderCache leftDeepOrderCache;
 	private PackedPrefixRowComposition rowComposition;
@@ -1886,6 +1900,10 @@ final class PackedJoinEnumerator {
 	private int correlatedLatticeBuilds;
 	private int correlatedLatticeReuses;
 	private int correlatedSeedResumes;
+	private int activeFactorInputFrame;
+	private final PackedCostContext activeFactorInputContext = new PackedCostContext();
+	private final PackedCostContext unaryCompletionInput = new PackedCostContext();
+	private int activeFactorSourceCompletion;
 	private double dependentReopenStartupWork;
 	private double dependentReopenPerInvocationWork;
 	private double dependentReopenFixedWork;
@@ -2180,8 +2198,12 @@ final class PackedJoinEnumerator {
 		double leftRows = memo.winnerOutputRows(childWinners[0]);
 		double rightRows = memo.winnerOutputRows(childWinners[1]);
 		double outputRows = saturatedAdd(leftRows, rightRows, 0.0d);
-		double childWork = saturatedAdd(memo.winnerTotalCost(childWinners[0]),
-				memo.winnerTotalCost(childWinners[1]), 0.0d);
+		double leftWork = contextualChildWork(childWinners[0], prefixRows, inputContextId);
+		double rightWork = contextualChildWork(childWinners[1], prefixRows, inputContextId);
+		if (!finiteNonNegative(leftWork) || !finiteNonNegative(rightWork)) {
+			return defaultWinnerId;
+		}
+		double childWork = saturatedAdd(leftWork, rightWork, 0.0d);
 		double totalWork = saturatedAdd(childWork, outputRows, 0.0d);
 		costEstimate.clear();
 		costEstimate.setRows(outputRows, totalWork);
@@ -2194,14 +2216,12 @@ final class PackedJoinEnumerator {
 			outputRows = costEstimate.outputRows();
 		}
 		if (finiteNonNegative(costEstimate.workRows())) {
+			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-				memo.addWinnerPhysicalCost(childWinners[0], costEstimate);
-				memo.addWinnerPhysicalCost(childWinners[1], costEstimate);
+				memo.addWinnerPhysicalCosts(childWinners[0], inputContextId, prefixRows,
+						childWinners[1], inputContextId, prefixRows, costEstimate);
 			}
-			totalWork = costEstimate.hasExplicitPhysicalCost()
-					? costSession.objectiveScore(costEstimate)
-					: costEstimate.workRows();
 		}
 		if (costEstimate.hasExplicitPhysicalCost()) {
 			costEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
@@ -2262,6 +2282,9 @@ final class PackedJoinEnumerator {
 		dependentEvidenceContext.reset(rightPrefixRelations, rightPrefixContributions, 0, prefixCount + 1, leftRows,
 				winnerEvidenceStateId(leftWinnerId), rightBindingLayoutId, rightCorrelationMaskId,
 				semanticScopeMaskId, leftCostEventId);
+		int rightInputContextId = memo.internEvidenceContext(rightPrefixRelations, rightPrefixContributions, 0,
+				prefixCount + 1, leftRows, winnerEvidenceStateId(leftWinnerId), rightBindingLayoutId,
+				rightCorrelationMaskId, semanticScopeMaskId, leftCostEventId);
 		int rightWinnerId = rightEnumerator.optimizeWithInheritedPrefix(query.relChild(relationId, 1),
 				dependentEvidenceContext);
 		nestedWorkUnits += rightEnumerator.contextualWorkUnits();
@@ -2273,7 +2296,12 @@ final class PackedJoinEnumerator {
 
 		double rightRows = memo.winnerOutputRows(rightWinnerId);
 		double outputRows = Math.max(leftRows, rightRows);
-		double childWork = saturatedAdd(memo.winnerTotalCost(leftWinnerId), memo.winnerTotalCost(rightWinnerId), 0.0d);
+		double leftWork = contextualChildWork(leftWinnerId, prefixRows, inputContextId);
+		double rightWork = contextualChildWork(rightWinnerId, leftRows, rightInputContextId);
+		if (!finiteNonNegative(leftWork) || !finiteNonNegative(rightWork)) {
+			return defaultWinnerId;
+		}
+		double childWork = saturatedAdd(leftWork, rightWork, 0.0d);
 		double totalWork = saturatedAdd(childWork, outputRows, 0.0d);
 		costEstimate.clear();
 		costEstimate.setRows(outputRows, totalWork);
@@ -2289,8 +2317,8 @@ final class PackedJoinEnumerator {
 			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-				memo.addWinnerPhysicalCost(leftWinnerId, costEstimate);
-				memo.addWinnerPhysicalCost(rightWinnerId, costEstimate);
+				memo.addWinnerPhysicalCosts(leftWinnerId, inputContextId, prefixRows,
+						rightWinnerId, rightInputContextId, leftRows, costEstimate);
 			}
 		}
 		if (costEstimate.hasExplicitPhysicalCost()) {
@@ -2313,12 +2341,14 @@ final class PackedJoinEnumerator {
 				physicalExpressionId, metadataId, tieBreakRank, outputRows, totalWork, totalWork, childWinners, 0, 2);
 		return offerContextualMemoizedPositiveOptional(relationId, inputContextId, prefixRelations,
 				prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId,
-				semanticScopeMaskId, leftWinnerId, rightWinnerId, leftRows, rightRows, outputRows, winnerId);
+				semanticScopeMaskId, leftWinnerId, rightWinnerId, rightInputContextId, rightWork, leftRows, rightRows,
+				outputRows, winnerId);
 	}
 
 	private int offerContextualMemoizedPositiveOptional(int relationId, int inputContextId, int[] prefixRelations,
 			int prefixCount, double prefixRows, int prefixEvidenceStateId, int bindingLayoutId,
-			int correlationMaskId, int semanticScopeMaskId, int leftWinnerId, int rightWinnerId, double leftRows,
+			int correlationMaskId, int semanticScopeMaskId, int leftWinnerId, int rightWinnerId,
+			int rightInputContextId, double rightWork, double leftRows,
 			double rightRows, double outputRows, int incumbentWinnerId) {
 		int leftRelationId = query.relChild(relationId, 0);
 		int rightRelationId = query.relChild(relationId, 1);
@@ -2340,12 +2370,29 @@ final class PackedJoinEnumerator {
 
 		int compatibilityMaskId = query.intersectMasks(
 				effectiveLeftOutputMaskId, query.relOutputMaskId(rightRelationId));
+		if (!finiteNonNegative(rightWork)) {
+			return incumbentWinnerId;
+		}
+		if (memoizedRightPriceMetadata == null) {
+			memoizedRightPriceMetadata = new PackedCostEstimate();
+			memoizedRightResources = new PackedCostEstimate();
+		}
+		memo.restoreWinnerPriceMetadata(rightWinnerId, memoizedRightPriceMetadata);
+		PackedCostEstimate resources = null;
+		if (memoizedRightPriceMetadata.hasExplicitPhysicalCost()) {
+			if (!memo.restoreCompleteWinnerPhysicalResources(rightWinnerId, rightInputContextId, leftRows,
+					memoizedRightResources)) {
+				return incumbentWinnerId;
+			}
+			resources = memoizedRightResources;
+		}
+
 		alternativePhysicalJoinEstimate.copyCandidateFrom(costEstimate);
 		alternativePhysicalJoinEstimate.putPlannedDoubleMetric(
 				PackedPhysicalJoinCosting.MEMOIZED_DEPENDENT_RIGHT_ROWS_METRIC, rightRows);
 		alternativePhysicalJoinEstimate.putPlannedDoubleMetric(
 				PackedPhysicalJoinCosting.MEMOIZED_DEPENDENT_RIGHT_WORK_METRIC,
-				memo.winnerTotalCost(rightWinnerId));
+				rightWork);
 		alternativePhysicalJoinEstimate.putPlannedStringMetric("optimizer.memoizedCorrelationBindings",
 				String.join(",", query.bindingNames(lookupMaskId)));
 		resetInheritedCostContext(prefixRelations, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
@@ -2353,12 +2400,16 @@ final class PackedJoinEnumerator {
 		costContext.setHashJoinMasks(lookupMaskId, compatibilityMaskId);
 		costContext.setOperatorInputs(leftRows, rightRows,
 				winnerEvidenceStateId(leftWinnerId), winnerEvidenceStateId(rightWinnerId));
-		PackedPhysicalJoinCosting.refine(costSession, PackedPhysicalJoinCosting.MEMOIZED_CORRELATED, costContext,
-				alternativePhysicalJoinEstimate);
+		PackedPhysicalJoinCosting.refineMemoized(costSession, costContext, alternativePhysicalJoinEstimate,
+				resources, memoizedRightPriceMetadata);
 		certifyCompleteContextualInvocationDomain(alternativePhysicalJoinEstimate, prefixRows);
 		double localObjective = costSession.objectiveScore(alternativePhysicalJoinEstimate);
-		memo.addWinnerPhysicalCost(leftWinnerId, alternativePhysicalJoinEstimate);
-		double totalCost = saturatedAdd(memo.winnerTotalCost(leftWinnerId), localObjective, 0.0d);
+		memo.addWinnerPhysicalCost(leftWinnerId, alternativePhysicalJoinEstimate, inputContextId, prefixRows);
+		double leftWork = contextualChildWork(leftWinnerId, prefixRows, inputContextId);
+		if (!finiteNonNegative(leftWork)) {
+			return incumbentWinnerId;
+		}
+		double totalCost = saturatedAdd(leftWork, localObjective, 0.0d);
 
 		childGroups[0] = memo.winnerGroupId(leftWinnerId);
 		childGroups[1] = memo.winnerGroupId(rightWinnerId);
@@ -2418,7 +2469,11 @@ final class PackedJoinEnumerator {
 			int rowWidth = Math.max(1, query.maskCardinality(query.relOutputMaskId(relationId)));
 			localWork = saturatedMultiply(localWork, rowWidth);
 		}
-		double totalWork = saturatedAdd(memo.winnerTotalCost(childWinnerId), localWork, 0.0d);
+		double childWork = contextualChildWork(childWinnerId, prefixRows, inputContextId);
+		if (!finiteNonNegative(childWork)) {
+			return defaultWinnerId;
+		}
+		double totalWork = saturatedAdd(childWork, localWork, 0.0d);
 		costEstimate.clear();
 		costEstimate.setRows(outputRows, totalWork);
 		resetInheritedCostContext(prefixRelations, prefixCount, prefixRows, prefixEvidenceStateId, bindingLayoutId,
@@ -2429,13 +2484,11 @@ final class PackedJoinEnumerator {
 			outputRows = costEstimate.outputRows();
 		}
 		if (finiteNonNegative(costEstimate.workRows())) {
+			totalWork = refinedOperatorWork(childWork, costEstimate);
 			if (costEstimate.hasExplicitPhysicalCost()
 					&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-				memo.addWinnerPhysicalCost(childWinnerId, costEstimate);
+				memo.addWinnerPhysicalCost(childWinnerId, costEstimate, inputContextId, prefixRows);
 			}
-			totalWork = costEstimate.hasExplicitPhysicalCost()
-					? costSession.objectiveScore(costEstimate)
-					: costEstimate.workRows();
 		}
 		if (costEstimate.hasExplicitPhysicalCost()) {
 			costEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
@@ -2460,7 +2513,9 @@ final class PackedJoinEnumerator {
 			return false;
 		}
 		return switch (query.relOperator(relationId)) {
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE -> true;
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER,
+				PackedRelOp.MATERIALIZE ->
+			true;
 		default -> false;
 		};
 	}
@@ -2490,7 +2545,9 @@ final class PackedJoinEnumerator {
 			return false;
 		}
 		return switch (query.relOperator(relationId)) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH -> true;
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET,
+				PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH ->
+			true;
 		case PackedRelOp.JOIN -> recursivelySafeContextualProbe(query.relChild(relationId, 0))
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
 		case PackedRelOp.LEFT_JOIN -> contextualPositiveLeftJoin(relationId)
@@ -2498,9 +2555,11 @@ final class PackedJoinEnumerator {
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
 		case PackedRelOp.UNION -> recursivelySafeContextualProbe(query.relChild(relationId, 0))
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE -> !query
-				.relationHasObservableEvaluationEffects(relationId)
-				&& recursivelySafeContextualProbe(query.relChild(relationId, 0));
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER,
+				PackedRelOp.MATERIALIZE ->
+			!query
+					.relationHasObservableEvaluationEffects(relationId)
+					&& recursivelySafeContextualProbe(query.relChild(relationId, 0));
 		case PackedRelOp.FILTER -> {
 			int conditionId = query.relPayload(relationId);
 			int inputRelationId = query.relChild(relationId, 0);
@@ -2542,6 +2601,11 @@ final class PackedJoinEnumerator {
 				correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, relationId);
 		costSession.estimate(relationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+				inputContextId,
+				contextualAtomicFactor(relationId, memo.findWinner(memo.logicalGroupId(relationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		if (!finiteNonNegative(costEstimate.outputRows()) && !finiteNonNegative(costEstimate.workRows())) {
 			return defaultWinnerId;
 		}
@@ -2711,9 +2775,7 @@ final class PackedJoinEnumerator {
 		int[] filters = new int[query.relationCount() + 1];
 		int[] counts = new int[2];
 		if (!collectRelocatableFilterRegion(rootFilterRelationId, query.relSemanticScope(rootFilterRelationId),
-				query.relExecutionDomain(rootFilterRelationId), factors, filters, counts)
-				|| counts[0] < 2 || counts[1] < 1
-				|| counts[0] + counts[1] > DENSE_FACTOR_LIMIT) {
+				query.relExecutionDomain(rootFilterRelationId), factors, filters, counts)) {
 			return Integer.MIN_VALUE;
 		}
 		factors = Arrays.copyOf(factors, counts[0]);
@@ -2764,9 +2826,11 @@ final class PackedJoinEnumerator {
 		}
 		int semanticScopeId = query.relSemanticScope(rootFilterRelationId);
 		int executionDomainId = query.relExecutionDomain(rootFilterRelationId);
+		int[] targetProjectionMembers = null;
 		for (int latticeOrdinal = 0; latticeOrdinal < completedCorrelatedLatticeCount; latticeOrdinal++) {
 			CompletedCorrelatedLattice lattice = completedCorrelatedLattices[latticeOrdinal];
-			if (lattice.semanticScopeId != semanticScopeId
+			if (PackedNodeMetadataArena.structuralScopeFlags(lattice.semanticScopeId) != PackedNodeMetadataArena
+					.structuralScopeFlags(semanticScopeId)
 					|| lattice.executionDomainId != executionDomainId
 					|| lattice.factors.length + lattice.filters.length < targetFactors.length + targetFilters.length) {
 				continue;
@@ -2777,6 +2841,21 @@ final class PackedJoinEnumerator {
 					|| Integer.bitCount(targetFactorSet) != targetFactors.length
 					|| Integer.bitCount(targetFilterSet) != targetFilters.length) {
 				continue;
+			}
+			if (lattice.semanticScopeId != semanticScopeId) {
+				if (lattice.factors.length + lattice.filters.length <= targetFactors.length + targetFilters.length) {
+					continue;
+				}
+				if (targetProjectionMembers == null) {
+					targetProjectionMembers = Arrays.copyOf(targetFactors, targetFactors.length + targetFilters.length);
+					for (int ordinal = 0; ordinal < targetFilters.length; ordinal++) {
+						targetProjectionMembers[targetFactors.length + ordinal] = -targetFilters[ordinal];
+					}
+				}
+				if (!retainedPrefixFrameIsIndependent(query, lattice.sourceRootRelationId, lattice.factors,
+						rootFilterRelationId, targetProjectionMembers)) {
+					continue;
+				}
 			}
 			if (!baseFactorWinnersAreCurrent(lattice, targetFactorSet)) {
 				continue;
@@ -2806,6 +2885,51 @@ final class PackedJoinEnumerator {
 			return true;
 		}
 		return false;
+	}
+
+	/**
+	 * A strict subset may share an exact state across an outer frame tag only when every possible outer observation or
+	 * write is independent of the subset's complete compatibility and predicate inputs. This leaves the stored raw
+	 * contexts intact and never cancels a write merely because the same name is also written inside the subset.
+	 */
+	private static boolean retainedPrefixFrameIsIndependent(PackedQuery query, int sourceRootRelationId,
+			int[] sourceFactors, int targetRootRelationId, int[] targetMembers) {
+		if (((query.relMetadataFlags(sourceRootRelationId) | query.relMetadataFlags(targetRootRelationId))
+				& PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+			return false;
+		}
+		int frame = query.unionMasks(relationFrameMask(query, sourceRootRelationId),
+				relationFrameMask(query, targetRootRelationId));
+		for (int factor : sourceFactors) {
+			if ((query.relMetadataFlags(factor) & PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+				return false;
+			}
+			frame = query.unionMasks(frame, query.relOrdinaryWriteMaskId(factor));
+		}
+		int observations = query.unionMasks(query.relOutputMaskId(targetRootRelationId),
+				relationFrameMask(query, targetRootRelationId));
+		for (int member : targetMembers) {
+			int relation = member < 0 ? -member : member;
+			if ((query.relMetadataFlags(relation) & PackedNodeMetadataArena.UNKNOWN_OUTPUT_DOMAIN) != 0) {
+				return false;
+			}
+			observations = query.unionMasks(observations, query.relOutputMaskId(relation));
+			observations = query.unionMasks(observations, relationFrameMask(query, relation));
+			if (member < 0) {
+				int condition = query.relOperator(relation) == PackedRelOp.FILTER ? query.relPayload(relation)
+						: query.payloadPrimary(query.relPayload(relation));
+				observations = query.unionMasks(observations, query.scalarDependencyMaskId(condition));
+				observations = query.unionMasks(observations, query.scalarEmbeddedReferenceMaskId(condition));
+			}
+		}
+		return !query.masksIntersect(frame, observations);
+	}
+
+	private static int relationFrameMask(PackedQuery query, int relation) {
+		int frame = query.unionMasks(query.relRequiredInputMaskId(relation), query.relProtectedInputMaskId(relation));
+		frame = query.unionMasks(frame, query.relNullableInputMaskId(relation));
+		frame = query.unionMasks(frame, query.relIndependentOutputMaskId(relation));
+		return query.unionMasks(frame, query.relOrdinaryWriteMaskId(relation));
 	}
 
 	boolean hasCurrentCompletedCorrelatedSearch(int filterRelationId) {
@@ -2989,9 +3113,7 @@ final class PackedJoinEnumerator {
 		int[] filters = new int[query.relationCount() + 1];
 		int[] counts = new int[2];
 		if (!collectRelocatableFilterRegion(rootFilterRelationId, query.relSemanticScope(rootFilterRelationId),
-				query.relExecutionDomain(rootFilterRelationId), factors, filters, counts)
-				|| counts[0] < 2 || counts[1] < 1
-				|| counts[0] + counts[1] > DENSE_FACTOR_LIMIT) {
+				query.relExecutionDomain(rootFilterRelationId), factors, filters, counts)) {
 			return null;
 		}
 		int[] canonicalRelations = canonicalContextualOperatorRelationIds();
@@ -3052,6 +3174,14 @@ final class PackedJoinEnumerator {
 
 	private boolean collectRelocatableFilterRegion(int relationId, int semanticScopeId, int executionDomainId,
 			int[] factors, int[] filters, int[] counts) {
+		return collectRelocatableFilterRegionNodes(relationId, semanticScopeId, executionDomainId,
+				factors, filters, counts)
+				&& counts[0] >= 2 && counts[1] >= 1 && counts[0] + counts[1] <= DENSE_FACTOR_LIMIT
+				&& predicateWritePhasesAreStable(factors, counts[0], filters, counts[1]);
+	}
+
+	private boolean collectRelocatableFilterRegionNodes(int relationId, int semanticScopeId, int executionDomainId,
+			int[] factors, int[] filters, int[] counts) {
 		int operator = query.relOperator(relationId);
 		if (operator == PackedRelOp.FILTER) {
 			if (query.relChildCount(relationId) == 1
@@ -3062,7 +3192,9 @@ final class PackedJoinEnumerator {
 				return true;
 			}
 			if (query.relChildCount(relationId) != 1
-					|| query.relSemanticScope(relationId) != semanticScopeId
+					|| PackedNodeMetadataArena
+							.structuralScopeFlags(query.relSemanticScope(relationId)) != PackedNodeMetadataArena
+									.structuralScopeFlags(semanticScopeId)
 					|| query.relExecutionDomain(relationId) != executionDomainId
 					|| (query.relMetadataFlags(relationId)
 							& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
@@ -3071,6 +3203,15 @@ final class PackedJoinEnumerator {
 			int conditionId = predicateConditionId(relationId);
 			int embeddedReferenceMaskId = query.scalarEmbeddedReferenceMaskId(conditionId);
 			int scalarFlags = query.scalarMetadataFlags(conditionId);
+			if ((query.relSemanticScope(relationId) & PackedNodeMetadataArena.INPUT_FRAME_SENSITIVE) != 0
+					&& (embeddedReferenceMaskId != 0
+							|| !query.maskContainsAll(query.relAssuredMaskId(query.relChild(relationId, 0)),
+									query.scalarDependencyMaskId(conditionId)))) {
+				// A later provider must not fill an originally absent or nullable predicate input. Keep the complete
+				// predicate/input phase as a factor, carrying its original required/protected/nullable facts.
+				factors[counts[0]++] = relationId;
+				return true;
+			}
 			boolean freelyRelocatable = query.scalarSafeToRelocate(conditionId)
 					&& query.scalarDependencyMaskId(conditionId) != 0
 					&& embeddedReferenceMaskId == 0;
@@ -3085,24 +3226,98 @@ final class PackedJoinEnumerator {
 				return false;
 			}
 			filters[counts[1]++] = relationId;
-			return collectRelocatableFilterRegion(query.relChild(relationId, 0), semanticScopeId,
+			return collectRelocatableFilterRegionNodes(query.relChild(relationId, 0), semanticScopeId,
 					executionDomainId, factors, filters, counts);
 		}
 		if (operator == PackedRelOp.JOIN) {
 			if (query.relChildCount(relationId) != 2
 					|| query.relPayload(relationId) != 0
-					|| query.relSemanticScope(relationId) != semanticScopeId
+					|| PackedNodeMetadataArena
+							.structuralScopeFlags(query.relSemanticScope(relationId)) != PackedNodeMetadataArena
+									.structuralScopeFlags(semanticScopeId)
 					|| query.relExecutionDomain(relationId) != executionDomainId
 					|| (query.relMetadataFlags(relationId)
 							& PackedNodeMetadataArena.VARIABLE_SCOPE_CHANGE) != 0) {
 				return false;
 			}
-			return collectRelocatableFilterRegion(query.relChild(relationId, 0), semanticScopeId,
+			return collectRelocatableFilterRegionNodes(query.relChild(relationId, 0), semanticScopeId,
 					executionDomainId, factors, filters, counts)
-					&& collectRelocatableFilterRegion(query.relChild(relationId, 1), semanticScopeId,
+					&& collectRelocatableFilterRegionNodes(query.relChild(relationId, 1), semanticScopeId,
 							executionDomainId, factors, filters, counts);
 		}
 		factors[counts[0]++] = relationId;
+		return true;
+	}
+
+	/** Provider readiness must identify the same value version on both sides of every extracted predicate. */
+	private boolean predicateWritePhasesAreStable(int[] factors, int factorCount, int[] filters, int filterCount) {
+		int allWrites = 0;
+		for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+			allWrites = query.unionMasks(allWrites, query.relOrdinaryWriteMaskId(factors[ordinal]));
+		}
+		if (allWrites == 0) {
+			return true;
+		}
+		int[] ownershipMarks = null;
+		int[] sourceStack = null;
+		for (int filterOrdinal = 0; filterOrdinal < filterCount; filterOrdinal++) {
+			int filter = filters[filterOrdinal];
+			int condition = predicateConditionId(filter);
+			int observations = query.unionMasks(query.scalarDependencyMaskId(condition),
+					query.scalarEmbeddedReferenceMaskId(condition));
+			int observedWrites = query.intersectMasks(observations, allWrites);
+			if (observedWrites == 0) {
+				continue;
+			}
+			if (ownershipMarks == null) {
+				ownershipMarks = new int[query.relationCount() + 1];
+				sourceStack = new int[query.relationCount() + 1];
+			}
+			int mark = filterOrdinal + 1;
+			int source = query.relChild(filter, 0);
+			int size = 0;
+			ownershipMarks[source] = mark;
+			sourceStack[size++] = source;
+			while (size != 0) {
+				int current = sourceStack[--size];
+				for (int ordinal = 0; ordinal < query.relChildCount(current); ordinal++) {
+					int child = query.relChild(current, ordinal);
+					if (ownershipMarks[child] != mark) {
+						ownershipMarks[child] = mark;
+						sourceStack[size++] = child;
+					}
+				}
+			}
+			for (int symbol = 1; symbol <= query.symbolCount(); symbol++) {
+				if (!query.maskContainsSymbol(observedWrites, symbol)) {
+					continue;
+				}
+				int providerOrdinal = -1;
+				int writerOrdinal = -1;
+				for (int ordinal = 0; ordinal < factorCount; ordinal++) {
+					int factor = factors[ordinal];
+					if (query.maskContainsSymbol(query.relOrdinaryWriteMaskId(factor), symbol)) {
+						if (writerOrdinal != -1) {
+							return false;
+						}
+						writerOrdinal = ordinal;
+					}
+					if (query.relationBindsSymbol(factor, symbol)) {
+						if (providerOrdinal != -1) {
+							return false;
+						}
+						providerOrdinal = ordinal;
+					}
+				}
+				// Count factor occurrences, including canonical twins. A singleton readiness certificate is safe only
+				// for the same assured writer owned by this predicate's original input, never an outside competitor.
+				if (providerOrdinal == -1 || providerOrdinal != writerOrdinal
+						|| !query.relationAssuresSymbol(factors[providerOrdinal], symbol)
+						|| ownershipMarks[factors[providerOrdinal]] != mark) {
+					return false;
+				}
+			}
+		}
 		return true;
 	}
 
@@ -4137,7 +4352,8 @@ final class PackedJoinEnumerator {
 			int[] canonicalFactorIds = canonicalRelationIds(factors);
 			Arrays.sort(canonicalFactorIds);
 			CompletedCorrelatedLattice completedLattice = new CompletedCorrelatedLattice(
-					query.relSemanticScope(rootFilterRelationId), query.relExecutionDomain(rootFilterRelationId),
+					rootFilterRelationId, query.relSemanticScope(rootFilterRelationId),
+					query.relExecutionDomain(rootFilterRelationId),
 					factors, canonicalFactorIds, filters, canonicalRelationIds(filters), states.factorWinnerIds,
 					states.stateCount, states.bestStateIds, states.stateKeys, states.rows, states.costs,
 					states.evidenceStateIds, states.parentStates,
@@ -4183,7 +4399,7 @@ final class PackedJoinEnumerator {
 			int metadataId = memo.winnerPhysicalMetadataId(winnerId);
 			retainCorrelatedTransitionEvidence(stateId, metadataId, states.costEventIds,
 					states.evidenceGuarantees, states.evidenceDispositions);
-			states.costVectorIds[stateId] = memo.winnerCostVectorId(winnerId);
+			states.costCompletionIds[stateId] = memo.winnerCostCompletionId(winnerId);
 			states.appendedContributionRows[stateId] = states.rows[stateId];
 			states.appendedFactorBits[stateId] = factorBit;
 			states.appendedFactorWinnerIds[stateId] = winnerId;
@@ -4684,7 +4900,7 @@ final class PackedJoinEnumerator {
 		int filterRelationId = filters[filterOrdinal];
 		int workUnits = costScheduledFilter(filterRelationId, scheduledPrefixRelations,
 				scheduledPrefixContributionRows, prefixCount, states.rows[state], states.costs[state],
-				states.evidenceStateIds[state]);
+				states.evidenceStateIds[state], states.costCompletionIds[state]);
 		int filterBit = 1 << filterOrdinal;
 		int targetKey = states.key(subset, appliedFilterSet | filterBit);
 		double candidateCost = Math.max(states.costs[state], completeOperatorWork(states.costs[state], costEstimate));
@@ -4726,8 +4942,12 @@ final class PackedJoinEnumerator {
 		states.operatorMetadataIds[targetState] = metadataId;
 		retainCorrelatedTransitionEvidence(targetState, metadataId, states.costEventIds,
 				states.evidenceGuarantees, states.evidenceDispositions);
-		states.costVectorIds[targetState] = memo.completeUnaryPhysicalCostVectorId(metadataId,
-				states.costVectorIds[state]);
+		unaryCompletionInput.reset(scheduledPrefixRelations, 0, prefixCount, states.rows[state],
+				states.evidenceStateIds[state]);
+		unaryCompletionInput.setEvidenceIdentity(0, 0, query.relSemanticScope(filterRelationId));
+		unaryCompletionInput.setOperatorInputs(states.rows[state], Double.NaN, states.evidenceStateIds[state], 0);
+		states.costCompletionIds[targetState] = memo.completeUnaryCostCompletion(metadataId, costEstimate,
+				states.costCompletionIds[state], unaryCompletionInput, candidateCost);
 		states.retainParetoState(targetState, targetKey, memo);
 		states.publish(targetState, targetKey);
 		return workUnits + 1;
@@ -4775,10 +4995,18 @@ final class PackedJoinEnumerator {
 			int retainedContextualWinnerId = reuseExistingContextualFactor
 					? restoreExistingContextualFactor(factors[factorOrdinal], prefixRelations,
 							prefixContributionRows, prefixCount, states.rows[state], states.evidenceStateIds[state], 0,
-							0, query.relSemanticScope(rootFilterRelationId), states.costEventIds[state])
+							0, query.relSemanticScope(rootFilterRelationId), states.costEventIds[state],
+							states.costCompletionIds[state])
 					: 0;
 			if (retainedContextualWinnerId == 0) {
 				costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+				activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
+						states.costCompletionIds[state],
+						0,
+						contextualAtomicFactor(factors[factorOrdinal],
+								memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
+										memo.anyPropertyId(), 0, 0, 0)));
+				activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 			} else {
 				factorWinnerId = retainedContextualWinnerId;
 			}
@@ -4941,18 +5169,19 @@ final class PackedJoinEnumerator {
 		states.operatorMetadataIds[targetState] = metadataId;
 		retainCorrelatedTransitionEvidence(targetState, metadataId, states.costEventIds,
 				states.evidenceGuarantees, states.evidenceDispositions);
-		int factorCostVectorId = factorMetadataId != 0
-				? memo.physicalMetadataCostVectorId(factorMetadataId)
-				: memo.winnerCostVectorId(factorWinnerId);
-		states.costVectorIds[targetState] = memo.completeBinaryPhysicalCostVectorId(metadataId,
-				states.costVectorIds[parentState], factorCostVectorId);
+		int factorCostCompletionId = factorMetadataId != 0
+				? memo.plannerCostCompletionId(costEstimate)
+				: memo.winnerCostCompletionId(factorWinnerId);
+		states.costCompletionIds[targetState] = memo.completeBinaryCostCompletion(metadataId, selectedPhysicalEstimate,
+				states.costCompletionIds[parentState], factorCostCompletionId, candidateCost);
 		states.retainParetoState(targetState, targetKey, memo);
 		states.publish(targetState, targetKey);
 	}
 
 	private int restoreExistingContextualFactor(int relationId, int[] prefixRelations,
 			double[] prefixContributionRows, int prefixCount, double prefixRows, int prefixEvidenceStateId,
-			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, int prefixCostEventId) {
+			int bindingLayoutId, int correlationMaskId, int semanticScopeMaskId, int prefixCostEventId,
+			int parentCostCompletionId) {
 		int inputContextId = memo.internEvidenceContext(prefixRelations, prefixContributionRows, 0, prefixCount,
 				prefixRows, prefixEvidenceStateId, bindingLayoutId, correlationMaskId, semanticScopeMaskId,
 				prefixCostEventId);
@@ -4960,6 +5189,9 @@ final class PackedJoinEnumerator {
 				inputContextId, 0);
 		if (contextualWinnerId != 0) {
 			restoreWinnerEstimate(contextualWinnerId);
+			activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
+					parentCostCompletionId, inputContextId, contextualAtomicFactor(relationId, contextualWinnerId));
+			activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		}
 		return contextualWinnerId;
 	}
@@ -4967,6 +5199,13 @@ final class PackedJoinEnumerator {
 	private int costScheduledFilter(int filterRelationId, int[] prefixRelations, double[] prefixContributionRows,
 			int prefixCount,
 			double inputRows, double inputWork, int inputEvidenceStateId) {
+		return costScheduledFilter(filterRelationId, prefixRelations, prefixContributionRows, prefixCount,
+				inputRows, inputWork, inputEvidenceStateId, 0);
+	}
+
+	private int costScheduledFilter(int filterRelationId, int[] prefixRelations, double[] prefixContributionRows,
+			int prefixCount,
+			double inputRows, double inputWork, int inputEvidenceStateId, int parentCompletion) {
 		ensureCostingScratch();
 		int semanticScopeMaskId = query.relSemanticScope(filterRelationId);
 		int dependentWorkUnits = contextualizeEmbeddedSubqueries(predicateConditionId(filterRelationId),
@@ -4985,7 +5224,7 @@ final class PackedJoinEnumerator {
 			PackedCostEstimate candidateEstimate = scheduledFilterCandidateEstimate();
 			double candidateWork = costScheduledFilterImplementation(alternativeId, filterRelationId,
 					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputWork,
-					inputEvidenceStateId, semanticScopeMaskId, candidateEstimate);
+					inputEvidenceStateId, semanticScopeMaskId, candidateEstimate, parentCompletion);
 			if (!selectedTypedAlternative || candidateWork < bestWork) {
 				bestWork = candidateWork;
 				selectedTypedAlternative = true;
@@ -4995,7 +5234,7 @@ final class PackedJoinEnumerator {
 		if (!costedTypedAlternative) {
 			costScheduledFilterImplementation(filterRelationId, filterRelationId,
 					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputWork,
-					inputEvidenceStateId, semanticScopeMaskId, costEstimate);
+					inputEvidenceStateId, semanticScopeMaskId, costEstimate, parentCompletion);
 		}
 		return dependentWorkUnits;
 	}
@@ -5003,7 +5242,7 @@ final class PackedJoinEnumerator {
 	private double costScheduledFilterImplementation(int implementationRelationId, int filterRelationId,
 			int[] prefixRelations, double[] prefixContributionRows, int prefixCount,
 			double inputRows, double inputWork, int inputEvidenceStateId, int semanticScopeMaskId,
-			PackedCostEstimate estimate) {
+			PackedCostEstimate estimate, int parentCompletion) {
 		/* Predicate output is bounded by its input; provider evidence below may tighten this event-time bound. */
 		double outputRows = inputRows;
 		double totalWork = saturatedAdd(inputWork, 0.0d, outputRows);
@@ -5019,6 +5258,7 @@ final class PackedJoinEnumerator {
 					prefixRelations, prefixContributionRows, prefixCount, inputRows, inputEvidenceStateId, 0, 0,
 					semanticScopeMaskId, estimate);
 			costSession.refineOperator(implementationRelationId, costContext, estimate);
+			memo.captureUnaryPhysicalCost(estimate, costContext, parentCompletion);
 			boolean componentRefinement = estimate.hasComponentOutputRows();
 			if (componentRefinement) {
 				estimate.setReplacesChildWork(false);
@@ -5495,6 +5735,11 @@ final class PackedJoinEnumerator {
 				bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+				inputContextId,
+				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, outputRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
@@ -5532,7 +5777,9 @@ final class PackedJoinEnumerator {
 		}
 		states.addSingleton(factorOrdinal, factorWinnerId, outputRows, totalCost, evidenceStateId,
 				winnerCostEventId(factorWinnerId), exactContinuationIdentity(costEstimate),
-				memo.physicalCostVectorId(costEstimate), relationDigest(factors[factorOrdinal]));
+				memo.completeAtomicCostCompletion(costEstimate, inputContextId, prefixRows, reopenMultiplier,
+						totalCost),
+				relationDigest(factors[factorOrdinal]));
 		if (states.singletonStateIds[factorOrdinal] != 0) {
 			states.appendedContributionRows[states.singletonStateIds[factorOrdinal]] = factorContributionRows;
 		}
@@ -5565,6 +5812,11 @@ final class PackedJoinEnumerator {
 				states.evidenceStateIds[stateId], bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, states.costCompletionIds[stateId],
+				0,
+				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, candidateRows);
 		factorContributionRows = rowComposition.factorContributionRows();
@@ -5663,12 +5915,12 @@ final class PackedJoinEnumerator {
 				&& physicalImplementation == JOIN_IMPLEMENTATION
 				&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
 				&& (finiteNonNegative(costEstimate.outputRows()) || finiteNonNegative(costEstimate.workRows()));
-		int factorCostVectorId = retainsContextualFactorMetadata
-				? composedPhysicalCostVectorId(costEstimate, candidateRows, factorWork)
-				: memo.winnerCostVectorId(factorWinnerId);
+		int factorCostCompletionId = retainsContextualFactorMetadata
+				? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+				: memo.winnerCostCompletionId(factorWinnerId);
 		int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-		int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-				states.costVectorIds[parentStateId], factorCostVectorId);
+		int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+				states.costCompletionIds[parentStateId], factorCostCompletionId, candidateCost);
 		if (retainsContextualFactorMetadata) {
 			transitionMetadataId = addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork);
 		}
@@ -5679,7 +5931,7 @@ final class PackedJoinEnumerator {
 		states.append(combined, parentStateId, factorBit, factorWinnerId, candidateRows, candidateCost,
 				factorContributionRows, evidenceStateId, transitionMetadataId, operatorMetadataId,
 				operatorMetadataId == 0 ? 0 : memo.physicalMetadataCostEventId(operatorMetadataId),
-				physicalImplementation, 0, 0, 0, exactContinuationIdentityId, costVectorId,
+				physicalImplementation, 0, 0, 0, exactContinuationIdentityId, costCompletionId,
 				PackedRelationDigest.compose(states.digests[parentStateId], relationDigest(factors[factorOrdinal]),
 						physicalImplementation));
 	}
@@ -5823,12 +6075,12 @@ final class PackedJoinEnumerator {
 							? physicalJoinEstimate.evidenceStateId()
 							: joinEstimate.evidenceStateId();
 					int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-					int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-							states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
+					int costCompletionId = memo.completeBinaryCostCompletion(metadataId, physicalJoinEstimate,
+							states.costCompletionIds[leftStateId], states.costCompletionIds[rightStateId], hashCost);
 					if (states.append(combined, leftStateId, 0, 0, hashRows, hashCost,
 							states.rows[rightStateId], evidenceStateId, 0, metadataId,
 							memo.physicalMetadataCostEventId(metadataId), HASH_JOIN_IMPLEMENTATION,
-							rightStateId, 0, 0, exactContinuationIdentityId, costVectorId,
+							rightStateId, 0, 0, exactContinuationIdentityId, costCompletionId,
 							PackedRelationDigest.compose(states.digests[leftStateId], states.digests[rightStateId],
 									HASH_JOIN_IMPLEMENTATION)) == 0) {
 						return false;
@@ -5993,6 +6245,11 @@ final class PackedJoinEnumerator {
 				bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+				inputContextId,
+				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, outputRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
@@ -6035,10 +6292,11 @@ final class PackedJoinEnumerator {
 						factorRelationId, factorContributionRows, outputRows, evidenceStateId, bindingLayoutId,
 						correlationMaskId, semanticScopeMaskId, costEventId)
 				: 0;
-		int costVectorId = memo.physicalCostVectorId(costEstimate);
+		int costCompletionId = memo.completeAtomicCostCompletion(costEstimate, inputContextId, prefixRows,
+				reopenMultiplier, totalCost);
 		states.addContextualSingleton(nodeSets.singleton(factorOrdinal), factorOrdinal, factorWinnerId,
 				outputRows, totalCost, factorContributionRows, evidenceStateId, costEventId,
-				continuationContextId, exactContinuationIdentityId, costVectorId);
+				continuationContextId, exactContinuationIdentityId, costCompletionId);
 		return nestedWorkUnits + 1;
 	}
 
@@ -6065,6 +6323,11 @@ final class PackedJoinEnumerator {
 				states.evidenceStateIds[stateId], bindingLayoutId, correlationMaskId, semanticScopeMaskId);
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, states.costCompletionIds[stateId],
+				0,
+				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factorRelationId, candidateRows);
 		factorContributionRows = rowComposition.factorContributionRows();
@@ -6167,14 +6430,14 @@ final class PackedJoinEnumerator {
 				&& physicalImplementation == JOIN_IMPLEMENTATION
 				&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
 				&& (finiteNonNegative(costEstimate.outputRows()) || finiteNonNegative(costEstimate.workRows()));
-		int factorCostVectorId = retainsContextualFactorMetadata
-				? composedPhysicalCostVectorId(costEstimate, candidateRows, factorWork)
-				: memo.winnerCostVectorId(factorWinnerId);
-		int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-				states.costVectorIds[parentStateId], factorCostVectorId);
+		int factorCostCompletionId = retainsContextualFactorMetadata
+				? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+				: memo.winnerCostCompletionId(factorWinnerId);
+		int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+				states.costCompletionIds[parentStateId], factorCostCompletionId, candidateCost);
 		if (states.findEquivalentContextual(combinedNodeSetId, continuationContextId,
 				exactContinuationIdentityId, evidenceStateId, candidateRows, candidateCost,
-				factorContributionRows, physicalImplementation, costVectorId) != 0) {
+				factorContributionRows, physicalImplementation, costCompletionId) != 0) {
 			return;
 		}
 		int transitionMetadataId = 0;
@@ -6188,7 +6451,7 @@ final class PackedJoinEnumerator {
 		states.appendContextual(combinedNodeSetId, parentStateId, 0, factorOrdinal, factorWinnerId, candidateRows,
 				candidateCost, factorContributionRows, evidenceStateId, transitionMetadataId, operatorMetadataId,
 				operatorMetadataId == 0 ? 0 : memo.physicalMetadataCostEventId(operatorMetadataId),
-				physicalImplementation, continuationContextId, exactContinuationIdentityId, costVectorId);
+				physicalImplementation, continuationContextId, exactContinuationIdentityId, costCompletionId);
 	}
 
 	private int costWideInheritedBushyPartitions(int rootRelationId, int[] factors, PackedNodeSetArena nodeSets,
@@ -6337,12 +6600,12 @@ final class PackedJoinEnumerator {
 								bindingLayoutId, correlationMaskId, semanticScopeMaskId,
 								physicalJoinEstimate.costEventId())
 						: 0;
-				int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-						states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
+				int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+						states.costCompletionIds[leftStateId], states.costCompletionIds[rightStateId], hashCost);
 				if (finiteNonNegative(hashCost) && hashCost <= incumbentCost
 						&& states.findEquivalentContextual(combinedNodeSetId, continuationContextId,
 								exactContinuationIdentityId, evidenceStateId, hashRows, hashCost,
-								states.rows[rightStateId], HASH_JOIN_IMPLEMENTATION, costVectorId) == 0) {
+								states.rows[rightStateId], HASH_JOIN_IMPLEMENTATION, costCompletionId) == 0) {
 					int metadataId = memo.addPhysicalMetadata(physicalJoinEstimate, hashRows, hashCost);
 					if (metadataId == 0 && budget.resourceLimitReached()) {
 						return false;
@@ -6350,7 +6613,7 @@ final class PackedJoinEnumerator {
 					if (states.appendContextual(combinedNodeSetId, leftStateId, rightStateId, -1, 0, hashRows,
 							hashCost, states.rows[rightStateId], evidenceStateId, 0, metadataId,
 							memo.physicalMetadataCostEventId(metadataId), HASH_JOIN_IMPLEMENTATION,
-							continuationContextId, exactContinuationIdentityId, costVectorId) == 0) {
+							continuationContextId, exactContinuationIdentityId, costCompletionId) == 0) {
 						return false;
 					}
 				}
@@ -6624,9 +6887,9 @@ final class PackedJoinEnumerator {
 								: joinEstimate.evidenceStateId();
 						int dependentExactContinuationIdentityId = exactContinuationIdentity(
 								alternativePhysicalJoinEstimate);
-						int dependentCostVectorId = memo.completeBinaryPhysicalCostVectorId(
-								alternativePhysicalJoinEstimate, states.costVectorIds[leftStateId],
-								states.costVectorIds[rightStateId]);
+						int dependentCostVectorId = memo.completeBinaryCostCompletion(dependentMetadataId,
+								alternativePhysicalJoinEstimate, states.costCompletionIds[leftStateId],
+								states.costCompletionIds[rightStateId], dependentCost);
 						if (states.append(combined, leftStateId, 0, 0, candidateRows, dependentCost,
 								states.rows[rightStateId], dependentEvidenceStateId, 0, dependentMetadataId,
 								memo.physicalMetadataCostEventId(dependentMetadataId), JOIN_IMPLEMENTATION,
@@ -6655,8 +6918,9 @@ final class PackedJoinEnumerator {
 								? physicalJoinEstimate.evidenceStateId()
 								: joinEstimate.evidenceStateId();
 						int hashExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-						int hashCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-								states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
+						int hashCostVectorId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+								states.costCompletionIds[leftStateId], states.costCompletionIds[rightStateId],
+								hashCost);
 						int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, hashRows, hashCost);
 						if (hashMetadataId == 0 && budget.resourceLimitReached()) {
 							return false;
@@ -6686,6 +6950,10 @@ final class PackedJoinEnumerator {
 					continue;
 				}
 				restoreWinnerEstimate(contextualRightWinnerId, costEstimate);
+				bindRetainedRightInput(rootRelationId, states.costCompletionIds[leftStateId], leftRelations,
+						leftContributionRows, prefixCount, states.rows[leftStateId],
+						states.evidenceStateIds[leftStateId],
+						states.costEventIds[leftStateId]);
 				double contextualRightRows = memo.winnerOutputRows(contextualRightWinnerId);
 				/*
 				 * continueRetainedRecipeUnderPrefix evaluated the complete right recipe over this exact left prefix.
@@ -6731,8 +6999,10 @@ final class PackedJoinEnumerator {
 							? physicalJoinEstimate.evidenceStateId()
 							: joinEstimate.evidenceStateId();
 					int contextualExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-					int contextualCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-							states.costVectorIds[leftStateId], memo.winnerCostVectorId(contextualRightWinnerId));
+					int contextualCostVectorId = memo.completeBinaryCostCompletion(contextualMetadataId,
+							physicalJoinEstimate,
+							states.costCompletionIds[leftStateId], memo.winnerCostCompletionId(contextualRightWinnerId),
+							contextualCost);
 					System.arraycopy(rightRelations, 0, leftRelations, prefixCount, rightCount);
 					System.arraycopy(rightContributionRows, 0, leftContributionRows, prefixCount, rightCount);
 					int prefixSnapshotId = memo.internPhysicalPrefixSnapshot(leftRelations, leftContributionRows, 0,
@@ -6882,23 +7152,32 @@ final class PackedJoinEnumerator {
 		joinEstimate.setContextualRows(fallbackRows, fallbackRows);
 		restoreWinnerEstimate(rightWinnerId, costEstimate);
 		if (implementation == JOIN_IMPLEMENTATION) {
+			bindRetainedRightInput(rootRelationId, memo.winnerCostCompletionId(leftWinnerId), contextRelations,
+					contextContributionRows, rightContextCount, rightContextRows, rightContextEvidenceStateId,
+					rightContextCostEventId);
 			retainContextualJoinEvidence(costEstimate, joinEstimate, fallbackRows);
 		}
 		double outputRows = refineIntermediateJoinCandidate(contextRelations, joinPrefixCount, leftRows,
 				rightRows, fallbackRows, winnerEvidenceStateId(leftWinnerId), winnerEvidenceStateId(rightWinnerId),
 				joinEstimate);
+		double leftWork = contextualChildWork(leftWinnerId, contextRows, inputContextId);
+		if (!finiteNonNegative(leftWork)) {
+			return 0;
+		}
 		double totalCost = implementation == HASH_JOIN_IMPLEMENTATION
 				? refineIndependentHashPhysicalCandidate(contextRelations, joinPrefixCount, recipeRelations,
-						recipeOffset + leftCount, rightCount, leftRows, memo.winnerTotalCost(leftWinnerId),
+						recipeOffset + leftCount, rightCount, leftRows, leftWork,
 						rightRows, memo.winnerTotalCost(rightWinnerId), outputRows,
 						winnerEvidenceStateId(leftWinnerId), winnerEvidenceStateId(rightWinnerId), 0.0d,
 						joinEstimate, contextRows)
 				: refinePhysicalJoinCandidate(PackedPhysicalJoinCosting.DEPENDENT_ITERATION, contextRelations,
-						joinPrefixCount, leftRows, memo.winnerTotalCost(leftWinnerId), rightRows,
+						joinPrefixCount, leftRows, leftWork, rightRows,
 						memo.winnerTotalCost(rightWinnerId), outputRows, winnerEvidenceStateId(leftWinnerId),
 						winnerEvidenceStateId(rightWinnerId), 0.0d, joinEstimate, costEstimate);
 		physicalJoinEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
 		certifyCompleteContextualInvocationDomain(physicalJoinEstimate, contextRows);
+		memo.completeBinaryCostCompletion(physicalJoinEstimate, memo.winnerCostCompletionId(leftWinnerId),
+				memo.winnerCostCompletionId(rightWinnerId), totalCost);
 		int metadataId = memo.addPhysicalMetadata(physicalJoinEstimate, outputRows, totalCost);
 		if (metadataId == 0 && budget.resourceLimitReached()) {
 			return 0;
@@ -6916,6 +7195,19 @@ final class PackedJoinEnumerator {
 		requireRetainedCorrelatedTransition(winnerId, physicalExpressionId, metadataId, inputContextId, stateId,
 				outputRows, totalCost);
 		return winnerId;
+	}
+
+	/** Binds a completed RHS recipe to the exact input supplied by its caller, independently of its last leaf event. */
+	private void bindRetainedRightInput(int rootRelationId, int leftCompletion, int[] relations,
+			double[] contributionRows, int count, double rows, int evidenceStateId, int costEventId) {
+		resetInheritedCostContext(relations, count, rows, evidenceStateId, 0, 0,
+				query.relSemanticScope(rootRelationId));
+		int inputContext = memo.internEvidenceContext(relations, contributionRows, 0, count, rows,
+				evidenceStateId, 0, 0, query.relSemanticScope(rootRelationId), costEventId);
+		// Only the winner's existing PROGRAM certificate can qualify quantities here. Its local metadata is not atomic.
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, leftCompletion,
+				inputContext, false);
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 	}
 
 	private int continueRetainedFactorUnderPrefix(int rootRelationId, int factorRelationId, int defaultWinnerId,
@@ -6952,6 +7244,11 @@ final class PackedJoinEnumerator {
 				0, 0, query.relSemanticScope(rootRelationId));
 		setUnrelatedPrefixRows(contextRelations, contextContributionRows, contextCount, factorRelationId);
 		costSession.estimate(factorRelationId, costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+				inputContextId,
+				contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+						memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		outputRows = rowComposition.effectiveRows(costEstimate, contextRelations, contextContributionRows,
 				contextCount, factorRelationId, outputRows);
 		double contributionRows = rowComposition.factorContributionRows();
@@ -7026,6 +7323,13 @@ final class PackedJoinEnumerator {
 			costContext.reset(prefixRelations, 0, prefixCount, states.rows[stateId], states.evidenceStateIds[stateId]);
 			setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factors[factorOrdinal]);
 			costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+			activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
+					states.costCompletionIds[stateId],
+					0,
+					contextualAtomicFactor(factors[factorOrdinal],
+							memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
+									memo.anyPropertyId(), 0, 0, 0)));
+			activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 			candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 					prefixCount, factors[factorOrdinal], candidateRows);
 			factorContributionRows = rowComposition.factorContributionRows();
@@ -7162,18 +7466,18 @@ final class PackedJoinEnumerator {
 		int transitionMetadataId = 0;
 		int operatorMetadataId = 0;
 		int exactContinuationIdentityId = 0;
-		int costVectorId = 0;
+		int costCompletionId = 0;
 		if (costSession != null) {
 			boolean retainsContextualFactorMetadata = factorWinnerId == defaultFactorWinnerId
 					&& physicalImplementation == JOIN_IMPLEMENTATION
 					&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
 					&& (finiteNonNegative(costEstimate.outputRows()) || finiteNonNegative(costEstimate.workRows()));
-			int factorCostVectorId = retainsContextualFactorMetadata
-					? composedPhysicalCostVectorId(costEstimate, candidateRows, factorWork)
-					: memo.winnerCostVectorId(factorWinnerId);
+			int factorCostCompletionId = retainsContextualFactorMetadata
+					? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+					: memo.winnerCostCompletionId(factorWinnerId);
 			exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-			costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-					states.costVectorIds[parentStateId], factorCostVectorId);
+			costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+					states.costCompletionIds[parentStateId], factorCostCompletionId, candidateCost);
 			if (retainsContextualFactorMetadata) {
 				transitionMetadataId = addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork);
 			}
@@ -7186,7 +7490,7 @@ final class PackedJoinEnumerator {
 				factorContributionRows, evidenceStateId, transitionMetadataId, operatorMetadataId,
 				operatorMetadataId == 0 ? 0 : memo.physicalMetadataCostEventId(operatorMetadataId),
 				physicalImplementation, states.singletonStateIds[factorOrdinal], 0, 0,
-				exactContinuationIdentityId, costVectorId, candidateDigest);
+				exactContinuationIdentityId, costCompletionId, candidateDigest);
 	}
 
 	private void emitDenseWinner(int rootRelationId, int[] factors, int terminalStateId, int[] parentStateIds,
@@ -7816,6 +8120,11 @@ final class PackedJoinEnumerator {
 				costContext.reset(prefixRelations, 0, prefixCount, currentRows, currentEvidenceStateId);
 				setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factorRelationId);
 				costSession.estimate(factorRelationId, costContext, costEstimate);
+				activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+						0,
+						contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+								memo.anyPropertyId(), 0, 0, 0)));
+				activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 				outputRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 						prefixCount, factorRelationId, outputRows);
 				factorContributionRows = rowComposition.factorContributionRows();
@@ -7994,13 +8303,12 @@ final class PackedJoinEnumerator {
 			/* This complete operator event was composed under the inherited invocation domain. */
 			costEstimate.setInvocations(pricedInvocations);
 		}
+		double totalWork = completeOperatorWork(inputWork, costEstimate);
 		if (costEstimate.hasExplicitPhysicalCost()
 				&& costEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
-			memo.addWinnerPhysicalCost(inputWinnerId, costEstimate);
+			memo.addWinnerPhysicalCost(inputWinnerId, costEstimate, inputContextId,
+					inputContextId == 0 ? 1.0d : pricedInvocations);
 		}
-		double totalWork = costEstimate.hasExplicitPhysicalCost()
-				? costSession.objectiveScore(costEstimate)
-				: completeOperatorWork(inputWork, costEstimate);
 		childGroups[0] = inputGroupId;
 		int implementationRelationId = scheduledFilterCostingRelationId(filterRelationId, costEstimate);
 		int operator = query.relOperator(implementationRelationId);
@@ -8224,7 +8532,7 @@ final class PackedJoinEnumerator {
 				stateId = states.offerRetainedContinuation(factorBit, factorRows, memo.winnerTotalCost(winnerId),
 						factorRows,
 						winnerEvidenceStateId(winnerId), 0, 0, ordinal, adjacency[ordinal], winnerId, 0, 0, 0,
-						0, memo.winnerCostVectorId(winnerId));
+						0, memo.winnerCostCompletionId(winnerId));
 			}
 			if (stateId == 0) {
 				return 0;
@@ -8278,6 +8586,13 @@ final class PackedJoinEnumerator {
 						setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount,
 								factors[factorOrdinal]);
 						costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+						activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext,
+								states.costCompletionId(stateId),
+								0,
+								contextualAtomicFactor(factors[factorOrdinal],
+										memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
+												memo.anyPropertyId(), 0, 0, 0)));
+						activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 						candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations,
 								prefixContributionRows, prefixCount, factors[factorOrdinal], candidateRows);
 						factorContributionRows = rowComposition.factorContributionRows();
@@ -8374,17 +8689,17 @@ final class PackedJoinEnumerator {
 									&& (finiteNonNegative(costEstimate.outputRows())
 											|| finiteNonNegative(costEstimate.workRows()));
 							int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-							int factorCostVectorId = retainsContextualFactorEvent
-									? composedPhysicalCostVectorId(costEstimate, candidateRows, factorWork)
-									: memo.winnerCostVectorId(factorWinnerId);
-							int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-									states.costVectorId(stateId), factorCostVectorId);
+							int factorCostCompletionId = retainsContextualFactorEvent
+									? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+									: memo.winnerCostCompletionId(factorWinnerId);
+							int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+									states.costCompletionId(stateId), factorCostCompletionId, candidateCost);
 							int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
 									? physicalJoinEstimate.evidenceStateId()
 									: costEstimate.evidenceStateId();
 							if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal, factorWinnerId,
 									candidateRows, candidateCost, factorContributionRows, evidenceStateId,
-									JOIN_IMPLEMENTATION, exactContinuationIdentityId, costVectorId) == 0) {
+									JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
 								int transitionMetadataId = retainsContextualFactorEvent
 										? addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork)
 										: 0;
@@ -8397,7 +8712,7 @@ final class PackedJoinEnumerator {
 										candidateCost, factorContributionRows, evidenceStateId, 0, stateId,
 										factorOrdinal, neighborMask, factorWinnerId, transitionMetadataId,
 										operatorMetadataId, JOIN_IMPLEMENTATION, exactContinuationIdentityId,
-										costVectorId);
+										costCompletionId);
 								if (dependentStateId == 0) {
 									return workUnits;
 								}
@@ -8406,15 +8721,16 @@ final class PackedJoinEnumerator {
 						if (finiteNonNegative(hashCost)) {
 							copyEstimate(independentPhysicalJoinEstimate, physicalJoinEstimate);
 							int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-							int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-									states.costVectorId(stateId), memo.winnerCostVectorId(defaultFactorWinnerId));
+							int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+									states.costCompletionId(stateId),
+									memo.winnerCostCompletionId(defaultFactorWinnerId), hashCost);
 							int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
 									? physicalJoinEstimate.evidenceStateId()
 									: costEstimate.evidenceStateId();
 							if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal,
 									defaultFactorWinnerId, independentHashRows, hashCost, states.rows(factorStateId),
 									evidenceStateId, HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId,
-									costVectorId) == 0) {
+									costCompletionId) == 0) {
 								int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate,
 										independentHashRows, hashCost);
 								if (hashMetadataId == 0 && budget.resourceLimitReached()) {
@@ -8423,7 +8739,7 @@ final class PackedJoinEnumerator {
 								int hashStateId = states.offerRetainedContinuation(combined, independentHashRows,
 										hashCost, states.rows(factorStateId), evidenceStateId, 0, stateId,
 										factorOrdinal, neighborMask, defaultFactorWinnerId, 0, hashMetadataId,
-										HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costVectorId);
+										HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId);
 								if (hashStateId == 0) {
 									return workUnits;
 								}
@@ -8490,6 +8806,12 @@ final class PackedJoinEnumerator {
 		costContext.reset(prefixRelations, 0, prefixCount, states.rows(stateId), states.evidenceStateId(stateId));
 		setUnrelatedPrefixRows(prefixRelations, prefixContributionRows, prefixCount, factors[factorOrdinal]);
 		costSession.estimate(factors[factorOrdinal], costContext, costEstimate);
+		activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, states.costCompletionId(stateId),
+				0,
+				contextualAtomicFactor(factors[factorOrdinal],
+						memo.findWinner(memo.logicalGroupId(factors[factorOrdinal]),
+								memo.anyPropertyId(), 0, 0, 0)));
+		activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 		candidateRows = rowComposition.effectiveRows(costEstimate, prefixRelations, prefixContributionRows,
 				prefixCount, factors[factorOrdinal], candidateRows);
 		double factorContributionRows = rowComposition.factorContributionRows();
@@ -8567,17 +8889,17 @@ final class PackedJoinEnumerator {
 					&& contextualAtomicFactor(factors[factorOrdinal], factorWinnerId)
 					&& (finiteNonNegative(costEstimate.outputRows()) || finiteNonNegative(costEstimate.workRows()));
 			int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-			int factorCostVectorId = retainsContextualFactorEvent
-					? composedPhysicalCostVectorId(costEstimate, candidateRows, factorWork)
-					: memo.winnerCostVectorId(factorWinnerId);
-			int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-					states.costVectorId(stateId), factorCostVectorId);
+			int factorCostCompletionId = retainsContextualFactorEvent
+					? composedPhysicalCostCompletionId(costEstimate, candidateRows, factorWork)
+					: memo.winnerCostCompletionId(factorWinnerId);
+			int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+					states.costCompletionId(stateId), factorCostCompletionId, dependentCost);
 			int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
 					? physicalJoinEstimate.evidenceStateId()
 					: costEstimate.evidenceStateId();
 			if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal, factorWinnerId, candidateRows,
 					dependentCost, factorContributionRows, evidenceStateId, JOIN_IMPLEMENTATION,
-					exactContinuationIdentityId, costVectorId) == 0) {
+					exactContinuationIdentityId, costCompletionId) == 0) {
 				int transitionMetadataId = retainsContextualFactorEvent
 						? addComposedPhysicalMetadata(costEstimate, candidateRows, factorWork)
 						: 0;
@@ -8588,7 +8910,7 @@ final class PackedJoinEnumerator {
 				if (states.offerRetainedContinuation(combined, candidateRows, dependentCost, factorContributionRows,
 						evidenceStateId, 0, stateId, factorOrdinal, neighborMask, factorWinnerId,
 						transitionMetadataId, operatorMetadataId, JOIN_IMPLEMENTATION,
-						exactContinuationIdentityId, costVectorId) == 0) {
+						exactContinuationIdentityId, costCompletionId) == 0) {
 					return workUnits;
 				}
 			}
@@ -8596,14 +8918,14 @@ final class PackedJoinEnumerator {
 		if (finiteNonNegative(hashCost)) {
 			copyEstimate(independentPhysicalJoinEstimate, physicalJoinEstimate);
 			int exactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-			int costVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-					states.costVectorId(stateId), memo.winnerCostVectorId(defaultFactorWinnerId));
+			int costCompletionId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+					states.costCompletionId(stateId), memo.winnerCostCompletionId(defaultFactorWinnerId), hashCost);
 			int evidenceStateId = physicalJoinEstimate.evidenceStateId() != 0
 					? physicalJoinEstimate.evidenceStateId()
 					: costEstimate.evidenceStateId();
 			if (states.findEquivalentRetained(combined, stateId, 0, factorOrdinal, defaultFactorWinnerId,
 					independentHashRows, hashCost, states.rows(factorStateId), evidenceStateId,
-					HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costVectorId) == 0) {
+					HASH_JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
 				int hashMetadataId = memo.addPhysicalMetadata(physicalJoinEstimate, independentHashRows, hashCost);
 				if (hashMetadataId == 0 && budget.resourceLimitReached()) {
 					return workUnits;
@@ -8611,7 +8933,7 @@ final class PackedJoinEnumerator {
 				if (states.offerRetainedContinuation(combined, independentHashRows, hashCost,
 						states.rows(factorStateId), evidenceStateId, 0, stateId, factorOrdinal, neighborMask,
 						defaultFactorWinnerId, 0, hashMetadataId, HASH_JOIN_IMPLEMENTATION,
-						exactContinuationIdentityId, costVectorId) == 0) {
+						exactContinuationIdentityId, costCompletionId) == 0) {
 					return workUnits;
 				}
 			}
@@ -8784,9 +9106,9 @@ final class PackedJoinEnumerator {
 						? alternativePhysicalJoinEstimate.evidenceStateId()
 						: joinEstimate.evidenceStateId();
 				int dependentExactContinuationIdentityId = exactContinuationIdentity(alternativePhysicalJoinEstimate);
-				int dependentCostVectorId = memo.completeBinaryPhysicalCostVectorId(
-						alternativePhysicalJoinEstimate, states.costVectorId(leftStateId),
-						states.costVectorId(rightStateId));
+				int dependentCostVectorId = memo.completeBinaryCostCompletion(
+						alternativePhysicalJoinEstimate, states.costCompletionId(leftStateId),
+						states.costCompletionId(rightStateId), dependentCost);
 				if (states.findEquivalentRetained(combined, leftStateId, rightStateId, -1, 0,
 						candidateRows, dependentCost, states.rows(rightStateId), dependentEvidenceStateId,
 						JOIN_IMPLEMENTATION, dependentExactContinuationIdentityId, dependentCostVectorId) == 0) {
@@ -8816,8 +9138,8 @@ final class PackedJoinEnumerator {
 						? physicalJoinEstimate.evidenceStateId()
 						: joinEstimate.evidenceStateId();
 				int hashExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-				int hashCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-						states.costVectorId(leftStateId), states.costVectorId(rightStateId));
+				int hashCostVectorId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+						states.costCompletionId(leftStateId), states.costCompletionId(rightStateId), hashCost);
 				if (states.findEquivalentRetained(combined, leftStateId, rightStateId, -1, 0, hashRows,
 						hashCost, states.rows(rightStateId), hashEvidenceStateId, HASH_JOIN_IMPLEMENTATION,
 						hashExactContinuationIdentityId, hashCostVectorId) == 0) {
@@ -8850,6 +9172,10 @@ final class PackedJoinEnumerator {
 					continue;
 				}
 				restoreWinnerEstimate(contextualRightWinnerId, costEstimate);
+				bindRetainedRightInput(rootRelationId, states.costCompletionId(leftStateId), leftRelations,
+						leftContributionRows, prefixCount, states.rows(leftStateId),
+						states.evidenceStateId(leftStateId),
+						leftCostEventId);
 				double contextualRightRows = memo.winnerOutputRows(contextualRightWinnerId);
 				double contextualFallbackRows = contextualRightRows;
 				joinEstimate.clear();
@@ -8879,8 +9205,9 @@ final class PackedJoinEnumerator {
 						? physicalJoinEstimate.evidenceStateId()
 						: joinEstimate.evidenceStateId();
 				int contextualExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-				int contextualCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-						states.costVectorId(leftStateId), memo.winnerCostVectorId(contextualRightWinnerId));
+				int contextualCostVectorId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+						states.costCompletionId(leftStateId), memo.winnerCostCompletionId(contextualRightWinnerId),
+						contextualCost);
 				if (states.findEquivalentRetained(combined, leftStateId, rightStateId, -1, 0, contextualRows,
 						contextualCost, contextualRightRows, contextualEvidenceStateId, JOIN_IMPLEMENTATION,
 						contextualExactContinuationIdentityId, contextualCostVectorId) == 0) {
@@ -9098,7 +9425,7 @@ final class PackedJoinEnumerator {
 			int winnerId = memo.findWinner(groupId, anyPropertyId, 0, 0, 0);
 			if (nodeSetId == 0 || states.addSingleton(nodeSetId, ordinal, winnerId, selectedRowsByGroup[groupId],
 					memo.winnerTotalCost(winnerId), winnerEvidenceStateId(winnerId),
-					memo.winnerCostVectorId(winnerId)) == 0) {
+					memo.winnerCostCompletionId(winnerId)) == 0) {
 				return workUnits;
 			}
 		}
@@ -9236,12 +9563,13 @@ final class PackedJoinEnumerator {
 							? physicalJoinEstimate.evidenceStateId()
 							: joinEstimate.evidenceStateId();
 					int exactContinuationIdentityId = exactContinuationIdentity(alternativePhysicalJoinEstimate);
-					int costVectorId = memo.completeBinaryPhysicalCostVectorId(alternativePhysicalJoinEstimate,
-							states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
+					int costCompletionId = memo.completeBinaryCostCompletion(alternativePhysicalJoinEstimate,
+							states.costCompletionIds[leftStateId], states.costCompletionIds[rightStateId],
+							candidateCost);
 					if (states.findEquivalentWithExactContinuationIdentity(combinedNodeSetId, leftStateId,
 							rightStateId, -1, 0,
 							evidenceStateId, candidateRows, candidateCost, states.rows[rightStateId],
-							JOIN_IMPLEMENTATION, exactContinuationIdentityId, costVectorId) == 0) {
+							JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
 						operatorMetadataId = memo.addPhysicalMetadata(alternativePhysicalJoinEstimate,
 								candidateRows, candidateCost);
 						if (operatorMetadataId == 0 && budget.resourceLimitReached()) {
@@ -9250,7 +9578,7 @@ final class PackedJoinEnumerator {
 						if (states.appendWithExactContinuationIdentity(combinedNodeSetId, leftStateId,
 								rightStateId, -1, 0, candidateRows,
 								candidateCost, states.rows[rightStateId], evidenceStateId, operatorMetadataId,
-								JOIN_IMPLEMENTATION, exactContinuationIdentityId, costVectorId) == 0) {
+								JOIN_IMPLEMENTATION, exactContinuationIdentityId, costCompletionId) == 0) {
 							return false;
 						}
 					}
@@ -9267,8 +9595,8 @@ final class PackedJoinEnumerator {
 							? physicalJoinEstimate.evidenceStateId()
 							: joinEstimate.evidenceStateId();
 					int hashExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-					int hashCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-							states.costVectorIds[leftStateId], states.costVectorIds[rightStateId]);
+					int hashCostVectorId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+							states.costCompletionIds[leftStateId], states.costCompletionIds[rightStateId], hashCost);
 					if (states.findEquivalentWithExactContinuationIdentity(combinedNodeSetId, leftStateId,
 							rightStateId, -1, 0,
 							hashEvidenceStateId, hashRows, hashCost, states.rows[rightStateId],
@@ -9303,6 +9631,10 @@ final class PackedJoinEnumerator {
 						continue;
 					}
 					restoreWinnerEstimate(contextualRightWinnerId, costEstimate);
+					bindRetainedRightInput(rootRelationId, states.costCompletionIds[leftStateId], prefixRelations,
+							prefixContributionRows, prefixCount, states.rows[leftStateId],
+							states.evidenceStateIds[leftStateId],
+							leftCostEventId);
 					double contextualRightRows = memo.winnerOutputRows(contextualRightWinnerId);
 					double contextualFallbackRows = contextualRightRows;
 					joinEstimate.clear();
@@ -9332,8 +9664,9 @@ final class PackedJoinEnumerator {
 							? physicalJoinEstimate.evidenceStateId()
 							: joinEstimate.evidenceStateId();
 					int contextualExactContinuationIdentityId = exactContinuationIdentity(physicalJoinEstimate);
-					int contextualCostVectorId = memo.completeBinaryPhysicalCostVectorId(physicalJoinEstimate,
-							states.costVectorIds[leftStateId], memo.winnerCostVectorId(contextualRightWinnerId));
+					int contextualCostVectorId = memo.completeBinaryCostCompletion(physicalJoinEstimate,
+							states.costCompletionIds[leftStateId], memo.winnerCostCompletionId(contextualRightWinnerId),
+							contextualCost);
 					if (states.findEquivalentWithExactContinuationIdentity(combinedNodeSetId, leftStateId,
 							rightStateId, -1, 0, contextualEvidenceStateId, contextualRows, contextualCost,
 							contextualRightRows, JOIN_IMPLEMENTATION, contextualExactContinuationIdentityId,
@@ -9823,6 +10156,11 @@ final class PackedJoinEnumerator {
 				costContext.reset(costPrefix, 0, costPrefixCount, currentRows, currentEvidenceStateId);
 				setUnrelatedPrefixRows(costPrefix, retainedPrefixContributions, costPrefixCount, factorRelationId);
 				costSession.estimate(factorRelationId, costContext, costEstimate);
+				activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+						0,
+						contextualAtomicFactor(factorRelationId, memo.findWinner(memo.logicalGroupId(factorRelationId),
+								memo.anyPropertyId(), 0, 0, 0)));
+				activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 				outputRows = rowComposition.effectiveRows(costEstimate, costPrefix, retainedPrefixContributions,
 						costPrefixCount, factorRelationId, outputRows);
 				if (Double.isFinite(costEstimate.workRows()) && costEstimate.workRows() >= 0.0d) {
@@ -10095,8 +10433,7 @@ final class PackedJoinEnumerator {
 			return Double.POSITIVE_INFINITY;
 		}
 		PackedCostEstimate rightEstimate = null;
-		if (implementation == PackedPhysicalJoinCosting.DEPENDENT_ITERATION
-				&& memo.winnerInputContextId(rightWinnerId) != 0) {
+		if (implementation == PackedPhysicalJoinCosting.DEPENDENT_ITERATION) {
 			rightEstimate = contextualDefaultEstimate();
 			restoreWinnerEstimate(rightWinnerId, rightEstimate);
 			/*
@@ -10104,7 +10441,16 @@ final class PackedJoinEnumerator {
 			 * Its state therefore already describes this JOIN candidate; treating it as an isolated right-child state
 			 * would compose the left prefix twice and detach the winner from the event that priced it.
 			 */
-			retainContextualJoinEvidence(rightEstimate, logicalEstimate, outputRows);
+			if (memo.winnerInputContextId(rightWinnerId) != 0) {
+				retainContextualJoinEvidence(rightEstimate, logicalEstimate, outputRows);
+			} else {
+				// A default winner is an isolated price, never a certificate for a future prefix.
+				rightEstimate.setContextualScalarWork(false);
+				if (!contextualAtomicFactor(rightRelationId, rightWinnerId)) {
+					// Internal composite invocations do not price future outer-prefix executions of this whole UNIT.
+					rightEstimate = null;
+				}
+			}
 		}
 		double totalCost = implementation == PackedPhysicalJoinCosting.INDEPENDENT_HASH
 				? refineIndependentHashPhysicalCandidate(leftRelations, leftCount, rightRelationId,
@@ -10236,6 +10582,10 @@ final class PackedJoinEnumerator {
 			int leftEvidenceStateId, int rightEvidenceStateId, double dependentProbeWork,
 			PackedCostEstimate logicalEstimate, double executionPartitions, PackedCostEstimate rightEstimate,
 			int hashLookupMaskId, int hashCompatibilityMaskId) {
+		int expectedRightFrame = memo.matchesCostInputFrame(activeFactorInputFrame, activeFactorInputContext)
+				&& memo.matchesCostInputLeft(activeFactorInputFrame, prefixRelations, prefixCount,
+						leftRows, leftEvidenceStateId) ? activeFactorInputFrame : 0;
+		int expectedRightSource = activeFactorSourceCompletion;
 		copyEstimate(logicalEstimate, physicalJoinEstimate);
 		if (logicalEstimate.hasComponentOutputRows()) {
 			physicalJoinEstimate.setComponentOutputRowsPreservingPhysicalCost(outputRows);
@@ -10292,45 +10642,80 @@ final class PackedJoinEnumerator {
 			physicalJoinEstimate.putPlannedStringMetric("optimizer.dependentCostSource",
 					"inherited-prefix");
 		}
+		physicalJoinEstimate.setPlannerRightExecution(expectedRightFrame, expectedRightSource, implementation,
+				executionPartitions);
 		double localObjective = costSession.objectiveScore(physicalJoinEstimate);
 		return saturatedAdd(leftWork, effectiveRightWork,
 				saturatedAdd(localObjective, effectiveDependentProbeWork, 0.0d));
 	}
 
+	double contextualChildWork(int winnerId, double requiredInvocations, int expectedInputContextId) {
+		if (contextualChildEstimate == null) {
+			contextualChildEstimate = new PackedCostEstimate();
+		}
+		PackedCostEstimate estimate = contextualChildEstimate;
+		restoreWinnerEstimate(winnerId, estimate);
+		int inputContextId = memo.winnerInputContextId(winnerId);
+		if (inputContextId != 0 && inputContextId != expectedInputContextId) {
+			// Exact memo contexts include population and frame; an old price cannot certify this input.
+			return Double.POSITIVE_INFINITY;
+		}
+		if (inputContextId == 0) {
+			estimate.setContextualScalarWork(false);
+		}
+		double work = memo.winnerTotalCost(winnerId);
+		int sourceRelationId = memo.physicalSourceLogicalExpressionId(memo.winnerPhysicalExpressionId(winnerId));
+		boolean atomic = memo.winnerChildCount(winnerId) == 0
+				|| sourceRelationId > 0 && sourceRelationId <= query.relationCount()
+						&& contextualAtomicFactor(sourceRelationId, winnerId);
+		double partitions;
+		if (!atomic && inputContextId == 0) {
+			// A composite's internal invocation annotation is not an outer-prefix price certificate.
+			partitions = Math.max(1.0d, requiredInvocations);
+			estimate = null;
+		} else {
+			partitions = dependentReopenMultiplier(requiredInvocations, estimate);
+		}
+		if (partitions <= 1.0d) {
+			return work;
+		}
+		if (!atomic && estimate != null && estimate.costScope() != PackedCostEstimate.CostScope.INCLUSIVE
+				&& !estimate.hasDependentCostComponents()) {
+			// LOCAL describes this operator, while work is the immutable complete winner objective.
+			estimate = null;
+		}
+		return dependentReopenWork(estimate, work, partitions);
+	}
+
 	private double dependentReopenWork(PackedCostEstimate estimate, double fallbackWork,
 			double executionPartitions) {
 		if (estimate != null && estimate.hasDependentCostComponents()) {
-			/* Repeat only the still-unpriced batches; the explicit startup remains query-global. */
-			dependentReopenStartupWork = Math.min(fallbackWork, estimate.startupOnceWork());
-			dependentReopenPerInvocationWork = Math.max(0.0d, fallbackWork - dependentReopenStartupWork);
-			dependentReopenFixedWork = 0.0d;
-			return saturatedAdd(dependentReopenStartupWork,
-					saturatedMultiply(dependentReopenPerInvocationWork, executionPartitions), 0.0d);
-		}
-		if (estimate != null && estimate.hasExplicitPhysicalCost()) {
-			/*
-			 * Whole-prefix result rows already include the inherited execution domain and remain fixed. Component rows
-			 * describe only the disconnected component containing this factor, so every unrelated outer partition emits
-			 * them again just as it repeats scans, seeks, and opens.
-			 */
+			dependentReopenStartupWork = estimate.startupOnceWork();
+			dependentReopenFixedWork = estimate.memorySpillWork()
+					+ (estimate.hasComponentOutputRows() ? 0.0d : estimate.outputWork());
+			dependentReopenPerInvocationWork = fallbackWork - dependentReopenStartupWork - dependentReopenFixedWork;
+			if (finiteNonNegative(dependentReopenPerInvocationWork)) {
+				return saturatedAdd(dependentReopenStartupWork,
+						saturatedMultiply(dependentReopenPerInvocationWork, executionPartitions),
+						dependentReopenFixedWork);
+			}
+			// The calibrated whole price cannot certify this decomposition; use the complete UNIT fallback below.
+		} else if (estimate != null && estimate.hasExplicitPhysicalCost()) {
 			boolean repeatResultRows = estimate.hasComponentOutputRows();
-			PackedCostEstimate reopenEstimate = dependentReopenEstimate();
-			reopenEstimate.clear();
-			reopenEstimate.setInclusivePhysicalCost(
-					estimate.sequentialRows(), estimate.randomSeeks(), estimate.iteratorOpens(),
-					estimate.expressionEvaluations(), estimate.hashBuildRows(), estimate.hashProbeRows(),
-					estimate.pathExpansions(), repeatResultRows ? estimate.resultRows() : 0.0d,
-					estimate.remoteCalls(), 0.0d);
-			dependentReopenStartupWork = 0.0d;
-			dependentReopenPerInvocationWork = objectiveWork(reopenEstimate);
-			reopenEstimate.clear();
-			reopenEstimate.setInclusivePhysicalCost(
-					0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
+			PackedCostEstimate fixed = dependentReopenEstimate();
+			fixed.clear();
+			fixed.setInclusivePhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
 					repeatResultRows ? 0.0d : estimate.resultRows(), 0.0d, estimate.peakMemoryRows());
-			dependentReopenFixedWork = objectiveWork(reopenEstimate);
-			return saturatedAdd(dependentReopenStartupWork,
-					saturatedMultiply(dependentReopenPerInvocationWork, executionPartitions),
-					dependentReopenFixedWork);
+			dependentReopenStartupWork = 0.0d;
+			dependentReopenFixedWork = objectiveWork(fixed);
+			// Keep either sign of calibration in the complete repeating price. No vector residual clamp.
+			dependentReopenPerInvocationWork = fallbackWork - dependentReopenFixedWork;
+			if (finiteNonNegative(dependentReopenPerInvocationWork)) {
+				return saturatedAdd(0.0d,
+						saturatedMultiply(dependentReopenPerInvocationWork, executionPartitions),
+						dependentReopenFixedWork);
+			}
+			// No residual clamp or fabricated physical quantity: preserve the complete price as a UNIT.
 		}
 		dependentReopenStartupWork = Math.min(Math.max(0.0d, fallbackWork), 1.0d);
 		dependentReopenPerInvocationWork = Math.max(0.0d, fallbackWork - dependentReopenStartupWork);
@@ -10349,7 +10734,7 @@ final class PackedJoinEnumerator {
 		 * only an invocation stamp or dependent component profile proves how much of the domain it priced. Component
 		 * estimates likewise repeat across unrelated partitions.
 		 */
-		if (estimate != null && estimate.hasContextualOutputRows() && !estimate.hasComponentOutputRows()
+		if (estimate != null && estimate.hasContextualScalarWork()
 				&& !estimate.hasExplicitPhysicalCost()) {
 			return 1.0d;
 		}
@@ -10760,7 +11145,10 @@ final class PackedJoinEnumerator {
 		int anyPropertyId = memo.anyPropertyId();
 		int inputGroupId = memo.winnerGroupId(inputWinnerId);
 		double inputRows = memo.winnerOutputRows(inputWinnerId);
-		double inputWork = memo.winnerTotalCost(inputWinnerId);
+		double inputWork = contextualChildWork(inputWinnerId, prefixRows, inputContextId);
+		if (!finiteNonNegative(inputWork)) {
+			return memo.findWinner(memo.logicalGroupId(filterRelationId), anyPropertyId, 0, 0, 0);
+		}
 		/* Predicate output is bounded by its input; provider evidence below may tighten this event-time bound. */
 		double outputRows = inputRows;
 		double totalWork = saturatedAdd(inputWork, 0.0d, outputRows);
@@ -10880,6 +11268,12 @@ final class PackedJoinEnumerator {
 			setUnrelatedPrefixRows(retainedPrefixRelations, retainedPrefixContributions, retainedPrefixCount,
 					candidateRelationId);
 			costSession.estimate(candidateRelationId, costContext, costEstimate);
+			activeFactorInputFrame = captureFactorPhysicalCost(costEstimate, costContext, 0,
+					0,
+					contextualAtomicFactor(candidateRelationId,
+							memo.findWinner(memo.logicalGroupId(candidateRelationId),
+									memo.anyPropertyId(), 0, 0, 0)));
+			activeFactorSourceCompletion = memo.plannerCostCompletionId(costEstimate);
 			outputRows = rowComposition.effectiveRows(costEstimate, retainedPrefixRelations,
 					retainedPrefixContributions, retainedPrefixCount, candidateRelationId, outputRows);
 			double contributionRows = rowComposition.factorContributionRows();
@@ -10996,16 +11390,24 @@ final class PackedJoinEnumerator {
 					"only a complete contextual estimate can certify its invocation domain");
 		}
 		/*
-		 * This is a proof attached at the composition boundary, not an estimate: every child and this operator have
-		 * already been priced over the inherited input relation. A dependent parent can therefore reuse the complete
-		 * vector without reopening it. Atomic provider vectors are deliberately not stamped here; their own access or
-		 * dependent-component metadata remains the sole proof of how many invocations they priced.
+		 * Every child and this operator have already contributed their complete price for the inherited input. The memo
+		 * TOTAL covers that domain. Physical dimensions stay LOCAL when all-child aggregation was not certified; this
+		 * stamp cannot turn that partial vector into an INCLUSIVE one. Atomic providers keep their own invocation and
+		 * dependent-component declarations.
 		 */
 		estimate.setInvocations(pricedInvocations);
+		estimate.setContextualScalarWork(true);
 	}
 
-	private int composedPhysicalCostVectorId(PackedCostEstimate estimate, double outputRows, double workRows) {
-		return memo.physicalCostVectorId(prepareComposedMetadataEstimate(estimate, outputRows, workRows));
+	private int captureFactorPhysicalCost(PackedCostEstimate estimate, PackedCostContext context,
+			int parent, int inputContext, boolean atomic) {
+		// Retain the actual factor-input facts separately from the later operator-refinement context.
+		activeFactorInputContext.copyFrom(context);
+		return memo.captureFactorPhysicalCost(estimate, context, parent, inputContext, atomic);
+	}
+
+	private int composedPhysicalCostCompletionId(PackedCostEstimate estimate, double outputRows, double workRows) {
+		return memo.plannerCostCompletionId(prepareComposedMetadataEstimate(estimate, outputRows, workRows));
 	}
 
 	private PackedCostEstimate prepareComposedMetadataEstimate(PackedCostEstimate estimate, double outputRows,
@@ -11016,6 +11418,7 @@ final class PackedJoinEnumerator {
 			composedEstimate.setContextualOutputRowsPreservingPhysicalCost(outputRows);
 		} else {
 			composedEstimate.setContextualRows(outputRows, workRows);
+			composedEstimate.setContextualScalarWork(estimate.hasContextualScalarWork());
 			composedEstimate.setReplacesChildWork(estimate.replacesChildWork());
 		}
 		return composedEstimate;
@@ -11043,7 +11446,8 @@ final class PackedJoinEnumerator {
 		int metadataId = memo.winnerPhysicalMetadataId(winnerId);
 		destination.clear();
 		if (metadataId == 0) {
-			destination.setContextualRows(memo.winnerOutputRows(winnerId), memo.winnerTotalCost(winnerId));
+			destination.setRows(memo.winnerOutputRows(winnerId), memo.winnerTotalCost(winnerId));
+			destination.setContextualOutputRowsPreservingPhysicalCost(destination.outputRows());
 			return;
 		}
 		destination.setContextualRows(memo.physicalMetadataOutputRows(metadataId),

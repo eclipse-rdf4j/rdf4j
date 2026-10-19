@@ -38,10 +38,17 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.assertj.core.groups.Tuple;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.FedXFactory;
+import org.eclipse.rdf4j.federated.algebra.ExclusiveStatement;
 import org.eclipse.rdf4j.federated.algebra.FedXZeroLengthPath;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
 import org.eclipse.rdf4j.federated.algebra.NUnion;
+import org.eclipse.rdf4j.federated.algebra.ResolvedGraphSelection;
+import org.eclipse.rdf4j.federated.algebra.StatementSource;
+import org.eclipse.rdf4j.federated.algebra.StatementSource.StatementSourceType;
+import org.eclipse.rdf4j.federated.algebra.StatementSourcePattern;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
+import org.eclipse.rdf4j.federated.endpoint.EndpointBase;
+import org.eclipse.rdf4j.federated.endpoint.EndpointConfiguration;
 import org.eclipse.rdf4j.federated.endpoint.EndpointFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
@@ -66,13 +73,16 @@ import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -137,6 +147,108 @@ class FedXRemoteBlankNodeGraphTest {
 	void transportVariantsPreserveEndpointScopedGraphNames(String transport) throws Exception {
 		initialize(transport);
 		assertBlankGraphRows(query("SELECT ?g ?s ?o WHERE { GRAPH ?g { ?s <urn:p> ?o } }"), 1);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = { "mixed", "mixed-reversed" })
+	void mixedMemberOrderPreservesSelectedGraphCompositions(String transport) throws Exception {
+		initialize(transport);
+		for (String body : List.of(
+				"?s <urn:p> ?o",
+				"?s <urn:p> ?o . OPTIONAL { ?s <urn:q> ?marker }",
+				"?s <urn:p> ?o . FILTER EXISTS { ?s <urn:q> ?marker }",
+				"?s <urn:p> ?o . FILTER NOT EXISTS { ?s <urn:absent> ?missing }",
+				"?s <urn:p> ?o . MINUS { ?s <urn:absent> ?missing }",
+				"{ ?s <urn:p> ?o } UNION { ?s <urn:absent> ?o }",
+				"{ SELECT ?s ?o WHERE { ?s <urn:p> ?o } }",
+				"?s <urn:p> ?o . GRAPH <urn:shared> { ?start <urn:r> ?middle . ?middle <urn:t> ?end }")) {
+			assertMixedGraphRows(query("SELECT ?g ?s ?o WHERE { GRAPH ?g { " + body + " } }"), 1);
+		}
+		assertMixedGraphRows(query("SELECT ?g ?s ?o WHERE { VALUES ?copy { 1 1 } "
+				+ "GRAPH ?g { ?s <urn:p> ?o } GRAPH ?g { ?s <urn:q> ?marker } }"), 2);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void mixedNativeGraphSelectionRetainsEachOwningMember(boolean snapshotOwned) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			RemoteGraphSnapshot snapshot = strategy.getGraphSnapshot(endpoints.getFirst());
+			Resource graph = snapshotOwned
+					? snapshot.graphNames().stream().filter(BNode.class::isInstance).findFirst().orElseThrow()
+					: (Resource) new EndpointIdentity(endpoints.getLast(), info).incoming(GRAPH);
+			RemoteBNode.Provenance provenance = ((RemoteBNode) graph).getProvenance();
+			assertThat(provenance.identityScope()).isSameAs(snapshotOwned ? snapshot : second.getSail());
+			assertThat(provenance.canonicalResultID()).isEqualTo(!snapshotOwned);
+			StatementSourcePattern expression = new StatementSourcePattern(
+					new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o")), info);
+			expression.setResolvedGraphSelection(new ResolvedGraphSelection(graph, graph, false));
+			for (Endpoint endpoint : endpoints) {
+				expression.addStatementSource(new StatementSource(endpoint.getId(), StatementSourceType.REMOTE));
+			}
+			try (var rows = strategy.precompile(expression).evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(QueryResults.asList(rows)).extracting(row -> tuple(row.getValue("s"), row.getValue("o")))
+						.containsExactly(
+								tuple(snapshotOwned ? A : B, VF.createLiteral(snapshotOwned ? "left" : "right")));
+			}
+		} finally {
+			info.close();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void capturedGraphDoesNotAuthorizeForeignCanonicalBodyBindings(boolean nestedTriple) throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			Resource graph = strategy.getGraphSnapshot(endpoints.getFirst())
+					.graphNames()
+					.stream()
+					.filter(BNode.class::isInstance)
+					.findFirst()
+					.orElseThrow();
+			Resource foreign = (Resource) new EndpointIdentity(endpoints.getLast(), info)
+					.incoming(VF.createBNode("foreign-body-term"));
+			QueryBindingSet bindings = new QueryBindingSet();
+			bindings.addBinding("s", nestedTriple ? VF.createTripleTerm(foreign, P, foreign) : foreign);
+			ExclusiveStatement expression = selectedGraph(graph, info, endpoints.getFirst());
+			assertThatThrownBy(() -> {
+				try (var rows = strategy.precompile(expression).evaluate(bindings)) {
+					QueryResults.asList(rows);
+				}
+			}).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("Unsupported blank-node identity");
+		} finally {
+			info.close();
+		}
+	}
+
+	@Test
+	void releasedSnapshotCannotExcludeSelectedCanonicalGraph() throws Exception {
+		initialize("mixed");
+		var context = federation.getFederationContext();
+		var strategy = context.createStrategy(null);
+		var info = new QueryInfo(null, null, QueryType.SELECT, 0, false, context, strategy, null);
+		try {
+			strategy.prepareGraphSnapshots(endpoints, info);
+			Resource graph = (Resource) new EndpointIdentity(endpoints.getLast(), info).incoming(GRAPH);
+			strategy.getGraphSnapshot(endpoints.getFirst()).release();
+			ExclusiveStatement expression = selectedGraph(graph, info, endpoints.getFirst());
+			assertThatThrownBy(() -> {
+				try (var rows = strategy.precompile(expression).evaluate(EmptyBindingSet.getInstance())) {
+					QueryResults.asList(rows);
+				}
+			}).isInstanceOf(QueryEvaluationException.class).hasMessageContaining("released");
+		} finally {
+			info.close();
+		}
 	}
 
 	@ParameterizedTest
@@ -579,13 +691,27 @@ class FedXRemoteBlankNodeGraphTest {
 			right.add(VF.createIRI("urn:middle"), VF.createIRI("urn:t"), VF.createIRI("urn:end"), SHARED);
 		}
 		Repository left = transport.equals("local") ? first : remote(first, "one", transport.equals("http"));
-		Repository right = transport.equals("mixed") || transport.equals("local") ? second
+		Repository right = transport.equals("mixed") || transport.equals("mixed-reversed") || transport.equals("local")
+				? second
 				: remote(second, "two", transport.equals("http"));
 		if (transport.equals("wrapped-sparql")) {
 			left = wrapped(left, "one");
 			right = wrapped(right, "two");
 		}
 		endpoints = List.of(EndpointFactory.loadEndpoint("one", left), EndpointFactory.loadEndpoint("two", right));
+		if (transport.equals("mixed-reversed")) {
+			endpoints = List.of(endpoints.getLast(), endpoints.getFirst());
+		}
+		if (transport.equals("http")) {
+			for (int index = 0; index < endpoints.size(); index++) {
+				// The in-process protocol fixture returns stable IDs from these exact stores, unlike standard SPARQL.
+				EndpointConfiguration configuration = mock(EndpointConfiguration.class);
+				when(configuration.supportsBlankNodeReferences()).thenReturn(true);
+				when(configuration.supportsCanonicalBNodeIDs()).thenReturn(true);
+				when(configuration.getBNodeIdentityScope()).thenReturn(index == 0 ? first.getSail() : second.getSail());
+				((EndpointBase) endpoints.get(index)).setEndpointConfiguration(configuration);
+			}
+		}
 		federation = FedXFactory.newFederation()
 				.withMembers(endpoints)
 				.create();
@@ -765,6 +891,29 @@ class FedXRemoteBlankNodeGraphTest {
 		try (RepositoryConnection connection = federation.getConnection();
 				var rows = connection.prepareTupleQuery(text).evaluate()) {
 			return QueryResults.asList(rows);
+		}
+	}
+
+	private static ExclusiveStatement selectedGraph(Resource graph, QueryInfo info, Endpoint endpoint) {
+		ExclusiveStatement expression = new ExclusiveStatement(
+				new StatementPattern(Var.of("s"), Var.of("p", P), Var.of("o")),
+				new StatementSource(endpoint.getId(), StatementSourceType.REMOTE), info);
+		expression.setResolvedGraphSelection(new ResolvedGraphSelection(graph, graph, false));
+		return expression;
+	}
+
+	private void assertMixedGraphRows(List<BindingSet> rows, int copies) {
+		assertBlankGraphRows(rows, copies);
+		for (BindingSet row : rows) {
+			RemoteBNode.Provenance provenance = ((RemoteBNode) row.getValue("g")).getProvenance();
+			if (row.getValue("s").equals(A)) {
+				assertThat(provenance.identityScope()).isInstanceOf(RemoteGraphSnapshot.class);
+				assertThat(provenance.canonicalResultID()).isFalse();
+			} else {
+				assertThat(provenance.identityScope()).isSameAs(second.getSail());
+				assertThat(provenance.remoteID()).isEqualTo(GRAPH.getID());
+				assertThat(provenance.canonicalResultID()).isTrue();
+			}
 		}
 	}
 

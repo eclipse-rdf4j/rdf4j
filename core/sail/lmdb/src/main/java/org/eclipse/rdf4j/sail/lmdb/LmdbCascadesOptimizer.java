@@ -25,8 +25,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
@@ -402,7 +400,7 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			LmdbPackedCostModel packedCostModel, LmdbPackedPredicateRangeProvider rangeProvider,
 			LmdbEstimatorRuntime runtime) {
 		long dataRevision = runtime == null ? 0L : runtime.snapshotVersion();
-		long datasetFingerprint = unsignedHash(dataset);
+		long datasetFingerprint = unsignedHash(LmdbPipelinePlanCache.DatasetIdentity.of(dataset));
 		long bindingShapeFingerprint = bindings == null ? 0L : unsignedHash(bindings.getBindingNames());
 		long parameterVariant = bindingFingerprint(bindings);
 		long goalFingerprint = goalFingerprint(goal);
@@ -417,7 +415,8 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 
 	private static boolean datasetUsesStoreDefaults(Dataset dataset) {
 		return dataset == null
-				|| dataset.getDefaultGraphs().isEmpty() && dataset.getNamedGraphs().isEmpty();
+				|| !dataset.isExplicitReadDataset() && dataset.getDefaultGraphResources().isEmpty()
+						&& dataset.getNamedGraphResources().isEmpty();
 	}
 
 	private static long goalFingerprint(OptimizationGoal goal) {
@@ -442,28 +441,9 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			return 0L;
 		}
 		long hash = 0x243f6a8885a308d3L;
-		for (String name : bindings.getBindingNames().stream().sorted().toList()) {
-			hash = mixCacheHash(hash, Integer.toUnsignedLong(name.hashCode()));
-			hash = mixCacheHash(hash, valueFingerprint(bindings.getValue(name)));
-		}
-		return hash;
-	}
-
-	private static long valueFingerprint(Value value) {
-		if (value == null) {
-			return 0L;
-		}
-		long hash = Integer.toUnsignedLong(value.getType().ordinal() + 1);
-		if (value instanceof TripleTerm triple) {
-			hash = mixCacheHash(hash, valueFingerprint(triple.getSubject()));
-			hash = mixCacheHash(hash, valueFingerprint(triple.getPredicate()));
-			return mixCacheHash(hash, valueFingerprint(triple.getObject()));
-		}
-		hash = mixCacheHash(hash, Integer.toUnsignedLong(value.stringValue().hashCode()));
-		if (value instanceof Literal literal) {
-			hash = mixCacheHash(hash, Integer.toUnsignedLong(literal.getDatatype().stringValue().hashCode()));
-			hash = mixCacheHash(hash,
-					Integer.toUnsignedLong(literal.getLanguage().map(String::hashCode).orElse(0)));
+		for (LmdbPipelinePlanCache.BoundValue value : LmdbPipelinePlanCache.BindingIdentity.of(bindings).values()) {
+			hash = mixCacheHash(hash, Integer.toUnsignedLong(value.name().hashCode()));
+			hash = mixCacheHash(hash, Integer.toUnsignedLong(value.identity().hashCode()));
 		}
 		return hash;
 	}

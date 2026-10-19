@@ -102,12 +102,15 @@ class LmdbIndependentFiniteAnchorJoinPlanningTest {
 				assertTrue(executionOrder.indexOf("anchor-u") < bridgeIndex
 						&& executionOrder.indexOf("anchor-v") < bridgeIndex,
 						"Independent finite user anchors should be combined before the follows bridge so the bridge "
-								+ "uses direct lookup instead of a one-sided prefix scan. order=" + executionOrder
+								+ "binds the full SPO prefix instead of a one-sided range. order=" + executionOrder
 								+ ", plan=" + optimized);
 
-				assertEquals("directLookup",
+				assertEquals("prefixScan",
 						bridge.getStringMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_ACCESS_MODE),
-						"Follows bridge should use both finite domains as a direct lookup: " + bridge);
+						"Both finite domains bind SPO; the absent context keeps the physical access a range: "
+								+ bridge);
+				assertEquals(3.0d, bridge.getDoubleMetricPlanned(TelemetryMetricNames.PLANNED_INDEX_PREFIX_LENGTH),
+						0.0d, "The physical range retains the complete three-component SPO prefix");
 				assertEquals("[S, P, O]",
 						bridge.getStringMetricPlanned(TelemetryMetricNames.PLANNED_LOOKUP_COMPONENTS),
 						"Follows bridge should bind subject, predicate, and object: " + bridge);

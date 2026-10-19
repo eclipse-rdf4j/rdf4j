@@ -48,18 +48,33 @@ final class PackedPhysicalJoinCosting {
 
 	static void refine(PackedCostSession session, int implementation, PackedCostContext context,
 			double executionPartitions, PackedCostEstimate output) {
-		applyRawPhysicalCost(implementation, context, executionPartitions, output);
+		if (implementation == MEMOIZED_CORRELATED) {
+			applyMemoizedCorrelatedCost(session, context, output, null, null);
+		} else {
+			applyRawPhysicalCost(implementation, context, executionPartitions, output);
+		}
 		stampImplementation(implementation, output);
 		/*
 		 * The logical operator event has already produced this candidate state. Make it the immutable input to the
 		 * physical implementation event; the provider may verify or annotate it, but must not reconstruct the join from
 		 * scalar child summaries after winner costing.
 		 */
+		dispatch(session, implementation, context, output);
+	}
+
+	private static void dispatch(PackedCostSession session, int implementation, PackedCostContext context,
+			PackedCostEstimate output) {
 		context.setEvidenceStateId(output.evidenceStateId());
-		if (session instanceof EventSourcingPackedCostSession eventSourcing) {
-			eventSourcing.refinePhysicalJoin(implementation, context, output);
-		} else {
+		if (session instanceof EventSourcingPackedCostSession traced) {
+			// The wrapper scopes its own realized callback context, including replay and retained returns.
+			traced.refinePhysicalJoin(implementation, context, output);
+			return;
+		}
+		int previous = context.setPhysicalJoinImplementation(implementation);
+		try {
 			session.refineIntermediateJoin(context, output);
+		} finally {
+			context.setPhysicalJoinImplementation(previous);
 		}
 	}
 
@@ -115,13 +130,22 @@ final class PackedPhysicalJoinCosting {
 			output.putPlannedDoubleMetric(HASH_JOIN_PEAK_MEMORY_ROWS_METRIC, peakMemoryRows);
 			output.putPlannedDoubleMetric(HASH_JOIN_EXECUTION_PARTITIONS_METRIC, invocations);
 		}
-		case MEMOIZED_CORRELATED -> applyMemoizedCorrelatedCost(context, output, resultRows);
+		case MEMOIZED_CORRELATED -> throw new IllegalArgumentException("memoized costing requires its complete price");
 		default -> throw new IllegalArgumentException("unknown physical join implementation " + implementation);
 		}
 	}
 
-	private static void applyMemoizedCorrelatedCost(PackedCostContext context, PackedCostEstimate output,
-			double resultRows) {
+	static void refineMemoized(PackedCostSession session, PackedCostContext context, PackedCostEstimate output,
+			PackedCostEstimate rightResources, PackedCostEstimate rightPriceMetadata) {
+		applyMemoizedCorrelatedCost(session, context, output, rightResources, rightPriceMetadata);
+		stampImplementation(MEMOIZED_CORRELATED, output);
+		dispatch(session, MEMOIZED_CORRELATED, context, output);
+	}
+
+	private static void applyMemoizedCorrelatedCost(PackedCostSession session, PackedCostContext context,
+			PackedCostEstimate output, PackedCostEstimate rightResources, PackedCostEstimate rightPriceMetadata) {
+		double resultRows = requireRows(output.outputRows(), "memoized result");
+		output.setInvocations(1.0d);
 		double leftRows = requireRows(context.leftInputRows(), "left join input");
 		double dependentRightRows = requireRows(output.plannedDoubleMetric(
 				MEMOIZED_DEPENDENT_RIGHT_ROWS_METRIC, context.rightInputRows()), "dependent right output");
@@ -135,17 +159,57 @@ final class PackedPhysicalJoinCosting {
 		double retainedFraction = distinctKeys > 0.0d ? Math.min(distinctKeys, capacity) / distinctKeys : 0.0d;
 		double repeatedRows = Math.max(0.0d, leftRows - distinctKeys);
 		double cacheHits = saturatedMultiply(repeatedRows, retainedFraction);
-		double cacheMisses = Math.max(0.0d, leftRows - cacheHits);
-		double scaledRightWork = scaleForMisses(dependentRightWork, cacheMisses, leftRows);
+		// Equivalent cold-cache accounting, retaining the first miss when leftRows - distinctKeys rounds away.
+		double cacheMisses = saturatedAdd(distinctKeys,
+				saturatedMultiply(repeatedRows, 1.0d - retainedFraction));
+		double scaledRightWork = memoizedMissPrice(dependentRightWork, cacheMisses, leftRows, rightPriceMetadata);
 		double scaledRightRows = scaleForMisses(dependentRightRows, cacheMisses, leftRows);
 		double peakRows = Math.min(scaleForMisses(dependentRightRows, distinctKeys, leftRows),
 				LeftJoinQueryEvaluationStep.maxMemoizedRows());
-		output.setLocalPhysicalCost(
-				scaledRightWork, 0.0d, cacheMisses, leftRows, 0.0d, 0.0d, 0.0d, resultRows, 0.0d, peakRows);
+		// Price the cache's actual local overhead with the existing provider objective, never invert that objective.
+		output.setLocalScalarPrice(resultRows, 0.0d);
+		output.setLocalPhysicalCost(0.0d, 0.0d, cacheMisses, leftRows, 0.0d, 0.0d, 0.0d, resultRows, 0.0d, peakRows);
+		double localPrice = saturatedAdd(scaledRightWork, session.objectiveScore(output));
+		if (leftRows > 0.0d) {
+			// Nonempty execution needs authenticated RHS quantities; zero input retains the known overhead only.
+			output.setLocalScalarPrice(resultRows, localPrice);
+		}
+		if (rightResources != null && leftRows > 0.0d) {
+			output.setLocalPhysicalCost(scaleForMisses(rightResources.sequentialRows(), cacheMisses, leftRows),
+					scaleForMisses(rightResources.randomSeeks(), cacheMisses, leftRows),
+					saturatedAdd(cacheMisses, scaleForMisses(rightResources.iteratorOpens(), cacheMisses, leftRows)),
+					saturatedAdd(leftRows,
+							scaleForMisses(rightResources.expressionEvaluations(), cacheMisses, leftRows)),
+					scaleForMisses(rightResources.hashBuildRows(), cacheMisses, leftRows),
+					scaleForMisses(rightResources.hashProbeRows(), cacheMisses, leftRows),
+					scaleForMisses(rightResources.pathExpansions(), cacheMisses, leftRows),
+					saturatedAdd(resultRows, scaleForMisses(rightResources.resultRows(), cacheMisses, leftRows)),
+					scaleForMisses(rightResources.remoteCalls(), cacheMisses, leftRows),
+					Math.max(peakRows, cacheMisses > 0.0d ? rightResources.peakMemoryRows() : 0.0d));
+		}
+		output.setObjectivePricePreservingPhysicalCost(localPrice);
 		output.putPlannedDoubleMetric(MEMOIZED_DISTINCT_KEYS_METRIC, distinctKeys);
 		output.putPlannedDoubleMetric(MEMOIZED_CACHE_HITS_METRIC, cacheHits);
 		output.putPlannedDoubleMetric(MEMOIZED_CACHE_MISSES_METRIC, cacheMisses);
 		output.putPlannedDoubleMetric(MEMOIZED_PEAK_ROWS_METRIC, peakRows);
+	}
+
+	private static double memoizedMissPrice(double completePrice, double misses, double outerRows,
+			PackedCostEstimate pricing) {
+		if (outerRows == 0.0d) {
+			return 0.0d;
+		}
+		if (pricing != null && pricing.hasDependentCostComponents()) {
+			double startup = pricing.startupOnceWork();
+			double fixed = pricing.memorySpillWork() + (pricing.hasComponentOutputRows() ? 0.0d : pricing.outputWork());
+			double repeating = completePrice - startup - fixed;
+			if (Double.isFinite(repeating) && repeating >= 0.0d) {
+				return saturatedAdd(saturatedAdd(startup, scaleForMisses(repeating, misses, outerRows)), fixed);
+			}
+			// An incompatible decomposition cannot discount a certified complete UNIT price.
+			return completePrice;
+		}
+		return scaleForMisses(completePrice, misses, outerRows);
 	}
 
 	private static double boundedDistinctKeys(double distinctKeys, double leftRows) {

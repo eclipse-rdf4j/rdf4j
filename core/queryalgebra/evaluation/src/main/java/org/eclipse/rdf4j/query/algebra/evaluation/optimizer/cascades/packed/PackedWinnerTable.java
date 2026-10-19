@@ -634,6 +634,7 @@ final class PackedWinnerTable {
 		if (comparison != 0) {
 			return comparison < 0;
 		}
+		// At an otherwise equal price, prefer a known estimate; this is not resource dominance.
 		comparison = Double.compare(peakMemoryRows, this.peakMemoryRows[winnerId]);
 		if (comparison != 0) {
 			return comparison < 0;
@@ -804,7 +805,7 @@ final class PackedWinnerTable {
 			throw new IllegalArgumentException("winner tie-break rank must not be negative");
 		}
 		if (!Double.isFinite(startupCost) || !Double.isFinite(totalCost) || !Double.isFinite(comparisonCost)
-				|| !Double.isFinite(peakMemoryRows) || peakMemoryRows < 0.0d) {
+				|| Double.isInfinite(peakMemoryRows) || peakMemoryRows < 0.0d) {
 			throw new IllegalArgumentException("winner costs must be finite: group=" + groupId + ", expression="
 					+ physicalExpressionId + ", startup=" + startupCost + ", total=" + totalCost + ", comparison="
 					+ comparisonCost + ", peakMemory=" + peakMemoryRows);

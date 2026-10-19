@@ -35,7 +35,7 @@ final class DictionaryByteEstimate {
 	static final long LARGE_RECORD_BYTES = 1L << 14;
 	/**
 	 * Extrapolated (unsampled) cardinality is inflated by this factor: the estimate is advisory and an overestimate
-	 * only enlarges the virtual map, while memo churn and sketch variance could otherwise pull a sample below the exact
+	 * only enlarges the virtual map, while sampling and sketch variance could otherwise pull a sample below the exact
 	 * value.
 	 */
 	static final double SAMPLING_MARGIN = 1.25d;
@@ -54,7 +54,6 @@ final class DictionaryByteEstimate {
 	private final ToLongFunction<Value> storedId;
 	private HllSketch[] sketches;
 	private long[] maximumBytes;
-	private long[] offers;
 	private String[] cachedStrings;
 	private long[] cachedHashes;
 	private byte[] cachedTypes;
@@ -72,16 +71,13 @@ final class DictionaryByteEstimate {
 	private long[] offeredBytes;
 	private long totalBytes;
 	private long exactRecords;
-	/** Per size bucket: records that were sized but not fingerprinted; they extrapolate the sketched cardinality. */
+	/** Per size bucket: every record sized without fingerprinting, before any memoization. */
 	private long[] unsampledOffers;
 	/**
-	 * Per size bucket: every record fed exactly, before the fingerprint memo, so sampling ratios compare like with
-	 * like.
+	 * Per size bucket: every reached nonstored scalar or composite record on the exact path, including memo hits.
+	 * Sampling ratios and cardinality caps must describe logical offers, independently of cache identities or eviction.
 	 */
 	private long[] exactOffers;
-	/** Identity memo of lexical values already sized without fingerprinting (mirrors the exact-path string memo). */
-	private String[] skippedStrings;
-	private byte[] skippedTypes;
 
 	DictionaryByteEstimate(boolean distinct) {
 		this(distinct, value -> LmdbValue.UNKNOWN_ID);
@@ -124,20 +120,16 @@ final class DictionaryByteEstimate {
 			return;
 		}
 		String lexical;
-		int type;
 		long bytes;
 		if (value instanceof IRI iri) {
 			lexical = iri.stringValue();
-			type = 1;
 			bytes = dictionaryBytes(utf8UpperBound(lexical) + 32L);
 		} else if (value instanceof BNode bnode) {
 			lexical = bnode.getID();
-			type = 2;
 			bytes = dictionaryBytes(utf8UpperBound(lexical) + 16L);
 		} else if (value instanceof Literal literal) {
 			String language = literal.getLanguage().orElse(null);
 			lexical = literal.getLabel();
-			type = 4;
 			bytes = dictionaryBytes(utf8UpperBound(lexical) + 32L
 					+ (language == null ? 0L : utf8UpperBound(language)));
 			if (bytes >= LARGE_RECORD_BYTES) {
@@ -153,22 +145,8 @@ final class DictionaryByteEstimate {
 			add(value);
 			return;
 		}
-		// The same identity memo the exact path uses: a lexical value that was already fingerprinted or already
-		// sized is not a new record, so repeated terms scale like their fingerprinted share.
-		int index = stringCacheIndex(lexical);
-		if (findCachedString(lexical, type == 4 ? 0 : type, index)) {
-			return;
-		}
-		if (skippedStrings != null && skippedStrings[index] == lexical && skippedTypes[index] == type) {
-			return;
-		}
+		// Count the same population as the exact path: each logical offer, rather than identity-cache misses.
 		recordUnsampled(bytes);
-		if (skippedStrings == null) {
-			skippedStrings = new String[HASH_CACHE_SIZE];
-			skippedTypes = new byte[HASH_CACHE_SIZE];
-		}
-		skippedStrings[index] = lexical;
-		skippedTypes[index] = (byte) type;
 	}
 
 	private void recordUnsampled(long bytes) {
@@ -216,7 +194,11 @@ final class DictionaryByteEstimate {
 		} else {
 			objectHash = scalar(value);
 		}
-		if (depth == 0 || repeated && depth == completedDepth && objectHash == completedLeaf) {
+		if (depth == 0) {
+			return;
+		}
+		if (repeated && depth == completedDepth && objectHash == completedLeaf) {
+			recordExactOffers(dictionaryBytes(64L), depth);
 			return;
 		}
 		// Reuse requires the whole current sequence, leaf and depth, after traversal and cycle checks.
@@ -257,6 +239,8 @@ final class DictionaryByteEstimate {
 		String predicateLexical = predicate.stringValue();
 		if (subjectLexical == headerSubject && subjectType == headerSubjectType
 				&& predicateLexical == headerPredicate) {
+			recordExactOffers(dictionaryBytes(utf8UpperBound(subjectLexical) + overhead), 1L);
+			recordExactOffers(dictionaryBytes(utf8UpperBound(predicateLexical) + 32L), 1L);
 			return cachedHeader;
 		}
 		long subjectHash = stringScalar(subjectLexical, subjectSalt, subjectType, overhead);
@@ -303,6 +287,7 @@ final class DictionaryByteEstimate {
 		int index = stringCacheIndex(lexical);
 		if (findCachedString(lexical, type, index)) {
 			// Immutable lexical content plus term type fixes both fingerprint and size. Both were already recorded.
+			recordExactOffers(dictionaryBytes(utf8UpperBound(lexical) + overhead), 1L);
 			return cachedHashes[index];
 		}
 		long hash = mix(salt ^ lexicalHash(lexical));
@@ -330,9 +315,7 @@ final class DictionaryByteEstimate {
 			totalBytes = LmdbUtil.saturatedAdd(totalBytes, bytes);
 			return;
 		}
-		ensureBuckets();
-		int bucket = Long.SIZE - 1 - Long.numberOfLeadingZeros(bytes);
-		exactOffers[bucket] = LmdbUtil.saturatedAdd(exactOffers[bucket], 1L);
+		int bucket = recordExactOffers(bytes, 1L);
 		int index = (int) hash & (HASH_CACHE_SIZE - 1);
 		if (offeredHashes != null && offeredHashes[index] == hash && offeredBytes[index] == bytes) {
 			return;
@@ -340,11 +323,17 @@ final class DictionaryByteEstimate {
 		recordDistinct(hash, bytes, index, bucket);
 	}
 
+	private int recordExactOffers(long bytes, long count) {
+		ensureBuckets();
+		int bucket = Long.SIZE - 1 - Long.numberOfLeadingZeros(bytes);
+		exactOffers[bucket] = LmdbUtil.saturatedAdd(exactOffers[bucket], count);
+		return bucket;
+	}
+
 	private void ensureBuckets() {
 		if (sketches == null) {
 			sketches = new HllSketch[Long.SIZE];
 			maximumBytes = new long[Long.SIZE];
-			offers = new long[Long.SIZE];
 			exactOffers = new long[Long.SIZE];
 			unsampledOffers = new long[Long.SIZE];
 		}
@@ -362,14 +351,13 @@ final class DictionaryByteEstimate {
 			offeredBytes = new long[HASH_CACHE_SIZE];
 		}
 		// The exact fingerprint/size memo only skips inputs already incorporated into the sketch and maximum.
-		// Every distinct fingerprint is offered at least once, so uncached offers still cap its cardinality.
+		// Every distinct fingerprint is offered at least once; logical exact offers cap its cardinality separately.
 		// Cache collisions repeat work; no HLL register update is interpreted as a membership test.
 		sketch.update(hash);
 		exactRecords++;
 		offeredHashes[index] = hash;
 		offeredBytes[index] = bytes;
 		maximumBytes[bucket] = Math.max(maximumBytes[bucket], bytes);
-		offers[bucket] = LmdbUtil.saturatedAdd(offers[bucket], 1L);
 	}
 
 	long bytes() {
@@ -388,7 +376,7 @@ final class DictionaryByteEstimate {
 				} else {
 					// Round the confidence margin for this advisory estimate; ceiling would double a repeated
 					// singleton.
-					long distinct = Math.min(offers[bucket], Math.max(1L, Math.round(sketch.getUpperBound(3))));
+					long distinct = Math.min(exactOffers[bucket], Math.max(1L, Math.round(sketch.getUpperBound(3))));
 					count = distinct;
 					if (unsampled != 0L) {
 						// Extrapolate the sketched cardinality over the records that were only sized, using the

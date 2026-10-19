@@ -1252,6 +1252,7 @@
 						<doclint>none</doclint>
 						<additionalOptions>
 							<additionalOption>-html5</additionalOption>
+							<additionalOption>--add-modules=jdk.incubator.vector</additionalOption>
 						</additionalOptions>
 					</configuration>
 				</plugin>

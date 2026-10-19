@@ -18,8 +18,8 @@ import java.util.Arrays;
 final class PackedCandidateArena {
 
 	private static final int INITIAL_CAPACITY = 1;
-	private static final int INT_COLUMNS = 7;
-	private static final int DOUBLE_COLUMNS = 1;
+	private static final int INT_COLUMNS = 8;
+	private static final int DOUBLE_COLUMNS = 2;
 	private static final int MAX_CAPACITY = Integer.MAX_VALUE / INT_COLUMNS;
 	private static final int GROUP_ID = 0;
 	private static final int CONTINUATION_KEY_ID = 1;
@@ -28,10 +28,12 @@ final class PackedCandidateArena {
 	private static final int EVIDENCE_STATE_ID = 4;
 	private static final int PARENT_CANDIDATE_ID = 5;
 	private static final int IMPLEMENTATION_ID = 6;
+	private static final int QUANTITY_VECTOR_ID = 7;
 
 	private final PackedSearchBudget budget;
 	private int[] integerRows = new int[0];
 	private double[] objectiveScores = new double[0];
+	private double[] quantityPopulations = new double[0];
 	private int size;
 
 	PackedCandidateArena(PackedSearchBudget budget) {
@@ -44,7 +46,16 @@ final class PackedCandidateArena {
 
 	int append(int groupId, int continuationKeyId, int deliveredPropertyId, int costVectorId,
 			int evidenceStateId, int parentCandidateId, int implementationId, double objectiveScore) {
+		return appendWithQuantities(groupId, continuationKeyId, deliveredPropertyId, costVectorId, costVectorId,
+				1.0d, evidenceStateId, parentCandidateId, implementationId, objectiveScore);
+	}
+
+	int appendWithQuantities(int groupId, int continuationKeyId, int deliveredPropertyId, int costVectorId,
+			int quantityVectorId, double quantityPopulation, int evidenceStateId, int parentCandidateId,
+			int implementationId, double objectiveScore) {
 		if (groupId <= 0 || continuationKeyId <= 0 || deliveredPropertyId < 0 || costVectorId <= 0
+				|| quantityVectorId <= 0 || quantityPopulation < 0.0d
+				|| !Double.isNaN(quantityPopulation) && !Double.isFinite(quantityPopulation)
 				|| evidenceStateId < 0 || parentCandidateId < 0 || parentCandidateId > size
 				|| implementationId < 0 || !Double.isFinite(objectiveScore) || objectiveScore < 0.0d) {
 			throw new IllegalArgumentException("invalid packed candidate row");
@@ -58,10 +69,12 @@ final class PackedCandidateArena {
 		integerRows[base + CONTINUATION_KEY_ID] = continuationKeyId;
 		integerRows[base + DELIVERED_PROPERTY_ID] = deliveredPropertyId;
 		integerRows[base + COST_VECTOR_ID] = costVectorId;
+		integerRows[base + QUANTITY_VECTOR_ID] = quantityVectorId;
 		integerRows[base + EVIDENCE_STATE_ID] = evidenceStateId;
 		integerRows[base + PARENT_CANDIDATE_ID] = parentCandidateId;
 		integerRows[base + IMPLEMENTATION_ID] = implementationId;
 		objectiveScores[size] = objectiveScore;
+		quantityPopulations[size] = quantityPopulation;
 		size = candidateId;
 		return candidateId;
 	}
@@ -80,6 +93,20 @@ final class PackedCandidateArena {
 
 	int costVectorId(int candidateId) {
 		return integerValue(candidateId, COST_VECTOR_ID);
+	}
+
+	int quantityVectorId(int candidateId) {
+		return integerValue(candidateId, QUANTITY_VECTOR_ID);
+	}
+
+	double objectiveScore(int candidateId) {
+		checkCandidateId(candidateId);
+		return objectiveScores[candidateId - 1];
+	}
+
+	double quantityPopulation(int candidateId) {
+		checkCandidateId(candidateId);
+		return quantityPopulations[candidateId - 1];
 	}
 
 	static long requiredBytesForCapacity(int capacity) {
@@ -112,8 +139,10 @@ final class PackedCandidateArena {
 		}
 		int[] nextIntegerRows = Arrays.copyOf(integerRows, capacity * INT_COLUMNS);
 		double[] nextObjectiveScores = Arrays.copyOf(objectiveScores, capacity);
+		double[] nextQuantityPopulations = Arrays.copyOf(quantityPopulations, capacity);
 		integerRows = nextIntegerRows;
 		objectiveScores = nextObjectiveScores;
+		quantityPopulations = nextQuantityPopulations;
 		return true;
 	}
 

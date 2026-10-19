@@ -55,6 +55,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlannerLimits;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedQueryView;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.EvidenceGuarantee;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
@@ -183,7 +184,8 @@ class LmdbMappedOperatorLearningContextTest {
 		LmdbEstimatorRuntime runtime = runtimeWithFact(call.query(), call.leftRelationId());
 		var session = new LmdbMappedFrontierLearningSession(runtime, call.query(), true);
 		PackedCostContext unknownRows = PackedCostTestSupport.restrictedPrefixContext(new int[0], 0, 1.0d, 0);
-		var output = operatorEstimate(session, call.leftRelationId(), unknownRows);
+		var output = physicalEstimate();
+		session.applyOperator(call.leftRelationId(), new int[] { call.leftRelationId() }, unknownRows, output);
 		assertEquals(100_000.0d, output.outputRows(), 0.0d,
 				"matching leaf IDs do not describe a prefix after an unproved row transform");
 		assertNotNull(output.runtimeFeedbackContract(), "qualified physical observations remain useful");
@@ -237,13 +239,13 @@ class LmdbMappedOperatorLearningContextTest {
 		int other = filteredLeaf(query, Compare.CompareOp.LT);
 		int leaf = query.childRelationId(first, 0);
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
-		try (var session = mappedSession(query, runtime)) {
-			var input = estimate();
+		try (var session = boundedMappedSession(query, runtime)) {
+			var input = physicalEstimate();
 			session.estimateLeaf(leaf, emptyContext(), input);
-			var firstOutput = estimate();
+			var firstOutput = physicalEstimate();
 			session.refineOperator(first, call.operatorContext(input.outputRows(), input.evidenceStateId()),
 					firstOutput);
-			var otherOutput = estimate();
+			var otherOutput = physicalEstimate();
 			session.refineOperator(other, call.operatorContext(input.outputRows(), input.evidenceStateId()),
 					otherOutput);
 			assertEquals(firstOutput.outputRows(), otherOutput.outputRows());
@@ -252,11 +254,11 @@ class LmdbMappedOperatorLearningContextTest {
 			var correctContext = call.operatorContext(firstOutput.outputRows(), firstOutput.evidenceStateId());
 			assertEquals(0, correctContext.prefixRelationCount());
 			assertTrue(correctContext.prefixRelationsDescribeRows());
-			var correct = estimate();
+			var correct = physicalEstimate();
 			session.refineOperator(call.operatorRelationId(), correctContext, correct);
 			assertTrue(correct.runtimeFeedbackContract().admits(RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE),
 					"the actual encoded complete child retains whole-expression learning");
-			var mismatched = estimate();
+			var mismatched = physicalEstimate();
 			session.refineOperator(call.operatorRelationId(),
 					call.operatorContext(otherOutput.outputRows(), otherOutput.evidenceStateId()), mismatched);
 			assertNotNull(mismatched.runtimeFeedbackContract());
@@ -324,7 +326,7 @@ class LmdbMappedOperatorLearningContextTest {
 	void unknownPopulationCannotRegainLogicalLeasesAfterRefreshOrExactProvenance() {
 		var call = semiAntiQuery();
 		var session = new LmdbMappedFrontierLearningSession(mock(LmdbEstimatorRuntime.class), call.query(), true);
-		var output = estimate();
+		var output = physicalEstimate();
 		output.setEvidenceGuarantee(EvidenceGuarantee.DATABASE_EXACT);
 		output.putPlannedStringMetric("optimizer.frontierLogicalGroupKey", "stale-child-population");
 		session.applyOperator(call.leftRelationId(), new int[] { call.leftRelationId() }, emptyContext(), output,
@@ -341,17 +343,17 @@ class LmdbMappedOperatorLearningContextTest {
 				new Join(twoFilters(), pattern("other", "otherValue")));
 		int first = filteredLeaf(call.query(), Compare.CompareOp.GT);
 		int leaf = call.query().childRelationId(first, 0);
-		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
-			var input = estimate();
+		try (var session = boundedMappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
+			var input = physicalEstimate();
 			session.estimateLeaf(leaf,
 					PackedCostTestSupport.restrictedPrefixContext(new int[0], 0, 1.0d, 0), input);
-			var filtered = estimate();
+			var filtered = physicalEstimate();
 			session.refineOperator(first, call.operatorContext(input.outputRows(), Double.NaN,
 					input.evidenceStateId(), 0), filtered);
 			assertPhysicalOnly(filtered.runtimeFeedbackContract());
-			var right = estimate();
+			var right = physicalEstimate();
 			session.estimateLeaf(call.rightRelationId(), emptyContext(), right);
-			var joined = estimate();
+			var joined = physicalEstimate();
 			session.refineIntermediateJoin(call.operatorContext(filtered.outputRows(), right.outputRows(),
 					filtered.evidenceStateId(), right.evidenceStateId()), joined);
 			assertPhysicalOnly(joined.runtimeFeedbackContract());
@@ -362,11 +364,11 @@ class LmdbMappedOperatorLearningContextTest {
 	void repeatedBagDagKeepsMultiplicityAndDeclinesUnrepresentableLogicalIdentity() {
 		var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(),
 				new Join(pattern("value", "o"), pattern("other", "otherValue")));
-		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
-			var current = estimate();
+		try (var session = boundedMappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
+			var current = physicalEstimate();
 			session.estimateLeaf(call.leftRelationId(), emptyContext(), current);
 			for (int doubling = 0; doubling < Long.SIZE; doubling++) {
-				var next = estimate();
+				var next = physicalEstimate();
 				session.refineIntermediateJoin(call.operatorContext(current.outputRows(), current.outputRows(),
 						current.evidenceStateId(), current.evidenceStateId()), next);
 				current = next;
@@ -381,11 +383,11 @@ class LmdbMappedOperatorLearningContextTest {
 		int leaf = call.query().childRelationId(call.leftRelationId(), 0);
 		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
 			for (int state = 0; state < 8_192; state++) {
-				var output = estimate();
+				var output = physicalEstimate();
 				session.estimateLeaf(leaf, emptyContext(), output);
 				assertTrue(output.evidenceStateId() > 0);
 			}
-			var refused = estimate();
+			var refused = physicalEstimate();
 			session.estimateLeaf(leaf, emptyContext(), refused);
 			assertEquals(0, refused.evidenceStateId());
 			assertPhysicalOnly(refused.runtimeFeedbackContract());
@@ -402,11 +404,11 @@ class LmdbMappedOperatorLearningContextTest {
 		var call = PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(),
 				new Join(pattern("value", "o"), pattern("other", "otherValue")));
 		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
-			var left = estimate();
-			var right = estimate();
+			var left = physicalEstimate();
+			var right = physicalEstimate();
 			session.estimateLeaf(call.leftRelationId(), emptyContext(), left);
 			session.estimateLeaf(call.rightRelationId(), emptyContext(), right);
-			var logical = estimate();
+			var logical = physicalEstimate();
 			session.refineIntermediateJoin(call.operatorContext(left.outputRows(), right.outputRows(),
 					left.evidenceStateId(), right.evidenceStateId()), logical);
 			var pair = new PackedCostTestSupport.PairCostCall(call.query(), call.leftRelationId(),
@@ -414,7 +416,7 @@ class LmdbMappedOperatorLearningContextTest {
 			var context = pair.intermediateJoinContext(logical.outputRows(), logical.evidenceStateId(),
 					left.outputRows(),
 					right.outputRows(), left.evidenceStateId(), right.evidenceStateId());
-			var physical = estimate();
+			var physical = physicalEstimate();
 			physical.putPlannedStringMetric("optimizer.physicalJoinImplementation", "independent-hash");
 			session.refineIntermediateJoin(context, physical);
 			assertEquals(logical.outputRows(), physical.outputRows());
@@ -432,9 +434,9 @@ class LmdbMappedOperatorLearningContextTest {
 						new ValueConstant(SimpleValueFactory.getInstance().createIRI("urn:test:never")),
 						Compare.CompareOp.NE)));
 		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
-			var input = estimate();
+			var input = physicalEstimate();
 			session.estimateLeaf(call.inputRelationId(), emptyContext(), input);
-			var output = estimate();
+			var output = physicalEstimate();
 			session.refineOperator(call.operatorRelationId(),
 					call.operatorContext(input.outputRows(), input.evidenceStateId()), output);
 			assertPhysicalOnly(output.runtimeFeedbackContract());
@@ -565,11 +567,11 @@ class LmdbMappedOperatorLearningContextTest {
 	void componentPopulationCannotBecomeAnUnconditionedWholeFact() {
 		var call = PackedCostTestSupport.unaryOperator(PlanningGraphDomain.defaultGraph(), twoFilters());
 		int first = filteredLeaf(call.query(), Compare.CompareOp.GT);
-		try (var session = mappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
-			var input = estimate();
+		try (var session = boundedMappedSession(call.query(), mock(LmdbEstimatorRuntime.class))) {
+			var input = physicalEstimate();
 			input.setComponentRows(100_000.0d, 100_000.0d);
 			session.estimateLeaf(call.query().childRelationId(first, 0), emptyContext(), input);
-			var filtered = estimate();
+			var filtered = physicalEstimate();
 			session.refineOperator(first, call.operatorContext(input.outputRows(), input.evidenceStateId()), filtered);
 			assertPhysicalOnly(filtered.runtimeFeedbackContract());
 		}
@@ -743,6 +745,14 @@ class LmdbMappedOperatorLearningContextTest {
 		throw new AssertionError("fixture lost the independently scheduled " + comparison + " filter");
 	}
 
+	private static LmdbFrontierStatisticsCostSession boundedMappedSession(PackedQueryView query,
+			LmdbEstimatorRuntime runtime) {
+		LmdbFrontierStatisticsCostSession session = mappedSession(query, runtime);
+		session.bindProviderMemory(PackedCostTestSupport.providerMemory(
+				new PackedPlannerLimits(Long.MAX_VALUE, Long.MAX_VALUE)));
+		return session;
+	}
+
 	private static LmdbFrontierStatisticsCostSession mappedSession(PackedQueryView query,
 			LmdbEstimatorRuntime runtime) {
 		return new LmdbFrontierStatisticsCostSession(mock(PackedCostSession.class), mock(LmdbPackedCostModel.class),
@@ -806,6 +816,36 @@ class LmdbMappedOperatorLearningContextTest {
 		feedback.publishRuntimeFeedbackTargets(new RuntimeFeedbackTarget[] { target }, 1, true);
 		when(runtime.feedback()).thenReturn(feedback);
 		return runtime;
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void scalarPopulationCannotAcquirePhysicalOrLifecycleAdmission(boolean completePopulation) {
+		var call = semiAntiQuery();
+		var session = new LmdbMappedFrontierLearningSession(mock(LmdbEstimatorRuntime.class), call.query(), true);
+		PackedCostContext context = completePopulation ? emptyContext()
+				: PackedCostTestSupport.restrictedPrefixContext(new int[0], 0, 1.0d, 0);
+		var output = operatorEstimate(session, call.leftRelationId(), context);
+		assertEquals(100_000.0d, output.outputRows());
+		assertFalse(output.hasExplicitPhysicalCost());
+		assertEquals(completePopulation,
+				output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+		assertEquals(completePopulation,
+				output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE));
+		assertFalse(output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_PHYSICAL));
+		assertFalse(output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE));
+		assertTrue(Double.isNaN(output.runtimeFeedbackContract().rawPrediction().sourceRows()));
+	}
+
+	private static PackedCostEstimate physicalEstimate() {
+		PackedCostEstimate output = estimate();
+		// This fixture declares one open and 99,999 expression evaluations, independently of its row summary.
+		// It supplies no source scans; a scalar objective alone must never be reinterpreted as that quantity.
+		output.setLocalPhysicalCost(0.0d, 0.0d, 1.0d, 99_999.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
+		assertEquals(100_000.0d, output.workRows());
+		assertTrue(output.hasExplicitPhysicalCost());
+		assertEquals(0.0d, output.sequentialRows());
+		return output;
 	}
 
 	private static PackedCostEstimate estimate() {

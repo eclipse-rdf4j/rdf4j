@@ -1176,6 +1176,8 @@ class PackedFrontierSubsetKernelContractTest {
 			output.setContextualRows(1.0d, 1.0d);
 			output.setLocalPhysicalCost(1.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d,
 					0.0d);
+			// This callback declares one source event for the complete supplied prefix.
+			output.setInvocations(context.prefixRows());
 			stamp(output, state(new ExactContinuationState(input.factorMask() | bit(relationId), input.filterMask())));
 		}
 
@@ -1209,6 +1211,13 @@ class PackedFrontierSubsetKernelContractTest {
 			if (output.evidenceStateId() != 0) {
 				stamp(output, output.evidenceStateId());
 			}
+		}
+
+		@Override
+		public int exactContinuationIdentity(PackedCostEstimate estimate) {
+			// The interned factor/filter state determines every future transition in this fixture.
+			// Resource tradeoffs remain in the separate physical vector.
+			return estimate.evidenceStateId();
 		}
 
 		private void resetExtensionInvocations() {
@@ -1590,6 +1599,8 @@ class PackedFrontierSubsetKernelContractTest {
 				return;
 			}
 			output.setRows(1.0d, 0.0d);
+			// This synthetic input has no resource events; only join alternatives own modeled resources.
+			output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 			output.setEvidenceStateId(stateId(factorBit(relationId)));
 		}
 
@@ -1605,6 +1616,8 @@ class PackedFrontierSubsetKernelContractTest {
 				suffixPrefixes.add(List.copyOf(prefix));
 			}
 			output.setContextualRows(1.0d, 0.0d);
+			// This synthetic input has no resource events; only join alternatives own modeled resources.
+			output.setLocalPhysicalCost(0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d, 0.0d);
 			output.setEvidenceStateId(stateId(prefixMask | 1 << factorOrdinal));
 		}
 

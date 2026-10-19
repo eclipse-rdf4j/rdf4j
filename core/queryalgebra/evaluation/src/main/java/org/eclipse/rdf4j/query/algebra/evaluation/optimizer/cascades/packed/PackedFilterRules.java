@@ -144,11 +144,14 @@ final class PackedFilterRules {
 			if (!helperEstimate.hasComponentOutputRows() && finiteNonNegative(helperEstimate.workRows())) {
 				if (helperEstimate.hasExplicitPhysicalCost()
 						&& helperEstimate.costScope() == PackedCostEstimate.CostScope.LOCAL) {
+					double localObjective = costSession.objectiveScore(helperEstimate);
 					memo.addWinnerPhysicalCost(filteredInputWinnerId, helperEstimate);
+					helperCost = saturatedAdd(memo.winnerTotalCost(filteredInputWinnerId), localObjective);
+				} else {
+					helperCost = helperEstimate.hasExplicitPhysicalCost()
+							? costSession.objectiveScore(helperEstimate)
+							: helperEstimate.workRows();
 				}
-				helperCost = helperEstimate.hasExplicitPhysicalCost()
-						? costSession.objectiveScore(helperEstimate)
-						: helperEstimate.workRows();
 			} else if (helperEstimate.hasComponentOutputRows()) {
 				helperEstimate.setReplacesChildWork(false);
 			}

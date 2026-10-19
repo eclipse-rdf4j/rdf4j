@@ -360,8 +360,10 @@ class CancellableOperationCoordinatorTest {
 	void failedCancellationIsRetriedAndEventuallyRemovedAfterBoundedAttempts() throws Exception {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		AtomicInteger remoteCalls = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
 		CountDownLatch attempts = new CountDownLatch(21);
 		coordinator.register("request-exhausted", () -> {
+			remoteWorker.set(Thread.currentThread());
 			remoteCalls.incrementAndGet();
 			attempts.countDown();
 			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
@@ -370,6 +372,7 @@ class CancellableOperationCoordinatorTest {
 		assertThatThrownBy(() -> coordinator.cancel("request-exhausted"))
 				.isInstanceOf(CancellableOperationCoordinator.CancellationException.class);
 		assertThat(attempts.await(8, TimeUnit.SECONDS)).isTrue();
+		awaitCallbackWorker(remoteWorker);
 		assertThat(remoteCalls).hasValue(21);
 		assertThat(coordinator.cancel("request-exhausted")).isFalse();
 	}
@@ -415,8 +418,10 @@ class CancellableOperationCoordinatorTest {
 	void concurrentCancellationCannotReserveBeyondTheBoundedRemoteAttempts() throws Exception {
 		CancellableOperationCoordinator coordinator = new CancellableOperationCoordinator();
 		AtomicInteger remoteCalls = new AtomicInteger();
+		AtomicReference<Thread> remoteWorker = new AtomicReference<>();
 		CountDownLatch attempts = new CountDownLatch(21);
 		coordinator.register("request-concurrent-exhaustion", () -> {
+			remoteWorker.set(Thread.currentThread());
 			remoteCalls.incrementAndGet();
 			attempts.countDown();
 			throw new CancellableOperationCoordinator.CancellationException("downstream unavailable");
@@ -438,6 +443,7 @@ class CancellableOperationCoordinatorTest {
 				caller.get(5, TimeUnit.SECONDS);
 			}
 			assertThat(attempts.await(8, TimeUnit.SECONDS)).isTrue();
+			awaitCallbackWorker(remoteWorker);
 			assertThat(remoteCalls).hasValue(21);
 			assertThat(coordinator.cancel("request-concurrent-exhaustion")).isFalse();
 		} finally {
@@ -518,12 +524,18 @@ class CancellableOperationCoordinatorTest {
 
 		releaseRemote.countDown();
 		assertThat(remoteFinished.await(5, TimeUnit.SECONDS)).isTrue();
+		awaitCallbackWorker(remoteWorker);
+		assertThat(forwarded).hasValue(1);
+		assertThat(coordinator.cancel("request-async")).isFalse();
+	}
+
+	private static void awaitCallbackWorker(AtomicReference<Thread> remoteWorker) throws InterruptedException {
+		// A callback latch signals before the coordinator processes the result and retires the handle.
+		// Joining its worker observes that cleanup, including when the final bounded retry failed.
 		Thread callbackWorker = remoteWorker.get();
 		assertThat(callbackWorker).isNotNull();
 		callbackWorker.join(TimeUnit.SECONDS.toMillis(5));
 		assertThat(callbackWorker.isAlive()).isFalse();
-		assertThat(forwarded).hasValue(1);
-		assertThat(coordinator.cancel("request-async")).isFalse();
 	}
 
 	@Test

@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
+import org.eclipse.rdf4j.query.QueryParseOptions;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.DescribeOperator;
@@ -44,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedQuery;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.queryrender.RenderUtils;
 import org.eclipse.rdf4j.queryrender.VarNameNormalizer;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IRTextPrinter;
 import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
@@ -499,9 +501,9 @@ public class TupleExprIRRenderer {
 		}
 
 		try {
-			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null);
-			String expected = VarNameNormalizer.normalizeVars(original.toString());
-			String actual = VarNameNormalizer.normalizeVars(parsed.getTupleExpr().toString());
+			ParsedQuery parsed = QueryParserUtil.parseQuery(QueryLanguage.SPARQL, rendered, null, cfg.parseOptions);
+			String expected = VarNameNormalizer.normalizeModelVariables(original);
+			String actual = VarNameNormalizer.normalizeModelVariables(parsed.getTupleExpr());
 			if (!expected.equals(actual)) {
 				String message = "Rendered SPARQL does not round-trip to the original TupleExpr."
 						+ "\n# Rendered query\n" + rendered
@@ -564,7 +566,7 @@ public class TupleExprIRRenderer {
 		}
 
 		static void validate(TupleExpr expr, Config cfg) {
-			if (expr == null || cfg == null || !cfg.failOnIllegalBNodes) {
+			if (expr == null || cfg == null) {
 				return;
 			}
 			expr.visit(new BNodeValidator(cfg));
@@ -572,15 +574,14 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(BindingSetAssignment node) {
-			if (cfg.allowBNodesInValues) {
+			if (cfg.parseOptions.blankNodeReferences()) {
 				return;
 			}
 			for (BindingSet bs : node.getBindingSets()) {
 				for (String name : bs.getBindingNames()) {
 					Value v = bs.getValue(name);
-					if (v instanceof BNode) {
-						throw new IllegalArgumentException("Blank nodes in VALUES are not supported: binding '" + name
-								+ "' -> " + v);
+					if (v != null) {
+						RenderUtils.toSPARQL(v, new StringBuilder(), cfg.parseOptions);
 					}
 				}
 			}
@@ -588,13 +589,22 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(StatementPattern sp) {
-			// StatementPattern positions allow anonymous bnodes (subject/object). Predicate bnodes are illegal but
-			// should not occur after parsing; keep tolerant to avoid overblocking.
+			// Pattern placeholders retain ordinary syntax; validate only the fixed operands here.
+			for (Var var : new Var[] { sp.getSubjectVar(), sp.getPredicateVar(), sp.getObjectVar(),
+					sp.getContextVar() }) {
+				if (var != null && var.hasValue()) {
+					RenderUtils.toSPARQL(var.getValue(), new StringBuilder(), cfg.parseOptions);
+				}
+			}
 		}
 
 		@Override
 		public void meet(Var var) {
-			if (!var.isAnonymous()) {
+			if (var.hasValue()) {
+				RenderUtils.toSPARQL(var.getValue(), new StringBuilder(), cfg.parseOptions);
+				return;
+			}
+			if (!cfg.failOnIllegalBNodes || !var.isAnonymous()) {
 				return;
 			}
 			String name = var.getName();
@@ -611,10 +621,7 @@ public class TupleExprIRRenderer {
 
 		@Override
 		public void meet(ValueConstant node) {
-			if (node.getValue() instanceof BNode) {
-				throw new IllegalArgumentException("Blank node literal in expression context is not supported: "
-						+ node.getValue());
-			}
+			RenderUtils.toSPARQL(node.getValue(), new StringBuilder(), cfg.parseOptions);
 		}
 	}
 
@@ -637,7 +644,11 @@ public class TupleExprIRRenderer {
 
 	private void printPrologueAndDataset(final StringBuilder out, final DatasetView dataset) {
 		if (cfg.printPrefixes && !cfg.prefixes.isEmpty()) {
-			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ").append(pfx).append(": <").append(ns).append(">\n"));
+			cfg.prefixes.forEach((pfx, ns) -> out.append("PREFIX ")
+					.append(pfx)
+					.append(": ")
+					.append(RenderUtils.toSPARQLIRI(ns))
+					.append('\n'));
 		}
 		// FROM / FROM NAMED (top-level only)
 		final List<IRI> dgs = dataset != null ? dataset.defaultGraphs : cfg.defaultGraphs;
@@ -694,7 +705,7 @@ public class TupleExprIRRenderer {
 	}
 
 	public String convertValueToString(final Value val) {
-		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction, cfg.parseOptions);
 	}
 
 	private static String deriveStableLabelFromName(String name) {
@@ -768,6 +779,7 @@ public class TupleExprIRRenderer {
 	}
 
 	public static final class Config {
+		public QueryParseOptions parseOptions = QueryParseOptions.DEFAULT;
 		public final String indent = "  ";
 		public final boolean printPrefixes = true;
 		public final boolean usePrefixCompaction = true;
@@ -784,7 +796,7 @@ public class TupleExprIRRenderer {
 		public boolean preserveUserBNodeLabels = false; // derive stable labels from parser placeholder
 		public boolean deterministicBNodeLabels = false; // stable mapping independent of traversal order
 		public boolean preserveAnonBNodeIdentity = false; // render repeated [] as the same _:label
-		public boolean failOnIllegalBNodes = true; // reject bnodes in VALUES or expression contexts
+		public boolean failOnIllegalBNodes = true; // reject allocating blank placeholders in expression contexts
 		public boolean allowBNodesInValues = false; // override to allow (non-standard) bnodes in VALUES
 	}
 

@@ -88,6 +88,7 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.Sum;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -194,7 +195,7 @@ public class TupleExprToIrConverter {
 	// PN_LOCAL checks handled in TermRenderer via SparqlNameUtils
 
 	private String convertValueToString(final Value val) {
-		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction);
+		return TermRenderer.convertValueToString(val, prefixIndex, cfg.usePrefixCompaction, cfg.parseOptions);
 	}
 
 	private String renderVarOrValue(final Var v) {
@@ -510,6 +511,13 @@ public class TupleExprToIrConverter {
 		}
 		if (e instanceof ValueConstant) {
 			return convertValueToString(((ValueConstant) e).getValue());
+		}
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExpr(triple.getSubjectExpr()) + ", " + renderExpr(triple.getPredicateExpr())
+					+ ", " + renderExpr(triple.getObjectExpr()) + ")";
+		}
+		if (e instanceof TripleComponent component) {
+			return component.getRole().name() + "(" + renderExpr(component.getTripleTermExpr()) + ")";
 		}
 
 		if (e instanceof If) {
@@ -1496,6 +1504,15 @@ public class TupleExprToIrConverter {
 	private String renderExprWithSubstitution(final ValueExpr e, final Map<String, ValueExpr> subs) {
 		if (e == null) {
 			return "()";
+		}
+		if (e instanceof ValueExprTripleRef triple) {
+			return "TRIPLE(" + renderExprWithSubstitution(triple.getSubjectExpr(), subs) + ", "
+					+ renderExprWithSubstitution(triple.getPredicateExpr(), subs) + ", "
+					+ renderExprWithSubstitution(triple.getObjectExpr(), subs) + ")";
+		}
+		if (e instanceof TripleComponent component) {
+			return component.getRole().name() + "(" + renderExprWithSubstitution(component.getTripleTermExpr(), subs)
+					+ ")";
 		}
 
 		if (e instanceof Var) {

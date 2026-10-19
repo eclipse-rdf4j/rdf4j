@@ -30,6 +30,11 @@ final class PackedNodeMetadataArena {
 	static final int CONTEXT_BINDING_ORIGIN_INHERITED = 1 << 7;
 	static final int SEMANTIC_ASSURED_SHARED_MINUS_FILTER = 1;
 
+	/** Input observations retain their own admission facts; they do not create a structural scope boundary. */
+	static int structuralScopeFlags(int flags) {
+		return flags & ~INPUT_FRAME_SENSITIVE;
+	}
+
 	private final Columns relations;
 	private final Columns scalars;
 	private final Columns terms;
@@ -70,7 +75,7 @@ final class PackedNodeMetadataArena {
 	}
 
 	boolean attachRelationInputContract(int id, int requiredNames, int protectedNames, int nullableNames,
-			int independentNames) {
+			int independentNames, int writeNames) {
 		if (frozen) {
 			throw new IllegalStateException("packed node metadata is frozen");
 		}
@@ -79,13 +84,15 @@ final class PackedNodeMetadataArena {
 			return relations.requiredInputNames[id] == requiredNames
 					&& relations.protectedInputNames[id] == protectedNames
 					&& relations.nullableInputNames[id] == nullableNames
-					&& relations.independentOutputNames[id] == independentNames;
+					&& relations.independentOutputNames[id] == independentNames
+					&& relations.ordinaryWriteNames[id] == writeNames;
 		}
 		relations.inputContractsPresent[id] = 1;
 		relations.requiredInputNames[id] = requiredNames;
 		relations.protectedInputNames[id] = protectedNames;
 		relations.nullableInputNames[id] = nullableNames;
 		relations.independentOutputNames[id] = independentNames;
+		relations.ordinaryWriteNames[id] = writeNames;
 		return true;
 	}
 
@@ -107,6 +114,11 @@ final class PackedNodeMetadataArena {
 	int relationNullableInputNames(int id) {
 		relations.checkId(id);
 		return relations.nullableInputNames[id];
+	}
+
+	int relationOrdinaryWriteNames(int id) {
+		relations.checkId(id);
+		return relations.ordinaryWriteNames[id];
 	}
 
 	void attachRelationReplaySafety(int id, boolean safe) {
@@ -307,6 +319,7 @@ final class PackedNodeMetadataArena {
 		private int[] protectedInputNames;
 		private int[] nullableInputNames;
 		private int[] independentOutputNames;
+		private int[] ordinaryWriteNames;
 		private byte[] replaySafety;
 		private int[] sourceFirst;
 		private int[] sourceLast;
@@ -323,6 +336,7 @@ final class PackedNodeMetadataArena {
 								|| protectedInputNames[id] != other.protectedInputNames[id]
 								|| nullableInputNames[id] != other.nullableInputNames[id]
 								|| independentOutputNames[id] != other.independentOutputNames[id]
+								|| ordinaryWriteNames[id] != other.ordinaryWriteNames[id]
 								|| replaySafety[id] != other.replaySafety[id]
 								|| sourceFirst[id] != other.sourceFirst[id]
 								|| sourceLast[id] != other.sourceLast[id]
@@ -349,6 +363,7 @@ final class PackedNodeMetadataArena {
 			protectedInputNames = new int[capacity];
 			nullableInputNames = new int[capacity];
 			independentOutputNames = new int[capacity];
+			ordinaryWriteNames = new int[capacity];
 			replaySafety = new byte[capacity];
 			sourceFirst = new int[capacity];
 			sourceLast = new int[capacity];
@@ -403,6 +418,7 @@ final class PackedNodeMetadataArena {
 			protectedInputNames[targetId] = protectedInputNames[sourceId];
 			nullableInputNames[targetId] = nullableInputNames[sourceId];
 			independentOutputNames[targetId] = independentOutputNames[sourceId];
+			ordinaryWriteNames[targetId] = ordinaryWriteNames[sourceId];
 			replaySafety[targetId] = replaySafety[sourceId];
 			sourceFirst[targetId] = sourceFirst[sourceId];
 			sourceLast[targetId] = sourceLast[sourceId];
@@ -487,6 +503,7 @@ final class PackedNodeMetadataArena {
 			protectedInputNames = Arrays.copyOf(protectedInputNames, capacity);
 			nullableInputNames = Arrays.copyOf(nullableInputNames, capacity);
 			independentOutputNames = Arrays.copyOf(independentOutputNames, capacity);
+			ordinaryWriteNames = Arrays.copyOf(ordinaryWriteNames, capacity);
 			replaySafety = Arrays.copyOf(replaySafety, capacity);
 			sourceFirst = Arrays.copyOf(sourceFirst, capacity);
 			sourceLast = Arrays.copyOf(sourceLast, capacity);

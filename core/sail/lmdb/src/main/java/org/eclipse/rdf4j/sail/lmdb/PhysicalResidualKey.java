@@ -16,6 +16,8 @@ import java.io.DataOutputStream;
 import java.io.IOException;
 import java.util.Objects;
 
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor.RetainedMemoryAccount;
+
 /** Versioned identity for implementation-specific work residuals; it intentionally contains no cardinality. */
 final class PhysicalResidualKey {
 
@@ -32,6 +34,7 @@ final class PhysicalResidualKey {
 	private final String externalForm;
 	private final String digest;
 	private final int hashCode;
+	private volatile PhysicalResidualKey sourceRowsPredictor;
 
 	private PhysicalResidualKey(String algorithm, String accessKernel, String indexMode, String reopenMode,
 			String cacheMode, String cacheCapacityClass, String materializationParameterDomain,
@@ -55,6 +58,25 @@ final class PhysicalResidualKey {
 			String bindingLayoutClass) {
 		return new PhysicalResidualKey(algorithm, accessKernel, indexMode, reopenMode, cacheMode, cacheCapacityClass,
 				materializationParameterDomain, bindingLayoutClass);
+	}
+
+	PhysicalResidualKey memoizedRightResourcePredictor() {
+		return of(algorithm, accessKernel, indexMode, reopenMode, cacheMode, cacheCapacityClass,
+				materializationParameterDomain, "memoized-right-resources-v1:" + bindingLayoutClass);
+	}
+
+	boolean usesMemoizedRightResourcePredictor() {
+		return bindingLayoutClass.startsWith("memoized-right-resources-v1:");
+	}
+
+	PhysicalResidualKey sourceRowsPredictor() {
+		PhysicalResidualKey cached = sourceRowsPredictor;
+		if (cached == null) {
+			cached = of(algorithm, accessKernel, indexMode, reopenMode, cacheMode, cacheCapacityClass,
+					materializationParameterDomain, "source-rows-v2:" + bindingLayoutClass);
+			sourceRowsPredictor = cached;
+		}
+		return cached;
 	}
 
 	static PhysicalResidualKey parse(String externalForm) {
@@ -85,6 +107,35 @@ final class PhysicalResidualKey {
 
 	String algorithm() {
 		return algorithm;
+	}
+
+	void accountRetainedMemory(RetainedMemoryAccount account) {
+		PhysicalResidualKey current = this;
+		while (current != null && account.add(current, 112L)) {
+			account.add(current.algorithm, 40L + 2L * current.algorithm.length());
+			account.add(current.accessKernel, 40L + 2L * current.accessKernel.length());
+			account.add(current.indexMode, 40L + 2L * current.indexMode.length());
+			account.add(current.reopenMode, 40L + 2L * current.reopenMode.length());
+			account.add(current.cacheMode, 40L + 2L * current.cacheMode.length());
+			account.add(current.cacheCapacityClass, 40L + 2L * current.cacheCapacityClass.length());
+			account.add(current.materializationParameterDomain,
+					40L + 2L * current.materializationParameterDomain.length());
+			account.add(current.bindingLayoutClass, 40L + 2L * current.bindingLayoutClass.length());
+			account.add(current.externalForm, 40L + 2L * current.externalForm.length());
+			account.add(current.digest, 40L + 2L * current.digest.length());
+			current = current.sourceRowsPredictor;
+		}
+	}
+
+	boolean fitsPersistedFields() {
+		return LearningKeyCodec.fitsPersistedString(algorithm)
+				&& LearningKeyCodec.fitsPersistedString(accessKernel)
+				&& LearningKeyCodec.fitsPersistedString(indexMode)
+				&& LearningKeyCodec.fitsPersistedString(reopenMode)
+				&& LearningKeyCodec.fitsPersistedString(cacheMode)
+				&& LearningKeyCodec.fitsPersistedString(cacheCapacityClass)
+				&& LearningKeyCodec.fitsPersistedString(materializationParameterDomain)
+				&& LearningKeyCodec.fitsPersistedString(bindingLayoutClass);
 	}
 
 	void writeTo(DataOutputStream out) throws IOException {

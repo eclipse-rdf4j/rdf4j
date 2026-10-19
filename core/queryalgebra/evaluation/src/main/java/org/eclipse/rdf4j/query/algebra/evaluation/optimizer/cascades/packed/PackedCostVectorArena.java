@@ -164,22 +164,36 @@ final class PackedCostVectorArena {
 		return vectorId;
 	}
 
+	/** Compatibility projection: CPU retains the historical scalar workRows diagnostic. Not quantity authority. */
 	int importEstimate(PackedCostEstimate estimate) {
+		return importEstimate(estimate, false);
+	}
+
+	/** Imports only authentic declared quantities, retaining unknown WORK when any additive input is unknown. */
+	int importQuantities(PackedCostEstimate estimate) {
+		return importEstimate(estimate, true);
+	}
+
+	private int importEstimate(PackedCostEstimate estimate, boolean quantities) {
 		if (estimate == null) {
 			throw new NullPointerException("estimate");
 		}
 		resetBuilderToUnknown();
-		setBuilderFinite(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK, estimate.workRows());
-		setBuilderFinite(PackedCostDimensionRegistry.SOURCE_ROW_EVENTS, estimate.sequentialRows());
-		setBuilderFinite(PackedCostDimensionRegistry.RANDOM_SEEKS, estimate.randomSeeks());
-		setBuilderFinite(PackedCostDimensionRegistry.ITERATOR_OPENS, estimate.iteratorOpens());
-		setBuilderFinite(PackedCostDimensionRegistry.EXPRESSION_EVALUATIONS, estimate.expressionEvaluations());
-		setBuilderFinite(PackedCostDimensionRegistry.HASH_BUILD_ROW_EVENTS, estimate.hashBuildRows());
-		setBuilderFinite(PackedCostDimensionRegistry.HASH_PROBE_ROW_EVENTS, estimate.hashProbeRows());
-		setBuilderFinite(PackedCostDimensionRegistry.PATH_EXPANSION_ROW_EVENTS, estimate.pathExpansions());
-		setBuilderFinite(PackedCostDimensionRegistry.RESULT_ROW_EVENTS, estimate.resultRows());
-		setBuilderFinite(PackedCostDimensionRegistry.REMOTE_CALLS, estimate.remoteCalls());
-		setBuilderFinite(PackedCostDimensionRegistry.LEGACY_PEAK_MEMORY_ROWS, estimate.peakMemoryRows());
+		setBuilderFinite(PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK,
+				quantities ? estimate.physicalWorkRows() : estimate.workRows());
+		if (estimate.hasExplicitPhysicalCost()) {
+			setBuilderFinite(PackedCostDimensionRegistry.SOURCE_ROW_EVENTS, estimate.sequentialRows());
+			setBuilderFinite(PackedCostDimensionRegistry.RANDOM_SEEKS, estimate.randomSeeks());
+			setBuilderFinite(PackedCostDimensionRegistry.ITERATOR_OPENS, estimate.iteratorOpens());
+			setBuilderFinite(PackedCostDimensionRegistry.EXPRESSION_EVALUATIONS, estimate.expressionEvaluations());
+			setBuilderFinite(PackedCostDimensionRegistry.HASH_BUILD_ROW_EVENTS, estimate.hashBuildRows());
+			setBuilderFinite(PackedCostDimensionRegistry.HASH_PROBE_ROW_EVENTS, estimate.hashProbeRows());
+			setBuilderFinite(PackedCostDimensionRegistry.PATH_EXPANSION_ROW_EVENTS, estimate.pathExpansions());
+			setBuilderFinite(PackedCostDimensionRegistry.RESULT_ROW_EVENTS, estimate.resultRows());
+			setBuilderFinite(PackedCostDimensionRegistry.REMOTE_CALLS, estimate.remoteCalls());
+			setBuilderFinite(PackedCostDimensionRegistry.LEGACY_PEAK_MEMORY_ROWS, estimate.peakMemoryRows());
+		}
+
 		if (estimate.hasDependentCostComponents()) {
 			setBuilderFinite(PackedCostDimensionRegistry.STARTUP_WORK, estimate.startupOnceWork());
 			setBuilderFinite(PackedCostDimensionRegistry.DEPENDENT_INVOCATIONS,
@@ -200,6 +214,49 @@ final class PackedCostVectorArena {
 			setBuilderFinite(PackedCostDimensionRegistry.SPILL_WORK, estimate.memorySpillWork());
 		}
 		return internBuilder();
+	}
+
+	/** Reconstructs the quantity view of an imported estimate without trusting its legacy CPU price carrier. */
+	int declaredQuantities(int vector, boolean explicitPhysical) {
+		if (vector == 0) {
+			return 0;
+		}
+		double work = Double.NaN;
+		if (explicitPhysical) {
+			work = declaredWork(0.0d, vector, PackedCostDimensionRegistry.SOURCE_ROW_EVENTS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.RANDOM_SEEKS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.ITERATOR_OPENS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.EXPRESSION_EVALUATIONS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.HASH_BUILD_ROW_EVENTS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.HASH_PROBE_ROW_EVENTS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.PATH_EXPANSION_ROW_EVENTS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.RESULT_ROW_EVENTS);
+			work = declaredWork(work, vector, PackedCostDimensionRegistry.REMOTE_CALLS);
+		}
+		int cpu = PackedCostDimensionRegistry.STEADY_STATE_CPU_WORK;
+		// Preserve the existing interned vector when the diagnostic projection already equals its declaration.
+		if (!isKnown(vector, cpu) && Double.isNaN(work)
+				|| isKnown(vector, cpu) && Double.isFinite(work) && lower(vector, cpu) == work
+						&& point(vector, cpu) == work && upper(vector, cpu) == work && lineageId(vector, cpu) == 0) {
+			return vector;
+		}
+		resetBuilderToUnknown();
+		for (int axis = 1; axis <= DIMENSION_COUNT; axis++) {
+			if (axis != cpu && isKnown(vector, axis)) {
+				setBuilderInterval(axis, lower(vector, axis), point(vector, axis), upper(vector, axis),
+						lineageId(vector, axis));
+			}
+		}
+		setBuilderFinite(cpu, work);
+		return internBuilder();
+	}
+
+	private double declaredWork(double total, int vector, int axis) {
+		// Imports are exact point declarations. Do not reconstruct authority from unrelated interval estimates.
+		if (!isKnown(vector, axis) || lower(vector, axis) != upper(vector, axis) || lineageId(vector, axis) != 0) {
+			return Double.NaN;
+		}
+		return Math.min(Double.MAX_VALUE, total + point(vector, axis));
 	}
 
 	boolean isKnown(int vectorId, int dimensionId) {

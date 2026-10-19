@@ -23,7 +23,7 @@ import java.util.Locale;
 /** Shared, length-bounded encoding primitives for persisted learned-feedback identities. */
 final class LearningKeyCodec {
 
-	private static final int MAX_STRING_BYTES = 1_000_000;
+	static final int MAX_STRING_BYTES = 1_000_000;
 	private static final Base64.Encoder ENCODER = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder DECODER = Base64.getUrlDecoder();
 
@@ -60,6 +60,38 @@ final class LearningKeyCodec {
 		} catch (NoSuchAlgorithmException impossible) {
 			throw new IllegalStateException("SHA-256 is required by the Java platform", impossible);
 		}
+	}
+
+	static boolean fitsPersistedString(String value) {
+		long bytes = 0L;
+		for (int index = 0; index < value.length(); index++) {
+			char unit = value.charAt(index);
+			if (unit < 0x80) {
+				bytes++;
+			} else if (unit < 0x800) {
+				bytes += 2L;
+			} else if (Character.isHighSurrogate(unit) && index + 1 < value.length()
+					&& Character.isLowSurrogate(value.charAt(index + 1))) {
+				bytes += 4L;
+				index++;
+			} else if (Character.isSurrogate(unit)) {
+				bytes++;
+			} // UTF-8 encoder's replacement is one ASCII '?'.
+			else {
+				bytes += 3L;
+			}
+			if (bytes > MAX_STRING_BYTES) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	static void writePhysicalString(DataOutputStream out, String value) throws IOException {
+		if (!fitsPersistedString(value)) {
+			throw new IOException("physical identity exceeds the existing persisted string byte bound");
+		}
+		writeString(out, value);
 	}
 
 	static void writeString(DataOutputStream out, String value) throws IOException {

@@ -35,6 +35,7 @@ final class FrontierLearningKey {
 	private final String accessMode;
 	private final String externalForm;
 	private final int hashCode;
+	private volatile FrontierLearningKey sourceRowsPredictor;
 
 	private FrontierLearningKey(String operatorFamily, String rawTransform, long bindingLayoutFingerprint,
 			long correlationFingerprint, String accessKernel, String indexName, String accessMode) {
@@ -54,6 +55,21 @@ final class FrontierLearningKey {
 			long correlationFingerprint, String accessKernel, String indexName, String accessMode) {
 		return new FrontierLearningKey(operatorFamily, rawTransform, bindingLayoutFingerprint,
 				correlationFingerprint, accessKernel, indexName, accessMode);
+	}
+
+	FrontierLearningKey memoizedRightResourcePredictor() {
+		return of(operatorFamily, rawTransform, bindingLayoutFingerprint, correlationFingerprint,
+				"memoized-right-resources-v1:" + accessKernel, indexName, accessMode);
+	}
+
+	FrontierLearningKey sourceRowsPredictor() {
+		FrontierLearningKey cached = sourceRowsPredictor;
+		if (cached == null) {
+			cached = of(operatorFamily, "SOURCE_ROWS_V2@" + rawTransform, bindingLayoutFingerprint,
+					correlationFingerprint, accessKernel, indexName, accessMode);
+			sourceRowsPredictor = cached;
+		}
+		return cached;
 	}
 
 	static FrontierLearningKey parse(String externalForm) {

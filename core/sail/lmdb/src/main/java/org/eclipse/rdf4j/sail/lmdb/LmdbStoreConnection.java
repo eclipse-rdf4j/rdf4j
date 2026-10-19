@@ -1044,17 +1044,18 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			return null;
 		}
 		SimpleDataset copy = new SimpleDataset();
-		for (IRI graph : dataset.getDefaultGraphs()) {
-			copy.addDefaultGraph((IRI) detachValue(graph));
+		copy.setExplicitReadDataset(dataset.isExplicitReadDataset());
+		for (Resource graph : dataset.getDefaultGraphResources()) {
+			copy.addDefaultGraph((Resource) detachValue(graph));
 		}
-		for (IRI graph : dataset.getNamedGraphs()) {
-			copy.addNamedGraph((IRI) detachValue(graph));
+		for (Resource graph : dataset.getNamedGraphResources()) {
+			copy.addNamedGraph((Resource) detachValue(graph));
 		}
-		for (IRI graph : dataset.getDefaultRemoveGraphs()) {
-			copy.addDefaultRemoveGraph((IRI) detachValue(graph));
+		for (Resource graph : dataset.getDefaultRemoveGraphResources()) {
+			copy.addDefaultRemoveGraph((Resource) detachValue(graph));
 		}
-		if (dataset.getDefaultInsertGraph() != null) {
-			copy.setDefaultInsertGraph((IRI) detachValue(dataset.getDefaultInsertGraph()));
+		if (dataset.getDefaultInsertGraphResource() != null) {
+			copy.setDefaultInsertGraph((Resource) detachValue(dataset.getDefaultInsertGraphResource()));
 		}
 		return copy;
 	}
@@ -1196,7 +1197,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 						}
 						boolean snapshotTransaction = operationAttempt == null && isActive()
 								&& isTransactionSnapshot();
-						if (isMapResizeConflict(failure) && growthToken != null) {
+						if (isMapResizeConflict(failure, growthToken, growthKind) && growthToken != null) {
 							if (snapshotTransaction && isReplayEligibleLocked()) {
 								replayRequested = true;
 								pendingGrowthViews.addAll(readViews);
@@ -1359,6 +1360,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	private static boolean isQueuedReplaySignal(Throwable failure, LmdbSailStore.MapGrowthToken growthToken,
 			LmdbSailStore.MapResizeKind growthKind) {
+		return isOwnedReplaySignal(failure, growthToken, growthKind, true);
+	}
+
+	private static boolean isOwnedReplaySignal(Throwable failure, LmdbSailStore.MapGrowthToken growthToken,
+			LmdbSailStore.MapResizeKind growthKind, boolean requireQueueEnvelope) {
 		if (growthToken == null || growthKind == null) {
 			return false;
 		}
@@ -1372,7 +1378,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			queued = true;
 			current = current.getCause();
 		}
-		if (!queued || !(current instanceof QueryExecutionContext.ReplaySafepointException)
+		if ((requireQueueEnvelope && !queued)
+				|| !(current instanceof QueryExecutionContext.ReplaySafepointException)
 				|| current.getSuppressed().length != 0) {
 			return false;
 		}
@@ -2500,7 +2507,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 							growthToken = pendingGrowthToken;
 							growthKind = pendingGrowthKind;
 						}
-						boolean conflict = isMapResizeConflict(failure);
+						boolean conflict = isMapResizeConflict(failure, growthToken, growthKind);
 						boolean retryableOutcome = failure == null || conflict;
 						if (!detachedResult && retryableOutcome && operationAttempt == null
 								&& (conflict || growthToken != null)
@@ -2806,6 +2813,26 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			throw new SailException("The LMDB read operation was cancelled");
 		}
 		QueryExecutionContext.checkpointReplaySafepoint();
+	}
+
+	/** A cooperative signal authorizes only the accepted growth episode that requested this read's replay. */
+	static boolean isMapResizeConflict(Throwable failure, LmdbSailStore.MapGrowthToken growthToken,
+			LmdbSailStore.MapResizeKind growthKind) {
+		if (failure == null) {
+			return false;
+		}
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Throwable current = failure; current != null; current = current.getCause()) {
+			if (!visited.add(current)) {
+				return false;
+			}
+			if (current instanceof QueryExecutionContext.ReplaySafepointException) {
+				return isOwnedReplaySignal(failure, growthToken, growthKind, false);
+			}
+		}
+		// Native snapshot invalidation retains the existing physical-conflict path. A queued cooperative signal
+		// instead requires the exact token, map kind, framework envelope and clean exception graph above.
+		return isMapResizeConflict(failure);
 	}
 
 	static boolean isMapResizeConflict(Throwable failure) {
@@ -3314,7 +3341,7 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private volatile TupleExpr tupleExpr;
 	}
 
-	private record ReplayPlan<T> (ReplayFactory<T> factory, long generation,
+	private record ReplayPlan<T>(ReplayFactory<T> factory, long generation,
 			List<LmdbSailStore.ReadViewLease> readViews, QueryExecutionDeadline deadline,
 			ReplayPlanIteration<T> iteration) {
 	}

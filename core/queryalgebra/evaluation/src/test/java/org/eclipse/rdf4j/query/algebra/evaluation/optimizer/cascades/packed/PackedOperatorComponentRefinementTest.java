@@ -174,6 +174,20 @@ class PackedOperatorComponentRefinementTest {
 			}
 
 			@Override
+			public void estimate(PackedQueryView query, int relationId, PackedCostContext context,
+					PackedCostEstimate output) {
+				double rows = estimateRows(query, relationId);
+				double work = estimateLocalWork(query, relationId, rows);
+				if (context.prefixRelationCount() > 0 && Double.isFinite(rows) && Double.isFinite(work)
+						&& Double.isFinite(context.prefixRows())) {
+					// This fixture prices the whole supplied prefix at the same scalar work as its isolated child.
+					output.setContextualRows(context.prefixRows() * rows, work);
+				} else {
+					output.setRows(rows, work);
+				}
+			}
+
+			@Override
 			public void refineOperator(PackedQueryView query, int relationId, PackedCostContext context,
 					PackedCostEstimate output) {
 				if (query.isFilter(relationId)) {

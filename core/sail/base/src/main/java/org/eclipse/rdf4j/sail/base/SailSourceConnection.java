@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.common.transaction.QueryEvaluationMode;
 import org.eclipse.rdf4j.common.transaction.TransactionSetting;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Namespace;
 import org.eclipse.rdf4j.model.Resource;
@@ -49,6 +50,7 @@ import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.BindingSetOrigin;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -61,7 +63,6 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.explanation.ExplanationImpl;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailConnection;
 import org.eclipse.rdf4j.sail.SailException;
@@ -309,7 +310,9 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			QueryOperationContext.throwIfDeadlineExpired();
 			QueryEvaluationStep qes = strategy.precompile(tupleExpr);
 			QueryOperationContext.throwIfDeadlineExpired();
-			iteration = qes.evaluate(EmptyBindingSet.getInstance());
+			// Parameters constrain optimized reads; they are not a solution row produced by OPTIONAL, GROUP or BIND.
+			// Retain the actual representative in the existing origin until its producer exports the value.
+			iteration = qes.evaluate(BindingSetOrigin.optimizationInput(bindings));
 			QueryOperationContext.throwIfDeadlineExpired();
 			iteration = interlock(iteration, rdfDataset);
 			rdfDataset = null; // The iteration now owns the dataset, including any acquired source.
@@ -322,6 +325,12 @@ public abstract class SailSourceConnection extends AbstractNotifyingSailConnecti
 			closeFailedRead(e, iteration, rdfDataset);
 			throw e;
 		} catch (QueryEvaluationException e) {
+			if (QueryExecutionContext.isReplaySafepointFailure(e)) {
+				// Preserve the original typed control envelope for the read owner. Adding a generic SailException
+				// here would make it indistinguishable from a terminal recreation or cleanup failure.
+				closeFailedRead(e, iteration, rdfDataset);
+				throw e;
+			}
 			SailException failure = new SailException(e);
 			closeFailedRead(failure, iteration, rdfDataset);
 			throw failure;

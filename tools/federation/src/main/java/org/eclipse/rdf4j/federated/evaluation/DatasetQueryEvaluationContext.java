@@ -28,6 +28,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MutableBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 /** Supplies the query dataset while retaining shared query state and binding ownership. */
 final class DatasetQueryEvaluationContext implements QueryEvaluationContext {
@@ -79,6 +80,11 @@ final class DatasetQueryEvaluationContext implements QueryEvaluationContext {
 	@Override
 	public Comparator<Value> getComparator() {
 		return delegate.getComparator();
+	}
+
+	@Override
+	public BlankNodeAllocationScope getBlankNodeAllocationScope() {
+		return delegate.getBlankNodeAllocationScope();
 	}
 
 	@Override

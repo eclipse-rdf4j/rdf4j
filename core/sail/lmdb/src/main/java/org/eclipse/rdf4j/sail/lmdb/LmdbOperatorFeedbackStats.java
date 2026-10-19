@@ -132,6 +132,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private static final int ABSOLUTE_LOGICAL_PERSIST_VERSION = 20;
 	private static final int LEO_PLUS_PERSIST_VERSION = 21;
 	private static final int PERSIST_VERSION = 24;
+	// Only a retained independent physical identity changes the legacy24 byte layout.
+	private static final int PHYSICAL_EVENT_PERSIST_SCHEMA = 25;
 	static final String SIDECAR_DATA_STAMP_CHECK_PROPERTY = "rdf4j.optimizer.lmdb.sidecarDataStampCheck";
 	private static final int MAX_ENTRIES = 2048;
 	private static final double MIN_CORRECTION_RATIO = 0.0001d;
@@ -302,6 +304,10 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		loadIfPresent();
 	}
 
+	synchronized FrontierLearningModel.PhysicalInventory physicalInventory() {
+		return frontierLearning.physicalInventory();
+	}
+
 	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract) {
 		return resolveRuntimeFeedbackTarget(contract, null, null);
 	}
@@ -309,6 +315,23 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	synchronized RuntimeFeedbackTarget resolveRuntimeFeedbackTarget(RuntimeFeedbackContract contract,
 			LmdbFilterSelectivityStats filterStatistics,
 			LmdbFilterSelectivityStats.ResolvedFilterCells filterCells) {
+		if (adaptiveEvidenceAllowed() && contract != null
+				&& contract.descriptor()instanceof LmdbPhysicalEventFeedbackDescriptor physical) {
+			// No logical/filter/lifecycle/exact destination exists for this descriptor type.
+			if (contract.admissionFlags() != RuntimeFeedbackContract.ADMIT_PHYSICAL) {
+				return RuntimeFeedbackTarget.NO_OP;
+			}
+			FrontierLearningModel learningModel = frontierLearning;
+			FrontierLearningModel.ResolvedCells cells = learningModel.resolvePhysical(physical.eventKey(),
+					physical.physicalKey(), physical.applicability(),
+					isFiniteNonNegative(contract.rawPrediction().sourceRows()));
+			if (cells == null) {
+				return RuntimeFeedbackTarget.NO_OP;
+			}
+			BoundRuntimeFeedbackDestination destination = new BoundRuntimeFeedbackDestination(this, contract,
+					learningModel, cells, planLifecycle, null, null, null, null, runtimeTargetGeneration);
+			return new RuntimeFeedbackAccumulator(contract, destination);
+		}
 		if (!adaptiveEvidenceAllowed() || contract == null
 				|| !(contract.descriptor()instanceof LmdbRuntimeFeedbackDescriptor descriptor)) {
 			return RuntimeFeedbackTarget.NO_OP;
@@ -319,7 +342,8 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		FrontierLearningModel learningModel = frontierLearning;
 		FrontierLearningModel.ResolvedCells learningCells = learningModel.resolve(
 				descriptor.logicalKey(), descriptor.physicalKey(), descriptor.applicability(),
-				resolveLogical, resolvePhysical);
+				resolveLogical, resolvePhysical,
+				resolvePhysical && isFiniteNonNegative(contract.rawPrediction().sourceRows()));
 		if ((resolveLogical || resolvePhysical) && learningCells == null) {
 			return RuntimeFeedbackTarget.NO_OP;
 		}
@@ -1152,7 +1176,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					.getDoubleMetricPlanned("optimizer.dependentExhaustionPredictedSum");
 			boolean componentWorkObservation = isFiniteNonNegative(predictedFirstMatchSum)
 					&& isFiniteNonNegative(predictedExhaustionSum);
-			if (!genericFrontierRecorded && !componentWorkObservation) {
+			if (!genericFrontierRecorded && !componentWorkObservation && hasDeclaredSourcePrediction(filter)) {
 				observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
 						FrontierCostDimension.SOURCE_ROWS_SCANNED,
 						frontierEventPrediction(filter, FrontierCostDimension.SOURCE_ROWS_SCANNED,
@@ -1470,10 +1494,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 					FrontierCostDimension.RESULT_ROWS, aggregate.rawPredictedWorkSum().resultRows(),
 					aggregate.actualWorkSum().resultRows(), epoch);
 		}
-		observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
-				FrontierCostDimension.SOURCE_ROWS_SCANNED,
-				aggregate.rawPredictedWorkSum().sourceRowsScanned(),
-				aggregate.actualWorkSum().sourceRowsScanned(), epoch);
+		if (hasDeclaredSourcePrediction(node)) {
+			observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
+					FrontierCostDimension.SOURCE_ROWS_SCANNED,
+					aggregate.rawPredictedWorkSum().sourceRowsScanned(),
+					aggregate.actualWorkSum().sourceRowsScanned(), epoch);
+		}
 		observePhysicalOrLegacy(logicalKey, residualKey, applicability, physicalKey, featureEnvelope,
 				FrontierCostDimension.INDEX_SEEKS,
 				aggregate.rawPredictedWorkSum().randomSeeks(), aggregate.actualWorkSum().randomSeeks(), epoch);
@@ -1500,6 +1526,12 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		trace("record-frontier", node, null,
 				"key=" + encodedKey + ", event=" + eventDigest + ", state=" + stateDigest);
 		return true;
+	}
+
+	private static boolean hasDeclaredSourcePrediction(TupleExpr node) {
+		RuntimeFeedbackContract contract = node.getRuntimeFeedbackContract();
+		return contract != null && contract.admits(RuntimeFeedbackContract.ADMIT_PHYSICAL)
+				&& isFiniteNonNegative(contract.rawPrediction().sourceRows());
 	}
 
 	private void observePhysicalOrLegacy(LogicalLearningKey logicalKey, PhysicalResidualKey residualKey,
@@ -1820,6 +1852,29 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				FRONTIER_EXACT_CARDINALITY_FACTS_PROPERTY, "true"));
 	}
 
+	synchronized FrontierLearningModel.DimensionDecision physicalDimensionDecision(PhysicalEventKey eventKey,
+			PhysicalResidualKey physicalKey, LearningApplicability applicability, FrontierCostDimension dimension,
+			LearningFeatureEnvelope features, double predicted) {
+		return adaptiveEvidenceAllowed()
+				? frontierLearning.physicalDecision(eventKey, physicalKey, applicability, dimension, features,
+						predicted)
+				: new FrontierLearningModel.DimensionDecision(
+						new LearningGateDecision(LearningGateDecision.Outcome.INAPPLICABLE, 0L, 0L,
+								Double.NaN, Double.NaN),
+						null);
+	}
+
+	synchronized FrontierLearningModel.PosteriorSnapshot physicalPosterior(PhysicalEventKey eventKey,
+			PhysicalResidualKey physicalKey, LearningApplicability applicability, FrontierCostDimension dimension) {
+		return adaptiveEvidenceAllowed()
+				? frontierLearning.physicalPosterior(eventKey, physicalKey, applicability, dimension)
+				: null;
+	}
+
+	synchronized long independentPhysicalKeyBytes() {
+		return frontierLearning.independentPhysicalKeyBytes();
+	}
+
 	synchronized FrontierLearningModel.PosteriorSnapshot logicalPosterior(LogicalLearningKey key,
 			LearningApplicability applicability, FrontierCostDimension dimension) {
 		return adaptiveEvidenceAllowed() ? frontierLearning.logicalPosterior(key, applicability, dimension) : null;
@@ -2102,12 +2157,11 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		}
 		boolean databaseExact = "database_exact".equalsIgnoreCase(node.getStringMetricPlanned(FRONTIER_GUARANTEE));
 		double correctedRows = databaseExact ? baseRows : rows.correctedValue();
-		FrontierLearningModel.DimensionEstimate work = frontierLearning.estimate(
-				key, FrontierCostDimension.SOURCE_ROWS_SCANNED, baseWorkRows);
-		double correctedWork = work == null ? baseWorkRows : work.correctedValue();
+		// This API receives a complete price, without a declared SOURCE_ROWS quantity.
+		double correctedWork = baseWorkRows;
 		double confidence = posteriorConfidence(rows.posteriorPrecision());
 		double rowQError = Math.max(1.0d, Math.exp(Math.abs(rows.posteriorLogMean())));
-		double workQError = work == null ? 1.0d : Math.max(1.0d, Math.exp(Math.abs(work.posteriorLogMean())));
+		double workQError = 1.0d;
 		double uncertaintyRows = Math.sqrt(Math.max(0.0d, rows.posteriorLogMeanVariance()))
 				* Math.max(correctedRows, correctedWork);
 		return new OperatorEstimate(correctedRows, Math.max(correctedRows, correctedWork),
@@ -2396,7 +2450,9 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 	private boolean persistOperatorFeedback(SketchSnapshotIdentity snapshotIdentity) {
 		Path tempPath = sidecarPath.resolveSibling(sidecarPath.getFileName().toString() + ".tmp");
 		try (DataOutputStream out = new DataOutputStream(Files.newOutputStream(tempPath))) {
-			out.writeInt(PERSIST_VERSION);
+			int schema = frontierLearning.requiresPhysicalEventSchema() ? PHYSICAL_EVENT_PERSIST_SCHEMA
+					: PERSIST_VERSION;
+			out.writeInt(schema);
 			snapshotIdentity.writeTo(out);
 			// The sketch identity only changes when the async synopsis rebuild publishes. The journal sequence closes
 			// the intervening statement-commit window without treating metadata-only LMDB commits as data mutations.
@@ -2429,7 +2485,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 				entry.getKey().writeTo(out);
 				entry.getValue().writeTo(out);
 			}
-			frontierLearning.writeTo(out);
+			frontierLearning.writeTo(out, schema >= PHYSICAL_EVENT_PERSIST_SCHEMA);
 			int exactFactCount = 0;
 			for (ExactCardinalityCell cell : exactCardinalityFacts.values()) {
 				exactFactCount += cell.hasFact() ? 1 : 0;
@@ -2512,7 +2568,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 		int loadedSteeringBadMisses = 0;
 		try (DataInputStream in = new DataInputStream(Files.newInputStream(sidecarPath))) {
 			int version = in.readInt();
-			if (version != PERSIST_VERSION) {
+			if (version != PERSIST_VERSION && version != PHYSICAL_EVENT_PERSIST_SCHEMA) {
 				return;
 			}
 			SketchSnapshotIdentity persistedIdentity = SketchSnapshotIdentity.readFrom(in);
@@ -2567,7 +2623,7 @@ final class LmdbOperatorFeedbackStats implements LeoLearnedEvidenceService {
 			 */
 			if (version >= LOGICAL_PHYSICAL_PERSIST_VERSION) {
 				FrontierLearningModel persistedFrontierLearning = FrontierLearningModel.readFrom(
-						in, version >= LEO_PLUS_PERSIST_VERSION);
+						in, version >= LEO_PLUS_PERSIST_VERSION, version >= PHYSICAL_EVENT_PERSIST_SCHEMA);
 				if (version >= ABSOLUTE_LOGICAL_PERSIST_VERSION) {
 					loadedFrontierLearning = persistedFrontierLearning;
 				}

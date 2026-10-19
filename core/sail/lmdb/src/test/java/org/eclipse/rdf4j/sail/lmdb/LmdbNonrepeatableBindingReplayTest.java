@@ -71,7 +71,8 @@ class LmdbNonrepeatableBindingReplayTest {
 	@Timeout(value = 30, unit = TimeUnit.SECONDS)
 	void growthNeverReopensNonrepeatableQueryInputs(SourceKind sourceKind, TransactionMode transactionMode,
 			boolean nested, @TempDir File directory) throws Exception {
-		BarrierFunction function = new BarrierFunction();
+		int barrierInvocation = sourceKind == SourceKind.SINGLE_USE ? 2 : 1;
+		BarrierFunction function = new BarrierFunction(barrierInvocation);
 		LmdbStore store = new LmdbStore(directory, new LmdbStoreConfig("spoc,posc")
 				.setTripleDBSize(MAP_SIZE)
 				.setValueDBSize(MAP_SIZE)
@@ -253,10 +254,15 @@ class LmdbNonrepeatableBindingReplayTest {
 	}
 
 	private static final class BarrierFunction implements Function {
+		private final int barrierInvocation;
 		private final CountDownLatch entered = new CountDownLatch(1);
 		private final CountDownLatch release = new CountDownLatch(1);
 		private final AtomicInteger calls = new AtomicInteger();
 		private final AtomicInteger keyEvaluations = new AtomicInteger();
+
+		private BarrierFunction(int barrierInvocation) {
+			this.barrierInvocation = barrierInvocation;
+		}
 
 		@Override
 		public String getURI() {

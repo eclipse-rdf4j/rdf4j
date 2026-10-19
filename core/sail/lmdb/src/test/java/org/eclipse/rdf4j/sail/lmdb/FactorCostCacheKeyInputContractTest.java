@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -32,9 +33,11 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomains;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -231,5 +234,32 @@ class FactorCostCacheKeyInputContractTest {
 				new And(new Bound(Var.of("other")), new And(new Bound(Var.of("Aa")), new Bound(Var.of("BB"))))));
 		filter.setRequiredInputBindingNames(required);
 		return filter;
+	}
+
+	@Test
+	void qualifiedFallbackKeysSeparateRUDistinctAndPopulationDescription() {
+		StatementPattern factor = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		EstimateContext estimate = EstimateContext.root(factor, new QuadSnapshotIdentity(11L, 13L, 17L), 19L);
+		JoinFactorCostModel.CostContext base = JoinFactorCostModel.CostContext.forOptimization(
+				Set.of("o"), 6.0d, Double.NaN, true, true, Map.of(), List.of())
+				.withPrefixFactorsDescribeCurrentRows(false)
+				.withUnrelatedPrefixRows(2.0d);
+		Object key = ScopedFactorCostCacheKey.of(factor, base, estimate);
+		assertThat(ScopedFactorCostCacheKey.of(factor.clone(), base, estimate)).isEqualTo(key);
+		for (double rows : new double[] { 0.0d, 0.5d, 1.0d, 7.0d }) {
+			JoinFactorCostModel.CostContext changed = JoinFactorCostModel.CostContext.forOptimization(
+					Set.of("o"), rows, Double.NaN, true, true, Map.of(), List.of())
+					.withPrefixFactorsDescribeCurrentRows(false)
+					.withUnrelatedPrefixRows(2.0d);
+			assertThat(ScopedFactorCostCacheKey.of(factor, changed, estimate)).isNotEqualTo(key);
+		}
+		assertThat(ScopedFactorCostCacheKey.of(factor, base.withUnrelatedPrefixRows(0.0d), estimate)).isNotEqualTo(key);
+		assertThat(ScopedFactorCostCacheKey.of(factor, base.withPrefixFactorsDescribeCurrentRows(true), estimate))
+				.isNotEqualTo(key);
+		JoinFactorCostModel.CostContext distinct = JoinFactorCostModel.CostContext.forOptimization(
+				Set.of("o"), 6.0d, 2.0d, true, true, Map.of(), List.of())
+				.withPrefixFactorsDescribeCurrentRows(false)
+				.withUnrelatedPrefixRows(2.0d);
+		assertThat(ScopedFactorCostCacheKey.of(factor, distinct, estimate)).isNotEqualTo(key);
 	}
 }

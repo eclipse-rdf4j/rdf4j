@@ -165,7 +165,7 @@ final class PackedLogicalRuleProgram {
 	private void addSafeAliasFilterCommutationAlternative(int filterExpressionId) {
 		if (relations.operatorTag(filterExpressionId) != PackedRelOp.FILTER
 				|| relations.childCount(filterExpressionId) != 1
-				|| relations.semanticScopeId(filterExpressionId) != 0
+				|| PackedNodeMetadataArena.structuralScopeFlags(relations.semanticScopeId(filterExpressionId)) != 0
 				|| relations.executionDomainId(filterExpressionId) != 0) {
 			return;
 		}
@@ -194,7 +194,7 @@ final class PackedLogicalRuleProgram {
 		int extensionExpressionId = factorIds[candidateOrdinal];
 		if (relations.operatorTag(extensionExpressionId) != PackedRelOp.EXTENSION
 				|| relations.childCount(extensionExpressionId) != 1
-				|| relations.semanticScopeId(extensionExpressionId) != 0
+				|| PackedNodeMetadataArena.structuralScopeFlags(relations.semanticScopeId(extensionExpressionId)) != 0
 				|| relations.executionDomainId(extensionExpressionId) != 0) {
 			return;
 		}
@@ -272,7 +272,7 @@ final class PackedLogicalRuleProgram {
 			return true;
 		}
 		return relations.payloadId(expressionId) == 0
-				&& relations.semanticScopeId(expressionId) == 0
+				&& PackedNodeMetadataArena.structuralScopeFlags(relations.semanticScopeId(expressionId)) == 0
 				&& relations.executionDomainId(expressionId) == 0
 				&& plainInnerJoinRegion(relations.childGroupId(expressionId, 0))
 				&& plainInnerJoinRegion(relations.childGroupId(expressionId, 1));
@@ -654,10 +654,6 @@ final class PackedLogicalRuleProgram {
 		int operator = scalars.operatorTag(scalarId);
 		if (operator == PackedScalarOp.VARIABLE) {
 			addTerm(scalars.payloadId(scalarId), output);
-		} else if (operator == PackedScalarOp.VALUE_TRIPLE_REF) {
-			addPayloadTerms(scalars.payloadId(scalarId), output);
-		} else if (operator == PackedScalarOp.TRIPLE_COMPONENT) {
-			addTerm(payloads.payloadId(scalars.payloadId(scalarId)), output);
 		} else if (operator == PackedScalarOp.EXISTS || operator == PackedScalarOp.IN
 				|| operator == PackedScalarOp.COMPARE_ANY || operator == PackedScalarOp.COMPARE_ALL) {
 			int referencedNamesId = scalars.semanticScopeId(scalarId);
@@ -3634,14 +3630,19 @@ final class PackedLogicalRuleProgram {
 
 	/**
 	 * A finite-values anchor joins by term identity while the filter it replaces compares by value equality. The two
-	 * only agree when every constant's value-equality class has a single term representative: IRIs, blank nodes, and
-	 * string-valued literals. Numeric, boolean, and temporal constants can value-equal differently-represented stored
+	 * only agree when every constant's value-equality class has a representation-stable producer: IRIs, blank nodes,
+	 * and plain string literals. A language tag's case remains observable even when RDF equality ignores it.
+	 * Numeric, boolean, and temporal constants can value-equal differently-represented stored
 	 * terms (e.g. {@code 1} parses as {@code "1"^^xsd:integer} but the store may hold {@code "1"^^xsd:int}), so those
 	 * are left to the predicate-range anchor rule, which expands constants to the proven stored representations.
 	 */
 	private boolean finiteDomainTermIdentitySafe() {
 		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
-			if (!termIdentitySafe(objects.value(finiteValueObjectIds[ordinal]))) {
+			Object constant = objects.value(finiteValueObjectIds[ordinal]);
+			// A filter driver also owns the produced binding, beyond preserving the comparison's truth set.
+			// Language tags compare without case, but LANG and projection expose the actual producer's spelling.
+			if (!termIdentitySafe(constant)
+					|| constant instanceof Literal literal && literal.getLanguage().isPresent()) {
 				return false;
 			}
 		}
@@ -3649,11 +3650,10 @@ final class PackedLogicalRuleProgram {
 	}
 
 	/**
-	 * Whether a constant's SPARQL value-equality class has a single RDF term representative, so that a term-identity
-	 * VALUES join may replace a value-equality comparison with it: IRIs, blank nodes, xsd:string literals and
-	 * language-tagged literals (whose {@code Literal#equals} already ignores language-tag case, exactly like value
-	 * equality; a store that keeps case variants as distinct terms is a storage-level concern). Shared by the
-	 * finite-filter rule and the finite code/type rule.
+	 * Whether a constant's SPARQL value equality agrees with RDF term equality for membership: IRIs, blank nodes,
+	 * xsd:string and language-tagged literals. Language-tag case is ignored by both comparisons, but remains
+	 * observable in a produced value. The finite-filter driver therefore also requires
+	 * {@link #finiteDomainTermIdentitySafe()}; the finite code/type membership check retains its existing domain.
 	 */
 	private static boolean termIdentitySafe(Object constant) {
 		if (!(constant instanceof Value value)) {
@@ -4030,10 +4030,6 @@ final class PackedLogicalRuleProgram {
 		int operator = scalars.operatorTag(scalarId);
 		if (operator == PackedScalarOp.VARIABLE) {
 			addTerm(scalars.payloadId(scalarId), output);
-		} else if (operator == PackedScalarOp.VALUE_TRIPLE_REF) {
-			addPayloadTerms(scalars.payloadId(scalarId), output);
-		} else if (operator == PackedScalarOp.TRIPLE_COMPONENT) {
-			addTerm(payloads.payloadId(scalars.payloadId(scalarId)), output);
 		} else if (operator == PackedScalarOp.EXISTS || operator == PackedScalarOp.IN
 				|| operator == PackedScalarOp.COMPARE_ANY || operator == PackedScalarOp.COMPARE_ALL) {
 			// (NOT) EXISTS and IN/ANY/ALL subqueries correlate on every in-scope variable they reference: a

@@ -13,8 +13,10 @@ package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.io.Serializable;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 
@@ -22,11 +24,15 @@ import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.AbstractBindingSet;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.MutableBindingSet;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
+import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
 /**
  * Immutable invocation provenance, separate from a solution's mapping equality. A request binding is a query-wide
@@ -49,8 +55,14 @@ public final class BindingSetOrigin implements Serializable {
 	private final Set<String> locals;
 	private final BindingSetOrigin parent;
 	private final Set<String> produced;
+	private final Map<String, Value> parameters;
 
 	private BindingSetOrigin(Set<String> requests, Set<String> locals) {
+		this(requests, locals, Map.of());
+	}
+
+	private BindingSetOrigin(Set<String> requests, Set<String> locals, Map<String, Value> parameters) {
+		this.parameters = Map.copyOf(parameters);
 		this.requests = Set.copyOf(requests);
 		this.locals = Set.copyOf(locals);
 		this.parent = null;
@@ -62,6 +74,7 @@ public final class BindingSetOrigin implements Serializable {
 		this.locals = Set.of();
 		this.parent = parent;
 		this.produced = Set.copyOf(produced);
+		this.parameters = parent.parameters;
 	}
 
 	public static BindingSetOrigin of(BindingSet bindings) {
@@ -88,6 +101,90 @@ public final class BindingSetOrigin implements Serializable {
 			return bindings;
 		}
 		return new Carrier(bindings, new BindingSetOrigin(bindings.getBindingNames(), Set.of()));
+	}
+
+	/**
+	 * A Sail optimization parameter constrains reads but does not seed an independently produced solution. Keep the
+	 * immutable supplied values in the existing origin while the ordinary mapping contains only local/unknown input.
+	 * Direct prepared-step callers retain the requestInput mapping contract.
+	 */
+	public static BindingSet optimizationInput(BindingSet bindings) {
+		BindingSet request = requestInput(bindings);
+		BindingSetOrigin origin = of(request);
+		if (origin.requestNames().isEmpty()) {
+			return request;
+		}
+		Map<String, Value> parameters = new HashMap<>(origin.parameters);
+		QueryBindingSet mapping = new QueryBindingSet(request.size());
+		for (Binding binding : request) {
+			if (origin.isRequest(binding.getName())) {
+				parameters.put(binding.getName(), binding.getValue());
+			} else {
+				mapping.addBinding(binding);
+			}
+		}
+		return with(mapping, new BindingSetOrigin(origin.requestNames(), origin.localNames(), parameters));
+	}
+
+	public boolean hasParameters() {
+		return !parameters.isEmpty();
+	}
+
+	/** A local assignment, including an unsuccessful one, masks its former parameter authority. */
+	public Value parameterValue(String name) {
+		return isRequest(name) ? parameters.get(name) : null;
+	}
+
+	/** Reifies only a fixed, nonconstant producer operand whose actual request authority is still present. */
+	public static BindingSet materializeParameters(BindingSet bindings, Collection<Var> variables,
+			QueryEvaluationContext context) {
+		BindingSetOrigin origin = of(bindings);
+		if (!origin.hasParameters()) {
+			return bindings;
+		}
+		MutableBindingSet materialized = null;
+		for (Var variable : variables) {
+			if (variable == null || variable.isConstant() || !variable.hasValue()
+					|| bindings.hasBinding(variable.getName())) {
+				continue;
+			}
+			Value supplied = origin.parameterValue(variable.getName());
+			if (supplied != null && supplied.equals(variable.getValue())) {
+				if (materialized == null) {
+					materialized = context.createBindingSet(bindings);
+				}
+				context.setBinding(variable.getName()).accept(supplied, materialized);
+			}
+		}
+		return materialized == null ? bindings : materialized;
+	}
+
+	private static Map<String, Value> mergeParameters(BindingSetOrigin base, BindingSetOrigin added) {
+		if (added.parameters.isEmpty()) {
+			return base.parameters;
+		}
+		if (base.parameters.isEmpty() || base.parameters == added.parameters) {
+			return added.parameters;
+		}
+		Map<String, Value> merged = new HashMap<>(base.parameters);
+		merged.putAll(added.parameters);
+		return merged;
+	}
+
+	/** Inherit invocation metadata without upgrading any locally produced or unknown existing value. */
+	private static BindingSetOrigin inheritParameters(BindingSet row, BindingSet input) {
+		BindingSetOrigin current = of(row);
+		BindingSetOrigin supplied = input == null ? UNKNOWN : of(input);
+		if (!supplied.hasParameters() || current.parameters == supplied.parameters) {
+			return current;
+		}
+		Set<String> requests = new HashSet<>(current.requestNames());
+		for (String name : supplied.parameters.keySet()) {
+			if (supplied.isRequest(name) && !current.isLocal(name) && !row.hasBinding(name)) {
+				requests.add(name);
+			}
+		}
+		return new BindingSetOrigin(requests, current.localNames(), mergeParameters(supplied, current));
 	}
 
 	public boolean isRequest(String name) {
@@ -195,7 +292,7 @@ public final class BindingSetOrigin implements Serializable {
 	/** Statement conversion owns new map/array rows, but a fully bound scan may return the shared input itself. */
 	public static CloseableIteration<BindingSet> produced(CloseableIteration<BindingSet> rows,
 			Collection<String> names, BindingSet sharedInput) {
-		if (names.isEmpty()) {
+		if (names.isEmpty() && (sharedInput == null || !of(sharedInput).hasParameters())) {
 			return rows;
 		}
 		Set<String> immutableNames = Set.copyOf(names);
@@ -206,7 +303,7 @@ public final class BindingSetOrigin implements Serializable {
 			if (row == sharedInput && !tracked(row)) {
 				return row;
 			}
-			BindingSetOrigin current = of(row);
+			BindingSetOrigin current = inheritParameters(row, sharedInput);
 			BindingSetOrigin origin = current == UNKNOWN ? localOrigin : current.producing(immutableNames);
 			if (sharedInput != null && unwrap(row) != unwrap(sharedInput)
 					&& (row instanceof QueryBindingSet || row instanceof ArrayBindingSet)) {
@@ -294,7 +391,7 @@ public final class BindingSetOrigin implements Serializable {
 				locals.add(name);
 			}
 		}
-		return new BindingSetOrigin(requests, locals);
+		return new BindingSetOrigin(requests, locals, mergeParameters(base, added));
 	}
 
 	public static BindingSetOrigin projected(BindingSetOrigin source, String[] sources, String[] targets,
@@ -311,7 +408,7 @@ public final class BindingSetOrigin implements Serializable {
 				requests.add(target);
 			}
 		}
-		return new BindingSetOrigin(requests, locals);
+		return new BindingSetOrigin(requests, locals, mergeParameters(inherited, source));
 	}
 
 	public static BindingSetOrigin projected(BindingSet source, String[] sources, String[] targets,
@@ -319,7 +416,7 @@ public final class BindingSetOrigin implements Serializable {
 		BindingSetOrigin sourceOrigin = of(source);
 		Set<String> fallbackNames = new HashSet<>();
 		for (String name : sources) {
-			if (!source.hasBinding(name) && parent.hasBinding(name)) {
+			if (!source.hasBinding(name) && !sourceOrigin.isLocal(name) && parent.hasBinding(name)) {
 				fallbackNames.add(name);
 			}
 		}
@@ -329,16 +426,86 @@ public final class BindingSetOrigin implements Serializable {
 		return projected(sourceOrigin, sources, targets, inheritParent ? of(parent) : UNKNOWN);
 	}
 
+	/** The emitted mapping decides whether a projection actually bound a parameter name. */
+	public static BindingSetOrigin projected(BindingSet source, String[] sources, String[] targets,
+			BindingSet parent, boolean inheritParent, BindingSet output) {
+		BindingSetOrigin origin = projected(source, sources, targets, parent, inheritParent);
+		if (!origin.hasParameters()) {
+			return origin;
+		}
+		Set<String> absent = new HashSet<>();
+		for (String target : targets) {
+			if (!output.hasBinding(target) && origin.parameterValue(target) != null) {
+				absent.add(target);
+			}
+		}
+		return origin.producing(absent);
+	}
+
 	/** For behavior-dependent memoization; ordinary BindingSet equality deliberately remains mapping based. */
 	public OriginKey key(Collection<String> names) {
 		Set<String> requests = new HashSet<>(requestNames());
 		requests.retainAll(names);
 		Set<String> locals = new HashSet<>(localNames());
 		locals.retainAll(names);
-		return new OriginKey(Set.copyOf(requests), Set.copyOf(locals));
+		if (!hasParameters()) {
+			return new OriginKey(Set.copyOf(requests), Set.copyOf(locals), Map.of(), Map.of());
+		}
+		Map<String, Value> values = new HashMap<>();
+		Map<String, String> representatives = new HashMap<>();
+		for (String name : names) {
+			Value value = parameterValue(name);
+			if (value != null) {
+				values.put(name, value);
+				representatives.put(name, value.toString());
+			}
+		}
+		return new OriginKey(Set.copyOf(requests), Set.copyOf(locals), Map.copyOf(values), Map.copyOf(representatives));
 	}
 
-	public record OriginKey(Set<String> requests, Set<String> locals) implements Serializable {
+	public record OriginKey(Set<String> requests, Set<String> locals, Map<String, Value> parameters,
+			Map<String, String> representatives) implements Serializable {
+		@Override
+		public boolean equals(Object other) {
+			if (this == other) {
+				return true;
+			}
+			if (!(other instanceof OriginKey key) || !requests.equals(key.requests) || !locals.equals(key.locals)
+					|| !parameters.equals(key.parameters) || !representatives.equals(key.representatives)) {
+				return false;
+			}
+			for (Map.Entry<String, Value> entry : parameters.entrySet()) {
+				if (!sameParameterAuthority(entry.getValue(), key.parameters.get(entry.getKey()))) {
+					return false;
+				}
+			}
+			return true;
+		}
+
+		@Override
+		public int hashCode() {
+			// Trusted identity refines RDF equality. Equal aliases may collide, but never authorize cache reuse.
+			int result = requests.hashCode();
+			result = 31 * result + locals.hashCode();
+			result = 31 * result + parameters.hashCode();
+			return 31 * result + representatives.hashCode();
+		}
+
+		private static boolean sameParameterAuthority(Value first, Value second) {
+			if (first == second) {
+				return true;
+			}
+			if (first instanceof RemoteBNode || second instanceof RemoteBNode) {
+				return first instanceof RemoteBNode firstRemote && second instanceof RemoteBNode secondRemote
+						&& RemoteBNode.sameTrustedIdentity(firstRemote, secondRemote);
+			}
+			if (first instanceof TripleTerm || second instanceof TripleTerm) {
+				return first instanceof TripleTerm firstTriple && second instanceof TripleTerm secondTriple
+						&& sameParameterAuthority(firstTriple.getSubject(), secondTriple.getSubject())
+						&& sameParameterAuthority(firstTriple.getObject(), secondTriple.getObject());
+			}
+			return true;
+		}
 	}
 
 	private static final class MutableCarrier extends AbstractBindingSet implements MutableBindingSet {

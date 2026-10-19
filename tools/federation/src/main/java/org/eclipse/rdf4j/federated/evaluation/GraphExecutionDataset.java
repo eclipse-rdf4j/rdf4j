@@ -15,42 +15,67 @@ import java.io.Serializable;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 
 /** Immutable dataset view for evaluating a selected default-graph alias inside GRAPH. */
 final class GraphExecutionDataset implements Dataset, Serializable {
 	private static final long serialVersionUID = 1L;
 
-	private static final Set<IRI> DEFAULT_GRAPHS = Set.of(RDF4J.NIL);
-
-	private final Set<IRI> defaultRemoveGraphs;
-	private final IRI defaultInsertGraph;
-	private final Set<IRI> namedGraphs;
+	private final SimpleDataset snapshot = new SimpleDataset();
 
 	GraphExecutionDataset(Dataset delegate) {
-		this.defaultRemoveGraphs = Set.copyOf(delegate.getDefaultRemoveGraphs());
-		this.defaultInsertGraph = delegate.getDefaultInsertGraph();
-		this.namedGraphs = Set.copyOf(delegate.getNamedGraphs());
+		snapshot.addDefaultGraph(RDF4J.NIL);
+		delegate.getDefaultRemoveGraphResources().forEach(snapshot::addDefaultRemoveGraph);
+		snapshot.setDefaultInsertGraph(delegate.getDefaultInsertGraphResource());
+		delegate.getNamedGraphResources().forEach(snapshot::addNamedGraph);
+		snapshot.setExplicitReadDataset(delegate.isExplicitReadDataset());
+	}
+
+	@Override
+	public boolean isExplicitReadDataset() {
+		return snapshot.isExplicitReadDataset();
+	}
+
+	@Override
+	public Set<Resource> getDefaultRemoveGraphResources() {
+		return snapshot.getDefaultRemoveGraphResources();
+	}
+
+	@Override
+	public Resource getDefaultInsertGraphResource() {
+		return snapshot.getDefaultInsertGraphResource();
+	}
+
+	@Override
+	public Set<Resource> getDefaultGraphResources() {
+		return snapshot.getDefaultGraphResources();
+	}
+
+	@Override
+	public Set<Resource> getNamedGraphResources() {
+		return snapshot.getNamedGraphResources();
 	}
 
 	@Override
 	public Set<IRI> getDefaultRemoveGraphs() {
-		return defaultRemoveGraphs;
+		return snapshot.getDefaultRemoveGraphs();
 	}
 
 	@Override
 	public IRI getDefaultInsertGraph() {
-		return defaultInsertGraph;
+		return snapshot.getDefaultInsertGraph();
 	}
 
 	@Override
 	public Set<IRI> getDefaultGraphs() {
-		return DEFAULT_GRAPHS;
+		return snapshot.getDefaultGraphs();
 	}
 
 	@Override
 	public Set<IRI> getNamedGraphs() {
-		return namedGraphs;
+		return snapshot.getNamedGraphs();
 	}
 }

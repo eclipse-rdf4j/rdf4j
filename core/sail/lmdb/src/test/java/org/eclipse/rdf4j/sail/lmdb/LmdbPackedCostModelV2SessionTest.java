@@ -436,9 +436,9 @@ class LmdbPackedCostModelV2SessionTest {
 				.thenReturn(100.0d);
 		when(costModel.mappedSemiAntiEstimate(eq(query), any(int[].class), eq(blocker), any(String[].class),
 				anyDouble(), anyDouble(), anyDouble()))
-						.thenReturn(new LmdbPackedCostModel.MappedSemiAntiEstimate(
-								0.9d, 0.0d, 1.0d, 0.86d,
-								"mapped-omni-correlated-semi-join", "frontier-v2-omni-center-subgraph"));
+				.thenReturn(new LmdbPackedCostModel.MappedSemiAntiEstimate(
+						0.9d, 0.0d, 1.0d, 0.86d,
+						"mapped-omni-correlated-semi-join", "frontier-v2-omni-center-subgraph"));
 		PackedCostContext context = mock(PackedCostContext.class);
 		when(context.leftInputRows()).thenReturn(100.0d);
 		when(context.rightInputRows()).thenReturn(Double.NaN);
@@ -729,17 +729,17 @@ class LmdbPackedCostModelV2SessionTest {
 		when(costModel.refineMappedIntermediateJoin(
 				eq(call.query()), any(int[].class), any(int[].class), any(EvidenceStateSummary.class),
 				any(int[].class), any(EvidenceStateSummary.class), anyBoolean(), any(PackedCostEstimate.class)))
-						.thenAnswer(invocation -> {
-							PackedCostEstimate estimate = invocation.getArgument(7);
-							double rows = logicalRefinements.incrementAndGet() == 1 ? 25.0d : 40.0d;
-							estimate.setContextualRows(rows, rows);
-							estimate.setEstimateProvenance("frontier-v2-omni-subgraph", "frontier_v2_mapped_join");
-							estimate.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
-							estimate.putPlannedDoubleMetric("plannedFrontierLowerRows", rows * 0.8d);
-							estimate.putPlannedDoubleMetric("plannedFrontierUpperRows", rows * 1.2d);
-							estimate.putPlannedDoubleMetric("plannedFrontierConfidence", 0.95d);
-							return true;
-						});
+				.thenAnswer(invocation -> {
+					PackedCostEstimate estimate = invocation.getArgument(7);
+					double rows = logicalRefinements.incrementAndGet() == 1 ? 25.0d : 40.0d;
+					estimate.setContextualRows(rows, rows);
+					estimate.setEstimateProvenance("frontier-v2-omni-subgraph", "frontier_v2_mapped_join");
+					estimate.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
+					estimate.putPlannedDoubleMetric("plannedFrontierLowerRows", rows * 0.8d);
+					estimate.putPlannedDoubleMetric("plannedFrontierUpperRows", rows * 1.2d);
+					estimate.putPlannedDoubleMetric("plannedFrontierConfidence", 0.95d);
+					return true;
+				});
 
 		try (PackedCostSession session = new LmdbFrontierStatisticsCostSession(
 				delegate, costModel, view, call.query(), runtime, true)) {
@@ -1225,19 +1225,27 @@ class LmdbPackedCostModelV2SessionTest {
 	void mappedV2PackedTransitionRetainsRowPreservingAliasBindingPrefix() throws Exception {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
+		FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
+		FrontierStatisticsView view = mock(FrontierStatisticsView.class);
 		ValueStore valueStore = mock(ValueStore.class);
 		when(runtime.statisticsService()).thenReturn(statistics);
 		when(runtime.valueStore()).thenReturn(valueStore);
 		when(runtime.frontierSettings()).thenReturn(
 				LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
 						.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
+		when(statistics.status()).thenReturn(status);
+		when(status.availability()).thenReturn(FrontierStatisticsAvailability.READY);
+		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
+		when(statistics.openCurrentView()).thenReturn(view);
+		when(view.ready()).thenReturn(true);
+		when(view.estimateProjectedDistinct(any(), anyInt())).thenReturn(Double.NaN);
 		var reviewPredicate = VF.createIRI("urn:test:packed-omni:review");
 		var aboutPredicate = VF.createIRI("urn:test:packed-omni:about");
 		when(valueStore.getId(reviewPredicate)).thenReturn(41L);
 		when(valueStore.getId(aboutPredicate)).thenReturn(42L);
-		when(statistics.estimateLeafCurrent(any())).thenReturn(new FrontierLeafEstimate(
+		when(view.estimateLeaf(any())).thenReturn(new FrontierLeafEstimate(
 				100.0d, 80.0d, 120.0d, 0.95d, "frontier-v2-omni-leaf", FrontierFallbackReason.NONE));
-		when(statistics.estimateJoinCurrent(any())).thenReturn(new FrontierJoinEstimate(
+		when(view.estimateJoin(any())).thenReturn(new FrontierJoinEstimate(
 				17.0d, 13.0d, 23.0d, 0.90d, "frontier-v2-omni-alias-prefix", FrontierFallbackReason.NONE));
 		when(runtime.packedTransitionRows(any(), any(), any(Double.class), any(Double.class))).thenReturn(999.0d);
 
@@ -1247,16 +1255,40 @@ class LmdbPackedCostModelV2SessionTest {
 		StatementPattern about = new StatementPattern(
 				Var.of("fanout"), Var.of("aboutPredicate", aboutPredicate), Var.of("topic"));
 		PackedCostTestSupport.PairCostCall call = PackedCostTestSupport.connectedAliasStatementFactor(defaultGraph(),
-				about, alias);
+				alias, about);
 		PackedCostEstimate estimate = new PackedCostEstimate();
 
-		new LmdbPackedCostModel(runtime, OptionalLong.empty(), true).estimate(
-				call.query(), call.prefixRelationId(), call.reversePrefixContext(100.0d, 0), estimate);
+		assertTrue(call.query().isPureBindingAlias(call.prefixRelationId()),
+				"the encoded alias must be a captured pure binding relation");
+		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
+				.openSession(call.query())) {
+			assertTrue(session instanceof LmdbFrontierStatisticsCostSession);
+			int reviewRelationId = call.query().childRelationId(call.prefixRelationId(), 0);
+			PackedCostEstimate reviewEstimate = new PackedCostEstimate();
+			session.estimateLeaf(reviewRelationId, call.emptyContext(), reviewEstimate);
+			assertEquals(100.0d, reviewEstimate.outputRows(), 0.0d);
+			assertTrue(reviewEstimate.evidenceStateId() > 0,
+					"the native leaf population must belong to the opened session");
+			PackedCostEstimate aliasEstimate = new PackedCostEstimate();
+			PackedCostTestSupport.copyCandidate(reviewEstimate, aliasEstimate);
+			PackedCostContext aliasContext = call.emptyContext();
+			PackedCostTestSupport.operatorInputs(aliasContext, reviewEstimate.outputRows(), Double.NaN,
+					reviewEstimate.evidenceStateId(), 0);
+			session.refineOperator(call.prefixRelationId(), aliasContext, aliasEstimate);
+			assertEquals(100.0d, aliasEstimate.outputRows(), 0.0d);
+			assertTrue(aliasEstimate.evidenceStateId() > 0,
+					"the alias prefix must be derived from this session's actual input population");
+			estimate.setRows(100.0d, 100.0d);
+			session.appendFactor(call.factorRelationId(),
+					call.prefixContext(aliasEstimate.outputRows(), aliasEstimate.evidenceStateId()), estimate);
+		}
 
 		assertEquals(17.0d, estimate.outputRows(), 0.0d);
 		assertEquals("frontier-v2-omni-alias-prefix", estimate.estimateSource());
 		ArgumentCaptor<FrontierJoinProbe> probe = ArgumentCaptor.forClass(FrontierJoinProbe.class);
-		verify(statistics).estimateJoinCurrent(probe.capture());
+		verify(view).estimateJoin(probe.capture());
+		verify(statistics, never()).estimateJoinCurrent(any());
+		verify(view).close();
 		int aliasPair = probe.getValue().crossComponentPairMask();
 		assertTrue(aliasPair == FrontierJoinProbe.componentPairMask(2, 0)
 				|| aliasPair == FrontierJoinProbe.componentPairMask(0, 2),

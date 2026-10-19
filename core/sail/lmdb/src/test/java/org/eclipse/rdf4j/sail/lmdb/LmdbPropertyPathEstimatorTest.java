@@ -26,6 +26,7 @@ import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationEstimate;
@@ -232,6 +233,44 @@ class LmdbPropertyPathEstimatorTest {
 		@Override
 		public OptionalDouble highQualityInnerProduct(DistributionSketch other) {
 			return innerProduct(other);
+		}
+	}
+
+	@Test
+	void everyNativePathFormulaDeclaresItsOwnInvocationDomain() {
+		StatementPattern step = new StatementPattern(Var.of("s"), Var.of("p", VF.createIRI("urn:p")), Var.of("o"));
+		EstimateCandidate direct = new EstimateCandidate(BagEstimate.heuristic(20.0d, "direct"),
+				new RowEvidence(20.0d, 10.0d, 30.0d, 0.5d, false, IDENTITY, 7L, "direct"),
+				EstimateCandidate.Kind.SYNOPSIS, 7L);
+		LmdbPropertyPathEstimator estimator = new LmdbPropertyPathEstimator(null);
+		for (Set<String> names : List.of(Set.<String>of(), Set.of("s"), Set.of("o"), Set.of("s", "o"))) {
+			for (double invocations : new double[] { 0.0d, 0.5d, 1.0d, 6.0d }) {
+				for (long minimum : new long[] { 0L, 1L, 3L }) {
+					ArbitraryLengthPath path = new ArbitraryLengthPath(Var.of("s"), step.clone(), Var.of("o"), minimum);
+					EstimateContext context = EstimateContext.root(path, IDENTITY, 7L)
+							.withBoundNames(names)
+							.withInvocationCount(invocations);
+					assertEquals(names.isEmpty() ? RowScope.PER_INVOCATION : RowScope.FOR_CONTEXT,
+							estimator.candidates(path, step, List.of(direct), context).getFirst().rowScope());
+					assertEquals(RowScope.PER_INVOCATION,
+							estimator.candidates(path, null, List.of(), context).getFirst().rowScope());
+				}
+				ZeroLengthPath zero = new ZeroLengthPath(Var.of("s"), Var.of("o"));
+				assertEquals(RowScope.FOR_CONTEXT, estimator.candidates(zero,
+						EstimateContext.root(zero, IDENTITY, 7L)
+								.withBoundNames(names)
+								.withInvocationCount(invocations))
+						.getFirst()
+						.rowScope());
+			}
+		}
+		ZeroLengthPath equal = new ZeroLengthPath(Var.of("s", VF.createIRI("urn:a")),
+				Var.of("o", VF.createIRI("urn:a")));
+		ZeroLengthPath unequal = new ZeroLengthPath(Var.of("s", VF.createIRI("urn:a")),
+				Var.of("o", VF.createIRI("urn:b")));
+		for (ZeroLengthPath zero : List.of(equal, unequal)) {
+			assertEquals(RowScope.FOR_CONTEXT, estimator.candidates(zero,
+					EstimateContext.root(zero, IDENTITY, 7L).withInvocationCount(6.0d)).getFirst().rowScope());
 		}
 	}
 }

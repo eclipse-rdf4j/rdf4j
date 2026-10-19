@@ -84,6 +84,7 @@ import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
+import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 
 public class FilterIterator extends FilterIteration<BindingSet>
 		implements IndexReportingIterator, FeedbackWorkReportingIterator {
@@ -121,6 +122,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	private long exprEvalTimeNanosActual;
 	private long recordedPassedCount;
 	private long recordedFilteredCount;
+	private final BlankNodeAllocationScope allocation;
+	private final Object solutionBoundary = new Object();
 
 	public static QueryEvaluationStep supply(Filter filter, EvaluationStrategy strategy,
 			QueryEvaluationContext context) {
@@ -166,7 +169,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		Function<BindingSet, BindingSet> argumentBindings = resourceEqualityArgumentBindings(filter);
 
 		QueryEvaluationStep prepared = (bs) -> new FilterIterator(filter, arg.evaluate(argumentBindings.apply(bs)), ves,
-				strategy, retain, evaluationStatistics, feedbackMode);
+				strategy, retain, evaluationStatistics, feedbackMode, context.getBlankNodeAllocationScope());
 		return AdaptiveFilterEvaluationStep.filter(context, prepared, movable
 				? () -> automaticSpecialization(filter, strategy, context, evaluationStatistics)
 				: null);
@@ -188,10 +191,10 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * distinct lexical RDF terms.
 	 */
 	private static Function<BindingSet, BindingSet> resourceEqualityArgumentBindings(Filter filter) {
-		if (!(filter.getCondition()instanceof Compare compare)
+		if (!(filter.getCondition() instanceof Compare compare)
 				|| compare.getOperator() != Compare.CompareOp.EQ
-				|| !(compare.getLeftArg()instanceof Var left)
-				|| !(compare.getRightArg()instanceof Var right)
+				|| !(compare.getLeftArg() instanceof Var left)
+				|| !(compare.getRightArg() instanceof Var right)
 				|| left.hasValue()
 				|| right.hasValue()
 				|| left.getName() == null
@@ -210,11 +213,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		}
 		return bindings -> {
 			if (leftAssured && !bindings.hasBinding(leftName)
-					&& bindings.getValue(rightName)instanceof Resource resource) {
+					&& bindings.getValue(rightName) instanceof Resource resource) {
 				return withBinding(bindings, leftName, resource);
 			}
 			if (rightAssured && !bindings.hasBinding(rightName)
-					&& bindings.getValue(leftName)instanceof Resource resource) {
+					&& bindings.getValue(leftName) instanceof Resource resource) {
 				return withBinding(bindings, rightName, resource);
 			}
 			return bindings;
@@ -258,8 +261,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (isPartOfSubQuery(filter)) {
 			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-scope");
 		}
-		boolean negated = filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
-		Exists exists = filter.getCondition()instanceof Exists direct
+		boolean negated = filter.getCondition() instanceof Not not && not.getArg() instanceof Exists;
+		Exists exists = filter.getCondition() instanceof Exists direct
 				? direct
 				: negated ? (Exists) ((Not) filter.getCondition()).getArg() : null;
 		if (exists == null) {
@@ -342,7 +345,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (!MINUS_ASSURED_SHARED.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND))) {
 			return null;
 		}
-		if (!(filter.getCondition()instanceof Not not) || !(not.getArg()instanceof Exists exists)
+		if (!(filter.getCondition() instanceof Not not) || !(not.getArg() instanceof Exists exists)
 				|| exists.getSubQuery() == null) {
 			// not the NOT EXISTS shape the rewrite produces: evaluated as the filter it is
 			return null;
@@ -459,7 +462,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * outer row first, as SPARQL's {@code substitute()} requires: bottom-up evaluation would, for example, strip an
 	 * outer binding of a variable that only occurs on the right-hand side of an OPTIONAL and drop rows the substituted
 	 * pattern keeps. Every physical EXISTS path routes its probes through here so the result never depends on the
-	 * chosen physical algorithm.
+	 * chosen physical algorithm. Every substituted probe captures its actual entry binding domain here, including
+	 * materialized and adaptive probes that do not enter through the scalar EXISTS value evaluator.
 	 *
 	 * @param subQuery the EXISTS body
 	 * @param compiled the precompiled EXISTS body, used directly when no substitution is required
@@ -472,7 +476,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (!requiresPerProbeExistsSubstitution(subQuery)) {
 			return compiled::evaluate;
 		}
-		return bindings -> evaluateSubstitutedExists(subQuery, strategy, context, bindings);
+		return bindings -> evaluateSubstitutedExists(subQuery, strategy,
+				QueryEvaluationContext.withSubstitutionBindings(context, bindings), bindings);
 	}
 
 	private static CloseableIteration<BindingSet> evaluateSubstitutedExists(TupleExpr subQuery,
@@ -654,9 +659,9 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
 				|| isPartOfSubQuery(filter)
-				|| !(filter.getArg()instanceof Join join)
+				|| !(filter.getArg() instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
-				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
+				|| !(join.getRightArg() instanceof BindingSetAssignment assignment)
 				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;
@@ -682,6 +687,13 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT);
 
 		List<BindingSet> assignmentRows = bindingRows(assignment);
+		QueryValueEvaluationStep preparedCondition = condition;
+		Object boundary = new Object();
+		QueryValueEvaluationStep scopedCondition = row -> {
+			try (var ignored = context.getBlankNodeAllocationScope().visitSolutionOccurrence(row, boundary)) {
+				return preparedCondition.evaluate(row);
+			}
+		};
 		QueryEvaluationStep leftPrepared = strategy.precompile(join.getLeftArg(), context);
 		AdaptiveFilterEvaluationStep.recordPrepared(context, join.getLeftArg(), leftPrepared);
 		Map<String, FilteredBindingSetAssignmentJoinIteration.BindingNameAccess> bindingNamesByName = bindingNameAccess(
@@ -696,7 +708,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			if (leftIter == QueryEvaluationStep.EMPTY_ITERATION) {
 				return leftIter;
 			}
-			return new FilteredBindingSetAssignmentJoinIteration(filter, leftIter, assignmentRows, condition,
+			return new FilteredBindingSetAssignmentJoinIteration(filter, leftIter, assignmentRows, scopedCondition,
 					directCondition, strategy, context::createBindingSet, bindingNamesByName, evaluationStatistics,
 					recordFilterOutcomes);
 		};
@@ -804,6 +816,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		this.recordFilterOutcomes = feedbackMode.collect();
 		this.recordLegacyFilterOutcomes = feedbackMode.legacy();
 		this.observedInput = iter;
+		this.allocation = BlankNodeAllocationScope.currentOrNew();
 		this.condition = condition;
 		this.strategy = strategy;
 		if (!isPartOfSubQuery(filter)) {
@@ -824,10 +837,10 @@ public class FilterIterator extends FilterIteration<BindingSet>
 
 	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
-			EvaluationStatistics evaluationStatistics)
+			EvaluationStatistics evaluationStatistics, BlankNodeAllocationScope allocation)
 			throws QueryEvaluationException {
 		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics,
-				feedbackMode(filterNode, evaluationStatistics));
+				feedbackMode(filterNode, evaluationStatistics), allocation);
 	}
 
 	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
@@ -835,12 +848,21 @@ public class FilterIterator extends FilterIteration<BindingSet>
 			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode)
 			throws QueryEvaluationException {
 		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics,
-				feedbackMode);
+				feedbackMode, BlankNodeAllocationScope.currentOrNew());
+	}
+
+	private FilterIterator(Filter filterNode, CloseableIteration<BindingSet> iter,
+			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
+			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode,
+			BlankNodeAllocationScope allocation) throws QueryEvaluationException {
+		this(filterNode, new CompletionTrackingIteration<>(iter), condition, strategy, retain, evaluationStatistics,
+				feedbackMode, allocation);
 	}
 
 	private FilterIterator(Filter filterNode, CompletionTrackingIteration<BindingSet> iter,
 			QueryValueEvaluationStep condition, EvaluationStrategy strategy, Function<BindingSet, BindingSet> retain,
-			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode) {
+			EvaluationStatistics evaluationStatistics, FilterFeedbackMode feedbackMode,
+			BlankNodeAllocationScope allocation) {
 		super(iter);
 		this.filterNode = filterNode;
 		this.evaluationStatistics = evaluationStatistics;
@@ -850,6 +872,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		this.recordFilterOutcomes = feedbackMode.collect();
 		this.recordLegacyFilterOutcomes = feedbackMode.legacy();
 		this.observedInput = iter;
+		this.allocation = allocation;
 		this.condition = condition;
 		this.strategy = strategy;
 		// FIXME Jeen Boekstra scopeBindingNames should include bindings from superquery
@@ -944,6 +967,12 @@ public class FilterIterator extends FilterIteration<BindingSet>
 
 	@Override
 	protected boolean accept(BindingSet bindings) throws QueryEvaluationException {
+		try (var ignored = allocation.visitSolutionOccurrence(bindings, solutionBoundary)) {
+			return acceptWithinOccurrence(bindings);
+		}
+	}
+
+	private boolean acceptWithinOccurrence(BindingSet bindings) {
 		if (runtimeTelemetryEnabled || directFeedbackEnabled) {
 			sourceRowsScannedActual++;
 			exprEvalCountActual++;

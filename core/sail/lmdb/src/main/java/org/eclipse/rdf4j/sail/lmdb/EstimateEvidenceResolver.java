@@ -21,6 +21,7 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.function.Supplier;
 
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.SketchEvidence;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.VariableEstimate;
@@ -32,30 +33,47 @@ final class EstimateEvidenceResolver {
 
 	private static final double MIN_INCOMPLETE_ROWS = 1.0d;
 
+	record ResolvedEstimate(BagEstimate estimate, RowScope rowScope) {
+		ResolvedEstimate {
+			Objects.requireNonNull(estimate, "estimate");
+			rowScope = rowScope == null ? RowScope.UNKNOWN : rowScope;
+		}
+	}
+
 	BagEstimate resolve(List<EstimateCandidate> candidates, EstimateContext context) {
+		return resolveQualified(candidates, context).estimate();
+	}
+
+	ResolvedEstimate resolveQualified(List<EstimateCandidate> candidates, EstimateContext context) {
 		Objects.requireNonNull(context, "context");
 		List<EstimateCandidate> current = currentCandidates(candidates, context);
 		EstimateCandidate winner = current.stream()
 				.min(candidateOrder())
 				.orElse(null);
 		if (winner == null) {
-			return withInterval(BagEstimate.heuristic(1.0d, "no-current-evidence"), 0.0d, Double.MAX_VALUE, 0.0d);
+			return new ResolvedEstimate(withInterval(BagEstimate.heuristic(1.0d, "no-current-evidence"),
+					0.0d, Double.MAX_VALUE, 0.0d), RowScope.UNKNOWN);
 		}
-		return retainOrthogonalSketchEvidence(normalize(winner), current);
+		return new ResolvedEstimate(retainOrthogonalSketchEvidence(normalize(winner), current), winner.rowScope());
 	}
 
 	BagEstimate resolveForDecision(List<EstimateCandidate> candidates, EstimateContext context,
 			Supplier<EstimateCandidate> exactProbe) {
+		return resolveQualifiedForDecision(candidates, context, exactProbe).estimate();
+	}
+
+	ResolvedEstimate resolveQualifiedForDecision(List<EstimateCandidate> candidates, EstimateContext context,
+			Supplier<EstimateCandidate> exactProbe) {
 		if (!context.estimationTier().allowsExactEstimates() || !context.exactProbePermitted()
 				|| exactProbe == null) {
-			return resolve(candidates, context);
+			return resolveQualified(candidates, context);
 		}
 		List<EstimateCandidate> augmented = new ArrayList<>(candidates == null ? List.of() : candidates);
 		EstimateCandidate exact = exactProbe.get();
 		if (exact != null) {
 			augmented.add(exact);
 		}
-		return resolve(augmented, context);
+		return resolveQualified(augmented, context);
 	}
 
 	private static List<EstimateCandidate> currentCandidates(List<EstimateCandidate> candidates,

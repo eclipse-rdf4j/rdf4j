@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BiFunction;
@@ -55,7 +56,7 @@ final class LmdbGraphDistinctQueryEvaluationStep implements QueryEvaluationStep 
 	private final BiFunction<StatementPattern, QueryEvaluationContext, QueryEvaluationStep> physicalPreparer;
 	private final QueryEvaluationStep ordinary;
 	private final QueryEvaluationContext context;
-	private final Set<IRI> namedGraphs;
+	private final Set<Resource> namedGraphs;
 	private final boolean namedAliases;
 	private final Function<BindingSet, Value> subject;
 	private final Function<BindingSet, Value> predicate;
@@ -74,9 +75,10 @@ final class LmdbGraphDistinctQueryEvaluationStep implements QueryEvaluationStep 
 		this.physicalPreparer = physicalPreparer;
 		this.ordinary = ordinary;
 		Dataset dataset = context.getDataset();
-		this.namedGraphs = dataset == null || dataset.getNamedGraphs().isEmpty() && dataset.getDefaultGraphs().isEmpty()
-				? null
-				: Set.copyOf(dataset.getNamedGraphs());
+		this.namedGraphs = dataset == null || !dataset.isExplicitReadDataset()
+				&& dataset.getNamedGraphResources().isEmpty() && dataset.getDefaultGraphResources().isEmpty()
+						? null
+						: Collections.unmodifiableSet(new LinkedHashSet<>(dataset.getNamedGraphResources()));
 		this.namedAliases = namedGraphs != null && namedGraphs.stream()
 				.anyMatch(LmdbGraphDistinctQueryEvaluationStep::isDefaultAlias);
 		this.subject = getter(body.getSubjectVar(), context);
@@ -171,6 +173,6 @@ final class LmdbGraphDistinctQueryEvaluationStep implements QueryEvaluationStep 
 	}
 
 	private static boolean isDefaultAlias(Value value) {
-		return RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
+		return value == null || RDF4J.NIL.equals(value) || SESAME.NIL.equals(value);
 	}
 }

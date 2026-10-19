@@ -22,6 +22,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel.RowScope;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.BagEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.DistributionSketch;
 import org.eclipse.rdf4j.sail.lmdb.estimation.QuadSnapshotIdentity;
@@ -135,5 +136,24 @@ class EstimateEvidenceResolverTest {
 		return EstimateContext.root(new SingletonSet(), IDENTITY, 9L)
 				.withEstimationTier(tier)
 				.withExactProbePermission(exactProbePermitted);
+	}
+
+	@Test
+	void selectedProducerKeepsItsDeclarationThroughOrthogonalSketchEnrichment() {
+		EstimateContext context = context(JoinFactorCostModel.EstimationTier.STANDARD, false);
+		DistributionSketch sketch = () -> 2.0d;
+		EstimateCandidate synopsis = new EstimateCandidate(
+				BagEstimate.heuristic(10.0d, "synopsis").withSketchRelation(Set.of("x"), sketch),
+				new RowEvidence(10.0d, 8.0d, 12.0d, 0.8d, false, IDENTITY, 9L, "synopsis"),
+				EstimateCandidate.Kind.SYNOPSIS, 9L, RowScope.COMPONENT);
+		for (RowScope scope : RowScope.values()) {
+			EstimateCandidate exact = candidate(4.0d, 4.0d, 4.0d, true,
+					EstimateCandidate.Kind.EXACT_STORAGE, 9L, IDENTITY).withRowScope(scope);
+			var result = new EstimateEvidenceResolver().resolveQualified(List.of(synopsis, exact), context);
+			assertEquals(scope, result.rowScope());
+			assertEquals(4.0d, result.estimate().rows());
+			assertSame(sketch, result.estimate().variable("x").sketch());
+		}
+		assertEquals(RowScope.UNKNOWN, new EstimateEvidenceResolver().resolveQualified(List.of(), context).rowScope());
 	}
 }

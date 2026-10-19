@@ -341,6 +341,7 @@ class SavedQueriesServletTest {
 		realServlet.init(TestServletConfig.withParams("saved", "transformations", "/transform"));
 		QueryStorage created = realServlet.callSuperCreateQueryStorage(dataDir);
 		assertThat(created).isNotNull();
+		realServlet.destroy();
 		created.shutdown();
 	}
 

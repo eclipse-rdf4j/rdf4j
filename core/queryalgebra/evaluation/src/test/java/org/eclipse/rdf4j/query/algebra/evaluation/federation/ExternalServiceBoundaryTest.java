@@ -92,6 +92,7 @@ class ExternalServiceBoundaryTest {
 		bindings.addBinding("input", input);
 		Service service = service(false, null);
 		FederatedService remote = mock(FederatedService.class);
+		when(remote.preservesBNodeResultProvenance()).thenReturn(true);
 		when(remote.evaluate(any(), any(), any())).thenAnswer(call -> {
 			CloseableIteration<BindingSet> rows = call.getArgument(1);
 			BindingSet row = rows.next();

@@ -32,7 +32,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cost.FiniteRelationE
 final class LmdbEstimatorOptimizationScope {
 
 	final PlanTemplateCache<Object> planTemplates = new PlanTemplateCache<>(256);
-	final Map<SemanticEstimateCacheKey, BagEstimate> semanticEstimates = new HashMap<>();
+	final Map<SemanticEstimateCacheKey, EstimateEvidenceResolver.ResolvedEstimate> semanticEstimates = new HashMap<>();
 	final Map<ScopedFactorCostCacheKey, Optional<FactorCostEstimate>> factorCosts = new HashMap<>();
 	final Map<PrefixEstimateCacheKey, BagEstimate> prefixEstimates = new HashMap<>();
 	final Map<Map<String, Set<Value>>, Optional<FiniteRelationEstimate>> finiteBindingContexts = new HashMap<>();

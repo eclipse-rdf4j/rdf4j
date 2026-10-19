@@ -41,6 +41,7 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet> {
 
 	private final BindingSet[] previousBindings;
 	private final Set<String> localOutputs;
+	private final Set<String> parameterSources;
 
 	private BindingSet currentBindings;
 
@@ -52,11 +53,19 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet> {
 
 	public MultiProjectionIterator(MultiProjection multiProjection,
 			CloseableIteration<BindingSet> iter, BindingSet bindings) {
+		this(multiProjection, iter, bindings, BindingSetOrigin.of(bindings).hasParameters()
+				? ProjectionIterator.parameterSources(multiProjection.getArg(), multiProjection.getProjections())
+				: Set.of());
+	}
+
+	public MultiProjectionIterator(MultiProjection multiProjection,
+			CloseableIteration<BindingSet> iter, BindingSet bindings, Set<String> parameterSources) {
 		this.projections = multiProjection.getProjections();
 		this.iter = iter;
 		this.parentBindings = bindings;
 		this.previousBindings = new BindingSet[projections.size()];
 		this.localOutputs = Set.copyOf(multiProjection.getBindingNames());
+		this.parameterSources = Set.copyOf(parameterSources);
 
 		// initialize out-of-range to enforce a fetch of the first result upon
 		// first use
@@ -80,7 +89,9 @@ public class MultiProjectionIterator extends LookAheadIteration<BindingSet> {
 				// Apply next projection in the list
 				ProjectionElemList projection = projections.get(projIdx);
 				BindingSet result = BindingSetOrigin.produced(
-						ProjectionIterator.project(projection, currentBindings, parentBindings), localOutputs);
+						ProjectionIterator.project(projection, currentBindings, parentBindings, false,
+								parameterSources),
+						localOutputs);
 
 				nextProjectionIdx++;
 

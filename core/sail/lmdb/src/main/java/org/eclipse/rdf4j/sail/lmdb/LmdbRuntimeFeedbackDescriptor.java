@@ -15,7 +15,6 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
-import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 
 /** Typed LMDB planning identity. Mutable posterior and lifecycle cells are deliberately resolved later. */
 record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
@@ -24,7 +23,7 @@ record LmdbRuntimeFeedbackDescriptor(FrontierLearningKey legacyLogicalKey,
 		LogicalGroupOrigin logicalGroupOrigin, LearningFeatureEnvelope featureEnvelope,
 		FilterSurfaceKey exactFilterSurfaceKey, FilterSurfaceKey generalizedFilterSurfaceKey,
 		LmdbPlanDecisionCache.PlanExecutionToken planExecutionToken)
-		implements RuntimeFeedbackDescriptor {
+		implements LmdbLearningFeedbackDescriptor {
 
 	static final String SEMANTIC_POPULATION_STATUS = "optimizer.frontierSemanticPopulation";
 

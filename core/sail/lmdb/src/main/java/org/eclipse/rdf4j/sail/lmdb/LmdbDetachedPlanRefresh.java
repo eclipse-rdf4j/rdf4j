@@ -31,7 +31,6 @@ import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.Pack
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanRefreshResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedPlanRefreshWork;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
-import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 
 /**
@@ -120,7 +119,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 		LmdbPlanDecisionCache.EvidenceSnapshot buildEvidence = LmdbPipelinePlanCache.evidence(buildRevisions);
 		Dataset dataset = dataset(datasetIdentity);
 		BindingSet bindings = bindings(bindingIdentity);
-		boolean storeDefaults = datasetIdentity.defaultGraphs().isEmpty() && datasetIdentity.namedGraphs().isEmpty();
+		boolean storeDefaults = datasetIdentity.usesStoreDefaults();
 		OptionalLong detachedSnapshotEpoch = OptionalLong.of(snapshotEpoch);
 		DefaultEvaluationStrategy evaluationStrategy = new DefaultEvaluationStrategy(tripleSource, dataset, null);
 		evaluationStrategy.setQueryEvaluationMode(queryEvaluationMode);
@@ -160,7 +159,8 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 				.map(PackedPlanDecisionSummary.CandidateSummary::costInterval)
 				.map(LmdbDetachedPlanRefresh::interval)
 				.orElse(null);
-		long planBytes = saturatedAdd(512L, FactorCostCacheKey.estimatedRetainedBytes(executable));
+		// The decision cache charges optional provider payload once across its complete immutable portfolio.
+		long planBytes = saturatedAdd(512L, FactorCostCacheKey.estimatedStructuralRetainedBytes(executable));
 		boolean predicateRangeDependent = LmdbPipelinePlanCache.guaranteeDependent(summary, assumptions);
 		if (predicateRangeDependent && !buildRangeIdentity.equals(currentRangeIdentity)) {
 			throw new IllegalStateException("detached refresh predicate-range evidence changed during packed planning");
@@ -222,21 +222,7 @@ final class LmdbDetachedPlanRefresh implements LmdbPlanDecisionCache.DetachedRef
 	}
 
 	private static Dataset dataset(LmdbPipelinePlanCache.DatasetIdentity identity) {
-		if (!identity.present()) {
-			return null;
-		}
-		SimpleDataset dataset = new SimpleDataset();
-		for (IRI graph : identity.defaultRemoveGraphs()) {
-			dataset.addDefaultRemoveGraph(graph);
-		}
-		dataset.setDefaultInsertGraph(identity.defaultInsertGraph());
-		for (IRI graph : identity.defaultGraphs()) {
-			dataset.addDefaultGraph(graph);
-		}
-		for (IRI graph : identity.namedGraphs()) {
-			dataset.addNamedGraph(graph);
-		}
-		return dataset;
+		return identity.toDataset();
 	}
 
 	private static BindingSet bindings(LmdbPipelinePlanCache.BindingIdentity identity) {

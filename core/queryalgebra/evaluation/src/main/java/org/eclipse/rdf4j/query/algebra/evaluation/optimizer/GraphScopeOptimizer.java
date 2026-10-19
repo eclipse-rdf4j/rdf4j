@@ -53,8 +53,10 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 				Value name = graph.getGraphName().getValue();
 				if (graph.getParentNode() != null && name instanceof Resource && !isDefaultAlias(name)
 						&& hasCompatibleInput(graph.getGraphName(), input)
-						&& (dataset == null || !dataset.getNamedGraphs().isEmpty()
-								&& dataset.getNamedGraphs().stream().noneMatch(GraphScopeOptimizer::isDefaultAlias))
+						&& (dataset == null || !dataset.getNamedGraphResources().isEmpty()
+								&& dataset.getNamedGraphResources()
+										.stream()
+										.noneMatch(GraphScopeOptimizer::isDefaultAlias))
 						&& isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName())) {
 					boolean inheritedSelector = !graph.getGraphName().isConstant()
 							&& !graph.getArg().getBindingNames().contains(graph.getGraphName().getName());

@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
@@ -24,30 +25,39 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.OptionalLong;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Compare;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinFactorCostModel;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.PlanningGraphDomain;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostEstimate;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostSession;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.cascades.packed.PackedCostTestSupport;
-import org.eclipse.rdf4j.query.impl.MapBindingSet;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.config.FrontierEstimatorMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierFallbackReason;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 /**
  * A statement pattern whose subject, predicate and object are all bound (constants, or bindings supplied by the prefix)
@@ -80,8 +90,7 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
 		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
 				Var.of("d"));
-		PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport.statementFactorChain(
-				PlanningGraphDomain.defaultGraph(), finiteValues("d", 5), knows, follows);
+		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("d", 5), knows, follows);
 
 		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
 
@@ -103,13 +112,14 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
 		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
 				Var.of("d"));
-		PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport.statementFactorChain(
-				PlanningGraphDomain.defaultGraph(), finiteValues("unrelated", 5), knows, follows);
+		PackedCostTestSupport.BinaryCostCall call = lineagePrefix(finiteValues("unrelated", 5), knows, follows);
 
-		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
+		PackedCostEstimate estimate = fixture.appendUnderLineagePrefix(call);
 
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT, fixture.accessPath.lookupMask,
 				"only the subject is bound when the object has no finite domain");
+		assertEquals(CONTEXT_BIT, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT);
+		assertFalse(fixture.lastFollowsProbe().namedContextsOnly());
 		assertEquals(PREFIX_ROWS * FANOUT_PER_LEFT, estimate.outputRows(), 1.0e-6d,
 				"a partially bound lookup keeps the lineage-conditioned fan-out estimate");
 	}
@@ -118,31 +128,113 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 	void unboundContextVariableIsNotAFullyBoundLookup() throws Exception {
 		Fixture fixture = new Fixture();
 		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
-		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
-				Var.of("d"), Var.of("g"));
-		PackedCostTestSupport.StatementFactorChainCostCall call = PackedCostTestSupport.statementFactorChain(
-				PlanningGraphDomain.defaultGraph(), finiteValues("d", 5), knows, follows);
+		StatementPattern follows = new StatementPattern(StatementPattern.Scope.NAMED_CONTEXTS, Var.of("c"),
+				Var.of("follows", fixture.follows), Var.of("d"), Var.of("g"));
+		PackedCostTestSupport.BinaryCostCall call = lineagePrefix(finiteValues("d", 5), knows, follows);
 
-		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
+		PackedCostEstimate estimate = fixture.appendUnderLineagePrefix(call);
 
 		assertEquals(SUBJECT_BIT | PREDICATE_BIT | OBJECT_BIT, fixture.accessPath.lookupMask & ~CONTEXT_BIT,
 				"subject, predicate and object are bound");
 		assertEquals(0, fixture.accessPath.lookupMask & CONTEXT_BIT, "the context variable stays unbound");
+		assertEquals(0, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT);
+		assertTrue(fixture.lastFollowsProbe().namedContextsOnly());
 		assertEquals(PREFIX_ROWS * FANOUT_PER_LEFT, estimate.outputRows(), 1.0e-6d,
 				"the same triple may exist in several contexts, so an unbound context variable keeps the "
 						+ "lineage-conditioned estimate");
 	}
 
+	@Test
+	void opaqueFilteredPrefixWithUnboundObjectKeepsIsolatedEstimateWithoutInventingLineage() throws Exception {
+		Fixture fixture = new Fixture();
+		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
+		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows), Var.of("d"));
+		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("unrelated", 5), knows, follows);
+		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
+		assertEquals(LEAF_ROWS, estimate.outputRows());
+		assertEquals(LEAF_ROWS, estimate.workRows());
+		assertEquals(SUBJECT_BIT | PREDICATE_BIT, fixture.accessPath.lookupMask);
+		assertEquals(0, fixture.conditionalEstimateCalls);
+		assertEquals(0, estimate.evidenceStateId());
+		assertFalse(estimate.runtimeFeedbackContract() != null
+				&& estimate.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+		assertFalse(estimate.runtimeFeedbackContract() != null
+				&& estimate.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE));
+	}
+
+	@Test
+	void defaultDomainWithSyntacticallyUnboundContextStillHasDefaultContextProbe() throws Exception {
+		Fixture fixture = new Fixture();
+		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
+		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows),
+				Var.of("d"), Var.of("g"));
+		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("d", 5), knows, follows);
+		PackedCostEstimate estimate = fixture.appendUnderFilteredPrefix(call);
+		assertEquals(SUBJECT_BIT | PREDICATE_BIT | OBJECT_BIT, fixture.accessPath.lookupMask);
+		assertEquals(CONTEXT_BIT, fixture.lastFollowsProbe().boundMask() & CONTEXT_BIT);
+		assertEquals(0L, fixture.lastFollowsProbe().contextId());
+		assertFalse(fixture.lastFollowsProbe().namedContextsOnly());
+		assertEquals(0, fixture.conditionalEstimateCalls);
+		assertEquals(PREFIX_ROWS, estimate.outputRows());
+		assertTrue(fixture.accessPath.accessRows <= 1.0d);
+	}
+
 	private static BindingSetAssignment finiteValues(String name, int rows) {
 		List<BindingSet> bindingSets = new ArrayList<>(rows);
 		for (int ordinal = 0; ordinal < rows; ordinal++) {
-			MapBindingSet bindingSet = new MapBindingSet();
-			bindingSet.addBinding(name, VF.createIRI("urn:test:fully-bound:user/" + ordinal));
-			bindingSets.add(bindingSet);
+			bindingSets.add(new ListBindingSet(List.of(name), VF.createIRI("urn:test:fully-bound:user/" + ordinal)));
 		}
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setBindingSets(bindingSets);
 		return assignment;
+	}
+
+	private static PackedCostTestSupport.BinaryCostCall lineagePrefix(BindingSetAssignment bindings,
+			StatementPattern knows, StatementPattern follows) {
+		return PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(),
+				new Join(new Join(bindings, knows), follows));
+	}
+
+	private static PackedCostTestSupport.BinaryCostCall filteredPrefix(BindingSetAssignment bindings,
+			StatementPattern knows, StatementPattern follows) {
+		Filter filtered = new Filter(new Join(bindings, knows),
+				new Compare(Var.of("b"), Var.of("c"), Compare.CompareOp.NE));
+		return PackedCostTestSupport.binaryOperator(PlanningGraphDomain.defaultGraph(), new Join(filtered, follows));
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void rawPrefixWithoutAStateDeclinesRegardlessOfDescriptionFlag(boolean describesRows) throws Exception {
+		Fixture fixture = new Fixture();
+		StatementPattern knows = new StatementPattern(Var.of("b"), Var.of("knows", fixture.knows), Var.of("c"));
+		StatementPattern follows = new StatementPattern(Var.of("c"), Var.of("follows", fixture.follows), Var.of("d"));
+		PackedCostTestSupport.BinaryCostCall call = filteredPrefix(finiteValues("d", 5), knows, follows);
+		int joined = call.query().childRelationId(call.leftRelationId(), 0);
+		int[] rawPrefix = { call.query().childRelationId(joined, 0), call.query().childRelationId(joined, 1) };
+		PackedCostContext context = describesRows
+				? PackedCostTestSupport.prefixContext(rawPrefix, rawPrefix.length, PREFIX_ROWS, 0)
+				: PackedCostTestSupport.restrictedPrefixContext(rawPrefix, rawPrefix.length, PREFIX_ROWS, 0);
+		PackedCostEstimate output = new PackedCostEstimate();
+		try (PackedCostSession session = new LmdbPackedCostModel(fixture.runtime, OptionalLong.empty(), true)
+				.openSession(call.query())) {
+			session.estimateLeaf(call.rightRelationId(), call.emptyContext(), output);
+			assertEquals(LEAF_ROWS, output.outputRows());
+			double isolatedWork = output.workRows();
+			int lookupMask = fixture.accessPath.lookupMask;
+			double accessRows = fixture.accessPath.accessRows;
+			double invocations = fixture.accessPath.invocations;
+			session.appendFactor(call.rightRelationId(), context, output);
+			assertEquals(LEAF_ROWS, output.outputRows());
+			assertEquals(isolatedWork, output.workRows());
+			assertEquals(lookupMask, fixture.accessPath.lookupMask);
+			assertEquals(accessRows, fixture.accessPath.accessRows);
+			assertEquals(invocations, fixture.accessPath.invocations);
+			assertEquals(0, output.evidenceStateId());
+			assertFalse(output.runtimeFeedbackContract() != null
+					&& output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+			assertFalse(output.runtimeFeedbackContract() != null
+					&& output.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE));
+		}
 	}
 
 	/**
@@ -153,6 +245,8 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 		final IRI knows = VF.createIRI("urn:test:fully-bound:knows");
 		final IRI follows = VF.createIRI("urn:test:fully-bound:follows");
 		final AccessPath accessPath = new AccessPath();
+		int conditionalEstimateCalls;
+		private final List<FrontierLeafProbe> followsProbes = new ArrayList<>();
 		private final LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 
 		Fixture() throws IOException {
@@ -170,18 +264,33 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 			when(statistics.openCurrentView()).thenReturn(view);
 			when(view.ready()).thenReturn(true);
+			when(runtime.factorCost(any(BindingSetAssignment.class), any())).thenAnswer(invocation -> {
+				BindingSetAssignment assignment = invocation.getArgument(0);
+				double count = 0.0d;
+				for (BindingSet ignored : assignment.getBindingSets()) {
+					count++;
+				}
+				return Optional.of(new JoinFactorCostModel.FactorCostEstimate(count, count));
+			});
 			when(view.generationId()).thenReturn(23L);
 			when(view.baseEpoch()).thenReturn(11L);
 			when(view.coveredEpoch()).thenReturn(17L);
 			when(valueStore.getId(knows)).thenReturn(11L);
 			when(valueStore.getId(follows)).thenReturn(22L);
-			when(view.estimateLeaf(any())).thenReturn(new FrontierLeafEstimate(
-					LEAF_ROWS, 0.8d * LEAF_ROWS, 1.2d * LEAF_ROWS, 0.95d, "frontier-v2-omni-leaf",
-					FrontierFallbackReason.NONE));
+			when(view.estimateLeaf(any())).thenAnswer(invocation -> {
+				FrontierLeafProbe probe = invocation.getArgument(0);
+				if (probe.predicateId() == 22L) {
+					followsProbes.add(probe);
+				}
+				return new FrontierLeafEstimate(LEAF_ROWS, 0.8d * LEAF_ROWS, 1.2d * LEAF_ROWS, 0.95d,
+						"frontier-v2-omni-leaf", FrontierFallbackReason.NONE);
+			});
 			/* The lineage-conditioned transition: rows of the appended statement per left row. */
-			when(view.estimateConditionalJoin(any(), anyDouble())).thenReturn(new FrontierJoinEstimate(
-					FANOUT_PER_LEFT, 0.9d * FANOUT_PER_LEFT, 1.1d * FANOUT_PER_LEFT, 0.9d,
-					"frontier-v2-omni-conditional", FrontierFallbackReason.NONE));
+			when(view.estimateConditionalJoin(any(), anyDouble())).thenAnswer(invocation -> {
+				conditionalEstimateCalls++;
+				return new FrontierJoinEstimate(FANOUT_PER_LEFT, 0.9d * FANOUT_PER_LEFT,
+						1.1d * FANOUT_PER_LEFT, 0.9d, "frontier-v2-omni-conditional", FrontierFallbackReason.NONE);
+			});
 			when(runtime.packedTransitionRows(any(), any(), any(Double.class), any(Double.class)))
 					.thenReturn(999.0d);
 			doAnswer(invocation -> {
@@ -192,20 +301,80 @@ class LmdbPackedCostModelFullyBoundLookupTest {
 			}).when(runtime).describePackedAccessPath(anyInt(), anyDouble(), anyDouble(), any(), any());
 		}
 
-		/**
-		 * Appends the second statement factor to a prefix made of the VALUES clause and the first statement factor. A
-		 * correlated filter was already applied inside that prefix (as in the SOCIAL_MEDIA q10 cycle), so the listed
-		 * relations no longer describe the prefix bag exactly and the finite-lookup and finite-domain estimators stand
-		 * down; the structural bound must hold regardless.
-		 */
-		PackedCostEstimate appendUnderFilteredPrefix(PackedCostTestSupport.StatementFactorChainCostCall call) {
-			int[] prefixRelationIds = { call.bindingRelationId(), call.factorRelationId(0) };
-			PackedCostContext context = PackedCostTestSupport.restrictedPrefixContext(prefixRelationIds,
-					prefixRelationIds.length, PREFIX_ROWS, 0);
+		FrontierLeafProbe lastFollowsProbe() {
+			assertFalse(followsProbes.isEmpty(), "the appended statement must reach the mapped probe producer");
+			return followsProbes.getLast();
+		}
+
+		/** Supplies the original untransformed VALUES/statement bag through both actual child states. */
+		PackedCostEstimate appendUnderLineagePrefix(PackedCostTestSupport.BinaryCostCall call) {
 			PackedCostEstimate estimate = new PackedCostEstimate();
 			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
 					.openSession(call.query())) {
-				session.appendFactor(call.factorRelationId(1), context, estimate);
+				int joinedId = call.leftRelationId();
+				assertTrue(call.query().isInnerJoin(joinedId));
+				int bindingId = call.query().childRelationId(joinedId, 0);
+				int knowsId = call.query().childRelationId(joinedId, 1);
+				PackedCostEstimate bindings = new PackedCostEstimate();
+				PackedCostEstimate knows = new PackedCostEstimate();
+				session.estimateLeaf(bindingId, call.emptyContext(), bindings);
+				session.estimateLeaf(knowsId, call.emptyContext(), knows);
+				assertEquals(5.0d, bindings.outputRows());
+				assertTrue(bindings.evidenceStateId() > 0);
+				assertTrue(knows.evidenceStateId() > 0);
+				PackedCostEstimate joined = new PackedCostEstimate();
+				// A controlled cardinality summary; both supplied child certificates prove its semantic population.
+				joined.setRows(PREFIX_ROWS, bindings.workRows() + knows.workRows());
+				session.refineOperator(joinedId, call.operatorContext(bindings.outputRows(), knows.outputRows(),
+						bindings.evidenceStateId(), knows.evidenceStateId()), joined);
+				assertEquals(PREFIX_ROWS, joined.outputRows());
+				assertTrue(joined.evidenceStateId() > 0);
+				session.estimateLeaf(call.rightRelationId(), call.emptyContext(), estimate);
+				PackedCostContext context = PackedCostTestSupport.prefixContext(new int[] { bindingId, knowsId }, 2,
+						joined.outputRows(), joined.evidenceStateId());
+				session.appendFactor(call.rightRelationId(), context, estimate);
+				assertTrue(conditionalEstimateCalls > 0,
+						"the original supplied statement occurrence must reach the 8.7 conditional estimate");
+			}
+			return estimate;
+		}
+
+		/**
+		 * Supplies the actual filtered prefix in one session. The controlled post-filter estimate is still 100 rows;
+		 * its population certificate comes from the matching operator and both actual child states, not that number.
+		 */
+		PackedCostEstimate appendUnderFilteredPrefix(PackedCostTestSupport.BinaryCostCall call) {
+			PackedCostEstimate estimate = new PackedCostEstimate();
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
+					.openSession(call.query())) {
+				int filteredId = call.leftRelationId();
+				assertTrue(call.query().isFilter(filteredId));
+				int joinedId = call.query().childRelationId(filteredId, 0);
+				assertTrue(call.query().isInnerJoin(joinedId));
+				int bindingId = call.query().childRelationId(joinedId, 0);
+				int knowsId = call.query().childRelationId(joinedId, 1);
+				PackedCostEstimate bindings = new PackedCostEstimate();
+				PackedCostEstimate knows = new PackedCostEstimate();
+				session.estimateLeaf(bindingId, call.emptyContext(), bindings);
+				session.estimateLeaf(knowsId, call.emptyContext(), knows);
+				assertEquals(5.0d, bindings.outputRows());
+				assertTrue(bindings.evidenceStateId() > 0);
+				assertTrue(knows.evidenceStateId() > 0);
+				PackedCostEstimate joined = new PackedCostEstimate();
+				joined.setRows(bindings.outputRows() * knows.outputRows(), bindings.workRows() + knows.workRows());
+				session.refineOperator(joinedId, call.operatorContext(bindings.outputRows(), knows.outputRows(),
+						bindings.evidenceStateId(), knows.evidenceStateId()), joined);
+				assertTrue(joined.evidenceStateId() > 0);
+				PackedCostEstimate filtered = new PackedCostEstimate();
+				filtered.setRows(PREFIX_ROWS, joined.workRows() + joined.outputRows());
+				session.refineOperator(filteredId, call.operatorContext(joined.outputRows(), Double.NaN,
+						joined.evidenceStateId(), 0), filtered);
+				assertEquals(PREFIX_ROWS, filtered.outputRows());
+				assertTrue(filtered.evidenceStateId() > 0);
+				session.estimateLeaf(call.rightRelationId(), call.emptyContext(), estimate);
+				PackedCostContext context = PackedCostTestSupport.prefixContext(new int[] { filteredId }, 1,
+						filtered.outputRows(), filtered.evidenceStateId());
+				session.appendFactor(call.rightRelationId(), context, estimate);
 			}
 			return estimate;
 		}

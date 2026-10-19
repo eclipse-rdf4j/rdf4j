@@ -13,6 +13,8 @@ package org.eclipse.rdf4j.federated;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.identity;
+import static org.eclipse.rdf4j.federated.util.BlankNodeIdentityTestUtil.memberValue;
 
 import java.util.List;
 
@@ -89,8 +91,8 @@ class FedXBlankNodeGraphTest {
 		String text = "SELECT ?g WHERE { GRAPH ?g { "
 				+ "{ <urn:a> <urn:p> \"left\" . <urn:a> <urn:p2> \"v\" } UNION "
 				+ "{ <urn:b> <urn:q> \"right\" . <urn:b> <urn:q2> \"v\" } } }";
-		assertThat(query(text)).extracting(row -> row.getValue("g"))
-				.containsExactlyInAnyOrder(firstGraph, secondGraph);
+		assertThat(query(text)).extracting(row -> identity(row.getValue("g")))
+				.containsExactlyInAnyOrder(memberValue(first, firstGraph), memberValue(second, secondGraph));
 	}
 
 	@ParameterizedTest
@@ -100,11 +102,11 @@ class FedXBlankNodeGraphTest {
 		String text = "SELECT ?g ?s ?o ?v ?m ?copy WHERE { GRAPH ?g { VALUES ?copy { 1 1 } { "
 				+ GROUPS + " } ?s <urn:marker> ?m } }";
 		List<BindingSet> rows = query(text);
-		assertThat(rows).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("m")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, VF.createLiteral("first")),
-						tuple(firstGraph, A, VF.createLiteral("first")),
-						tuple(secondGraph, B, VF.createLiteral("second")),
-						tuple(secondGraph, B, VF.createLiteral("second")));
+		assertThat(rows).extracting(row -> tuple(identity(row.getValue("g")), row.getValue("s"), row.getValue("m")))
+				.containsExactlyInAnyOrder(tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")),
+						tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")),
+						tuple(memberValue(second, secondGraph), B, VF.createLiteral("second")),
+						tuple(memberValue(second, secondGraph), B, VF.createLiteral("second")));
 	}
 
 	@ParameterizedTest
@@ -117,10 +119,11 @@ class FedXBlankNodeGraphTest {
 		String text = "SELECT ?g ?s ?o ?v ?m ?copy WHERE { GRAPH ?g { VALUES ?copy { 1 1 } { "
 				+ GROUPS + " } OPTIONAL { ?s <urn:marker> ?m } } }";
 		assertThat(query(text))
-				.extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("m")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, VF.createLiteral("first")),
-						tuple(firstGraph, A, VF.createLiteral("first")), tuple(secondGraph, B, null),
-						tuple(secondGraph, B, null));
+				.extracting(row -> tuple(identity(row.getValue("g")), row.getValue("s"), row.getValue("m")))
+				.containsExactlyInAnyOrder(tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")),
+						tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")),
+						tuple(memberValue(second, secondGraph), B, null),
+						tuple(memberValue(second, secondGraph), B, null));
 	}
 
 	@ParameterizedTest
@@ -140,9 +143,10 @@ class FedXBlankNodeGraphTest {
 		populate(graphKind);
 		String text = "SELECT ?g ?s ?o WHERE { GRAPH ?g { { ?s <urn:p>+ ?o } UNION "
 				+ "{ ?s <urn:q>+ ?o } } }";
-		assertThat(query(text)).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, VF.createLiteral("left")),
-						tuple(secondGraph, B, VF.createLiteral("right")));
+		assertThat(query(text))
+				.extracting(row -> tuple(identity(row.getValue("g")), row.getValue("s"), row.getValue("o")))
+				.containsExactlyInAnyOrder(tuple(memberValue(first, firstGraph), A, VF.createLiteral("left")),
+						tuple(memberValue(second, secondGraph), B, VF.createLiteral("right")));
 	}
 
 	@ParameterizedTest
@@ -152,10 +156,10 @@ class FedXBlankNodeGraphTest {
 		String text = "SELECT ?g ?s ?threshold WHERE { GRAPH ?g { "
 				+ "VALUES ?threshold { \"first\" \"first\" \"absent\" } { " + GROUPS
 				+ " } ?s <urn:marker> ?m . FILTER(?m = ?threshold) } }";
-		assertThat(query(text)).extracting(row -> tuple(row.getValue("g"), row.getValue("s"),
+		assertThat(query(text)).extracting(row -> tuple(identity(row.getValue("g")), row.getValue("s"),
 				row.getValue("threshold")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, VF.createLiteral("first")),
-						tuple(firstGraph, A, VF.createLiteral("first")));
+				.containsExactlyInAnyOrder(tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")),
+						tuple(memberValue(first, firstGraph), A, VF.createLiteral("first")));
 	}
 
 	@ParameterizedTest
@@ -172,13 +176,11 @@ class FedXBlankNodeGraphTest {
 		populate(graphKind);
 		try (RepositoryConnection connection = federation.getConnection()) {
 			var prepared = connection.prepareTupleQuery("SELECT ?s ?m WHERE { GRAPH ?g { ?s <urn:marker> ?m } }");
-			prepared.setBinding("g", firstGraph);
+			prepared.setBinding("g", firstPublicGraph());
 			try (var rows = prepared.evaluate()) {
 				List<BindingSet> actual = QueryResults.asList(rows);
 				assertThat(actual).extracting(row -> tuple(row.getValue("s"), row.getValue("m")))
-						.containsExactlyInAnyOrderElementsOf(graphKind.equals("shared-blank")
-								? List.of(tuple(A, VF.createLiteral("first")), tuple(B, VF.createLiteral("second")))
-								: List.of(tuple(A, VF.createLiteral("first"))));
+						.containsExactly(tuple(A, VF.createLiteral("first")));
 			}
 		}
 	}
@@ -196,10 +198,13 @@ class FedXBlankNodeGraphTest {
 				+ RDF.REIFIES + "> <<(?part ?predicate ?tail)>> ; <urn:marker> ?source } }";
 		assertThat(federation.getFederationContext().getQueryManager().getQueryPlan(text))
 				.contains("TripleRefJoinGroup");
-		assertThat(query(text)).extracting(row -> tuple(row.getValue("g"), row.getValue("part"),
+		assertThat(query(text)).extracting(row -> tuple(identity(row.getValue("g")), row.getValue("part"),
 				row.getValue("predicate"), row.getValue("tail"), row.getValue("source")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, P, VF.createLiteral("left"), VF.createLiteral("first")),
-						tuple(secondGraph, B, Q, VF.createLiteral("right"), VF.createLiteral("second")));
+				.containsExactlyInAnyOrder(
+						tuple(memberValue(first, firstGraph), A, P, VF.createLiteral("left"),
+								VF.createLiteral("first")),
+						tuple(memberValue(second, secondGraph), B, Q, VF.createLiteral("right"),
+								VF.createLiteral("second")));
 	}
 
 	@ParameterizedTest
@@ -214,8 +219,8 @@ class FedXBlankNodeGraphTest {
 		String text = "SELECT ?g WHERE { GRAPH ?g { "
 				+ "{ <urn:a> <" + RDF.REIFIES + "> <<(<urn:a> <urn:p> \"left\")>> ; <urn:marker> \"first\" } UNION "
 				+ "{ <urn:b> <" + RDF.REIFIES + "> <<(<urn:b> <urn:q> \"right\")>> ; <urn:marker> \"second\" } } }";
-		assertThat(query(text)).extracting(row -> row.getValue("g"))
-				.containsExactlyInAnyOrder(firstGraph, secondGraph);
+		assertThat(query(text)).extracting(row -> identity(row.getValue("g")))
+				.containsExactlyInAnyOrder(memberValue(first, firstGraph), memberValue(second, secondGraph));
 	}
 
 	@ParameterizedTest
@@ -235,20 +240,23 @@ class FedXBlankNodeGraphTest {
 				? "{ ?g <urn:p> ?term } UNION { ?g <urn:q> ?term }"
 				: "{ ?term <urn:p> ?g } UNION { ?term <urn:q> ?g }";
 		String text = "SELECT ?g ?term WHERE { GRAPH ?g { " + body + " } }";
-		var expected = List.of(tuple(firstGraph, position.equals("subject") ? VF.createLiteral("graph-left") : A),
-				tuple(secondGraph, position.equals("subject") ? VF.createLiteral("graph-right") : B));
-		assertThat(query(text)).extracting(row -> tuple(row.getValue("g"), row.getValue("term")))
+		var expected = List.of(
+				tuple(memberValue(first, firstGraph), position.equals("subject") ? VF.createLiteral("graph-left") : A),
+				tuple(memberValue(second, secondGraph),
+						position.equals("subject") ? VF.createLiteral("graph-right") : B));
+		assertThat(query(text)).extracting(row -> tuple(identity(row.getValue("g")), row.getValue("term")))
 				.containsExactlyInAnyOrderElementsOf(expected);
 		try (RepositoryConnection connection = federation.getConnection()) {
 			var prepared = connection.prepareTupleQuery(text);
-			prepared.setBinding("g", firstGraph);
+			prepared.setBinding("g", firstPublicGraph());
 			try (var rows = prepared.evaluate()) {
-				assertThat(QueryResults.asList(rows)).extracting(row -> tuple(row.getValue("g"), row.getValue("term")))
+				assertThat(QueryResults.asList(rows))
+						.extracting(row -> tuple(identity(row.getValue("g")), row.getValue("term")))
 						.containsExactly(expected.get(0));
 			}
 		}
 		assertThat(query("SELECT ?g ?term WHERE { GRAPH ?g { VALUES ?copy { 1 1 } { " + body + " } } }"))
-				.extracting(row -> tuple(row.getValue("g"), row.getValue("term")))
+				.extracting(row -> tuple(identity(row.getValue("g")), row.getValue("term")))
 				.containsExactlyInAnyOrder(expected.get(0), expected.get(0), expected.get(1), expected.get(1));
 	}
 
@@ -273,10 +281,18 @@ class FedXBlankNodeGraphTest {
 		}
 	}
 
+	private Resource firstPublicGraph() {
+		List<BindingSet> rows = query("SELECT ?g WHERE { GRAPH ?g { <urn:a> <urn:marker> \"first\" } }");
+		assertThat(rows).singleElement()
+				.satisfies(row -> assertThat(identity(row.getValue("g"))).isEqualTo(memberValue(first, firstGraph)));
+		return (Resource) rows.getFirst().getValue("g");
+	}
+
 	private void assertGroupRows(List<BindingSet> rows) {
-		assertThat(rows).extracting(row -> tuple(row.getValue("g"), row.getValue("s"), row.getValue("o"),
+		assertThat(rows).extracting(row -> tuple(identity(row.getValue("g")), row.getValue("s"), row.getValue("o"),
 				row.getValue("v")))
-				.containsExactlyInAnyOrder(tuple(firstGraph, A, VF.createLiteral("left"), VF.createLiteral("v")),
-						tuple(secondGraph, B, VF.createLiteral("right"), VF.createLiteral("v")));
+				.containsExactlyInAnyOrder(
+						tuple(memberValue(first, firstGraph), A, VF.createLiteral("left"), VF.createLiteral("v")),
+						tuple(memberValue(second, secondGraph), B, VF.createLiteral("right"), VF.createLiteral("v")));
 	}
 }

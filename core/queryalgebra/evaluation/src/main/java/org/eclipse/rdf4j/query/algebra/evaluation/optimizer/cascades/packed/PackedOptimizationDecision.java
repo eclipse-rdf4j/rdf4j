@@ -169,14 +169,54 @@ final class PackedOptimizationDecision {
 
 	long retainedBytes() {
 		long bytes = 32L + (long) candidates.length * 40L;
+		PackedProviderRetainedMemory providerMemory = new PackedProviderRetainedMemory();
 		for (Candidate candidate : candidates) {
-			bytes = saturatedAdd(bytes, candidate.recipe().detachedEvidenceBytes());
+			bytes = saturatedAdd(bytes, candidate.recipe().detachedEvidenceBytes(providerMemory));
 			bytes = saturatedAdd(bytes, candidate.physicalIdentity().canonicalForm().length() * 2L);
 		}
 		if (searchCheckpoint != null) {
 			bytes = saturatedAdd(bytes, searchCheckpoint.retainedBytes());
+			bytes = saturatedAdd(bytes,
+					searchCheckpoint.continuationRecipe().detachedProviderBytes(providerMemory));
+			bytes = saturatedAdd(bytes,
+					searchCheckpoint.continuationRecipe().detachedQuantityBytes(providerMemory));
 		}
 		return bytes;
+	}
+
+	/** Owned quantity storage is charged even when no Frontier state enables stale validation. */
+	long retainedQuantityBytes() {
+		PackedProviderRetainedMemory memory = new PackedProviderRetainedMemory();
+		for (Candidate candidate : candidates) {
+			candidate.recipe().detachedQuantityBytes(memory);
+		}
+		if (searchCheckpoint != null) {
+			searchCheckpoint.continuationRecipe().detachedQuantityBytes(memory);
+		}
+		return memory.bytes();
+	}
+
+	PackedOptimizationDecision withoutDetachedQuantities() {
+		if (retainedQuantityBytes() == 0L) {
+			return this;
+		}
+		Candidate[] stripped = new Candidate[candidates.length];
+		for (int candidate = 0; candidate < candidates.length; candidate++) {
+			Candidate retained = candidates[candidate];
+			stripped[candidate] = new Candidate(retained.recipe().withoutDetachedQuantities(),
+					retained.physicalIdentity(), retained.estimatedCost(), retained.diversityKey());
+		}
+		return new PackedOptimizationDecision(familyIdentity, stripped, completionStatus, deterministicWorkUnits,
+				searchCheckpoint == null ? null : searchCheckpoint.withoutDetachedQuantities());
+	}
+
+	boolean hasRetainedProviderPayload() {
+		for (Candidate candidate : candidates) {
+			if (candidate.recipe().hasRetainedProviderPayload()) {
+				return true;
+			}
+		}
+		return searchCheckpoint != null && searchCheckpoint.continuationRecipe().hasRetainedProviderPayload();
 	}
 
 	PackedOptimizationDecision withoutDetachedEvidence() {
@@ -187,7 +227,7 @@ final class PackedOptimizationDecision {
 					retained.physicalIdentity(), retained.estimatedCost(), retained.diversityKey());
 		}
 		return new PackedOptimizationDecision(familyIdentity, stripped, completionStatus, deterministicWorkUnits,
-				searchCheckpoint);
+				searchCheckpoint == null ? null : searchCheckpoint.withoutRetainedProviderPayload());
 	}
 
 	private Candidate candidate(int candidate) {
