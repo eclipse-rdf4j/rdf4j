@@ -146,6 +146,50 @@ public class ValueStoreTest {
 	}
 
 	@Test
+	public void autoGrowWaitsForEnvironmentCopy() throws Exception {
+		CountDownLatch copyStarted = new CountDownLatch(1);
+		CountDownLatch allowCopyToComplete = new CountDownLatch(1);
+		ExecutorService executor = Executors.newFixedThreadPool(2);
+		try {
+			Future<?> copy = executor.submit(() -> {
+				try {
+					valueStore.withEnvironmentCopyLock(() -> {
+						copyStarted.countDown();
+						try {
+							if (!allowCopyToComplete.await(10, TimeUnit.SECONDS)) {
+								throw new AssertionError("Timed out waiting to complete the environment copy");
+							}
+						} catch (InterruptedException e) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(e);
+						}
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertTrue(copyStarted.await(10, TimeUnit.SECONDS));
+
+			Future<?> resize = executor.submit(() -> {
+				try {
+					valueStore.withMapResizeLock(() -> {
+					});
+				} catch (IOException e) {
+					throw new AssertionError(e);
+				}
+			});
+			assertFalse("auto-grow must wait for the environment copy", resize.isDone());
+
+			allowCopyToComplete.countDown();
+			copy.get(10, TimeUnit.SECONDS);
+			resize.get(10, TimeUnit.SECONDS);
+		} finally {
+			allowCopyToComplete.countDown();
+			executor.shutdownNow();
+		}
+	}
+
+	@Test
 	public void testDisableInlineLiteralsUsesStoredIds() throws Exception {
 		valueStore.close();
 

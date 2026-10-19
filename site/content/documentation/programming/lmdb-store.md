@@ -214,6 +214,18 @@ More up-to-date information about LMDB can be found at: https://www.symas.com/sy
 Especially the [SSD-benchmarks](http://www.lmdb.tech/bench/optanessd/imdt.html) may be of interest.
 
 ## Backup and restore
+
+`LmdbStore.getBackupService()` provides coordinated full snapshots, incremental backups, and
+point-in-time restores. Backup transaction IDs identify durable logical mutations, including
+namespace-only commits; they are not native LMDB transaction IDs. Incremental creation and restore
+validate the journal's predecessor chain. If a committed mutation could not be journaled, take a
+new full snapshot covering that mutation before creating further incrementals from that snapshot.
+A restore replays only mutations after its selected full snapshot and up to the requested ID.
+Restored stores use a restore-local journal directory, and neither replay nor subsequent writes
+publish into the source backup. Backup destinations must be outside the store's data directory.
+Store shutdown waits for active backup operations and scheduled backups before closing the native
+environments.
+
 LMDB provides a set of [command line tools](http://www.lmdb.tech/doc/tools.html) that can be used
 to backup and restore the value and triple databases.
 Those tools can typically be used while the databases are in use as LMDB permits concurrent use
