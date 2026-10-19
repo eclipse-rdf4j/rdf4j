@@ -1139,7 +1139,10 @@ public class QueryJoinOptimizerTest extends QueryOptimizerTest {
 				Var.of("cheapP", vf.createIRI("ex:pCheap")), Var.of("cheapO"));
 		Join original = new Join(volatileFactor, cheap);
 		QueryRoot root = new QueryRoot(original);
-		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new VolatileBarrierStatistics(), new EmptyTripleSource());
+		// Unspecified determinism is a reorder barrier only under the experimental query optimizations profile;
+		// UndeclaredFunctionPolicyTest covers the default policy, which keeps cost-based ordering.
+		QueryJoinOptimizer optimizer = new QueryJoinOptimizer(new VolatileBarrierStatistics(), false,
+				new EmptyTripleSource(), QueryExecutionPolicy.EXPERIMENTAL);
 
 		optimizer.optimize(root, null, null);
 

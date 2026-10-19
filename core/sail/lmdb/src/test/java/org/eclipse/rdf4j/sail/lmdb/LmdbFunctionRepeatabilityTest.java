@@ -44,7 +44,14 @@ class LmdbFunctionRepeatabilityTest {
 
 	@BeforeEach
 	void setUp() {
-		repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc,posc,ospc")));
+		function = new UnmarkedZeroArgFunction();
+		FunctionRegistry.getInstance().add(function);
+	}
+
+	private void openRepository(boolean experimentalQueryOptimizations) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc");
+		config.setExperimentalQueryOptimizations(experimentalQueryOptimizations);
+		repository = new SailRepository(new LmdbStore(dataDir, config));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI subject = vf.createIRI(EX, "subject");
@@ -55,8 +62,6 @@ class LmdbFunctionRepeatabilityTest {
 			connection.add(subject, second, vf.createIRI(EX, "b1"));
 			connection.add(subject, second, vf.createIRI(EX, "b2"));
 		}
-		function = new UnmarkedZeroArgFunction();
-		FunctionRegistry.getInstance().add(function);
 	}
 
 	@AfterEach
@@ -65,24 +70,44 @@ class LmdbFunctionRepeatabilityTest {
 		repository.shutDown();
 	}
 
-	@Test
-	void defaultFunctionPurityDoesNotMakeZeroArgCallQueryConstant() {
-		String query = "PREFIX ex: <" + EX + ">\n"
-				+ "SELECT (COUNT(*) AS ?count) WHERE {\n"
-				+ "  VALUES ?s { ex:subject }\n"
-				+ "  ?s ex:first ?a .\n"
-				+ "  ?s ex:second ?b .\n"
-				+ "  FILTER(<" + FUNCTION_URI + ">() > 1)\n"
-				+ "}";
+	private static final String QUERY = "PREFIX ex: <" + EX + ">\n"
+			+ "SELECT (COUNT(*) AS ?count) WHERE {\n"
+			+ "  VALUES ?s { ex:subject }\n"
+			+ "  ?s ex:first ?a .\n"
+			+ "  ?s ex:second ?b .\n"
+			+ "  FILTER(<" + FUNCTION_URI + ">() > 1)\n"
+			+ "}";
 
+	/**
+	 * The experimental query profile only trusts declared determinism: an unmarked zero-arg call stays a per-solution
+	 * evaluation instead of becoming a query constant.
+	 */
+	@Test
+	void experimentalProfileDoesNotMakeUnmarkedZeroArgCallQueryConstant() {
+		openRepository(true);
+		assertThat(count()).isEqualTo(3L);
+		assertThat(function.calls.get()).isEqualTo(4);
+	}
+
+	/**
+	 * The default policy keeps the long-standing planning: a zero-arg function of unspecified determinism is folded
+	 * once per query, as every function without a freshness guarantee always was.
+	 */
+	@Test
+	void defaultPolicyFoldsUnmarkedZeroArgCallOncePerQuery() {
+		openRepository(false);
+		assertThat(count()).isEqualTo(0L);
+		assertThat(function.calls.get()).isEqualTo(1);
+	}
+
+	private long count() {
 		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+				TupleQueryResult result = connection.prepareTupleQuery(QUERY).evaluate()) {
 			assertThat(result.hasNext()).isTrue();
 			Literal count = (Literal) result.next().getValue("count");
-			assertThat(count.longValue()).isEqualTo(3L);
 			assertThat(result.hasNext()).isFalse();
+			return count.longValue();
 		}
-		assertThat(function.calls.get()).isEqualTo(4);
 	}
 
 	private static final class UnmarkedZeroArgFunction implements Function {

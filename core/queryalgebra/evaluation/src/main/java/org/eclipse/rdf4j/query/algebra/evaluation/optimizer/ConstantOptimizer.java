@@ -281,7 +281,8 @@ public class ConstantOptimizer implements QueryOptimizer {
 			super.meet(functionCall);
 
 			if (QueryEvaluationUtility.resolveFunction(functionCall)
-					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function))
+					.filter(function -> !QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
+							strategy.getQueryExecutionPolicy()))
 					.isPresent()) {
 				return;
 			}

@@ -22,6 +22,7 @@ import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.function.BiFunction;
 
@@ -121,6 +122,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	private final boolean trackResultSize;
 	private final TripleSource tripleSource;
 	private final boolean experimental;
+	private final QueryExecutionPolicy policy;
 
 	public QueryJoinOptimizer(EvaluationStatistics statistics) {
 		this(statistics, false, new EmptyTripleSource());
@@ -143,6 +145,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		this.statistics = statistics;
 		this.trackResultSize = trackResultSize;
 		this.tripleSource = tripleSource;
+		this.policy = Objects.requireNonNull(policy, "policy must not be null");
 		this.experimental = policy.experimentalQueryOptimizations();
 	}
 
@@ -153,7 +156,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 	 */
 	@Override
 	public void optimize(TupleExpr tupleExpr, Dataset dataset, BindingSet bindings) {
-		tupleExpr.visit(new JoinVisitor(tupleExpr, bindings, QueryEvaluationUtility.querySafetySnapshot(tupleExpr)));
+		tupleExpr.visit(new JoinVisitor(tupleExpr, bindings,
+				QueryEvaluationUtility.querySafetySnapshot(tupleExpr, policy)));
 	}
 
 	/**
@@ -662,7 +666,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			@Override
 			public void meet(FunctionCall functionCall) {
 				if (QueryEvaluationUtility.resolveFunction(functionCall)
-						.map(QueryEvaluationUtility::isRepeatable)
+						.map(function -> QueryEvaluationUtility.isRepeatable(function, policy))
 						.orElse(false) == false) {
 					unsafe = true;
 				}

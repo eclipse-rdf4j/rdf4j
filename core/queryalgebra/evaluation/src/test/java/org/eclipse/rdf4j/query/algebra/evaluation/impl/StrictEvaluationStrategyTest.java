@@ -38,6 +38,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
@@ -398,6 +399,9 @@ public class StrictEvaluationStrategyTest {
 		UnmarkedSpoofFunction function = new UnmarkedSpoofFunction();
 		FunctionRegistry registry = FunctionRegistry.getInstance();
 		Function previous = registry.add(function).orElse(null);
+		// Only the experimental profile refuses to fold a function of unspecified determinism; the default policy
+		// plans it like a built-in (see UndeclaredFunctionPolicyTest).
+		strategy.setQueryExecutionPolicy(QueryExecutionPolicy.EXPERIMENTAL);
 		try {
 			String query = "SELECT ?row ?value WHERE { VALUES ?row { 1 2 } BIND(<"
 					+ UnmarkedSpoofFunction.URI + ">() AS ?value) } ORDER BY ?row";
@@ -434,6 +438,11 @@ public class StrictEvaluationStrategyTest {
 			@Override
 			public Value evaluate(ValueFactory valueFactory, Value... args) {
 				return valueFactory.createLiteral(++invocations[0]);
+			}
+
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.VOLATILE;
 			}
 		};
 		Function previous = registry.add(volatileFunction).orElse(null);

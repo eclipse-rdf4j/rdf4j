@@ -243,6 +243,11 @@ public class MemoryVolatileOrderByTest {
 		public Value evaluate(ValueFactory valueFactory, Value... args) {
 			return valueFactory.createLiteral(calls.incrementAndGet());
 		}
+
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
 	}
 
 	private static final class FailingService implements FederatedService {

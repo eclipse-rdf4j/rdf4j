@@ -359,7 +359,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		synchronized (this) {
 			queryPreparationStarted = true;
 		}
-		return QueryEvaluationUtility.withPreparedQuerySafetySnapshot(expression,
+		return QueryEvaluationUtility.withPreparedQuerySafetySnapshot(expression, getQueryExecutionPolicy(),
 				PreparedValuesSnapshot::newPreparation,
 				action);
 	}
@@ -1929,7 +1929,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			List<ValueExpr> args, QueryValueEvaluationStep[] argSteps) {
 		// plan-level constant folding is stricter than within-execution repeatability: a prepared query can be
 		// executed repeatedly, so only functions immutable across executions may be folded into the plan
-		boolean allConstant = QueryEvaluationUtility.isSafeForPlanConstantFolding(function);
+		boolean allConstant = QueryEvaluationUtility.isSafeForPlanConstantFolding(function,
+				getQueryExecutionPolicy());
 		for (int i = 0; i < args.size(); i++) {
 			argSteps[i] = precompile(args.get(i), context);
 			if (!argSteps[i].isConstant()) {

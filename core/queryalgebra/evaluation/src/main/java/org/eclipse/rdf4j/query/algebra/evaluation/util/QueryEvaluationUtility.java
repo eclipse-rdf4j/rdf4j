@@ -37,6 +37,7 @@ import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.util.Literals;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
@@ -202,6 +203,18 @@ public class QueryEvaluationUtility {
 	private static final ThreadLocal<QuerySafetySnapshot> ACTIVE_SAFETY_SNAPSHOT = new ThreadLocal<>();
 
 	/**
+	 * Outside a strategy's preparation phase no repository policy is known, so a function of unspecified determinism is
+	 * classified conservatively (as under the experimental query optimizations profile).
+	 */
+	private static final QueryExecutionPolicy CONSERVATIVE_POLICY = QueryExecutionPolicy.EXPERIMENTAL;
+
+	/** The policy of the active preparation phase, or the conservative classification outside one. */
+	private static QueryExecutionPolicy activePolicy() {
+		QuerySafetySnapshot active = ACTIVE_SAFETY_SNAPSHOT.get();
+		return active == null ? CONSERVATIVE_POLICY : active.policy;
+	}
+
+	/**
 	 * Returns whether evaluating a query-model subtree again with the same bindings is guaranteed to produce the same
 	 * result. Unresolved function calls are conservative barriers; a pinned function call is repeatable only when its
 	 * captured implementation is an exact known built-in class.
@@ -218,7 +231,16 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static QuerySafetySnapshot querySafetySnapshot(QueryModelNode node) {
-		return new QuerySafetySnapshot(node, null);
+		return querySafetySnapshot(node, activePolicy());
+	}
+
+	/**
+	 * Classifies one query tree under an explicit {@link QueryExecutionPolicy}, which decides how functions of
+	 * {@link Function.Determinism#UNSPECIFIED unspecified} determinism are treated.
+	 */
+	@Experimental
+	public static QuerySafetySnapshot querySafetySnapshot(QueryModelNode node, QueryExecutionPolicy policy) {
+		return new QuerySafetySnapshot(node, null, Objects.requireNonNull(policy, "policy must not be null"));
 	}
 
 	/** Runs one optimizer or precompile phase against a reusable identity-based query-safety snapshot. */
@@ -245,7 +267,16 @@ public class QueryEvaluationUtility {
 	public static <T> T withPreparedQuerySafetySnapshot(TupleExpr root,
 			Supplier<? extends QueryModelPreparation> preparationFactory,
 			java.util.function.Function<TupleExpr, T> action) {
+		return withPreparedQuerySafetySnapshot(root, activePolicy(), preparationFactory, action);
+	}
+
+	/** Captures VALUES once before analysis under the strategy's execution policy. */
+	@InternalUseOnly
+	public static <T> T withPreparedQuerySafetySnapshot(TupleExpr root, QueryExecutionPolicy policy,
+			Supplier<? extends QueryModelPreparation> preparationFactory,
+			java.util.function.Function<TupleExpr, T> action) {
 		Objects.requireNonNull(root, "root must not be null");
+		Objects.requireNonNull(policy, "policy must not be null");
 		Objects.requireNonNull(preparationFactory, "preparationFactory must not be null");
 		Objects.requireNonNull(action, "action must not be null");
 		QuerySafetySnapshot previous = ACTIVE_SAFETY_SNAPSHOT.get();
@@ -255,7 +286,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = preparationFactory.get();
 		try {
 			TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation));
+			ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, policy));
 			return action.apply(prepared);
 		} finally {
 			if (previous == null) {
@@ -280,7 +311,7 @@ public class QueryEvaluationUtility {
 		QueryModelPreparation preparation = previous.valuesPreparation;
 		preparation.resetTraversal();
 		TupleExpr prepared = (TupleExpr) preparation.prepare(root);
-		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation));
+		ACTIVE_SAFETY_SNAPSHOT.set(new QuerySafetySnapshot(prepared, preparation, previous.policy));
 		try {
 			return action.apply(prepared);
 		} finally {
@@ -415,11 +446,23 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static boolean isRepeatable(Function function) {
+		return isRepeatable(function, activePolicy());
+	}
+
+	/**
+	 * Returns whether a resolved function implementation is stable within one query execution under the given policy. A
+	 * function of {@link Function.Determinism#UNSPECIFIED unspecified} determinism is repeatable under the default
+	 * policy (the long-standing planning for third-party functions) and a conservative barrier under the experimental
+	 * query optimizations profile; an explicit {@link Function.Determinism#VOLATILE} declaration is a barrier under
+	 * both.
+	 */
+	@Experimental
+	public static boolean isRepeatable(Function function, QueryExecutionPolicy policy) {
 		if (function.mustReturnDifferentResult()) {
 			return false;
 		}
 		return isQueryStable(function) || DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
-				|| function.getDeterminism() == Function.Determinism.DETERMINISTIC;
+				|| isDeclaredRepeatable(function, policy);
 	}
 
 	/**
@@ -430,11 +473,30 @@ public class QueryEvaluationUtility {
 	 */
 	@Experimental
 	public static boolean isSafeForPlanConstantFolding(Function function) {
-		if (function.mustReturnDifferentResult()) {
+		return isSafeForPlanConstantFolding(function, activePolicy());
+	}
+
+	/**
+	 * Returns whether a resolved function implementation may be constant-folded into a reusable prepared plan under the
+	 * given policy. Unspecified determinism folds under the default policy and never under the experimental profile;
+	 * see {@link #isRepeatable(Function, QueryExecutionPolicy)}.
+	 */
+	@Experimental
+	public static boolean isSafeForPlanConstantFolding(Function function, QueryExecutionPolicy policy) {
+		if (function.mustReturnDifferentResult() || isQueryStable(function)) {
 			return false;
 		}
 		return DETERMINISTIC_FUNCTION_CLASSES.contains(function.getClass())
-				|| function.getDeterminism() == Function.Determinism.DETERMINISTIC;
+				|| isDeclaredRepeatable(function, policy);
+	}
+
+	private static boolean isDeclaredRepeatable(Function function, QueryExecutionPolicy policy) {
+		Function.Determinism determinism = function.getDeterminism();
+		if (determinism == Function.Determinism.DETERMINISTIC) {
+			return true;
+		}
+		return determinism == Function.Determinism.UNSPECIFIED
+				&& !Objects.requireNonNull(policy, "policy must not be null").experimentalQueryOptimizations();
 	}
 
 	/**
@@ -510,6 +572,7 @@ public class QueryEvaluationUtility {
 	@Experimental
 	public static final class QuerySafetySnapshot {
 		private final QueryModelPreparation valuesPreparation;
+		private final QueryExecutionPolicy policy;
 		private final Map<QueryModelNode, NodeSafetySummary> summaries = new IdentityHashMap<>();
 		private final Map<QueryModelNode, List<QueryModelNode>> childrenByNode = new IdentityHashMap<>();
 		private final Set<QueryModelNode> unknownNodes = Collections.newSetFromMap(new IdentityHashMap<>());
@@ -518,11 +581,19 @@ public class QueryEvaluationUtility {
 		/** Creates an empty snapshot that lazily classifies the first queried node. */
 		public QuerySafetySnapshot() {
 			valuesPreparation = null;
+			policy = activePolicy();
 		}
 
-		private QuerySafetySnapshot(QueryModelNode root, QueryModelPreparation valuesPreparation) {
+		private QuerySafetySnapshot(QueryModelNode root, QueryModelPreparation valuesPreparation,
+				QueryExecutionPolicy policy) {
 			this.valuesPreparation = valuesPreparation;
+			this.policy = Objects.requireNonNull(policy, "policy must not be null");
 			ensureNode(root);
+		}
+
+		/** The policy under which functions of unspecified determinism were classified. */
+		public QueryExecutionPolicy getQueryExecutionPolicy() {
+			return policy;
 		}
 
 		private QueryModelNode ensureNode(QueryModelNode node) {
@@ -664,10 +735,14 @@ public class QueryEvaluationUtility {
 			}
 
 			if (node instanceof FunctionCall functionCall) {
+				// The experimental profile only trusts an implementation captured by pinFunctions, so a later registry
+				// replacement cannot invalidate its decisions. The default policy classifies an unpinned call from the
+				// current registry, as the long-standing planner did for every function call.
 				Function function = functionCall instanceof PinnedFunctionCall
-						? resolveFunction(functionCall).orElse(null)
-						: null;
-				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function);
+						|| !policy.experimentalQueryOptimizations()
+								? resolveFunction(functionCall).orElse(null)
+								: null;
+				repeatable &= function != null && QueryEvaluationUtility.isRepeatable(function, policy);
 			}
 			if (node instanceof TupleExpr && unknownNodes.contains(node)) {
 				repeatable = false;

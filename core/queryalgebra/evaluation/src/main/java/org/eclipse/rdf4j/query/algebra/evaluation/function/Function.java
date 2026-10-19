@@ -91,22 +91,35 @@ public interface Function {
 		DETERMINISTIC,
 
 		/**
-		 * No repeatability promise (the default). Volatile functions are conservative barriers: the optimizer never
-		 * folds, merges, duplicates, or moves them across cardinality-changing operators, and the evaluation engine
-		 * never re-evaluates an operand containing them where the algebra evaluates it once.
+		 * Explicitly no repeatability promise. Volatile functions are conservative barriers under every query execution
+		 * policy: the optimizer never folds, merges, duplicates, or moves them across cardinality-changing operators,
+		 * and the evaluation engine never re-evaluates an operand containing them where the algebra evaluates it once.
 		 */
-		VOLATILE
+		VOLATILE,
+
+		/**
+		 * The implementation has not declared its determinism (the default). How such a function is planned depends on
+		 * the repository's {@link org.eclipse.rdf4j.query.QueryExecutionPolicy}: the default policy keeps the
+		 * long-standing planning that treats every function as repeatable unless it
+		 * {@link Function#mustReturnDifferentResult() must return fresh values}, so bind joins, join reordering and
+		 * constant folding apply as they do to built-in functions. The experimental query optimizations profile treats
+		 * an unspecified determinism like {@link #VOLATILE}.
+		 */
+		UNSPECIFIED
 	}
 
 	/**
-	 * Declares this function's determinism. The default is {@link Determinism#VOLATILE}, the only sound classification
-	 * for an unknown implementation. Declaring {@link Determinism#DETERMINISTIC} is an affirmative promise by the
-	 * implementor — see the enum constant documentation for the exact contract; a wrong declaration produces wrong
-	 * query results. When {@link #mustReturnDifferentResult()} is {@code true}, that freshness guarantee dominates and
-	 * the function is treated as volatile regardless of this declaration.
+	 * Declares this function's determinism. The default is {@link Determinism#UNSPECIFIED}: the default query execution
+	 * policy then plans the function like a built-in, while the experimental query optimizations profile treats it as
+	 * {@link Determinism#VOLATILE}, the only sound classification for an unknown implementation. Declaring
+	 * {@link Determinism#DETERMINISTIC} is an affirmative promise by the implementor — see the enum constant
+	 * documentation for the exact contract; a wrong declaration produces wrong query results. Declaring
+	 * {@link Determinism#VOLATILE} keeps every optimizer barrier under both policies. When
+	 * {@link #mustReturnDifferentResult()} is {@code true}, that freshness guarantee dominates and the function is
+	 * treated as volatile regardless of this declaration.
 	 */
 	@Experimental
 	default Determinism getDeterminism() {
-		return Determinism.VOLATILE;
+		return Determinism.UNSPECIFIED;
 	}
 }

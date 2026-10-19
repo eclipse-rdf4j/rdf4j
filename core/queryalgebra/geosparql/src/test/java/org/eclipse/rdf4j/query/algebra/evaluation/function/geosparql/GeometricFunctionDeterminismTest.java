@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.GEO;
 import org.eclipse.rdf4j.model.vocabulary.GEOF;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.QueryExecutionPolicy;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
@@ -136,8 +137,12 @@ class GeometricFunctionDeterminismTest {
 			}
 		};
 
-		assertThat(function.getDeterminism()).isEqualTo(Function.Determinism.VOLATILE);
-		assertThat(QueryEvaluationUtility.isRepeatable(function)).isFalse();
-		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(function)).isFalse();
+		assertThat(function.getDeterminism()).isEqualTo(Function.Determinism.UNSPECIFIED);
+		assertThat(QueryEvaluationUtility.isRepeatable(function, QueryExecutionPolicy.EXPERIMENTAL)).isFalse();
+		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(function, QueryExecutionPolicy.EXPERIMENTAL))
+				.isFalse();
+		assertThat(QueryEvaluationUtility.isRepeatable(function, QueryExecutionPolicy.DEFAULT)).isTrue();
+		assertThat(QueryEvaluationUtility.isSafeForPlanConstantFolding(function, QueryExecutionPolicy.DEFAULT))
+				.isTrue();
 	}
 }
