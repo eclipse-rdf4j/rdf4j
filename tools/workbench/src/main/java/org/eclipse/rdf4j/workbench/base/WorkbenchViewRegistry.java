@@ -18,6 +18,7 @@ import java.util.Optional;
 
 import org.eclipse.rdf4j.workbench.commands.AddServlet;
 import org.eclipse.rdf4j.workbench.commands.ClearServlet;
+import org.eclipse.rdf4j.workbench.commands.ConfigServlet;
 import org.eclipse.rdf4j.workbench.commands.ContextsServlet;
 import org.eclipse.rdf4j.workbench.commands.CreateServlet;
 import org.eclipse.rdf4j.workbench.commands.DeleteServlet;
@@ -51,6 +52,7 @@ public final class WorkbenchViewRegistry {
 			Map.entry(RepositoriesServlet.class, new View("repositories", true)),
 			Map.entry(CreateServlet.class, new View("create", true)),
 			Map.entry(DeleteServlet.class, new View("delete", true)),
+			Map.entry(ConfigServlet.class, new View("config", true)),
 			Map.entry(NamespacesServlet.class, new View("namespaces", true)),
 			Map.entry(WorkbenchNamespaceMetadataServlet.class, new View("namespace-metadata", false)),
 			Map.entry(ContextsServlet.class, new View("contexts", true)),

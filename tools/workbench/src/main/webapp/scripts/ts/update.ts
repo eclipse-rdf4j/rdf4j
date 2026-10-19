@@ -31,7 +31,9 @@ namespace workbench {
                     return {update: yasqe.getValue()};
                 },
                 consumeShareLink: function (yasqe:any, args:any) {
-                    if (args.update) yasqe.setValue(args.update)
+                    if (args && args.update) {
+                        yasqe.setValue(args.update);
+                    }
                 },
 
                 // This way, we don't conflict with the YASQE editor of the

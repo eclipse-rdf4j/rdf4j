@@ -31,6 +31,7 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.workbench.commands.AddServlet;
 import org.eclipse.rdf4j.workbench.commands.ClearServlet;
+import org.eclipse.rdf4j.workbench.commands.ConfigServlet;
 import org.eclipse.rdf4j.workbench.commands.ContextsServlet;
 import org.eclipse.rdf4j.workbench.commands.CreateServlet;
 import org.eclipse.rdf4j.workbench.commands.DeleteServlet;
@@ -285,7 +286,7 @@ public final class WorkbenchPolicy {
 				? List.of("repositories", "server")
 				: List.of("summary", "query", "explore", "graph", "namespaces", "contexts", "types", "saved-queries",
 						"export",
-						"information", "update", "add", "remove", "clear");
+						"information", "update", "add", "remove", "clear", "config");
 		for (String candidate : candidates) {
 			String candidatePath = landingPathFor(candidate);
 			if (visibleMenuItemsById.containsKey(candidate) && isRouteAllowed(candidatePath)) {
@@ -494,6 +495,7 @@ public final class WorkbenchPolicy {
 		addPage(pages, "explore", "explore", "explore", "explore", "Explore", "explore");
 		addPage(pages, "graph", "explore", "graph", "graph", "Graph", "graph");
 		addPage(pages, "summary", "explore", "summary", "summary", "Summary", "summary");
+		addPage(pages, "config", "explore", "config", "config", "Configuration", "information");
 		addPage(pages, "namespaces", "explore", "namespaces", "namespaces", "Namespaces", "namespaces");
 		addPage(pages, "contexts", "explore", "contexts", "contexts", "Named Graphs", "contexts");
 		addPage(pages, "types", "explore", "types", "types", "Types", "types");
@@ -525,6 +527,7 @@ public final class WorkbenchPolicy {
 	private static Map<Class<?>, String> builtInServletIds() {
 		Map<Class<?>, String> servlets = new HashMap<>();
 		servlets.put(SummaryServlet.class, "summary");
+		servlets.put(ConfigServlet.class, "config");
 		servlets.put(RepositoriesServlet.class, "repositories");
 		servlets.put(CreateServlet.class, "create");
 		servlets.put(DeleteServlet.class, "delete");

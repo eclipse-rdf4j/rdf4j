@@ -218,6 +218,26 @@ body.workbench-body :is(.query-page, #update-editor) .yasqe .CodeMirror.CodeMirr
     touch-action: none;
 }
 
+body.workbench-body #configuration-editor .CodeMirror {
+    width: 100%;
+    height: auto;
+    border: 1px solid var(--workbench-editor-gutter-border);
+    border-radius: var(--workbench-radius, 6px);
+    font-family: var(--workbench-code-font);
+    font-size: var(--workbench-code-font-size);
+}
+
+body.workbench-body #configuration-editor .CodeMirror-scroll {
+    min-height: 240px;
+    max-height: 60vh;
+}
+
+body.workbench-body #configuration-editor .CodeMirror[data-workbench-editor-height] .CodeMirror-scroll {
+    height: 100%;
+    min-height: 0;
+    max-height: none;
+}
+
 .query-editor-resize::before {
     content: "";
     position: absolute;

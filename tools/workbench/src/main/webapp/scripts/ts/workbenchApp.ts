@@ -770,8 +770,8 @@ namespace workbench {
                 // A rejected request answers with an error-message row, and Clear and Remove list graphs (M6.1).
                 count = model.rowCount;
             } else if (model.viewId === 'summary' || model.viewId === 'information' || model.viewId === 'server'
-                    || model.viewId === 'query') {
-                // The Query page has a row only when it opens a saved query for editing (M10.2).
+                    || model.viewId === 'query' || model.viewId === 'config') {
+                // Query and Configuration use this row to fill their editor, including retained form errors.
                 count = Math.min(1, model.rowCount);
             } else if (model.viewId === 'info' && !model.metadata.workbench) {
                 // The linked Info endpoint's small fixed rows describe shell settings,

@@ -187,7 +187,7 @@ namespace workbench {
         /** Short page names for the document title; keep in sync with SHORT_TITLES in WorkbenchHtmlShell.java. */
         const shortTitles: { [key: string]: string } = {
             summary: 'Summary', information: 'Information', repositories: 'Repositories',
-            create: 'Create repository', delete: 'Delete repository', namespaces: 'Namespaces',
+            create: 'Create repository', delete: 'Delete repository', config: 'Configuration', namespaces: 'Namespaces',
             contexts: 'Named Graphs',
             types: 'Types', explore: 'Explore', graph: 'Graph', query: 'Query', 'saved-queries': 'Saved queries',
             export: 'Export',
@@ -210,6 +210,7 @@ namespace workbench {
             repositories: 'List of Repositories',
             create: 'New Repository',
             delete: 'Delete Repository',
+            config: 'Repository Configuration',
             namespaces: 'Namespaces In Repository',
             contexts: 'Named Graphs',
             types: 'Types In Repository',
@@ -232,6 +233,7 @@ namespace workbench {
             repositories: 'Every repository on this server. Open one to work with its data.',
             create: 'Set up a new repository on this server.',
             delete: 'Permanently delete a repository and all of its data from the server.',
+            config: 'Edit the saved Turtle configuration and restart this repository to apply it.',
             namespaces: 'Manage the prefixes this repository uses to shorten IRIs in queries and results.',
             contexts: 'See the named graphs in this repository and how many statements each holds.',
             types: 'See the classes used in this repository and how many resources belong to each.',
@@ -248,7 +250,7 @@ namespace workbench {
         };
 
         /** The sidebar icon of a page when the policy names none; keep in sync with the page definitions in WorkbenchPolicy.java. */
-        const defaultPageIcons: { [key: string]: string } = { 'saved-queries': 'saved' };
+        const defaultPageIcons: { [key: string]: string } = { 'saved-queries': 'saved', config: 'information' };
 
         function text(value: any): string {
             if (value === null || typeof value === 'undefined') {
@@ -598,7 +600,7 @@ namespace workbench {
 
         /** The pages a repository can open with, in the order the server picks its landing page. */
         const repositoryLandingPages = ['summary', 'query', 'explore', 'graph', 'namespaces', 'contexts', 'types',
-            'saved-queries', 'export', 'update', 'add', 'remove', 'clear'];
+            'saved-queries', 'export', 'update', 'add', 'remove', 'clear', 'config'];
 
         /** The first page of a repository the policy shows (Summary unless it is hidden). */
         function repositoryLanding(context: ViewContext): string {
@@ -649,6 +651,9 @@ namespace workbench {
 
         function isDisabled(item: any, info: any): boolean {
             const id = item.id || item['menu-item-id'];
+            if (id === 'config' && (!info.id || info.id === 'NONE')) {
+                return true;
+            }
             const readable = info.readable !== false && String(info.readable) !== 'false';
             const writeable = info.writeable !== false && String(info.writeable) !== 'false';
             const readRoutes: { [key: string]: boolean } = {
@@ -3830,6 +3835,48 @@ namespace workbench {
             </form>`;
         }
 
+        function configurationPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
+            const h = runtime.html;
+            const sending = submissionOf(model).state === 'running';
+            const turtle = text(pageValue(model, 'configuration'));
+            return h`<form id="configuration-form" class="workbench-island" action="config" method="post"
+                    aria-busy=${sending ? 'true' : 'false'}
+                    @submit=${(event: any) => {
+                        event.preventDefault();
+                        if (sending) { return; }
+                        const editor = (workbench as any).configuration;
+                        if (editor) { editor.save(); }
+                        const submitter = event.submitter
+                            || event.currentTarget.querySelector('button[value="save-and-restart"]');
+                        const restart = submitter && submitter.value === 'save-and-restart';
+                        sendInPlace(event.currentTarget, submitter, model, context, runtime,
+                            restart ? 'Saving and restarting…' : 'Saving configuration…',
+                            restart ? 'Configuration saved and repository restarted.'
+                                : 'Configuration saved. Restart the repository to apply it.');
+                    }}
+                    @input=${(event: any) => clearSubmission(event, model, context, runtime)}>
+                ${errorCallout(runtime, model)}
+                <p class="workbench-field__help" id="configuration-help">Repository ID: <strong>${context.repositoryId}</strong>.
+                    Keep this ID unchanged. Save and restart closes this repository and opens it with the saved settings.
+                    An initialization error leaves the saved configuration available here for correction.</p>
+                <div id="configuration-editor" class="workbench-field"><label for="configuration">Configuration (Turtle)</label>
+                    <textarea id="configuration" name="configuration" rows="22" cols="100"
+                        spellcheck="false" aria-describedby="configuration-help">${turtle}</textarea>
+                    <div id="configuration-editor-resize" class="query-editor-resize" role="separator"
+                        aria-orientation="horizontal" aria-label="Resize configuration editor" tabindex="0"></div>
+                </div>
+                <div class="workbench-form-actions">
+                    <button type="submit" name="action" value="save-and-restart" class="workbench-action workbench-action--primary"
+                        ?disabled=${sending}>${icon(runtime, 'update')}<span>Save and restart</span></button>
+                    <button type="submit" name="action" value="save" class="workbench-action"
+                        ?disabled=${sending}>${icon(runtime, 'saved')}<span>Save</span></button>
+                    <a href="config" class="workbench-action" aria-disabled=${sending ? 'true' : 'false'}
+                        @click=${(event: any) => { if (sending) { event.preventDefault(); } }}>Reload saved configuration</a>
+                    ${submissionStatus(runtime, model)}
+                </div>
+            </form>`;
+        }
+
         function updatePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const error = pageErrorMessage(model);
@@ -4419,7 +4466,7 @@ namespace workbench {
          * Clear, Update, server change, Explore or query); on any other page such a model is only its error.
          */
         const errorFormViews: { [viewId: string]: boolean } = {
-            add: true, remove: true, clear: true, update: true, server: true, explore: true, query: true
+            add: true, remove: true, clear: true, update: true, config: true, server: true, explore: true, query: true
         };
 
         /**
@@ -4467,6 +4514,7 @@ namespace workbench {
                 case 'remove': return removePage(runtime, model, context);
                 case 'clear': return clearPage(runtime, model, context);
                 case 'update': return updatePage(runtime, model, context);
+                case 'config': return configurationPage(runtime, model, context);
                 case 'server': return serverPage(runtime, model, context);
                 default: return runtime.html`<p class="error" role="alert">Unsupported Workbench view: ${model.viewId}</p>`;
             }
@@ -4479,7 +4527,7 @@ namespace workbench {
 
         const repositoryScopedViews: { [view: string]: boolean } = {
             summary: true, namespaces: true, contexts: true, types: true, explore: true, graph: true, query: true,
-            'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true
+            'saved-queries': true, export: true, update: true, add: true, remove: true, clear: true, config: true
         };
 
         /** Where choosing a repository in the switcher leads: the same view when it is repository-scoped. */

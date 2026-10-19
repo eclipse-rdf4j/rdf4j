@@ -97,7 +97,7 @@ namespace workbench {
          * address or the server.
          */
         const drafts: { [key: string]: DraftField[] } = {};
-        const draftViews = ['update', 'add', 'remove'];
+        const draftViews = ['update', 'add', 'remove', 'config'];
 
         /** The code editor (CodeMirror, YASQE) that shows a textarea, if any. */
         function editorOf(element: any): any {

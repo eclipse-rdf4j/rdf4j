@@ -86,10 +86,12 @@ class WorkbenchPagePolicyTest {
 		assertThat(policy.getVisibleMenuGroups()).extracting(WorkbenchPolicy.MenuGroup::getLabel)
 				.containsExactly("Repository", "Data", "Server", "System");
 		assertThat(policy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
-				.containsExactly("query", "saved-queries", "explore", "graph", "summary", "namespaces", "contexts",
+				.containsExactly("query", "saved-queries", "explore", "graph", "summary", "config", "namespaces",
+						"contexts",
 						"types");
 		assertThat(policy.getVisibleMenuGroups().get(0).getItems()).extracting(WorkbenchPolicy.MenuItem::getLabel)
-				.containsExactly("Query", "Saved queries", "Explore", "Graph", "Summary", "Namespaces", "Named Graphs",
+				.containsExactly("Query", "Saved queries", "Explore", "Graph", "Summary", "Configuration", "Namespaces",
+						"Named Graphs",
 						"Types");
 		assertThat(policy.getVisibleMenuGroups().get(1).getItems()).extracting(WorkbenchPolicy.MenuItem::getId)
 				.containsExactly("add", "export", "update", "remove", "clear");

@@ -124,6 +124,10 @@
 			<param-value>org.eclipse.rdf4j.workbench.commands.SummaryServlet</param-value>
 		</init-param>
 		<init-param>
+			<param-name>/config</param-name>
+			<param-value>org.eclipse.rdf4j.workbench.commands.ConfigServlet</param-value>
+		</init-param>
+		<init-param>
 			<param-name>/info</param-name>
 			<param-value>org.eclipse.rdf4j.workbench.commands.InfoServlet</param-value>
 		</init-param>

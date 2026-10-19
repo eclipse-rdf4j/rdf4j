@@ -333,6 +333,7 @@ public class Rdf4jServerWorkbenchApplication {
 		params.put("default-Accept", "application/rdf+xml");
 		params.put("default-Content-Type", "application/rdf+xml");
 		params.put("/summary", "org.eclipse.rdf4j.workbench.commands.SummaryServlet");
+		params.put("/config", "org.eclipse.rdf4j.workbench.commands.ConfigServlet");
 		params.put("/info", "org.eclipse.rdf4j.workbench.commands.InfoServlet");
 		params.put("/information", "org.eclipse.rdf4j.workbench.commands.InformationServlet");
 		params.put("/repositories", "org.eclipse.rdf4j.workbench.commands.RepositoriesServlet");

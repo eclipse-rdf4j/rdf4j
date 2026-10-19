@@ -300,6 +300,36 @@ test('a malformed legacy credentials cookie has no effect on deletion confirmati
     assert.equal(form.submitCount, 1, 'the server checks whether deletion is authorized');
 });
 
+for (const [label, parameters, expected] of [
+    ['no URL parameters', null, 'INSERT DATA {}'],
+    ['undefined URL parameters', undefined, 'INSERT DATA {}'],
+    ['empty URL parameters', {}, 'INSERT DATA {}'],
+    ['unrelated query parameters', { query: 'ASK {}' }, 'INSERT DATA {}'],
+    ['a shared update', { update: 'DELETE WHERE {}' }, 'DELETE WHERE {}']
+]) {
+    test('Update mounts when YASQE consumes ' + label + ' during construction', () => {
+        const harness = createFormBrowserHarness({ globals: { namespaces: {} } });
+        const textarea = harness.registerElement('textarea', { id: 'update', value: 'INSERT DATA {}' });
+        harness.document.body.appendChild(textarea);
+        const yasqe = createYasqeStub(harness);
+        const createEditor = yasqe.api.fromTextArea;
+        yasqe.api.fromTextArea = (element, options) => {
+            const editor = createEditor(element, options);
+            // The bundled YASQE invokes this callback synchronously; getUrlParams() returns null for plain URLs.
+            options.consumeShareLink(editor, parameters);
+            return editor;
+        };
+        harness.context.YASQE = yasqe.api;
+        harness.loadScripts(['yasqeHelper.js', 'update.js']);
+
+        const dispose = harness.context.workbench.update.mount(harness.document.body);
+
+        assert.equal(yasqe.state.instance.getValue(), expected);
+        dispose();
+        assert.equal(yasqe.state.instance.closed, true);
+    });
+}
+
 test('update page initializes yasqe, applies defaults, and submits safely without init', () => {
     const harness = createFormBrowserHarness({
         globals: {

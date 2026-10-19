@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.http.client;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockserver.model.HttpRequest.request;
 import static org.mockserver.model.HttpResponse.response;
 
@@ -28,6 +29,7 @@ import org.eclipse.rdf4j.http.protocol.Protocol;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
+import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.config.RepositoryConfig;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.helpers.StatementCollector;
@@ -238,6 +240,42 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 						.withPath("/rdf4j-server/repositories/test/config")
 						.withHeader(testHeader, testValue)
 		);
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testUpdateRepositoryAndRestartRequiresServerAcknowledgement(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/config")
+				.withQueryStringParameter("restart", "true"), Times.once())
+				.respond(response().withStatusCode(204));
+
+		assertThatThrownBy(() -> getRDF4JSession().updateRepository(new RepositoryConfig("test"), true))
+				.isInstanceOf(RepositoryException.class)
+				.hasMessageContaining("did not confirm repository restart")
+				.hasMessageContaining("may have been saved");
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testUpdateRepositoryAndRestartUsesAcknowledgedServerOperation(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(request().withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/config")
+				.withQueryStringParameter("restart", "true"), Times.once())
+				.respond(response().withStatusCode(204).withHeader(Protocol.REPOSITORY_RESTART_HEADER, "done"));
+
+		getRDF4JSession().updateRepository(new RepositoryConfig("test"), true);
+
+		client.verify(request().withMethod("POST")
+				.withPath("/rdf4j-server/repositories/test/config")
+				.withQueryStringParameter("restart", "true")
+				.withHeader(testHeader, testValue));
 	}
 
 	@ParameterizedTest(name = "[{0}]")

@@ -309,8 +309,28 @@ public class QueryServlet extends TransformationServlet {
 		return ACTION_EXPLAIN.equals(getRequestAction(req)) || req.isParameterPresent(EXPLAIN);
 	}
 
-	private String getRequestAction(WorkbenchRequest req) {
+	private static String getRequestAction(WorkbenchRequest req) {
 		return req.isParameterPresent(ACTION) ? req.getParameter(ACTION) : null;
+	}
+
+	/** The operation identity used to keep cancellation on its owning servlet across repository reinitialization. */
+	public static RequestOperation requestOperation(WorkbenchRequest request) {
+		String action = getRequestAction(request);
+		boolean post = "POST".equalsIgnoreCase(request.getMethod());
+		boolean cancellation = post && (ACTION_CANCEL_QUERY.equals(action) || ACTION_CANCEL_EXPLAIN.equals(action));
+		if (post && !cancellation && !"exec".equals(action) && !ACTION_EXPLAIN.equals(action)) {
+			return null;
+		}
+		if (!post && (ACTION_GET.equals(action) || WorkbenchViewRegistry.requestsQueryPagePrefill(request))) {
+			return null;
+		}
+		boolean explanation = ACTION_EXPLAIN.equals(action) || post && ACTION_CANCEL_EXPLAIN.equals(action);
+		String requestId = explanation ? getExplainRequestId(request) : getQueryRequestId(request);
+		return requestId == null ? null
+				: new RequestOperation(explanation ? "explain" : "query", requestId, cancellation);
+	}
+
+	public record RequestOperation(String kind, String requestId, boolean cancellation) {
 	}
 
 	private boolean rejectDisabledExplainFeature(HttpServletResponse resp) throws IOException {
@@ -1493,7 +1513,7 @@ public class QueryServlet extends TransformationServlet {
 		return userName;
 	}
 
-	private String getExplainRequestId(WorkbenchRequest req) {
+	private static String getExplainRequestId(WorkbenchRequest req) {
 		if (!req.isParameterPresent(EXPLAIN_REQUEST_ID)) {
 			return null;
 		}
@@ -1505,7 +1525,7 @@ public class QueryServlet extends TransformationServlet {
 		return explainRequestId.isEmpty() ? null : explainRequestId;
 	}
 
-	private String getQueryRequestId(WorkbenchRequest req) {
+	private static String getQueryRequestId(WorkbenchRequest req) {
 		if (!req.isParameterPresent(QUERY_REQUEST_ID)) {
 			return null;
 		}

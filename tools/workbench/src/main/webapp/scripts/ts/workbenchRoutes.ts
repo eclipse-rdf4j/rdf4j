@@ -282,6 +282,8 @@ namespace workbench {
         register(staticRoute('graph', ['graph-explorer/graph-explorer.mjs'], routeMount(scriptMount('graphExplorer'))));
         register(staticRoute('export', ['paging.js', 'export.js'], routeMount(scriptMount('exportPage'))));
         register(staticRoute('add', ['add.js'], routeMount(scriptMount('add'))));
+        register(staticRoute('config', ['vendor/codemirror-5.65.21/codemirror.js', 'yasqeHelper.js', 'configuration.js'],
+            routeMount(scriptMount('configuration'))));
         register(staticRoute('saved-queries',
             ['queryStream.js', 'vendor/codemirror-5.65.21/codemirror.js', 'yasqe.min.js', 'saved-queries.js'],
             routeMount(scriptMount('savedQueries'))));
