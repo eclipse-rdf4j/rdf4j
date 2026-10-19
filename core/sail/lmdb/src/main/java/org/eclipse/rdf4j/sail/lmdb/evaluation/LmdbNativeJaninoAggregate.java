@@ -16,7 +16,6 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -45,7 +44,7 @@ final class LmdbNativeJaninoAggregate {
 
 	private static final int MAX_PATTERNS = 6;
 	private static final int ROWS_PER_OPEN_ESTIMATE = 4096;
-	private static final ConcurrentHashMap<String, AtomicLong> SHAPE_OPENS = new ConcurrentHashMap<>();
+	private static final LmdbNativeShapeCounter SHAPE_OPENS = new LmdbNativeShapeCounter();
 
 	private LmdbNativeJaninoAggregate() {
 	}
@@ -144,7 +143,7 @@ final class LmdbNativeJaninoAggregate {
 				}
 				adjacencies[1 + i] = adjacency;
 			}
-			long opens = SHAPE_OPENS.computeIfAbsent(shape.shapeKey, key -> new AtomicLong()).incrementAndGet();
+			long opens = SHAPE_OPENS.increment(shape.shapeKey);
 			JaninoKernel kernel = LmdbNativeJaninoCodegen.kernel(shape.shapeKey,
 					shape.className, () -> emitSource(shape), opens * ROWS_PER_OPEN_ESTIMATE);
 			if (kernel == null) {

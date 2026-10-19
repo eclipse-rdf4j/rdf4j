@@ -19,7 +19,6 @@ import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
@@ -62,7 +61,7 @@ final class LmdbNativeKernelExecution {
 
 	private static final int ROWS_PER_OPEN_ESTIMATE = 4096;
 	private static final int FILL_ROWS = 256;
-	private static final ConcurrentHashMap<String, AtomicLong> SHAPE_OPENS = new ConcurrentHashMap<>();
+	private static final LmdbNativeShapeCounter SHAPE_OPENS = new LmdbNativeShapeCounter();
 
 	private enum ParallelExecution {
 		PREFER,
@@ -444,7 +443,7 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			} else {
-				long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
+				long opens = SHAPE_OPENS.increment(shapeKey);
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
 				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);
@@ -1178,7 +1177,7 @@ final class LmdbNativeKernelExecution {
 					return null;
 				}
 			} else {
-				long opens = SHAPE_OPENS.computeIfAbsent(shapeKey, key -> new AtomicLong()).incrementAndGet();
+				long opens = SHAPE_OPENS.increment(shapeKey);
 				observedRows = opens * ROWS_PER_OPEN_ESTIMATE;
 				kernel = LmdbNativeJaninoCodegen.kernel(shapeKey, lowered.kernel.className(),
 						() -> LmdbNativeKernelEmitter.emit(lowered.kernel), observedRows);

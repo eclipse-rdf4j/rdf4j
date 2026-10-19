@@ -37,6 +37,7 @@ Before first output, an opener/preflight can decline and an arbiter may release 
 | Structure | Owner/lifetime | Bound or fallback contract |
 |---|---|---|
 | Process compiled-kernel classes | Static Janino or batch-specialization LRU. | Entry and generated-byte caps are documented in [IR/codegen](query-ir-and-codegen.md); this is class-cache memory, separate from per-query reservations. |
+| Compilation-admission shape counts | Two process-wide trackers: shared IR rows/aggregates and legacy Janino aggregates. | `rdf4j.lmdb.janinoCodegen.maxTrackedShapes` defaults to 16,384 entries per tracker (32,768 histories total), captured at construction. Recent-access eviction resets the evicted history; this entry cap is independent of compiled classes and per-query byte reservations. |
 | Island materialization/replay rows | Per evaluation or per LATERAL entry frame. | Keyed mode admits at most 256 distinct keys; this does not bound row count/bytes. Source and scope in [routing](query-routing-and-hosts.md). |
 | Factorized branch/value memo | One factorized sink's shared `MemoBudget`. | Entry and value caps; on overflow bypasses caching/re-scans rather than losing solutions. |
 | Factorized prefix batch | Per query row plan/prefix depth. | Bounded by cumulative memo budget and array-capacity guards; cache-backed probes can suppress duplicate local memoization. |

@@ -263,6 +263,15 @@ relied on the former automatic native evaluator or adjacency activation should a
 repository configuration. The three startup options are captured when the store is constructed; restart the repository
 after changing any of them.
 
+Native Janino compilation keeps bounded query-shape open counts separately from its compiled-class cache. Set
+`-Drdf4j.lmdb.janinoCodegen.maxTrackedShapes=16384` at JVM startup to control the maximum histories **per tracker**.
+IR row and aggregate execution share one process-wide tracker; legacy Janino aggregation uses a second, giving a
+default maximum of 32,768 retained histories across all repositories. Recently accessed shapes retain their counts while
+cold histories are evicted individually; an evicted shape restarts at one and may compile later. This entry limit is
+independent of `rdf4j.lmdb.janinoCodegen.maxEntries` (512 compiled classes by default) and query-memory byte limits.
+The setting accepts a trimmed positive integer; absent, malformed, overflowing, zero or negative values use 16,384.
+Existing trackers capture the setting at construction, so restart the JVM after changing it.
+
 ## Background adjacency indexes
 
 Direct adjacency is disabled by default. Opt in with `LmdbStoreConfig.setDirectAdjacencyEnabled(true)` or the persisted
