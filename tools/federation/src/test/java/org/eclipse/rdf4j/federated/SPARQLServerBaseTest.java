@@ -17,6 +17,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.monitoring.MonitoringService;
 import org.eclipse.rdf4j.federated.repository.ConfigurableSailRepository;
@@ -64,6 +65,7 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 	 * the server, e.g. SparqlEmbeddedServer or NativeStoreServer
 	 */
 	protected static Server server;
+	private String previousAllowedHosts;
 
 	@TempDir
 	static Path tempDir;
@@ -81,31 +83,54 @@ public abstract class SPARQLServerBaseTest extends FedXBaseTest {
 
 	@BeforeAll
 	public void initTest() throws Exception {
+		previousAllowedHosts = System.getProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY);
+		String allowedHosts = previousAllowedHosts == null || previousAllowedHosts.isBlank()
+				? "localhost"
+				: previousAllowedHosts + ",localhost";
+		System.setProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY, allowedHosts);
+
 		System.setProperty("org.eclipse.rdf4j.repository.debug", "true");
 
-		log = LoggerFactory.getLogger(SPARQLServerBaseTest.class);
+		try {
+			log = LoggerFactory.getLogger(SPARQLServerBaseTest.class);
 
-		if (System.getProperty("repositoryType") != null) {
-			repositoryType = REPOSITORY_TYPE.valueOf(System.getProperty("repositoryType"));
-		}
+			if (System.getProperty("repositoryType") != null) {
+				repositoryType = REPOSITORY_TYPE.valueOf(System.getProperty("repositoryType"));
+			}
 
-		switch (repositoryType) {
-		case NATIVE:
-			initializeLocalNativeStores();
-			break;
-		case REMOTEREPOSITORY:
-		case SPARQLREPOSITORY:
-		default:
-			initializeServer();
+			switch (repositoryType) {
+			case NATIVE:
+				initializeLocalNativeStores();
+				break;
+			case REMOTEREPOSITORY:
+			case SPARQLREPOSITORY:
+			default:
+				initializeServer();
+			}
+		} catch (Exception | Error e) {
+			restoreAllowedHosts();
+			throw e;
 		}
 	}
 
 	@AfterAll
 	public void afterTest() throws Exception {
-		if (server != null) {
-			server.shutdown();
+		try {
+			if (server != null) {
+				server.shutdown();
+			}
+		} finally {
+			restoreAllowedHosts();
+			System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
 		}
-		System.setProperty("org.eclipse.rdf4j.repository.debug", "false");
+	}
+
+	private void restoreAllowedHosts() {
+		if (previousAllowedHosts == null) {
+			System.clearProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY);
+		} else {
+			System.setProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY, previousAllowedHosts);
+		}
 	}
 
 	@BeforeEach

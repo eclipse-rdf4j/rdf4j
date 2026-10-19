@@ -33,6 +33,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.io.IOUtil;
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.common.net.PublicNetworkAccessPolicy;
 import org.eclipse.rdf4j.common.text.StringUtil;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -98,6 +99,7 @@ public class SPARQLServiceEvaluationTest {
 	private SPARQLEmbeddedServer server;
 
 	private SailRepository localRepository;
+	private String previousAllowedHosts;
 
 	private List<HTTPRepository> remoteRepositories;
 
@@ -113,6 +115,12 @@ public class SPARQLServiceEvaluationTest {
 	 */
 	@Before
 	public void setUp() throws Exception {
+		previousAllowedHosts = System.getProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY);
+		String allowedHosts = previousAllowedHosts == null || previousAllowedHosts.isBlank()
+				? "localhost"
+				: previousAllowedHosts + ",localhost";
+		System.setProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY, allowedHosts);
+
 		// set up the server: the maximal number of endpoints must be known
 		List<String> repositoryIds = new ArrayList<>(MAX_ENDPOINTS);
 		for (int i = 1; i <= MAX_ENDPOINTS; i++) {
@@ -219,7 +227,15 @@ public class SPARQLServiceEvaluationTest {
 		try {
 			localRepository.shutDown();
 		} finally {
-			server.stop();
+			try {
+				server.stop();
+			} finally {
+				if (previousAllowedHosts == null) {
+					System.clearProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY);
+				} else {
+					System.setProperty(PublicNetworkAccessPolicy.ALLOWED_HOSTS_PROPERTY, previousAllowedHosts);
+				}
+			}
 		}
 	}
 

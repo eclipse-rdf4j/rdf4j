@@ -150,6 +150,10 @@ public class SailUpdateExecutor {
 		Value graph = load.getGraph() != null ? load.getGraph().getValue() : null;
 
 		URL sourceURL = new URL(source.stringValue());
+		String protocol = sourceURL.getProtocol();
+		if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
+			throw new IOException("Remote resource access denied: only HTTP(S) targets are permitted");
+		}
 
 		RDFSailInserter rdfInserter = new RDFSailInserter(con, vf, uc);
 		if (graph != null) {
