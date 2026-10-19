@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalLong;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -73,7 +74,6 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private static final String TXLOG_DIR = "txlog";
 	private static final String BACKUP_STATE_FILE = "backup.properties";
 	private static final String BACKUP_DIRECTORY_KEY = "backup-directory";
-	private static final String DEFAULT_TRIPLE_TERM_INDEXES = "spoc,cspo";
 
 	private final Path storeRoot;
 	private final LmdbSailStore backingStore;
@@ -98,23 +98,39 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private volatile Runnable afterFullBackupTransactionIdCaptured = () -> {
 	};
 	private volatile long lastPublishedTxnId;
+	private volatile boolean closed;
+	private Long failedPublicationTxnId;
 
-	LmdbBackupServiceImpl(LmdbStore store, LmdbSailStore backingStore, LmdbStoreConfig config) {
-		this.storeRoot = store.getDataDir().toPath();
+	LmdbBackupServiceImpl(LmdbStore store, LmdbSailStore backingStore, LmdbStoreConfig config,
+			PostCommitBackupPublisher postCommitPublisher) {
+		this.storeRoot = store.getDataDir().toPath().toAbsolutePath().normalize();
 		this.backingStore = backingStore;
 		this.config = config;
 		this.txLogRoot = resolveInitialTxLogRoot();
-		this.backingStore.setCommitListener(new LmdbSailStore.CommitListener() {
-			@Override
-			public void onCommit(long transactionId, List<Record> records) {
-				LmdbBackupServiceImpl.this.onCommit(transactionId, records);
-			}
+		try {
+			// Startup has no in-flight publications. Range validation still checks durable journal coverage.
+			this.lastPublishedTxnId = backingStore.getCurrentCommittedTxnId();
+		} catch (IOException e) {
+			throw new SailException("Unable to recover LMDB backup publication baseline", e);
+		}
+		// If post-commit publisher is provided, the backup service will set itself as the publisher's backup service
+		// and the publisher will be used as the commit listener. Otherwise, use direct listener.
+		if (postCommitPublisher == null) {
+			backingStore.setCommitListener(new LmdbSailStore.CommitListener() {
+				@Override
+				public void onCommit(long transactionId, long previousRequiredTxn, List<Record> records) {
+					LmdbBackupServiceImpl.this.onCommit(transactionId, previousRequiredTxn, records);
+				}
 
-			@Override
-			public void onCommitFailure(long transactionId, List<Record> records, Throwable error) {
-				LmdbBackupServiceImpl.this.onCommitFailure(transactionId, error);
-			}
-		});
+				@Override
+				public void onCommitFailure(long transactionId, long previousRequiredTxn, List<Record> records,
+						Throwable error) {
+					LmdbBackupServiceImpl.this.onCommitFailure(transactionId, error);
+				}
+			});
+		} else {
+			backingStore.setCommitListener(postCommitPublisher);
+		}
 	}
 
 	void setAfterFullBackupTransactionIdCaptured(Runnable callback) {
@@ -125,9 +141,21 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	public BackupResult createBackup(BackupRequest request) throws SailException {
 		backupOperationLock.lock();
 		try {
+			ensureOpen();
 			Path backupDir = request.getBackupDirectory();
-			txLogRoot = backupDir.toAbsolutePath().normalize();
-			persistBackupDirectory(txLogRoot);
+			ensureBackupDirectoryIsOutsideStore(backupDir);
+			txLogPublicationLock.lock();
+			try {
+				Path requestedRoot = backupDir.toAbsolutePath().normalize();
+				if (!requestedRoot.equals(txLogRoot)) {
+					createDurableDirectories(requestedRoot);
+					migrateTransactionLogs(txLogRoot, requestedRoot);
+					persistBackupDirectory(requestedRoot);
+					txLogRoot = requestedRoot;
+				}
+			} finally {
+				txLogPublicationLock.unlock();
+			}
 			Files.createDirectories(backupDir);
 			cleanupStaleTemporaryBackups(backupDir);
 			return request.getType() == BackupType.FULL ? createFullBackup(request) : createIncrementalBackup(request);
@@ -159,6 +187,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 			deleteRecursively(restoreDir);
 			Files.createDirectories(restoreDir);
 			restoreSnapshot(base.getArtifactPath(), restoreDir);
+			writeBackupDirectory(restoreDir, restoreDir.toAbsolutePath().normalize().resolve("backup"));
 
 			applyDeltaLogs(request.getBackupDirectory(), restoreDir, base.getEndTransactionId(),
 					request.getTargetTransactionId(), request.isVerifyBeforeRestore());
@@ -183,6 +212,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 
 	@Override
 	public UUID schedule(BackupSchedule schedule) throws SailException {
+		ensureOpen();
 		UUID id = UUID.randomUUID();
 		ScheduleState state = new ScheduleState(id, schedule, Instant.now());
 		scheduleStates.put(id, state);
@@ -223,11 +253,43 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 
 	@Override
 	public void close() {
-		backingStore.setCommitListener(null);
+		txLogPublicationLock.lock();
+		try {
+			closed = true;
+			txLogPublished.signalAll();
+		} finally {
+			txLogPublicationLock.unlock();
+		}
 		schedules.values().forEach(future -> future.cancel(false));
 		schedules.clear();
 		scheduleStates.values().forEach(ScheduleState::cancel);
 		scheduler.shutdown();
+		backupOperationLock.lock();
+		try {
+			backingStore.setCommitListener(null);
+		} finally {
+			backupOperationLock.unlock();
+		}
+		boolean interrupted = false;
+		try {
+			while (!scheduler.isTerminated()) {
+				try {
+					scheduler.awaitTermination(1, TimeUnit.DAYS);
+				} catch (InterruptedException e) {
+					interrupted = true;
+				}
+			}
+		} finally {
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+	}
+
+	private void ensureOpen() {
+		if (closed) {
+			throw new SailException("LMDB backup service is closed");
+		}
 	}
 
 	@Override
@@ -264,7 +326,6 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		boolean promoted = false;
 		try {
 			long txnId = backingStore.createOnlineSnapshot(snapshotDir, true, afterFullBackupTransactionIdCaptured);
-			copyStorePropertiesFile(snapshotDir);
 			String backupId = "full-" + txnId + "-" + System.currentTimeMillis();
 			Path container = parent.resolve(backupId);
 			Path artifactPath = snapshotDir;
@@ -302,25 +363,15 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 	}
 
-	private void copyStorePropertiesFile(Path snapshotDir) {
-		StoreProperties snapshotProperties = new StoreProperties(snapshotDir.toFile());
-		snapshotProperties.setVersion(String.valueOf(LmdbStore.VERSION))
-				.setTripleIndexes(config.getTripleIndexes())
-				.setTripleTermIndexes(resolveTripleTermIndexes())
-				.save();
-	}
-
-	private String resolveTripleTermIndexes() {
-		String configured = config.getTripleTermIndexes();
-		return configured == null || configured.isBlank() ? DEFAULT_TRIPLE_TERM_INDEXES : configured;
-	}
-
 	private BackupResult createIncrementalBackup(BackupRequest request) throws IOException {
 		OptionalLong since = request.getSinceTransactionId();
 		if (since.isEmpty()) {
 			throw new SailException("Incremental backup requires sinceTransactionId");
 		}
 		long currentTxn = awaitPublishedTransactionId(backingStore.getCurrentCommittedTxnId());
+		if (since.getAsLong() > currentTxn) {
+			throw new SailException("Incremental backup baseline is after the current transaction");
+		}
 		String backupId = "incr-" + since.getAsLong() + "-" + currentTxn + "-" + System.currentTimeMillis()
 				+ "-" + UUID.randomUUID();
 		Path parent = request.getBackupDirectory().resolve(INCREMENTAL_DIR);
@@ -332,6 +383,7 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		boolean promoted = false;
 		try {
 			List<Path> logs = listTransactionLogs(request.getBackupDirectory(), since.getAsLong(), currentTxn);
+			validateLogCoverage(logs, since.getAsLong(), currentTxn);
 			for (Path log : logs) {
 				Files.copy(log, deltaDir.resolve(log.getFileName()), StandardCopyOption.REPLACE_EXISTING);
 			}
@@ -363,21 +415,48 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 		}
 	}
 
-	private void onCommit(long transactionId, List<Record> records) {
+	void onCommit(long transactionId, long previousRequiredTxn, List<Record> records) {
 		if (records.isEmpty()) {
 			return;
 		}
 		txLogPublicationLock.lock();
 		try {
+			ensureOpen();
+			if (transactionId <= lastPublishedTxnId) {
+				// Recovery may retry a journal made durable before its outbox acknowledgement.
+				if (transactionId < lastPublishedTxnId) {
+					throw new IOException("Out of order LMDB transaction publication: " + transactionId);
+				}
+			} else if (previousRequiredTxn != lastPublishedTxnId) {
+				throw new IOException("Noncontiguous LMDB transaction publication after " + lastPublishedTxnId);
+			}
 			Path txLogDir = txLogRoot.resolve(TXLOG_DIR);
-			Files.createDirectories(txLogDir);
+			createDurableDirectories(txLogDir);
 			Path logFile = txLogDir.resolve(String.format("txn-%020d.delta.gz", transactionId));
-			try (OutputStream out = new GZIPOutputStream(new BufferedOutputStream(Files.newOutputStream(logFile)))) {
-				LmdbBackupDeltaCodec.write(out, records);
+			Path temporaryLog = Files.createTempFile(txLogDir, ".tmp-txn-", ".delta.gz");
+			try {
+				try (OutputStream out = new GZIPOutputStream(new BufferedOutputStream(
+						Files.newOutputStream(temporaryLog)))) {
+					LmdbBackupDeltaCodec.write(out, records, previousRequiredTxn);
+				}
+				PostCommitBackupPublisher.forceFile(temporaryLog);
+				if (Files.exists(logFile)) {
+					if (!checksum(temporaryLog).equals(checksum(logFile))) {
+						throw new IOException("Conflicting LMDB transaction journal at " + transactionId);
+					}
+					PostCommitBackupPublisher.forceFile(logFile);
+				} else {
+					Files.move(temporaryLog, logFile, StandardCopyOption.ATOMIC_MOVE);
+				}
+				StoreProperties.forceParentDirectory(txLogDir);
+				StoreProperties.forceParentDirectory(txLogRoot);
+			} finally {
+				Files.deleteIfExists(temporaryLog);
 			}
 			lastPublishedTxnId = transactionId;
 			txLogPublished.signalAll();
 		} catch (IOException e) {
+			markPublicationFailure(transactionId);
 			logger.warn("Failed to persist LMDB transaction delta log for txn {}", transactionId, e);
 			throw new RuntimeException(e);
 		} finally {
@@ -388,101 +467,182 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	private long awaitPublishedTransactionId(long targetTxnId) {
 		txLogPublicationLock.lock();
 		try {
-			while (lastPublishedTxnId < targetTxnId) {
-				txLogPublished.awaitUninterruptibly();
+			if (failedPublicationTxnId != null && failedPublicationTxnId <= targetTxnId) {
+				throw new SailException("Missing committed transaction journal at " + failedPublicationTxnId);
 			}
-			return lastPublishedTxnId;
+			while (lastPublishedTxnId < targetTxnId) {
+				ensureOpen();
+				if (failedPublicationTxnId != null && failedPublicationTxnId <= targetTxnId) {
+					throw new SailException("Missing committed transaction journal at " + failedPublicationTxnId);
+				}
+				try {
+					txLogPublished.await();
+				} catch (InterruptedException e) {
+					Thread.currentThread().interrupt();
+					throw new SailException("Interrupted while waiting for LMDB transaction journal publication", e);
+				}
+			}
+			ensureOpen();
+			return targetTxnId;
 		} finally {
 			txLogPublicationLock.unlock();
 		}
 	}
 
-	private void onCommitFailure(long transactionId, Throwable error) {
+	void initializePublicationBaseline(long transactionId) {
+		txLogPublicationLock.lock();
+		try {
+			lastPublishedTxnId = transactionId;
+		} finally {
+			txLogPublicationLock.unlock();
+		}
+	}
+
+	private void migrateTransactionLogs(Path sourceRoot, Path targetRoot) throws IOException {
+		Path source = sourceRoot.resolve(TXLOG_DIR);
+		Path target = targetRoot.resolve(TXLOG_DIR);
+		if (!Files.isDirectory(source)) {
+			return;
+		}
+		createDurableDirectories(target);
+		try (var files = Files.list(source)) {
+			for (Path file : files.toList()) {
+				if (!file.getFileName().toString().startsWith("txn-")) {
+					continue;
+				}
+				Path destination = target.resolve(file.getFileName());
+				if (Files.exists(destination)) {
+					if (!checksum(file).equals(checksum(destination))) {
+						throw new IOException("Conflicting LMDB journal at new backup directory");
+					}
+					continue;
+				}
+				Path temporary = Files.createTempFile(target, ".tmp-migrate-", ".delta.gz");
+				try {
+					Files.copy(file, temporary, StandardCopyOption.REPLACE_EXISTING);
+					PostCommitBackupPublisher.forceFile(temporary);
+					Files.move(temporary, destination, StandardCopyOption.ATOMIC_MOVE);
+				} finally {
+					Files.deleteIfExists(temporary);
+				}
+			}
+		}
+		StoreProperties.forceParentDirectory(target);
+		StoreProperties.forceParentDirectory(targetRoot);
+	}
+
+	static void createDurableDirectories(Path directory) throws IOException {
+		createDurableDirectories(directory, StoreProperties::forceParentDirectory);
+	}
+
+	static void createDurableDirectories(Path directory, DirectoryForcer forcer) throws IOException {
+		Path absolute = directory.toAbsolutePath().normalize();
+		Files.createDirectories(absolute);
+		// Forcing a directory persists its children, not its own entry in its parent.
+		for (Path ancestor = absolute; ancestor != null; ancestor = ancestor.getParent()) {
+			forcer.force(ancestor);
+		}
+	}
+
+	@FunctionalInterface
+	interface DirectoryForcer {
+		void force(Path directory) throws IOException;
+	}
+
+	void onCommitFailure(long transactionId, Throwable error) {
+		txLogPublicationLock.lock();
+		try {
+			markPublicationFailure(transactionId);
+		} finally {
+			txLogPublicationLock.unlock();
+		}
 		recordFailure("commit-delta", transactionId, error);
+	}
+
+	private void markPublicationFailure(long transactionId) {
+		failedPublicationTxnId = failedPublicationTxnId == null ? transactionId
+				: Math.min(failedPublicationTxnId, transactionId);
+		txLogPublished.signalAll();
 	}
 
 	private void applyDeltaLogs(Path backupDirectory, Path restoreDirectory, long fromExclusive, long toInclusive,
 			boolean verify) throws IOException {
-		List<Path> logs = collectRestoreDeltaLogs(backupDirectory, fromExclusive, toInclusive, verify);
-		if (logs.isEmpty()) {
-			return;
-		}
-		LmdbStore restored = new LmdbStore(restoreDirectory.toFile(), config);
-		restored.init();
 		List<Path> temporaryLogDirs = new ArrayList<>();
-		try (SailConnection connection = restored.getConnection()) {
-			for (Path log : logs) {
-				Path parent = log.getParent();
-				if (parent != null && parent.getFileName() != null
-						&& parent.getFileName().toString().startsWith("rdf4j-lmdb-restore-delta-")) {
-					temporaryLogDirs.add(parent);
-				}
-				if (verify && Files.size(log) == 0) {
-					throw new SailException("Empty transaction log file: " + log);
-				}
-				try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(log)))) {
-					List<Record> records = LmdbBackupDeltaCodec.read(in);
-					connection.begin();
-					try {
-						for (Record record : records) {
-							if (record.isNamespaceOperation()) {
-								switch (record.getNamespaceOperation()) {
-								case SET -> connection.setNamespace(record.getNamespacePrefix(),
-										record.getNamespaceName());
-								case REMOVE -> connection.removeNamespace(record.getNamespacePrefix());
-								case CLEAR -> connection.clearNamespaces();
-								default -> throw new SailException("Unsupported namespace operation in backup delta: "
-										+ record.getNamespaceOperation());
+		try {
+			List<Path> logs = collectRestoreDeltaLogs(backupDirectory, fromExclusive, toInclusive, verify,
+					temporaryLogDirs);
+			if (logs.isEmpty()) {
+				return;
+			}
+			LmdbStore restored = new LmdbStore(restoreDirectory.toFile(), config);
+			restored.init();
+			restored.getBackingStore().setCommitListener(null);
+			try (SailConnection connection = restored.getConnection()) {
+				for (Path log : logs) {
+					if (verify && Files.size(log) == 0) {
+						throw new SailException("Empty transaction log file: " + log);
+					}
+					try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(log)))) {
+						List<Record> records = LmdbBackupDeltaCodec.read(in);
+						connection.begin();
+						try {
+							for (Record record : records) {
+								if (record.isNamespaceOperation()) {
+									switch (record.getNamespaceOperation()) {
+									case SET -> connection.setNamespace(record.getNamespacePrefix(),
+											record.getNamespaceName());
+									case REMOVE -> connection.removeNamespace(record.getNamespacePrefix());
+									case CLEAR -> connection.clearNamespaces();
+									default -> throw new SailException(
+											"Unsupported namespace operation in backup delta: "
+													+ record.getNamespaceOperation());
+									}
+									continue;
 								}
-								continue;
-							}
-							Statement st = record.getStatement();
-							if (record.isAddition()) {
-								if (record.isExplicit()) {
-									connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
+								Statement st = record.getStatement();
+								if (record.isAddition()) {
+									if (record.isExplicit()) {
+										connection.addStatement(st.getSubject(), st.getPredicate(), st.getObject(),
+												st.getContext());
+									} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
+										lmdbConnection.addInferredStatement(st.getSubject(), st.getPredicate(),
+												st.getObject(),
+												st.getContext());
+									} else {
+										throw new SailException(
+												"Restored store does not support inferred statement replay");
+									}
+								} else if (record.isExplicit()) {
+									connection.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(),
 											st.getContext());
 								} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
-									lmdbConnection.addInferredStatement(st.getSubject(), st.getPredicate(),
+									lmdbConnection.removeInferredStatement(st.getSubject(), st.getPredicate(),
 											st.getObject(),
 											st.getContext());
 								} else {
 									throw new SailException(
 											"Restored store does not support inferred statement replay");
 								}
-							} else if (record.isExplicit()) {
-								connection.removeStatements(st.getSubject(), st.getPredicate(), st.getObject(),
-										st.getContext());
-							} else if (connection instanceof LmdbStoreConnection lmdbConnection) {
-								lmdbConnection.removeInferredStatement(st.getSubject(), st.getPredicate(),
-										st.getObject(),
-										st.getContext());
-							} else {
-								throw new SailException("Restored store does not support inferred statement replay");
 							}
+							connection.commit();
+						} catch (RuntimeException e) {
+							connection.rollback();
+							throw e;
 						}
-						connection.commit();
-					} catch (RuntimeException e) {
-						connection.rollback();
-						throw e;
 					}
 				}
+			} finally {
+				restored.shutDown();
 			}
 		} finally {
-			restored.shutDown();
-			temporaryLogDirs.sort(Comparator.naturalOrder());
-			Path previous = null;
 			for (Path temporaryLogDir : temporaryLogDirs) {
-				if (temporaryLogDir.equals(previous)) {
-					continue;
-				}
 				deleteRecursively(temporaryLogDir);
-				previous = temporaryLogDir;
 			}
 		}
 	}
 
 	private List<Path> collectRestoreDeltaLogs(Path backupDirectory, long fromExclusive, long toInclusive,
-			boolean verify)
+			boolean verify, List<Path> temporaryLogDirs)
 			throws IOException {
 		List<BackupResult> incrementalBackups = listByType(backupDirectory, BackupType.INCREMENTAL).stream()
 				.filter(result -> result.getBaseTransactionId().isPresent())
@@ -491,38 +651,45 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 				.sorted(Comparator.comparingLong(BackupResult::getStartTransactionId))
 				.toList();
 
-		List<Path> logs = new ArrayList<>();
-		long nextExpectedTxn = fromExclusive + 1;
-
+		Map<Long, Path> selectedLogs = new TreeMap<>();
 		for (BackupResult incremental : incrementalBackups) {
-			if (incremental.getStartTransactionId() > nextExpectedTxn) {
-				break;
+			List<Path> extracted = extractIncrementalLogs(incremental, verify);
+			if (!Files.isDirectory(incremental.getArtifactPath()) && !extracted.isEmpty()) {
+				temporaryLogDirs.add(extracted.getFirst().getParent());
 			}
-			if (incremental.getEndTransactionId() < nextExpectedTxn) {
-				continue;
-			}
-			logs.addAll(extractIncrementalLogs(incremental, verify));
-			nextExpectedTxn = incremental.getEndTransactionId() + 1;
-			if (nextExpectedTxn > toInclusive) {
-				break;
-			}
-		}
-
-		if (nextExpectedTxn <= toInclusive) {
-			List<Path> liveLogs = listTransactionLogs(backupDirectory, nextExpectedTxn - 1, toInclusive);
-			logs.addAll(liveLogs);
-			if (!liveLogs.isEmpty()) {
-				nextExpectedTxn = parseTransactionId(liveLogs.getLast()) + 1;
+			for (Path log : extracted) {
+				long transactionId = parseTransactionId(log);
+				if (transactionId > fromExclusive && transactionId <= toInclusive) {
+					selectedLogs.putIfAbsent(transactionId, log);
+				}
 			}
 		}
-
-		if (nextExpectedTxn <= toInclusive) {
-			throw new SailException("Cannot restore requested transaction range " + (fromExclusive + 1) + "-"
-					+ toInclusive + ": missing incremental backup artifacts or transaction logs starting at "
-					+ nextExpectedTxn);
+		for (Path log : listTransactionLogs(backupDirectory, fromExclusive, toInclusive)) {
+			selectedLogs.putIfAbsent(parseTransactionId(log), log);
 		}
 
+		List<Path> logs = new ArrayList<>(selectedLogs.values());
+		validateLogCoverage(logs, fromExclusive, toInclusive);
 		return logs;
+	}
+
+	private static void validateLogCoverage(List<Path> logs, long fromExclusive, long toInclusive) throws IOException {
+		long previous = fromExclusive;
+		for (Path log : logs) {
+			long transactionId = parseTransactionId(log);
+			try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(log)))) {
+				long requiredPrevious = LmdbBackupDeltaCodec.validateJournal(in);
+				if (requiredPrevious < 0 ? transactionId != previous + 1 : requiredPrevious != previous) {
+					throw new SailException("Missing committed transaction journal before " + transactionId
+							+ ": gap after " + previous);
+				}
+			}
+			previous = transactionId;
+		}
+		if (previous != toInclusive) {
+			throw new SailException("Cannot recover requested transaction range " + (fromExclusive + 1) + "-"
+					+ toInclusive + ": missing transaction logs after " + previous);
+		}
 	}
 
 	private List<Path> extractIncrementalLogs(BackupResult incremental, boolean verify) throws IOException {
@@ -631,11 +798,23 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private void persistBackupDirectory(Path backupDir) throws IOException {
+		writeBackupDirectory(storeRoot, backupDir);
+	}
+
+	private static void writeBackupDirectory(Path directory, Path backupDir) throws IOException {
 		Properties properties = new Properties();
 		properties.setProperty(BACKUP_DIRECTORY_KEY, backupDir.toString());
-		Path backupStateFile = storeRoot.resolve(BACKUP_STATE_FILE);
-		try (OutputStream out = Files.newOutputStream(backupStateFile)) {
-			properties.store(out, "LMDB backup metadata");
+		Path temporary = Files.createTempFile(directory, ".tmp-backup-state-", ".properties");
+		try {
+			try (OutputStream out = Files.newOutputStream(temporary)) {
+				properties.store(out, "LMDB backup metadata");
+			}
+			PostCommitBackupPublisher.forceFile(temporary);
+			Files.move(temporary, directory.resolve(BACKUP_STATE_FILE), StandardCopyOption.ATOMIC_MOVE,
+					StandardCopyOption.REPLACE_EXISTING);
+			StoreProperties.forceParentDirectory(directory);
+		} finally {
+			Files.deleteIfExists(temporary);
 		}
 	}
 
@@ -785,8 +964,17 @@ final class LmdbBackupServiceImpl implements SailBackupService {
 	}
 
 	private void deleteTransactionLogsUpTo(Path backupDirectory, long cutoffTxn) throws IOException {
-		for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoffTxn)) {
-			Files.deleteIfExists(log);
+		txLogPublicationLock.lock();
+		try {
+			for (Path log : listTransactionLogs(backupDirectory, Long.MIN_VALUE, cutoffTxn)) {
+				Files.deleteIfExists(log);
+			}
+			Path logDirectory = backupDirectory.resolve(TXLOG_DIR);
+			if (Files.isDirectory(logDirectory)) {
+				StoreProperties.forceParentDirectory(logDirectory);
+			}
+		} finally {
+			txLogPublicationLock.unlock();
 		}
 	}
 

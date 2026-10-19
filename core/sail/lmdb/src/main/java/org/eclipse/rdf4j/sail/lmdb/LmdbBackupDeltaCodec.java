@@ -34,6 +34,13 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 final class LmdbBackupDeltaCodec {
 
 	private static final byte[] MAGIC = "R4J-LMDB-DELTA-1".getBytes(StandardCharsets.US_ASCII);
+	private static final byte[] CHAINED_MAGIC = "R4J-LMDB-DELTA-2".getBytes(StandardCharsets.US_ASCII);
+
+	record Journal(long previousTransactionId, List<Record> records) {
+		Journal {
+			records = List.copyOf(records);
+		}
+	}
 
 	private static final byte OP_ADD = 1;
 	private static final byte OP_REMOVE = 2;
@@ -50,69 +57,105 @@ final class LmdbBackupDeltaCodec {
 	}
 
 	static void write(OutputStream outputStream, List<Record> records) throws IOException {
+		writeJournal(outputStream, records, -1L);
+	}
+
+	static void write(OutputStream outputStream, List<Record> records, long previousTransactionId) throws IOException {
+		if (previousTransactionId < 0L) {
+			throw new IllegalArgumentException("Previous transaction ID must not be negative");
+		}
+		writeJournal(outputStream, records, previousTransactionId);
+	}
+
+	private static void writeJournal(OutputStream outputStream, List<Record> records, long previousTransactionId)
+			throws IOException {
 		try (DataOutputStream out = new DataOutputStream(outputStream)) {
 			out.writeInt(MAGIC.length);
-			out.write(MAGIC);
+			out.write(previousTransactionId < 0 ? MAGIC : CHAINED_MAGIC);
+			if (previousTransactionId >= 0) {
+				out.writeLong(previousTransactionId);
+			}
 			out.writeInt(records.size());
 			for (Record record : records) {
-				if (record.isStatementOperation()) {
-					out.writeByte(record.isAddition() ? OP_ADD : OP_REMOVE);
-					out.writeBoolean(record.isExplicit());
-					writeStatement(out, record.getStatement());
-				} else {
-					switch (record.getNamespaceOperation()) {
-					case SET -> {
-						out.writeByte(OP_SET_NAMESPACE);
-						writeString(out, record.getNamespacePrefix());
-						writeString(out, record.getNamespaceName());
-					}
-					case REMOVE -> {
-						out.writeByte(OP_REMOVE_NAMESPACE);
-						writeString(out, record.getNamespacePrefix());
-					}
-					case CLEAR -> out.writeByte(OP_CLEAR_NAMESPACES);
-					}
-				}
+				writeRecord(out, record);
+			}
+		}
+	}
+
+	static void writeRecord(DataOutputStream out, Record record) throws IOException {
+		if (record.isStatementOperation()) {
+			out.writeByte(record.isAddition() ? OP_ADD : OP_REMOVE);
+			out.writeBoolean(record.isExplicit());
+			writeStatement(out, record.getStatement());
+		} else {
+			switch (record.getNamespaceOperation()) {
+			case SET -> {
+				out.writeByte(OP_SET_NAMESPACE);
+				writeString(out, record.getNamespacePrefix());
+				writeString(out, record.getNamespaceName());
+			}
+			case REMOVE -> {
+				out.writeByte(OP_REMOVE_NAMESPACE);
+				writeString(out, record.getNamespacePrefix());
+			}
+			case CLEAR -> out.writeByte(OP_CLEAR_NAMESPACES);
 			}
 		}
 	}
 
 	static List<Record> read(InputStream inputStream) throws IOException {
+		return readJournal(inputStream).records();
+	}
+
+	static Journal readJournal(InputStream inputStream) throws IOException {
+		return readJournal(inputStream, true);
+	}
+
+	static long validateJournal(InputStream inputStream) throws IOException {
+		return readJournal(inputStream, false).previousTransactionId();
+	}
+
+	private static Journal readJournal(InputStream inputStream, boolean retainRecords) throws IOException {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 		try (DataInputStream in = new DataInputStream(inputStream)) {
-			byte[] magic = new byte[in.readInt()];
+			if (in.readInt() != MAGIC.length) {
+				throw new IOException("Unexpected LMDB delta log header length");
+			}
+			byte[] magic = new byte[MAGIC.length];
 			in.readFully(magic);
-			if (!java.util.Arrays.equals(MAGIC, magic)) {
+			boolean chained = java.util.Arrays.equals(CHAINED_MAGIC, magic);
+			if (!chained && !java.util.Arrays.equals(MAGIC, magic)) {
 				throw new IOException("Unexpected LMDB delta log header");
 			}
+			long previousTransactionId = chained ? in.readLong() : -1L;
+			if (chained && previousTransactionId < 0) {
+				throw new IOException("Negative previous transaction ID in backup delta");
+			}
 			int recordCount = in.readInt();
-			List<Record> records = new ArrayList<>(recordCount);
+			if (recordCount < 0) {
+				throw new IOException("Negative record count in backup delta");
+			}
+			List<Record> records = retainRecords ? new ArrayList<>(recordCount) : List.of();
 			for (int i = 0; i < recordCount; i++) {
-				byte operation = in.readByte();
-				switch (operation) {
-				case OP_ADD -> {
-					boolean explicit = in.readBoolean();
-					records.add(new Record(true, explicit, readStatement(in, vf)));
-				}
-				case OP_REMOVE -> {
-					boolean explicit = in.readBoolean();
-					records.add(new Record(false, explicit, readStatement(in, vf)));
-				}
-				case OP_SET_NAMESPACE -> {
-					String prefix = readString(in);
-					String name = readString(in);
-					records.add(new Record(NamespaceOperation.SET, prefix, name));
-				}
-				case OP_REMOVE_NAMESPACE -> {
-					String prefix = readString(in);
-					records.add(new Record(NamespaceOperation.REMOVE, prefix, null));
-				}
-				case OP_CLEAR_NAMESPACES -> records.add(new Record(NamespaceOperation.CLEAR, null, null));
-				default -> throw new IOException("Unexpected operation marker in backup delta: " + operation);
+				Record record = readRecord(in, vf);
+				if (retainRecords) {
+					records.add(record);
 				}
 			}
-			return records;
+			return new Journal(previousTransactionId, records);
 		}
+	}
+
+	static Record readRecord(DataInputStream in, ValueFactory vf) throws IOException {
+		byte operation = in.readByte();
+		return switch (operation) {
+		case OP_ADD -> new Record(true, in.readBoolean(), readStatement(in, vf));
+		case OP_REMOVE -> new Record(false, in.readBoolean(), readStatement(in, vf));
+		case OP_SET_NAMESPACE -> new Record(NamespaceOperation.SET, readString(in), readString(in));
+		case OP_REMOVE_NAMESPACE -> new Record(NamespaceOperation.REMOVE, readString(in), null);
+		case OP_CLEAR_NAMESPACES -> new Record(NamespaceOperation.CLEAR, null, null);
+		default -> throw new IOException("Unexpected operation marker in backup delta: " + operation);
+		};
 	}
 
 	private static void writeStatement(DataOutputStream out, Statement statement) throws IOException {

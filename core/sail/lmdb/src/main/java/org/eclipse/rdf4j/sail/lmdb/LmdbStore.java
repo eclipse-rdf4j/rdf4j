@@ -143,6 +143,7 @@ public class LmdbStore extends AbstractNotifyingSail
 	private boolean offlineMaintenance;
 	private PreparedBulkStore.Snapshot preparedBulkSnapshot;
 	private LmdbBackupServiceImpl backupService;
+	private PostCommitBackupPublisher postCommitPublisher;
 
 	// used to decide if store is writable, is true if the store was writable during initialization
 	private boolean isWritable;
@@ -539,7 +540,9 @@ public class LmdbStore extends AbstractNotifyingSail
 			boolean useSketchBasedJoinEstimator = shouldUseSketchBasedJoinEstimator();
 			backingStore = createBackingStore(dataDir, properties, config, useSketchBasedJoinEstimator);
 			properties.completeNativeGenerationRecreation();
-			backupService = new LmdbBackupServiceImpl(this, backingStore, config);
+			postCommitPublisher = backingStore.backupPublisher();
+			backupService = new LmdbBackupServiceImpl(this, backingStore, config, postCommitPublisher);
+			postCommitPublisher.setBackupService(backupService);
 			properties.save();
 			if (resetInitialImport) {
 				LmdbInitialRunImport.completeReset(dataDir.toPath(), format);
@@ -574,6 +577,27 @@ public class LmdbStore extends AbstractNotifyingSail
 			};
 		} catch (Throwable e) {
 			// LmdbStore initialization failed, release any allocated files
+			try {
+				if (backingStore != null) {
+					backingStore.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
+			try {
+				if (postCommitPublisher != null) {
+					postCommitPublisher.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
+			try {
+				if (backupService != null) {
+					backupService.close();
+				}
+			} catch (Throwable cleanupFailure) {
+				e.addSuppressed(cleanupFailure);
+			}
 			dirLock.release();
 			logger.error("LmdbStore initialization failed for data directory: " + dataDir.getAbsolutePath(), e);
 
@@ -591,12 +615,23 @@ public class LmdbStore extends AbstractNotifyingSail
 
 		try {
 			try {
-				if (backupService != null) {
-					backupService.close();
-					backupService = null;
+				if (format != null && !format.isLegacy()) {
+					backingStore.ensureNamespacePersistenceCertain();
 				}
+				// Stop admission and settle native/publication owners before draining external publication.
+				backingStore.close();
 			} finally {
-				store.close();
+				try {
+					if (postCommitPublisher != null) {
+						postCommitPublisher.close();
+						postCommitPublisher = null;
+					}
+				} finally {
+					if (backupService != null) {
+						backupService.close();
+						backupService = null;
+					}
+				}
 			}
 			if (format != null && !format.isLegacy()) {
 				try {
