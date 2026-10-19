@@ -10,11 +10,17 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.opentelemetry.repository;
 
+import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.opentelemetry.RDF4JOpenTelemetryConfig;
+import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.Operation;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
+import org.eclipse.rdf4j.repository.sparql.query.QueryStringUtil;
+import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
 
 import io.opentelemetry.api.trace.Span;
 import io.opentelemetry.api.trace.SpanKind;
@@ -58,7 +64,47 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 	 * responsible for ending the span.
 	 */
 	protected Span startSpan() {
-		String operationName = getOperationName();
+		Span span = startSpan(tracer, config, repositoryId, getOperationName());
+
+		if (config.isCaptureQueryText() && operationString != null) {
+			span.setAttribute(DbOtelAttributes.DB_QUERY_TEXT,
+					truncateQueryText(operationString, config.getMaxQueryTextLength()));
+		}
+
+		if (config.isCaptureQueryParameters()) {
+			BindingSet bindings = getBindings();
+			if (bindings != null) {
+				for (Binding binding : bindings) {
+					span.setAttribute(DbOtelAttributes.queryParameterKey(binding.getName()),
+							truncate(valueToString(binding.getValue()), config.getMaxQueryTextLength()));
+				}
+			}
+		}
+
+		return span;
+	}
+
+	/**
+	 * Converts a {@link Value} to a query-string-like representation, e.g. for use in {@code db.query.parameter.*}/
+	 * {@code db.query.text}-style attributes. {@code QueryStringUtil} only supports {@link IRI}/{@link Literal} values
+	 * (SPARQL syntax can't express a {@code BNode} or {@code TripleTerm}), so those are rendered via N-Triples syntax
+	 * instead; tracing must never fail/alter the actual operation just because a value can't be expressed as a SPARQL
+	 * term.
+	 */
+	static String valueToString(Value value) {
+		if (value instanceof IRI || value instanceof Literal) {
+			return QueryStringUtil.valueToString(value);
+		}
+		return NTriplesUtil.toNTriplesString(value);
+	}
+
+	/**
+	 * Starts a new CLIENT span with the standard {@code db.*} attributes attached (excluding {@code db.query.text},
+	 * which requires an operation string to capture), for use by connection-level operations that aren't a
+	 * {@link Operation} (e.g. {@code getStatements}/{@code hasStatement}). The caller is responsible for ending the
+	 * span.
+	 */
+	static Span startSpan(Tracer tracer, RDF4JOpenTelemetryConfig config, String repositoryId, String operationName) {
 		String spanName = operationName + " " + repositoryId;
 
 		Span span = tracer.spanBuilder(spanName)
@@ -70,16 +116,34 @@ abstract class TracingOperation<T extends Operation> implements Operation {
 		span.setAttribute(DbOtelAttributes.DB_NAMESPACE, repositoryId);
 		span.setAttribute(DbOtelAttributes.DB_QUERY_SUMMARY, spanName);
 
-		if (config.isCaptureQueryText() && operationString != null) {
-			span.setAttribute(DbOtelAttributes.DB_QUERY_TEXT, truncate(operationString));
-		}
-
 		return span;
 	}
 
-	private String truncate(String text) {
-		int maxLength = config.getMaxQueryTextLength();
+	/**
+	 * @return {@code text}, truncated to {@code maxLength} characters if it exceeds that length.
+	 */
+	static String truncate(String text, int maxLength) {
 		return text.length() > maxLength ? text.substring(0, maxLength) : text;
+	}
+
+	/**
+	 * Like {@link #truncate(String, int)}, but for SPARQL query/update text specifically: if the full text doesn't fit,
+	 * first try stripping the {@code PREFIX}/{@code BASE} prolog (per
+	 * {@link QueryParserUtil#removeSPARQLQueryProlog(String)}) before truncating, since a query with a long namespace
+	 * prolog otherwise loses its actual query body - the useful part - to truncation first. Not suitable for
+	 * non-query-text truncation (e.g. a single value or a triple pattern): {@code removeSPARQLQueryProlog} assumes its
+	 * input is a syntactically legal query, and can otherwise mangle arbitrary text that happens to start with
+	 * something resembling a prolog keyword.
+	 */
+	static String truncateQueryText(String queryText, int maxLength) {
+		if (queryText.length() <= maxLength) {
+			return queryText;
+		}
+		try {
+			return truncate(QueryParserUtil.removeSPARQLQueryProlog(queryText), maxLength);
+		} catch (RuntimeException e) {
+			return truncate(queryText, maxLength);
+		}
 	}
 
 	/**
