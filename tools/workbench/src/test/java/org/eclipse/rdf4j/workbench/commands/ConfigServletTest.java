@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.workbench.commands;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -24,9 +25,11 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
+import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Models;
 import org.eclipse.rdf4j.repository.Repository;
@@ -103,12 +106,22 @@ class ConfigServletTest {
 			when(manager.hasRepositoryConfig("memory")).thenReturn(true);
 			CustomConfig custom = new CustomConfig();
 			custom.value = "kept custom setting";
-			when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory", custom));
+			RepositoryConfig repositoryConfig = new RepositoryConfig("memory", custom);
+			when(manager.getRepositoryConfig("memory")).thenReturn(repositoryConfig);
 			MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
 			request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
 
-			String turtle = column(run(manager, request), "configuration");
+			MockHttpServletResponse loadedResponse = run(manager, request);
+			String turtle = column(loadedResponse, "configuration");
+			JsonNode reference = JSON.readTree(column(loadedResponse, "config-reference"));
+			assertThat(reference.path("groups").get(1).path("complete").asBoolean()).isFalse();
+			assertThat(reference.path("groups").get(1).path("className").asText())
+					.isEqualTo(CustomConfig.class.getName());
 			assertThat(turtle).contains("@prefix custom:", "kept custom setting");
+			Model expected = new LinkedHashModel();
+			repositoryConfig.export(expected);
+			Model roundTrip = Rio.parse(new StringReader(turtle), "urn:config:", RDFFormat.TURTLE);
+			assertThat(Models.isomorphic(expected, roundTrip)).isTrue();
 			MockHttpServletResponse saved = run(manager, post(turtle, "save"));
 
 			assertThat(saved.getStatus()).isEqualTo(200);
@@ -170,6 +183,107 @@ class ConfigServletTest {
 		assertThat(loaded.getTitle()).isEqualTo("Saved title");
 		assertThat(((MemoryStoreConfig) ((SailRepositoryConfig) loaded.getRepositoryImplConfig()).getSailImplConfig())
 				.getPersist()).isTrue();
+	}
+
+	@Test
+	void editorProvidesReferenceForAllNestedConfigurationLevels() throws Exception {
+		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(
+				Rio.parse(new StringReader(nestedConfiguration(false)), "urn:config:", RDFFormat.TURTLE), "memory");
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryConfig("memory")).thenReturn(config);
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+
+		MockHttpServletResponse response = run(manager, request);
+
+		JsonNode reference = JSON.readTree(column(response, "config-reference"));
+		assertThat(column(response, "configuration")).doesNotContain("mem.syncDelay",
+				"sail.iterationCacheSyncThreshold");
+		assertThat(reference.path("groups").size()).isEqualTo(4);
+		assertThat(reference.toString()).contains("openrdf:SailRepository", "rdf4j:SchemaCachingRDFSInferencer",
+				"openrdf:MemoryStore", "tag:rdf4j.org,2023:config/mem.syncDelay",
+				"tag:rdf4j.org,2023:config/sail.iterationCacheSyncThreshold");
+		verify(manager, never()).getRepository(org.mockito.ArgumentMatchers.anyString());
+	}
+
+	@Test
+	void rejectedDraftKeepsThePersistedConfigurationReference() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory",
+				new SailRepositoryConfig(new MemoryStoreConfig())));
+		String draft = "this is not Turtle";
+
+		MockHttpServletResponse response = run(manager, post(draft, "save"));
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(column(response, "configuration")).isEqualTo(draft);
+		JsonNode reference = JSON.readTree(column(response, "config-reference"));
+		assertThat(reference.path("groups").size()).isEqualTo(3);
+		assertThat(reference.toString()).contains("openrdf:MemoryStore", "tag:rdf4j.org,2023:config/mem.syncDelay");
+		verify(manager, never()).getRepository(org.mockito.ArgumentMatchers.anyString());
+	}
+
+	@Test
+	void unavailablePersistedMetadataDoesNotReplaceTheRejectedDraftOrError() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryConfig("memory")).thenThrow(new RepositoryException("metadata unavailable"));
+		String draft = "this is not Turtle";
+
+		MockHttpServletResponse response = run(manager, post(draft, "save"));
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(column(response, "configuration")).isEqualTo(draft);
+		assertThat(column(response, "error-message")).isNotBlank().doesNotContain("metadata unavailable");
+		assertThat(JSON.readTree(column(response, "config-reference")).path("groups").size()).isZero();
+	}
+
+	@Test
+	void brokenExtensionMetadataDoesNotReplaceTheRejectedDraftOrError() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		RepositoryImplConfig extension = mock(RepositoryImplConfig.class);
+		when(extension.getType()).thenThrow(new IllegalStateException("broken extension metadata"));
+		when(manager.getRepositoryConfig("memory")).thenReturn(new RepositoryConfig("memory", extension));
+		String draft = "this is not Turtle";
+
+		MockHttpServletResponse response = run(manager, post(draft, "save"));
+
+		assertThat(response.getStatus()).isEqualTo(400);
+		assertThat(column(response, "configuration")).isEqualTo(draft);
+		assertThat(column(response, "error-message")).isNotBlank().doesNotContain("broken extension metadata");
+		assertThat(JSON.readTree(column(response, "config-reference")).path("unavailable").asBoolean()).isTrue();
+	}
+
+	@Test
+	void metadataLookupAuthenticationFailuresStillReachTheGateway() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryConfig("memory"))
+				.thenThrow(new RepositoryException("remote manager", new UnauthorizedException("Sign in")));
+
+		assertThatThrownBy(() -> run(manager, post("this is not Turtle", "save")))
+				.hasRootCauseInstanceOf(UnauthorizedException.class);
+	}
+
+	@Test
+	void editorPrettyPrintsNestedConfigurationWithInlineBlankNodes() throws Exception {
+		Model source = Rio.parse(new StringReader(nestedConfiguration(false)), "urn:config:", RDFFormat.TURTLE);
+		RepositoryConfig config = RepositoryConfigUtil.getRepositoryConfig(source, "memory");
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.getRepositoryConfig("memory")).thenReturn(config);
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/memory/config");
+		request.addHeader("Accept", WorkbenchPageProtocol.ACCEPT);
+
+		String turtle = column(run(manager, request), "configuration");
+
+		assertThat(turtle).contains("@prefix config:", "@prefix rdfs:", "config:rep.impl [",
+				"config:sail.impl [", "config:delegate [");
+		assertThat(turtle).doesNotContain("_:");
+		assertThat(turtle.lines()
+				.anyMatch(line -> line.startsWith("  ")
+						&& line.stripLeading().startsWith("config:sail.impl ["))).isTrue();
+		Model expected = new LinkedHashModel();
+		config.export(expected);
+		Model roundTrip = Rio.parse(new StringReader(turtle), "urn:config:", RDFFormat.TURTLE);
+		assertThat(Models.isomorphic(expected, roundTrip)).isTrue();
 	}
 
 	@ParameterizedTest
@@ -249,6 +363,8 @@ class ConfigServletTest {
 	void anInitializationFailureRetainsTheTextAndTheSavedConfigurationFailureStage() throws Exception {
 		RepositoryManager manager = mock(RepositoryManager.class);
 		when(manager.hasRepositoryConfig("memory")).thenReturn(true);
+		when(manager.getRepositoryConfig("memory")).thenReturn(RepositoryConfigUtil.getRepositoryConfig(
+				Rio.parse(new StringReader(nestedConfiguration(false)), "urn:config:", RDFFormat.TURTLE), "memory"));
 		doThrow(new RepositoryException(
 				"The configuration was saved, but repository 'memory' could not initialize: bad directory"))
 						.when(manager)
@@ -260,6 +376,7 @@ class ConfigServletTest {
 		assertThat(response.getStatus()).isEqualTo(500);
 		assertThat(column(response, "configuration")).isEqualTo(turtle);
 		assertThat(column(response, "error-message")).contains("configuration was saved", "could not initialize");
+		assertThat(JSON.readTree(column(response, "config-reference")).path("groups").size()).isEqualTo(4);
 		assertThat(response.getHeader(WorkbenchPageProtocol.WRITE_RESULT_HEADER)).isNull();
 	}
 

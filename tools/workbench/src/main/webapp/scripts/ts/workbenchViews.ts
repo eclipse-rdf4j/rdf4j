@@ -8,6 +8,264 @@
 // Ordinary-DOM Lit views for the Workbench shell and non-query routes. The
 // existing route names, field names, and script-facing selectors stay stable.
 namespace workbench {
+    /** Turtle vocabulary formatting shared by the editor and its reference. This lexer never rewrites a draft. */
+    export namespace configurationVocabulary {
+        interface Token { start: number; end: number; kind: string; value: string; }
+        export interface Binding { prefix: string; namespace: string; }
+        export interface Plan {
+            turtle: string;
+            added: string;
+            bindings: Binding[];
+            signature: string;
+            iri(value: string): string;
+            compact(value: string): string;
+        }
+        const preferred: Binding[] = [
+            { prefix: 'config', namespace: 'tag:rdf4j.org,2023:config/' },
+            { prefix: 'rdf', namespace: 'http://www.w3.org/1999/02/22-rdf-syntax-ns#' },
+            { prefix: 'rdfs', namespace: 'http://www.w3.org/2000/01/rdf-schema#' },
+            { prefix: 'xsd', namespace: 'http://www.w3.org/2001/XMLSchema#' },
+            { prefix: 'fedx', namespace: 'http://rdf4j.org/config/federation#' },
+            { prefix: 'sp', namespace: 'http://spinrdf.org/sp#' },
+            { prefix: 'geo', namespace: 'http://www.opengis.net/ont/geosparql#' },
+            { prefix: 'sd', namespace: 'http://www.w3.org/ns/sparql-service-description#' },
+            { prefix: 'rdf4j', namespace: 'http://rdf4j.org/schema/rdf4j#' }
+        ];
+        function points(value: string): string[] {
+            const result: string[] = [];
+            for (let index = 0; index < value.length; index++) {
+                const first = value.charCodeAt(index);
+                result.push(first >= 0xD800 && first <= 0xDBFF && index + 1 < value.length
+                    && value.charCodeAt(index + 1) >= 0xDC00 && value.charCodeAt(index + 1) <= 0xDFFF
+                    ? value.slice(index, ++index + 1) : value.charAt(index));
+            }
+            return result;
+        }
+        function base(value: string): boolean {
+            const code = value.length === 2
+                ? (value.charCodeAt(0) - 0xD800) * 0x400 + value.charCodeAt(1) - 0xDC00 + 0x10000
+                : value.charCodeAt(0);
+            return code >= 65 && code <= 90 || code >= 97 && code <= 122
+                || code >= 0xC0 && code <= 0xD6 || code >= 0xD8 && code <= 0xF6
+                || code >= 0xF8 && code <= 0x2FF || code >= 0x370 && code <= 0x37D
+                || code >= 0x37F && code <= 0x1FFF || code >= 0x200C && code <= 0x200D
+                || code >= 0x2070 && code <= 0x218F || code >= 0x2C00 && code <= 0x2FEF
+                || code >= 0x3001 && code <= 0xD7FF || code >= 0xF900 && code <= 0xFDCF
+                || code >= 0xFDF0 && code <= 0xFFFD || code >= 0x10000 && code <= 0xEFFFF;
+        }
+        function pn(value: string): boolean {
+            const code = value.charCodeAt(0);
+            return base(value) || value === '_' || value === '-' || /^[0-9]$/.test(value)
+                || code === 0xB7 || code >= 0x300 && code <= 0x36F || code >= 0x203F && code <= 0x2040;
+        }
+        function prefix(value: string): boolean {
+            const chars = points(value);
+            return !chars.length || base(chars[0]) && chars[chars.length - 1] !== '.'
+                && chars.every((char, index) => index === 0 || pn(char) || char === '.');
+        }
+        /** Encode PN_LOCAL with the Turtle grammar's escapes, preserving the IRI's percent-encoded bytes. */
+        function local(value: string): string | null {
+            const chars = points(value);
+            let result = '';
+            for (let index = 0; index < chars.length; index++) {
+                const char = chars[index];
+                if (char === '%' && /^[0-9A-Fa-f]{2}$/.test(chars.slice(index + 1, index + 3).join(''))) {
+                    result += chars.slice(index, index + 3).join(''); index += 2;
+                } else if (char === ':' || char === '_' || base(char) || /^[0-9]$/.test(char)
+                        || index > 0 && (pn(char) || char === '.' && index < chars.length - 1)) {
+                    result += char;
+                } else if ("_~.-!$&'()*+,;=/?#@%".indexOf(char) !== -1) {
+                    result += '\\' + char;
+                } else { return null; }
+            }
+            return result;
+        }
+        function decode(value: string): string {
+            return value.replace(/\\u([0-9A-Fa-f]{4})|\\U([0-9A-Fa-f]{8})/g,
+                (_match, small: string, large: string) => {
+                    const code = parseInt(small || large, 16);
+                    return code <= 0xFFFF ? String.fromCharCode(code)
+                        : code <= 0x10FFFF ? String.fromCharCode(0xD800 + ((code - 0x10000) >> 10),
+                            0xDC00 + ((code - 0x10000) & 0x3FF)) : _match;
+                });
+        }
+        function absolute(value: string): boolean { return /^[A-Za-z][A-Za-z0-9+.-]*:/.test(value); }
+        /** Skip comments and all four Turtle string forms before recognizing IRI or directive tokens. */
+        function tokens(source: string): Token[] {
+            const result: Token[] = [];
+            for (let index = 0; index < source.length;) {
+                const start = index;
+                const char = source.charAt(index);
+                if (/\s/.test(char)) { index++; continue; }
+                if (char === '#') {
+                    while (index < source.length && !/[\r\n]/.test(source.charAt(index))) { index++; }
+                    continue;
+                }
+                if (char === '"' || char === "'") {
+                    const delimiter = source.slice(index, index + 3) === char + char + char ? char + char + char : char;
+                    index += delimiter.length;
+                    while (index < source.length) {
+                        if (source.charAt(index) === '\\') { index += 2; }
+                        else if (source.slice(index, index + delimiter.length) === delimiter) { index += delimiter.length; break; }
+                        else { index++; }
+                    }
+                    result.push({ start, end: index, kind: 'string', value: source.slice(start, index) });
+                } else if (source.slice(index, index + 2) === '<<' || source.slice(index, index + 2) === '>>') {
+                    index += 2;
+                    result.push({ start, end: index, kind: 'punctuation', value: source.slice(start, index) });
+                } else if (char === '<') {
+                    index++;
+                    while (index < source.length && source.charAt(index) !== '>') {
+                        if (source.charAt(index) === '\\') { index++; }
+                        index++;
+                    }
+                    const closed = source.charAt(index) === '>';
+                    if (closed) { index++; }
+                    result.push({ start, end: index, kind: closed ? 'iri' : 'incomplete',
+                        value: decode(source.slice(start + 1, closed ? index - 1 : index)) });
+                } else if ('[]();,<>^'.indexOf(char) !== -1) {
+                    index++;
+                    result.push({ start, end: index, kind: 'punctuation', value: char });
+                } else {
+                    index++;
+                    while (index < source.length && !/[\s<>"'\[\]();,#^]/.test(source.charAt(index))) {
+                        // Escaped punctuation is part of a prefixed name, including escaped # or semicolon.
+                        if (source.charAt(index) === '\\' && index + 1 < source.length) { index += 2; }
+                        else { index++; }
+                    }
+                    let end = index;
+                    if (source.charAt(end - 1) === '.') {
+                        let escapes = 0;
+                        for (let before = end - 2; before >= start && source.charAt(before) === '\\'; before--) { escapes++; }
+                        if (escapes % 2 === 0) { end--; }
+                    }
+                    if (end > start) { result.push({ start, end, kind: 'word', value: source.slice(start, end) }); }
+                    if (end !== index) { result.push({ start: end, end: index, kind: 'punctuation', value: '.' }); }
+                }
+            }
+            return result;
+        }
+        function vocabulary(groups: any[]): { iris: string[]; fragments: string[] } {
+            const iris: string[] = [];
+            const fragments: string[] = [];
+            groups.forEach((group) => {
+                // Factory type IDs are literal strings, even when they contain a colon.
+                if (group.id === 'repository' && group.type) { iris.push(group.type); }
+                group.options.forEach((option: any) => {
+                    iris.push(option.predicate);
+                    if (option.examplePredicate && Array.isArray(option.examples) && option.examples.length) { iris.push(option.examplePredicate); }
+                    if (Array.isArray(option.path)) { iris.push.apply(iris, option.path); }
+                    if ((!option.valueType || String(option.valueType).toLowerCase() === 'literal') && option.datatype) {
+                        iris.push(option.datatype);
+                    }
+                    if (Array.isArray(option.examples)) { fragments.push.apply(fragments, option.examples); }
+                });
+            });
+            return { iris, fragments };
+        }
+        export function reference(source: string, groups: any[]): Plan {
+            const terms = vocabulary(groups);
+            return plan(source, terms.iris, terms.fragments);
+        }
+        export function plan(source: string, iris: string[], fragments: string[] = []): Plan {
+            const reserved: { [key: string]: boolean } = Object.create(null);
+            const declarations: { [key: string]: string[] } = Object.create(null);
+            const lexical = tokens(source);
+            lexical.forEach((token, index) => {
+                if (token.kind !== 'word') { return; }
+                const colon = token.value.indexOf(':');
+                const name = token.value.slice(0, colon);
+                if (colon >= 0 && prefix(name)) { reserved[name] = true; }
+                if (token.value === '@prefix' || token.value.toUpperCase() === 'PREFIX') {
+                    const label = lexical[index + 1];
+                    if (label && label.kind === 'word') {
+                        const candidate = label.value.replace(/:$/, '');
+                        if (prefix(candidate)) { reserved[candidate] = true; }
+                    }
+                }
+            });
+            let depth = 0;
+            let boundary = true;
+            for (let index = 0; index < lexical.length; index++) {
+                const token = lexical[index];
+                const isPrefix = token.value === '@prefix' || token.value.toUpperCase() === 'PREFIX';
+                const isBase = token.value === '@base' || token.value.toUpperCase() === 'BASE';
+                if (boundary && depth === 0 && token.kind === 'word' && (isPrefix || isBase)) {
+                    const label = isPrefix ? lexical[index + 1] : null;
+                    const iri = lexical[index + (isPrefix ? 2 : 1)];
+                    const end = index + (isPrefix ? 3 : 2);
+                    const dotted = token.value.charAt(0) === '@';
+                    const complete = iri && iri.kind === 'iri' && (!dotted || lexical[end] && lexical[end].value === '.');
+                    if (isPrefix && label && label.kind === 'word' && /:$/.test(label.value)) {
+                        const key = label.value.slice(0, -1);
+                        if (prefix(key)) {
+                            const valid = complete && absolute(iri.value) && !/[\u0000-\u0020<>"{}|^`\\]/.test(iri.value);
+                            (declarations[key] || (declarations[key] = [])).push(valid ? iri.value : '');
+                        }
+                    }
+                    if (complete) { index = dotted ? end : end - 1; boundary = true; continue; }
+                }
+                if (token.kind === 'punctuation' && (token.value === '[' || token.value === '(' || token.value === '<<')) { depth++; }
+                if (token.kind === 'punctuation' && (token.value === ']' || token.value === ')' || token.value === '>>')) { depth--; }
+                boundary = depth === 0 && token.value === '.';
+            }
+            const bindings: Binding[] = [];
+            Object.keys(declarations).sort().forEach((key) => {
+                const values = declarations[key];
+                if (values[0] && values.every((value) => value === values[0])) {
+                    bindings.push({ prefix: key, namespace: values[0] });
+                }
+            });
+            const compact = (value: string): string | null => {
+                const candidates = bindings.filter((binding) => value.indexOf(binding.namespace) === 0)
+                    .sort((left, right) => right.namespace.length - left.namespace.length
+                        || left.prefix.length - right.prefix.length || (left.prefix < right.prefix ? -1 : 1));
+                for (const candidate of candidates) {
+                    const suffix = local(value.slice(candidate.namespace.length));
+                    if (suffix !== null) { return candidate.prefix + ':' + suffix; }
+                }
+                return null;
+            };
+            const required: { [key: string]: boolean } = Object.create(null);
+            iris.forEach((iri) => { if (typeof iri === 'string' && absolute(iri)) { required[iri] = true; } });
+            fragments.forEach((fragment) => tokens(String(fragment)).forEach((token) => {
+                if (token.kind === 'iri' && absolute(token.value)) { required[token.value] = true; }
+            }));
+            const added: Binding[] = [];
+            Object.keys(required).sort().forEach((iri) => {
+                if (compact(iri) !== null) { return; }
+                const standard = preferred.filter((binding) => iri.indexOf(binding.namespace) === 0)
+                    .sort((left, right) => right.namespace.length - left.namespace.length)[0];
+                const split = Math.max(iri.lastIndexOf('#'), iri.lastIndexOf('/'), iri.lastIndexOf(':')) + 1;
+                const namespace = standard ? standard.namespace : iri.slice(0, split);
+                if (!namespace || /[\u0000-\u0020<>"{}|^`\\]/.test(namespace) || local(iri.slice(namespace.length)) === null) { return; }
+                const stem = standard ? standard.prefix : 'ns';
+                let name = stem;
+                for (let suffix = 1; reserved[name]; suffix++) { name = stem + suffix; }
+                reserved[name] = true;
+                const binding = { prefix: name, namespace };
+                bindings.push(binding); added.push(binding);
+            });
+            const newline = source.indexOf('\r\n') !== -1 ? '\r\n' : '\n';
+            const additions = added.map((binding) => '@prefix ' + binding.prefix + ': <' + binding.namespace + '> .')
+                .join(newline) + (added.length ? newline : '');
+            return { turtle: source.charAt(0) === '\uFEFF' ? '\uFEFF' + additions + source.slice(1) : additions + source,
+                added: additions, bindings,
+                signature: JSON.stringify(bindings.slice().sort((a, b) => a.prefix < b.prefix ? -1 : 1)),
+                iri: (value) => compact(String(value)) || '<' + String(value) + '>',
+                compact: (value) => {
+                    let result = ''; let end = 0;
+                    tokens(value).forEach((token) => {
+                        if (token.kind === 'iri' && absolute(token.value)) {
+                            result += value.slice(end, token.start) + (compact(token.value) || value.slice(token.start, token.end));
+                            end = token.end;
+                        }
+                    });
+                    return result + value.slice(end);
+                } };
+        }
+    }
+
     const actionIconCatalog: { [name: string]: string } = {
         server: 'M4 4h16v6H4zM4 14h16v6H4zM7 7h.01M7 17h.01',
         repository: 'M5 6c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3Zm0 0v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6',
@@ -3835,11 +4093,109 @@ namespace workbench {
             </form>`;
         }
 
+        function configurationReferenceGroups(model: PageModel): any[] {
+            let groups: any[] = [];
+            try {
+                const reference = JSON.parse(text(pageValue(model, 'config-reference')) || '{}');
+                if (reference && Array.isArray(reference.groups)) {
+                    groups = reference.groups.filter((group: any) => group && Array.isArray(group.options)).map((group: any) =>
+                        Object.assign({}, group, { options: group.options.filter((option: any) => option
+                            && typeof option.predicate === 'string' && typeof option.description === 'string') }));
+                }
+            } catch (_invalidReference) {
+                // Documentation is optional; a malformed extension response must never prevent editing.
+            }
+            return groups;
+        }
+
+        function configurationReference(runtime: LitRuntime, groups: any[], vocabulary: any): any {
+            const h = runtime.html;
+            const iri = (value: any) => '<' + String(value || '') + '>';
+            const list = (value: any): string[] => Array.isArray(value) ? value.map(String) : [];
+            const example = (option: any, value: string): string => {
+                let statement = iri(option.examplePredicate || option.predicate) + ' ' + value;
+                list(option.path).slice().reverse().forEach((path: string) => {
+                    statement = iri(path) + ' [ ' + statement + ' ]';
+                });
+                return '[] ' + statement + ' .';
+            };
+            return h`<aside id="configuration-reference" class="workbench-config-reference"
+                    aria-labelledby="configuration-reference-heading">
+                <h2 id="configuration-reference-heading">Configuration reference</h2>
+                <p class="workbench-field__help">Options for the saved repository and its nested layers, including settings
+                    omitted from the Turtle. Changing a type in your draft does not change this reference.
+                    Examples are reference text; adapt them to the matching configuration node.</p>
+                ${groups.length ? h`<div class="workbench-field workbench-config-reference__search">
+                    <label for="configuration-reference-search">Find a configuration option</label>
+                    <input id="configuration-reference-search" type="search" placeholder="Predicate, description or datatype"
+                        aria-controls="configuration-reference-groups" autocomplete="off" />
+                </div>
+                <p id="configuration-reference-status" class="workbench-field__help" role="status" aria-live="polite"></p>
+                <p id="configuration-reference-empty" class="workbench-field__help" hidden>No options match your search.</p>
+                <div id="configuration-reference-groups">${groups.map((group: any, index: number) => {
+                    const groupText = [group.title, group.type, group.className, group.description].join(' ');
+                    return h`<details class="workbench-config-reference__group" data-config-reference-group ?open=${index === 0}>
+                        <summary><span>${group.title || group.type || group.className}</span><span class="workbench-config-reference__count">Layer ${
+                            index + 1} · ${group.options.length} options</span></summary>
+                        ${group.id ? h`<p class="workbench-field__help">Configuration path: ${String(group.id).split('/').map((part: string) =>
+                            part.charAt(0).toUpperCase() + part.slice(1)).join(' → ')}</p>` : ''}
+                        ${group.type ? h`<p class="workbench-config-reference__type">${group.id === 'repository'
+                            ? h`<code data-config-reference-iri=${group.type} title=${iri(group.type)}
+                                .textContent=${vocabulary.iri(group.type)}></code>`
+                            : h`<code>${JSON.stringify(group.type)}</code>`}</p>` : ''}
+                        ${group.description ? h`<p class="workbench-field__help">${group.description}</p>` : ''}
+                        ${group.complete ? '' : h`<p class="workbench-config-reference__notice">Documentation is incomplete for this
+                            implementation. Extensions may support additional options.</p>`}
+                        ${group.options.map((option: any) => h`<article class="workbench-config-reference__option"
+                                data-config-reference-option data-config-reference-search-base=${[groupText, option.predicate,
+                                    option.description, option.datatype, option.valueType,
+                                    list(option.aliases).join(' '), list(option.path).join(' '), list(option.examples).join(' ')].join(' ').toLowerCase()}
+                                data-config-reference-search=${[groupText, option.predicate, vocabulary.iri(option.predicate),
+                                    option.description, option.datatype, vocabulary.iri(option.datatype), option.valueType,
+                                    list(option.path).join(' '), list(option.examples).join(' ')].join(' ').toLowerCase()}>
+                            <h3><code data-config-reference-iri=${option.predicate} title=${iri(option.predicate)}
+                                .textContent=${vocabulary.iri(option.predicate)}></code></h3>
+                            ${option.parameterFamily ? h`<p class="workbench-config-reference__notice">Extensible parameter family;
+                                individual keys depend on the configured implementation.</p>` : ''}
+                            ${list(option.path).length ? h`<p class="workbench-config-reference__path">Within ${
+                                list(option.path).map((path: string) => h`<code data-config-reference-iri=${path}
+                                    title=${iri(path)} .textContent=${vocabulary.iri(path)}></code>`)}</p>` : ''}
+                            <p>${option.description}</p>
+                            <p class="workbench-config-reference__shape"><span>${option.valueType || 'literal'}</span>${
+                                option.datatype && (!option.valueType || String(option.valueType).toLowerCase() === 'literal')
+                                    ? h`<code data-config-reference-iri=${option.datatype} title=${iri(option.datatype)}
+                                        .textContent=${vocabulary.iri(option.datatype)}></code>` : ''}${
+                                option.required ? h`<span>Required</span>` : ''}${
+                                option.multiple ? h`<span>Multiple values allowed</span>` : ''}</p>
+                            ${list(option.examples).map((value: string) => {
+                                const source = example(option, value);
+                                const turtle = vocabulary.compact(source);
+                                return h`<div class="workbench-config-reference__example"><pre tabindex="0"
+                                    aria-label="Turtle example"><code data-config-reference-turtle=${source}
+                                        .textContent=${turtle}></code></pre>
+                                    <button type="button" class="workbench-action" data-config-reference-copy=${turtle}
+                                        data-config-reference-turtle=${source}
+                                        aria-label=${'Copy Turtle example for ' + vocabulary.iri(option.predicate)}>${icon(runtime, 'copy')}<span>Copy</span></button>
+                                </div>`;
+                            })}
+                        </article>`)}
+                    </details>`;
+                })}</div>
+                <p id="configuration-reference-copy-status" class="workbench-field__help" role="status" aria-live="polite"></p>`
+                    : h`<p class="workbench-field__help">Configuration documentation is unavailable for this response.</p>`}
+            </aside>`;
+        }
+
         function configurationPage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {
             const h = runtime.html;
             const sending = submissionOf(model).state === 'running';
-            const turtle = text(pageValue(model, 'configuration'));
-            return h`<form id="configuration-form" class="workbench-island" action="config" method="post"
+            const configuration = (workbench as any).configuration;
+            const source = text(pageValue(model, 'configuration'));
+            const groups = configurationReferenceGroups(model);
+            const vocabulary = (workbench as any).configurationVocabulary.reference(
+                configuration ? configuration.source(model, source) : source, groups);
+            const turtle = vocabulary.turtle;
+            return h`<div class="workbench-config-layout"><form id="configuration-form" class="workbench-island" action="config" method="post"
                     aria-busy=${sending ? 'true' : 'false'}
                     @submit=${(event: any) => {
                         event.preventDefault();
@@ -3861,7 +4217,7 @@ namespace workbench {
                     An initialization error leaves the saved configuration available here for correction.</p>
                 <div id="configuration-editor" class="workbench-field"><label for="configuration">Configuration (Turtle)</label>
                     <textarea id="configuration" name="configuration" rows="22" cols="100"
-                        spellcheck="false" aria-describedby="configuration-help">${turtle}</textarea>
+                        .configurationModel=${model} spellcheck="false" aria-describedby="configuration-help">${turtle}</textarea>
                     <div id="configuration-editor-resize" class="query-editor-resize" role="separator"
                         aria-orientation="horizontal" aria-label="Resize configuration editor" tabindex="0"></div>
                 </div>
@@ -3874,7 +4230,7 @@ namespace workbench {
                         @click=${(event: any) => { if (sending) { event.preventDefault(); } }}>Reload saved configuration</a>
                     ${submissionStatus(runtime, model)}
                 </div>
-            </form>`;
+            </form>${configurationReference(runtime, groups, vocabulary)}</div>`;
         }
 
         function updatePage(runtime: LitRuntime, model: PageModel, context: ViewContext): any {

@@ -29,7 +29,7 @@ for (const [stage, error] of [
         installDetailDisclosureTemplateRuntime(workbench);
         const context = vm.createContext({ console, workbench, window: {}, URL, URLSearchParams, Promise,
             TextDecoder, TextEncoder, setTimeout, clearTimeout, performance });
-        for (const script of ['queryStream.js', 'workbenchViews.js', 'workbenchApp.js']) {
+        for (const script of ['queryStream.js', 'configuration.js', 'workbenchViews.js', 'workbenchApp.js']) {
             vm.runInContext(fs.readFileSync(path.join(scripts, script), 'utf8'), context);
         }
         const turtle = '@prefix config: <tag:rdf4j.org,2023:config/> . [] a config:Repository .';
@@ -81,6 +81,7 @@ test('configuration editor submits its current text and releases its listeners',
     const calls = [];
     let value = textarea.value;
     let changed;
+    let synchronized;
     harness.context.CodeMirror = {
         fromTextArea(element, options) {
             assert.equal(element, textarea);
@@ -90,8 +91,13 @@ test('configuration editor submits its current text and releases its listeners',
                 setSize() {},
                 refresh() {},
                 save() { textarea.value = value; calls.push('save'); },
-                on(name, listener) { assert.equal(name, 'change'); changed = listener; },
-                off(name, listener) { assert.equal(name, 'change'); assert.equal(listener, changed); calls.push('off'); },
+                on(name, listener) {
+                    if (name === 'change') { changed = listener; }
+                    else { assert.equal(name, 'changes'); synchronized = listener; }
+                },
+                off(name, listener) {
+                    assert.equal(listener, name === 'change' ? changed : synchronized); calls.push('off-' + name);
+                },
                 toTextArea() { calls.push('closed'); }
             };
         }
@@ -100,12 +106,13 @@ test('configuration editor submits its current text and releases its listeners',
     const dispose = harness.context.workbench.configuration.mount(page);
     value = 'edited nested configuration';
     changed();
+    synchronized();
     assert.equal(textarea.value, value, 'CodeMirror changes keep the native form current');
     harness.context.workbench.configuration.save();
     assert.equal(textarea.value, value);
     dispose();
     dispose();
-    assert.deepEqual(calls, ['save', 'save', 'off', 'closed']);
+    assert.deepEqual(calls, ['save', 'save', 'off-change', 'off-changes', 'closed']);
 });
 
 test('a newly mounted editor uses the rendered configuration instead of a dirty reused textarea value', () => {
@@ -128,16 +135,218 @@ test('a newly mounted editor uses the rendered configuration instead of a dirty 
     dispose();
 });
 
-function configurationPage() {
+function configurationPage(reference, turtle = 'typed Turtle configuration') {
     const workbench = {};
     installDetailDisclosureTemplateRuntime(workbench);
     const context = vm.createContext({ console, URL, URLSearchParams, Promise, workbench, window: {}, setTimeout });
-    vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8'), context);
-    const model = { viewId: 'config', vars: ['configuration', 'error-message'],
-        rows: [[{ kind: 'literal', value: 'typed Turtle configuration' }, null]], rowCount: 1, metadata: {} };
+    for (const script of ['configuration.js', 'workbenchViews.js']) {
+        vm.runInContext(fs.readFileSync(path.join(scripts, script), 'utf8'), context);
+    }
+    const model = { viewId: 'config', vars: ['configuration', 'error-message', 'config-reference'],
+        rows: [[{ kind: 'literal', value: turtle }, null,
+            reference === undefined ? null : { kind: 'literal', value: JSON.stringify(reference) }]],
+        rowCount: 1, metadata: {} };
     const runtime = { nothing: '', html: (strings, ...values) => ({ strings: Array.from(strings), values }), render() {} };
     const view = { basePath: '/workbench', repositoryId: 'repo', workbench: { menu: [] } };
     return { context, model, template: context.workbench.views.pageTemplate(model, view, runtime) };
+}
+
+test('reference vocabulary shares editor prefixes and hides legacy aliases', () => {
+    const namespace = 'tag:rdf4j.org,2023:config/';
+    const turtle = '@prefix cfg: <' + namespace + '> .\n[] cfg:rep.id "repo" .\n';
+    const { template } = configurationPage({ groups: [{ id: 'repository', title: 'Repository',
+        type: namespace + 'Repository', complete: true, options: [{
+            predicate: namespace + 'mem.persist', description: 'Persist statements.',
+            datatype: 'http://www.w3.org/2001/XMLSchema#boolean', valueType: 'literal',
+            examples: ['true'], aliases: ['http://www.openrdf.org/config/sail/memory#persist'],
+            path: [namespace + 'delegate']
+        }] }] }, turtle);
+    const markup = flat(template);
+    assert.match(markup, /cfg:mem\.persist/);
+    assert.match(markup, /cfg:Repository/);
+    assert.match(markup, /@prefix xsd: <http:\/\/www\.w3\.org\/2001\/XMLSchema#> \./);
+    assert.ok(markup.includes(turtle), 'the editable source is preserved after additive declarations');
+    assert.deepEqual(attributeValues(template, 'data-config-reference-copy'),
+        ['[] cfg:delegate [ cfg:mem.persist true ] .']);
+    assert.ok(attributeValues(template, 'aria-label').includes('Copy Turtle example for cfg:mem.persist'),
+        'the accessible copy label follows the displayed vocabulary');
+    assert.doesNotMatch(markup, /Also accepts|class="workbench-config-reference__aliases"/);
+    assert.doesNotMatch(markup, /@prefix [^\n]+openrdf\.org\/config\/sail\/memory/);
+});
+
+test('reference examples compact only Turtle IRI tokens and preserve embedded query text', () => {
+    const namespace = 'tag:rdf4j.org,2023:config/';
+    const query = 'CONSTRUCT { <' + namespace + 'subject> ?p ?o } WHERE { ?s ?p ?o }';
+    const value = '[ <' + namespace + 'query> """' + query + '"""; <' + namespace
+        + 'members> ( <' + namespace + 'First> [ <' + namespace + 'label> "<urn:literal:untouched>" ] ) ]';
+    const { template } = configurationPage({ groups: [{ complete: true, options: [{
+        predicate: namespace + 'setting', description: 'Nested example.', valueType: 'resource',
+        datatype: '', examples: [value], aliases: []
+    }] }] }, '@prefix config: <' + namespace + '> .\n');
+    const copied = attributeValues(template, 'data-config-reference-copy')[0];
+    assert.equal(copied, '[] config:setting [ config:query """' + query
+        + '"""; config:members ( config:First [ config:label "<urn:literal:untouched>" ] ) ] .');
+});
+
+test('configuration reference renders persisted layers, shapes and nested Turtle examples', () => {
+    const { model, template } = configurationPage({ groups: [{ id: 'sail', title: 'Memory store',
+        type: 'openrdf:MemoryStore', className: 'MemoryStoreConfig', complete: false,
+        description: 'Stores statements in memory.', options: [{
+            predicate: 'urn:test:persist', description: 'Persist statements after shutdown.',
+            datatype: 'http://www.w3.org/2001/XMLSchema#boolean', valueType: 'literal',
+            examples: ['true'], aliases: ['urn:legacy:persist'], path: ['urn:test:delegate'],
+            multiple: false, required: false, parameterFamily: false
+        }] }] });
+    const markup = flat(template);
+    assert.match(markup, /Configuration reference/);
+    assert.match(markup, /saved repository/i);
+    assert.match(markup, /Memory store/);
+    assert.match(markup, /Layer 1/);
+    assert.match(markup, /Configuration path: Sail/);
+    assert.match(markup, /Persist statements after shutdown/);
+    assert.match(markup, /xsd:boolean/);
+    assert.ok(attributeValues(template, 'data-config-reference-search')[0].includes('xsd:boolean'),
+        'the visible datatype abbreviation is searchable');
+    assert.ok(attributeValues(template, 'data-config-reference-search-base')[0].includes('urn:legacy:persist'),
+        'hidden legacy aliases remain searchable without declaring their namespace');
+    assert.deepEqual(attributeValues(template, 'data-config-reference-copy'), ['[] ns:delegate [ ns:persist true ] .']);
+    assert.match(markup, /incomplete/i);
+    assert.match(markup, /type="search"/);
+    assert.equal(model.rows[0][0].value, 'typed Turtle configuration');
+});
+
+test('configuration reference search filters only documentation and releases its listener', () => {
+    const harness = createFormBrowserHarness();
+    const page = harness.registerElement('div');
+    const textarea = harness.registerElement('textarea', { id: 'configuration', value: 'draft Turtle' });
+    textarea.defaultValue = textarea.value;
+    const reference = harness.registerElement('aside', { id: 'configuration-reference' });
+    const search = harness.registerElement('input', { id: 'configuration-reference-search', type: 'search',
+        value: 'filter from the previous repository' });
+    const status = harness.registerElement('p', { id: 'configuration-reference-status' });
+    const empty = harness.registerElement('p', { id: 'configuration-reference-empty', hidden: true });
+    const group = harness.registerElement('details', { attributes: { 'data-config-reference-group': '' } });
+    group.appendChild(harness.registerElement('summary', { textContent: 'Memory store' }));
+    group.open = false;
+    const memory = harness.registerElement('article', { attributes: {
+        'data-config-reference-option': '', 'data-config-reference-search': 'memory persist durable boolean' } });
+    const timeout = harness.registerElement('article', { attributes: {
+        'data-config-reference-option': '', 'data-config-reference-search': 'memory timeout milliseconds integer' } });
+    page.appendChild(textarea);
+    page.appendChild(reference);
+    [search, status, empty, group].forEach((element) => reference.appendChild(element));
+    [memory, timeout].forEach((element) => group.appendChild(element));
+    harness.document.body.appendChild(page);
+    harness.loadScripts(['configuration.js']);
+
+    const dispose = harness.context.workbench.configuration.mount(page);
+    assert.equal(search.value, '', 'a reused reference input starts from its newly mounted repository');
+    assert.match(status.textContent, /2 options in 1 layer/, 'mount initializes the imperative status');
+    group.open = false;
+    textarea.value = 'edited draft remains';
+    search.focus();
+    search.value = 'MEMORY durable';
+    search.trigger('input');
+    assert.equal(memory.hidden, false);
+    assert.equal(timeout.hidden, true);
+    assert.equal(group.hidden, false);
+    assert.equal(group.open, true);
+    assert.match(status.textContent, /1 of 2/);
+    assert.equal(textarea.value, 'edited draft remains');
+    assert.equal(harness.document.activeElement, search);
+    search.value = 'no option matches';
+    search.trigger('input');
+    assert.equal(group.hidden, true);
+    assert.equal(empty.hidden, false);
+    search.value = '';
+    search.trigger('input');
+    assert.equal(memory.hidden, false);
+    assert.equal(timeout.hidden, false);
+    assert.equal(empty.hidden, true);
+    assert.equal(group.open, false, 'clearing search restores the previous disclosure state');
+    dispose();
+    assert.equal(search.listenerCount('input'), 0);
+});
+
+test('configuration reference status regions have exclusive imperative child ownership', () => {
+    const { template } = configurationPage({ groups: [{ id: 'repository', title: 'Repository', complete: true,
+        options: [{ predicate: 'urn:test:setting', description: 'Setting', examples: ['"value"'] }] }] });
+    const chunks = [];
+    const visit = (part) => {
+        if (Array.isArray(part)) { part.forEach(visit); }
+        else if (part && part.strings) {
+            chunks.push(part.strings.join('[dynamic child part]'));
+            part.values.forEach(visit);
+        }
+    };
+    visit(template);
+    for (const id of ['configuration-reference-status', 'configuration-reference-copy-status']) {
+        const reference = chunks.find((chunk) => chunk.includes('id="' + id + '"'));
+        assert.match(reference, new RegExp('id="' + id + '"[^>]*><\\/p>'),
+            'the reference controller owns textContent in ' + id + ', so Lit must not create child parts there');
+    }
+});
+
+test('extension parameter examples use a real predicate while documenting the extensible prefix', () => {
+    const { template } = configurationPage({ groups: [{ title: 'Search index', complete: true, options: [{
+        predicate: 'urn:search:', description: 'Implementation-specific search parameters.',
+        valueType: 'literal', datatype: 'http://www.w3.org/2001/XMLSchema#string', parameterFamily: true,
+        examplePredicate: 'urn:search:indexDir', examples: ['"index"'], aliases: ['urn:legacy:search:']
+    }] }] });
+    const markup = flat(template);
+    assert.match(markup, /Extensible parameter family/);
+    assert.doesNotMatch(markup, /Also accepts parameter prefixes/);
+    assert.deepEqual(attributeValues(template, 'data-config-reference-copy'), ['[] ns:indexDir "index" .']);
+});
+
+test('malformed extension documentation leaves the configuration editor available', () => {
+    const { model, context } = configurationPage();
+    model.rows[0][2] = { kind: 'literal', value: '{malformed' };
+    const runtime = { nothing: '', html: (strings, ...values) => ({ strings: Array.from(strings), values }), render() {} };
+    const markup = flat(context.workbench.views.pageTemplate(model,
+        { basePath: '/workbench', repositoryId: 'repo', workbench: { menu: [] } }, runtime));
+    assert.match(markup, /typed Turtle configuration/);
+    assert.match(markup, /documentation is unavailable/);
+});
+
+for (const outcome of ['copied', 'unavailable', 'refused']) {
+    test('Turtle example copy reports ' + outcome + ' without changing the draft', async () => {
+        const harness = createFormBrowserHarness();
+        const page = harness.registerElement('div');
+        const textarea = harness.registerElement('textarea', { id: 'configuration', value: 'draft configuration' });
+        textarea.defaultValue = textarea.value;
+        const reference = harness.registerElement('aside', { id: 'configuration-reference' });
+        const search = harness.registerElement('input', { id: 'configuration-reference-search' });
+        const status = harness.registerElement('p', { id: 'configuration-reference-copy-status',
+            textContent: 'Feedback from the previous repository' });
+        const example = '[] <urn:setting> "sample" .';
+        const button = harness.registerElement('button', { type: 'button', attributes: {
+            'data-config-reference-copy': example
+        } });
+        const copied = [];
+        harness.document.defaultView = { navigator: outcome === 'unavailable' ? {} : { clipboard: {
+            writeText(value) {
+                copied.push(value);
+                return outcome === 'refused' ? Promise.reject(new Error('clipboard refused')) : Promise.resolve();
+            }
+        } } };
+        [search, status, button].forEach((element) => reference.appendChild(element));
+        [textarea, reference].forEach((element) => page.appendChild(element));
+        harness.document.body.appendChild(page);
+        harness.loadScripts(['configuration.js']);
+        const dispose = harness.context.workbench.configuration.mount(page);
+        assert.equal(status.textContent, '', 'new reference mounts clear previous copy feedback');
+
+        button.click();
+        await new Promise(setImmediate);
+
+        assert.equal(textarea.value, 'draft configuration');
+        assert.equal(harness.document.activeElement, button);
+        assert.deepEqual(copied, outcome === 'unavailable' ? [] : [example]);
+        assert.match(status.textContent, outcome === 'copied' ? /example copied/ : /Select the example text/);
+        dispose();
+        assert.equal(button.listenerCount('click'), 0);
+    });
 }
 
 function handlers(template, result = []) {
@@ -147,6 +356,17 @@ function handlers(template, result = []) {
             if (typeof value === 'function') {
                 result.push({ before: template.strings[index], value });
             } else { handlers(value, result); }
+        });
+    }
+    return result;
+}
+
+function attributeValues(template, name, result = []) {
+    if (Array.isArray(template)) { template.forEach((part) => attributeValues(part, name, result)); }
+    if (template && template.strings) {
+        template.values.forEach((value, index) => {
+            if (template.strings[index].endsWith(name + '=')) { result.push(String(value)); }
+            attributeValues(value, name, result);
         });
     }
     return result;

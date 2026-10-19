@@ -3289,6 +3289,126 @@ body.workbench-body .workbench-page-surface form {
 	max-width: 100%;
 }
 
+body.workbench-body .workbench-config-layout {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--workbench-space-section);
+	align-items: start;
+}
+
+body.workbench-body .workbench-config-layout > *,
+body.workbench-body .workbench-config-reference {
+	min-width: 0;
+}
+
+body.workbench-body .workbench-config-reference {
+	padding: 20px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: var(--workbench-control-radius);
+	background: var(--workbench-inset);
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-config-reference h2 {
+	margin: 0 0 10px;
+	font-size: 18px;
+}
+
+body.workbench-body .workbench-config-reference__search {
+	margin-top: 18px;
+}
+
+body.workbench-body .workbench-config-reference__group {
+	border-top: 1px solid var(--workbench-soft-rule);
+}
+
+body.workbench-body .workbench-config-reference__group > summary {
+	padding: 14px 0;
+	cursor: pointer;
+	font-weight: 600;
+}
+
+body.workbench-body .workbench-config-reference__count {
+	margin-left: 8px;
+	font-size: 12px;
+	font-weight: 400;
+}
+
+body.workbench-body .workbench-config-reference__option {
+	padding: 16px 0;
+	border-top: 1px solid var(--workbench-soft-rule);
+	font-size: 13px;
+	line-height: 1.55;
+}
+
+body.workbench-body .workbench-config-reference__option h3 {
+	margin: 0 0 8px;
+	font-size: 13px;
+}
+
+body.workbench-body .workbench-config-reference__option p {
+	margin: 8px 0;
+}
+
+body.workbench-body .workbench-config-reference code {
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+	font-size: 12px;
+	overflow-wrap: anywhere;
+}
+
+body.workbench-body .workbench-config-reference__shape {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px 12px;
+	color: var(--workbench-muted);
+}
+
+body.workbench-body .workbench-config-reference__aliases code,
+body.workbench-body .workbench-config-reference__path code {
+	display: block;
+}
+
+body.workbench-body .workbench-config-reference__notice {
+	font-size: 12px;
+	font-style: italic;
+}
+
+body.workbench-body .workbench-config-reference__example {
+	display: flex;
+	align-items: flex-start;
+	gap: 8px;
+	margin-top: 10px;
+}
+
+body.workbench-body .workbench-config-reference__example pre {
+	flex: 1;
+	min-width: 0;
+	margin: 0;
+	padding: 10px;
+	border: 1px solid var(--workbench-soft-rule);
+	border-radius: 4px;
+	background: var(--workbench-surface);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+body.workbench-body .workbench-config-reference__example button {
+	flex: none;
+	min-height: 32px;
+	padding: 5px 8px;
+	font-size: 12px;
+}
+
+body.workbench-body .workbench-config-reference [hidden] {
+	display: none !important;
+}
+
+@media (min-width: 1280px) {
+	body.workbench-body .workbench-config-layout {
+		grid-template-columns: minmax(0, 1.7fr) minmax(340px, 1fr);
+	}
+}
+
 body.workbench-body .workbench-page-surface input:not([type="checkbox"]):not([type="radio"]):not([type="button"]):not([type="submit"]):not([type="file"]),
 body.workbench-body .workbench-page-surface select,
 body.workbench-body .workbench-page-surface textarea {

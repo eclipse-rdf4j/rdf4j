@@ -16,6 +16,17 @@ const {
 
 const REPOSITORY_ID = uniqueRepositoryId('configuration-editor');
 let fixtureCreated = false;
+const pageErrors = new WeakMap();
+
+test.beforeEach(async ({ page }) => {
+    const errors = [];
+    pageErrors.set(page, errors);
+    page.on('pageerror', error => errors.push(error.message));
+});
+
+test.afterEach(async ({ page }) => {
+    expect(pageErrors.get(page), 'configuration editor has no unhandled browser errors').toEqual([]);
+});
 
 test.beforeAll(async ({ request }) => {
     if (!process.env.RDF4J_SERVER_BASE_URL || !process.env.RDF4J_WORKBENCH_BASE_URL) {
@@ -49,10 +60,11 @@ async function setEditor(page, value) {
 async function expectFreshReload(page, freezeSavedModel, submitInvalid = true) {
     const initialResponse = page.waitForResponse(response => response.request().method() === 'GET'
         && new URL(response.url()).pathname.endsWith('/config')
-        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'));
+        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'))
+        .then(response => response.text());
     await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
     await waitForRoute(page, 'config');
-    const savedModel = await (await initialResponse).text();
+    const savedModel = await initialResponse;
     await expect(page.locator('#configuration-editor .CodeMirror')).toBeVisible();
     const saved = await editorValue(page);
     expect(saved).toContain(REPOSITORY_ID);
@@ -81,23 +93,27 @@ async function expectFreshReload(page, freezeSavedModel, submitInvalid = true) {
     }
     const fresh = page.waitForResponse(response => response.request().method() === 'GET'
         && new URL(response.url()).pathname.endsWith('/config')
-        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'));
+        && (response.request().headers().accept || '').includes('application/vnd.rdf4j.workbench+ndjson'))
+        .then(async response => ({ status: response.status(), text: await response.text() }));
 
     await page.getByRole('link', { name: 'Reload saved configuration', exact: true }).click();
     const reloaded = await fresh;
-    expect(reloaded.status()).toBe(200);
-    const freshModel = await reloaded.text();
+    expect(reloaded.status).toBe(200);
+    const freshModel = reloaded.text;
     if (freezeSavedModel) {
         expect(freshModel, 'the entire server model is byte-identical, including blank-node IDs').toBe(savedModel);
     }
     const records = freshModel.trim().split('\n').map(line => JSON.parse(line));
     const variables = records.find(record => record.type === 'vars').values;
     const freshTurtle = records.find(record => record.type === 'rows').values[0][variables.indexOf('configuration')].value;
+    const reference = JSON.parse(records.find(record => record.type === 'rows').values[0][variables.indexOf('config-reference')].value);
+    const editableTurtle = await page.evaluate(({ turtle, groups }) =>
+        workbench.configurationVocabulary.reference(turtle, groups).turtle, { turtle: freshTurtle, groups: reference.groups });
     expect(freshTurtle).not.toContain('urn:discarded-configuration-draft');
     await waitForRoute(page, 'config');
 
-    await expect.poll(() => editorValue(page)).toBe(freshTurtle);
-    await expect(page.locator('#configuration')).toHaveValue(freshTurtle);
+    await expect.poll(() => editorValue(page)).toBe(editableTurtle);
+    await expect(page.locator('#configuration')).toHaveValue(editableTurtle);
     await expect(page.locator('#configuration-form')).not.toContainText('Unexpected end of file');
     expect(await page.evaluate(() => window.configurationReloadDocumentMarker)).toBe('same-document');
 }
@@ -142,4 +158,314 @@ test('ordinary navigation and Back preserve the configuration draft', async ({ p
     await waitForRoute(page, 'config');
 
     await expect.poll(() => editorValue(page)).toBe(draft);
+});
+
+test('configuration reference searches saved layers without replacing the draft or editor', async ({ page }) => {
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    const reference = page.locator('#configuration-reference');
+    await expect(reference.getByRole('heading', { name: 'Configuration reference' })).toBeVisible();
+    await expect(reference).toContainText('saved repository');
+    const draft = await editorValue(page) + '\n# A draft survives reference filtering\n';
+    await setEditor(page, draft);
+    await page.locator('#configuration-editor .CodeMirror').evaluate(element => {
+        window.configurationReferenceEditor = element.CodeMirror;
+    });
+
+    const search = reference.getByRole('searchbox', { name: 'Find a configuration option' });
+    await search.fill('syncDelay');
+    const visibleOptions = reference.locator('[data-config-reference-option]:visible');
+    await expect(visibleOptions).toHaveCount(1);
+    await expect(visibleOptions.first()).toContainText('mem.syncDelay');
+    await expect(search).toBeFocused();
+    await expect.poll(() => editorValue(page)).toBe(draft);
+    expect(await page.locator('#configuration-editor .CodeMirror').evaluate(element =>
+        element.CodeMirror === window.configurationReferenceEditor)).toBe(true);
+
+    await search.fill('there is no matching configuration option');
+    await expect(reference.locator('#configuration-reference-empty')).toBeVisible();
+    await search.clear();
+    await expect(reference.locator('#configuration-reference-empty')).toBeHidden();
+    const summary = reference.locator('summary').last();
+    await summary.focus();
+    await summary.press('Enter');
+    await expect(summary.locator('..')).toHaveAttribute('open', '');
+    await expect.poll(() => editorValue(page)).toBe(draft);
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await expect(reference).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
+
+test('repository picker switches filtered configuration layers without replacing the document', async ({ page, request }) => {
+    const source = uniqueRepositoryId('configuration-reference-switch-lmdb');
+    const target = uniqueRepositoryId('configuration-reference-switch-nested');
+    const created = [];
+    const browserErrors = [];
+    page.on('pageerror', error => browserErrors.push(error.message));
+    page.on('console', message => { if (message.type() === 'error') { browserErrors.push(message.text()); } });
+    const fixture = (id, sail) => `@prefix config: <tag:rdf4j.org,2023:config/> .
+        [] a config:Repository; config:rep.id "${id}";
+          config:rep.impl [ config:rep.type "openrdf:SailRepository"; config:sail.impl ${sail} ] .`;
+    try {
+        for (const [id, sail] of [
+            [source, '[ config:sail.type "rdf4j:LmdbStore" ]'],
+            [target, '[ config:sail.type "rdf4j:SchemaCachingRDFSInferencer"; config:delegate [ config:sail.type "openrdf:MemoryStore" ] ]']
+        ]) {
+            const response = await request.put(`${serverBaseUrl()}/repositories/${encodeURIComponent(id)}`, {
+                headers: { 'Content-Type': 'text/turtle' }, data: fixture(id, sail)
+            });
+            expect([200, 201, 204]).toContain(response.status());
+            created.push(id);
+        }
+        await page.goto(repositoryPageUrl(source, 'config'));
+        await waitForRoute(page, 'config');
+        const reference = page.locator('#configuration-reference');
+        await expect(reference).toContainText('rdf4j:LmdbStore');
+        await reference.getByRole('searchbox', { name: 'Find a configuration option' }).fill('tripleIndexes');
+        await expect(reference.locator('[data-config-reference-option]:visible')).toHaveCount(1);
+        await page.evaluate(() => {
+            window.configurationSwitchDocument = document;
+            window.configurationSwitchWindowMarker = 'same-document';
+        });
+
+        await page.locator('#workbench-repository-switcher').click();
+        await page.locator('#workbench-repository-filter').fill(target);
+        await page.locator('#workbench-repository-options').getByRole('link', { name: target, exact: false }).click();
+        await expect(page).toHaveURL(repositoryPageUrl(target, 'config'));
+        await waitForRoute(page, 'config');
+        await expect.poll(() => editorValue(page)).toContain(target);
+
+        expect(browserErrors, 'repository switching must not corrupt real Lit parts or trigger router fallback').toEqual([]);
+        expect(await page.evaluate(() => window.configurationSwitchWindowMarker)).toBe('same-document');
+        expect(await page.evaluate(() => document === window.configurationSwitchDocument)).toBe(true);
+        await expect(reference).toContainText('rdf4j:SchemaCachingRDFSInferencer');
+        await expect(reference).not.toContainText('rdf4j:LmdbStore');
+        await expect(reference.getByRole('searchbox', { name: 'Find a configuration option' })).toHaveValue('');
+        await expect(reference.locator('[data-config-reference-group]')).toHaveCount(4);
+        await expect(reference.locator('[data-config-reference-option]')).toHaveCount(20);
+    } finally {
+        for (const id of created.reverse()) { await deleteRepository(request, serverBaseUrl(), id); }
+    }
+});
+
+test('real Lit configuration templates remount different helper models after filtering', async ({ page }) => {
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    await expect(page.locator('#configuration-editor .CodeMirror')).toBeVisible();
+    const result = await page.evaluate(() => {
+        const runtime = window.RDF4JLitHTML;
+        const host = document.createElement('div');
+        document.body.appendChild(host);
+        let dispose;
+        const model = (name, sizes) => ({
+            viewId: 'config', vars: ['configuration', 'error-message', 'config-reference'],
+            rows: [[{ kind: 'literal', value: '# ' + name }, null, { kind: 'literal', value: JSON.stringify({
+                groups: sizes.map((size, group) => ({
+                    id: 'sail/' + group, title: name + ' group ' + group, type: 'test:' + name,
+                    className: 'TestConfig', complete: true, description: 'Real Lit helper fixture',
+                    options: Array.from({ length: size }, (_, option) => ({
+                        predicate: 'urn:' + name + ':' + group + ':' + option,
+                        description: name + ' option ' + option, datatype: 'http://www.w3.org/2001/XMLSchema#string',
+                        valueType: 'literal', examples: ['"value"'], aliases: [], path: []
+                    }))
+                }))
+            }) }]], rowCount: 1, metadata: {}
+        });
+        const context = { basePath: '/rdf4j-workbench', repositoryId: 'synthetic', workbench: { menu: [] } };
+        try {
+            runtime.render(workbench.views.pageTemplate(model('first', [2, 1]), context, runtime), host);
+            dispose = workbench.configuration.mount(host);
+            const search = host.querySelector('#configuration-reference-search');
+            search.value = 'urn:first:1:0';
+            search.dispatchEvent(new Event('input', { bubbles: true }));
+            const filtered = host.querySelectorAll('[data-config-reference-option]:not([hidden])').length;
+            dispose();
+            dispose = null;
+
+            runtime.render(workbench.views.pageTemplate(model('second', [1, 2, 2]), context, runtime), host);
+            dispose = workbench.configuration.mount(host);
+            return {
+                filtered,
+                groups: host.querySelectorAll('[data-config-reference-group]').length,
+                options: host.querySelectorAll('[data-config-reference-option]').length,
+                hidden: host.querySelectorAll('[data-config-reference-option][hidden]').length,
+                open: Array.from(host.querySelectorAll('[data-config-reference-group]')).map(group => group.open),
+                search: host.querySelector('#configuration-reference-search').value,
+                status: host.querySelector('#configuration-reference-status').textContent,
+                text: host.querySelector('#configuration-reference').textContent
+            };
+        } finally {
+            if (dispose) { dispose(); }
+            host.remove();
+        }
+    });
+    expect(result.filtered).toBe(1);
+    expect(result.groups).toBe(3);
+    expect(result.options).toBe(5);
+    expect(result.hidden).toBe(0);
+    expect(result.open).toEqual([true, false, false]);
+    expect(result.search).toBe('');
+    expect(result.status).toContain('5');
+    expect(result.text).toContain('second group');
+    expect(result.text).not.toContain('first group');
+});
+
+test('reference filtering restores owned disclosure interactivity and keyboard access', async ({ page, request }) => {
+    const id = uniqueRepositoryId('configuration-reference-disclosure');
+    let created = false;
+    try {
+        const response = await request.put(`${serverBaseUrl()}/repositories/${encodeURIComponent(id)}`, {
+            headers: { 'Content-Type': 'text/turtle' }, data: `@prefix config: <tag:rdf4j.org,2023:config/> .
+                [] a config:Repository; config:rep.id "${id}";
+                  config:rep.impl [ config:rep.type "openrdf:SailRepository";
+                    config:sail.impl [ config:sail.type "rdf4j:LmdbStore" ] ] .`
+        });
+        expect([200, 201, 204]).toContain(response.status()); created = true;
+        await page.goto(repositoryPageUrl(id, 'config'));
+        await waitForRoute(page, 'config');
+        const reference = page.locator('#configuration-reference');
+        const group = reference.locator('[data-config-reference-group]').last();
+        await expect(group).not.toHaveAttribute('open');
+        const search = reference.getByRole('searchbox', { name: 'Find a configuration option' });
+        await search.fill('slow');
+        await expect(group).toHaveAttribute('open', '');
+        const option = group.locator('[data-config-reference-option]:visible').first();
+        expect(await option.evaluate(element => !!element.closest('[inert], [aria-hidden="true"]')),
+            'automatic expansion must release the real disclosure controller\'s inert content').toBe(false);
+        await expect(group.locator('summary')).toHaveAttribute('aria-expanded', 'true');
+        await search.press('Tab');
+        await expect(group.locator('summary')).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(option.locator('pre')).toBeFocused();
+        await page.keyboard.press('Tab');
+        await expect(option.getByRole('button', { name: /Copy Turtle example/ }).first()).toBeFocused();
+        await search.clear();
+        await expect(group).not.toHaveAttribute('open');
+        await expect(group.locator('summary')).toHaveAttribute('aria-expanded', 'false');
+        await group.locator('summary').focus();
+        await group.locator('summary').press('Enter');
+        await expect(group).toHaveAttribute('open', '');
+        await option.locator('pre').focus();
+        await expect(option.locator('pre')).toBeFocused();
+    } finally {
+        if (created) { await deleteRepository(request, serverBaseUrl(), id); }
+    }
+});
+
+test('live prefix reconciliation preserves undo, selection, scroll and reference ownership', async ({ page }) => {
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    const reference = page.locator('#configuration-reference');
+    const search = reference.getByRole('searchbox', { name: 'Find a configuration option' });
+    await search.fill('syncDelay');
+    const result = await page.locator('#configuration-editor .CodeMirror').evaluate(element => {
+        const editor = element.CodeMirror;
+        const original = editor.getValue() + '\n' + Array.from({ length: 250 }, (_, index) => '# unchanged line ' + index).join('\n');
+        editor.setValue(original);
+        editor.setSelection({ line: 150, ch: 2 }, { line: 150, ch: 11 });
+        editor.scrollTo(0, 1200);
+        editor.clearHistory();
+        const beforeSelection = editor.getSelection();
+        const beforeScroll = editor.getScrollInfo().top;
+        const prefixLine = original.split('\n').findIndex(line => line.startsWith('@prefix config:'));
+        let inputs = 0;
+        const input = () => { inputs++; };
+        const textarea = document.getElementById('configuration');
+        textarea.addEventListener('input', input);
+        const predicateSelector = 'h3 code[data-config-reference-iri="tag:rdf4j.org,2023:config/rep.id"]';
+        const code = document.querySelector(predicateSelector);
+        const search = document.getElementById('configuration-reference-search');
+        search.focus();
+        try {
+            editor.replaceRange('', { line: prefixLine, ch: 0 }, { line: prefixLine + 1, ch: 0 }, '+input');
+            const repaired = editor.getValue();
+            const afterSelection = editor.getSelection();
+            const afterScroll = editor.getScrollInfo().top;
+            const history = editor.historySize();
+            const compactPredicate = code.textContent;
+            const identity = element.CodeMirror === editor && code === document.querySelector(predicateSelector);
+            const focused = document.activeElement === search;
+            editor.undo();
+            const undone = editor.getValue();
+            editor.redo();
+            const redone = editor.getValue();
+            workbench.configuration.save();
+            workbench.configuration.save();
+            return { original, repaired, undone, redone, current: editor.getValue(), beforeSelection, afterSelection,
+                beforeScroll, afterScroll, history, compactPredicate, identity, focused, inputs,
+                search: search.value, declarations: repaired.split('\n').filter(line => line.startsWith('@prefix config1:')).length };
+        } finally { textarea.removeEventListener('input', input); }
+    });
+    expect(result.repaired).toContain('@prefix config1: <tag:rdf4j.org,2023:config/> .');
+    expect(result.compactPredicate).toBe('config1:rep.id');
+    expect(result.declarations).toBe(1);
+    expect(result.history).toEqual({ undo: 1, redo: 0 });
+    expect(result.undone).toBe(result.original);
+    expect(result.redone).toBe(result.repaired);
+    expect(result.current).toBe(result.repaired);
+    expect(result.afterSelection).toBe(result.beforeSelection);
+    expect(Math.abs(result.afterScroll - result.beforeScroll)).toBeLessThanOrEqual(1);
+    expect(result.identity).toBe(true);
+    expect(result.focused).toBe(true);
+    expect(result.search).toBe('syncDelay');
+    expect(result.inputs).toBe(3); // The original edit, Undo and Redo; automatic additions do not dispatch another edit.
+});
+
+test('prefixed reference copy and save share current safe bindings without changing literal content', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    const original = await editorValue(page);
+    const literal = 'SELECT <tag:rdf4j.org,2023:config/queryIRI> WHERE { ?s ?p ?o }';
+    const draft = original.replace(/@prefix config: <tag:rdf4j.org,2023:config\/> \./,
+        '@prefix config: <urn:foreign:> .') + '\n<urn:subject> <urn:query> """' + literal + '""" .\n';
+    await setEditor(page, draft);
+    const reconciled = await editorValue(page);
+    expect(reconciled.endsWith(draft)).toBe(true);
+    expect(reconciled).toContain('@prefix config1: <tag:rdf4j.org,2023:config/> .');
+    const reference = page.locator('#configuration-reference');
+    await expect(reference).not.toContainText('Also accepts');
+    const search = reference.getByRole('searchbox', { name: 'Find a configuration option' });
+    await search.fill('mem.syncDelay');
+    const option = reference.locator('[data-config-reference-option]:visible').first();
+    await expect(option.locator('h3')).toHaveText('config1:mem.syncDelay');
+    const example = await option.locator('pre code').textContent();
+    await option.getByRole('button', { name: /Copy Turtle example/ }).click();
+    await expect(reference.locator('#configuration-reference-copy-status')).toHaveText('Turtle example copied.');
+    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(example);
+    expect(await editorValue(page)).toBe(reconciled);
+
+    const rejected = page.waitForResponse(response => response.request().method() === 'POST'
+        && new URL(response.url()).pathname.endsWith('/config'));
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    expect((await rejected).status()).toBe(400); // Rebinding the repository vocabulary changes its meaning; never repair it silently.
+    await expect.poll(() => editorValue(page)).toBe(reconciled);
+    expect(await editorValue(page)).toContain(literal);
+
+    await setEditor(page, original);
+    for (const action of ['Save', 'Save and restart']) {
+        const saved = page.waitForResponse(response => response.request().method() === 'POST'
+            && new URL(response.url()).pathname.endsWith('/config'));
+        await page.getByRole('button', { name: action, exact: true }).click();
+        expect((await saved).status()).toBe(200);
+        await expect(page.locator('#configuration-form .workbench-submit-status')).toHaveAttribute('data-state', 'done');
+        expect(await editorValue(page)).toBe(original);
+    }
+});
+
+test('reference filtering follows changed prefix bindings without resetting the search', async ({ page }) => {
+    await page.goto(repositoryPageUrl(REPOSITORY_ID, 'config'));
+    await waitForRoute(page, 'config');
+    const reference = page.locator('#configuration-reference');
+    const search = reference.getByRole('searchbox', { name: 'Find a configuration option' });
+    await search.fill('config:mem.syncDelay');
+    await expect(reference.locator('[data-config-reference-option]:visible')).toHaveCount(1);
+    const draft = (await editorValue(page)).replace('@prefix config: <tag:rdf4j.org,2023:config/> .',
+        '@prefix config: <urn:foreign:> .');
+    await setEditor(page, draft);
+    await expect(search).toHaveValue('config:mem.syncDelay');
+    await expect(reference.locator('#configuration-reference-empty')).toBeVisible();
+    await search.fill('config1:mem.syncDelay');
+    await expect(reference.locator('[data-config-reference-option]:visible')).toHaveCount(1);
 });

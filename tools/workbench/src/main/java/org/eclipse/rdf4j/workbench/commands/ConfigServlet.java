@@ -13,7 +13,10 @@ package org.eclipse.rdf4j.workbench.commands;
 
 import java.io.StringReader;
 import java.io.StringWriter;
+import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Set;
 
 import org.eclipse.rdf4j.http.protocol.UnauthorizedException;
 import org.eclipse.rdf4j.model.impl.LinkedHashModel;
@@ -24,6 +27,8 @@ import org.eclipse.rdf4j.repository.config.RepositoryConfigUtil;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFParseException;
 import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
@@ -38,14 +43,17 @@ public class ConfigServlet extends TransformationServlet {
 		RepositoryConfig configuration = manager.getRepositoryConfig(info.getId());
 		if (configuration == null) {
 			response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-			writeEditor(request, response, "", "No such repository: " + info.getId());
+			writeEditor(request, response, "", "No such repository: " + info.getId(), null);
 			return;
 		}
 		var model = new LinkedHashModel();
 		configuration.export(model);
 		StringWriter turtle = new StringWriter();
-		Rio.write(model, turtle, RDFFormat.TURTLE);
-		writeEditor(request, response, turtle.toString(), null);
+		WriterConfig writerConfig = new WriterConfig();
+		writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+		writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+		Rio.write(model, turtle, RDFFormat.TURTLE, writerConfig);
+		writeEditor(request, response, turtle.toString(), null, configuration);
 	}
 
 	@Override
@@ -74,29 +82,47 @@ public class ConfigServlet extends TransformationServlet {
 			}
 		} catch (Exception failure) {
 			// The gateway owns the sign-in response, including remote managers' wrapped authentication errors.
-			for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
-				if (cause instanceof UnauthorizedException) {
-					throw failure;
-				}
-				if (cause.getCause() == cause) {
-					break;
-				}
-			}
+			propagateUnauthorized(failure);
 			response.setStatus(failure instanceof RepositoryConfigException || failure instanceof RDFParseException
 					|| failure instanceof IllegalArgumentException ? HttpServletResponse.SC_BAD_REQUEST
 							: HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-			writeEditor(request, response, turtle, CreateServlet.failureMessage(failure));
+			RepositoryConfig persisted = null;
+			try {
+				persisted = manager.getRepositoryConfig(info.getId());
+			} catch (Exception referenceFailure) {
+				propagateUnauthorized(referenceFailure);
+				log.debug("Could not load the persisted configuration reference", referenceFailure);
+			}
+			writeEditor(request, response, turtle, CreateServlet.failureMessage(failure), persisted);
 			return;
 		}
 		writeDone(request, response, "config");
 	}
 
-	private void writeEditor(WorkbenchRequest request, HttpServletResponse response, String turtle, String error)
+	private void writeEditor(WorkbenchRequest request, HttpServletResponse response, String turtle, String error,
+			RepositoryConfig configuration)
 			throws Exception {
+		String reference;
+		try {
+			reference = ConfigReference.describe(configuration).toJson();
+		} catch (Exception referenceFailure) {
+			propagateUnauthorized(referenceFailure);
+			log.debug("Could not describe the persisted configuration", referenceFailure);
+			reference = "{\"groups\":[],\"unavailable\":true}";
+		}
 		TupleResultBuilder builder = getTupleResultBuilder(request, response, response.getOutputStream());
-		builder.start("configuration", "error-message");
+		builder.start("configuration", "error-message", "config-reference");
 		builder.link(List.of(INFO));
-		builder.result(turtle, error);
+		builder.result(turtle, error, reference);
 		builder.end();
+	}
+
+	private static void propagateUnauthorized(Exception failure) throws Exception {
+		Set<Throwable> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		for (Throwable cause = failure; cause != null && visited.add(cause); cause = cause.getCause()) {
+			if (cause instanceof UnauthorizedException) {
+				throw failure;
+			}
+		}
 	}
 }
