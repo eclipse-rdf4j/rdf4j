@@ -391,78 +391,161 @@ export function nodeBoundaryPoint(node: GraphNode, toward: PointerPosition) {
   );
 }
 
+/**
+ * Offsets at least `preferredGap` apart (less when `maximum - minimum` cannot hold them), each as close to its ideal as
+ * that allows and within its bounds; in the order given, which must be the order of the ideals. Null when the bounds
+ * cannot hold them at that gap.
+ */
 export function distributePortOffsets(
   idealOffsets: number[],
   minimum: number,
   maximum: number,
   preferredGap = 12,
-) {
+  bounds?: { lower: readonly number[]; upper: readonly number[] },
+): number[] | null {
   if (!idealOffsets.length) return [];
-  const clamp = (value: number) => Math.max(minimum, Math.min(maximum, value));
-  if (idealOffsets.length === 1) return [clamp(idealOffsets[0])];
+  const clamp = (value: number, low: number, high: number) => Math.max(low, Math.min(high, value));
+  if (idealOffsets.length === 1) {
+    const low = Math.max(minimum, bounds?.lower[0] ?? -Infinity), high = Math.min(maximum, bounds?.upper[0] ?? Infinity);
+    return low > high ? null : [clamp(idealOffsets[0], low, high)];
+  }
 
   const gap = Math.min(
     preferredGap,
     (maximum - minimum) / (idealOffsets.length - 1),
   );
+  const count = idealOffsets.length;
+  // The gap wanted before each anchor: the gap, or less where two anchors' bounds hold them closer, and less again
+  // where a run of bounded anchors cannot hold the gaps between them (the run's gaps shrink alike).
+  const gaps = new Array<number>(count).fill(gap);
+  gaps[0] = 0;
+  const low = (index: number) => Math.max(minimum, bounds?.lower[index] ?? -Infinity);
+  const high = (index: number) => Math.min(maximum, bounds?.upper[index] ?? Infinity);
+  if (bounds) {
+    for (let index = 1; index < count; index += 1) gaps[index] = Math.max(0, Math.min(gap, high(index) - low(index - 1)));
+    for (let pass = 0; pass < count; pass += 1) {
+      let anchor = 0, earliest = low(0), violated = -1;
+      const starts = new Array<number>(count);
+      for (let index = 0; index < count; index += 1) {
+        if (index) earliest = Math.max(low(index), earliest + gaps[index]);
+        if (earliest === low(index)) anchor = index;
+        starts[index] = anchor;
+        if (earliest > high(index)) { violated = index; break; }
+      }
+      if (violated < 0) break;
+      const from = starts[violated];
+      let needed = 0;
+      for (let index = from + 1; index <= violated; index += 1) needed += gaps[index];
+      const available = Math.max(0, high(violated) - low(from));
+      for (let index = from + 1; index <= violated; index += 1) gaps[index] = needed > 0 ? (gaps[index] * available) / needed : 0;
+    }
+  }
+  // Subtracting the gaps before each anchor turns minimum-spacing into a
+  // monotonic sequence. Pool-adjacent-violators then gives the least-displacement
+  // solution rather than redistributing every anchor across the full side. Each
+  // anchor's bounds move the same way; a lower bound binds every anchor after it
+  // and an upper bound every anchor before it, so they are made monotonic too,
+  // and a pooled block takes the value nearest its mean within its members' bounds.
+  const shifts = new Array<number>(count);
+  for (let index = 0, shift = 0; index < count; index += 1) { shift += gaps[index]; shifts[index] = shift; }
+  const lower = new Array<number>(count), upper = new Array<number>(count);
+  for (let index = 0; index < count; index += 1) {
+    lower[index] = low(index) - shifts[index];
+    upper[index] = high(index) - shifts[index];
+    if (index) lower[index] = Math.max(lower[index], lower[index - 1]);
+  }
+  for (let index = count - 2; index >= 0; index -= 1) upper[index] = Math.min(upper[index], upper[index + 1]);
+  for (let index = 0; index < count; index += 1) if (lower[index] > upper[index]) return null;
+
   type OffsetBlock = {
     start: number;
     end: number;
     sum: number;
     count: number;
-    mean: number;
+    lower: number;
+    upper: number;
+    value: number;
   };
   const blocks: OffsetBlock[] = [];
-
-  // Subtracting index * gap turns minimum-spacing into a monotonic sequence.
-  // Pool-adjacent-violators then gives the least-displacement solution rather
-  // than redistributing every anchor across the full side.
   idealOffsets.forEach((idealOffset, index) => {
-    const transformed = idealOffset - index * gap;
+    const transformed = idealOffset - shifts[index];
     blocks.push({
       start: index,
       end: index,
       sum: transformed,
       count: 1,
-      mean: transformed,
+      lower: lower[index],
+      upper: upper[index],
+      value: clamp(transformed, lower[index], upper[index]),
     });
     while (
       blocks.length > 1 &&
-      blocks[blocks.length - 2].mean > blocks[blocks.length - 1].mean
+      blocks[blocks.length - 2].value > blocks[blocks.length - 1].value
     ) {
       const right = blocks.pop()!;
       const left = blocks.pop()!;
       const sum = left.sum + right.sum;
-      const count = left.count + right.count;
+      const pooled = left.count + right.count;
+      const low = Math.max(left.lower, right.lower), high = Math.min(left.upper, right.upper);
       blocks.push({
         start: left.start,
         end: right.end,
         sum,
-        count,
-        mean: sum / count,
+        count: pooled,
+        lower: low,
+        upper: high,
+        value: clamp(sum / pooled, low, high),
       });
     }
   });
 
-  const transformedMinimum = minimum;
-  const transformedMaximum = maximum - gap * (idealOffsets.length - 1);
-  const offsets = new Array<number>(idealOffsets.length);
+  const offsets = new Array<number>(count);
   blocks.forEach((block) => {
-    const transformed = Math.max(
-      transformedMinimum,
-      Math.min(transformedMaximum, block.mean),
-    );
     for (let index = block.start; index <= block.end; index += 1) {
-      offsets[index] = transformed + index * gap;
+      offsets[index] = block.value + shifts[index];
     }
   });
   return offsets;
+}
+
+/** How far a port may move from its ideal parameter, back and forward along the perimeter. */
+export type PortWindow = { before: number; after: number };
+
+/**
+ * The stretch of a card's perimeter, as parameters clockwise from `start` to `end` (past the perimeter when it wraps),
+ * from which a straight arrow to `toward` (relative to the card's centre) leaves the card without running back across
+ * it: the sides the point lies beyond, and the corner between two of them. Null when the point is beside no side.
+ */
+export function visiblePerimeterWindow(width: number, height: number, radius: number, toward: PointerPosition) {
+  const halfWidth = width / 2, halfHeight = height / 2;
+  const horizontalLength = width - 2 * radius, verticalLength = height - 2 * radius, arcLength = (Math.PI * radius) / 2;
+  // Top, right, bottom and left: whether the point lies beyond the side, and where the side starts and how long it is.
+  const beyond = [toward.y < -halfHeight, toward.x > halfWidth, toward.y > halfHeight, toward.x < -halfWidth];
+  const starts = [0, horizontalLength + arcLength, horizontalLength + 2 * arcLength + verticalLength,
+    2 * horizontalLength + 3 * arcLength + verticalLength];
+  const lengths = [horizontalLength, verticalLength, horizontalLength, verticalLength];
+  const first = beyond[3] && beyond[0] ? 3 : beyond.indexOf(true);
+  if (first < 0) return null;
+  const second = (first + 1) % 4;
+  if (!beyond[second]) return { start: starts[first], end: starts[first] + lengths[first] };
+  const wrap = second < first ? roundedRectPerimeterLength(width, height, radius) : 0;
+  return { start: starts[first], end: starts[second] + lengths[second] + wrap };
+}
+
+/** The window's room before and after an ideal parameter; an ideal outside the window (on a corner) widens it to itself. */
+export function portWindowAround(ideal: number, window: { start: number; end: number }, perimeter: number): PortWindow {
+  const length = window.end - window.start;
+  const offset = (((ideal - window.start) % perimeter) + perimeter) % perimeter;
+  if (offset <= length) return { before: offset, after: length - offset };
+  const pastEnd = offset - length, beforeStart = perimeter - offset;
+  return pastEnd <= beforeStart ? { before: length + pastEnd, after: 0 } : { before: 0, after: length + beforeStart };
 }
 
 export function distributeCircularPortParameters(
   idealParameters: number[],
   perimeter: number,
   preferredGap = 12,
+  windows?: readonly (PortWindow | null)[],
 ) {
   if (idealParameters.length <= 1) return idealParameters;
   const normalized = idealParameters.map(
@@ -491,22 +574,38 @@ export function distributeCircularPortParameters(
     }
   });
 
-  const ordered = normalized
-    .map((parameter, index) => ({
-      index,
-      relative: (parameter - cut + perimeter) % perimeter,
-    }))
-    .sort(
-      (left, right) =>
-        left.relative - right.relative || left.index - right.index,
-    );
+  // A port stays within its window, the perimeter facing its neighbour (and, from the router, where its arrow can
+  // leave): spread evenly round a card with more arrows than its facing sides hold, the outer ones were pushed round
+  // onto the far side and ran back across the card. The ports keep the order of their ideals; when the windows
+  // cannot hold them in that order at this spacing, the spacing shrinks until they can, and when they cannot hold
+  // them in that order at all, each ideal outside its window moves to the window's nearest end first and the ports
+  // take the order they then stand in, which the windows always hold at some spacing.
+  const candidates = normalized.map((parameter, index) => {
+    const relative = (parameter - cut + perimeter) % perimeter, window = windows?.[index];
+    const lower = relative - (window?.before ?? Infinity), upper = relative + (window?.after ?? Infinity);
+    return { index, relative, lower, upper, clamped: Math.max(lower, Math.min(upper, relative)) };
+  });
   const gap = Math.min(preferredGap, perimeter / idealParameters.length);
-  const distributed = distributePortOffsets(
-    ordered.map((candidate) => candidate.relative),
-    gap / 2,
-    perimeter - gap / 2,
-    gap,
-  );
+  const attempt = (key: 'relative' | 'clamped') => {
+    const ordered = candidates.slice().sort((left, right) => left[key] - right[key] || left.index - right.index);
+    const relatives = ordered.map((candidate) => candidate[key]);
+    const bounds = windows && { lower: ordered.map((candidate) => candidate.lower), upper: ordered.map((candidate) => candidate.upper) };
+    const spread = (spacing: number) =>
+      distributePortOffsets(relatives, spacing / 2, perimeter - spacing / 2, spacing, bounds || undefined);
+    let distributed = spread(gap);
+    if (!distributed) {
+      let low = 0, high = gap, best = spread(0);
+      if (!best) return null;
+      for (let step = 0; step < 12; step += 1) {
+        const middle = (low + high) / 2, found = spread(middle);
+        if (found) { low = middle; best = found; } else high = middle;
+      }
+      distributed = best;
+    }
+    return { ordered, distributed };
+  };
+  const { ordered, distributed } = attempt('relative') ?? attempt('clamped') ??
+    { ordered: candidates, distributed: candidates.map((candidate) => candidate.clamped) };
   const result = new Array<number>(idealParameters.length);
   ordered.forEach((candidate, index) => {
     result[candidate.index] = (distributed[index] + cut) % perimeter;
@@ -797,12 +896,25 @@ export function computeEdgeLanes(edges: GraphEdge[]) {
   return lanes;
 }
 
-export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
+/** How far from its ideal, at most, a port is moved to make room; sampled every PORT_WINDOW_STEP. */
+const PORT_WINDOW_REACH = 120;
+const PORT_WINDOW_STEP = 6;
+
+/**
+ * Where each arrow leaves its two cards: ports along the border, aimed at the other card's centre (or at the point in
+ * `aims` the arrow heads for from that card, keyed by edgePortKey, when its route turns first) and spread apart in
+ * that order. With `clear`, a port is only moved along the border while the arrow can still leave from there (the
+ * router's lines stay clear of the cards around). Keyed by edgePortKey.
+ */
+export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[], aims?: ReadonlyMap<string, PointerPosition>,
+  clear?: (edgeId: string, nodeId: string, port: PointerPosition) => boolean) {
   type PortCandidate = {
     edgeId: string;
     node: GraphNode;
     idealParameter: number;
     side: number;
+    /** The perimeter facing the neighbour, where the port may move to (see distributeCircularPortParameters). */
+    window: PortWindow | null;
   };
   const nodeById = new Map(nodes.map((node) => [node.id, node]));
   const buckets = new Map<string, PortCandidate[]>();
@@ -817,25 +929,44 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
     ) return;
     const { width, height } = graphNodeSize(node);
     const radius = nodeCornerRadius(node);
+    const toward = aims?.get(edgePortKey(edgeId, node.id)) ?? { x: neighbor.x, y: neighbor.y };
     const idealPoint = roundedRectBoundaryLocal(width, height, radius, {
-      x: neighbor.x - node.x,
-      y: neighbor.y - node.y,
+      x: toward.x - node.x,
+      y: toward.y - node.y,
     });
     if (Math.hypot(idealPoint.x, idealPoint.y) < 1e-6) return;
     // Parallel arrows share one ideal parameter, so their order along the card comes from their lanes. A lane bends
     // along edgeGeometry's normal from the smaller id to the larger; the perimeter runs clockwise, which is along that
     // normal at the smaller id's card and against it at the other. Without the flip the arrows swap order and cross.
     const lane = lanes.get(edgeId) ?? 0;
-    const candidate = {
+    const idealParameter = roundedRectPerimeterParameter(idealPoint, width, height, radius);
+    const visible = visiblePerimeterWindow(width, height, radius, { x: toward.x - node.x, y: toward.y - node.y });
+    let window = visible ? portWindowAround(idealParameter, visible, roundedRectPerimeterLength(width, height, radius)) : null;
+    if (clear) {
+      // The stretch of border nearest the ideal from which the arrow can leave, sampled every PORT_WINDOW_STEP up to
+      // PORT_WINDOW_REACH either way; it need not hold the ideal (a nudged turn can leave the ideal's own leg blocked).
+      // With no such stretch the port stays at the ideal.
+      const steps = Math.floor(PORT_WINDOW_REACH / PORT_WINDOW_STEP);
+      const open = (step: number) => clear(edgeId, node.id, nodePortAtParameter(node, idealParameter + step * PORT_WINDOW_STEP));
+      let nearest: number | null = null;
+      for (let step = 0; step <= steps && nearest === null; step += 1) {
+        if (open(step)) nearest = step;
+        else if (step && open(-step)) nearest = -step;
+      }
+      if (nearest === null) window = { before: 0, after: 0 };
+      else {
+        let first = nearest, last = nearest;
+        while (first > -steps && open(first - 1)) first -= 1;
+        while (last < steps && open(last + 1)) last += 1;
+        window = { before: -first * PORT_WINDOW_STEP, after: last * PORT_WINDOW_STEP };
+      }
+    }
+    const candidate: PortCandidate = {
       edgeId,
       node,
-      idealParameter: roundedRectPerimeterParameter(
-        idealPoint,
-        width,
-        height,
-        radius,
-      ),
+      idealParameter,
       side: node.id.localeCompare(neighbor.id) <= 0 ? lane : -lane,
+      window,
     };
     const current = buckets.get(node.id);
     if (current) current.push(candidate);
@@ -863,6 +994,8 @@ export function computeEdgePorts(nodes: GraphNode[], edges: GraphEdge[]) {
     const parameters = distributeCircularPortParameters(
       candidates.map((candidate) => candidate.idealParameter),
       roundedRectPerimeterLength(width, height, nodeCornerRadius(node)),
+      12,
+      candidates.map((candidate) => candidate.window),
     );
 
     candidates.forEach((candidate, index) => {

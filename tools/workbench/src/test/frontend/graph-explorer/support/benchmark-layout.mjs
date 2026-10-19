@@ -34,7 +34,8 @@ export function layoutMetrics(graph, positions, bends, routes) {
     const byId = new Map(placed.map(n => [n.id, n])), ports = computeEdgePorts(placed, graph.edges);
     for (const edge of graph.edges) {
       const curve = edgeGeometry(byId.get(edge.source), byId.get(edge.target), bends.get(edge.id) ?? 0, ports.get(edgePortKey(edge.id, edge.source)), ports.get(edgePortKey(edge.id, edge.target)), routes?.get(edge.id));
-      const samples = curveSamples(curve, 12);
+      // A stepped route is tested leg by leg: chords between samples of it would cut the corners it goes round.
+      const samples = curve.points ?? curveSamples(curve, 12);
       for (const box of nodes) {
         if (box.entityId === edge.source || box.entityId === edge.target) continue;
         if (samples.some((a, i) => i && segmentBox(samples[i - 1], a, box))) routedEdgeNodeOverlaps++;

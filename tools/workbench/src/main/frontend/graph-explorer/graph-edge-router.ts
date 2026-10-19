@@ -22,7 +22,10 @@
  * Parallel arrows between the same two cards keep their lanes (curves on alternate sides). Choices 2 and 3 are routes
  * (`EdgeRoute`), which the canvas honours while both cards keep the centres they were computed for.
  */
-import {computeEdgeLanes, computeEdgePorts, edgeBendForLane, edgePortKey, graphNodeSize, nodeBoundaryPoint, nodeCornerRadius} from './graph-geometry.ts';
+import {
+  computeEdgeLanes, computeEdgePorts, edgeBendForLane, edgePortKey, graphNodeSize, nodeBoundaryPoint, nodeCornerRadius, nodePortAtParameter,
+  roundedRectBoundaryLocal, roundedRectPerimeterLength, roundedRectPerimeterParameter, segmentDistance,
+} from './graph-geometry.ts';
 import {segmentBoxApart, segmentHitsBox} from './graph-layout-stress.ts';
 import {SpatialGrid, type Bounds} from './spatial-grid.ts';
 import type {EdgeRoute, GraphEdge, GraphNode, PointerPosition} from './graph-types.ts';
@@ -35,6 +38,12 @@ const DETOUR_PADDING = 14;
 const DETOUR_EDGE_LIMIT = 1600;
 /** Detours are searched among at most this many cards near the arrow. */
 const DETOUR_OBSTACLE_LIMIT = 80;
+/** Cards with this many arrows or more are hubs: a blocked arrow's end stays in its port's slot (see slotPoints). */
+const HUB_ARROWS = 3;
+/** How far along the border a hub's arrow may move from its port, at most. */
+const SLOT_REACH = 40;
+/** Spacing between the arrows of one card that go round the same corner. */
+const NUDGE = 6;
 
 /** Extra cost of a detour leg for every card it passes within `ROOM` of. */
 function crowding(a: PointerPosition, b: PointerPosition, near: readonly Box[]) {
@@ -120,6 +129,127 @@ function borderPoints(node: GraphNode): PointerPosition[] {
   return points;
 }
 
+/** The perimeter parameter (clockwise from the top-left corner, see graph-geometry) of a point beside the card. */
+function perimeterParameterOf(node: GraphNode, point: PointerPosition) {
+  const {width, height} = graphNodeSize(node), radius = nodeCornerRadius(node);
+  const local = roundedRectBoundaryLocal(width, height, radius, {x: point.x - (node.x ?? 0), y: point.y - (node.y ?? 0)});
+  return roundedRectPerimeterParameter(local, width, height, radius);
+}
+
+/**
+ * Where a hub's arrow may end instead of at its port: along the border, up to half-way to the neighbouring port on
+ * either side. A hub's arrows leave it in the order of their ports; an end moved past a neighbour's port would cross
+ * that neighbour's arrow. `before` and `after` are the distances along the perimeter to those ports.
+ */
+function slotPoints(node: GraphNode, parameter: number, before: number, after: number): PointerPosition[] {
+  const points: PointerPosition[] = [];
+  for (const [room, sign] of [[before, -1], [after, 1]] as const) {
+    const reach = Math.min(room / 2, SLOT_REACH);
+    if (reach < 2) continue;
+    for (const fraction of [1, 0.5]) points.push(nodePortAtParameter(node, parameter + sign * reach * fraction));
+  }
+  return points;
+}
+
+/** An arrow of a card, its route's points from that card outward, and its place in the order the card's arrows leave it. */
+type HubArrow = {points: PointerPosition[]; except: ReadonlySet<string>; rank: number};
+
+/** The card whose padded corner (see detour) the point is, if any. */
+function cardAtPaddedCorner(o: Obstacles, point: PointerPosition): Box | null {
+  const found = o.grid.search(point.x - DETOUR_PADDING - 1, point.y - DETOUR_PADDING - 1, point.x + DETOUR_PADDING + 1, point.y + DETOUR_PADDING + 1);
+  for (const i of found) {
+    const box = o.boxes[i];
+    if (Math.abs(Math.abs(point.x - box.x) - box.halfWidth - DETOUR_PADDING) < 0.75 && Math.abs(Math.abs(point.y - box.y) - box.halfHeight - DETOUR_PADDING) < 0.75) return box;
+  }
+  return null;
+}
+
+/**
+ * Arrows of one card that go round the same padded corner are moved apart there, each a multiple of the spacing
+ * further from the card than the next, in the order they arrive (the one farthest from the card on the way in stays
+ * farthest), so none cross; as far as the cards around allow, up to NUDGE apart. At the first corner an arrow that
+ * cannot move at all goes innermost instead, since the card's ports are spread again afterwards in the order the
+ * arrows leave. Points are oriented from the card outward.
+ */
+function nudgeSharedCorners(arrows: HubArrow[], o: Obstacles) {
+  const longest = Math.max(0, ...arrows.map(arrow => arrow.points.length));
+  for (let m = 1; m < longest - 1; m++) {
+    const groups = new Map<string, HubArrow[]>();
+    for (const arrow of arrows) {
+      if (arrow.points.length <= m + 1) continue;
+      const at = arrow.points[m], key = `${Math.round(at.x * 2)},${Math.round(at.y * 2)}`;
+      const group = groups.get(key);
+      if (group) group.push(arrow); else groups.set(key, [arrow]);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      const corner = {...group[0].points[m]};
+      const card = cardAtPaddedCorner(o, corner);
+      if (!card) continue;
+      // Away from the card, along the corner's diagonal; and the mean direction the arrows arrive in.
+      const awayX = Math.sign(corner.x - card.x) / Math.SQRT2, awayY = Math.sign(corner.y - card.y) / Math.SQRT2;
+      let inX = 0, inY = 0;
+      for (const {points} of group) {
+        const before = points[m - 1], length = Math.hypot(corner.x - before.x, corner.y - before.y) || 1;
+        inX += (corner.x - before.x) / length; inY += (corner.y - before.y) / length;
+      }
+      const inLength = Math.hypot(inX, inY);
+      if (inLength < 1e-6) continue;
+      inX /= inLength; inY /= inLength;
+      // Where each arrow arrives from, across the way in: positive on the left of travel. The card is on one side;
+      // the arrow arriving farthest from it goes outermost.
+      const cardRight = inX * (card.y - corner.y) - inY * (card.x - corner.x) > 0;
+      const across = (arrow: HubArrow) => {
+        const before = arrow.points[m - 1];
+        return (before.x - corner.x) * inY - (before.y - corner.y) * inX;
+      };
+      const outerFirst = group.slice().sort((a, b) =>
+        (cardRight ? across(b) - across(a) : across(a) - across(b)) || (cardRight ? a.rank - b.rank : b.rank - a.rank));
+      const clear = (arrow: HubArrow, offset: number) => {
+        const candidate = {x: corner.x + awayX * offset, y: corner.y + awayY * offset};
+        return !blocked(o, arrow.points[m - 1], candidate, arrow.except, CLEARANCE) &&
+          !blocked(o, candidate, arrow.points[m + 1], arrow.except, CLEARANCE);
+      };
+      const most = (outerFirst.length - 1) * NUDGE;
+      const limit = new Map<HubArrow, number>();
+      for (const arrow of outerFirst) {
+        let offset = most;
+        while (offset > 0 && !clear(arrow, offset)) offset -= 1;
+        limit.set(arrow, offset);
+      }
+      const order = m === 1
+        ? [...outerFirst.filter(arrow => limit.get(arrow)! >= NUDGE), ...outerFirst.filter(arrow => limit.get(arrow)! < NUDGE)]
+        : outerFirst;
+      // The outermost goes as far out as the cards allow; the others share that evenly, each inside the one before.
+      const top = limit.get(order[0])!;
+      const spacing = Math.min(NUDGE, top / (order.length - 1));
+      let room = top;
+      order.forEach((arrow, i) => {
+        const offset = Math.max(0, Math.min((order.length - 1 - i) * spacing, limit.get(arrow)!, room));
+        arrow.points[m] = {x: corner.x + awayX * offset, y: corner.y + awayY * offset};
+        room = offset - spacing;
+      });
+    }
+  }
+}
+
+/** The arrows' places (0, 1, …) in the order they leave the card: clockwise from the widest gap between their ends. */
+function leavingOrder(node: GraphNode, ends: PointerPosition[]) {
+  const angles = ends.map(end => Math.atan2(end.y - (node.y ?? 0), end.x - (node.x ?? 0)));
+  const sorted = angles.map((angle, index) => ({angle, index})).sort((a, b) => a.angle - b.angle || a.index - b.index);
+  let cut = 0, widest = -1;
+  sorted.forEach((entry, i) => {
+    const next = sorted[(i + 1) % sorted.length];
+    const gap = i === sorted.length - 1 ? next.angle + Math.PI * 2 - entry.angle : next.angle - entry.angle;
+    if (gap > widest) { widest = gap; cut = entry.angle + gap / 2; }
+  });
+  const ranks = new Array<number>(ends.length);
+  angles.map((angle, index) => ({relative: ((angle - cut) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2), index}))
+    .sort((a, b) => a.relative - b.relative || a.index - b.index)
+    .forEach((entry, rank) => { ranks[entry.index] = rank; });
+  return ranks;
+}
+
 /** Whether the segment leaves the card of this size at (x, y) at `from` without running back across the card. */
 function leavesCard(width: number, height: number, x: number, y: number, from: PointerPosition, to: PointerPosition) {
   // Sample just after the start: it must already be outside the card.
@@ -164,8 +294,14 @@ function obstaclesNear(o: Obstacles, points: readonly PointerPosition[], sc: Poi
   return near.map(entry => entry.i);
 }
 
-/** A straight line between two other border points of the cards, clear of every other card; the closest to the centre line. */
-function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: ReadonlySet<string>) {
+/**
+ * A straight line between other points of the two cards' borders, clear of every other card: the closest to the centre
+ * line among, in turn, lines that keep the busier card's port (`keep`) and move the other end along its sides, lines
+ * that keep the other card's port, lines aimed at a border point of either card, and any pair of border points. A hub's
+ * ports lay its arrows out side by side; an arrow re-aimed at its leaf instead landed between them and crossed them.
+ */
+function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: ReadonlySet<string>, from: PointerPosition, to: PointerPosition,
+  keep: 'source' | 'target' | 'either', sourceMoves: PointerPosition[] | null, targetMoves: PointerPosition[] | null) {
   const sc = {x: source.x ?? 0, y: source.y ?? 0}, tc = {x: target.x ?? 0, y: target.y ?? 0};
   const direct = Math.atan2(tc.y - sc.y, tc.x - sc.x);
   const centreDistance = Math.hypot(tc.x - sc.x, tc.y - sc.y);
@@ -177,12 +313,14 @@ function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: 
     const angle = Math.abs(Math.atan2(Math.sin(Math.atan2(to.y - from.y, to.x - from.x) - direct), Math.cos(Math.atan2(to.y - from.y, to.x - from.x) - direct)));
     return {from, to, cost: length + centreDistance * 0.6 * angle};
   };
-  const targetPoints = borderPoints(target), sourcePoints = borderPoints(source);
-  // The hub's end aims at the other end (its arrows fan from its centre); the other end moves along its sides.
+  // A hub's end moves within its port's slot (`sourceMoves`, `targetMoves`); any other card's along its sides.
+  const targetPoints = targetMoves ?? borderPoints(target), sourcePoints = sourceMoves ?? borderPoints(source);
+  const keepingSource = targetPoints.map(point => choice(from, point)), keepingTarget = sourcePoints.map(point => choice(point, to));
+  // One end aims at the other's moved end (its arrows fan from its centre), unless it is a hub's: that stays in its slot.
   const aimed: Array<Choice | null> = [];
-  for (const to of targetPoints) aimed.push(choice(nodeBoundaryPoint(source, to), to));
-  for (const from of sourcePoints) aimed.push(choice(from, nodeBoundaryPoint(target, from)));
-  const ends: PointerPosition[] = [...targetPoints, ...sourcePoints];
+  if (!sourceMoves) for (const to of targetPoints) aimed.push(choice(nodeBoundaryPoint(source, to), to));
+  if (!targetMoves) for (const from of sourcePoints) aimed.push(choice(from, nodeBoundaryPoint(target, from)));
+  const ends: PointerPosition[] = [...targetPoints, ...sourcePoints, from, to];
   for (const c of aimed) if (c) ends.push(c.from, c.to);
   const near = obstaclesNear(o, ends, sc, tc, except, CLEARANCE);
   const blockedLine = (from: PointerPosition, to: PointerPosition) => (near ? hitsAny(o, near, from, to, CLEARANCE) : blocked(o, from, to, except, CLEARANCE));
@@ -199,8 +337,12 @@ function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: 
     for (const k of order) if (!blockedLine(open[k].from, open[k].to)) return open[k];
     return null;
   };
-  const best = cheapest(aimed);
-  if (best) return best;
+  const tiers = keep === 'source' ? [keepingSource, keepingTarget] : keep === 'target' ? [keepingTarget, keepingSource]
+    : [[...keepingSource, ...keepingTarget]];
+  for (const tier of [...tiers, aimed]) {
+    const best = cheapest(tier);
+    if (best) return best;
+  }
   const pairs: Array<Choice | null> = [];
   for (const from of sourcePoints) for (const to of targetPoints) pairs.push(choice(from, to));
   return cheapest(pairs);
@@ -317,6 +459,38 @@ export function routeEdges(nodes: readonly GraphNode[], edges: readonly GraphEdg
   const ports = computeEdgePorts(nodes as GraphNode[], edges as GraphEdge[]);
   const o = obstaclesOf(nodes);
   const detours = edges.length <= DETOUR_EDGE_LIMIT;
+  // How many arrows each card has: a blocked arrow keeps the port of the busier card.
+  const degrees = new Map<string, number>(), arrowsOf = new Map<string, GraphEdge[]>();
+  for (const edge of edges) for (const id of [edge.source, edge.target]) {
+    degrees.set(id, (degrees.get(id) ?? 0) + 1);
+    const list = arrowsOf.get(id);
+    if (list) list.push(edge); else arrowsOf.set(id, [edge]);
+  }
+  // A hub's arrows may end only within their ports' slots.
+  const slots = new Map<string, PointerPosition[]>();
+  for (const [id, arrows] of arrowsOf) {
+    const node = byId.get(id);
+    if (!node || arrows.length < HUB_ARROWS) continue;
+    const {width, height} = graphNodeSize(node), perimeter = roundedRectPerimeterLength(width, height, nodeCornerRadius(node));
+    const placed: Array<{edge: GraphEdge; parameter: number}> = [];
+    for (const edge of arrows) {
+      const port = ports.get(edgePortKey(edge.id, id));
+      if (port) placed.push({edge, parameter: perimeterParameterOf(node, port)});
+    }
+    placed.sort((a, b) => a.parameter - b.parameter || a.edge.id.localeCompare(b.edge.id));
+    placed.forEach(({edge, parameter}, i) => {
+      const before = i ? parameter - placed[i - 1].parameter : parameter + perimeter - placed[placed.length - 1].parameter;
+      const after = i + 1 < placed.length ? placed[i + 1].parameter - parameter : placed[0].parameter + perimeter - parameter;
+      slots.set(edgePortKey(edge.id, id),
+        slotPoints(node, parameter, placed.length > 1 ? before : perimeter, placed.length > 1 ? after : perimeter));
+    });
+  }
+  /** The arrow's end at the card: its port when the leg to `next` is clear and leaves the card, else `fallback`. */
+  const endAt = (node: GraphNode, port: PointerPosition, next: PointerPosition, except: ReadonlySet<string>, fallback: PointerPosition) => {
+    const {width, height} = graphNodeSize(node);
+    return leavesCard(width, height, node.x ?? 0, node.y ?? 0, port, next) && !blocked(o, port, next, except, CLEARANCE) ? port : fallback;
+  };
+  const excepts = new Map<string, ReadonlySet<string>>();
   for (const edge of edges) {
     const source = byId.get(edge.source), target = byId.get(edge.target);
     if (!source || !target) continue;
@@ -328,14 +502,146 @@ export function routeEdges(nodes: readonly GraphNode[], edges: readonly GraphEdg
     }
     bends.set(edge.id, 0);
     const except = new Set([source.id, target.id]);
+    excepts.set(edge.id, except);
     const from = ports.get(edgePortKey(edge.id, source.id)) ?? nodeBoundaryPoint(source, tc);
     const to = ports.get(edgePortKey(edge.id, target.id)) ?? nodeBoundaryPoint(target, sc);
     if (!blocked(o, from, to, except, CLEARANCE)) continue;
-    const moved = movedPorts(source, target, o, except);
+    const sourceDegree = degrees.get(source.id) ?? 0, targetDegree = degrees.get(target.id) ?? 0;
+    const moved = movedPorts(source, target, o, except, from, to,
+      sourceDegree > targetDegree ? 'source' : targetDegree > sourceDegree ? 'target' : 'either',
+      slots.get(edgePortKey(edge.id, source.id)) ?? null, slots.get(edgePortKey(edge.id, target.id)) ?? null);
     if (moved) { routes.set(edge.id, {source: sc, target: tc, points: [moved.from, moved.to]}); continue; }
     if (!detours) continue;
     const path = detour(source, target, o, except);
-    if (path) routes.set(edge.id, {source: sc, target: tc, points: path});
+    if (!path) continue;
+    // The detour leaves and enters the cards at their ports where it can, so a hub's detours stay side by side.
+    path[0] = endAt(source, from, path[1], except, path[0]);
+    path[path.length - 1] = endAt(target, to, path[path.length - 2], except, path[path.length - 1]);
+    routes.set(edge.id, {source: sc, target: tc, points: path});
+  }
+  if (!routes.size) return {bends, routes};
+  // Detours of one card round the same corner are moved apart there.
+  for (const [id, arrows] of arrowsOf) {
+    const node = byId.get(id);
+    if (!node) continue;
+    const ends = arrows.map(edge => {
+      const route = routes.get(edge.id);
+      if (route) return edge.source === id ? route.points[0] : route.points[route.points.length - 1];
+      return ports.get(edgePortKey(edge.id, id)) ?? {x: node.x ?? 0, y: node.y ?? 0};
+    });
+    const ranks = leavingOrder(node, ends);
+    const bundle: Array<HubArrow & {edge: GraphEdge}> = [];
+    arrows.forEach((edge, i) => {
+      const route = routes.get(edge.id);
+      if (!route || route.points.length < 3) return;
+      const points = edge.source === id ? route.points.slice() : route.points.slice().reverse();
+      bundle.push({edge, points, except: excepts.get(edge.id) ?? new Set([edge.source, edge.target]), rank: ranks[i]});
+    });
+    if (bundle.length < 2) continue;
+    nudgeSharedCorners(bundle, o);
+    for (const {edge, points} of bundle) routes.get(edge.id)!.points = edge.source === id ? points : points.reverse();
+  }
+  // The ports are spread again in the order the arrows actually leave: aimed at the first turn of a routed arrow
+  // rather than at the far card, so an arrow's first leg leaves between the arrows beside it and crosses neither.
+  const aims = new Map<string, PointerPosition>();
+  const edgeById = new Map(edges.map(edge => [edge.id, edge]));
+  for (const [edgeId, route] of routes) {
+    const edge = edgeById.get(edgeId)!;
+    aims.set(edgePortKey(edgeId, edge.source), route.points[1]);
+    aims.set(edgePortKey(edgeId, edge.target), route.points[route.points.length - 2]);
+  }
+  /** Whether an arrow can leave the card from this point towards where it heads. */
+  const leaves = (edgeId: string, nodeId: string, point: PointerPosition) => {
+    const edge = edgeById.get(edgeId)!, node = byId.get(nodeId)!, except = excepts.get(edgeId);
+    if (!except) return true;
+    const other = byId.get(nodeId === edge.source ? edge.target : edge.source)!;
+    const aim = aims.get(edgePortKey(edgeId, nodeId)) ?? {x: other.x ?? 0, y: other.y ?? 0};
+    const {width, height} = graphNodeSize(node);
+    return leavesCard(width, height, node.x ?? 0, node.y ?? 0, point, aim) && !blocked(o, point, aim, except, CLEARANCE);
+  };
+  const aimedPorts = computeEdgePorts(nodes as GraphNode[], edges as GraphEdge[], aims, leaves);
+  for (const edge of edges) {
+    const except = excepts.get(edge.id);
+    if (!except) continue;
+    const source = byId.get(edge.source)!, target = byId.get(edge.target)!;
+    const from = aimedPorts.get(edgePortKey(edge.id, source.id)), to = aimedPorts.get(edgePortKey(edge.id, target.id));
+    if (!from || !to) continue;
+    const route = routes.get(edge.id);
+    if (route) {
+      const points = route.points;
+      points[0] = endAt(source, from, points[1], except, points[0]);
+      points[points.length - 1] = endAt(target, to, points[points.length - 2], except, points[points.length - 1]);
+      continue;
+    }
+    const before = ports.get(edgePortKey(edge.id, source.id))!, after = ports.get(edgePortKey(edge.id, target.id))!;
+    if (Math.hypot(from.x - before.x, from.y - before.y) < 0.5 && Math.hypot(to.x - after.x, to.y - after.y) < 0.5) continue;
+    if (!blocked(o, from, to, except, CLEARANCE)) {
+      routes.set(edge.id, {source: {x: source.x ?? 0, y: source.y ?? 0}, target: {x: target.x ?? 0, y: target.y ?? 0}, points: [from, to]});
+    }
+  }
+  // Two first legs of a card that still cross swap their ends when that uncrosses them.
+  for (const [id, arrows] of arrowsOf) {
+    const node = byId.get(id);
+    if (!node || arrows.length < 2) continue;
+    uncrossFirstLegs(node, arrows, routes, ports, byId, excepts, o);
   }
   return {bends, routes};
+}
+
+/** A card's arrow as it leaves: where, towards what, and whether a route holds its points. */
+type FirstLeg = {edge: GraphEdge; end: PointerPosition; next: PointerPosition; except: ReadonlySet<string>};
+
+/**
+ * Exchanges the ends at the card of two arrows whose first legs cross or touch, when both arrows can still leave from
+ * the other's end and the exchange crosses fewer arrows; a few passes, as each exchange can expose another pair.
+ */
+function uncrossFirstLegs(node: GraphNode, arrows: readonly GraphEdge[], routes: Map<string, EdgeRoute>,
+  ports: ReadonlyMap<string, PointerPosition>, byId: ReadonlyMap<string, GraphNode>, excepts: ReadonlyMap<string, ReadonlySet<string>>,
+  o: Obstacles) {
+  const legs: FirstLeg[] = [];
+  for (const edge of arrows) {
+    const except = excepts.get(edge.id);
+    if (!except) continue;
+    const route = routes.get(edge.id), outward = edge.source === node.id;
+    const other = byId.get(outward ? edge.target : edge.source)!;
+    const end = route ? (outward ? route.points[0] : route.points[route.points.length - 1]) : ports.get(edgePortKey(edge.id, node.id));
+    const next = route ? (outward ? route.points[1] : route.points[route.points.length - 2]) : ports.get(edgePortKey(edge.id, other.id));
+    if (end && next) legs.push({edge, end, next, except});
+  }
+  if (legs.length < 2) return;
+  const {width, height} = graphNodeSize(node), x = node.x ?? 0, y = node.y ?? 0;
+  const touches = (a: FirstLeg, b: FirstLeg) => segmentDistance(a.end, a.next, b.end, b.next) < 0.5;
+  const crossings = (leg: FirstLeg, end: PointerPosition, skip: FirstLeg) => {
+    let count = 0;
+    for (const other of legs) if (other !== leg && other !== skip && segmentDistance(end, leg.next, other.end, other.next) < 0.5) count++;
+    return count;
+  };
+  const canLeave = (leg: FirstLeg, end: PointerPosition) =>
+    leavesCard(width, height, x, y, end, leg.next) && !blocked(o, end, leg.next, leg.except, CLEARANCE);
+  for (let pass = 0; pass < 3; pass++) {
+    let swapped = false;
+    for (let a = 0; a < legs.length; a++) {
+      for (let b = a + 1; b < legs.length; b++) {
+        const first = legs[a], second = legs[b];
+        if (!touches(first, second) || Math.hypot(first.end.x - second.end.x, first.end.y - second.end.y) < 0.5) continue;
+        if (!canLeave(first, second.end) || !canLeave(second, first.end)) continue;
+        const before = crossings(first, first.end, second) + crossings(second, second.end, first) + 1;
+        const after = crossings(first, second.end, second) + crossings(second, first.end, first) +
+          (segmentDistance(second.end, first.next, first.end, second.next) < 0.5 ? 1 : 0);
+        if (after >= before) continue;
+        [first.end, second.end] = [second.end, first.end];
+        swapped = true;
+      }
+    }
+    if (!swapped) break;
+    for (const leg of legs) {
+      const outward = leg.edge.source === node.id, route = routes.get(leg.edge.id);
+      if (route) route.points[outward ? 0 : route.points.length - 1] = leg.end;
+      else {
+        const source = byId.get(leg.edge.source)!, target = byId.get(leg.edge.target)!;
+        routes.set(leg.edge.id, {source: {x: source.x ?? 0, y: source.y ?? 0}, target: {x: target.x ?? 0, y: target.y ?? 0},
+          points: outward ? [leg.end, leg.next] : [leg.next, leg.end]});
+      }
+    }
+  }
 }

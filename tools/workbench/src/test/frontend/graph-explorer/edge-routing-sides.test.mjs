@@ -13,6 +13,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { canvasGraph } from '../../../main/frontend/graph-explorer/graph-canvas-scope.ts';
 import { routeDrawnEdges, routeDrawnGraph } from '../../../main/frontend/graph-explorer/graph-edge-routing.ts';
+import { routeEdges } from '../../../main/frontend/graph-explorer/graph-edge-router.ts';
 import { curveMidpoint, nearestEdge } from '../../../main/frontend/graph-explorer/edge-hit.ts';
 import { createGraphVertexCache } from '../../../main/frontend/graph-explorer/graph-webgl.ts';
 import { computeEdgePorts, curveSamples, distributeCircularPortParameters, edgeGeometry, edgePortKey, graphNodeSize, nodeBoundaryPoint, optimizeEdgeBends, quadraticPoint, segmentDistance } from '../../../main/frontend/graph-explorer/graph-geometry.ts';
@@ -252,4 +253,108 @@ test('a card linked to only one neighbour centres its ports on that neighbour', 
   const ideal = nodeBoundaryPoint(bob, alice);
   const mean = { x: atBob.reduce((sum, port) => sum + port.x, 0) / 3, y: atBob.reduce((sum, port) => sum + port.y, 0) / 3 };
   assert.ok(Math.hypot(mean.x - ideal.x, mean.y - ideal.y) < 1, `ports ${JSON.stringify(atBob)} centre ${JSON.stringify(mean)}, ideal ${JSON.stringify(ideal)}`);
+});
+
+/** Whether a straight line from `port` (on the card) toward `toward` leaves the card without running back across it. */
+function leavesCard(node, port, toward) {
+  const { width, height } = graphNodeSize(node);
+  const t = Math.min(0.5, 3 / Math.max(1, Math.hypot(toward.x - port.x, toward.y - port.y)));
+  const x = port.x + (toward.x - port.x) * t, y = port.y + (toward.y - port.y) * t;
+  return !(Math.abs(x - node.x) < width / 2 && Math.abs(y - node.y) < height / 2);
+}
+
+test('a hub keeps every port on a side that faces its neighbour', () => {
+  // A wide card with 59 neighbours above it and 20 below-left: all statements of a repository loaded at once. Spread
+  // evenly round the perimeter the arrows need more than the top side and both ends, and the ones to the upper-left
+  // neighbours were pushed round onto the bottom side, where they ran back across the card and over the other arrows.
+  const hub = { id: 'urn:hub', label: '65e986d9ccf844ad01051a65584444d859df84ef', kind: 'iri', x: 0, y: 0 };
+  const neighbours = [];
+  for (let i = 0; i < 59; i++) {
+    const angle = (-178 + (166 * i) / 58) * (Math.PI / 180), distance = 1800 + ((i * 37) % 2300);
+    neighbours.push(card(`urn:up${i}`, Math.cos(angle) * distance, Math.sin(angle) * distance));
+  }
+  for (const [i, degrees] of [26, 89, 105, 119, 130, 138, 148, 150, 152, 154, 157, 159, 161, 164, 166, 169, 171, 174, 177, 179].entries()) {
+    const angle = degrees * (Math.PI / 180), distance = 1200 + ((i * 53) % 900);
+    neighbours.push(card(`urn:down${i}`, Math.cos(angle) * distance, Math.sin(angle) * distance));
+  }
+  const edges = neighbours.map((neighbour, i) => (i % 3 ? link(hub.id, neighbour.id) : link(neighbour.id, hub.id)));
+  const ports = computeEdgePorts([hub, ...neighbours], edges);
+  const byId = new Map(neighbours.map((node) => [node.id, node]));
+  const backwards = edges.filter((edge) => !leavesCard(hub, ports.get(edgePortKey(edge.id, hub.id)), byId.get(edge.source === hub.id ? edge.target : edge.source)));
+  assert.deepEqual(backwards.map((edge) => edge.id), [], `${backwards.length} of ${edges.length} arrows run back across the hub`);
+});
+
+test('a blocked arrow keeps the port of its busier card and moves its other end', () => {
+  // Thirteen arrows fan up from a hub, 12.5° apart; a short card grazes every other one three quarters of the way to
+  // its leaf (clear of the arrows beside it). Those lines are blocked, and a small move of the leaf's end clears them.
+  // Re-aiming the hub's end at the leaf instead (the old choice) landed the moved arrows between the hub's spread
+  // ports and crossed them; the arrows must stay spread at the hub and leave it without crossing.
+  const hub = { id: 'urn:hub', label: '65e986d9ccf844ad01051a65584444d859df84ef', kind: 'iri', x: 0, y: 0 };
+  const leaves = [];
+  for (let i = 0; i < 13; i++) {
+    const angle = (-165 + 12.5 * i) * (Math.PI / 180);
+    leaves.push(card(`urn:leaf${i}`, Math.cos(angle) * 900, Math.sin(angle) * 900));
+  }
+  const edges = leaves.map((leaf) => link(hub.id, leaf.id));
+  const ports = computeEdgePorts([hub, ...leaves], edges);
+  const blockers = [];
+  edges.forEach((edge, i) => {
+    if (i % 2) return;
+    const from = ports.get(edgePortKey(edge.id, hub.id)), to = ports.get(edgePortKey(edge.id, edge.target));
+    const dx = to.x - from.x, dy = to.y - from.y, length = Math.hypot(dx, dy), nx = -dy / length, ny = dx / length;
+    const blocker = { id: `urn:b${i}`, label: 'b', kind: 'iri', x: 0, y: 0 }, { width, height } = graphNodeSize(blocker);
+    // The card's nearest corner lies 2 px from the line, inside the router's clearance.
+    const offset = (Math.abs(nx) * width) / 2 + (Math.abs(ny) * height) / 2 + 2, side = i % 4 ? 1 : -1;
+    blocker.x = from.x + dx * 0.75 + nx * side * offset;
+    blocker.y = from.y + dy * 0.75 + ny * side * offset;
+    blockers.push(blocker);
+  });
+  const nodes = [hub, ...leaves, ...blockers];
+  const { routes } = routeEdges(nodes, edges);
+  assert.equal(routes.size, 7, `${routes.size} arrows routed`);
+  // The hub's end stays by its port (the ports are spread again as the arrows actually leave) while the leaf's moves.
+  const left = edges.filter((edge) => {
+    const route = routes.get(edge.id), port = ports.get(edgePortKey(edge.id, hub.id)), far = ports.get(edgePortKey(edge.id, edge.target));
+    return route && (Math.hypot(route.points[0].x - port.x, route.points[0].y - port.y) > 12 || Math.hypot(route.points[1].x - far.x, route.points[1].y - far.y) < 2);
+  });
+  assert.deepEqual(left.map((edge) => edge.id), [], `${left.length} of ${routes.size} routed arrows left the hub's port or kept the leaf's`);
+  const segments = hubSegments(hub, nodes, edges);
+  for (let a = 0; a < segments.length; a++) {
+    for (let b = a + 1; b < segments.length; b++) {
+      assert.ok(Math.hypot(segments[a].from.x - segments[b].from.x, segments[a].from.y - segments[b].from.y) >= 8, `${segments[a].edge.target} and ${segments[b].edge.target} leave the hub less than 8 px apart`);
+      assert.ok(segmentDistance(segments[a].from, segments[a].to, segments[b].from, segments[b].to) >= 0.5, `${segments[a].edge.target} and ${segments[b].edge.target} cross at the hub`);
+    }
+  }
+});
+
+/** The first segments of a hub's arrows: from the hub's end of each arrow to the next point of its route or line. */
+function hubSegments(hub, nodes, edges) {
+  const { routes } = routeEdges(nodes, edges), ports = computeEdgePorts(nodes, edges);
+  return edges.map((edge) => {
+    const route = routes.get(edge.id), other = edge.source === hub.id ? edge.target : edge.source;
+    if (!route) return { edge, from: ports.get(edgePortKey(edge.id, hub.id)), to: ports.get(edgePortKey(edge.id, other)), routed: false };
+    const points = edge.source === hub.id ? route.points : route.points.slice().reverse();
+    return { edge, from: points[0], to: points[1], routed: true };
+  });
+}
+
+test('arrows of a hub beside a grid of cards leave it without crossing or overlapping each other', () => {
+  // All statements of a repository loaded: a hub with a card right above and below it and 24 neighbours in a grid of
+  // four columns to its left. Most arrows detour round the nearest column, and every detour through the same padded
+  // corner shared that corner and the hub end aimed at it, so a dozen arrows drew as one line and crossed the rest.
+  const hub = { id: 'urn:hub', label: '0c182a57e4310fac5cd8cbeb9f5e5fd9bb70c439', kind: 'iri', x: 0, y: 0 };
+  const wide = (id, x, y) => ({ id, label: `${id}-000000000000000000000000000000000000000`, kind: 'iri', x, y });
+  const leaves = [wide('urn:above', 0, -109), wide('urn:below', 0, 109)];
+  for (let column = 0; column < 4; column++) for (let row = -3; row < 3; row++) leaves.push(wide(`urn:c${column}r${row + 3}`, -370 - 352 * column, 59 + 118 * row));
+  const nodes = [hub, ...leaves], edges = leaves.map((leaf) => link(hub.id, leaf.id));
+  assert.equal(graphNodeSize(leaves[2]).width, 280);
+  const segments = hubSegments(hub, nodes, edges);
+  assert.ok(segments.filter((segment) => segment.routed).length >= 12, 'the grid should block most arrows');
+  const crossing = [];
+  for (let a = 0; a < segments.length; a++) {
+    for (let b = a + 1; b < segments.length; b++) {
+      if (segmentDistance(segments[a].from, segments[a].to, segments[b].from, segments[b].to) < 0.5) crossing.push([segments[a].edge.target, segments[b].edge.target]);
+    }
+  }
+  assert.deepEqual(crossing, [], `${crossing.length} pairs of arrows cross or overlap at the hub`);
 });
