@@ -2,6 +2,10 @@
 <web-app xmlns="https://jakarta.ee/xml/ns/jakartaee" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="https://jakarta.ee/xml/ns/jakartaee https://jakarta.ee/xml/ns/jakartaee/web-app_6_0.xsd" version="6.0">
 	<display-name>RDF4J Server</display-name>
 	<description>RDF4J Server</description>
+	<filter>
+		<filter-name>RequestIntegrityFilter</filter-name>
+		<filter-class>org.eclipse.rdf4j.http.server.security.RequestIntegrityFilter</filter-class>
+	</filter>
     <!-- Uncomment this and the associated filter-mapping to enable cross-origin requests.
     See https://github.com/eBay/cors-filter to change default configuration settings.
     <filter>
@@ -41,6 +45,10 @@
         <url-pattern>/*</url-pattern>
     </filter-mapping>
      -->
+	<filter-mapping>
+		<filter-name>RequestIntegrityFilter</filter-name>
+		<url-pattern>/repositories/*</url-pattern>
+	</filter-mapping>
 	<filter-mapping>
 		<filter-name>HttpCompressionFilter</filter-name>
 		<url-pattern>/*</url-pattern>
