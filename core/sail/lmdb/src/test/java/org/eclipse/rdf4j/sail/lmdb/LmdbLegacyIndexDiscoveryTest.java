@@ -138,7 +138,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		StoreProperties discovered = new StoreProperties(directory.toFile());
 		assertThat(discovered.load()).isTrue();
 
-		LegacyStoreDiscovery.discover(directory.toFile(), discovered);
+		LegacyStoreDiscovery.discover(directory.toFile(), discovered, false);
 
 		assertThat(TripleIndex.parseIndexSpecList(statements ? discovered.getTripleIndexes()
 				: discovered.getTripleTermIndexes())).isEqualTo(authoritative);
@@ -441,7 +441,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		var predicate = values.createIRI("urn:gc:predicate");
 		var quoted = values.createTripleTerm(values.createIRI("urn:gc:inner"), predicate,
 				values.createLiteral("unreferenced component"));
-		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false).setValueEvictionInterval(60_000);
+		LmdbStoreConfig config = validatingConfig().setValueEvictionInterval(60_000);
 		SailRepository initial = new SailRepository(new LmdbStore(directory.toFile(), config));
 		initial.init();
 		try (var connection = initial.getConnection()) {
@@ -773,7 +773,7 @@ class LmdbLegacyIndexDiscoveryTest {
 	void reindexesOnlyAfterValidatingTheAuthoritativeLegacyIndexes() throws Exception {
 		extract("v2-610-default.zip", directory);
 		SailRepository repository = new SailRepository(new LmdbStore(directory.toFile(),
-				new LmdbStoreConfig("spoc,ospc").setInlineLiterals(false)));
+				new LmdbStoreConfig("spoc,ospc").setInlineLiterals(false).setLegacyStoreValidationEnabled(true)));
 		repository.init();
 		try (var connection = repository.getConnection()) {
 			assertThat(connection.size()).isEqualTo(4);
@@ -798,7 +798,14 @@ class LmdbLegacyIndexDiscoveryTest {
 			// Legacy encoding tests require a genuine v2 generation; optimize's new-store contract is v6.
 			extract("v2-empty-inline-false.zip", directory);
 		}
-		return new SailRepository(new LmdbStore(directory.toFile(), new LmdbStoreConfig().setInlineLiterals(false)));
+		return new SailRepository(new LmdbStore(directory.toFile(), validatingConfig()));
+	}
+
+	/**
+	 * The sweep-dependent checks in this class opt in; {@link LmdbLegacyStoreValidationOptInTest} covers the default.
+	 */
+	private static LmdbStoreConfig validatingConfig() {
+		return new LmdbStoreConfig().setInlineLiterals(false).setLegacyStoreValidationEnabled(true);
 	}
 
 	private void createRetainedTripleTermFixture(boolean removeStatements, boolean removeForwardMappings,
@@ -904,7 +911,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		return key;
 	}
 
-	private static List<byte[]> readNativeKeys(Path environment, String database) throws Exception {
+	static List<byte[]> readNativeKeys(Path environment, String database) throws Exception {
 		long env = NULL;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
@@ -964,7 +971,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		return key;
 	}
 
-	private static void nativeDeleteTriple(Path environment, String database, byte[] keyBytes) throws Exception {
+	static void nativeDeleteTriple(Path environment, String database, byte[] keyBytes) throws Exception {
 		long env = NULL;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);
@@ -1014,7 +1021,7 @@ class LmdbLegacyIndexDiscoveryTest {
 		StoreProperties properties = new StoreProperties(directory.toFile());
 		assertThat(properties.load()).isTrue();
 
-		LegacyStoreDiscovery.discover(directory.toFile(), properties);
+		LegacyStoreDiscovery.discover(directory.toFile(), properties, true);
 
 		assertThat(properties.getVersion()).isEqualTo("2");
 		assertThat(properties.hasNativeGeneration()).isTrue();
@@ -1027,13 +1034,13 @@ class LmdbLegacyIndexDiscoveryTest {
 		assertThat(properties.load()).isTrue();
 
 		IOException failure = assertThrows(IOException.class,
-				() -> LegacyStoreDiscovery.discover(directory.toFile(), properties));
+				() -> LegacyStoreDiscovery.discover(directory.toFile(), properties, false));
 
 		assertThat(failure).hasMessageContaining(expectedMessage);
 		assertThat(snapshot(directory)).isEqualTo(before);
 	}
 
-	private static void createNamedDatabase(Path environment, String name) throws Exception {
+	static void createNamedDatabase(Path environment, String name) throws Exception {
 		long env = NULL;
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			PointerBuffer handle = stack.mallocPointer(1);

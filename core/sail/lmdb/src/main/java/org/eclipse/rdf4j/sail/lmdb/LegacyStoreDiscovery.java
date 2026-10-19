@@ -84,7 +84,18 @@ final class LegacyStoreDiscovery {
 	private LegacyStoreDiscovery() {
 	}
 
-	static void discover(File directory, StoreProperties properties) throws IOException {
+	/**
+	 * Inspects an existing native generation without writing to it.
+	 *
+	 * @param directory           the store directory
+	 * @param properties          the loaded {@code store.properties} sidecar, completed with recovered descriptors
+	 * @param validateLegacyStore whether a versioned format-2 store runs the full consistency sweeps over its
+	 *                            dictionary, contexts, statement indexes and triple-term indexes. The catalog, manifest
+	 *                            and retirement-schema checks always run, and a format-2 store without a recorded
+	 *                            sidecar is always swept once before its descriptors are recorded.
+	 */
+	static void discover(File directory, StoreProperties properties, boolean validateLegacyStore)
+			throws IOException {
 		File values = new File(directory, "values/data.mdb");
 		File triples = new File(directory, "triples/data.mdb");
 		boolean valuesPresent = values.isFile();
@@ -98,6 +109,10 @@ final class LegacyStoreDiscovery {
 		}
 
 		boolean legacy = isLegacyGeneration(directory, properties);
+		// The sweeps read every dictionary entry and every statement in every index, so an already recorded format-2
+		// store only pays for them on request. An unrecorded 6.1.x store is swept once before its descriptors are
+		// trusted and recorded.
+		boolean sweepLegacyStore = legacy && (validateLegacyStore || !properties.isLoaded());
 		try (MemoryStack stack = MemoryStack.stackPush()) {
 			long valuesEnv = openReadOnlyEnvironment(stack, values.getParentFile());
 			long triplesEnv = NULL;
@@ -123,7 +138,7 @@ final class LegacyStoreDiscovery {
 				Set<String> termIndexes = termManifest ? activeTermIndexes : physicalTermIndexes;
 				validateKnownDatabases(valuesDatabases, triplesDatabases, statementIndexes, physicalTermIndexes,
 						properties, legacy, retirementQueue);
-				if (legacy) {
+				if (sweepLegacyStore) {
 					int termCspoDatabase = termIndexes.contains("cspo")
 							? valuesDatabases.get(TripleIndex.nativeDatabaseName("term-cspo", true))
 							: -1;

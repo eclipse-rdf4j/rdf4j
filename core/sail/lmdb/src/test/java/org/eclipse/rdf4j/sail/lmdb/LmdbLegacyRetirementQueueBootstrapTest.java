@@ -256,7 +256,7 @@ class LmdbLegacyRetirementQueueBootstrapTest {
 		Map<String, String> before = LmdbCompatibilityFixtures.snapshot(storeDirectory);
 		StoreProperties discovered = new StoreProperties(storeDirectory.toFile());
 		discovered.load();
-		LegacyStoreDiscovery.discover(storeDirectory.toFile(), discovered);
+		LegacyStoreDiscovery.discover(storeDirectory.toFile(), discovered, true);
 		assertThat(LmdbCompatibilityFixtures.snapshot(storeDirectory)).as("preflight is read-only").isEqualTo(before);
 		long originalId = LmdbCompatibilityFixtures.findReferenceId(storeDirectory, ValueIds.T_URI,
 				"subject".getBytes(StandardCharsets.UTF_8));

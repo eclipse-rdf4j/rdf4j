@@ -134,6 +134,45 @@ class LmdbStoreConfigTest {
 	}
 
 	@Test
+	void legacyStoreValidationDefaultsToDisabled() {
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		assertThat(config.getLegacyStoreValidationEnabled()).isFalse();
+		Model model = new LinkedHashModel();
+		Resource node = config.export(model);
+		assertThat(model.filter(node, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, null)).isEmpty();
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void legacyStoreValidationParsesAndRoundTrips(boolean enabled) {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, Values.literal(enabled));
+		LmdbStoreConfig config = new LmdbStoreConfig();
+		config.parse(model, node);
+		assertThat(config.getLegacyStoreValidationEnabled()).isEqualTo(enabled);
+		Model exported = new LinkedHashModel();
+		Resource exportedNode = config.export(exported);
+		LmdbStoreConfig reparsed = new LmdbStoreConfig();
+		reparsed.parse(exported, exportedNode);
+		assertThat(reparsed.getLegacyStoreValidationEnabled()).isEqualTo(enabled);
+		assertThat(new LmdbStoreConfig().setLegacyStoreValidationEnabled(enabled).getLegacyStoreValidationEnabled())
+				.isEqualTo(enabled);
+	}
+
+	@Test
+	void legacyStoreValidationRejectsInvalidAndConflictingValues() {
+		Model model = new LinkedHashModel();
+		Resource node = Values.bnode();
+		model.add(node, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, Values.literal("sometimes"));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+		model.clear();
+		model.add(node, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, Values.literal(false));
+		model.add(node, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, Values.literal(true));
+		assertThatThrownBy(() -> new LmdbStoreConfig().parse(model, node)).isInstanceOf(SailConfigException.class);
+	}
+
+	@Test
 	void backlogDefaultsToAutoAndRejectsNegativeValues() {
 		assertThat(new LmdbStoreConfig().getDirectAdjacencyBacklogMaxBytes()).isZero();
 		assertThatThrownBy(() -> new LmdbStoreConfig().setDirectAdjacencyBacklogMaxBytes(-1))

@@ -206,6 +206,32 @@ Experimental branch formats 3, 4 and 5 are not supported. Export those repositor
 then import into a new repository. Unsupported versions and inconsistent format metadata are rejected before storage
 writers open. Removing or changing format metadata is not a supported conversion.
 
+### Consistency sweeps for existing format-2 repositories
+
+Opening an existing format-2 repository always runs cheap read-only checks before any storage writer opens: the LMDB
+database catalogs, the index manifests and the retirement-queue schema are verified, and a repository that has no
+recorded `store.properties` sidecar yet is swept in full once before its index descriptors are recorded. The full
+sweeps over the dictionary, contexts, statement indexes and triple-term indexes read every statement in every index,
+so their cost grows with the size of the repository. They are therefore disabled by default once the sidecar exists.
+Set `legacyStoreValidationEnabled` to run them on every open; an inconsistency then refuses the open without changing
+the repository.
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig()
+        .setLegacyStoreValidationEnabled(true);
+```
+
+The corresponding RDF configuration property is
+`<http://rdf4j.org/config/sail/lmdb#legacyStoreValidationEnabled> true`:
+
+```turtle
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#> .
+
+[] lmdb:legacyStoreValidationEnabled true .
+```
+
+The option has no effect on format-6 repositories.
+
 ## Optional query optimizations
 
 `experimentalQueryOptimizations` defaults to `false` for each repository. The default keeps optional planning,

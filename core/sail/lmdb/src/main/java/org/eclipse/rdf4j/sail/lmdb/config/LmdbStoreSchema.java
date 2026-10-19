@@ -110,6 +110,9 @@ public class LmdbStoreSchema {
 	/** <tt>http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled</tt> */
 	public final static IRI LEGACY_REFERENCE_COUNT_REPAIR_ENABLED;
 
+	/** <tt>http://rdf4j.org/config/sail/lmdb#legacyStoreValidationEnabled</tt> */
+	public final static IRI LEGACY_STORE_VALIDATION_ENABLED;
+
 	public final static IRI SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT;
 
 	public final static IRI SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT;
@@ -221,6 +224,7 @@ public class LmdbStoreSchema {
 		VALUE_EVICTION_INTERVAL = factory.createIRI(NAMESPACE, "valueEvictionInterval");
 		VALUE_HASH_CACHE_ENABLED = factory.createIRI(NAMESPACE, "valueHashCacheEnabled");
 		LEGACY_REFERENCE_COUNT_REPAIR_ENABLED = factory.createIRI(NAMESPACE, "legacyReferenceCountRepairEnabled");
+		LEGACY_STORE_VALIDATION_ENABLED = factory.createIRI(NAMESPACE, "legacyStoreValidationEnabled");
 		SKETCH_ESTIMATOR_SUBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorSubjectBucketCount");
 		SKETCH_ESTIMATOR_PREDICATE_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorPredicateBucketCount");
 		SKETCH_ESTIMATOR_OBJECT_BUCKET_COUNT = factory.createIRI(NAMESPACE, "sketchEstimatorObjectBucketCount");

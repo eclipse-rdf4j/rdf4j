@@ -404,7 +404,7 @@ public class LmdbStore extends AbstractNotifyingSail implements FederatedService
 		try {
 			StoreProperties properties = new StoreProperties(dataDir);
 			properties.load();
-			LegacyStoreDiscovery.discover(dataDir, properties);
+			LegacyStoreDiscovery.discover(dataDir, properties, config.getLegacyStoreValidationEnabled());
 			format = LmdbStoreFormat.resolve(dataDir, properties, config);
 			if (!properties.isLoaded() && !properties.hasNativeGeneration()) {
 				format.initializeProperties(properties);

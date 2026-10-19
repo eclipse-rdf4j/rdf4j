@@ -135,6 +135,8 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	private boolean legacyReferenceCountRepairEnabled;
 
+	private boolean legacyStoreValidationEnabled;
+
 	private boolean inlineLiterals = true;
 
 	private boolean orderedNumericIds = true;
@@ -401,6 +403,23 @@ public class LmdbStoreConfig extends BaseSailConfig {
 
 	public LmdbStoreConfig setLegacyReferenceCountRepairEnabled(boolean enabled) {
 		legacyReferenceCountRepairEnabled = enabled;
+		return this;
+	}
+
+	/**
+	 * Whether opening an existing format-2 store runs the full read-only consistency sweeps over its dictionary,
+	 * contexts, statement indexes and triple-term indexes. Disabled by default: the sweeps read every statement in
+	 * every index, so their cost grows with the size of the store on every open. The cheap catalog, manifest and
+	 * retirement-schema checks always run, and a format-2 store that has no recorded {@code store.properties} yet is
+	 * validated once before its index descriptors are recorded. Enable this to refuse to open an inconsistent format-2
+	 * store.
+	 */
+	public boolean getLegacyStoreValidationEnabled() {
+		return legacyStoreValidationEnabled;
+	}
+
+	public LmdbStoreConfig setLegacyStoreValidationEnabled(boolean enabled) {
+		legacyStoreValidationEnabled = enabled;
 		return this;
 	}
 
@@ -800,6 +819,9 @@ public class LmdbStoreConfig extends BaseSailConfig {
 		if (legacyReferenceCountRepairEnabled) {
 			m.add(implNode, LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED, vf.createLiteral(true));
 		}
+		if (legacyStoreValidationEnabled) {
+			m.add(implNode, LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED, vf.createLiteral(true));
+		}
 		if (!inlineLiterals) {
 			m.add(implNode, LmdbStoreSchema.INLINE_LITERALS, vf.createLiteral(false));
 		}
@@ -916,6 +938,13 @@ public class LmdbStoreConfig extends BaseSailConfig {
 			if (legacyReferenceCountRepair != null) {
 				setLegacyReferenceCountRepairEnabled(parseBoolean(legacyReferenceCountRepair,
 						LmdbStoreSchema.LEGACY_REFERENCE_COUNT_REPAIR_ENABLED));
+			}
+
+			Literal legacyStoreValidation = singleBooleanLiteral(m, implNode,
+					LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED);
+			if (legacyStoreValidation != null) {
+				setLegacyStoreValidationEnabled(parseBoolean(legacyStoreValidation,
+						LmdbStoreSchema.LEGACY_STORE_VALIDATION_ENABLED));
 			}
 
 			Literal nativeEvaluationEnabledLiteral = singleBooleanLiteral(m, implNode,

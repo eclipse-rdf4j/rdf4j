@@ -94,7 +94,8 @@ class LmdbLegacyReferenceCountRepairTest {
 			repository.shutDown();
 		}
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, null, LmdbCompatibilityFixtures.idKey(literalId)))
-				.as("unverified counts cannot authorize physical deletion").isNotNull();
+				.as("unverified counts cannot authorize physical deletion")
+				.isNotNull();
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 })).isNull();
 
 		store = store(false);
@@ -117,7 +118,8 @@ class LmdbLegacyReferenceCountRepairTest {
 			repository.shutDown();
 		}
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, null, LmdbCompatibilityFixtures.idKey(literalId)))
-				.as("opted-in recovery drains deferred candidates after establishing counts").isNull();
+				.as("opted-in recovery drains deferred candidates after establishing counts")
+				.isNull();
 
 		repository = new SailRepository(store(false));
 		repository.init();
@@ -144,9 +146,12 @@ class LmdbLegacyReferenceCountRepairTest {
 			repository.shutDown();
 		}
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 }))
-				.as("the earlier repair reader must see no completion proof").isNull();
-		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", LmdbCompatibilityFixtures.idKey(subjectId)))
-				.as("disabled repair does not silently reconcile or endorse historical counts").containsExactly(99);
+				.as("the earlier repair reader must see no completion proof")
+				.isNull();
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(subjectId)))
+						.as("disabled repair does not silently reconcile or endorse historical counts")
+						.containsExactly(99);
 	}
 
 	@ParameterizedTest
@@ -173,9 +178,10 @@ class LmdbLegacyReferenceCountRepairTest {
 		} finally {
 			repository.shutDown();
 		}
-		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", LmdbCompatibilityFixtures.idKey(datatypeId)))
-				.as("corrected arithmetic spans committed transactions even with legacy repair disabled")
-				.containsExactly(2);
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(datatypeId)))
+						.as("corrected arithmetic spans committed transactions even with legacy repair disabled")
+						.containsExactly(2);
 		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", LmdbCompatibilityFixtures.idKey(datatypeId),
 				new byte[] { 99 });
 		LmdbCompatibilityFixtures.nativePut(directory, "ref_counts", new byte[] { 0 }, null);
@@ -184,8 +190,10 @@ class LmdbLegacyReferenceCountRepairTest {
 		repository = new SailRepository(store(legacy));
 		repository.init();
 		repository.shutDown();
-		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", LmdbCompatibilityFixtures.idKey(datatypeId)))
-				.as("reconstruction counts both live literal owners").containsExactly(2);
+		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts",
+				LmdbCompatibilityFixtures.idKey(datatypeId)))
+						.as("reconstruction counts both live literal owners")
+						.containsExactly(2);
 		assertThat(LmdbCompatibilityFixtures.nativeGet(directory, "ref_counts", new byte[] { 0 })).hasSize(18);
 	}
 
