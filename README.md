@@ -63,4 +63,4 @@ You can find more detailed information about our development and release process
 
 See the [packed factorized trees guide](docs/branch/optimize-lmdb/query-joins-and-factors.md#packed-factorized-trees)
 for the current implementation and boundaries. The [branch developer documentation index](docs/branch/optimize-lmdb/README.md)
-maps the wider `optimize-lmdb` feature set.
+maps the wider `LMDB Native Query Engine and Adjacency Index` feature set.
