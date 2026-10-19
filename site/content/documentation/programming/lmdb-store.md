@@ -436,6 +436,29 @@ More up-to-date information about LMDB can be found at: https://www.symas.com/sy
 Especially the [SSD-benchmarks](http://www.lmdb.tech/bench/optanessd/imdt.html) may be of interest.
 
 ## Backup and restore
+
+`LmdbStore.getBackupService()` provides coordinated full snapshots, incremental backups, and
+point-in-time restores. Backup transaction IDs identify durable logical mutations, including
+namespace-only commits; they are not native LMDB transaction IDs. Incremental creation and restore
+validate the journal's predecessor chain. Committed changes are retained in a durable, store-local
+`backup-outbox` until an ordered background publisher has persisted their journals. Journal publication
+runs after the native writer lifecycle releases its locks; it does not retain live LMDB values.
+If publication fails, later journals cannot skip the failed change. Repair the journal destination and
+reopen the store to retry retained changes before requesting further incrementals.
+A restore replays only mutations after its selected full snapshot and up to the requested ID.
+Restored stores use a restore-local journal directory, and neither replay nor subsequent writes
+publish into the source backup. Backup destinations must be outside the store's data directory.
+Full snapshots preserve the source's persisted format and capabilities in `store.properties` and
+establish an independent publication baseline rather than copying the source's pending outbox.
+Store shutdown settles admitted writers and active backup operations, then drains publication while
+the backup service remains available. Failed publication stages remain available for recovery.
+
+The coordinated backup lifecycle explicitly flushes native dictionary state before the authoritative
+triples commit and flushes both environments before allowing an external publication acknowledgement.
+These flushes also apply with `forceSync=false`, adding durability-related I/O to journaled commits.
+Keep the complete store directory, including `backup-outbox`, when moving or recovering a live store.
+Durability requires a filesystem and storage stack that honor file and directory flushes.
+
 LMDB provides a set of [command line tools](http://www.lmdb.tech/doc/tools.html) that can be used
 to backup and restore the value and triple databases.
 Those tools can typically be used while the databases are in use as LMDB permits concurrent use

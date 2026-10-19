@@ -210,9 +210,12 @@ applies because they are separate LMDB environments.
 
 ## Durability and uncertain outcomes
 
-`forceSync` remains `false` by default. In that mode the LMDB environments use `MDB_NOSYNC` and `MDB_NOMETASYNC`, so
-an acknowledged commit has weaker power-loss durability. Set `forceSync=true` when the application requires LMDB's
-synchronous commit behavior, and ensure the filesystem and storage stack honor flushes. Even with `forceSync=true`,
+`forceSync` remains `false` by default. In that mode the LMDB environments use `MDB_NOSYNC` and `MDB_NOMETASYNC`.
+Native writes outside the coordinated logical-backup lifecycle therefore have weaker power-loss durability.
+Journaled backup commits additionally force dictionary state before the authoritative triples commit and force
+both environments before external publication can acknowledge the change, even with `forceSync=false`.
+Set `forceSync=true` when the application requires LMDB's synchronous commit behavior for all native writes,
+and ensure the filesystem and storage stack honor flushes. Even with `forceSync=true`,
 the ValueStore and TripleStore are separate environments: dictionary additions and retirement intents are committed
 before the authoritative triple/namespace transaction. An interrupted write can therefore leave unreferenced
 dictionary entries for later cleanup. Retirement and recovery recheck committed triple liveness before an ID can be

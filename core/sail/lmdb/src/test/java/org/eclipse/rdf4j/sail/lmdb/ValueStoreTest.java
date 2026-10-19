@@ -364,6 +364,13 @@ public class ValueStoreTest {
 	public void autoGrowWaitsForEnvironmentCopy() throws Exception {
 		CountDownLatch copyStarted = new CountDownLatch(1);
 		CountDownLatch allowCopyToComplete = new CountDownLatch(1);
+		CountDownLatch resizeAttempted = new CountDownLatch(1);
+		CountDownLatch resizeEntered = new CountDownLatch(1);
+		IRI value = Values.iri("urn:copy:committed-value");
+		valueStore.startTransaction(true);
+		long id = valueStore.storeValue(value);
+		valueStore.commit();
+		Path snapshot = dataDir.toPath().resolve("snapshot");
 		ExecutorService executor = Executors.newFixedThreadPool(2);
 		try {
 			Future<?> copy = executor.submit(() -> {
@@ -378,6 +385,7 @@ public class ValueStoreTest {
 							Thread.currentThread().interrupt();
 							throw new AssertionError(e);
 						}
+						valueStore.copyEnvironment(snapshot, true);
 					});
 				} catch (IOException e) {
 					throw new AssertionError(e);
@@ -387,20 +395,51 @@ public class ValueStoreTest {
 
 			Future<?> resize = executor.submit(() -> {
 				try {
+					resizeAttempted.countDown();
 					valueStore.withMapResizeLock(() -> {
+						resizeEntered.countDown();
 					});
 				} catch (IOException e) {
 					throw new AssertionError(e);
 				}
 			});
-			assertFalse("auto-grow must wait for the environment copy", resize.isDone());
+			assertTrue(resizeAttempted.await(10, TimeUnit.SECONDS));
+			assertFalse("resize admission must wait until the guarded native copy completes",
+					resizeEntered.await(200, TimeUnit.MILLISECONDS));
 
 			allowCopyToComplete.countDown();
 			copy.get(10, TimeUnit.SECONDS);
 			resize.get(10, TimeUnit.SECONDS);
+			assertEquals(0L, resizeEntered.getCount());
+			ValueStore restored = new ValueStore(snapshot.toFile(), new LmdbStoreConfig());
+			try {
+				assertEquals(value, restored.getValue(id));
+			} finally {
+				restored.close();
+			}
 		} finally {
 			allowCopyToComplete.countDown();
 			executor.shutdownNow();
+			assertTrue("copy and resize workers must terminate before fixture teardown",
+					executor.awaitTermination(10, TimeUnit.SECONDS));
+		}
+	}
+
+	@Test
+	public void failedEnvironmentCopyReleasesResizeBarrier() throws Exception {
+		Path snapshot = Files.createDirectory(dataDir.toPath().resolve("failed-snapshot"));
+		Files.createFile(snapshot.resolve("data.mdb"));
+		assertThrows(IOException.class, () -> valueStore.copyEnvironment(snapshot, true));
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		try {
+			executor.submit(() -> {
+				valueStore.withMapResizeLock(() -> {
+				});
+				return null;
+			}).get(5, TimeUnit.SECONDS);
+		} finally {
+			executor.shutdownNow();
+			assertTrue(executor.awaitTermination(5, TimeUnit.SECONDS));
 		}
 	}
 
