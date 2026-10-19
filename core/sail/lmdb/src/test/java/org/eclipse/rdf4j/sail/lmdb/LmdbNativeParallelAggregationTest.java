@@ -93,10 +93,7 @@ public class LmdbNativeParallelAggregationTest {
 		System.setProperty(JANINO_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
-		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
-				.setNativeEvaluationEnabled(true)
-				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
-		repository = new SailRepository(new LmdbStore(dataDir, config));
+		repository = new SailRepository(new LmdbStore(dataDir, config(false)));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
 			ValueFactory vf = conn.getValueFactory();
 			IRI p1 = vf.createIRI(EX, "p1");
@@ -127,6 +124,21 @@ public class LmdbNativeParallelAggregationTest {
 			}
 			conn.commit();
 		}
+	}
+
+	private LmdbStoreConfig config(boolean experimental) {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc")
+				.setNativeEvaluationEnabled(true)
+				.setDirectAdjacencyMode(DirectAdjacencyMode.DISABLED);
+		config.setExperimentalQueryOptimizations(experimental);
+		return config;
+	}
+
+	private void reopenRepository(boolean experimental) {
+		if (repository != null) {
+			repository.shutDown();
+		}
+		repository = new SailRepository(new LmdbStore(dataDir, config(experimental)));
 	}
 
 	@AfterEach
@@ -547,6 +559,8 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void unmarkedFunctionRunsOnceWhenLateFloatingSumFallsBack() {
+		// The conservative unmarked-function contract belongs to the experimental policy.
+		reopenRepository(true);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI predicate = vf.createIRI(EX, "replayMatch");
@@ -808,6 +822,8 @@ public class LmdbNativeParallelAggregationTest {
 
 	@Test
 	public void unmarkedFunctionRunsOnceWhenExtremaTieFallsBack() {
+		// The conservative unmarked-function contract belongs to the experimental policy.
+		reopenRepository(true);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
 			ValueFactory vf = connection.getValueFactory();
 			IRI predicate = vf.createIRI(EX, "replayExtreme");

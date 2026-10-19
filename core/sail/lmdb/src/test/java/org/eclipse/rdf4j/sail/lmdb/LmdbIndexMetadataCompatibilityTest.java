@@ -216,10 +216,12 @@ class LmdbIndexMetadataCompatibilityTest {
 	}
 
 	private LmdbStoreConfig config(String termIndexes) {
+		// This compatibility fixture checks physical retirement and reindex cleanup for legacy stores.
 		return new LmdbStoreConfig("spoc,posc,ospc").setInlineLiterals(inlineLiterals)
 				.setForceSync(true)
 				.setSketchEstimatorEnabled(false)
 				.setValueHashCacheEnabled(false)
+				.setLegacyReferenceCountRepairEnabled(true)
 				.setTripleTermIndexes(termIndexes);
 	}
 

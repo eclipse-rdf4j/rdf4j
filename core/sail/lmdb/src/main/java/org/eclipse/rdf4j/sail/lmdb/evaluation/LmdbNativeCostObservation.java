@@ -19,8 +19,8 @@ import java.util.function.LongSupplier;
 
 /**
  * One execution-scoped observation. Row loops update primitive counters; clock reads and model publication happen only
- * at execution boundaries. Production observations use the store's millisecond clock; only elapsed durations are
- * converted to the cost model's nanosecond units. Cooperative cancellation uses its own monotonic deadline clock.
+ * at execution boundaries. Elapsed durations use the store's monotonic nanosecond clock, independently of the wall
+ * clock used for lifecycle and evidence staleness. Cooperative cancellation retains its own deadline clock.
  */
 final class LmdbNativeCostObservation implements AutoCloseable {
 
@@ -81,8 +81,10 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	private final AtomicInteger completionGuard = new AtomicInteger(OPEN_STATE);
 
 	private volatile double contendedWeightFactor = 1.0;
-	private volatile long firstOutputTime = -1L;
-	private volatile long closedTime = -1L;
+	private volatile long firstOutputTime;
+	private volatile boolean firstOutputRecorded;
+	private volatile long closedTime;
+	private volatile boolean closedTimeRecorded;
 	private volatile Completion completion = Completion.OPEN;
 	private volatile double consumedFraction = Double.NaN;
 	private volatile LmdbNativeAdaptiveCostModel.TrainingResult trainingResult;
@@ -95,7 +97,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	}
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, Role role) {
-		this(estimate, model, model.store()::nowMillis, TimeUnit.MILLISECONDS, role);
+		this(estimate, model, model.store()::nowNanos, role);
 	}
 
 	LmdbNativeCostObservation(LmdbNativeCostEstimate estimate, LmdbNativeAdaptiveCostModel model, NanoClock clock) {
@@ -122,10 +124,11 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	}
 
 	void firstOutput() {
-		if (firstOutputTime < 0L && completionGuard.get() == OPEN_STATE) {
+		if (!firstOutputRecorded && completionGuard.get() == OPEN_STATE) {
 			synchronized (this) {
-				if (firstOutputTime < 0L && completionGuard.get() == OPEN_STATE) {
+				if (!firstOutputRecorded && completionGuard.get() == OPEN_STATE) {
 					firstOutputTime = clock.getAsLong();
+					firstOutputRecorded = true;
 				}
 			}
 		}
@@ -245,6 +248,7 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 		}
 		long finished = clock.getAsLong();
 		closedTime = finished;
+		closedTimeRecorded = true;
 		completion = result;
 		consumedFraction = fraction;
 		failure = throwable;
@@ -254,9 +258,10 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 				: estimate;
 		LmdbNativeCostVector actual = actualVector();
 		long elapsed = elapsedNanos(startedTime, finished);
+		boolean producedOutput = firstOutputRecorded;
 		long first = firstOutputTime;
-		boolean clockMovedBackwards = finished < startedTime
-				|| first >= 0L && (first < startedTime || finished < first);
+		boolean clockMovedBackwards = elapsed < 0L
+				|| producedOutput && (elapsedNanos(startedTime, first) < 0L || elapsedNanos(first, finished) < 0L);
 		if (eligible && !clockMovedBackwards) {
 			// Feature-wise compatibility bridge: measured counters replace the estimate per feature; features no
 			// counter reported yet keep the estimate so their shape ratios stay pinned at 1 instead of collapsing
@@ -323,16 +328,22 @@ final class LmdbNativeCostObservation implements AutoCloseable {
 	}
 
 	Snapshot snapshot() {
+		boolean producedOutput = firstOutputRecorded;
 		long first = firstOutputTime;
+		boolean closedRecorded = closedTimeRecorded;
 		long closed = closedTime;
 		LmdbNativeCostVector trained = trainedFeatures;
-		return new Snapshot(completion, elapsedNanos(startedTime, first < 0L ? closed : first),
-				elapsedNanos(startedTime, closed), first >= 0L, consumedFraction,
+		long elapsed = closedRecorded ? Math.max(0L, elapsedNanos(startedTime, closed)) : 0L;
+		long startup = producedOutput ? Math.max(0L, elapsedNanos(startedTime, first)) : elapsed;
+		return new Snapshot(completion, startup,
+				elapsed, producedOutput, consumedFraction,
 				trained != null ? trained : actualVector(), trainingResult, failure);
 	}
 
 	private long elapsedNanos(long started, long finished) {
-		return finished < started ? 0L : clockUnit.toNanos(finished - started);
+		// nanoTime has an arbitrary signed origin and may wrap; subtraction preserves elapsed time for intervals
+		// shorter than 2^63 clock ticks. The completion boundary separately rejects a negative interval as backwards.
+		return clockUnit.toNanos(finished - started);
 	}
 
 	boolean isComplete() {

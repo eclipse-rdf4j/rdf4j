@@ -187,7 +187,9 @@ final class LmdbNativeAdaptiveCostModel {
 	private LmdbNativeCostPrediction predictFor(LmdbNativeCostEstimate estimate, LmdbNativeRegimeKey regime,
 			PricingInputs inputs) {
 		Quote quote = predictionQuote(estimate, regime, inputs);
-		long latestObservedNanos = store.latestObserved().latestNanos(quote.exactKey, quote.epoch);
+		LmdbNativeLatestObservedLedger.Snapshot runtime = store.latestObserved()
+				.snapshot(quote.exactKey, quote.epoch, quote.nowMillis, store.posteriorConfig());
+		long latestObservedNanos = runtime.latestNanos();
 		if (!quote.priceable && latestObservedNanos <= 0L) {
 			return LmdbNativeCostPrediction.ordinalOnly("no comparable features and no timing evidence");
 		}
@@ -246,7 +248,7 @@ final class LmdbNativeAdaptiveCostModel {
 		return new LmdbNativeCostPrediction(Math.min(low95, expected), expected, high95, Math.min(low99, low95),
 				high99, latentLow99, latentHigh99, basis, learnedAllowed, quarantined, reading.nEff(),
 				store.posteriors().completedExecutions(quote.exactKey, reading.exact().completedCount),
-				latestObservedNanos, source, components, reason);
+				latestObservedNanos, source, components, reason, runtime.evidence());
 	}
 
 	/**
@@ -417,7 +419,9 @@ final class LmdbNativeAdaptiveCostModel {
 			return;
 		}
 		Quote quote = quote(estimate, regime);
-		store.latestObserved().observe(quote.exactKey, (long) elapsedNanos, quote.epoch);
+		store.latestObserved()
+				.observe(quote.exactKey, (long) elapsedNanos, quote.epoch, quote.nowMillis,
+						store.posteriorConfig().decayHalfLifeMillis());
 
 	}
 

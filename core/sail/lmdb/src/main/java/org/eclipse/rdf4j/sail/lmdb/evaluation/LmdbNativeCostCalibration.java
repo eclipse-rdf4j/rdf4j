@@ -185,16 +185,33 @@ final class LmdbNativeCostCalibration {
 		return applyFactor(work, FACTORS.get(tag));
 	}
 
-	/** One calibration revision for a complete candidate comparison; no record can interleave halfway through it. */
+	/**
+	 * Converts one complete candidate set to time only when every known candidate can be converted with sufficient
+	 * evidence. Comparing a calibrated time interval with a raw work interval would mix units, so if calibration is
+	 * disabled or any known candidate lacks a tag with at least two observations, the whole set remains in raw work
+	 * units. Unknown candidates stay unknown and do not prevent conversion of the known candidates. The factors and
+	 * conversion are captured under one lock so a record cannot interleave halfway through the set.
+	 */
 	static synchronized LmdbNativeWork[] toTimes(String[] tags, LmdbNativeWork[] work) {
 		if (tags.length != work.length)
 			throw new IllegalArgumentException("mismatched cost columns");
-		boolean consume = enabled();
+		if (!enabled()) {
+			return work.clone();
+		}
+		Factor[] factors = new Factor[work.length];
+		for (int i = 0; i < work.length; i++) {
+			if (!work[i].known()) {
+				continue;
+			}
+			Factor factor = tags[i] == null ? null : FACTORS.get(tags[i]);
+			if (factor == null || factor.observations() < 2L) {
+				return work.clone();
+			}
+			factors[i] = factor;
+		}
 		LmdbNativeWork[] result = new LmdbNativeWork[work.length];
 		for (int i = 0; i < work.length; i++) {
-			result[i] = consume && tags[i] != null && work[i].known()
-					? applyFactor(work[i], FACTORS.get(tags[i]))
-					: work[i];
+			result[i] = work[i].known() ? applyFactor(work[i], factors[i]) : work[i];
 		}
 		return result;
 	}

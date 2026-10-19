@@ -67,15 +67,10 @@ public class LmdbNativeParallelPipelinesTest {
 	// This class asserts interpreted-strategy internals; the IR kernel rung must stay off so it cannot absorb the
 	// shapes first (plan: plans/lmdb-native-engine/20-kernel-lowering-row.md).
 	private static String previousJaninoCodegenEnabled;
-	private static String previousParallelStartupWork;
 
 	@org.junit.jupiter.api.BeforeAll
 	static void disableKernelCodegen() {
 		previousJaninoCodegenEnabled = System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", "false");
-		// These are lifecycle/semantics tests for the parallel operator over intentionally tiny fixtures. Model a
-		// zero-startup executor so the unified arbiter can select that operator without weakening the production cost.
-		previousParallelStartupWork = System.setProperty(
-				LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY, "0");
 	}
 
 	@org.junit.jupiter.api.AfterAll
@@ -84,12 +79,6 @@ public class LmdbNativeParallelPipelinesTest {
 			System.clearProperty("rdf4j.lmdb.janinoCodegen.enabled");
 		} else {
 			System.setProperty("rdf4j.lmdb.janinoCodegen.enabled", previousJaninoCodegenEnabled);
-		}
-		if (previousParallelStartupWork == null) {
-			System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
-		} else {
-			System.setProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY,
-					previousParallelStartupWork);
 		}
 	}
 
@@ -121,12 +110,6 @@ public class LmdbNativeParallelPipelinesTest {
 		System.setProperty(PACKED_FTREE_FLAG, "false");
 		System.setProperty(KERNEL_INTERPRETER_FLAG, "false");
 		LmdbNativeCostCalibration.reset();
-		for (int i = 0; i < 100; i++) {
-			// This class validates the selected operator, not its real scheduling crossover. Supply stable executor
-			// evidence so the unified arbiter can choose parallel execution over cheaper serial specialists on the
-			// deliberately small fixture.
-			LmdbNativeCostCalibration.record(LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, 1_000_000D, 1_000L);
-		}
 		repository = new SailRepository(new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)));
 		try (SailRepositoryConnection connection = repository.getConnection()) {
@@ -172,7 +155,7 @@ public class LmdbNativeParallelPipelinesTest {
 					.contains("NativeRows")
 					.contains("MultiJoin");
 		}
-		List<String> parallel = rows(query);
+		List<String> parallel = parallelRows(query);
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 				.as("parallel rejection: %s%n%s", LmdbNativeParallelPipelines.LAST_REJECTION.get(), physicalPlan)
 				.isEqualTo(1L);
@@ -189,7 +172,7 @@ public class LmdbNativeParallelPipelinesTest {
 		List<String> generic = orderedRowsWithProperty(NATIVE_FLAG, "false", query);
 		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 
-		List<String> parallel = orderedRows(query);
+		List<String> parallel = parallelOrderedRows(query);
 
 		assertThat(parallel).hasSize(720).containsExactlyElementsOf(generic);
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
@@ -197,7 +180,7 @@ public class LmdbNativeParallelPipelinesTest {
 						LmdbNativeParallelPipelines.LAST_REJECTION.get())
 				.isEqualTo(parallelBefore + 1L);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertThat(connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString())
+			assertThat(parallelTelemetry(connection, query))
 					.contains("parallelPipelines")
 					.contains("orderedFullSort");
 		}
@@ -210,7 +193,7 @@ public class LmdbNativeParallelPipelinesTest {
 
 		String rendered;
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			rendered = connection.prepareTupleQuery(query).explain(Explanation.Level.Telemetry).toString();
+			rendered = parallelTelemetry(connection, query);
 		}
 
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
@@ -247,7 +230,7 @@ public class LmdbNativeParallelPipelinesTest {
 		String query = chain(" FILTER(BOUND(?value))");
 		String previous = System.setProperty("rdf4j.lmdb.factorizedRows.enabled", "false");
 		try {
-			List<String> parallel = rows(query);
+			List<String> parallel = parallelRows(query);
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 					.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
 					.isEqualTo(1L);
@@ -264,7 +247,7 @@ public class LmdbNativeParallelPipelinesTest {
 		try {
 			List<String> generic = rowsWithProperty(NATIVE_FLAG, "false", query);
 			long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
-			List<String> parallel = rows(query);
+			List<String> parallel = parallelRows(query);
 			assertThat(parallel).containsExactlyElementsOf(generic);
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 					.as("a source-dependent scalar filter must be rebound inside every worker")
@@ -347,7 +330,7 @@ public class LmdbNativeParallelPipelinesTest {
 		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		assertThat(rowCount(query)).isEqualTo(720);
+		assertThat(parallelRowCount(query)).isEqualTo(720);
 
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 				.as("parallel rejection: %s", LmdbNativeParallelPipelines.LAST_REJECTION.get())
@@ -368,7 +351,7 @@ public class LmdbNativeParallelPipelinesTest {
 			long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-			assertThat(rowCount(query)).isEqualTo(720);
+			assertThat(parallelRowCount(query)).isEqualTo(720);
 
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore + 1L);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
@@ -387,7 +370,7 @@ public class LmdbNativeParallelPipelinesTest {
 			long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 			long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-			assertThat(rowCount(query)).isEqualTo(720);
+			assertThat(parallelRowCount(query)).isEqualTo(720);
 
 			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore + 1L);
 			assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
@@ -427,7 +410,7 @@ public class LmdbNativeParallelPipelinesTest {
 		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> parallel = allRows(query);
+		List<String> parallel = allRows(query, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
 
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 				.as("three plain patterns remain eligible for morsel parallelism: %s",
@@ -475,7 +458,7 @@ public class LmdbNativeParallelPipelinesTest {
 		long factorizedBefore = LmdbNativeFactorizedRows.ENGAGED.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> parallel = allRows(query);
+		List<String> parallel = allRows(query, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
 
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
 				.as("the constant root remains a partitionable pattern: %s",
@@ -524,7 +507,7 @@ public class LmdbNativeParallelPipelinesTest {
 		long mergeBefore = LmdbNativeChunkPipeline.MERGE_WALKS.get();
 		long sipBefore = LmdbNativeChunkPipeline.SIP_MASKS.get();
 
-		List<String> parallel = rows(query);
+		List<String> parallel = parallelRows(query);
 
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(parallelBefore + 1L);
 		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
@@ -580,7 +563,7 @@ public class LmdbNativeParallelPipelinesTest {
 		long parallelBefore = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
 		long chunkBefore = LmdbNativeChunkPipeline.ENGAGED.get();
 
-		List<String> nativeRows = rows(query, true);
+		List<String> nativeRows = parallelRows(query, true);
 
 		assertThat(nativeRows)
 				.hasSize(roots)
@@ -589,7 +572,7 @@ public class LmdbNativeParallelPipelinesTest {
 		assertThat(LmdbNativeChunkPipeline.ENGAGED.get())
 				.as("composite explicit-plus-inferred probes should retain the external-root chunk strategy")
 				.isGreaterThan(chunkBefore);
-		assertThat(rows(query, false)).hasSize(roots / 2);
+		assertThat(parallelRows(query, false)).hasSize(roots / 2);
 	}
 
 	@Test
@@ -1092,7 +1075,7 @@ public class LmdbNativeParallelPipelinesTest {
 
 	@Test
 	public void longFiniteSliceUsesParallelPipeline() {
-		List<String> result = rows(chain("") + " LIMIT 512");
+		List<String> result = parallelRows(chain("") + " LIMIT 512");
 
 		assertThat(result).hasSize(512);
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
@@ -1103,35 +1086,41 @@ public class LmdbNativeParallelPipelinesTest {
 	@Test
 	public void reservedWorkerGroupAllowsDegradedParallelPipeline() {
 		long before = LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
-			assertThat(held.hasNext()).isTrue();
-			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 1L);
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = forcedQuery(connection, highFanoutChain(),
+					LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+			try (TupleQueryResult held = query.evaluate()) {
+				assertThat(held.hasNext()).isTrue();
+				assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 1L);
 
-			assertThat(rows(chain(""))).hasSize(720);
-			assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
-					.as("the second query must retain a degraded-but-nonzero range worker grant")
-					.isEqualTo(before + 2L);
+				assertThat(parallelRows(chain(""))).hasSize(720);
+				assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get())
+						.as("the second query must retain a degraded-but-nonzero range worker grant")
+						.isEqualTo(before + 2L);
+			}
 		}
 
-		assertThat(rows(chain(""))).hasSize(720);
+		assertThat(parallelRows(chain(""))).hasSize(720);
 		assertThat(LmdbNativeParallelPipelines.PARALLEL_ROW_RUNS.get()).isEqualTo(before + 3L);
 	}
 
 	@Test
 	public void reservedWorkerGroupAllowsDegradedParallelAggregation() {
 		long before = LmdbNativeParallelAggregation.PARALLEL_RUNS.get();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult held = connection.prepareTupleQuery(highFanoutChain()).evaluate()) {
-			assertThat(held.hasNext()).isTrue();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = forcedQuery(connection, highFanoutChain(),
+					LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+			try (TupleQueryResult held = query.evaluate()) {
+				assertThat(held.hasNext()).isTrue();
 
-			rows(aggregateChain());
-			assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
-					.as("aggregation must retain a degraded-but-nonzero range worker grant")
-					.isEqualTo(before + 1L);
+				allRows(aggregateChain(), LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
+				assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get())
+						.as("aggregation must retain a degraded-but-nonzero range worker grant")
+						.isEqualTo(before + 1L);
+			}
 		}
 
-		rows(aggregateChain());
+		allRows(aggregateChain(), LmdbNativeAttemptMetrics.PATH_PARALLEL_AGGREGATION);
 		assertThat(LmdbNativeParallelAggregation.PARALLEL_RUNS.get()).isEqualTo(before + 2L);
 	}
 
@@ -1163,6 +1152,14 @@ public class LmdbNativeParallelPipelinesTest {
 
 	private List<String> rows(String query) {
 		return rows(query, true);
+	}
+
+	private List<String> parallelRows(String query) {
+		return parallelRows(query, true);
+	}
+
+	private List<String> parallelRows(String query, boolean includeInferred) {
+		return rows(query, includeInferred, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
 	}
 
 	private List<String> rows(String query, boolean includeInferred) {
@@ -1208,12 +1205,35 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private List<String> orderedRows(String query) {
+		return orderedRows(query, null);
+	}
+
+	private List<String> parallelOrderedRows(String query) {
+		return orderedRows(query, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+	}
+
+	private List<String> orderedRows(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate())
+			SailTupleQuery tupleQuery = forcedQuery(connection, query, forcedStrategy);
+			return QueryResults.asList(tupleQuery.evaluate())
 					.stream()
 					.map(row -> row.getValue("subject") + "|" + row.getValue("value"))
 					.toList();
 		}
+	}
+
+	private String parallelTelemetry(SailRepositoryConnection connection, String query) {
+		return forcedQuery(connection, query, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES)
+				.explain(Explanation.Level.Telemetry)
+				.toString();
+	}
+
+	private SailTupleQuery forcedQuery(SailRepositoryConnection connection, String query, String forcedStrategy) {
+		SailTupleQuery tupleQuery = (SailTupleQuery) connection.prepareTupleQuery(query);
+		if (forcedStrategy != null) {
+			tupleQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+		}
+		return tupleQuery;
 	}
 
 	private List<String> orderedRowsWithProperty(String property, String value, String query) {
@@ -1259,8 +1279,16 @@ public class LmdbNativeParallelPipelinesTest {
 	}
 
 	private int rowCount(String query) {
+		return rowCount(query, null);
+	}
+
+	private int parallelRowCount(String query) {
+		return rowCount(query, LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES);
+	}
+
+	private int rowCount(String query, String forcedStrategy) {
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			return QueryResults.asList(connection.prepareTupleQuery(query).evaluate()).size();
+			return QueryResults.asList(forcedQuery(connection, query, forcedStrategy).evaluate()).size();
 		}
 	}
 

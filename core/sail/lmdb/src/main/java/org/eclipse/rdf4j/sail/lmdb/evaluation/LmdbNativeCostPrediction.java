@@ -25,7 +25,18 @@ package org.eclipse.rdf4j.sail.lmdb.evaluation;
 record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double high95Nanos, double low99Nanos,
 		double high99Nanos, double latentLow99Nanos, double latentHigh99Nanos, PriceBasis priceBasis,
 		boolean learnedDominanceAllowed, boolean quarantined, double nEff, long exactCompletedCount,
-		long latestObservedNanos, EvidenceSource evidenceSource, Components components, String reason) {
+		long latestObservedNanos, EvidenceSource evidenceSource, Components components, String reason,
+		LmdbNativeLatestObservedLedger.Evidence fullRuntimeEvidence) {
+
+	/** Structural quotes and existing callers need not invent complete-runtime evidence. */
+	LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double high95Nanos, double low99Nanos,
+			double high99Nanos, double latentLow99Nanos, double latentHigh99Nanos, PriceBasis priceBasis,
+			boolean learnedDominanceAllowed, boolean quarantined, double nEff, long exactCompletedCount,
+			long latestObservedNanos, EvidenceSource evidenceSource, Components components, String reason) {
+		this(low95Nanos, expectedNanos, high95Nanos, low99Nanos, high99Nanos, latentLow99Nanos, latentHigh99Nanos,
+				priceBasis, learnedDominanceAllowed, quarantined, nEff, exactCompletedCount, latestObservedNanos,
+				evidenceSource, components, reason, null);
+	}
 
 	enum PriceBasis {
 		/** Feature model plus learned residual posterior: fully comparable. */
@@ -111,17 +122,20 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 	 * component (conservatively) enters. Either side lacking a numerical basis refuses displacement — that arm-locality
 	 * is what lets one unpriceable candidate coexist with a fully numerical frontier.
 	 * <p>
-	 * When <em>both</em> arms carry a latest completed time ({@link LmdbNativeLatestObservedLedger}) the confidence
-	 * machinery is skipped and the two measured times are compared directly against the margin. This is not an
-	 * optimization, it is the point: the confidence test exists to decide whether an <em>estimate</em> of a mean is
-	 * trustworthy, and a time the strategy has actually achieved is not an estimate. Keeping the test would defeat the
-	 * ledger — even with both arms' variances pinned at their floors (0.02 exact, 0.01 family) the pairwise sigma is
-	 * 0.245, so {@code Z99 * sigma + logGamma} demands a 2.08x gap, and the regression this whole mechanism was built
-	 * for is a 2x gap. Two arms that have each proved a time need no confidence interval between them; they need a
-	 * comparison.
+	 * When both arms carry a latest completed time, a substantial newly demonstrated gain still clears the margin
+	 * immediately. A smaller gain additionally needs a 99-percent confidence bound from comparable full-drain runtime
+	 * histories and agreement with the latest measured ordering. Its uncertainty describes the arithmetic elapsed mean,
+	 * rather than the geometric mean or the hierarchical model's prediction of one future run. Thus repeated reliable
+	 * evidence can distinguish a modest gain without treating an isolated noisy completion as proof or letting a stale
+	 * mean defeat a newly slower latest run.
 	 */
 	static boolean displaces(LmdbNativeCostPrediction challenger, LmdbNativeCostPrediction incumbent,
 			double logGamma) {
+		return displaces(challenger, incumbent, logGamma, true);
+	}
+
+	static boolean displaces(LmdbNativeCostPrediction challenger, LmdbNativeCostPrediction incumbent,
+			double logGamma, boolean allowMeasuredMean) {
 		if (!Double.isFinite(logGamma) || logGamma < 0.0) {
 			throw new IllegalArgumentException("finite nonnegative displacement margin required");
 		}
@@ -130,7 +144,18 @@ record LmdbNativeCostPrediction(double low95Nanos, double expectedNanos, double 
 			return false;
 		}
 		if (challenger.latestObservedNanos > 0L && incumbent.latestObservedNanos > 0L) {
-			return pairwiseDeltaMean(challenger, incumbent) < -logGamma;
+			double latestDelta = pairwiseDeltaMean(challenger, incumbent);
+			if (latestDelta < -logGamma) {
+				return true;
+			}
+			if (!allowMeasuredMean || !(latestDelta < 0.0)) {
+				return false;
+			}
+			LmdbNativeLatestObservedLedger.Evidence c = challenger.fullRuntimeEvidence;
+			LmdbNativeLatestObservedLedger.Evidence i = incumbent.fullRuntimeEvidence;
+			return c != null && i != null && c.regime().equals(i.regime()) && c.epoch() == i.epoch()
+					&& c.meanNanos() - i.meanNanos()
+							+ Z99 * StrictMath.sqrt(c.varianceOfMean() + i.varianceOfMean()) < 0.0;
 		}
 		return pairwiseDeltaMean(challenger, incumbent)
 				+ Z99 * StrictMath.sqrt(pairwiseDeltaVariance(challenger, incumbent)) < -logGamma;

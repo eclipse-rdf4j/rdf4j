@@ -37,6 +37,10 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>
  * This state is in-memory only and is deliberately not persisted with the posteriors: a current time is cheap to
  * re-earn, while a value restored from a sidecar could describe different hardware or load.
+ * <p>
+ * Full-run elapsed-runtime moments accompany the latest time. Their uncertainty permits a modest, repeatable
+ * improvement to win without treating one noisy completion as proof. Evidence strength decays with the configured
+ * posterior half-life; the latest price and the moments are captured from the same immutable entry.
  */
 final class LmdbNativeLatestObservedLedger {
 
@@ -54,7 +58,22 @@ final class LmdbNativeLatestObservedLedger {
 		}
 	}
 
-	private record Latest(long nanos, long epoch) {
+	/** Arithmetic full-run mean in nanoseconds and its variance in nanoseconds squared, after evidence decay. */
+	record Evidence(LmdbNativeRegimeKey regime, long epoch, double meanNanos, double varianceOfMean,
+			double effectiveStrength) {
+	}
+
+	record Snapshot(long latestNanos, Evidence evidence) {
+		private static final Snapshot EMPTY = new Snapshot(0L, null);
+	}
+
+	private record Latest(long nanos, long epoch, long observedMillis, double weight, double squaredWeight,
+			double meanNanos, double squaredDeviation) {
+	}
+
+	private static double decay(long nowMillis, long observedMillis, long halfLifeMillis) {
+		double ageMillis = nowMillis > observedMillis ? (double) nowMillis - observedMillis : 0.0;
+		return Math.exp(-Math.log(2.0) * ageMillis / halfLifeMillis);
 	}
 
 	private final boolean enabled;
@@ -81,11 +100,44 @@ final class LmdbNativeLatestObservedLedger {
 		return current == null || current.epoch != epoch ? 0L : current.nanos;
 	}
 
+	Snapshot snapshot(LmdbNativeCostPosteriorStore.ExactKey key, long epoch, long nowMillis,
+			LmdbNativePosteriorConfig config) {
+		Latest current = enabled ? latest.get(ExecutionKey.of(key)) : null;
+		if (current == null || current.epoch != epoch) {
+			return Snapshot.EMPTY;
+		}
+		double decay = decay(nowMillis, current.observedMillis, config.decayHalfLifeMillis());
+		double weight = current.weight * decay;
+		double squaredWeight = current.squaredWeight * decay * decay;
+		double denominator = weight > 0.0 ? weight - squaredWeight / weight : 0.0;
+		if (!(denominator > 0.0) || !(squaredWeight > 0.0)) {
+			return new Snapshot(current.nanos, null);
+		}
+		// Effective sample size alone does not weaken when every weight decays equally. The remaining total weight
+		// additionally limits confidence so old observations cannot remain decisive indefinitely.
+		double strength = Math.min(weight, weight * weight / squaredWeight);
+		// For log-runtime variance s², exp(s²)-1 is the corresponding squared coefficient of variation.
+		// Scaling that relative floor by the elapsed mean squared preserves nanosecond-squared units.
+		double varianceFloor = Math.expm1(config.noiseFloorLog()) * current.meanNanos * current.meanNanos;
+		double variance = Math.max(varianceFloor, current.squaredDeviation * decay / denominator);
+		double varianceOfMean = variance / strength;
+		Evidence evidence = strength > 0.0 && Double.isFinite(varianceOfMean)
+				? new Evidence(key.regime(), epoch, current.meanNanos, varianceOfMean, strength)
+				: null;
+		return new Snapshot(current.nanos, evidence);
+	}
+
 	/**
 	 * Offers one full, non-probe execution. Within one epoch the last completion callback wins; a newer epoch is never
 	 * replaced by an older one. A value is never compared with a previous epoch.
 	 */
 	synchronized void observe(LmdbNativeCostPosteriorStore.ExactKey key, long nanos, long epoch) {
+		observe(key, nanos, epoch, System.currentTimeMillis(),
+				LmdbNativePosteriorConfig.defaults().decayHalfLifeMillis());
+	}
+
+	synchronized void observe(LmdbNativeCostPosteriorStore.ExactKey key, long nanos, long epoch, long nowMillis,
+			long halfLifeMillis) {
 		if (!enabled || nanos <= 0L) {
 			return;
 		}
@@ -97,7 +149,19 @@ final class LmdbNativeLatestObservedLedger {
 		if (previous == null && latest.size() >= MAX_ENTRIES) {
 			return;
 		}
-		latest.put(execution, new Latest(nanos, epoch));
+		double value = nanos;
+		if (previous == null || previous.epoch != epoch) {
+			latest.put(execution, new Latest(nanos, epoch, nowMillis, 1.0, 1.0, value, 0.0));
+			return;
+		}
+		double decay = decay(nowMillis, previous.observedMillis, halfLifeMillis);
+		double priorWeight = previous.weight * decay;
+		double weight = priorWeight + 1.0;
+		double delta = value - previous.meanNanos;
+		double mean = previous.meanNanos + delta / weight;
+		double squaredDeviation = previous.squaredDeviation * decay + delta * (value - mean);
+		latest.put(execution, new Latest(nanos, epoch, Math.max(nowMillis, previous.observedMillis), weight,
+				previous.squaredWeight * decay * decay + 1.0, mean, Math.max(0.0, squaredDeviation)));
 	}
 
 	int size() {

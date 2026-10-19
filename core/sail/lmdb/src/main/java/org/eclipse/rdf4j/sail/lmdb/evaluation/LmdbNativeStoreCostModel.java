@@ -45,6 +45,7 @@ final class LmdbNativeStoreCostModel {
 	private final LmdbNativeSafetyLedger safetyLedger;
 	private final LmdbNativeProbeScheduler probeScheduler;
 	private final LongSupplier wallMillis;
+	private final LongSupplier monotonicNanos;
 	private final LmdbNativeCostModelPersistence persistence;
 
 	LmdbNativeStoreCostModel() {
@@ -69,7 +70,8 @@ final class LmdbNativeStoreCostModel {
 		this.posteriors = new LmdbNativeCostPosteriorStore(posteriorConfig);
 		this.regimeTracker = new LmdbNativeRegimeTracker(context);
 		this.changeDetector = new LmdbNativeChangeDetector(posteriorConfig);
-		this.safetyLedger = new LmdbNativeSafetyLedger(probeConfig, nanoTime);
+		this.monotonicNanos = Objects.requireNonNull(nanoTime, "nanoTime");
+		this.safetyLedger = new LmdbNativeSafetyLedger(probeConfig, monotonicNanos);
 		this.probeScheduler = new LmdbNativeProbeScheduler(probeConfig, wallMillis);
 		this.wallMillis = Objects.requireNonNull(wallMillis, "wallMillis");
 		this.persistence = context != null && context.dataDir() != null
@@ -135,6 +137,10 @@ final class LmdbNativeStoreCostModel {
 
 	long nowMillis() {
 		return wallMillis.getAsLong();
+	}
+
+	long nowNanos() {
+		return monotonicNanos.getAsLong();
 	}
 
 	/** Feature-count ratios for the exact variant, or identity when the variant has no accepted feature evidence. */

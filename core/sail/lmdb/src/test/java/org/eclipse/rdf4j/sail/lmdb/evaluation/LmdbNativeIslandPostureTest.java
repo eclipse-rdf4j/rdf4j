@@ -344,6 +344,11 @@ public class LmdbNativeIslandPostureTest {
 
 	private static final class VolatileIslandFunction implements Function {
 		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
+
+		@Override
 		public String getURI() {
 			return VOLATILE_ISLAND_URI;
 		}

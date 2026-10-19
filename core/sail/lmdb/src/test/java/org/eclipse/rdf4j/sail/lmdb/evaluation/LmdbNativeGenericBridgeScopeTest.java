@@ -107,6 +107,11 @@ public class LmdbNativeGenericBridgeScopeTest {
 	/** Records its argument (the NOW() literal) and accepts the row. Registered once per JVM. */
 	public static final class RecordNowFunction implements Function {
 		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
+
+		@Override
 		public String getURI() {
 			return RECORD_NOW_URI;
 		}
@@ -120,6 +125,11 @@ public class LmdbNativeGenericBridgeScopeTest {
 
 	/** Returns and records its NOW argument so a retained post-group extension can be checked by object identity. */
 	public static final class RecordLiteralNowFunction implements Function {
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
+
 		@Override
 		public String getURI() {
 			return RECORD_LITERAL_NOW_URI;
@@ -688,6 +698,11 @@ public class LmdbNativeGenericBridgeScopeTest {
 
 	private static Function recordLiteralNowFunction(String uri, List<Value> recorded) {
 		return new Function() {
+			@Override
+			public Determinism getDeterminism() {
+				return Determinism.VOLATILE;
+			}
+
 			@Override
 			public String getURI() {
 				return uri;

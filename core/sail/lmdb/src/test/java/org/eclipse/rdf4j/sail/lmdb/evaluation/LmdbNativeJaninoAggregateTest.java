@@ -30,8 +30,10 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterAll;
@@ -137,13 +139,22 @@ public class LmdbNativeJaninoAggregateTest {
 	}
 
 	private List<String> orderedRows(String query) {
+		return orderedRows(query, null);
+	}
+
+	private List<String> orderedRows(String query, String forcedStrategy) {
 		List<String> result = new ArrayList<>();
-		try (SailRepositoryConnection connection = repository.getConnection();
-				TupleQueryResult tupleResult = connection.prepareTupleQuery(QueryLanguage.SPARQL, query).evaluate()) {
-			while (tupleResult.hasNext()) {
-				BindingSet row = tupleResult.next();
-				result.add(row.getValue("interest").stringValue() + "|"
-						+ ((Literal) row.getValue("n")).longValue());
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery preparedQuery = (SailTupleQuery) connection.prepareTupleQuery(QueryLanguage.SPARQL, query);
+			if (forcedStrategy != null) {
+				preparedQuery.setForcedLmdbExecutionStrategy(forcedStrategy);
+			}
+			try (TupleQueryResult tupleResult = preparedQuery.evaluate()) {
+				while (tupleResult.hasNext()) {
+					BindingSet row = tupleResult.next();
+					result.add(row.getValue("interest").stringValue() + "|"
+							+ ((Literal) row.getValue("n")).longValue());
+				}
 			}
 		}
 		return result;
@@ -166,6 +177,14 @@ public class LmdbNativeJaninoAggregateTest {
 		}
 	}
 
+	private String groupedQueryTelemetry(String forcedStrategy) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(GROUPED_QUERY);
+			query.setForcedLmdbExecutionStrategy(forcedStrategy);
+			return query.explain(Explanation.Level.Telemetry).toString();
+		}
+	}
+
 	@Test
 	public void unusedValuesIdentityKeepsOrderedSpecialistParity() {
 		long expected;
@@ -185,12 +204,30 @@ public class LmdbNativeJaninoAggregateTest {
 	public void groupedCountDistinctEngagesKernelAndMatchesGeneric() {
 		List<String> expected = genericOrderedRows(GROUPED_QUERY);
 		assertEquals(2, expected.size(), "fixture should produce exactly two surviving groups");
-		for (int round = 0; round < 300 && LmdbNativeJaninoAggregate.OPENED.get() == 0L; round++) {
-			orderedRows(GROUPED_QUERY);
+		String previousSynchronous = System.getProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY);
+		// This explicit kernel-engagement check needs the first generated kernel to be ready before dispatch returns.
+		System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, "true");
+		try {
+			String janinoTelemetry = groupedQueryTelemetry(LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
+			assertTrue(janinoTelemetry.contains("nativeExecutionPath=janinoAggregate"),
+					() -> "forced Janino aggregate route did not execute; telemetry:\n" + janinoTelemetry);
+			List<String> actual = orderedRows(GROUPED_QUERY, LmdbNativeAttemptMetrics.PATH_JANINO_AGGREGATE);
+			assertTrue(LmdbNativeJaninoAggregate.PLANNED.get() > 0L, "aggregate shape was never recognized");
+			assertTrue(LmdbNativeJaninoAggregate.OPENED.get() > 0L, "aggregate kernel never opened");
+			assertTrue(LmdbNativeJaninoCodegen.COMPILATIONS.get() > 0L,
+					"synchronous validation did not successfully compile the grouped kernel");
+			assertEquals(0L, LmdbNativeJaninoCodegen.COMPILE_FAILURES.get(),
+					"grouped kernel compilation failed during synchronous validation");
+			assertEquals(0L, LmdbNativeJaninoCodegen.PENDING_COMPILES.get(),
+					"synchronous validation left an unfinished grouped kernel compile");
+			assertEquals(expected, actual);
+		} finally {
+			if (previousSynchronous == null) {
+				System.clearProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY);
+			} else {
+				System.setProperty(LmdbNativeJaninoCodegen.SYNCHRONOUS_PROPERTY, previousSynchronous);
+			}
 		}
-		assertTrue(LmdbNativeJaninoAggregate.PLANNED.get() > 0L, "aggregate shape was never recognized");
-		assertTrue(LmdbNativeJaninoAggregate.OPENED.get() > 0L, "aggregate kernel never opened");
-		assertEquals(expected, orderedRows(GROUPED_QUERY));
 	}
 
 	@Test

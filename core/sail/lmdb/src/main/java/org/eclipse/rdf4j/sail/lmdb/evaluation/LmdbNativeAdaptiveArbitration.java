@@ -703,7 +703,7 @@ final class LmdbNativeAdaptiveArbitration {
 		boolean orderLosing = candidateKey.strategyFamily().equals(incumbentKey.strategyFamily())
 				&& incumbentKey.propertyPreserving() && !candidateKey.propertyPreserving();
 		return LmdbNativeCostPrediction.displaces(candidate.prediction, incumbent.prediction,
-				orderLosing ? logGammaOrderLosing : logGamma);
+				orderLosing ? logGammaOrderLosing : logGamma, !orderLosing);
 	}
 
 	record Priced<T> (Candidate<T> candidate, LmdbNativeCostPrediction prediction) {

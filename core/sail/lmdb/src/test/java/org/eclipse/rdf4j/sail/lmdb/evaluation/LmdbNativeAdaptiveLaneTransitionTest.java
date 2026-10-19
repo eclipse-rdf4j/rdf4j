@@ -140,6 +140,71 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	}
 
 	@Test
+	public void latestLedgerKeepsArithmeticMomentsConsistentAcrossDecayAndEpochChanges() {
+		var ledger = new LmdbNativeLatestObservedLedger(true);
+		var exact = key(estimate("ledger-arithmetic"), LmdbNativeCostPosteriorStore.Lane.DIRECT);
+		var config = LmdbNativePosteriorConfig.defaults();
+		long observedAt = 1_000_000L;
+		long halfLife = config.decayHalfLifeMillis();
+		ledger.observe(exact, 100L, 7L, observedAt, halfLife);
+		ledger.observe(exact, 300L, 7L, observedAt, halfLife);
+
+		var fresh = ledger.snapshot(exact, 7L, observedAt, config);
+		check(fresh.latestNanos() == 300L, "snapshot did not retain the latest elapsed runtime");
+		check(fresh.evidence() != null && Math.abs(fresh.evidence().meanNanos() - 200.0) < 1e-9,
+				"full-run evidence must use arithmetic elapsed-time mean");
+		check(fresh.evidence().effectiveStrength() == 2.0, "two fresh runs must carry weight two");
+
+		var stale = ledger.snapshot(exact, 7L, observedAt + halfLife, config);
+		check(stale.latestNanos() == fresh.latestNanos(), "decay must not alter the latest observed price");
+		check(stale.evidence() != null && Math.abs(stale.evidence().meanNanos() - fresh.evidence().meanNanos()) < 1e-9,
+				"age must reduce confidence without moving the elapsed mean");
+		check(stale.evidence().effectiveStrength() < fresh.evidence().effectiveStrength(),
+				"full-run evidence strength must decay with the configured half-life");
+		check(stale.evidence().varianceOfMean() > fresh.evidence().varianceOfMean(),
+				"aged full-run evidence must have wider uncertainty");
+
+		ledger.observe(exact, 80L, 8L, observedAt + halfLife, halfLife);
+		var newEpochFirst = ledger.snapshot(exact, 8L, observedAt + halfLife, config);
+		check(ledger.latestNanos(exact, 7L) == 0L, "an epoch bump must hide the previous full-run price");
+		check(newEpochFirst.latestNanos() == 80L && newEpochFirst.evidence() == null,
+				"a new epoch starts with one current price but no variance estimate");
+		ledger.observe(exact, 900L, 7L, observedAt + halfLife + 1L, halfLife);
+		check(ledger.latestNanos(exact, 8L) == 80L, "a stale completion cannot overwrite the new epoch");
+		ledger.observe(exact, 60L, 8L, observedAt + halfLife + 2L, halfLife);
+		var newEpochPair = ledger.snapshot(exact, 8L, observedAt + halfLife + 2L, config);
+		check(newEpochPair.evidence() != null && Math.abs(newEpochPair.evidence().meanNanos() - 70.0) < 0.01,
+				"new-epoch moments must contain only the current epoch's 80 and 60 ns completions");
+		check(fresh.latestNanos() == 300L && Math.abs(fresh.evidence().meanNanos() - 200.0) < 1e-9,
+				"a previously captured snapshot must remain internally consistent after later updates");
+	}
+
+	@Test
+	public void latestLedgerRejectsInvalidDisabledAndOverCapacityEntries() {
+		var invalid = new LmdbNativeLatestObservedLedger(true);
+		var invalidKey = ledgerKey("ledger-invalid");
+		invalid.observe(invalidKey, 0L, 0L);
+		invalid.observe(invalidKey, -1L, 0L);
+		check(invalid.size() == 0 && invalid.latestNanos(invalidKey, 0L) == 0L,
+				"zero and negative elapsed times cannot become completed evidence");
+
+		var disabled = new LmdbNativeLatestObservedLedger(false);
+		disabled.observe(invalidKey, 1L, 0L);
+		check(disabled.size() == 0 && disabled.latestNanos(invalidKey, 0L) == 0L,
+				"a disabled ledger must not retain even valid full-run times");
+
+		var capped = new LmdbNativeLatestObservedLedger(true);
+		int capacity = LmdbNativeCostPosteriorStore.MAX_VARIANTS_PER_SUBPOPULATION;
+		for (int i = 0; i < capacity; i++) {
+			capped.observe(ledgerKey("ledger-cap-" + i), i + 1L, 1L);
+		}
+		var overflow = ledgerKey("ledger-cap-overflow");
+		capped.observe(overflow, 777L, 1L);
+		check(capped.size() == capacity, "the ledger must retain its configured entry bound");
+		check(capped.latestNanos(overflow, 1L) == 0L, "an over-capacity variant must not evict retained evidence");
+	}
+
+	@Test
 	public void probesDoNotReplaceFullRunPricesAcrossLanes() {
 		Fixture f = new Fixture();
 		var arm = estimate("irAggregate");
@@ -231,6 +296,13 @@ public class LmdbNativeAdaptiveLaneTransitionTest {
 	private static LmdbNativeCostPosteriorStore.ExactKey key(LmdbNativeCostEstimate arm,
 			LmdbNativeCostPosteriorStore.Lane lane) {
 		return LmdbNativeCostPosteriorStore.ExactKey.of(LmdbNativeRegimeKey.STEADY, lane, arm.variantKey());
+	}
+
+	private static LmdbNativeCostPosteriorStore.ExactKey ledgerKey(String family) {
+		return LmdbNativeCostPosteriorStore.ExactKey.of(LmdbNativeRegimeKey.STEADY,
+				LmdbNativeCostPosteriorStore.Lane.DIRECT, LmdbNativePhysicalVariantKey.builder(family)
+						.physicalOrderAndProperties(family)
+						.build());
 	}
 
 	private static LmdbNativeCostEstimate estimate(String family) {

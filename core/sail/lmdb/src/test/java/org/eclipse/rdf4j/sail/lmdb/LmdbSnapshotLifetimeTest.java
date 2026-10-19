@@ -83,9 +83,11 @@ class LmdbSnapshotLifetimeTest {
 		if (format == 6 && store == null) {
 			LmdbCompatibilityFixtures.extract("v6-tiny-map-inline-" + inline + ".zip", directory);
 		}
+		// These cases explicitly exercise retirement and ID reuse for legacy-format stores.
 		store = new LmdbStore(directory.toFile(), new LmdbStoreConfig("spoc,posc,ospc")
 				.setTripleTermIndexes("spoc,cspo")
 				.setInlineLiterals(inline)
+				.setLegacyReferenceCountRepairEnabled(true)
 				.setTripleDBSize(tripleMapSize)
 				.setValueDBSize(8L * 1024 * 1024)
 				.setForceSync(true)

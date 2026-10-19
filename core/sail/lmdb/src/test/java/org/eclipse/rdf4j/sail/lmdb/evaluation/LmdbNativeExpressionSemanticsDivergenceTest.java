@@ -26,11 +26,11 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.AfterEach;
@@ -186,7 +186,11 @@ public class LmdbNativeExpressionSemanticsDivergenceTest {
 		String previous = System.getProperty(NATIVE_FLAG);
 		System.setProperty(NATIVE_FLAG, Boolean.toString(nativeEnabled));
 		try (SailRepositoryConnection conn = repository.getConnection()) {
-			TupleQuery prepared = conn.prepareTupleQuery(query);
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			if (nativeEnabled) {
+				// This fixture exercises native batch semantics; adaptive winner can depend on learned strategy costs.
+				prepared.setForcedLmdbExecutionStrategy("batch");
+			}
 			List<BindingSet> result = QueryResults.asList(prepared.evaluate());
 			String telemetry = prepared.explain(Explanation.Level.Telemetry).toString();
 			if (nativeEnabled) {

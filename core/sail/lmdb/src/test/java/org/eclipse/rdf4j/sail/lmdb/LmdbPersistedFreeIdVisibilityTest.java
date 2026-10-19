@@ -50,7 +50,9 @@ class LmdbPersistedFreeIdVisibilityTest {
 	void oldPairedLookupDoesNotBorrowReadyReplacementOfPersistedFreeId(int format, Shape shape, boolean completed,
 			@TempDir Path directory) throws Exception {
 		File valuesDirectory = directory.resolve("values").toFile();
-		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false);
+		// This fixture explicitly exercises retirement and ID reuse, including legacy format 2.
+		LmdbStoreConfig config = new LmdbStoreConfig().setInlineLiterals(false)
+				.setLegacyReferenceCountRepairEnabled(true);
 		Value original = format == LmdbStoreFormat.LEGACY_VERSION
 				? VF.createBNode("persisted-free-retired")
 				: shape.value(false);

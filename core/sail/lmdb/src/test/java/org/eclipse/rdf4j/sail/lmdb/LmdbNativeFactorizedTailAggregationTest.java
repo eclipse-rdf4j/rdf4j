@@ -316,7 +316,7 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			System.setProperty(NATIVE_FLAG, "true");
 			function.reset();
 			assertThat(strategy(query))
-					.as("an extension function without an affirmative purity contract must stay at its row boundary")
+					.as("an explicitly volatile extension function must stay at its row boundary")
 					.isEqualTo("aggState");
 		} finally {
 			registry.remove(function);
@@ -782,6 +782,11 @@ public class LmdbNativeFactorizedTailAggregationTest {
 	private static final class CallIndexFunction implements Function {
 		private final AtomicInteger aCalls = new AtomicInteger();
 		private final AtomicInteger bCalls = new AtomicInteger();
+
+		@Override
+		public Determinism getDeterminism() {
+			return Determinism.VOLATILE;
+		}
 
 		@Override
 		public String getURI() {

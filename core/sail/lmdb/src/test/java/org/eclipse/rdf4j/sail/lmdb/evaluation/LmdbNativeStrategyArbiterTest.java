@@ -18,9 +18,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.explanation.Explanation;
@@ -196,6 +200,7 @@ public class LmdbNativeStrategyArbiterTest {
 	@org.junit.jupiter.api.BeforeEach
 	public void isolateFromLearnedCalibration() {
 		LmdbNativeCostCalibration.reset();
+		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
 	}
 
 	@org.junit.jupiter.api.AfterEach
@@ -203,6 +208,7 @@ public class LmdbNativeStrategyArbiterTest {
 		LmdbNativeCostCalibration.reset();
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
+		System.clearProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
 		System.clearProperty(LmdbNativeStrategyProposal.PARALLEL_STARTUP_COST_PROPERTY);
 		System.clearProperty(LmdbNativeParallelPipelines.MIN_WORK_ESTIMATE_PROPERTY);
 		System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
@@ -281,6 +287,543 @@ public class LmdbNativeStrategyArbiterTest {
 				.as("a million-fold static work gap exceeds any family speed ratio; the cold model may not retain "
 						+ "the absurd candidate on structural preference alone")
 				.isEqualTo(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	@Test
+	public void mixedCalibrationUnitsPreserveStructuralPreferenceAcrossCandidateOrder() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 50_000D, 2);
+
+		List<List<LmdbNativeStrategyProposal<String>>> candidateOrders = List.of(
+				List.of(proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 12D),
+						proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 12D)),
+				List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 12D),
+						proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 12D)));
+
+		List<String> winners = candidateOrders.stream()
+				.map(LmdbNativeStrategyArbiterTest::adaptiveWinner)
+				.toList();
+		assertThat(winners)
+				.as("one measured arm must not compare nanoseconds with its rival's raw work units, regardless of offer order")
+				.containsExactly(LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_BATCH);
+	}
+
+	@Test
+	public void balancedCalibrationRetainsStructuralPreferenceAcrossCandidateOrder() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		measure(LmdbNativeAttemptMetrics.PATH_BATCH, 50_000D, 2);
+		measure(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 50_000D, 2);
+
+		List<List<LmdbNativeStrategyProposal<String>>> candidateOrders = List.of(
+				List.of(proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 12D),
+						proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 12D)),
+				List.of(proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 12D),
+						proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 12D)));
+
+		List<String> winners = candidateOrders.stream()
+				.map(LmdbNativeStrategyArbiterTest::adaptiveWinner)
+				.toList();
+		assertThat(winners)
+				.as("equal calibration evidence leaves the structural tie-break in control, regardless of offer order")
+				.containsExactly(LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_BATCH);
+	}
+
+	@Test
+	public void defaultOnColdAdaptiveSelectionPrefersEligibleSpecialistsAcrossSubsetsAndOrders() {
+		assertThat(LmdbNativeAdaptiveCostModel.Configuration.system().enabled())
+				.as("learned dispatch is on by default during a cold start")
+				.isTrue();
+
+		List<List<String>> eligibleSubsets = List.of(
+				List.of(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE,
+						LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP),
+				List.of(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeAttemptMetrics.PATH_BATCH,
+						LmdbNativeAttemptMetrics.PATH_NESTED_LOOP),
+				List.of(LmdbNativeAttemptMetrics.PATH_BATCH, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP),
+				List.of(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP),
+				List.of(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP));
+		for (List<String> eligibleTags : eligibleSubsets) {
+			// Routes outside this subset are structurally ineligible and have no proposal to rank.
+			List<LmdbNativeStrategyProposal<String>> eligible = eligibleTags.stream()
+					.map(tag -> proposal(tag, 1_000D))
+					.toList();
+			String expected = structuralWinner(eligible);
+			for (List<LmdbNativeStrategyProposal<String>> order : candidateOrders(eligible)) {
+				assertThat(adaptiveWinner(order))
+						.as("cold equal-work selection among only eligible proposals")
+						.isEqualTo(expected);
+			}
+		}
+
+		LmdbNativeCostCalibration.reset();
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		measure(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, 0.01D, 2);
+		List<LmdbNativeStrategyProposal<String>> partiallyCalibrated = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D));
+		for (List<LmdbNativeStrategyProposal<String>> order : candidateOrders(partiallyCalibrated)) {
+			assertThat(adaptiveWinner(order))
+					.as("partial scalar history for packedFtree cannot mix nanoseconds with raw work")
+					.isEqualTo(LmdbNativeAttemptMetrics.PATH_IR_KERNEL);
+		}
+	}
+
+	@Test
+	public void coldSelectionReranksAfterMostSpecializedProposalDeclines() throws IOException {
+		List<LmdbNativeStrategyProposal<String>> candidates = List.of(
+				proposal(LmdbNativeAttemptMetrics.PATH_IR_KERNEL, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_PACKED_FTREE, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_BATCH, 1_000D),
+				proposal(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000D));
+		for (List<LmdbNativeStrategyProposal<String>> order : candidateOrders(candidates)) {
+			try (LmdbNativeStrategyArbiter<String> arbiter = LmdbNativeStrategyArbiter.forModel(null, -1D,
+					measuredModel())) {
+				for (LmdbNativeStrategyProposal<String> candidate : order) {
+					if (LmdbNativeAttemptMetrics.PATH_IR_KERNEL.equals(candidate.tag)) {
+						arbiter.offer(() -> new LmdbNativeStrategyProposal<>(() -> null, candidate.work,
+								candidate.tag, () -> {
+								}));
+					} else {
+						arbiter.offer(() -> proposal(candidate.tag, candidate.work));
+					}
+				}
+				arbiter.offer(() -> null);
+
+				String expected = structuralWinner(order.stream()
+						.filter(candidate -> !LmdbNativeAttemptMetrics.PATH_IR_KERNEL.equals(candidate.tag))
+						.toList());
+				assertThat(arbiter.select())
+						.as("the absent ineligible route is ignored, and a declining IR route yields to the best remaining arm")
+						.isEqualTo(expected);
+			}
+		}
+	}
+
+	private enum ScalarCalibration {
+		NONE,
+		PARTIAL,
+		BALANCED_STALE,
+		FULL_STALE
+	}
+
+	private static List<String> measuredStrategyTags() {
+		return List.of(LmdbNativeAttemptMetrics.PATH_FACTORIZED_ROWS, LmdbNativeAttemptMetrics.PATH_BATCH,
+				LmdbNativeAttemptMetrics.PATH_PARALLEL_PIPELINES, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL, LmdbNativeAttemptMetrics.PATH_PACKED_FTREE);
+	}
+
+	private static List<LmdbNativeStrategyProposal<String>> measuredStrategySet(double work) {
+		return measuredStrategyTags().stream()
+				.map(tag -> proposal(tag, work))
+				.toList();
+	}
+
+	private static LmdbNativeAdaptiveCostModel measuredModel() {
+		return new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), new LmdbNativeStoreCostModel(),
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+	}
+
+	private static Map<String, List<Long>> constantRuntimes(
+			List<LmdbNativeStrategyProposal<String>> candidates, String fastestTag, long fastestNanos,
+			long otherNanos) {
+		return constantRuntimes(candidates, fastestTag, fastestNanos, otherNanos,
+				Math.toIntExact(LmdbNativeAdaptiveArbitration.CONFIRMATION_FLOOR + 1L));
+	}
+
+	private static Map<String, List<Long>> constantRuntimes(
+			List<LmdbNativeStrategyProposal<String>> candidates, String fastestTag, long fastestNanos,
+			long otherNanos, int rounds) {
+		Map<String, List<Long>> result = new LinkedHashMap<>();
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			long nanos = candidate.tag.equals(fastestTag) ? fastestNanos : otherNanos;
+			result.put(candidate.tag, Collections.nCopies(rounds, nanos));
+		}
+		return result;
+	}
+
+	private static void recordNormalCompletions(LmdbNativeAdaptiveCostModel model,
+			List<LmdbNativeStrategyProposal<String>> candidates, Map<String, List<Long>> runtimes) {
+		AtomicLong clock = new AtomicLong();
+		Map<String, LmdbNativeCostEstimate> estimates = new LinkedHashMap<>();
+		int rounds = 0;
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			List<Long> samples = runtimes.get(candidate.tag);
+			assertThat(samples).as("complete timing samples for %s", candidate.tag).isNotNull().isNotEmpty();
+			estimates.put(candidate.tag, candidate.adaptiveEstimate(-1D));
+			rounds = Math.max(rounds, samples.size());
+		}
+		for (int round = 0; round < rounds; round++) {
+			for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+				List<Long> samples = runtimes.get(candidate.tag);
+				if (round >= samples.size()) {
+					continue;
+				}
+				LmdbNativeCostEstimate estimate = estimates.get(candidate.tag);
+				long elapsedNanos = samples.get(round);
+				// Injected nanosecond time makes policy assertions deterministic without changing the production clock.
+				LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model, clock::get);
+				clock.addAndGet(elapsedNanos);
+				observation.exhausted();
+				assertThat(observation.snapshot().completion())
+						.as("every sample must be a full normal completion for %s", candidate.tag)
+						.isEqualTo(LmdbNativeCostObservation.Completion.EXHAUSTED);
+			}
+		}
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			LmdbNativeCostEstimate estimate = estimates.get(candidate.tag);
+			List<Long> samples = runtimes.get(candidate.tag);
+			assertThat(model.predict(estimate).latestObservedNanos())
+					.as("the exact current-shape latest price for %s comes from the last full run", candidate.tag)
+					.isEqualTo(samples.get(samples.size() - 1));
+		}
+	}
+
+	private static List<List<LmdbNativeStrategyProposal<String>>> candidateOrders(
+			List<LmdbNativeStrategyProposal<String>> candidates) {
+		List<LmdbNativeStrategyProposal<String>> reversed = new ArrayList<>(candidates);
+		Collections.reverse(reversed);
+		List<LmdbNativeStrategyProposal<String>> rotated = new ArrayList<>(candidates);
+		Collections.rotate(rotated, 2);
+		return List.of(candidates, reversed, rotated);
+	}
+
+	private static String structuralWinner(List<LmdbNativeStrategyProposal<String>> candidates) {
+		return candidates.stream()
+				.min(Comparator.comparingInt(candidate -> LmdbNativeStrategyPreference.rank(candidate.tag)))
+				.orElseThrow().tag;
+	}
+
+	private static void seedLegacyScalarHistory(ScalarCalibration calibration,
+			List<LmdbNativeStrategyProposal<String>> candidates, String fastestTag) {
+		LmdbNativeCostCalibration.reset();
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		switch (calibration) {
+		case NONE -> {
+		}
+		case PARTIAL -> {
+			String staleTag = LmdbNativeAttemptMetrics.PATH_BATCH.equals(fastestTag)
+					? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP
+					: LmdbNativeAttemptMetrics.PATH_BATCH;
+			measure(staleTag, 50_000D, 4);
+		}
+		case BALANCED_STALE -> {
+			for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+				measure(candidate.tag, 50_000D, 4);
+			}
+		}
+		case FULL_STALE -> {
+			for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+				double staleNanosPerUnit = candidate.tag.equals(fastestTag) ? 50_000D : 1D;
+				measure(candidate.tag, staleNanosPerUnit, 4);
+			}
+		}
+		}
+	}
+
+	@Test
+	public void currentShapeFullRunsSelectTheMeasuredFastestFamilyAcrossOfferOrdersAndScalarHistories() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		for (String fastestTag : measuredStrategyTags()) {
+			for (ScalarCalibration calibration : ScalarCalibration.values()) {
+				List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+				seedLegacyScalarHistory(calibration, candidates, fastestTag);
+				LmdbNativeAdaptiveCostModel model = measuredModel();
+				recordNormalCompletions(model, candidates,
+						constantRuntimes(candidates, fastestTag, 5_000_000L, 100_000_000L));
+
+				for (List<LmdbNativeStrategyProposal<String>> order : candidateOrders(candidates)) {
+					int index = LmdbNativeStrategyArbiter.rankAdaptive(order, -1D, model);
+					assertThat(index >= 0 ? order.get(index).tag : null)
+							.as("%s has the latest full-run time of 5 ms versus 100 ms for every rival; scalar history=%s",
+									fastestTag, calibration)
+							.isEqualTo(fastestTag);
+				}
+			}
+		}
+	}
+
+	@Test
+	public void slightlyFasterMatureFullRunDisplacesHigherPreferenceCandidate() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<String> selected = new ArrayList<>();
+		List<String> expected = new ArrayList<>();
+		for (String fastestTag : measuredStrategyTags()) {
+			for (ScalarCalibration calibration : List.of(ScalarCalibration.NONE, ScalarCalibration.PARTIAL,
+					ScalarCalibration.BALANCED_STALE)) {
+				List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+				seedLegacyScalarHistory(calibration, candidates, fastestTag);
+				LmdbNativeAdaptiveCostModel model = measuredModel();
+				recordNormalCompletions(model, candidates,
+						constantRuntimes(candidates, fastestTag, 95_000_000L, 100_000_000L, 512));
+
+				for (List<LmdbNativeStrategyProposal<String>> order : candidateOrders(candidates)) {
+					int index = LmdbNativeStrategyArbiter.rankAdaptive(order, -1D, model);
+					selected.add(index >= 0 ? order.get(index).tag : null);
+					expected.add(fastestTag);
+				}
+			}
+		}
+		assertThat(selected)
+				.as("512 paired full NORMAL runs at 95 ms beat 100 ms rivals across every strategy family, offer order, "
+						+ "partial scalar history, and balanced stale scalar history")
+				.containsExactlyElementsOf(expected);
+	}
+
+	@Test
+	public void lowerGeometricRuntimeDoesNotDisplaceLowerArithmeticMean() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+		String challenger = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+		String stable = structuralWinner(candidates.stream()
+				.filter(candidate -> !candidate.tag.equals(challenger))
+				.toList());
+		Map<String, List<Long>> runtimes = new LinkedHashMap<>();
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			long steadyNanos = candidate.tag.equals(challenger) ? 95_000_000L : 100_000_000L;
+			List<Long> samples = new ArrayList<>(Collections.nCopies(512, steadyNanos));
+			if (candidate.tag.equals(challenger)) {
+				// One tail run makes the arithmetic average slower despite a lower geometric mean and latest time.
+				samples.set(0, 10_000_000_000L);
+			}
+			runtimes.put(candidate.tag, samples);
+		}
+		LmdbNativeAdaptiveCostModel model = measuredModelWithSlowChangeDetection();
+		recordNormalCompletions(model, candidates, runtimes);
+
+		double challengerArithmeticMean = runtimes.get(challenger)
+				.stream()
+				.mapToLong(Long::longValue)
+				.average()
+				.orElseThrow();
+		double stableArithmeticMean = runtimes.get(stable)
+				.stream()
+				.mapToLong(Long::longValue)
+				.average()
+				.orElseThrow();
+		double challengerGeometricMean = StrictMath.exp(runtimes.get(challenger)
+				.stream()
+				.mapToDouble(value -> StrictMath.log(value.doubleValue()))
+				.average()
+				.orElseThrow());
+		double stableGeometricMean = StrictMath.exp(runtimes.get(stable)
+				.stream()
+				.mapToDouble(value -> StrictMath.log(value.doubleValue()))
+				.average()
+				.orElseThrow());
+		assertThat(challengerArithmeticMean)
+				.as("one 10-second tail among 512 complete runs makes nestedLoop slower on arithmetic mean")
+				.isGreaterThan(stableArithmeticMean);
+		assertThat(challengerGeometricMean)
+				.as("the same history has a lower geometric mean, which cannot stand in for elapsed time")
+				.isLessThan(stableGeometricMean);
+
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+		assertThat(index >= 0 ? candidates.get(index).tag : null)
+				.as("arithmetic evidence rejects the tail-heavy arm; structural order selects the fastest remaining tier")
+				.isEqualTo(stable);
+	}
+
+	private static LmdbNativeAdaptiveCostModel measuredModelWithSlowChangeDetection() {
+		LmdbNativePosteriorConfig defaults = LmdbNativePosteriorConfig.defaults();
+		LmdbNativePosteriorConfig config = new LmdbNativePosteriorConfig(defaults.noiseFloorLog(),
+				defaults.noiseInitialLog(), defaults.varianceFloorExact(), defaults.varianceFloorFamily(),
+				defaults.varianceFloorGlobal(), defaults.priorVarianceExact(), defaults.priorVarianceFamily(),
+				defaults.priorVarianceGlobal(), defaults.huberSigmas(), defaults.decayHalfLifeMillis(),
+				defaults.displacementLogGamma(), defaults.displacementLogGammaOrderLosing(),
+				defaults.cooldownTtlMillis(),
+				defaults.changeDetectorDelta(), 1_000_000_000D, defaults.persistStaleHalfLifeMillis(),
+				defaults.persistKappa(),
+				defaults.persistPrecisionCap());
+		LmdbNativeStoreCostModel store = new LmdbNativeStoreCostModel(null, config, () -> 1_000L);
+		return new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(), store,
+				new LmdbNativeAdaptiveCostModel.Configuration(true, true));
+	}
+
+	@Test
+	public void overlappingNoisyRunsWithOneFasterLatestPriceDoNotInventConfidence() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+		String apparentWinner = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		Map<String, List<Long>> runtimes = new LinkedHashMap<>();
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			List<Long> samples = new ArrayList<>();
+			for (int round = 0; round < 512; round++) {
+				samples.add((round & 1) == 0 ? 95_000_000L : 105_000_000L);
+			}
+			samples.set(511, candidate.tag.equals(apparentWinner) ? 95_000_000L : 100_000_000L);
+			runtimes.put(candidate.tag, samples);
+		}
+		recordNormalCompletions(model, candidates, runtimes);
+
+		LmdbNativeStrategyProposal<String> lowerLatest = candidates.stream()
+				.filter(candidate -> candidate.tag.equals(apparentWinner))
+				.findFirst()
+				.orElseThrow();
+		assertThat(model.predict(lowerLatest.adaptiveEstimate(-1D)).latestObservedNanos())
+				.as("nestedLoop's last 95 ms price is less than 10% below the rivals' last 100 ms prices")
+				.isEqualTo(95_000_000L);
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+		assertThat(index >= 0 ? candidates.get(index).tag : null)
+				.as("512 paired noisy runs have overlapping timing distributions despite one lower latest price")
+				.isEqualTo(structuralWinner(candidates));
+	}
+
+	@Test
+	public void slowerLatestRunBlocksAStatisticallyFasterHistoricalMean() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+		String challenger = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		Map<String, List<Long>> runtimes = new LinkedHashMap<>();
+		for (LmdbNativeStrategyProposal<String> candidate : candidates) {
+			long steadyNanos = candidate.tag.equals(challenger) ? 95_000_000L : 100_000_000L;
+			List<Long> samples = new ArrayList<>(Collections.nCopies(512, steadyNanos));
+			samples.add(candidate.tag.equals(challenger) ? 110_000_000L : 100_000_000L);
+			runtimes.put(candidate.tag, samples);
+		}
+		recordNormalCompletions(model, candidates, runtimes);
+
+		LmdbNativeStrategyProposal<String> nestedLoop = candidates.stream()
+				.filter(candidate -> candidate.tag.equals(challenger))
+				.findFirst()
+				.orElseThrow();
+		LmdbNativeCostPrediction nestedPrice = model.predict(nestedLoop.adaptiveEstimate(-1D));
+		LmdbNativeCostPrediction factorizedPrice = model.predict(candidates.get(0).adaptiveEstimate(-1D));
+		assertThat(nestedPrice.latestObservedNanos()).isEqualTo(110_000_000L);
+		assertThat(nestedPrice.fullRuntimeEvidence().meanNanos())
+				.as("the historical arithmetic mean still favours nestedLoop")
+				.isLessThan(factorizedPrice.fullRuntimeEvidence().meanNanos());
+
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+		assertThat(index >= 0 ? candidates.get(index).tag : null)
+				.as("a newly slower latest completion cannot be displaced by an older fast-run mean")
+				.isEqualTo(structuralWinner(candidates));
+	}
+
+	@Test
+	public void modestMeanWinCannotOverrideSameFamilyPropertyPreservation() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		String family = "same-family";
+		LmdbNativeCostEstimate preserving = estimateWithProperties(family, "ordered", true);
+		LmdbNativeCostEstimate orderLosing = estimateWithProperties(family, "hashed", false);
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		recordFullRuns(model, preserving, 100_000_000L, 512);
+		recordFullRuns(model, orderLosing, 95_000_000L, 512);
+		LmdbNativeCostPrediction preservingPrice = model.predict(preserving);
+		LmdbNativeCostPrediction orderLosingPrice = model.predict(orderLosing);
+		assertThat(orderLosingPrice.fullRuntimeEvidence().meanNanos())
+				.as("the rewrite has a mature but modest elapsed-time mean advantage")
+				.isLessThan(preservingPrice.fullRuntimeEvidence().meanNanos());
+
+		var preservingCandidate = new LmdbNativeAdaptiveArbitration.Candidate<String>(preserving, 0,
+				observation -> "preserving");
+		var orderLosingCandidate = new LmdbNativeAdaptiveArbitration.Candidate<String>(orderLosing, 1,
+				observation -> "order-losing");
+		var selected = LmdbNativeAdaptiveArbitration.selectWithinFrontier(List.of(
+				new LmdbNativeAdaptiveArbitration.Priced<>(preservingCandidate, preservingPrice),
+				new LmdbNativeAdaptiveArbitration.Priced<>(orderLosingCandidate, orderLosingPrice)), 0.10, 0.35);
+		assertThat(selected.candidate()).isSameAs(preservingCandidate);
+	}
+
+	private static LmdbNativeCostEstimate estimateWithProperties(String family, String properties,
+			boolean propertyPreserving) {
+		LmdbNativePhysicalVariantKey key = LmdbNativePhysicalVariantKey.builder(family)
+				.physicalOrderAndProperties(properties)
+				.propertyPreserving(propertyPreserving)
+				.build();
+		LmdbNativeCostVector work = LmdbNativeCostVector.point(LmdbNativeCostVector.Feature.SCANNED_ROW, 1_000D);
+		return new LmdbNativeCostEstimate(key, LmdbNativeCostVector.zero(), work, 1_000D, 0.1D);
+	}
+
+	private static void recordFullRuns(LmdbNativeAdaptiveCostModel model, LmdbNativeCostEstimate estimate,
+			long elapsedNanos, int count) {
+		AtomicLong clock = new AtomicLong();
+		for (int i = 0; i < count; i++) {
+			LmdbNativeCostObservation observation = new LmdbNativeCostObservation(estimate, model, clock::get);
+			clock.addAndGet(elapsedNanos);
+			observation.exhausted();
+		}
+	}
+
+	@Test
+	public void overlappingNoisyFullRunsRetainStructuralPreference() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		Map<String, List<Long>> runtimes = new LinkedHashMap<>();
+		long[][] samples = {
+				{ 100_000_000L, 105_000_000L, 95_000_000L, 102_000_000L, 98_000_000L, 100_000_000L },
+				{ 100_000_000L, 95_000_000L, 105_000_000L, 99_000_000L, 101_000_000L, 100_000_000L },
+				{ 100_000_000L, 102_000_000L, 98_000_000L, 105_000_000L, 95_000_000L, 100_000_000L },
+				{ 100_000_000L, 98_000_000L, 102_000_000L, 95_000_000L, 105_000_000L, 100_000_000L },
+				{ 100_000_000L, 101_000_000L, 99_000_000L, 105_000_000L, 95_000_000L, 100_000_000L },
+				{ 100_000_000L, 99_000_000L, 101_000_000L, 95_000_000L, 105_000_000L, 100_000_000L }
+		};
+		for (int i = 0; i < candidates.size(); i++) {
+			List<Long> values = new ArrayList<>();
+			for (long sample : samples[i]) {
+				values.add(sample);
+			}
+			runtimes.put(candidates.get(i).tag, values);
+		}
+		recordNormalCompletions(model, candidates, runtimes);
+
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, model);
+		assertThat(index >= 0 ? candidates.get(index).tag : null)
+				.as("the six low-noise samples overlap and end at the same 100 ms latest price")
+				.isEqualTo(structuralWinner(candidates));
+	}
+
+	@Test
+	public void coldDefaultEnabledAndExplicitlyDisabledModelsDoNotInventAFastestArm() {
+		System.clearProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY);
+		List<LmdbNativeStrategyProposal<String>> candidates = measuredStrategySet(1_000D);
+		LmdbNativeAdaptiveCostModel defaultModel = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), LmdbNativeAdaptiveCostModel.Configuration.system());
+		assertThat(defaultModel.configuration().enabled()).as("adaptive dispatch is enabled by default").isTrue();
+		int coldIndex = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, defaultModel);
+		assertThat(coldIndex >= 0 ? candidates.get(coldIndex).tag : null)
+				.as("without completed current-shape timing, structural preference remains authoritative")
+				.isEqualTo(structuralWinner(candidates));
+
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "false");
+		LmdbNativeAdaptiveCostModel disabledModel = new LmdbNativeAdaptiveCostModel(new LmdbNativeMachineCostModel(),
+				new LmdbNativeStoreCostModel(), LmdbNativeAdaptiveCostModel.Configuration.system());
+		assertThat(disabledModel.configuration().enabled()).isFalse();
+		String measuredFastest = LmdbNativeAttemptMetrics.PATH_NESTED_LOOP;
+		recordNormalCompletions(disabledModel, candidates,
+				constantRuntimes(candidates, measuredFastest, 5_000_000L, 100_000_000L));
+		int disabledIndex = LmdbNativeStrategyArbiter.rankAdaptive(candidates, -1D, disabledModel);
+		assertThat(disabledIndex >= 0 ? candidates.get(disabledIndex).tag : null)
+				.as("with learned dispatch disabled, even completed observations do not displace structural preference")
+				.isEqualTo(structuralWinner(candidates));
+	}
+
+	@Test
+	public void currentShapeFullRunsOutrankOtherShapeAndStaleScalarHistory() {
+		System.setProperty(LmdbNativeAdaptiveCostModel.ENABLED_PROPERTY, "true");
+		List<LmdbNativeStrategyProposal<String>> unrelatedShape = measuredStrategySet(100_000D);
+		List<LmdbNativeStrategyProposal<String>> currentShape = measuredStrategySet(1_000D);
+		LmdbNativeAdaptiveCostModel model = measuredModel();
+		recordNormalCompletions(model, unrelatedShape,
+				constantRuntimes(unrelatedShape, LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1_000_000L,
+						100_000_000L));
+
+		LmdbNativeCostCalibration.reset();
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		measure(LmdbNativeAttemptMetrics.PATH_NESTED_LOOP, 1D, 20);
+		String currentFastest = LmdbNativeAttemptMetrics.PATH_BATCH;
+		recordNormalCompletions(model, currentShape,
+				constantRuntimes(currentShape, currentFastest, 5_000_000L, 100_000_000L));
+
+		int index = LmdbNativeStrategyArbiter.rankAdaptive(currentShape, -1D, model);
+		assertThat(index >= 0 ? currentShape.get(index).tag : null)
+				.as("5 ms exact completions for the current shape beat 1 ms nestedLoop runs for another shape and "
+						+ "stale JVM-wide scalar calibration")
+				.isEqualTo(currentFastest);
 	}
 
 	/**

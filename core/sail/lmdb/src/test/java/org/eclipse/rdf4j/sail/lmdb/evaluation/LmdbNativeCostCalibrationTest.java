@@ -45,6 +45,7 @@ public class LmdbNativeCostCalibrationTest {
 		// Consumption is opt-in in production, precisely so that dispatch stays reproducible by default; these tests
 		// are about what happens once it is switched on.
 		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "true");
+		System.setProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY, "true");
 	}
 
 	@AfterEach
@@ -52,12 +53,21 @@ public class LmdbNativeCostCalibrationTest {
 		LmdbNativeCostCalibration.reset();
 		System.clearProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY);
 		System.clearProperty(LmdbNativeCostCalibration.EXPLORATION_PROPERTY);
+		System.clearProperty(LmdbNativeAdaptiveCostModel.RECORD_PROPERTY);
 	}
 
 	private static void observe(String tag, double nanosPerUnit, int times) {
 		for (int i = 0; i < times; i++) {
 			LmdbNativeCostCalibration.record(tag, 10_000d, (long) (nanosPerUnit * 10_000d));
 		}
+	}
+
+	private static void assertRawCandidateSet(String[] tags, LmdbNativeWork[] work) {
+		LmdbNativeWork[] expected = work.clone();
+		LmdbNativeWork[] costs = LmdbNativeCostCalibration.toTimes(tags, work);
+
+		assertThat(costs).isNotSameAs(work).containsExactly(expected);
+		assertThat(work).containsExactly(expected);
 	}
 
 	// ---------------------------------------------------------------- learning
@@ -207,6 +217,66 @@ public class LmdbNativeCostCalibrationTest {
 		assertThat(LmdbNativeCostCalibration.toTime(FAST, LmdbNativeWork.UNKNOWN))
 				.as("calibration converts a cost; it cannot manufacture one")
 				.isEqualTo(LmdbNativeWork.UNKNOWN);
+	}
+
+	@Test
+	public void knownCandidatesStayInRawWorkUnitsWhenOneCandidateHasNoCalibration() {
+		observe(FAST, 5d, 2);
+		LmdbNativeWork fastWork = LmdbNativeWork.exact(12D);
+		LmdbNativeWork unmeasuredWork = LmdbNativeWork.exact(12D);
+
+		assertRawCandidateSet(new String[] { FAST, SLOW }, new LmdbNativeWork[] { fastWork, unmeasuredWork });
+		assertRawCandidateSet(new String[] { SLOW, FAST }, new LmdbNativeWork[] { unmeasuredWork, fastWork });
+	}
+
+	@Test
+	public void oneSampleDoesNotMixCalibratedAndRawWorkUnits() {
+		observe(FAST, 5d, 2);
+		observe(SLOW, 5d, 1);
+		LmdbNativeWork fastWork = LmdbNativeWork.exact(12D);
+		LmdbNativeWork thinWork = LmdbNativeWork.exact(12D);
+
+		assertRawCandidateSet(new String[] { FAST, SLOW }, new LmdbNativeWork[] { fastWork, thinWork });
+		assertRawCandidateSet(new String[] { SLOW, FAST }, new LmdbNativeWork[] { thinWork, fastWork });
+	}
+
+	@Test
+	public void knownCandidateWithNullTagKeepsTheWholeSetInRawWorkUnits() {
+		observe(FAST, 5d, 2);
+		LmdbNativeWork fastWork = LmdbNativeWork.exact(12D);
+		LmdbNativeWork untaggedWork = LmdbNativeWork.exact(12D);
+
+		assertRawCandidateSet(new String[] { FAST, null }, new LmdbNativeWork[] { fastWork, untaggedWork });
+	}
+
+	@Test
+	public void emptyCandidateSetRemainsEmptyAndReturnsANewArray() {
+		LmdbNativeWork[] work = new LmdbNativeWork[0];
+
+		assertThat(LmdbNativeCostCalibration.toTimes(new String[0], work)).isNotSameAs(work).isEmpty();
+	}
+
+	@Test
+	public void unknownCandidateDoesNotBlockConversionOfFullyCalibratedKnownCosts() {
+		observe(FAST, 5d, 2);
+		LmdbNativeWork rawWork = LmdbNativeWork.exact(12D);
+
+		LmdbNativeWork[] costs = LmdbNativeCostCalibration.toTimes(new String[] { FAST, SLOW },
+				new LmdbNativeWork[] { rawWork, LmdbNativeWork.UNKNOWN });
+
+		assertThat(costs[0]).isNotEqualTo(rawWork);
+		assertThat(costs[1]).isEqualTo(LmdbNativeWork.UNKNOWN);
+	}
+
+	@Test
+	public void disabledCalibrationLeavesTheWholeCandidateSetInRawWorkUnits() {
+		observe(FAST, 5d, 2);
+		observe(SLOW, 10d, 2);
+		System.setProperty(LmdbNativeCostCalibration.ENABLED_PROPERTY, "false");
+		LmdbNativeWork fastWork = LmdbNativeWork.exact(12D);
+		LmdbNativeWork slowWork = LmdbNativeWork.exact(12D);
+
+		assertRawCandidateSet(new String[] { FAST, SLOW }, new LmdbNativeWork[] { fastWork, slowWork });
 	}
 
 	// ---------------------------------------------------------------- feedback into dispatch
