@@ -224,10 +224,10 @@ public class RepositoryFederatedService implements FederatedService {
 	}
 
 	/**
-	 * Whether the wrapped endpoint has been declared tolerant to partitioning one logical SERVICE Invocation into
-	 * several remote requests. See {@link #setPartitionToleranceDeclared(boolean)}.
+	 * Whether the wrapped endpoint tolerates partitioning one logical SERVICE Invocation into several remote requests
+	 * (block-wise bound joins). Defaults to {@code true}; see {@link #setPartitionToleranceDeclared(boolean)}.
 	 */
-	private boolean partitionToleranceDeclared = false;
+	private boolean partitionToleranceDeclared = true;
 
 	/**
 	 * The number of bindings sent in a single subquery in {@link #evaluate(Service, CloseableIteration, String)} If
@@ -395,13 +395,13 @@ public class RepositoryFederatedService implements FederatedService {
 			CloseableIteration<BindingSet> bindings, String baseUri)
 			throws QueryEvaluationException {
 
-		// SPARQL defines a constant-IRI SERVICE as ONE logical Invocation producing one result multiset (or,
-		// for SILENT, one empty mapping on failure). Splitting the input bindings into blocks and sending one
-		// remote request per block partitions that Invocation: separate requests may observe different remote
-		// state, generate distinct fresh values (UUID/BNODE), and fail partially — outcomes no single
-		// Invocation can produce. Partitioned (batched) evaluation is therefore only used when the endpoint
-		// has been explicitly declared partition-tolerant; otherwise the input is either pushed down in one
-		// single request (when small enough) or the service pattern is evaluated once and joined locally.
+		// By default the input bindings are sent block-wise: one remote request per block of boundJoinBlockSize
+		// bindings, each carrying its block as a VALUES clause (bound join). SPARQL defines a constant-IRI
+		// SERVICE as ONE logical Invocation producing one result multiset; splitting it into several requests is
+		// only equivalent when the endpoint tolerates partitioning (stable results, equivalent fresh values,
+		// all-or-nothing failure). Operators who need strict single-invocation semantics declare the endpoint
+		// partition-intolerant via setPartitionToleranceDeclared(false): the input is then either pushed down
+		// in one single request (when small enough) or the service pattern is evaluated once and joined locally.
 		if (partitionToleranceDeclared && boundJoinBlockSize > 0) {
 			return new BatchingServiceIteration(bindings, boundJoinBlockSize, service);
 		}
@@ -711,13 +711,17 @@ public class RepositoryFederatedService implements FederatedService {
 
 	/**
 	 * Declares whether the wrapped endpoint tolerates partitioning one logical SERVICE Invocation into several remote
-	 * requests with observationally equivalent outcomes. SPARQL defines a constant-IRI SERVICE as one Invocation
-	 * producing one result multiset; block-wise evaluation sends several requests, which is only equivalent when the
-	 * endpoint guarantees: stable results for the duration of the query, equivalent blank node and volatile-function
-	 * behavior across requests, all-or-nothing failure, and equivalent SILENT handling. This is an affirmative
-	 * capability declaration by the operator — a deterministic remote pattern alone does not establish it. Default:
-	 * {@code false}, in which case the input bindings are either pushed down in one single request or the service
-	 * pattern is evaluated once and joined locally.
+	 * requests with observationally equivalent outcomes. Default: {@code true}, in which case the input bindings are
+	 * sent block-wise ({@link #setBoundJoinBlockSize(int)} bindings per remote request, each block transported as a
+	 * VALUES clause), which bounds the size of every remote request and response.
+	 * <p>
+	 * SPARQL defines a constant-IRI SERVICE as one Invocation producing one result multiset; block-wise evaluation
+	 * sends several requests, which is only equivalent when the endpoint guarantees stable results for the duration of
+	 * the query, equivalent blank node and volatile-function behavior across requests, all-or-nothing failure, and
+	 * equivalent SILENT handling. Declare {@code false} to opt into strict single-invocation semantics: the input
+	 * bindings are then either pushed down in one single request (when they fit in one block) or the service pattern is
+	 * evaluated once without input bindings and joined locally. Note that the local join downloads the complete remote
+	 * result of the service pattern and is subject to the endpoint's result size limits.
 	 */
 	@Experimental
 	public void setPartitionToleranceDeclared(boolean partitionToleranceDeclared) {

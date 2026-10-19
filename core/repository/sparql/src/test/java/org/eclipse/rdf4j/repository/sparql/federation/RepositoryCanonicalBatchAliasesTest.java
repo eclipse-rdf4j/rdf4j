@@ -261,6 +261,7 @@ class RepositoryCanonicalBatchAliasesTest {
 			var service = new Service(Var.of("endpoint", vf.createIRI("urn:remote")), expression,
 					body, Map.of(), null, false);
 			var endpoint = new RepositoryFederatedService(repository);
+			endpoint.setPartitionToleranceDeclared(false);
 			endpoint.setBoundJoinBlockSize(reason.equals("oversized") ? 1 : 0);
 			endpoint.setBNodeIdentityScope(epoch);
 			endpoint.setBlankNodeReferencesSupported(true);

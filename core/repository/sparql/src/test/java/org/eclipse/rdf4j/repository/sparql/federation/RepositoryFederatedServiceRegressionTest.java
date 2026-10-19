@@ -71,7 +71,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void silentOversizedFallbackPassesInputsThroughWhenConnectionOpenFails() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		doThrow(new RepositoryException("connection open failed")).when(harness.repository).getConnection();
 
 		List<BindingSet> inputs = inputBindings(16);
@@ -97,7 +97,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void silentOversizedFallbackPassesInputsThroughWhenEvaluationFails() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		doThrow(new QueryEvaluationException("query evaluation failed")).when(harness.query).evaluate();
 
 		List<BindingSet> inputs = inputBindings(16);
@@ -118,7 +118,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void nonSilentOversizedFallbackStillPropagatesEvaluationFailure() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		doThrow(new QueryEvaluationException("query evaluation failed")).when(harness.query).evaluate();
 
 		assertThrows(QueryEvaluationException.class,
@@ -129,7 +129,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void silentLocalFallbackDiscardsLazyFailureAndClosesRemoteResources() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		TupleQueryResult remote = mock(TupleQueryResult.class);
 		when(remote.getBindingNames()).thenReturn(List.of("remote"));
 		when(remote.hasNext()).thenReturn(true).thenThrow(new QueryEvaluationException("stream failed"));
@@ -147,7 +147,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void silentLocalFallbackPropagatesReplaySafepointWhenReadAndCloseThrowSameFailure() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		TupleQueryResult remote = mock(TupleQueryResult.class);
 		when(remote.getBindingNames()).thenReturn(List.of("remote"));
 		QueryExecutionContext.ReplaySafepointException replayFailure = replaySafepointFailure();
@@ -167,7 +167,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void silentLocalFallbackPreservesReadFailureWhenCloseFailsSeparately() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		TupleQueryResult remote = mock(TupleQueryResult.class);
 		when(remote.getBindingNames()).thenReturn(List.of("remote"));
 		QueryEvaluationException readFailure = new QueryEvaluationException("stream failed");
@@ -324,7 +324,6 @@ class RepositoryFederatedServiceRegressionTest {
 		List<BindingSet> actual = new ArrayList<>();
 		try (CloseableIteration<BindingSet> result = harness.service.evaluate(service, new ListIteration<>(inputs),
 				null)) {
-			assertQueryUsesControlColumn(harness, "__rowIdx_1");
 			while (result.hasNext()) {
 				actual.add(result.next());
 			}
@@ -356,7 +355,6 @@ class RepositoryFederatedServiceRegressionTest {
 		List<BindingSet> actual = new ArrayList<>();
 		try (CloseableIteration<BindingSet> result = harness.service.evaluate(service, new ListIteration<>(inputs),
 				null)) {
-			assertQueryUsesControlColumn(harness, "__rowIdx_1");
 			while (result.hasNext()) {
 				actual.add(result.next());
 			}
@@ -382,14 +380,15 @@ class RepositoryFederatedServiceRegressionTest {
 		List<BindingSet> actual = new ArrayList<>();
 		try (CloseableIteration<BindingSet> result = harness.service.evaluate(service, new ListIteration<>(inputs),
 				null)) {
-			ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
-			verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
-					nullable(String.class));
-			assertEquals(uncorrelatedQuery, queryCaptor.getValue());
 			while (result.hasNext()) {
 				actual.add(result.next());
 			}
 		}
+		// the remote request is submitted asynchronously; verify it once the result has been consumed
+		ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
+				nullable(String.class));
+		assertEquals(uncorrelatedQuery, queryCaptor.getValue());
 		assertEquals(1, actual.size());
 		verify(harness.query, times(1)).evaluate();
 	}
@@ -422,7 +421,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void localJoinPreservesInputAndRemoteMultiplicity() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		Value first = VF.createLiteral("first");
 		Value second = VF.createLiteral("second");
 		Value repeatedLabel = VF.createLiteral("repeat");
@@ -462,7 +461,7 @@ class RepositoryFederatedServiceRegressionTest {
 
 	@Test
 	void localJoinDoesNotReadRemoteRowsUntilConsumedAndClosesOnEarlyClose() throws Exception {
-		Harness harness = new Harness();
+		Harness harness = strictHarness();
 		Value value = VF.createLiteral("value");
 		TupleQueryResult remote = tupleResult(List.of(binding("x", value, "label", VF.createLiteral("remote"))));
 		when(harness.query.evaluate()).thenReturn(remote);
@@ -495,6 +494,42 @@ class RepositoryFederatedServiceRegressionTest {
 		}
 
 		verify(harness.query, times(2)).evaluate();
+	}
+
+	@Test
+	void defaultServiceBatchesOversizedInputIntoValuesRequests() throws Exception {
+		Harness harness = new Harness();
+		when(harness.query.evaluate()).thenAnswer(invocation -> tupleResult(List.of()));
+
+		Service service = service(statement("input", "label"), "?input <urn:test:p> ?label", false);
+		try (CloseableIteration<BindingSet> result = harness.service.evaluate(service,
+				new ListIteration<>(inputBindings(40)), null)) {
+			while (result.hasNext()) {
+				result.next();
+			}
+		}
+
+		ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+		verify(harness.connection, times(3)).prepareTupleQuery(any(QueryLanguage.class), queryCaptor.capture(),
+				nullable(String.class));
+		verify(harness.query, times(3)).evaluate();
+		for (String remoteQuery : queryCaptor.getAllValues()) {
+			assertTrue(remoteQuery.contains("VALUES"),
+					"each batched request must carry its input bindings as VALUES: " + remoteQuery);
+		}
+	}
+
+	@Test
+	void defaultConstructionDeclaresPartitionTolerance() {
+		assertTrue(new RepositoryFederatedService(mock(Repository.class), false).isPartitionToleranceDeclared());
+		assertTrue(new SPARQLFederatedService("http://example.org/sparql", null).isPartitionToleranceDeclared());
+	}
+
+	/** A service declared partition-intolerant: strict single-invocation semantics (no block-wise requests). */
+	private static Harness strictHarness() throws Exception {
+		Harness harness = new Harness();
+		harness.service.setPartitionToleranceDeclared(false);
+		return harness;
 	}
 
 	private static void assertQueryUsesControlColumn(Harness harness, String rowVariable) throws Exception {

@@ -226,6 +226,26 @@ Repository repo = new SPARQLRepository(sparqlEndpoint);
 
 After you have done this, you can query the SPARQL endpoint just as you would any other type of Repository.
 
+##### SERVICE clauses and remote endpoints
+
+When a query evaluated by a local repository (for example a `SailRepository`) contains a `SERVICE <endpoint> { ... }` clause, the endpoint is contacted through a {{< javadoc "SPARQLFederatedService" "repository/sparql/federation/SPARQLFederatedService.html" >}} created by the {{< javadoc "SPARQLServiceResolver" "repository/sparql/federation/SPARQLServiceResolver.html" >}}. By default the input bindings of the SERVICE clause are sent to the endpoint in blocks of 15 (a bound join): each remote request carries one block as a `VALUES` clause, so the endpoint only returns the rows that match. The block size can be changed with `setBoundJoinBlockSize(int)` on the service; `0` sends all input bindings in one request.
+
+Strictly speaking, SPARQL defines a SERVICE clause as a single invocation of the endpoint. Splitting it into several requests is only equivalent when the endpoint tolerates that: results must stay stable for the duration of the query, and fresh values such as `UUID()` or `BNODE()` and `SILENT` failures must behave the same across requests. If you need strict single-invocation semantics, call `setPartitionToleranceDeclared(false)` on the service, for example from a custom resolver:
+
+```java
+SPARQLServiceResolver resolver = new SPARQLServiceResolver() {
+	@Override
+	protected FederatedService createService(String serviceUrl) {
+		SPARQLFederatedService service = new SPARQLFederatedService(serviceUrl, getHttpClientSessionManager());
+		service.setPartitionToleranceDeclared(false);
+		return service;
+	}
+};
+localRepository.setFederatedServiceResolver(resolver);
+```
+
+In strict mode the input bindings are pushed down in a single request when they fit in one block. Otherwise the SERVICE pattern is evaluated once without input bindings and joined locally, which downloads the complete remote result of the pattern and is subject to the endpoint's result size limits. That is why strict mode is opt-in.
+
 #### Configuring the HTTP client
 
 Both the HTTPRepository and the SPARQLRepository use the SPARQL Protocol over

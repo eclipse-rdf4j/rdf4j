@@ -45,8 +45,9 @@ import org.junit.jupiter.api.Test;
  * SPARQL defines a constant-IRI SERVICE as ONE logical {@code Invocation} producing one result multiset; a failed
  * non-silent invocation is an error for the whole query, and a failed SILENT invocation is the singleton empty mapping
  * — never a prefix of its rows and never one outcome per input-binding block. These tests pin the conforming behaviors
- * of {@link RepositoryFederatedService}: no partitioning of the invocation without an explicit declaration,
- * failure-atomic SILENT buffering, and a collision-free synthetic row-index variable.
+ * of {@link RepositoryFederatedService}: no partitioning of the invocation once strict single-invocation semantics are
+ * declared ({@code setPartitionToleranceDeclared(false)}), failure-atomic SILENT buffering, and a collision-free
+ * synthetic row-index variable.
  */
 public class RepositoryFederatedServiceSemanticsTest {
 
@@ -108,13 +109,16 @@ public class RepositoryFederatedServiceSemanticsTest {
 	}
 
 	/**
-	 * 16 input bindings exceed the default block size of 15. Without a declared partition tolerance the service must
-	 * still behave as ONE invocation: a remote {@code BIND(UUID())} yields one fresh UUID shared by every result row.
-	 * Block-wise evaluation would perform one invocation per block and expose two distinct UUIDs.
+	 * 16 input bindings exceed the default block size of 15. With partition tolerance declared {@code false} the
+	 * service must still behave as ONE invocation: a remote {@code BIND(UUID())} yields one fresh UUID shared by every
+	 * result row. Block-wise evaluation (the default) would perform one invocation per block and expose two distinct
+	 * UUIDs.
 	 */
 	@Test
 	public void moreBindingsThanBlockSizeIsStillOneInvocation() {
-		useService(new RepositoryFederatedService(serviceRepo, false));
+		RepositoryFederatedService service = new RepositoryFederatedService(serviceRepo, false);
+		service.setPartitionToleranceDeclared(false);
+		useService(service);
 
 		List<BindingSet> rows = evaluate("SELECT ?x ?u WHERE { " + values16("x")
 				+ " SERVICE <urn:dummy> { BIND(UUID() AS ?u) } }");
@@ -190,7 +194,7 @@ public class RepositoryFederatedServiceSemanticsTest {
 		}
 	}
 
-	/** Declared partition tolerance re-enables block-wise evaluation; results stay correct for a plain BGP. */
+	/** Block-wise evaluation (the default, declared explicitly here) keeps results correct for a plain BGP. */
 	@Test
 	public void declaredPartitionToleranceKeepsBatchingCorrect() {
 		try (RepositoryConnection conn = serviceRepo.getConnection()) {
