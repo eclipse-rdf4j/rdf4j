@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
@@ -80,6 +81,25 @@ public class NTriplesWriter extends AbstractRDFWriter implements CharSink {
 	}
 
 	@Override
+	protected boolean requiresVersionAnnouncement() {
+		return true;
+	}
+
+	/**
+	 * Writes the N-Triples / N-Quads version directive as the very first output line once an RDF 1.2 feature is
+	 * detected. Per the RDF 1.2 N-Triples specification, this must appear before any triple that uses a
+	 * version-dependent feature.
+	 */
+	@Override
+	protected void writeVersionAnnouncement() throws RDFHandlerException {
+		try {
+			writer.write("VERSION \"1.2\"\n");
+		} catch (IOException e) {
+			throw new RDFHandlerException(e);
+		}
+	}
+
+	@Override
 	public void endRDF() throws RDFHandlerException {
 		checkWritingStarted();
 		try {
@@ -98,6 +118,12 @@ public class NTriplesWriter extends AbstractRDFWriter implements CharSink {
 	@Override
 	protected void consumeStatement(Statement st) {
 		try {
+
+			// Detect RDF 1.2 features and emit version announcement before
+			// the first affected triple is written (pure streaming — no buffering).
+			noteRdf12Feature(st.getSubject(), st.getObject());
+			ensureVersionAnnouncement();
+
 			writeValue(st.getSubject());
 			writer.write(" ");
 			writeIRI(st.getPredicate());
@@ -145,6 +171,8 @@ public class NTriplesWriter extends AbstractRDFWriter implements CharSink {
 			writeBNode((BNode) value);
 		} else if (value instanceof Literal) {
 			writeLiteral((Literal) value);
+		} else if (value instanceof TripleTerm) {
+			writeTriple((TripleTerm) value);
 		} else {
 			throw new IllegalArgumentException("Unknown value type: " + value.getClass());
 		}
@@ -188,5 +216,15 @@ public class NTriplesWriter extends AbstractRDFWriter implements CharSink {
 	private void writeLiteral(Literal lit) throws IOException {
 		NTriplesUtil.append(lit, writer, getWriterConfig().get(BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL),
 				escapeUnicode);
+	}
+
+	private void writeTriple(TripleTerm t) throws IOException {
+		writer.write("<<( ");
+		writeValue(t.getSubject());
+		writer.write(" ");
+		writeIRI(t.getPredicate());
+		writer.write(" ");
+		writeValue(t.getObject());
+		writer.write(" )>>");
 	}
 }

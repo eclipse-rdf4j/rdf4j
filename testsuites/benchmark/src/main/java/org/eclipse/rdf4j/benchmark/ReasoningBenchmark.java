@@ -53,46 +53,55 @@ public class ReasoningBenchmark {
 	@Benchmark
 	public void noReasoning() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
 
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
+				addRequiredResource(connection, "schema.ttl");
+				addAllDataSingleTransaction(connection);
 
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			addAllDataSingleTransaction(connection);
-
-			connection.commit();
+				connection.commit();
+			}
+		} finally {
+			sail.shutDown();
 		}
 	}
 
 	@Benchmark
 	public void noReasoningMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new MemoryStore());
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
 
-		try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
+				addRequiredResource(connection, "schema.ttl");
+				connection.commit();
 
-			connection.begin();
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
+				addAllDataMultipleTransactions(connection);
 
-			addAllDataMultipleTransactions(connection);
-
+			}
+		} finally {
+			sail.shutDown();
 		}
 	}
 
 	@Benchmark
 	public void forwardChainingSchemaCachingRDFSInferencer() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
 
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
+				addRequiredResource(connection, "schema.ttl");
+				addAllDataSingleTransaction(connection);
 
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			addAllDataSingleTransaction(connection);
+				connection.commit();
+			}
 
-			connection.commit();
+			checkSize(sail);
+		} finally {
+			sail.shutDown();
 		}
-
-		checkSize(sail);
 	}
 
 	private void checkSize(SailRepository sail) {
@@ -115,89 +124,121 @@ public class ReasoningBenchmark {
 	@Benchmark
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactions() throws IOException {
 		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore()));
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
 
-		try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
+				addRequiredResource(connection, "schema.ttl");
+				connection.commit();
 
-			connection.begin();
-			connection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
-			connection.commit();
+				addAllDataMultipleTransactions(connection);
 
-			addAllDataMultipleTransactions(connection);
-
+			}
+			checkSize(sail);
+		} finally {
+			sail.shutDown();
 		}
-		checkSize(sail);
-
 	}
 
 	@Benchmark
 	public void forwardChainingSchemaCachingRDFSInferencerSchema() throws IOException {
-		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			connection.begin();
-			addAllDataSingleTransaction(connection);
-			connection.commit();
+		SailRepository schema = createSchema();
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), schema));
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
+				connection.begin();
+				addAllDataSingleTransaction(connection);
+				connection.commit();
+			}
+			checkSize(sail);
+		} finally {
+			try {
+				sail.shutDown();
+			} finally {
+				schema.shutDown();
+			}
 		}
-		checkSize(sail);
-
 	}
 
 	@Benchmark
 	public void forwardChainingSchemaCachingRDFSInferencerMultipleTransactionsSchema() throws IOException {
-		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), createSchema()));
-
-		try (SailRepositoryConnection connection = sail.getConnection()) {
-			addAllDataMultipleTransactions(connection);
+		SailRepository schema = createSchema();
+		SailRepository sail = new SailRepository(new SchemaCachingRDFSInferencer(new MemoryStore(), schema));
+		try {
+			try (SailRepositoryConnection connection = sail.getConnection()) {
+				addAllDataMultipleTransactions(connection);
+			}
+			checkSize(sail);
+		} finally {
+			try {
+				sail.shutDown();
+			} finally {
+				schema.shutDown();
+			}
 		}
-		checkSize(sail);
-
 	}
 
 	private SailRepository createSchema() throws IOException {
 		SailRepository schema = new SailRepository(new MemoryStore());
 		try (SailRepositoryConnection schemaConnection = schema.getConnection()) {
 			schemaConnection.begin();
-			schemaConnection.add(resourceAsStream("schema.ttl"), "", RDFFormat.TURTLE);
+			addRequiredResource(schemaConnection, "schema.ttl");
 			schemaConnection.commit();
 		}
 		return schema;
 	}
 
 	private void addAllDataSingleTransaction(SailRepositoryConnection connection) throws IOException {
-		InputStream data = resourceAsStream("data.ttl");
-
-		if (data != null) {
-			connection.add(data, "", RDFFormat.TURTLE);
-		}
+		addOptionalResource(connection, "data.ttl");
 
 		int counter = 0;
 		while (true) {
-			data = resourceAsStream("data" + counter++ + ".ttl");
-			if (data == null) {
+			if (!addOptionalResource(connection, "data" + counter++ + ".ttl")) {
 				break;
+			}
+		}
+	}
+
+	private void addAllDataMultipleTransactions(SailRepositoryConnection connection) throws IOException {
+		addOptionalResourceInTransaction(connection, "data.ttl");
+
+		int counter = 0;
+		while (true) {
+			if (!addOptionalResourceInTransaction(connection, "data" + counter++ + ".ttl")) {
+				break;
+			}
+		}
+	}
+
+	private void addRequiredResource(SailRepositoryConnection connection, String resourceName) throws IOException {
+		try (InputStream data = resourceAsStream(resourceName)) {
+			if (data == null) {
+				throw new IOException("Resource not found: " + resourceName);
 			}
 			connection.add(data, "", RDFFormat.TURTLE);
 		}
 	}
 
-	private void addAllDataMultipleTransactions(SailRepositoryConnection connection) throws IOException {
-		InputStream data = resourceAsStream("data.ttl");
-
-		if (data != null) {
-			connection.begin();
-			connection.add(data, "", RDFFormat.TURTLE);
-			connection.commit();
-		}
-
-		int counter = 0;
-		while (true) {
-			data = resourceAsStream("data" + counter++ + ".ttl");
+	private boolean addOptionalResource(SailRepositoryConnection connection, String resourceName) throws IOException {
+		try (InputStream data = resourceAsStream(resourceName)) {
 			if (data == null) {
-				break;
+				return false;
+			}
+			connection.add(data, "", RDFFormat.TURTLE);
+			return true;
+		}
+	}
+
+	private boolean addOptionalResourceInTransaction(SailRepositoryConnection connection, String resourceName)
+			throws IOException {
+		try (InputStream data = resourceAsStream(resourceName)) {
+			if (data == null) {
+				return false;
 			}
 			connection.begin();
 			connection.add(data, "", RDFFormat.TURTLE);
 			connection.commit();
+			return true;
 		}
 	}
 

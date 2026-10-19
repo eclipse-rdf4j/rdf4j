@@ -217,7 +217,7 @@ public class FedXZeroLengthPathIteration extends LookAheadIteration<BindingSet> 
 	}
 
 	public Var createAnonVar(String varName) {
-		Var var = new Var(varName, true);
+		Var var = Var.of(varName, true);
 		return var;
 	}
 

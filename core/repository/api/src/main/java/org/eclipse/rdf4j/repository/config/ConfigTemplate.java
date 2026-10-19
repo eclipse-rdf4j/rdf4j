@@ -27,7 +27,7 @@ public class ConfigTemplate {
 	 * Constants *
 	 *-----------*/
 
-	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\{%[\\p{Print}&&[^\\}]]+%\\}");
+	private static final Pattern TOKEN_PATTERN = Pattern.compile("\\{%.*?%\\}");
 
 	/*-----------*
 	 * Variables *

@@ -27,4 +27,9 @@ public class LmdbTupleQueryResultTest extends TupleQueryResultTest {
 	protected Repository newRepository() {
 		return new SailRepository(new LmdbStore(tempDir, new LmdbStoreConfig("spoc")));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

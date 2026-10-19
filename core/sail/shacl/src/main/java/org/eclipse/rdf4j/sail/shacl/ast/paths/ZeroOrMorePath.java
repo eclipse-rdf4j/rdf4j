@@ -184,7 +184,8 @@ public class ZeroOrMorePath extends Path {
 										.getStatements()) {
 									try (CloseableIteration<? extends BindingSet> evaluate = baseConnection.evaluate(
 											tupleExpr, PlanNodeHelper.asDefaultGraphDataset(dataGraph),
-											new SingletonBindingSet(subjectName, statement.getSubject()), true)) {
+											new SingletonBindingSet(subjectName, statement.getSubject()),
+											connectionsGroup.isIncludeInferredStatements())) {
 										while (evaluate.hasNext()) {
 											BindingSet next = evaluate.next();
 											statements.add(new EffectiveTarget.SubjectObjectAndMatcher.SubjectObject(

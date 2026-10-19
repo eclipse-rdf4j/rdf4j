@@ -17,6 +17,8 @@ import java.net.URL;
 import java.nio.file.Path;
 import java.util.Map;
 
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
+import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.console.ConsoleIO;
 import org.eclipse.rdf4j.console.ConsoleState;
 import org.eclipse.rdf4j.console.LockRemover;
@@ -49,10 +51,11 @@ public class Load extends ConsoleCommand {
 
 	@Override
 	public String getHelpLong() {
-		return PrintHelp.USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>]\n"
+		return PrintHelp.USAGE + "load <file-or-url> [from <base-uri>] [into <context-id>] [isolation <level>]\n"
 				+ "  <file-or-url>   The path or URL identifying the data file\n"
 				+ "  <base-uri>      The base URI to use for resolving relative references, defaults to <file-or-url>\n"
 				+ "  <context-id>    The ID of the context to add the data to, e.g. foo:bar or _:n123\n"
+				+ "  <level>         Isolation level to use when loading data (defaults to NONE)\n"
 				+ "Loads the specified data file into the current repository\n";
 	}
 
@@ -83,21 +86,43 @@ public class Load extends ConsoleCommand {
 			} else {
 				String baseURI = null;
 				String context = null;
+				IsolationLevel isolationLevel = null;
 
 				int index = 2;
-				if (tokens.length >= index + 2 && tokens[index].equalsIgnoreCase("from")) {
-					baseURI = tokens[index + 1];
-					index += 2;
+				while (index < tokens.length) {
+					if (tokens[index].equalsIgnoreCase("from")) {
+						if (tokens.length < index + 2) {
+							writeln(getHelpLong());
+							return;
+						}
+						baseURI = tokens[index + 1];
+						index += 2;
+					} else if (tokens[index].equalsIgnoreCase("into")) {
+						if (tokens.length < index + 2) {
+							writeln(getHelpLong());
+							return;
+						}
+						context = tokens[index + 1];
+						index += 2;
+					} else if (tokens[index].equalsIgnoreCase("isolation")) {
+						if (tokens.length < index + 2) {
+							writeln(getHelpLong());
+							return;
+						}
+						try {
+							isolationLevel = IsolationLevels.valueOf(tokens[index + 1].toUpperCase());
+						} catch (IllegalArgumentException e) {
+							writeError("Unknown isolation level: " + tokens[index + 1]);
+							return;
+						}
+						index += 2;
+					} else {
+						writeln(getHelpLong());
+						return;
+					}
 				}
-				if (tokens.length >= index + 2 && tokens[index].equalsIgnoreCase("into")) {
-					context = tokens[tokens.length - 1];
-					index += 2;
-				}
-				if (index < tokens.length) {
-					writeln(getHelpLong());
-				} else {
-					load(repository, baseURI, context, tokens);
-				}
+
+				load(repository, baseURI, context, isolationLevel, tokens);
 			}
 		}
 	}
@@ -114,12 +139,14 @@ public class Load extends ConsoleCommand {
 	/**
 	 * Load data into a repository
 	 *
-	 * @param repository repository
+	 * @param repository     repository
 	 * @param baseURI
 	 * @param context
+	 * @param isolationLevel explicit isolation level, or null to prompt for default
 	 * @param tokens
 	 */
-	private void load(Repository repository, String baseURI, String context, final String... tokens) {
+	private void load(Repository repository, String baseURI, String context, IsolationLevel isolationLevel,
+			final String... tokens) {
 		final String dataPath = tokens[1];
 		URL dataURL = null;
 		File dataFile = null;
@@ -136,7 +163,17 @@ public class Load extends ConsoleCommand {
 		}
 
 		try {
-			addData(repository, baseURI, context, dataURL, dataFile);
+			IsolationLevel levelToUse = isolationLevel;
+			if (levelToUse == null) {
+				boolean confirmed = consoleIO
+						.askProceed("No isolation level specified. Use isolation level NONE?", false);
+				if (!confirmed) {
+					return;
+				}
+				levelToUse = IsolationLevels.NONE;
+			}
+
+			addData(repository, baseURI, context, dataURL, dataFile, levelToUse);
 		} catch (RepositoryReadOnlyException e) {
 			handleReadOnlyException(repository, e, tokens);
 		} catch (MalformedURLException e) {
@@ -179,26 +216,37 @@ public class Load extends ConsoleCommand {
 	/**
 	 * Add data from a URL or local file. If the dataURL is null, then the datafile will be used.
 	 *
-	 * @param repository repository
-	 * @param baseURI    base URI
-	 * @param context    context (can be null)
-	 * @param dataURL    url of the data
-	 * @param dataFile   file containing data
+	 * @param repository     repository
+	 * @param baseURI        base URI
+	 * @param context        context (can be null)
+	 * @param dataURL        url of the data
+	 * @param dataFile       file containing data
+	 * @param isolationLevel isolation level to use for the transaction
 	 * @throws RepositoryException
 	 * @throws IOException
 	 * @throws RDFParseException
 	 */
-	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile)
-			throws RepositoryException, IOException, RDFParseException {
+	private void addData(Repository repository, String baseURI, String context, URL dataURL, File dataFile,
+			IsolationLevel isolationLevel) throws RepositoryException, IOException, RDFParseException {
 		Resource[] contexts = getContexts(repository, context);
 		writeln("Loading data...");
 
 		final long startTime = System.nanoTime();
 		try (RepositoryConnection con = repository.getConnection()) {
-			if (dataURL == null) {
-				con.add(dataFile, baseURI, null, contexts);
-			} else {
-				con.add(dataURL, baseURI, null, contexts);
+			con.begin(isolationLevel);
+			try {
+				if (dataURL == null) {
+					con.add(dataFile, baseURI, null, contexts);
+				} else {
+					con.add(dataURL, baseURI, null, contexts);
+				}
+				con.commit();
+			} catch (RepositoryException | RDFParseException | IOException e) {
+				con.rollback();
+				throw e;
+			} catch (RuntimeException e) {
+				con.rollback();
+				throw e;
 			}
 		}
 		final long endTime = System.nanoTime();

@@ -39,8 +39,6 @@ import org.slf4j.LoggerFactory;
 @InternalUseOnly
 public class ParentReferenceChecker implements QueryOptimizer {
 
-	private static final Logger logger = LoggerFactory.getLogger(ParentReferenceChecker.class);
-
 	public static boolean skip = false;
 
 	private final QueryOptimizer previousOptimizerInPipeline;

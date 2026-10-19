@@ -15,7 +15,6 @@ import static org.eclipse.rdf4j.sail.lucene.LuceneSail.FUZZY_PREFIX_LENGTH_KEY;
 import java.io.IOException;
 import java.io.StringReader;
 import java.lang.reflect.UndeclaredThrowableException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -25,9 +24,11 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Properties;
 import java.util.Set;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Supplier;
 
@@ -80,9 +81,9 @@ import org.apache.lucene.spatial.prefix.RecursivePrefixTreeStrategy;
 import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTree;
 import org.apache.lucene.spatial.prefix.tree.SpatialPrefixTreeFactory;
 import org.apache.lucene.spatial.query.SpatialOperation;
+import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
-import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Bits;
 import org.eclipse.rdf4j.common.iterator.EmptyIterator;
 import org.eclipse.rdf4j.model.IRI;
@@ -126,7 +127,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	static {
 		// do NOT set this to Integer.MAX_VALUE, because this breaks fuzzy
 		// queries
-		BooleanQuery.setMaxClauseCount(1024 * 1024);
+		IndexSearcher.setMaxClauseCount(1024 * 1024);
 	}
 
 	private static final String GEO_FIELD_PREFIX = "_geo_";
@@ -149,6 +150,12 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	private volatile Similarity similarity;
 
 	private volatile int fuzzyPrefixLength;
+
+	private boolean transactionsEnabled = LuceneSail.DEFAULT_TRANSACTIONAL;
+
+	private long fsyncIntervalMillis = LuceneSail.DEFAULT_FSYNC_INTERVAL;
+
+	private ScheduledThreadPoolExecutor fsyncScheduler;
 
 	/**
 	 * The IndexWriter that can be used to alter the index' contents. Created lazily.
@@ -213,6 +220,19 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			this.fuzzyPrefixLength = NumberUtils.toInt(parameters.getProperty(FUZZY_PREFIX_LENGTH_KEY), 0);
 		}
 
+		if (parameters.containsKey(LuceneSail.TRANSACTIONAL_KEY)) {
+			this.transactionsEnabled = Boolean.parseBoolean(
+					parameters.getProperty(LuceneSail.TRANSACTIONAL_KEY));
+		}
+		if (parameters.containsKey(LuceneSail.FSYNC_INTERVAL_KEY)) {
+			this.fsyncIntervalMillis = NumberUtils.toLong(
+					parameters.getProperty(LuceneSail.FSYNC_INTERVAL_KEY),
+					LuceneSail.DEFAULT_FSYNC_INTERVAL);
+			if (this.fsyncIntervalMillis <= 0) {
+				throw new IllegalArgumentException(LuceneSail.FSYNC_INTERVAL_KEY + " must be > 0");
+			}
+		}
+
 		postInit();
 	}
 
@@ -222,7 +242,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			dir = FSDirectory.open(Paths.get(parameters.getProperty(LuceneSail.LUCENE_DIR_KEY)));
 		} else if (parameters.containsKey(LuceneSail.LUCENE_RAMDIR_KEY)
 				&& "true".equals(parameters.getProperty(LuceneSail.LUCENE_RAMDIR_KEY))) {
-			dir = new RAMDirectory();
+			dir = new ByteBuffersDirectory();
 		} else {
 			throw new IOException("No luceneIndex set, and no '" + LuceneSail.LUCENE_DIR_KEY + "' or '"
 					+ LuceneSail.LUCENE_RAMDIR_KEY + "' parameter given. ");
@@ -269,6 +289,55 @@ public class LuceneIndex extends AbstractLuceneIndex {
 			indexWriterConfig.setOpenMode(OpenMode.CREATE);
 			IndexWriter writer = new IndexWriter(directory, indexWriterConfig);
 			writer.close();
+		}
+
+		setUpFsyncScheduler();
+	}
+
+	private void setUpFsyncScheduler() {
+		// If transactions are disabled, launch a background thread to fsync periodically.
+		if (this.transactionsEnabled) {
+			return;
+		}
+		// Checked in initialize(), assertion here for clarity.
+		assert this.fsyncIntervalMillis > 0;
+
+		// Use a daemon thread so the scheduler does not prevent JVM shutdown.
+		this.fsyncScheduler = new ScheduledThreadPoolExecutor(1, r -> {
+			Thread t = Executors.defaultThreadFactory().newThread(r);
+			t.setDaemon(true);
+			t.setName("rdf4j-lucene-fsync-" + t.getId());
+			return t;
+		});
+		// Help GC by removing cancelled tasks from the queue.
+		this.fsyncScheduler.setRemoveOnCancelPolicy(true);
+		this.fsyncScheduler.scheduleAtFixedRate(
+				() -> {
+					try {
+						syncNow();
+					} catch (Throwable e) {
+						// We just log errors here, there's not much else we can do.
+						// Rethrowing exceptions on the next commit would be confusing, especially if
+						// the error is transient.
+						logger.error("Exception during Lucene index fsync", e);
+					}
+				},
+				this.fsyncIntervalMillis,
+				this.fsyncIntervalMillis,
+				TimeUnit.MILLISECONDS
+		);
+	}
+
+	@VisibleForTesting
+	synchronized void syncNow() throws IOException {
+		if (closed.get()) {
+			return;
+		}
+
+		IndexWriter writer = getIndexWriter();
+		if (writer.hasUncommittedChanges()) {
+			writer.commit();
+			invalidateReaders();
 		}
 	}
 
@@ -384,15 +453,47 @@ public class LuceneIndex extends AbstractLuceneIndex {
 						oldmonitors.clear();
 					}
 				} finally {
+					// shutdown fsync scheduler
 					try {
-						IndexWriter toCloseIndexWriter = indexWriter;
-						indexWriter = null;
-						if (toCloseIndexWriter != null) {
-							toCloseIndexWriter.close();
+						if (fsyncScheduler != null) {
+							fsyncScheduler.shutdown();
+							if (!fsyncScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+								logger.error("Failed to shut down Lucene fsync scheduler within 10s");
+								// Try interrupting the thread
+								fsyncScheduler.shutdownNow();
+								if (!fsyncScheduler.awaitTermination(10, TimeUnit.SECONDS)) {
+									logger.error("Failed to forcibly shut down Lucene fsync scheduler within 10s");
+								}
+							}
 						}
+					} catch (InterruptedException e) {
+						logger.error("Interrupted while trying to shut down Lucene fsync scheduler", e);
+						Thread.currentThread().interrupt();
+					} catch (Throwable e) {
+						exceptions.add(e);
 					} finally {
-						if (!exceptions.isEmpty()) {
-							throw new UndeclaredThrowableException(exceptions.get(0));
+						// Do a final sync of any uncommitted changes
+						IndexWriter toCloseIndexWriter = indexWriter;
+						try {
+							if (!this.transactionsEnabled && toCloseIndexWriter != null && toCloseIndexWriter.isOpen()
+									&& toCloseIndexWriter.hasUncommittedChanges()) {
+								toCloseIndexWriter.commit();
+							}
+						} catch (Throwable e) {
+							logger.error("Failed to commit Lucene IndexWriter while closing", e);
+							exceptions.add(e);
+						} finally {
+							// shutdown the index writer
+							try {
+								indexWriter = null;
+								if (toCloseIndexWriter != null) {
+									toCloseIndexWriter.close();
+								}
+							} finally {
+								if (!exceptions.isEmpty()) {
+									throw new UndeclaredThrowableException(exceptions.get(0));
+								}
+							}
 						}
 					}
 				}
@@ -708,14 +809,21 @@ public class LuceneIndex extends AbstractLuceneIndex {
 	 */
 	@Override
 	public synchronized void commit() throws IOException {
-		getIndexWriter().commit();
-		// the old IndexReaders/Searchers are not outdated
-		invalidateReaders();
+		if (this.transactionsEnabled) {
+			getIndexWriter().commit();
+			// the old IndexReaders/Searchers are not outdated
+			invalidateReaders();
+		} else {
+			getIndexWriter().flush();
+		}
 	}
 
 	@Override
 	public synchronized void rollback() throws IOException {
-		getIndexWriter().rollback();
+		if (this.transactionsEnabled) {
+			getIndexWriter().rollback();
+		}
+		// If transactions are disabled, we cannot rollback changes, so we just ignore the rollback request
 	}
 
 	// //////////////////////////////// Methods for querying the index
@@ -1130,7 +1238,7 @@ public class LuceneIndex extends AbstractLuceneIndex {
 
 	private static Document readDocument(IndexReader reader, int docId, Set<String> fieldsToLoad) throws IOException {
 		DocumentStoredFieldVisitor visitor = new DocumentStoredFieldVisitor(fieldsToLoad);
-		reader.document(docId, visitor);
+		reader.storedFields().document(docId, visitor);
 		return visitor.getDocument();
 	}
 
@@ -1150,8 +1258,8 @@ public class LuceneIndex extends AbstractLuceneIndex {
 		}
 
 		@Override
-		public void stringField(FieldInfo fieldInfo, byte[] value) {
-			final String stringValue = new String(value, StandardCharsets.UTF_8);
+		public void stringField(FieldInfo fieldInfo, String value) throws IOException {
+			final String stringValue = value;
 			String name = fieldInfo.name;
 			if (SearchFields.ID_FIELD_NAME.equals(name)) {
 				addIDField(stringValue, document);

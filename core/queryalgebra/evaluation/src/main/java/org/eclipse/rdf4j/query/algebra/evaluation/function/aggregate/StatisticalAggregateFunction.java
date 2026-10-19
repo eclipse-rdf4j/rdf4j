@@ -42,8 +42,7 @@ public class StatisticalAggregateFunction extends AggregateFunction<StatisticCol
 		}
 		Value v = evaluate(bindingSet);
 		if (distinctValue.test(v)) {
-			if (v instanceof Literal) {
-				Literal nextLiteral = (Literal) v;
+			if (v instanceof Literal nextLiteral) {
 				// check if the literal is numeric.
 				if (((Literal) v).getCoreDatatype()
 						.asXSDDatatype()

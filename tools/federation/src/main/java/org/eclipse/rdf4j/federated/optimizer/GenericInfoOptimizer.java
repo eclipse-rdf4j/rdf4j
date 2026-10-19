@@ -18,6 +18,7 @@ import org.eclipse.rdf4j.federated.algebra.FedXArbitraryLengthPath;
 import org.eclipse.rdf4j.federated.algebra.FedXLeftJoin;
 import org.eclipse.rdf4j.federated.algebra.FederatedDescribeOperator;
 import org.eclipse.rdf4j.federated.algebra.NJoin;
+import org.eclipse.rdf4j.federated.algebra.TripleRefStatementPattern;
 import org.eclipse.rdf4j.federated.exception.OptimizationException;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
@@ -26,6 +27,7 @@ import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -48,6 +50,7 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 	protected boolean hasFilter = false;
 	protected boolean hasUnion = false;
 	protected boolean hasPathExpr = false;
+	protected boolean hasTripleRefExpr = false;
 	protected List<Service> services = null;
 	protected long limit = -1; // set to a positive number if the main query has a limit
 	protected List<StatementPattern> stmts = new ArrayList<>();
@@ -68,6 +71,10 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 
 	public boolean hasUnion() {
 		return hasUnion;
+	}
+
+	public boolean hasTripleRefExpr() {
+		return hasTripleRefExpr;
 	}
 
 	public boolean hasPathExpression() {
@@ -128,8 +135,19 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		/*
 		 * Optimization task:
 		 *
-		 * Collect all join arguments recursively and create the NJoin structure for easier join order optimization
+		 * - Replace joins with a TripleRef to TripleRefStatementPattern (recursively) - Collect all join arguments
+		 * recursively and create the NJoin structure for easier join order optimization
 		 */
+
+		// conditionally based on config support RDF 1.2 triple terms
+		if (queryInfo.getFederationContext().getConfig().isEnableTripleRefSupport()) {
+			var newNode = OptimizerUtil.flattenTripleRefJoins(node, queryInfo);
+			if (!(newNode instanceof Join)) {
+				node.replaceWith(newNode);
+				newNode.visit(this);
+				return;
+			}
+		}
 
 		NJoin newJoin = OptimizerUtil.flattenJoin(node, queryInfo);
 		newJoin.visitChildren(this);
@@ -187,6 +205,17 @@ public class GenericInfoOptimizer extends AbstractSimpleQueryModelVisitor<Optimi
 		newNode.visitChildren(this);
 
 		node.replaceWith(newNode);
+	}
+
+	@Override
+	public void meetOther(QueryModelNode node) throws OptimizationException {
+
+		if (node instanceof TripleRefStatementPattern st) {
+			hasTripleRefExpr = true;
+			this.stmts.add(st);
+		}
+
+		super.meetOther(node);
 	}
 
 	public boolean hasService() {

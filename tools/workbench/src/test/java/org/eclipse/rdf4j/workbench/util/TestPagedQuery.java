@@ -41,4 +41,15 @@ public class TestPagedQuery {
 		PagedQuery pagedQuery = new PagedQuery(ResourceUtil.getString("ses2307.rq"), QueryLanguage.SPARQL, 100, 0);
 		assertThat(pagedQuery.getLimit()).isEqualTo(100);
 	}
+
+	@Test
+	public final void testNegativeOffsetZeroLimitAndExistingNewlineBranches() {
+		PagedQuery unlimited = new PagedQuery("select * {?s ?p ?o }\n", QueryLanguage.SPARQL, 0, -5);
+		assertThat(unlimited.isPaged()).isFalse();
+		assertThat(unlimited.getOffset()).isZero();
+
+		PagedQuery paged = new PagedQuery("select * {?s ?p ?o }\n", QueryLanguage.SPARQL, 7, 0);
+		assertThat(paged.isPaged()).isTrue();
+		assertThat(paged.toString()).endsWith("\nlimit 7");
+	}
 }

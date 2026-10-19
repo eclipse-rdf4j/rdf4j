@@ -18,6 +18,8 @@ public class ASTVar extends SimpleNode {
 
 	private boolean anonymous;
 
+	private boolean isBNode;
+
 	public ASTVar(int id) {
 		super(id);
 	}
@@ -50,5 +52,13 @@ public class ASTVar extends SimpleNode {
 	@Override
 	public String toString() {
 		return super.toString() + " (" + name + ")";
+	}
+
+	public void setIsBNode(boolean b) {
+		this.isBNode = b;
+	}
+
+	public boolean isBNode() {
+		return isBNode;
 	}
 }

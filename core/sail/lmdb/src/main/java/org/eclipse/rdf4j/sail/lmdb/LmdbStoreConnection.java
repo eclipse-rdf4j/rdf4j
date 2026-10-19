@@ -54,7 +54,7 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	 *--------------*/
 
 	protected LmdbStoreConnection(LmdbStore sail) {
-		super(sail, sail.getSailStore(), sail.getEvaluationStrategyFactory());
+		super(sail, sail.getSailStore(), sail.getConnectionEvaluationStrategyFactory());
 		this.lmdbStore = sail;
 		sailChangedEvent = new DefaultSailChangedEvent(sail);
 	}
@@ -203,7 +203,5 @@ public class LmdbStoreConnection extends SailSourceConnection {
 	@Override
 	protected void closeInternal() throws SailException {
 		super.closeInternal();
-		// release thread-local pool
-		Pool.release();
 	}
 }

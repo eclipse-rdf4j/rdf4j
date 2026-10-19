@@ -1,0 +1,178 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+{
+  ex:RootShape a sh:NodeShape ;
+    sh:targetClass ex:Root ;
+    sh:property ex:RootNextProperty ;
+    sh:property ex:RootFriendProperty ;
+     sh:property ex:RootLoopProperty ;
+    sh:node ex:SelfCheckShape ;
+    sh:and ( ex:AndShape ) ;
+    sh:or ( ex:OrShapeA ex:OrShapeB ) ;
+    sh:xone ( ex:XoneShapeA ex:XoneShapeB ) ;
+    sh:not ex:NotShape .
+
+  ex:RootNextProperty a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape1 .
+
+  ex:RootFriendProperty a sh:PropertyShape ;
+    sh:path ex:friend ;
+    sh:qualifiedValueShape ex:QualifiedShape ;
+    sh:qualifiedMinCount 1 .
+
+ ex:RootLoopProperty a sh:PropertyShape ;
+     sh:path ex:loop ;
+     sh:minCount 1 ;
+     sh:node ex:RootShape .
+
+  ex:SelfCheckShape a sh:NodeShape ;
+    sh:property [
+      sh:path ex:selfCheck ;
+      sh:hasValue "ok"
+    ] .
+
+  ex:AndShape a sh:NodeShape ;
+    sh:property [
+      sh:path ex:andFlag ;
+      sh:hasValue "ok"
+    ] .
+
+  ex:OrShapeA a sh:NodeShape ;
+    sh:property [
+      sh:path ex:orA ;
+      sh:hasValue "A"
+    ] .
+
+  ex:OrShapeB a sh:NodeShape ;
+    sh:property [
+      sh:path ex:orB ;
+      sh:hasValue "B"
+    ] .
+
+  ex:XoneShapeA a sh:NodeShape ;
+    sh:property [
+      sh:path ex:xoneA ;
+      sh:hasValue "A"
+    ] .
+
+  ex:XoneShapeB a sh:NodeShape ;
+    sh:property [
+      sh:path ex:xoneB ;
+      sh:hasValue "B"
+    ] .
+
+  ex:NotShape a sh:NodeShape ;
+    sh:property [
+      sh:path ex:notFlag ;
+      sh:hasValue "ban"
+    ] .
+
+  ex:QualifiedShape a sh:NodeShape ;
+    sh:property [
+      sh:path ex:friendFlag ;
+      sh:hasValue "friend"
+    ] .
+
+  ex:ChainShape1 a sh:NodeShape ;
+    sh:property ex:ChainShape1Property .
+
+  ex:ChainShape1Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape2 .
+
+  ex:ChainShape2 a sh:NodeShape ;
+    sh:property ex:ChainShape2Property .
+
+  ex:ChainShape2Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape3 .
+
+  ex:ChainShape3 a sh:NodeShape ;
+    sh:property ex:ChainShape3Property .
+
+  ex:ChainShape3Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape4 .
+
+  ex:ChainShape4 a sh:NodeShape ;
+    sh:property ex:ChainShape4Property .
+
+  ex:ChainShape4Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape5 .
+
+  ex:ChainShape5 a sh:NodeShape ;
+    sh:property ex:ChainShape5Property .
+
+  ex:ChainShape5Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape6 .
+
+  ex:ChainShape6 a sh:NodeShape ;
+    sh:property ex:ChainShape6Property .
+
+  ex:ChainShape6Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape7 .
+
+  ex:ChainShape7 a sh:NodeShape ;
+    sh:property ex:ChainShape7Property .
+
+  ex:ChainShape7Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape8 .
+
+  ex:ChainShape8 a sh:NodeShape ;
+    sh:property ex:ChainShape8Property .
+
+  ex:ChainShape8Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape9 .
+
+  ex:ChainShape9 a sh:NodeShape ;
+    sh:property ex:ChainShape9Property .
+
+  ex:ChainShape9Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape10 .
+
+  ex:ChainShape10 a sh:NodeShape ;
+    sh:property ex:ChainShape10Property .
+
+  ex:ChainShape10Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape11 .
+
+  ex:ChainShape11 a sh:NodeShape ;
+    sh:property ex:ChainShape11Property .
+
+  ex:ChainShape11Property a sh:PropertyShape ;
+    sh:path ex:next ;
+    sh:minCount 1 ;
+    sh:node ex:ChainShape12 .
+
+  ex:ChainShape12 a sh:NodeShape ;
+    sh:property ex:ChainShape12Property .
+
+  ex:ChainShape12Property a sh:PropertyShape ;
+    sh:path ex:value ;
+    sh:datatype xsd:integer .
+
+  rdf4j:nil sh:shapesGraph rdf4j:nil .
+}

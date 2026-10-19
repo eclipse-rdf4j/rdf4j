@@ -198,10 +198,9 @@ public class JSONLDParser extends AbstractRDFParser {
 			builder.configure(JsonReadFeature.ALLOW_TRAILING_COMMA,
 					parserConfig.get(JSONSettings.ALLOW_TRAILING_COMMA));
 		}
-		if (parserConfig.isSet(JSONSettings.INCLUDE_SOURCE_IN_LOCATION)) {
-			builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
-					parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
-		}
+		// Always apply the RDF4J-configured default to avoid backend-default drift between Jackson versions.
+		builder.configure(StreamReadFeature.INCLUDE_SOURCE_IN_LOCATION,
+				parserConfig.get(JSONSettings.INCLUDE_SOURCE_IN_LOCATION));
 		if (parserConfig.isSet(JSONSettings.STRICT_DUPLICATE_DETECTION)) {
 			builder.configure(StreamReadFeature.STRICT_DUPLICATE_DETECTION,
 					parserConfig.get(JSONSettings.STRICT_DUPLICATE_DETECTION));

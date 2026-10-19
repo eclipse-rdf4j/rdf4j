@@ -1,0 +1,16 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix rdf4j: <http://rdf4j.org/schema/rdf4j#> .
+
+{
+  ex:RootShape a sh:NodeShape ;
+    sh:targetClass ex:Node ;
+    sh:property ex:RecursiveProperty .
+
+  ex:RecursiveProperty a sh:PropertyShape ;
+    sh:path ex:p ;
+    sh:node ex:RootShape .
+
+  rdf4j:nil sh:shapesGraph rdf4j:nil .
+}
+

@@ -10,6 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.sail.shacl.ast;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -344,14 +345,8 @@ public class PropertyShape extends Shape {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
-			return false;
-		}
-		if (!super.equals(o)) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
+		if (!(o instanceof PropertyShape)) {
 			return false;
 		}
 
@@ -369,12 +364,18 @@ public class PropertyShape extends Shape {
 		if (!Objects.equals(group, that.group)) {
 			return false;
 		}
-		return Objects.equals(path, that.path);
+
+		if (!Objects.equals(path, that.path)) {
+			return false;
+		}
+
+		return super.equals(o, kvIdentityHashMap);
+
 	}
 
 	@Override
-	public int hashCode() {
-		int result = super.hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> cycleDetection) {
+		int result = super.hashCode(cycleDetection);
 		result = 31 * result + (name != null ? name.hashCode() : 0);
 		result = 31 * result + (description != null ? description.hashCode() : 0);
 		result = 31 * result + (defaultValue != null ? defaultValue.hashCode() : 0);

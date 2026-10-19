@@ -11,14 +11,14 @@
 package org.eclipse.rdf4j.sail.memory.model;
 
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 
 /**
- * An Iteration that can iterate over a list of {@link Triple} objects.
+ * An Iteration that can iterate over a list of {@link TripleTerm} objects.
  *
  * @author Jeen Broekstra
  */
-public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTriple> {
+public class MemTripleIterator<X extends Exception> extends LookAheadIteration<MemTripleTerm> {
 
 	/*-----------*
 	 * Variables *
@@ -92,7 +92,7 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 	 * constraints that have been set for this iterator.
 	 */
 	@Override
-	protected MemTriple getNextElement() {
+	protected MemTripleTerm getNextElement() {
 		statementIndex++;
 
 		for (; statementIndex < statementListSize; statementIndex++) {
@@ -102,13 +102,13 @@ public class MemTripleIterator<X extends Exception> extends LookAheadIteration<M
 			}
 
 			if (isInSnapshot(statement)) {
-				if (statement.getSubject().isTriple() && statement.getSubject() instanceof MemTriple) {
-					MemTriple triple = (MemTriple) statement.getSubject();
-					if (triple.matchesSPO(subject, predicate, object)) {
-						return triple;
+				if (statement.getObject().isTripleTerm() && statement.getObject()instanceof MemTripleTerm triple) {
+					if (triple.getObject().isTripleTerm()) {
+						MemTripleTerm tripleTerm = (MemTripleTerm) triple.getObject();
+						if (tripleTerm.matchesSPO(subject, predicate, object)) {
+							return tripleTerm;
+						}
 					}
-				} else if (statement.getObject().isTriple() && statement.getObject() instanceof MemTriple) {
-					MemTriple triple = (MemTriple) statement.getObject();
 					if (triple.matchesSPO(subject, predicate, object)) {
 						return triple;
 					}

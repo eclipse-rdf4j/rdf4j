@@ -42,27 +42,31 @@ public class LongMultithreadedTransactions {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		NotifyingSail baseSail = getBaseSail();
+		try {
+			Random r = new Random();
 
-		Random r = new Random();
+			IntStream.range(0, 10000).parallel().forEach(i -> {
 
-		IntStream.range(0, 10000).parallel().forEach(i -> {
+				try (SailConnection connection = baseSail.getConnection()) {
 
-			try (SailConnection connection = baseSail.getConnection()) {
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
+					executeATransaction(vf, r, i, connection);
 
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
-				executeATransaction(vf, r, i, connection);
+				}
 
-			}
-
-		});
+			});
+		} finally {
+			baseSail.shutDown();
+			LmdbTestUtil.deleteDir(baseSail.getDataDir());
+		}
 
 	}
 
@@ -73,74 +77,78 @@ public class LongMultithreadedTransactions {
 		ValueFactory vf = SimpleValueFactory.getInstance();
 
 		NotifyingSail baseSail = getBaseSail();
+		try {
+			Random r = new Random();
 
-		Random r = new Random();
+			try (NotifyingSailConnection connection0 = baseSail.getConnection()) {
+				try (NotifyingSailConnection connection1 = baseSail.getConnection()) {
+					try (NotifyingSailConnection connection2 = baseSail.getConnection()) {
+						try (NotifyingSailConnection connection3 = baseSail.getConnection()) {
+							connection0.begin(IsolationLevels.SERIALIZABLE);
+							connection1.begin(IsolationLevels.SERIALIZABLE);
+							connection2.begin(IsolationLevels.SERIALIZABLE);
+							connection3.begin(IsolationLevels.SERIALIZABLE);
 
-		try (NotifyingSailConnection connection0 = baseSail.getConnection()) {
-			try (NotifyingSailConnection connection1 = baseSail.getConnection()) {
-				try (NotifyingSailConnection connection2 = baseSail.getConnection()) {
-					try (NotifyingSailConnection connection3 = baseSail.getConnection()) {
-						connection0.begin(IsolationLevels.SERIALIZABLE);
-						connection1.begin(IsolationLevels.SERIALIZABLE);
-						connection2.begin(IsolationLevels.SERIALIZABLE);
-						connection3.begin(IsolationLevels.SERIALIZABLE);
+							boolean b1 = connection0.hasStatement(null, null, null, true);
+							boolean b2 = connection1.hasStatement(null, null, null, true);
+							boolean b3 = connection2.hasStatement(null, null, null, true);
+							boolean b4 = connection3.hasStatement(null, null, null, true);
 
-						boolean b1 = connection0.hasStatement(null, null, null, true);
-						boolean b2 = connection1.hasStatement(null, null, null, true);
-						boolean b3 = connection2.hasStatement(null, null, null, true);
-						boolean b4 = connection3.hasStatement(null, null, null, true);
+							System.out.println(b1);
+							System.out.println(b2);
+							System.out.println(b3);
+							System.out.println(b4);
 
-						System.out.println(b1);
-						System.out.println(b2);
-						System.out.println(b3);
-						System.out.println(b4);
+							connection0.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
+							connection1.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
+							connection2.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
+							connection3.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
 
-						connection0.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
-						connection1.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
-						connection2.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
-						connection3.addStatement(vf.createBNode(), RDFS.LABEL, vf.createLiteral("a"));
-
-						IntStream.range(0, 4).parallel().forEach(i -> {
-							if (i == 0) {
-								try {
-									connection0.prepare();
-								} catch (Exception e) {
-									e.printStackTrace();
-									connection0.rollback();
-									throw e;
+							IntStream.range(0, 4).parallel().forEach(i -> {
+								if (i == 0) {
+									try {
+										connection0.prepare();
+									} catch (Exception e) {
+										e.printStackTrace();
+										connection0.rollback();
+										throw e;
+									}
 								}
-							}
-							if (i == 1) {
-								connection1.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
-										vf.createLiteral("a"));
-							}
-							if (i == 2) {
-								try {
-									connection2.prepare();
-								} catch (Exception e) {
-									e.printStackTrace();
-									connection2.rollback();
-									throw e;
+								if (i == 1) {
+									connection1.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
+											vf.createLiteral("a"));
 								}
-							}
-							if (i == 3) {
-								connection3.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
-										vf.createLiteral("a"));
-							}
+								if (i == 2) {
+									try {
+										connection2.prepare();
+									} catch (Exception e) {
+										e.printStackTrace();
+										connection2.rollback();
+										throw e;
+									}
+								}
+								if (i == 3) {
+									connection3.addStatement(vf.createIRI("http://example.com/" + i), RDFS.LABEL,
+											vf.createLiteral("a"));
+								}
 
-						});
+							});
 
-						connection1.prepare();
-						connection3.prepare();
+							connection1.prepare();
+							connection3.prepare();
 
-						connection0.commit();
-						connection1.commit();
-						connection2.commit();
-						connection3.commit();
+							connection0.commit();
+							connection1.commit();
+							connection2.commit();
+							connection3.commit();
 
+						}
 					}
 				}
 			}
+		} finally {
+			baseSail.shutDown();
+			LmdbTestUtil.deleteDir(baseSail.getDataDir());
 		}
 
 	}

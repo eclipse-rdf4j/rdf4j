@@ -480,10 +480,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			if (obj == null) {
 				return false;
 			}
-			if (!(obj instanceof ValuePair)) {
+			if (!(obj instanceof ValuePair other)) {
 				return false;
 			}
-			ValuePair other = (ValuePair) obj;
 			if (endValue == null) {
 				if (other.endValue != null) {
 					return false;
@@ -627,7 +626,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
-		return new Var(varName, v, anonymous, false);
+		return Var.of(varName, v, anonymous, false);
 	}
 
 }

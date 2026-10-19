@@ -8,7 +8,13 @@
 module workbench {
 
     export module create {
-        export var id = $('#id');
+        export function findFieldByRole(role: string, fallbackSelector: string): JQuery {
+            var field = $('[data-field-role="' + role + '"]');
+            return field.length ? field : $(fallbackSelector);
+        }
+
+        export var id = findFieldByRole('repository-id', '#id');
+        export var title = findFieldByRole('repository-title', '#title');
     }
 }
 
@@ -50,7 +56,7 @@ workbench.addLoad(function createPageLoaded() {
      * Disables the create button if the id field doesn't have any text.
      */
     function disableCreateIfEmptyId() {
-        $('input#create').prop('disabled', !(/.+/.test($('#id').val())));
+        $('input#create').prop('disabled', !(/.+/.test(workbench.create.id.val())));
     }
 
     // Populate parameters
@@ -62,7 +68,7 @@ workbench.addLoad(function createPageLoaded() {
             workbench.create.id.val(value);
         }
         if (pair[0] == 'title') {
-            $('#title').val(value);
+            workbench.create.title.val(value);
         }
     }
 
@@ -70,7 +76,7 @@ workbench.addLoad(function createPageLoaded() {
 
     // Calls another function with a delay of 0 msec. (Workaround for 
     // annoying browser behavior.)
-    $('#id').on('keydown paste cut', function() {
+    workbench.create.id.on('keydown paste cut', function() {
         setTimeout(disableCreateIfEmptyId, 0);
     });
 });

@@ -14,7 +14,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
@@ -24,6 +23,7 @@ import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.collection.factory.impl.DefaultCollectionFactory;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.DistinctIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.common.iteration.IterationWrapper;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.iteration.ReducedIteration;
@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -63,6 +64,8 @@ import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.In;
@@ -71,11 +74,14 @@ import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.LocalName;
@@ -98,6 +104,8 @@ import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.StatementPattern.Scope;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
+import org.eclipse.rdf4j.query.algebra.TripleComponent;
 import org.eclipse.rdf4j.query.algebra.TripleRef;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
@@ -110,13 +118,13 @@ import org.eclipse.rdf4j.query.algebra.ValueExprTripleRef;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.EvaluationStrategy;
+import org.eclipse.rdf4j.query.algebra.evaluation.NativeTripleTermSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizerPipeline;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep.ConstantQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.RDFStarTripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedService;
@@ -128,15 +136,16 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.datetime.Now;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.BindingSetAssignmentQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.EncodedTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.IntersectionQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.JoinQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LateralQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.LeftJoinQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQueryEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.NativeTripleTermQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ProjectionQueryEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.RegexValueEvaluationStepSupplier;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ReificationRdfStarQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.ServiceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.SliceQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.StatementPatternQueryEvaluationStep;
@@ -152,6 +161,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.Li
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.OrValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.QueryValueEvaluationStepSupplier;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleRefEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ValueExprTripleTermComponentEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.DescribeIteration;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ExtensionIterator;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
@@ -164,9 +174,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtil;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.XMLDatatypeMathUtil;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
-
-import com.google.common.base.Stopwatch;
 
 /**
  * Default SPARQL 1.1 Query Evaluation strategy, to evaluate one {@link TupleExpr} on the given {@link TripleSource},
@@ -202,11 +211,10 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	// track the exeution time of each node in the plan
 	private boolean trackTime;
 
-	private UUID uuid;
-
 	private QueryOptimizerPipeline pipeline;
 
 	private final TupleFunctionRegistry tupleFuncRegistry;
+	private final EvaluationStatistics evaluationStatistics;
 
 	private QueryEvaluationMode queryEvaluationMode;
 
@@ -285,8 +293,9 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		this.dataset = dataset;
 		this.serviceResolver = serviceResolver;
 		this.iterationCacheSyncThreshold = iterationCacheSyncTreshold;
+		this.evaluationStatistics = evaluationStatistics == null ? new EvaluationStatistics() : evaluationStatistics;
 		this.pipeline = new org.eclipse.rdf4j.query.algebra.evaluation.optimizer.StandardQueryOptimizerPipeline(this,
-				tripleSource, evaluationStatistics);
+				tripleSource, this.evaluationStatistics);
 		this.trackResultSize = trackResultSize;
 		this.tupleFuncRegistry = tupleFunctionRegistry;
 		this.setQueryEvaluationMode(QueryEvaluationMode.STANDARD);
@@ -385,6 +394,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 					result = precompile(expr).evaluate(bindings);
 				} else if (expr instanceof Difference) {
 					result = precompile(expr).evaluate(bindings);
+				} else if (expr instanceof Lateral) {
+					result = precompile(expr).evaluate(bindings);
 				} else {
 					throw new QueryEvaluationException(
 							"Unsupported binary tuple operator type: " + ((BinaryTupleOperator) expr).getClass());
@@ -414,8 +425,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			}
 
 			if (trackTime) {
-				// set resultsSizeActual to at least be 0 so we can track iterations that don't procude anything
-				expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
+				initializeTimeTelemetry(expr);
 				result = new TimedIterator(result, expr);
 			}
 
@@ -489,17 +499,69 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryEvaluationStep trackResultSize(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, iter -> {
+		return bindings -> {
 			expr.setResultSizeActual(Math.max(0, expr.getResultSizeActual()));
-			return new ResultSizeCountingIterator(iter, expr);
-		});
+			if (expr.isRuntimeTelemetryEnabled()) {
+				initializeRuntimeTelemetry(expr);
+			}
+			return new ResultSizeCountingIterator(qes.evaluate(bindings), expr);
+		};
 	}
 
 	private QueryEvaluationStep trackTime(TupleExpr expr, QueryEvaluationStep qes) {
-		return QueryEvaluationStep.wrap(qes, iter -> {
-			expr.setTotalTimeNanosActual(Math.max(0, expr.getTotalTimeNanosActual()));
-			return new TimedIterator(iter, expr);
-		});
+		return bindings -> {
+			initializeTimeTelemetry(expr);
+			return new TimedIterator(qes.evaluate(bindings), expr);
+		};
+	}
+
+	private static void initializeTimeTelemetry(QueryModelNode queryModelNode) {
+		queryModelNode.setTotalTimeNanosActual(Math.max(0, queryModelNode.getTotalTimeNanosActual()));
+		initializeRuntimeTelemetry(queryModelNode);
+	}
+
+	private static void initializeRuntimeTelemetry(QueryModelNode queryModelNode) {
+		queryModelNode.setHasNextCallCountActual(Math.max(0, queryModelNode.getHasNextCallCountActual()));
+		queryModelNode.setHasNextTrueCountActual(Math.max(0, queryModelNode.getHasNextTrueCountActual()));
+		queryModelNode.setHasNextTimeNanosActual(Math.max(0, queryModelNode.getHasNextTimeNanosActual()));
+		queryModelNode.setNextCallCountActual(Math.max(0, queryModelNode.getNextCallCountActual()));
+		queryModelNode.setNextTimeNanosActual(Math.max(0, queryModelNode.getNextTimeNanosActual()));
+		queryModelNode
+				.setJoinRightIteratorsCreatedActual(Math.max(0, queryModelNode.getJoinRightIteratorsCreatedActual()));
+		queryModelNode
+				.setJoinLeftBindingsConsumedActual(Math.max(0, queryModelNode.getJoinLeftBindingsConsumedActual()));
+		queryModelNode
+				.setJoinRightBindingsConsumedActual(Math.max(0, queryModelNode.getJoinRightBindingsConsumedActual()));
+		queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+		queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+		queryModelNode.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
+	}
+
+	private static long longMetric(QueryModelNode queryModelNode, String metricName) {
+		return Math.max(0L, queryModelNode.getLongMetricActual(metricName));
+	}
+
+	private static void incrementLongMetric(QueryModelNode queryModelNode, String metricName) {
+		addLongMetric(queryModelNode, metricName, 1L);
+	}
+
+	private static void addLongMetric(QueryModelNode queryModelNode, String metricName, long delta) {
+		if (delta <= 0) {
+			return;
+		}
+		queryModelNode.setLongMetricActual(metricName, longMetric(queryModelNode, metricName) + delta);
+	}
+
+	private static void addDoubleMetric(QueryModelNode queryModelNode, String metricName, double delta) {
+		if (delta <= 0) {
+			return;
+		}
+		double current = Math.max(0D, queryModelNode.getDoubleMetricActual(metricName));
+		queryModelNode.setDoubleMetricActual(metricName, current + delta);
+	}
+
+	private static boolean telemetryActive(QueryModelNode node) {
+		return node != null && node.isRuntimeTelemetryEnabled();
 	}
 
 	protected QueryEvaluationStep prepare(ArbitraryLengthPath alp, QueryEvaluationContext context)
@@ -613,8 +675,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryModelNode child = node;
 		QueryModelNode parent = node.getParentNode();
 		while (parent != null) {
-			if (parent instanceof Difference) {
-				Difference diff = (Difference) parent;
+			if (parent instanceof Difference diff) {
 				if (diff.getRightArg() == child) {
 					return true;
 				}
@@ -636,7 +697,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryEvaluationStep prepare(Filter node, QueryEvaluationContext context) throws QueryEvaluationException {
 
-		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context);
+		return FilterIterator.supply(node, DefaultEvaluationStrategy.this, context, evaluationStatistics);
 
 	}
 
@@ -646,7 +707,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		boolean reduced = isReducedOrDistinct(node);
 		long limit = getLimit(node);
 		QueryEvaluationStep preparedArg = precompile(node.getArg(), context);
-		return new OrderQueryEvaluationStep(cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
+		return new OrderQueryEvaluationStep(node, cmp, limit, reduced, preparedArg, iterationCacheSyncThreshold);
 	}
 
 	protected QueryEvaluationStep prepare(BindingSetAssignment node, QueryEvaluationContext context)
@@ -832,6 +893,8 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			return prepare((Intersection) expr, context);
 		} else if (expr instanceof Difference) {
 			return prepare((Difference) expr, context);
+		} else if (expr instanceof Lateral) {
+			return LateralQueryEvaluationStep.supply(this, (Lateral) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
@@ -854,78 +917,130 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	public QueryValueEvaluationStep precompile(ValueExpr expr,
 			QueryEvaluationContext context)
 			throws QueryEvaluationException {
+		QueryValueEvaluationStep prepared;
 		if (expr instanceof Var) {
-			return prepare((Var) expr, context);
+			prepared = prepare((Var) expr, context);
 		} else if (expr instanceof ValueConstant) {
-			return prepare((ValueConstant) expr, context);
+			prepared = prepare((ValueConstant) expr, context);
 		} else if (expr instanceof BNodeGenerator) {
-			return prepare((BNodeGenerator) expr, context);
+			prepared = prepare((BNodeGenerator) expr, context);
 		} else if (expr instanceof Bound) {
-			return prepare((Bound) expr, context);
+			prepared = prepare((Bound) expr, context);
 //			return new QueryValueEvaluationStep.Minimal(this, expr);
 		} else if (expr instanceof Str) {
-			return prepare((Str) expr, context);
+			prepared = prepare((Str) expr, context);
 		} else if (expr instanceof Label) {
-			return prepare((Label) expr, context);
+			prepared = prepare((Label) expr, context);
 		} else if (expr instanceof Lang) {
-			return prepare((Lang) expr, context);
+			prepared = prepare((Lang) expr, context);
+		} else if (expr instanceof LangDir) {
+			prepared = prepare((LangDir) expr, context);
+		} else if (expr instanceof StrLangDir) {
+			prepared = prepare((StrLangDir) expr, context);
+		} else if (expr instanceof HasLang) {
+			prepared = prepare((HasLang) expr, context);
+		} else if (expr instanceof HasLangDir) {
+			prepared = prepare((HasLangDir) expr, context);
 		} else if (expr instanceof LangMatches) {
-			return prepare((LangMatches) expr, context);
+			prepared = prepare((LangMatches) expr, context);
 		} else if (expr instanceof Datatype) {
-			return prepare((Datatype) expr, context);
+			prepared = prepare((Datatype) expr, context);
 		} else if (expr instanceof Namespace) {
-			return prepare((Namespace) expr, context);
+			prepared = prepare((Namespace) expr, context);
 		} else if (expr instanceof LocalName) {
-			return prepare((LocalName) expr, context);
+			prepared = prepare((LocalName) expr, context);
 		} else if (expr instanceof IsResource) {
-			return prepare((IsResource) expr, context);
+			prepared = prepare((IsResource) expr, context);
+		} else if (expr instanceof IsTriple) {
+			prepared = prepare((IsTriple) expr, context);
 		} else if (expr instanceof IsURI) {
-			return prepare((IsURI) expr, context);
+			prepared = prepare((IsURI) expr, context);
 		} else if (expr instanceof IsBNode) {
-			return prepare((IsBNode) expr, context);
+			prepared = prepare((IsBNode) expr, context);
 		} else if (expr instanceof IsLiteral) {
-			return prepare((IsLiteral) expr, context);
+			prepared = prepare((IsLiteral) expr, context);
 		} else if (expr instanceof IsNumeric) {
-			return prepare((IsNumeric) expr, context);
+			prepared = prepare((IsNumeric) expr, context);
 		} else if (expr instanceof IRIFunction) {
-			return prepare((IRIFunction) expr, context);
+			prepared = prepare((IRIFunction) expr, context);
 		} else if (expr instanceof Regex) {
-			return prepare((Regex) expr, context);
+			prepared = prepare((Regex) expr, context);
 		} else if (expr instanceof Coalesce) {
-			return prepare((Coalesce) expr, context);
+			prepared = prepare((Coalesce) expr, context);
 		} else if (expr instanceof FunctionCall) {
-			return prepare((FunctionCall) expr, context);
+			prepared = prepare((FunctionCall) expr, context);
 		} else if (expr instanceof And) {
-			return prepare((And) expr, context);
+			prepared = prepare((And) expr, context);
 		} else if (expr instanceof Or) {
-			return prepare((Or) expr, context);
+			prepared = prepare((Or) expr, context);
 		} else if (expr instanceof Not) {
-			return prepare((Not) expr, context);
+			prepared = prepare((Not) expr, context);
 		} else if (expr instanceof SameTerm) {
-			return prepare((SameTerm) expr, context);
+			prepared = prepare((SameTerm) expr, context);
 		} else if (expr instanceof Compare) {
-			return prepare((Compare) expr, context);
+			prepared = prepare((Compare) expr, context);
 		} else if (expr instanceof MathExpr) {
-			return prepare((MathExpr) expr, context);
+			prepared = prepare((MathExpr) expr, context);
 		} else if (expr instanceof In) {
-			return prepare((In) expr, context);
+			prepared = prepare((In) expr, context);
 		} else if (expr instanceof CompareAny) {
-			return prepare((CompareAny) expr, context);
+			prepared = prepare((CompareAny) expr, context);
 		} else if (expr instanceof CompareAll) {
-			return prepare((CompareAll) expr, context);
+			prepared = prepare((CompareAll) expr, context);
 		} else if (expr instanceof Exists) {
-			return prepare((Exists) expr, context);
+			prepared = prepare((Exists) expr, context);
 		} else if (expr instanceof If) {
-			return prepare((If) expr, context);
+			prepared = prepare((If) expr, context);
 		} else if (expr instanceof ListMemberOperator) {
-			return prepare((ListMemberOperator) expr, context);
+			prepared = prepare((ListMemberOperator) expr, context);
 		} else if (expr instanceof ValueExprTripleRef) {
-			return prepare((ValueExprTripleRef) expr, context);
+			prepared = prepare((ValueExprTripleRef) expr, context);
+		} else if (expr instanceof TripleComponent) {
+			prepared = prepare((TripleComponent) expr, context);
 		} else if (expr == null) {
 			throw new IllegalArgumentException("expr must not be null");
 		} else {
 			throw new QueryEvaluationException("Unsupported value expr type: " + expr.getClass());
 		}
+		return wrapValueExprTelemetry(expr, prepared);
+	}
+
+	private QueryValueEvaluationStep wrapValueExprTelemetry(ValueExpr expr, QueryValueEvaluationStep prepared) {
+		if (prepared == null || !expr.isRuntimeTelemetryEnabled()) {
+			return prepared;
+		}
+		return new QueryValueEvaluationStep() {
+			@Override
+			public Value evaluate(BindingSet bindings) {
+				long started = System.nanoTime();
+				incrementLongMetric(expr, TelemetryMetricNames.EXPR_EVAL_COUNT_ACTUAL);
+				try {
+					Value value = prepared.evaluate(bindings);
+					if (value == null) {
+						incrementLongMetric(expr, TelemetryMetricNames.EXPR_NULL_COUNT_ACTUAL);
+					} else {
+						QueryEvaluationUtility.Result ebv = QueryEvaluationUtility.getEffectiveBooleanValue(value);
+						if (ebv == QueryEvaluationUtility.Result._true) {
+							incrementLongMetric(expr, TelemetryMetricNames.EXPR_TRUE_COUNT_ACTUAL);
+						} else if (ebv == QueryEvaluationUtility.Result._false) {
+							incrementLongMetric(expr, TelemetryMetricNames.EXPR_FALSE_COUNT_ACTUAL);
+						}
+					}
+					return value;
+				} catch (RuntimeException e) {
+					incrementLongMetric(expr, TelemetryMetricNames.EXPR_ERROR_COUNT_ACTUAL);
+					throw e;
+				} finally {
+					addDoubleMetric(expr, TelemetryMetricNames.EXPR_EVAL_TIME_NANOS_ACTUAL,
+							System.nanoTime() - started);
+				}
+			}
+
+			@Override
+			public boolean isConstant() {
+				return prepared.isConstant();
+			}
+		};
 	}
 
 	@Deprecated(forRemoval = true)
@@ -935,7 +1050,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return precompile(expr,
 				new QueryEvaluationContext.Minimal(DefaultEvaluationStrategy.this.sharedValueOfNow, dataset,
 						tripleSource.getComparator()))
-				.evaluate(bindings);
+								.evaluate(bindings);
 	}
 
 	protected QueryValueEvaluationStep prepare(Var var, QueryEvaluationContext context)
@@ -970,7 +1085,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		ValueExpr nodeIdExpr = node.getNodeIdExpr();
 		if (nodeIdExpr != null) {
 			QueryValueEvaluationStep nodeVes = precompile(nodeIdExpr, context);
-			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf);
+			return QueryValueEvaluationStepSupplier.bnode(nodeVes, vf, context);
 		} else {
 			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> vf.createBNode());
 		}
@@ -1004,6 +1119,29 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		return QueryValueEvaluationStepSupplier.prepareLang(arg, tripleSource.getValueFactory());
 	}
 
+	protected QueryValueEvaluationStep prepare(LangDir node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareLangDir(arg, tripleSource.getValueFactory());
+	}
+
+	protected QueryValueEvaluationStep prepare(StrLangDir node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep lexArg = precompile(node.getLexicalFormArg(), context);
+		QueryValueEvaluationStep langArg = precompile(node.getLangArg(), context);
+		QueryValueEvaluationStep dirArg = precompile(node.getDirArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareStrLangDir(lexArg, langArg, dirArg,
+				tripleSource.getValueFactory());
+	}
+
+	private QueryValueEvaluationStep prepare(HasLangDir expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(expr.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareHasLangDir(arg);
+	}
+
+	private QueryValueEvaluationStep prepare(HasLang expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(expr.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareHasLang(arg);
+	}
+
 	protected QueryValueEvaluationStep prepare(Datatype node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareDatatype(arg, context);
@@ -1022,6 +1160,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	protected QueryValueEvaluationStep prepare(IsResource node, QueryEvaluationContext context) {
 		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
 		return QueryValueEvaluationStepSupplier.prepareIs(arg, v -> v instanceof Resource);
+	}
+
+	protected QueryValueEvaluationStep prepare(IsTriple node, QueryEvaluationContext context) {
+		QueryValueEvaluationStep arg = precompile(node.getArg(), context);
+		return QueryValueEvaluationStepSupplier.prepareIs(arg, v -> v instanceof TripleTerm);
 	}
 
 	protected QueryValueEvaluationStep prepare(IsURI node, QueryEvaluationContext context) {
@@ -1045,8 +1188,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private static boolean isNumeric(Value argValue) {
-		if (argValue instanceof Literal) {
-			Literal lit = (Literal) argValue;
+		if (argValue instanceof Literal lit) {
 			CoreDatatype.XSD datatype = lit.getCoreDatatype().asXSDDatatypeOrNull();
 			return datatype != null && datatype.isNumericDatatype();
 		} else {
@@ -1070,7 +1212,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			throws QueryEvaluationException {
 		return prepare(node,
 				new QueryEvaluationContext.Minimal(sharedValueOfNow, dataset, tripleSource.getComparator()))
-				.evaluate(bindings);
+						.evaluate(bindings);
 	}
 
 	/**
@@ -1174,29 +1316,17 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	private QueryValueEvaluationStep prepare(And node, QueryEvaluationContext context) throws QueryEvaluationException {
-		QueryValueEvaluationStep leftStep = precompile(node.getLeftArg(), context);
-		QueryValueEvaluationStep rightStep = precompile(node.getRightArg(), context);
+		QueryValueEvaluationStep leftStep = precompileOrFail(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightStep = precompileOrFail(node.getRightArg(), context);
 
-		return AndValueEvaluationStep.supply(leftStep, rightStep);
+		return AndValueEvaluationStep.supply(leftStep, rightStep, node);
 	}
 
 	protected QueryValueEvaluationStep prepare(Or node, QueryEvaluationContext context)
 			throws QueryEvaluationException {
-		QueryValueEvaluationStep leftArg = null;
-		QueryValueEvaluationStep rightArg = null;
-		try {
-			try {
-				leftArg = precompile(node.getLeftArg(), context);
-			} catch (ValueExprEvaluationException e) {
-				// leftArg would always be false in this case so no need to evaluate it.
-				return precompile(node.getRightArg(), context);
-			}
-			rightArg = precompile(node.getRightArg(), context);
-		} catch (ValueExprEvaluationException e) {
-			// Both failed to compile so we know we will always throw an exception
-			return new QueryValueEvaluationStep.Fail("Value Expressions in OR both failed to prepare/precompile");
-		}
-		return new OrValueEvaluationStep(leftArg, rightArg);
+		QueryValueEvaluationStep leftArg = precompileOrFail(node.getLeftArg(), context);
+		QueryValueEvaluationStep rightArg = precompileOrFail(node.getRightArg(), context);
+		return new OrValueEvaluationStep(leftArg, rightArg, node);
 	}
 
 	protected QueryValueEvaluationStep prepare(Not node, QueryEvaluationContext context) {
@@ -1252,8 +1382,32 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	protected QueryValueEvaluationStep prepare(Compare node, QueryEvaluationContext context) {
 		boolean strict = QueryEvaluationMode.STRICT == getQueryEvaluationMode();
-		return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
-				.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
+
+		Compare.CompareOp operator = node.getOperator();
+		switch (operator) {
+		case EQ:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareEQ(leftVal, rightVal, strict)), context);
+		case NE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareNE(leftVal, rightVal, strict)), context);
+		case LT:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareLT(leftVal, rightVal, strict)), context);
+		case LE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareLE(leftVal, rightVal, strict)), context);
+		case GE:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareGE(leftVal, rightVal, strict)), context);
+		case GT:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compareGT(leftVal, rightVal, strict)), context);
+		default:
+			return supplyBinaryValueEvaluation(node, (leftVal, rightVal) -> BooleanLiteral
+					.valueOf(QueryEvaluationUtil.compare(leftVal, rightVal, node.getOperator(), strict)), context);
+		}
+
 	}
 
 	private BiFunction<Value, Value, Value> mathOperationApplier(MathExpr node,
@@ -1299,9 +1453,23 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 			// binding.
 			return new QueryValueEvaluationStep.ApplyFunctionForEachBinding(bs -> null);
 		}
-		QueryValueEvaluationStep result = precompile(node.getResult(), context);
-		QueryValueEvaluationStep alternative = precompile(node.getAlternative(), context);
-		return new IfValueEvaluationStep(result, condition, alternative);
+		// only the selected branch is evaluated, so an error in the other branch must not surface
+		QueryValueEvaluationStep result = precompileOrFail(node.getResult(), context);
+		QueryValueEvaluationStep alternative = precompileOrFail(node.getAlternative(), context);
+		return new IfValueEvaluationStep(result, condition, alternative, node);
+	}
+
+	/**
+	 * Precompile an operand whose value error may be discarded by the enclosing expression (for example
+	 * <code>true || error</code> or <code>false &amp;&amp; error</code>). An error raised while precompiling is
+	 * deferred until the operand is evaluated.
+	 */
+	private QueryValueEvaluationStep precompileOrFail(ValueExpr expr, QueryEvaluationContext context) {
+		try {
+			return precompile(expr, context);
+		} catch (ValueExprEvaluationException e) {
+			return new QueryValueEvaluationStep.Fail(e.getMessage());
+		}
 	}
 
 	protected QueryValueEvaluationStep prepare(In node, QueryEvaluationContext context)
@@ -1345,8 +1513,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		// In algebra, OPTIONAL is a LeftJoin. With a SingletonSet left-arg, LeftJoin
 		// always yields at least the input binding set. Therefore EXISTS evaluates to TRUE.
 		TupleExpr subQuery = node.getSubQuery();
-		if (subQuery instanceof LeftJoin) {
-			LeftJoin leftJoin = (LeftJoin) subQuery;
+		if (subQuery instanceof LeftJoin leftJoin) {
 			if (leftJoin.getLeftArg() instanceof SingletonSet) {
 				return bindings -> BooleanLiteral.TRUE;
 			}
@@ -1380,8 +1547,7 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 */
 	protected long getLimit(QueryModelNode node) {
 		long offset = 0;
-		if (node instanceof Slice) {
-			Slice slice = (Slice) node;
+		if (node instanceof Slice slice) {
 			if (slice.hasOffset() && slice.hasLimit()) {
 				return slice.getOffset() + slice.getLimit();
 			} else if (slice.hasLimit()) {
@@ -1412,6 +1578,11 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 	}
 
+	protected QueryValueEvaluationStep prepare(TripleComponent expr, QueryEvaluationContext context) {
+		QueryValueEvaluationStep tripleTerm = precompile(expr.getTripleRefVar(), context);
+		return new ValueExprTripleTermComponentEvaluationStep(tripleTerm, expr.getRole());
+	}
+
 	/**
 	 * evaluates a TripleRef node returning bindingsets from the matched Triple nodes in the dataset (or explore
 	 * standard reification)
@@ -1431,13 +1602,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		final org.eclipse.rdf4j.query.algebra.Var predVar = ref.getPredicateVar();
 		final org.eclipse.rdf4j.query.algebra.Var objVar = ref.getObjectVar();
 		final org.eclipse.rdf4j.query.algebra.Var extVar = ref.getExprVar();
-		// whether the TripleSouce support access to RDF star
-		final boolean sourceSupportsRdfStar = tripleSource instanceof RDFStarTripleSource;
-		if (sourceSupportsRdfStar) {
-			return new RdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, (RDFStarTripleSource) tripleSource,
+		// whether the TripleSouce support access to TripleTerms
+		final boolean nativeTripleTermSupport = tripleSource instanceof NativeTripleTermSource;
+		if (nativeTripleTermSupport) {
+			return new NativeTripleTermQueryEvaluationStep(subjVar, predVar, objVar, extVar,
+					(NativeTripleTermSource) tripleSource,
 					context);
 		} else {
-			return new ReificationRdfStarQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
+			return new EncodedTripleTermQueryEvaluationStep(subjVar, predVar, objVar, extVar, tripleSource, context);
 		}
 	}
 
@@ -1445,27 +1617,130 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	 * This class wraps an iterator and increments the "resultSizeActual" of the query model node that the iterator
 	 * represents. This means we can track the number of tuples that have been retrieved from this node.
 	 */
-	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet> {
+	private static class ResultSizeCountingIterator extends IterationWrapper<BindingSet>
+			implements IndexReportingIterator {
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
+		boolean telemetryEnabled;
+		long openedAtNanos;
+		boolean firstRowSeen;
 
 		public ResultSizeCountingIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
+			this.telemetryEnabled = telemetryActive(queryModelNode);
+			this.openedAtNanos = System.nanoTime();
+			if (telemetryEnabled) {
+				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
+			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			return iterator.hasNext();
+			boolean hasNext = false;
+			long started = System.nanoTime();
+			try {
+				hasNext = iterator.hasNext();
+				return hasNext;
+			} finally {
+				if (telemetryEnabled) {
+					long elapsed = System.nanoTime() - started;
+					queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
+					queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
+					if (hasNext) {
+						queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+					}
+				}
+			}
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
+			long started = System.nanoTime();
 			queryModelNode.setResultSizeActual(queryModelNode.getResultSizeActual() + 1);
-			return iterator.next();
+			try {
+				return iterator.next();
+			} finally {
+				if (telemetryEnabled) {
+					long elapsed = System.nanoTime() - started;
+					queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
+					queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.OUTPUT_ROWS_ACTUAL,
+							Math.max(0, queryModelNode.getResultSizeActual()));
+					if (!firstRowSeen) {
+						firstRowSeen = true;
+						queryModelNode.setLongMetricActual(TelemetryMetricNames.FIRST_ROW_TIME_NANOS_ACTUAL,
+								Math.max(0L, System.nanoTime() - openedAtNanos));
+					}
+				}
+			}
+		}
+
+		@Override
+		protected void handleClose() throws QueryEvaluationException {
+			try {
+				if (telemetryEnabled && iterator instanceof IndexReportingIterator sourceMetrics) {
+					queryModelNode.setSourceRowsScannedActual(Math.max(0, queryModelNode.getSourceRowsScannedActual()));
+					queryModelNode.setSourceRowsMatchedActual(Math.max(0, queryModelNode.getSourceRowsMatchedActual()));
+					queryModelNode
+							.setSourceRowsFilteredActual(Math.max(0, queryModelNode.getSourceRowsFilteredActual()));
+
+					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
+					if (sourceRowsScanned >= 0) {
+						queryModelNode.setSourceRowsScannedActual(
+								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
+					}
+					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
+					if (sourceRowsMatched >= 0) {
+						queryModelNode.setSourceRowsMatchedActual(
+								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
+					}
+					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
+					if (sourceRowsFiltered >= 0) {
+						queryModelNode.setSourceRowsFilteredActual(
+								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
+					}
+				}
+				if (telemetryEnabled) {
+					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
+							Math.max(0L, System.nanoTime() - openedAtNanos));
+					QueryRuntimeTelemetryRegistry.record(queryModelNode);
+				}
+			} finally {
+				super.handleClose();
+			}
+		}
+
+		@Override
+		public String getIndexName() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? "" : metrics.getIndexName();
+		}
+
+		@Override
+		public long getSourceRowsScannedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsScannedActual();
+		}
+
+		@Override
+		public long getSourceRowsMatchedActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsMatchedActual();
+		}
+
+		@Override
+		public long getSourceRowsFilteredActual() {
+			IndexReportingIterator metrics = indexReporter();
+			return metrics == null ? -1 : metrics.getSourceRowsFilteredActual();
+		}
+
+		private IndexReportingIterator indexReporter() {
+			return iterator instanceof IndexReportingIterator ? (IndexReportingIterator) iterator : null;
 		}
 
 	}
@@ -1477,38 +1752,85 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 
 		CloseableIteration<BindingSet> iterator;
 		QueryModelNode queryModelNode;
-		Stopwatch stopwatch = Stopwatch.createStarted();
+		long elapsedNanos;
+		long openedAtNanos;
+		boolean firstRowSeen;
 
 		public TimedIterator(CloseableIteration<BindingSet> iterator,
 				QueryModelNode queryModelNode) {
 			super(iterator);
 			this.iterator = iterator;
 			this.queryModelNode = queryModelNode;
-			stopwatch.stop();
+			this.openedAtNanos = System.nanoTime();
+			if (telemetryActive(queryModelNode)) {
+				incrementLongMetric(queryModelNode, TelemetryMetricNames.OPEN_COUNT_ACTUAL);
+			}
 		}
 
 		@Override
 		public BindingSet next() throws QueryEvaluationException {
-			stopwatch.start();
-			BindingSet next = iterator.next();
-			stopwatch.stop();
-			return next;
+			long started = System.nanoTime();
+			try {
+				return iterator.next();
+			} finally {
+				long elapsed = System.nanoTime() - started;
+				elapsedNanos += elapsed;
+				queryModelNode.setNextCallCountActual(queryModelNode.getNextCallCountActual() + 1);
+				queryModelNode.setNextTimeNanosActual(queryModelNode.getNextTimeNanosActual() + elapsed);
+				if (!firstRowSeen && telemetryActive(queryModelNode)) {
+					firstRowSeen = true;
+					long firstRowElapsedNanos = Math.max(0L, System.nanoTime() - openedAtNanos);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.FIRST_ROW_TIME_NANOS_ACTUAL,
+							firstRowElapsedNanos);
+				}
+			}
 		}
 
 		@Override
 		public boolean hasNext() throws QueryEvaluationException {
-			stopwatch.start();
-			boolean hasNext = super.hasNext();
-			stopwatch.stop();
-			return hasNext;
+			boolean hasNext = false;
+			long started = System.nanoTime();
+			try {
+				hasNext = super.hasNext();
+				return hasNext;
+			} finally {
+				long elapsed = System.nanoTime() - started;
+				elapsedNanos += elapsed;
+				queryModelNode.setHasNextCallCountActual(queryModelNode.getHasNextCallCountActual() + 1);
+				queryModelNode.setHasNextTimeNanosActual(queryModelNode.getHasNextTimeNanosActual() + elapsed);
+				if (hasNext) {
+					queryModelNode.setHasNextTrueCountActual(queryModelNode.getHasNextTrueCountActual() + 1);
+				}
+			}
 		}
 
 		@Override
 		protected void handleClose() throws QueryEvaluationException {
 			try {
 				long totalTimeNanosActual = queryModelNode.getTotalTimeNanosActual();
-				queryModelNode
-						.setTotalTimeNanosActual((totalTimeNanosActual + stopwatch.elapsed(TimeUnit.NANOSECONDS)));
+				queryModelNode.setTotalTimeNanosActual(totalTimeNanosActual + elapsedNanos);
+				if (telemetryActive(queryModelNode)) {
+					incrementLongMetric(queryModelNode, TelemetryMetricNames.CLOSE_COUNT_ACTUAL);
+					queryModelNode.setLongMetricActual(TelemetryMetricNames.LAST_ROW_TIME_NANOS_ACTUAL,
+							Math.max(0L, System.nanoTime() - openedAtNanos));
+				}
+				if (iterator instanceof IndexReportingIterator sourceMetrics) {
+					long sourceRowsScanned = sourceMetrics.getSourceRowsScannedActual();
+					if (sourceRowsScanned >= 0) {
+						queryModelNode.setSourceRowsScannedActual(
+								queryModelNode.getSourceRowsScannedActual() + sourceRowsScanned);
+					}
+					long sourceRowsMatched = sourceMetrics.getSourceRowsMatchedActual();
+					if (sourceRowsMatched >= 0) {
+						queryModelNode.setSourceRowsMatchedActual(
+								queryModelNode.getSourceRowsMatchedActual() + sourceRowsMatched);
+					}
+					long sourceRowsFiltered = sourceMetrics.getSourceRowsFilteredActual();
+					if (sourceRowsFiltered >= 0) {
+						queryModelNode.setSourceRowsFilteredActual(
+								queryModelNode.getSourceRowsFilteredActual() + sourceRowsFiltered);
+					}
+				}
 			} finally {
 				super.handleClose();
 
@@ -1522,8 +1844,18 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 	}
 
 	@Override
+	public boolean isTrackResultSize() {
+		return trackResultSize;
+	}
+
+	@Override
 	public void setTrackTime(boolean trackTime) {
 		this.trackTime = trackTime;
+	}
+
+	@Override
+	public boolean isTrackTime() {
+		return trackTime;
 	}
 
 	/**
@@ -1542,7 +1874,13 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		if (leftStep.isConstant() && rightStep.isConstant()) {
 			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
 			Value rightVal = rightStep.evaluate(EmptyBindingSet.getInstance());
-			Value value = operation.apply(leftVal, rightVal);
+			Value value;
+			try {
+				value = operation.apply(leftVal, rightVal);
+			} catch (ValueExprEvaluationException e) {
+				// defer the error to evaluation, where OR, IF, COALESCE and BIND apply their error rules
+				return new QueryValueEvaluationStep.Fail(e.getMessage());
+			}
 			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else if (leftStep.isConstant()) {
 			Value leftVal = leftStep.evaluate(EmptyBindingSet.getInstance());
@@ -1579,8 +1917,14 @@ public class DefaultEvaluationStrategy implements EvaluationStrategy, FederatedS
 		QueryValueEvaluationStep argStep = precompile(node.getArg(), context);
 		if (argStep.isConstant()) {
 			Value argValue = argStep.evaluate(EmptyBindingSet.getInstance());
-
-			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(operation.apply(argValue));
+			Value value;
+			try {
+				value = operation.apply(argValue);
+			} catch (ValueExprEvaluationException e) {
+				// defer the error to evaluation, where OR, IF, COALESCE and BIND apply their error rules
+				return new QueryValueEvaluationStep.Fail(e.getMessage());
+			}
+			return new QueryValueEvaluationStep.ConstantQueryValueEvaluationStep(value);
 		} else {
 			return bindings -> {
 				Value argValue = argStep.evaluate(bindings);

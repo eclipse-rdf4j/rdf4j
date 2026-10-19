@@ -4,11 +4,17 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j-sail</artifactId>
-		<version>5.2.1-SNAPSHOT</version>
+		<version>6.1.1-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-sail-nativerdf</artifactId>
 	<name>RDF4J: NativeStore</name>
 	<description>Sail implementation that stores data directly to disk in dedicated file formats.</description>
+	<properties>
+		<nativerdf.surefire.groups></nativerdf.surefire.groups>
+		<nativerdf.surefire.excludedGroups></nativerdf.surefire.excludedGroups>
+		<nativerdf.surefire.includeTags></nativerdf.surefire.includeTags>
+		<nativerdf.surefire.excludeTags></nativerdf.surefire.excludeTags>
+	</properties>
 	<dependencies>
 		<dependency>
 			<groupId>${project.groupId}</groupId>
@@ -39,6 +45,11 @@
 			<groupId>${project.groupId}</groupId>
 			<artifactId>rdf4j-model</artifactId>
 			<version>${project.version}</version>
+		</dependency>
+		<dependency>
+			<groupId>tools.jackson.core</groupId>
+			<artifactId>jackson-core</artifactId>
+			<version>${jackson3.version}</version>
 		</dependency>
 		<dependency>
 			<groupId>org.slf4j</groupId>
@@ -85,6 +96,12 @@
 			<scope>test</scope>
 		</dependency>
 		<dependency>
+			<groupId>${project.groupId}</groupId>
+			<artifactId>rdf4j-benchmark-common</artifactId>
+			<version>${project.version}</version>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
 			<groupId>org.openjdk.jmh</groupId>
 			<artifactId>jmh-core</artifactId>
 			<version>${jmhVersion}</version>
@@ -97,8 +114,51 @@
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
+	<profiles>
+		<profile>
+			<id>slowTestsOnly</id>
+			<properties>
+				<nativerdf.surefire.groups>slow</nativerdf.surefire.groups>
+				<nativerdf.surefire.includeTags>slow</nativerdf.surefire.includeTags>
+			</properties>
+		</profile>
+		<profile>
+			<id>skipSlowTests</id>
+			<activation>
+				<jdk>[25,)</jdk>
+			</activation>
+			<properties>
+				<nativerdf.surefire.excludedGroups>slow</nativerdf.surefire.excludedGroups>
+				<nativerdf.surefire.excludeTags>slow</nativerdf.surefire.excludeTags>
+			</properties>
+		</profile>
+	</profiles>
 	<build>
 		<plugins>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-surefire-plugin</artifactId>
+				<configuration>
+					<groups>${nativerdf.surefire.groups}</groups>
+					<excludedGroups>${nativerdf.surefire.excludedGroups}</excludedGroups>
+					<properties>
+						<includeTags>${nativerdf.surefire.includeTags}</includeTags>
+						<excludeTags>${nativerdf.surefire.excludeTags}</excludeTags>
+					</properties>
+				</configuration>
+			</plugin>
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-failsafe-plugin</artifactId>
+				<configuration>
+					<groups>${nativerdf.surefire.groups}</groups>
+					<excludedGroups>${nativerdf.surefire.excludedGroups}</excludedGroups>
+					<properties>
+						<includeTags>${nativerdf.surefire.includeTags}</includeTags>
+						<excludeTags>${nativerdf.surefire.excludeTags}</excludeTags>
+					</properties>
+				</configuration>
+			</plugin>
 			<plugin>
 				<artifactId>maven-assembly-plugin</artifactId>
 			</plugin>

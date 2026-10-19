@@ -38,15 +38,15 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 
 	@Test
 	public void testInstantiate() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(), "testindex");
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetConnection() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(), "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -56,14 +56,14 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 	@Test
 	public void testSailRepository() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 		elasticsearchStore.shutDown();
 	}
 
 	@Test
 	public void testGetSailRepositoryConnection() {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 		}
 		elasticsearchStore.shutDown();
@@ -71,15 +71,15 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 
 	@Test
 	public void testShutdownAndRecreate() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(), "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
 			connection.commit();
 		}
 		elasticsearchStore.shutDown();
-		elasticsearchStore = new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER,
+		elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(),
 				"testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
@@ -92,8 +92,8 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 
 	@Test
 	public void testShutdownAndReinit() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(), "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -106,8 +106,8 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 
 	@Test
 	public void testAddRemoveData() {
-		ElasticsearchStore elasticsearchStore = new ElasticsearchStore("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER, "testindex");
+		ElasticsearchStore elasticsearchStore = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(), "testindex");
 		try (NotifyingSailConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin(IsolationLevels.NONE);
 			connection.addStatement(RDF.TYPE, RDF.TYPE, RDFS.RESOURCE);
@@ -128,7 +128,7 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 	public void testAddLargeDataset() {
 		StopWatch stopWatch = StopWatch.createStarted();
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			stopWatch.stop();
@@ -173,7 +173,8 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 	}
 
 	private ClientProvider initElasticsearchStoreForGcTest() {
-		ElasticsearchStore sail = new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER,
+		ElasticsearchStore sail = new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster(),
 				"testindex");
 
 		ClientProvider clientProvider = sail.clientProvider;
@@ -189,7 +190,7 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 	public void testNamespacePersistenc() {
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			connection.begin();
@@ -199,7 +200,7 @@ public class ElasticsearchStoreIT extends AbstractElasticsearchStoreIT {
 
 		elasticsearchStore.shutDown();
 		elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 			String namespace = connection.getNamespace(SHACL.PREFIX);

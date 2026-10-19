@@ -119,6 +119,30 @@ public abstract class AbstractGenericLuceneTest {
 
 	protected abstract void configure(LuceneSail sail) throws IOException;
 
+	/**
+	 * How long to wait after a commit() to ensure index is updated.
+	 *
+	 * @return milliseconds to wait
+	 */
+	protected long waitAfterCommitMillis() {
+		return 0;
+	}
+
+	protected final void sleepAfterCommitIfNeeded() {
+		long waitMillis = waitAfterCommitMillis();
+		if (waitMillis > 0) {
+			try {
+				Thread.sleep(waitMillis);
+			} catch (InterruptedException e) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		afterCommitWait();
+	}
+
+	protected void afterCommitWait() {
+	}
+
 	@BeforeEach
 	public void setUp() throws Exception {
 		// set logging, uncomment this to get better logging for debugging
@@ -166,6 +190,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testComplexQueryTwo() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		// prepare the query
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT ?Resource ?Matching ?Score ");
@@ -275,6 +300,7 @@ public abstract class AbstractGenericLuceneTest {
 	@Test
 	public void testPredicateLuceneQueries()
 			throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		// prepare the query
 		String[] queries = new String[] {
 				"SELECT ?Resource ?Score ?Snippet \n"
@@ -337,6 +363,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testSnippetQueries() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		// prepare the query
 		// search for the term "one", but only in predicate 1
 		StringBuilder buffer = new StringBuilder();
@@ -396,6 +423,7 @@ public abstract class AbstractGenericLuceneTest {
 			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("but the unicorn charly said to goaway"));
 			localConnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral("there was poor charly without a kidney"));
 			localConnection.commit();
+			sleepAfterCommitIfNeeded();
 		}
 
 		// prepare the query
@@ -471,6 +499,7 @@ public abstract class AbstractGenericLuceneTest {
 			localConnection.add(SUBJECT_1, PREDICATE_1, vf.createLiteral("but the unicorn charly said to goaway"));
 			localConnection.add(SUBJECT_1, PREDICATE_2, vf.createLiteral("there was poor charly without a kidney"));
 			localConnection.commit();
+			sleepAfterCommitIfNeeded();
 		}
 		// search for the term "charly" in all predicates
 		StringBuilder buffer = new StringBuilder();
@@ -529,6 +558,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testGraphQuery() throws QueryEvaluationException, MalformedQueryException, RepositoryException {
+		sleepAfterCommitIfNeeded();
 		IRI score = vf.createIRI(LuceneSailSchema.NAMESPACE + "score");
 		StringBuilder query = new StringBuilder();
 
@@ -577,6 +607,7 @@ public abstract class AbstractGenericLuceneTest {
 	@Test
 	public void testQueryWithSpecifiedSubject()
 			throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		// fire a query with the subject pre-specified
 		TupleQuery query = connection.prepareTupleQuery(QUERY_STRING);
 		query.setBinding("Subject", SUBJECT_1);
@@ -594,6 +625,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testUnionQuery() throws RepositoryException, MalformedQueryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		String queryStr = "";
 		queryStr += "PREFIX search: <http://www.openrdf.org/contrib/lucenesail#> ";
 		queryStr += "PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#> ";
@@ -626,6 +658,7 @@ public abstract class AbstractGenericLuceneTest {
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponectwo"), CONTEXT_2);
 		connection.add(SUBJECT_5, PREDICATE_2, vf.createLiteral("sfiveptwoctwo"), CONTEXT_2);
 		connection.commit();
+		sleepAfterCommitIfNeeded();
 		// connection.close();
 		// connection = repository.getConnection();
 		// connection.setAutoCommit(false);
@@ -640,6 +673,7 @@ public abstract class AbstractGenericLuceneTest {
 		// remove a context
 		connection.clear(CONTEXT_1);
 		connection.commit();
+		sleepAfterCommitIfNeeded();
 		assertNoQueryResult("sfourponecone");
 		assertNoQueryResult("sfourptwocone");
 		assertNoQueryResult("sfiveponecone");
@@ -659,6 +693,7 @@ public abstract class AbstractGenericLuceneTest {
 		connection.add(SUBJECT_5, PREDICATE_1, vf.createLiteral("sfiveponectwo"), CONTEXT_2);
 		connection.add(SUBJECT_5, PREDICATE_2, vf.createLiteral("sfiveptwoctwo"), CONTEXT_2);
 		connection.commit();
+		sleepAfterCommitIfNeeded();
 		// connection.close();
 		// connection = repository.getConnection();
 		// connection.setAutoCommit(false);
@@ -673,6 +708,7 @@ public abstract class AbstractGenericLuceneTest {
 		// remove a context
 		connection.clear((Resource) null);
 		connection.commit();
+		sleepAfterCommitIfNeeded();
 		assertNoQueryResult("sfourponecone");
 		assertNoQueryResult("sfourptwocone");
 		assertNoQueryResult("sfiveponecone");
@@ -682,6 +718,7 @@ public abstract class AbstractGenericLuceneTest {
 
 	@Test
 	public void testFuzzyQuery() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		// prepare the query
 		// search for the term "one" with 80% fuzzyness
 		StringBuilder buffer = new StringBuilder();
@@ -729,11 +766,13 @@ public abstract class AbstractGenericLuceneTest {
 	@Test
 	public void testReindexing() {
 		sail.reindex();
+		sleepAfterCommitIfNeeded();
 		testComplexQueryTwo();
 	}
 
 	@Test
 	public void testPropertyVar() throws MalformedQueryException, RepositoryException, QueryEvaluationException {
+		sleepAfterCommitIfNeeded();
 		StringBuilder buffer = new StringBuilder();
 		buffer.append("SELECT ?Resource ?Property \n");
 		buffer.append("WHERE { \n");

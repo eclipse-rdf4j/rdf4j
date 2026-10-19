@@ -1,5 +1,4 @@
-/**
- * ******************************************************************************
+/*******************************************************************************
  * Copyright (c) 2025 Eclipse RDF4J contributors.
  *
  * All rights reserved. This program and the accompanying materials
@@ -8,8 +7,7 @@
  * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
- * ******************************************************************************
- */
+ *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -17,9 +15,6 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-
-import java.util.LinkedHashSet;
-import java.util.Set;
 
 import org.eclipse.rdf4j.model.vocabulary.OWL;
 import org.eclipse.rdf4j.query.Binding;

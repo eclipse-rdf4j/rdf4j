@@ -21,4 +21,16 @@ public interface IndexReportingIterator {
 
 	String getIndexName();
 
+	default long getSourceRowsScannedActual() {
+		return -1;
+	}
+
+	default long getSourceRowsMatchedActual() {
+		return -1;
+	}
+
+	default long getSourceRowsFilteredActual() {
+		return -1;
+	}
+
 }

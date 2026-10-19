@@ -103,7 +103,8 @@ public class SparqlTarget extends Target {
 		List<String> varNames = List.of("this");
 
 		return new Select(connectionsGroup.getBaseConnection(), sparqlFragment, null,
-				new AllTargetsPlanNode.AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph);
+				new AllTargetsPlanNode.AllTargetsBindingSetMapper(varNames, scope, false, dataGraph), dataGraph,
+				connectionsGroup.isIncludeInferredStatements());
 	}
 
 	@Override

@@ -29,7 +29,7 @@
 <meta property="og:description" content="{{ . }}">
 <meta name="twitter:description" content="{{ . | truncate 200 }}">
 {{- end }}
-<meta name="author" content="{{ .Site.Author.name }}"/>
+<meta name="author" content="{{ .Site.Params.author.name }}"/>
  {{- with  .Params.page_favicon | default .Site.Params.favicon | default "https://www.eclipse.org/favicon.ico"}}
 <link href='{{ . | absURL }}' rel='icon' type='image/x-icon'/>
 {{- end -}}
@@ -39,7 +39,7 @@
 <meta name="twitter:image" content="{{ . | absURL }}" />
 {{- end }}
 <meta name="twitter:card" content="summary" />
-{{- with .Site.Author.twitter }}
+{{- with .Site.Params.author.twitter }}
 <meta name="twitter:site" content="@{{ . }}" />
 <meta name="twitter:creator" content="@{{ . }}" />
 {{- end }}

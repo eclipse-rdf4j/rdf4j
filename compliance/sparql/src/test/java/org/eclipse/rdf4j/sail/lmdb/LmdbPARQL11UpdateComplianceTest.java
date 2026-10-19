@@ -37,4 +37,9 @@ public class LmdbPARQL11UpdateComplianceTest extends SPARQL11UpdateComplianceTes
 		return new DatasetRepository(
 				new SailRepository(new LmdbStore(temp, new LmdbStoreConfig("spoc"))));
 	}
+
+	@Override
+	protected boolean deleteDataDirAfterShutdown() {
+		return true;
+	}
 }

@@ -10,7 +10,7 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.algebra.evaluation.function.triple;
 
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -18,8 +18,8 @@ import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
 
 /**
- * Function that return "true"^^xsd:boolean if its argument is RDF-star Triple otherwise return "false"^^xsd:boolean the
- * function's IRI uses RDF namespace to match the other functions in the package
+ * Function that return "true"^^xsd:boolean if its argument is RDF-star TripleTerm otherwise return "false"^^xsd:boolean
+ * the function's IRI uses RDF namespace to match the other functions in the package
  *
  * @author damyan.ognyanov
  */
@@ -34,6 +34,6 @@ public class IsTripleFunction implements Function {
 		if (args.length != 1) {
 			throw new ValueExprEvaluationException("expect exactly 1 argument");
 		}
-		return vf.createLiteral(args[0] instanceof Triple);
+		return vf.createLiteral(args[0] instanceof TripleTerm);
 	}
 }

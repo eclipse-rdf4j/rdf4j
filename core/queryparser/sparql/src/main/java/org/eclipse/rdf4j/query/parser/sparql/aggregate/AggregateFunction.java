@@ -23,7 +23,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
  * @param <D>
  */
 @Experimental
-public abstract class AggregateFunction<T extends AggregateCollector, D> {
+public abstract class AggregateFunction<T extends AggregateCollector, D> implements AggregateProcessor<T, D> {
 
 	protected final Function<BindingSet, Value> evaluationStep;
 
@@ -31,6 +31,7 @@ public abstract class AggregateFunction<T extends AggregateCollector, D> {
 		this.evaluationStep = evaluationStep;
 	}
 
+	@Override
 	public abstract void processAggregate(BindingSet bindingSet, Predicate<D> distinctValue, T agv)
 			throws QueryEvaluationException;
 

@@ -34,6 +34,7 @@ import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
+import org.eclipse.rdf4j.rio.helpers.BasicParserSettings;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractQueryResultIOTupleTest;
 import org.junit.jupiter.api.Test;
 
@@ -92,6 +93,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 		writer.startDocument();
 		writer.startHeader();
 		writer.handleLinks(List.<String>of());
+
 		QueryResults.report(createTupleSingleVarMultipleBindingSets(), writer);
 
 		System.out.println(out.toString(StandardCharsets.UTF_8));
@@ -99,7 +101,7 @@ public class SPARQLCSVTupleBackgroundTest extends AbstractQueryResultIOTupleTest
 				+ "\"\"\"\"\"double-quoted string\"\r\n" + "space at the end         \r\n"
 				+ "space at the end         \r\n" + "\"\"\"\"\"double-quoted string with no datatype\"\r\n"
 				+ "\"newline at the end \n\"(\r\n)?"
-				+ "urn:rdf4j:triple:PDw8dXJuOmE-IDxodHRwOi8vd3d3LnczLm9yZy8xOTk5LzAyLzIyLXJkZi1zeW50YXgtbnMjdHlwZT4gPHVybjpiPj4-(\r\n)?",
+				+ "<<\\( urn:a http://www.w3.org/1999/02/22-rdf-syntax-ns#type urn:b \\)>>(\r\n)?",
 				out.toString(StandardCharsets.UTF_8));
 	}
 

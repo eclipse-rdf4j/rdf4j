@@ -47,6 +47,6 @@ public final class ValueExprTripleRefEvaluationStep implements QueryValueEvaluat
 		if (obj == null) {
 			throw new ValueExprEvaluationException("no object value");
 		}
-		return valueFactory.createTriple((Resource) subj, (IRI) pred, obj);
+		return valueFactory.createTripleTerm((Resource) subj, (IRI) pred, obj);
 	}
 }

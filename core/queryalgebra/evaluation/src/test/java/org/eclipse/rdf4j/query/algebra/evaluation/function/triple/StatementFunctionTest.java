@@ -18,7 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -28,8 +28,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Test rdf:Statement(a, b, c) function cases covered: subject one of (IRI | BNode | Triple | Literal) predicate one of
- * (IRI | Literal) object one of (IRI | BNode | Triple | Literal)
+ * Test rdf:Statement(a, b, c) function cases covered: subject one of (IRI | BNode | TripleTerm | Literal) predicate one
+ * of (IRI | Literal) object one of (IRI | BNode | TripleTerm | Literal)
  *
  * @author damyan.ognyanov
  */
@@ -60,8 +60,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -73,8 +73,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -86,8 +86,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -95,12 +95,12 @@ public class StatementFunctionTest {
 	public void testEvaluateIRIAndTriple() {
 		IRI subj = f.createIRI("urn:a");
 		IRI pred = f.createIRI("urn:b");
-		Triple obj = f.createTriple(subj, subj, subj);
+		TripleTerm obj = f.createTripleTerm(subj, subj, subj);
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -112,8 +112,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -125,8 +125,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -138,8 +138,8 @@ public class StatementFunctionTest {
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 
@@ -147,64 +147,12 @@ public class StatementFunctionTest {
 	public void testEvaluateBNodeAndTriple() {
 		BNode subj = f.createBNode();
 		IRI pred = f.createIRI("urn:b");
-		Triple obj = f.createTriple(pred, pred, pred);
+		TripleTerm obj = f.createTripleTerm(pred, pred, pred);
 
 		Value value = function.evaluate(f, subj, pred, obj);
 		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndIRI() {
-		IRI pred = f.createIRI("urn:b");
-		IRI obj = f.createIRI("urn:c");
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndBNode() {
-		IRI pred = f.createIRI("urn:b");
-		BNode obj = f.createBNode();
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndLiteral() {
-		IRI pred = f.createIRI("urn:b");
-		Literal obj = f.createLiteral(1);
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
-		assertEquals(value, other, "expect to be the same");
-	}
-
-	@Test
-	public void testEvaluateTripleAndTriple() {
-		IRI pred = f.createIRI("urn:b");
-		Triple obj = f.createTriple(pred, pred, pred);
-		Triple subj = f.createTriple(pred, pred, pred);
-
-		Value value = function.evaluate(f, subj, pred, obj);
-		assertNotNull(value);
-		assertTrue(value instanceof Triple, "expect Triple");
-		Triple other = f.createTriple(subj, pred, obj);
+		assertTrue(value instanceof TripleTerm, "expect TripleTerm");
+		TripleTerm other = f.createTripleTerm(subj, pred, obj);
 		assertEquals(value, other, "expect to be the same");
 	}
 

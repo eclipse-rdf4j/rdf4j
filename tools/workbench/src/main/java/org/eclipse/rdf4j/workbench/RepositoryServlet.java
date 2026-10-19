@@ -10,11 +10,11 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench;
 
-import javax.servlet.Servlet;
-
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.repository.manager.RepositoryManager;
+
+import jakarta.servlet.Servlet;
 
 public interface RepositoryServlet extends Servlet {
 

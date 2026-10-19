@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 import static org.eclipse.rdf4j.model.util.Values.literal;
 
 import java.math.BigInteger;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -288,11 +289,8 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> guard) {
+		if (!(o instanceof QualifiedMaxCountConstraintComponent)) {
 			return false;
 		}
 
@@ -301,15 +299,15 @@ public class QualifiedMaxCountConstraintComponent extends AbstractConstraintComp
 		if (qualifiedValueShapesDisjoint != that.qualifiedValueShapesDisjoint) {
 			return false;
 		}
-		if (!qualifiedValueShape.equals(that.qualifiedValueShape)) {
+		if (!qualifiedValueShape.equals(that.qualifiedValueShape, guard)) {
 			return false;
 		}
 		return Objects.equals(qualifiedMaxCount, that.qualifiedMaxCount);
 	}
 
 	@Override
-	public int hashCode() {
-		int result = qualifiedValueShape.hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> guard) {
+		int result = qualifiedValueShape.hashCode(guard);
 		result = 31 * result + (qualifiedValueShapesDisjoint ? 1 : 0);
 		result = 31 * result + (qualifiedMaxCount != null ? qualifiedMaxCount.hashCode() : 0);
 		return result + "QualifiedMaxCountConstraintComponent".hashCode();

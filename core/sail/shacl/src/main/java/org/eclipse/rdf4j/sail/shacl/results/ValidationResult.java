@@ -66,6 +66,7 @@ public class ValidationResult {
 	private Path rsxPairwisePath;
 	private ValidationResult detail;
 	private Value pathIri;
+	private List<Literal> messagesOverride;
 
 	public ValidationResult(Value focusNode, Value value, Shape shape,
 			ConstraintComponent sourceConstraint, Severity severity, ConstraintComponent.Scope scope,
@@ -117,6 +118,13 @@ public class ValidationResult {
 
 	public void setDetail(ValidationResult detail) {
 		this.detail = detail;
+	}
+
+	/**
+	 * Allows per-result overriding of sh:resultMessage values (used by SPARQL-based constraints).
+	 */
+	public void setMessagesOverride(List<Literal> messagesOverride) {
+		this.messagesOverride = messagesOverride;
 	}
 
 	/**
@@ -175,7 +183,21 @@ public class ValidationResult {
 		model.add(getId(), SHACL.SOURCE_CONSTRAINT_COMPONENT, getSourceConstraintComponent().getIri());
 		model.add(getId(), SHACL.RESULT_SEVERITY, severity.getIri());
 
-		for (Literal message : shape.getMessage()) {
+		List<Literal> messagesToAdd;
+		if (messagesOverride != null) {
+			messagesToAdd = messagesOverride;
+		} else if (sourceConstraint instanceof SparqlConstraintComponent) {
+			messagesToAdd = sourceConstraint.getDefaultMessage();
+		} else {
+			List<Literal> explicitMessages = shape.getExplicitMessages();
+			if (!explicitMessages.isEmpty()) {
+				messagesToAdd = explicitMessages;
+			} else {
+				messagesToAdd = sourceConstraint.getDefaultMessage();
+			}
+		}
+
+		for (Literal message : messagesToAdd) {
 			model.add(getId(), SHACL.RESULT_MESSAGE, message);
 		}
 

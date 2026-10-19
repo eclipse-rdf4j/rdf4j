@@ -47,12 +47,8 @@ import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 
 import jakarta.json.spi.JsonProvider;
-import no.hasmac.jsonld.JsonLdError;
 import no.hasmac.jsonld.document.Document;
 import no.hasmac.jsonld.document.JsonDocument;
-import no.hasmac.jsonld.loader.DocumentLoader;
-import no.hasmac.jsonld.loader.DocumentLoaderOptions;
-import no.hasmac.jsonld.loader.SchemeRouter;
 
 /**
  * Custom (non-manifest) tests for JSON-LD parser.
@@ -370,6 +366,7 @@ public class JSONLDParserCustomTest {
 				.getResource("testcases/jsonld/remoteContext/data.jsonld")
 				.getFile()), StandardCharsets.UTF_8);
 
+		parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
 	}
@@ -381,6 +378,7 @@ public class JSONLDParserCustomTest {
 				.getFile()), StandardCharsets.UTF_8);
 
 		parser.getParserConfig().set(JSONLDSettings.WHITELIST, Set.of("https://schema.org"));
+		parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 		parser.parse(new StringReader(jsonld), "");
 		assertEquals(59, model.size());
 	}
@@ -394,6 +392,7 @@ public class JSONLDParserCustomTest {
 		try {
 			System.setProperty(JSONLDSettings.WHITELIST.getKey(),
 					"[\"https://schema.org\",\"https://example.org/context.jsonld\"]");
+			parser.getParserConfig().set(JSONLDSettings.EXPAND_CONTEXT, JSONLDTestContexts.schemaOrgContext());
 			parser.parse(new StringReader(jsonld), "");
 			assertEquals(59, model.size());
 		} finally {

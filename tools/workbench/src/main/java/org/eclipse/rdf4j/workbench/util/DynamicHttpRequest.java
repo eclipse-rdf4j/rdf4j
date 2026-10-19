@@ -12,9 +12,9 @@ package org.eclipse.rdf4j.workbench.util;
 
 import java.util.Locale;
 
-import javax.servlet.ServletRequest;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletRequestWrapper;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequestWrapper;
 
 public class DynamicHttpRequest extends HttpServletRequestWrapper {
 

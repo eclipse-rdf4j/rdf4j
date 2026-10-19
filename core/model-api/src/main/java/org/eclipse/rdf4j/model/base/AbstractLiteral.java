@@ -32,6 +32,9 @@ import static java.util.Objects.requireNonNull;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.time.DateTimeException;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
@@ -77,11 +80,12 @@ public abstract class AbstractLiteral implements Literal {
 	private static final long serialVersionUID = -1286527360744086451L;
 
 	static boolean reserved(IRI datatype) {
-		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype);
+		return CoreDatatype.RDF.LANGSTRING.getIri().equals(datatype)
+				|| CoreDatatype.RDF.DIRLANGSTRING.getIri().equals(datatype);
 	}
 
 	static boolean reserved(CoreDatatype datatype) {
-		return CoreDatatype.RDF.LANGSTRING == datatype;
+		return CoreDatatype.RDF.LANGSTRING == datatype || CoreDatatype.RDF.DIRLANGSTRING == datatype;
 	}
 
 	/**
@@ -171,7 +175,8 @@ public abstract class AbstractLiteral implements Literal {
 		return this == o || o instanceof Literal
 				&& getLabel().equals(((Literal) o).getLabel())
 				&& getDatatype().equals(((Literal) o).getDatatype())
-				&& equals(getLanguage(), ((Literal) o).getLanguage());
+				&& equals(getLanguage(), ((Literal) o).getLanguage())
+				&& getBaseDirection() == ((Literal) o).getBaseDirection();
 	}
 
 	@Override
@@ -186,7 +191,7 @@ public abstract class AbstractLiteral implements Literal {
 
 		return getLanguage()
 
-				.map(language -> label + '@' + language)
+				.map(language -> label + '@' + language + getBaseDirection())
 
 				.orElseGet(() -> CoreDatatype.XSD.STRING == getCoreDatatype() ? label
 						: label + "^^<" + getDatatype().stringValue() + ">");
@@ -268,10 +273,16 @@ public abstract class AbstractLiteral implements Literal {
 
 		private final String label;
 		private final String language;
+		private final BaseDirection baseDirection;
 
 		TaggedLiteral(String label, String language) {
+			this(label, language, BaseDirection.NONE);
+		}
+
+		TaggedLiteral(String label, String language, BaseDirection baseDirection) {
 			this.label = label;
 			this.language = language;
+			this.baseDirection = baseDirection;
 		}
 
 		@Override
@@ -285,13 +296,19 @@ public abstract class AbstractLiteral implements Literal {
 		}
 
 		@Override
+		public BaseDirection getBaseDirection() {
+			return baseDirection;
+		}
+
+		@Override
 		public IRI getDatatype() {
-			return CoreDatatype.RDF.LANGSTRING.getIri();
+			return baseDirection == BaseDirection.NONE ? CoreDatatype.RDF.LANGSTRING.getIri()
+					: CoreDatatype.RDF.DIRLANGSTRING.getIri();
 		}
 
 		@Override
 		public CoreDatatype.RDF getCoreDatatype() {
-			return CoreDatatype.RDF.LANGSTRING;
+			return baseDirection == BaseDirection.NONE ? CoreDatatype.RDF.LANGSTRING : CoreDatatype.RDF.DIRLANGSTRING;
 		}
 	}
 
@@ -704,15 +721,24 @@ public abstract class AbstractLiteral implements Literal {
 
 			this.value = value;
 
-			datatype = DATATYPES.get(key(value));
+			TemporalAccessor lexicalValue = value;
 
-			if (datatype == null) {
+			CoreDatatype.XSD detectedDatatype = DATATYPES.get(key(lexicalValue));
+
+			if (detectedDatatype == null && value.isSupported(ChronoField.INSTANT_SECONDS)) {
+				Instant instant = Instant.from(value);
+				lexicalValue = OffsetDateTime.ofInstant(instant, ZoneOffset.UTC);
+				detectedDatatype = DATATYPES.get(key(lexicalValue));
+			}
+
+			if (detectedDatatype == null) {
 				throw new IllegalArgumentException(String.format(
 						"value <%s> cannot be represented by an XML Schema date/time datatype", value
 				));
 			}
 
-			this.label = FORMATTERS.get(datatype).format(value);
+			datatype = detectedDatatype;
+			this.label = FORMATTERS.get(datatype).format(lexicalValue);
 		}
 
 		@Override

@@ -10,6 +10,8 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.query.parser.sparql;
 
+import static org.eclipse.rdf4j.query.parser.sparql.TupleExprBuilder.REIFIES_VAR;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -19,7 +21,9 @@ import java.util.Map;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.MalformedQueryException;
+import org.eclipse.rdf4j.query.algebra.AnnotationTripleRef;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.Distinct;
 import org.eclipse.rdf4j.query.algebra.EmptySet;
@@ -40,6 +44,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollector;
 
 /**
@@ -49,11 +54,12 @@ import org.eclipse.rdf4j.query.algebra.helpers.collectors.StatementPatternCollec
 @InternalUseOnly
 public class ConstructorBuilder {
 
-	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct, boolean reduced) {
-		return buildConstructor(bodyExpr, constructExpr, true, distinct, reduced);
+	public TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean distinct, boolean reduced,
+			ValueFactory valueFactory) {
+		return buildConstructor(bodyExpr, constructExpr, true, distinct, reduced, valueFactory);
 	}
 
-	public TupleExpr buildConstructor(TupleExpr bodyExpr, boolean distinct, boolean reduced)
+	public TupleExpr buildConstructor(TupleExpr bodyExpr, boolean distinct, boolean reduced, ValueFactory valueFactory)
 			throws MalformedQueryException {
 		// check that bodyExpr contains _only_ a basic graph pattern.
 		BasicPatternVerifier verifier = new BasicPatternVerifier();
@@ -64,7 +70,7 @@ public class ConstructorBuilder {
 					"can not use shorthand CONSTRUCT: graph pattern in WHERE clause is not a basic pattern.");
 		}
 
-		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced);
+		return buildConstructor(bodyExpr, bodyExpr, false, distinct, reduced, valueFactory);
 	}
 
 	private static class BasicPatternVerifier extends AbstractQueryModelVisitor<RuntimeException> {
@@ -119,11 +125,29 @@ public class ConstructorBuilder {
 	}
 
 	private TupleExpr buildConstructor(TupleExpr bodyExpr, TupleExpr constructExpr, boolean explicitConstructor,
-			boolean distinct, boolean reduced) {
+			boolean distinct, boolean reduced, ValueFactory valueFactory) {
 		TupleExpr result = bodyExpr;
 
 		// Retrieve all StatementPattern's from the construct expression
 		List<StatementPattern> statementPatterns = StatementPatternCollector.process(constructExpr);
+
+		List<StatementPattern> augmented = new ArrayList<>(statementPatterns);
+
+		Map<String, Object> tripleVars = TripleRefCollector.process(bodyExpr);
+
+		for (Object tripleVar : tripleVars.values()) {
+			if (tripleVar instanceof AnnotationTripleRef) {
+				AnnotationTripleRef tr = (AnnotationTripleRef) tripleVar;
+				if (!tr.getSubjectVar().hasValue() ||
+						!tr.getPredicateVar().hasValue() ||
+						!tr.getObjectVar().hasValue()) {
+					var freshBNode = TupleExprs.createConstVar(valueFactory.createBNode());
+					augmented.add(new StatementPattern(freshBNode, REIFIES_VAR.clone(), tr.getExprVar().clone()));
+				}
+			}
+		}
+
+		statementPatterns = augmented;
 
 		Set<Var> constructVars = getConstructVars(statementPatterns);
 

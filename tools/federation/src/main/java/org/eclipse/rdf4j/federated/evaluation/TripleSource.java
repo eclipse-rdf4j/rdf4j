@@ -25,7 +25,6 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryException;
 
@@ -39,23 +38,6 @@ import org.eclipse.rdf4j.repository.RepositoryException;
  * @see SailTripleSource
  */
 public interface TripleSource {
-
-	/**
-	 * Evaluate the prepared query in its internal representation on the provided endpoint.
-	 *
-	 * @param preparedQuery a prepared query to evaluate
-	 * @param bindings      the bindings to use
-	 * @param filterExpr    the filter expression to apply or null if there is no filter or if it is evaluated already
-	 *
-	 * @return the resulting iteration
-	 *
-	 * @throws RepositoryException
-	 * @throws MalformedQueryException
-	 * @throws QueryEvaluationException
-	 */
-	CloseableIteration<BindingSet> getStatements(TupleExpr preparedQuery,
-			final BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException, QueryEvaluationException;
 
 	/**
 	 * Evaluate the prepared query (SPARQL query as String) on the provided endpoint.

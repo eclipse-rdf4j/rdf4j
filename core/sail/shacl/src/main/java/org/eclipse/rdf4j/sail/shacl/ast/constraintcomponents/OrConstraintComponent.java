@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.Collections;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -213,21 +214,29 @@ public class OrConstraintComponent extends LogicalOperatorConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
-		if (this == o) {
-			return true;
-		}
-		if (o == null || getClass() != o.getClass()) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> guard) {
+		if (!(o instanceof OrConstraintComponent)) {
 			return false;
 		}
-
 		OrConstraintComponent that = (OrConstraintComponent) o;
 
-		return or.equals(that.or);
+		if (or.size() != that.or.size()) {
+			return false;
+		}
+		for (int i = 0; i < or.size(); i++) {
+			if (!or.get(i).equals(that.or.get(i), guard)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	@Override
-	public int hashCode() {
-		return or.hashCode() + "OrConstraintComponent".hashCode();
+	public int hashCode(IdentityHashMap<Shape, Boolean> guard) {
+		int result = "OrConstraintComponent".hashCode();
+		for (Shape shape : or) {
+			result = 31 * result + shape.hashCode(guard);
+		}
+		return result;
 	}
 }

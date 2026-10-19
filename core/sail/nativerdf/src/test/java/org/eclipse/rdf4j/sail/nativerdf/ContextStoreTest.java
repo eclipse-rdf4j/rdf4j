@@ -42,7 +42,7 @@ public class ContextStoreTest {
 	File dataDir;
 
 	/**
-	 * @throws java.lang.Exception
+	 * @throws Exception
 	 */
 	@BeforeEach
 	public void setUp() throws Exception {

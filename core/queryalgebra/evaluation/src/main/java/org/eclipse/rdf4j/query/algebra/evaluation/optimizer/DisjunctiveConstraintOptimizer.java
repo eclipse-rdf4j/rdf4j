@@ -46,8 +46,7 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Filter filter) {
-			if (filter.getCondition() instanceof Or && containsSameTerm(filter.getCondition())) {
-				Or orNode = (Or) filter.getCondition();
+			if (filter.getCondition()instanceof Or orNode && containsSameTerm(filter.getCondition())) {
 				TupleExpr filterArg = filter.getArg();
 
 				ValueExpr leftConstraint = orNode.getLeftArg();
@@ -81,13 +80,11 @@ public class DisjunctiveConstraintOptimizer implements QueryOptimizer {
 			if (node instanceof SameTerm) {
 				return true;
 			}
-			if (node instanceof Or) {
-				Or or = (Or) node;
+			if (node instanceof Or or) {
 				boolean left = containsSameTerm(or.getLeftArg());
 				return left || containsSameTerm(or.getRightArg());
 			}
-			if (node instanceof And) {
-				And and = (And) node;
+			if (node instanceof And and) {
 				boolean left = containsSameTerm(and.getLeftArg());
 				return left || containsSameTerm(and.getRightArg());
 			}

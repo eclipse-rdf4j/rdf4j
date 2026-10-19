@@ -144,11 +144,11 @@ public class RegexTest {
 
 	private Literal evaluate(Value... args) throws ValueExprEvaluationException, QueryEvaluationException {
 		StrictEvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(vf), serviceResolver);
-		ValueExpr expr = new Var("expr", args[0]);
-		ValueExpr pattern = new Var("pattern", args[1]);
+		ValueExpr expr = Var.of("expr", args[0]);
+		ValueExpr pattern = Var.of("pattern", args[1]);
 		ValueExpr flags = null;
 		if (args.length > 2) {
-			flags = new Var("flags", args[2]);
+			flags = Var.of("flags", args[2]);
 		}
 		return (Literal) strategy.evaluate(new Regex(expr, pattern, flags), new EmptyBindingSet());
 	}

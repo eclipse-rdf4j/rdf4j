@@ -14,26 +14,26 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.StatementTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
 
 /**
  * A task implementation representing a bound join, see
- * {@link FederationEvalStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)} for further details on the
- * evaluation process.
+ * {@link FederationEvaluationStrategy#evaluateBoundJoinStatementPattern(StatementTupleExpr, List)} for further details
+ * on the evaluation process.
  *
  * @author Andreas Schwarte
  */
 public class ParallelBoundJoinTask extends ParallelTaskBase<BindingSet> {
 
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final StatementTupleExpr expr;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
 
-	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+	public ParallelBoundJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvaluationStrategy strategy,
 			StatementTupleExpr expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.expr = expr;

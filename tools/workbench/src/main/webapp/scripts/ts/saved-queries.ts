@@ -81,4 +81,21 @@ workbench
         $('[name="edit-query"]').find('[name="query"]').each(function() {
             $(this).attr('value', $(this).attr('value').trim());
         });
+
+        $('.saved-query-delete').each(function() {
+            var button = $(this);
+            button.click(function() {
+                workbench.savedQueries.deleteQuery(
+                    button.attr('data-query-owner'),
+                    button.attr('data-query-name'),
+                    button.attr('data-query-urn'));
+            });
+        });
+
+        $('.saved-query-toggle').each(function() {
+            var button = $(this);
+            button.click(function() {
+                workbench.savedQueries.toggle(button.attr('data-query-urn'));
+            });
+        });
     });

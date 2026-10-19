@@ -95,7 +95,8 @@ import org.slf4j.LoggerFactory;
  * <p>
  * In SPARQL:
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * SELECT ?subject ?score ?snippet ?resource
  * WHERE {
  *   ?subject <http://www.openrdf.org/contrib/lucenesail#matches> [
@@ -106,7 +107,8 @@ import org.slf4j.LoggerFactory;
  *      <http://www.openrdf.org/contrib/lucenesail#resource> ?resource
  *   ]
  * }
- * }</pre>
+ * }
+ * </pre>
  *
  * When defining queries, these properties <b>type and query are mandatory</b>. Also, the <b>matches relation is
  * mandatory</b>. When one of these misses, the query will not be executed as expected. The failure behavior can be
@@ -152,14 +154,16 @@ import org.slf4j.LoggerFactory;
  * <h2 name="indexidsyntax">Set and select Lucene sail by id</h2> The property {@link #INDEX_ID} is to configure the id
  * of the index and filter every request without the search:indexid predicate, the request would be:
  *
- * <pre>{@code
+ * <pre>
+ * {@code
  * ?subj search:matches [
  * 	      search:indexid my:lucene_index_id;
  * 	      search:query "search terms...";
  * 	      search:property my:property;
  * 	      search:score ?score;
  * 	      search:snippet ?snippet ] .
- * }</pre>
+ * }
+ * </pre>
  * <p>
  * If a LuceneSail is using another LuceneSail as a base sail, the evaluation mode should be set to
  * {@link TupleFunctionEvaluationMode#NATIVE}.
@@ -288,6 +292,36 @@ public class LuceneSail extends NotifyingSailWrapper {
 	 * intended for production environments.
 	 */
 	public static final String LUCENE_RAMDIR_KEY = "useramdir";
+
+	/**
+	 * Whether the LuceneIndex should support transactions and rollbacks (true by default). Set the key
+	 * "transactional=false" as sail parameter to DISABLE rollback support. This will improve performance if you are
+	 * doing a lot of inserts/updates and don't need rollback support. It will also run fsync only at an interval (see
+	 * {@link #FSYNC_INTERVAL_KEY}), instead of after each transaction commit. Changes in the index will be only visible
+	 * to readers after the periodic fsync is done.
+	 * <p>
+	 * See <a href="https://github.com/eclipse-rdf4j/rdf4j/issues/5291">the original issue</a>.
+	 */
+	public static final String TRANSACTIONAL_KEY = "transactional";
+
+	/**
+	 * Default value for {@link #TRANSACTIONAL_KEY}, true (rollbacks enabled, fsync after each commit).
+	 */
+	public static final boolean DEFAULT_TRANSACTIONAL = true;
+
+	/**
+	 * Set the key "fsyncInterval=&lt;t&gt;" as sail parameter to configure the interval in milliseconds in which fsync
+	 * is called on the Lucene index, default is defined in {@link #DEFAULT_FSYNC_INTERVAL}. Changes in the index will
+	 * become visible to readers at most after the interval is elapsed. This must be set to a value &gt; 0. This setting
+	 * is only used when {@link #TRANSACTIONAL_KEY} is set to false (rollbacks disabled).
+	 */
+	public static final String FSYNC_INTERVAL_KEY = "fsyncInterval";
+
+	/**
+	 * Default fsync interval in milliseconds, used when {@link #FSYNC_INTERVAL_KEY} is not set and
+	 * {@link #TRANSACTIONAL_KEY} is set to false (rollbacks disabled).
+	 */
+	public static final long DEFAULT_FSYNC_INTERVAL = 10_000L;
 
 	/**
 	 * Set the key "defaultNumDocs=&lt;n&gt;" as sail parameter to limit the maximum number of documents to return from

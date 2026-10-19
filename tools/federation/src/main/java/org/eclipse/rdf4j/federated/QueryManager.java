@@ -25,8 +25,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.MatchResult;
 import java.util.regex.Pattern;
 
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
 import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStatistics;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.exception.FedXException;
 import org.eclipse.rdf4j.federated.exception.FedXRuntimeException;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;
@@ -307,7 +307,7 @@ public class QueryManager {
 			throw new MalformedQueryException("Not a ParsedQuery: " + query.getClass());
 		}
 		Dataset dataset = ((ParsedQuery) query).getDataset();
-		FederationEvalStrategy strategy = federationContext.createStrategy(dataset);
+		FederationEvaluationStrategy strategy = federationContext.createStrategy(dataset);
 		// we use a dummy query info object here
 		QueryInfo qInfo = new QueryInfo(queryString, null, QueryType.SELECT,
 				federationContext.getConfig().getEnforceMaxQueryTime(),

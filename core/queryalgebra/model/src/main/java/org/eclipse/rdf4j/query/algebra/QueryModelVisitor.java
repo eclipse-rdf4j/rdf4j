@@ -103,6 +103,14 @@ public interface QueryModelVisitor<X extends Exception> {
 
 	void meet(Label node) throws X;
 
+	/**
+	 * @implNote This temporary default method is only supplied as a stop-gap for backward compatibility. Concrete
+	 *           implementations are expected to override.
+	 */
+	default void meet(Lateral node) throws X {
+		// no-op
+	}
+
 	void meet(Lang node) throws X;
 
 	void meet(LangMatches node) throws X;
@@ -191,6 +199,18 @@ public interface QueryModelVisitor<X extends Exception> {
 	default void meet(ValueExprTripleRef node) throws X {
 		// no-op
 	}
+
+	default void meet(IsTriple node) throws X {
+		// no-op
+	}
+
+	void meet(LangDir node) throws X;
+
+	void meet(StrLangDir node) throws X;
+
+	void meet(HasLang node) throws X;
+
+	void meet(HasLangDir node) throws X;
 
 	void meetOther(QueryModelNode node) throws X;
 }

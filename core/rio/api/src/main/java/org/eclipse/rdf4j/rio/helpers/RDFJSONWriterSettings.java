@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * A selection of writer settings specific to RDF/JSON parsers.
  * <p>

@@ -21,7 +21,7 @@ public interface Value extends Serializable {
 		IRI,
 		BNode,
 		Literal,
-		Triple
+		TripleTerm
 	}
 
 	/**
@@ -73,9 +73,9 @@ public interface Value extends Serializable {
 	 * <p>
 	 * For implementers: This default implementation is overridden in the repsective sub-interface.
 	 *
-	 * @return true if instance of {@link Triple}
+	 * @return true if instance of {@link TripleTerm}
 	 */
-	default boolean isTriple() {
+	default boolean isTripleTerm() {
 		return false;
 	}
 
@@ -87,8 +87,8 @@ public interface Value extends Serializable {
 			return Type.BNode;
 		} else if (isLiteral()) {
 			return Type.Literal;
-		} else if (isTriple()) {
-			return Type.Triple;
+		} else if (isTripleTerm()) {
+			return Type.TripleTerm;
 		} else {
 			throw new IllegalStateException("Unknown value type");
 		}

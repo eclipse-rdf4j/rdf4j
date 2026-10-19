@@ -13,8 +13,6 @@ package org.eclipse.rdf4j.rio.helpers;
 
 import java.nio.charset.StandardCharsets;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * WriterSettings for the binary RDF writer.
  *

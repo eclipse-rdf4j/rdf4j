@@ -46,12 +46,13 @@ public class Select implements PlanNode {
 	private final String query;
 	private final boolean sorted;
 	private final Dataset dataset;
+	private final boolean includeInferredStatements;
 	private StackTraceElement[] stackTrace;
 	private boolean printed = false;
 	private ValidationExecutionLogger validationExecutionLogger;
 
 	public Select(SailConnection connection, SparqlFragment queryFragment, String orderBy,
-			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph) {
+			Function<BindingSet, ValidationTuple> mapper, Resource[] dataGraph, boolean includeInferredStatements) {
 		this.connection = connection;
 		assert this.connection != null;
 		this.mapper = mapper;
@@ -75,13 +76,14 @@ public class Select implements PlanNode {
 		}
 
 		dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.includeInferredStatements = includeInferredStatements;
 		if (logger.isDebugEnabled()) {
 			this.stackTrace = Thread.currentThread().getStackTrace();
 		}
 	}
 
 	public Select(SailConnection connection, String query, Function<BindingSet, ValidationTuple> mapper,
-			Resource[] dataGraph) {
+			Resource[] dataGraph, boolean includeInferredStatements) {
 		assert !query.toLowerCase().contains("order by") : "Queries with order by are not supported.";
 		assert query.trim().toLowerCase().contains("select ") : "Expected query to contain select.";
 
@@ -90,6 +92,7 @@ public class Select implements PlanNode {
 		this.mapper = mapper;
 		this.query = StatementMatcher.StableRandomVariableProvider.normalize(query, List.of(), List.of());
 		this.dataset = PlanNodeHelper.asDefaultGraphDataset(dataGraph);
+		this.includeInferredStatements = includeInferredStatements;
 
 		this.sorted = false;
 		if (logger.isDebugEnabled()) {
@@ -124,7 +127,8 @@ public class Select implements PlanNode {
 							Thread.currentThread().interrupt();
 							throw new InterruptedSailException("Thread was interrupted while executing SPARQL query.");
 						}
-						bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(), true);
+						bindingSet = connection.evaluate(tupleExpr, dataset, EmptyBindingSet.getInstance(),
+								includeInferredStatements);
 
 					} catch (Throwable t) {
 						if (bindingSet != null) {

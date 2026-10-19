@@ -10,6 +10,9 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.workbench.commands;
 
+import static org.eclipse.rdf4j.model.util.Values.bnode;
+
+import java.io.StringWriter;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
@@ -20,19 +23,29 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.iteration.Iterations;
+import org.eclipse.rdf4j.model.Model;
+import org.eclipse.rdf4j.model.impl.LinkedHashModel;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryResultHandlerException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.config.RepositoryConfig;
+import org.eclipse.rdf4j.repository.config.RepositoryConfigException;
 import org.eclipse.rdf4j.repository.manager.LocalRepositoryManager;
 import org.eclipse.rdf4j.repository.manager.RemoteRepositoryManager;
+import org.eclipse.rdf4j.rio.RDFFormat;
+import org.eclipse.rdf4j.rio.Rio;
+import org.eclipse.rdf4j.rio.WriterConfig;
+import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.base.TransformationServlet;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class SummaryServlet extends TransformationServlet {
+
+	private static final String EFFECTIVE_CONFIG_TURTLE = "config-model-turtle";
 
 	private final ExecutorService executorService = Executors.newCachedThreadPool();
 
@@ -42,6 +55,7 @@ public class SummaryServlet extends TransformationServlet {
 	public void service(TupleResultBuilder builder, String xslPath)
 			throws RepositoryException, QueryEvaluationException, MalformedQueryException, QueryResultHandlerException {
 		builder.transform(xslPath, "summary.xsl");
+		builder.metadata(EFFECTIVE_CONFIG_TURTLE, getEffectiveConfigTurtle());
 		builder.start("id", "description", "location", "server", "size", "contexts");
 		builder.link(List.of(INFO));
 		try (RepositoryConnection con = repository.getConnection()) {
@@ -107,5 +121,32 @@ public class SummaryServlet extends TransformationServlet {
 			result = ((RemoteRepositoryManager) manager).getServerURL();
 		}
 		return result;
+	}
+
+	private String getEffectiveConfigTurtle() {
+		if (manager == null || info == null || info.getId() == null) {
+			return null;
+		}
+
+		try {
+			RepositoryConfig repositoryConfig = manager.getRepositoryConfig(info.getId());
+			if (repositoryConfig == null) {
+				return null;
+			}
+
+			Model model = new LinkedHashModel();
+			repositoryConfig.export(model, bnode());
+
+			WriterConfig writerConfig = new WriterConfig();
+			writerConfig.set(BasicWriterSettings.PRETTY_PRINT, true);
+			writerConfig.set(BasicWriterSettings.INLINE_BLANK_NODES, true);
+
+			StringWriter writer = new StringWriter();
+			Rio.write(model, writer, RDFFormat.TURTLE, writerConfig);
+			return writer.toString();
+		} catch (RepositoryConfigException | RepositoryException e) {
+			LOGGER.warn("Unable to render effective repository config.", e);
+			return null;
+		}
 	}
 }

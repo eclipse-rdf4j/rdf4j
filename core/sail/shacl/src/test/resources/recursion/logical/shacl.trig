@@ -1,0 +1,7 @@
+@prefix ex: <http://example.com/ns#> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+
+{
+  ex:PlaceholderShape a sh:NodeShape ;
+    sh:targetClass ex:Placeholder .
+}

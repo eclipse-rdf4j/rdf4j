@@ -15,18 +15,26 @@ import java.util.function.Predicate;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.explanation.TelemetryMetricNames;
 
 public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 
 	private final QueryEvaluationStep wrapped;
 	private final Predicate<BindingSet> condition;
+	private final QueryModelNode metricTarget;
+
+	public PostFilterQueryEvaluationStep(QueryEvaluationStep wrapped, QueryValueEvaluationStep condition) {
+		this(wrapped, condition, null);
+	}
 
 	public PostFilterQueryEvaluationStep(QueryEvaluationStep wrapped,
-			QueryValueEvaluationStep condition) {
+			QueryValueEvaluationStep condition, QueryModelNode metricTarget) {
 		this.wrapped = wrapped;
 		this.condition = condition.asPredicate();
+		this.metricTarget = metricTarget;
 	}
 
 	@Override
@@ -41,7 +49,15 @@ public class PostFilterQueryEvaluationStep implements QueryEvaluationStep {
 
 			@Override
 			protected boolean accept(BindingSet bindings) {
-				return condition.test(bindings);
+				boolean accepted = condition.test(bindings);
+				if (!accepted && metricTarget != null) {
+					metricTarget.setLongMetricActual(TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL,
+							Math.max(0L,
+									metricTarget.getLongMetricActual(
+											TelemetryMetricNames.LEFT_JOIN_CONDITION_REJECTED_ROWS_ACTUAL))
+									+ 1L);
+				}
+				return accepted;
 			}
 
 			@Override

@@ -15,17 +15,25 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.Sail;
 import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStoreTestContainerSupport;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.sail.SailIsolationLevelTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * An extension of {@link SailIsolationLevelTest} for testing the class
  * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
+@Testcontainers
 public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
+
+	@Container
+	private static final GenericContainer<?> elasticsearch = ElasticsearchStoreTestContainerSupport.getContainer();
 
 	private static SingletonClientProvider clientPool;
 
@@ -33,7 +41,7 @@ public class ElasticsearchStoreIsolationLevelIT extends SailIsolationLevelTest {
 	public static void beforeClass() {
 		SailIsolationLevelTest.setUpClass();
 		TestHelpers.openClient();
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		clientPool = new SingletonClientProvider(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
 
 	@AfterAll

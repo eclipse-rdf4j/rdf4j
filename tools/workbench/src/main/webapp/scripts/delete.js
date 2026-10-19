@@ -41,7 +41,10 @@ function checkIsSafeToDelete(event) {
                 submitForm = confirm('WARNING: You are about to delete a repository that has been proxied by another repository!');
             }
             if (submitForm) {
-                $(event.target).closest('form')[0].submit();
+                var form = $(event.target).closest('form').get(0);
+                if (form) {
+                    form.submit();
+                }
             }
         }
     });

@@ -24,6 +24,22 @@ interface RecordIterator extends Closeable {
 	 */
 	long[] next();
 
+	default String getIndexName() {
+		return "";
+	}
+
+	default long getSourceRowsScannedActual() {
+		return -1;
+	}
+
+	default long getSourceRowsMatchedActual() {
+		return -1;
+	}
+
+	default long getSourceRowsFilteredActual() {
+		return -1;
+	}
+
 	/**
 	 * Closes the iterator, freeing any resources that it uses. Once closed, the iterator will not return any more
 	 * records.

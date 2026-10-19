@@ -27,7 +27,9 @@ import org.junit.jupiter.params.provider.MethodSource;
 public class NativeStoreConnectionTest extends RepositoryConnectionTest {
 	@Override
 	protected Repository createRepository(File dataDir) {
-		return new SailRepository(new NativeStore(dataDir, "spoc"));
+		NativeStore sail = new NativeStore(dataDir, "spoc");
+		sail.setWalEnabled(false);
+		return new SailRepository(sail);
 	}
 
 	@ParameterizedTest

@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.federated;
 
 import java.util.Optional;
 
-import org.eclipse.rdf4j.collection.factory.api.CollectionFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCacheFactory;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
@@ -58,6 +57,13 @@ public class FedXConfig {
 	private boolean debugQueryPlan = false;
 
 	private boolean includeInferredDefault = true;
+
+	private boolean enableGroupedSourceSelection = true;
+
+	/**
+	 * Enable support for RDF 1.2 triple term queries
+	 */
+	private boolean enableTripleRefSupport = false;
 
 	private String sourceSelectionCacheSpec = null;
 
@@ -498,18 +504,58 @@ public class FedXConfig {
 	}
 
 	/**
-	 * Set the CollectionFactory to be used by the federation
+	 * Flag to enable or disable the grouped source selection strategy. Default={@code true}.
+	 *
+	 * <p>
+	 * When enabled, all statement patterns that require a remote check for a given endpoint are batched into a single
+	 * SPARQL SELECT query using {@code BIND(EXISTS { ... } AS ?stmt_i)} expressions, reducing the number of remote
+	 * requests from <em>O(S &times; M)</em> to <em>O(M)</em> where <em>S</em> is the number of statement patterns and
+	 * <em>M</em> the number of federation members. When disabled, one individual ASK query is sent per statement
+	 * pattern and endpoint (the classic FedX behaviour).
+	 * </p>
+	 *
+	 * @return {@code true} if grouped source selection is enabled
+	 */
+	public boolean isEnableGroupedSourceSelection() {
+		return enableGroupedSourceSelection;
+	}
+
+	/**
+	 * Enable or disable the grouped source selection strategy. Default={@code true}.
 	 *
 	 * <p>
 	 * Can only be set before federation initialization.
 	 * </p>
 	 *
-	 * @param cf
+	 * @param flag {@code true} to enable grouped source selection, {@code false} to fall back to individual ASK queries
 	 * @return the current config
-	 * @deprecated unusedO
+	 * @see #isEnableGroupedSourceSelection()
 	 */
-	@Deprecated(forRemoval = true)
-	public FedXConfig withCollectionFactory(CollectionFactory cf) {
+	public FedXConfig withEnableGroupedSourceSelection(boolean flag) {
+		this.enableGroupedSourceSelection = flag;
 		return this;
 	}
+
+	/**
+	 * Whether the support for RDF 1.2 triple term evaluation is enabled or not
+	 *
+	 * @return whether triple ref support is enabled
+	 */
+	public boolean isEnableTripleRefSupport() {
+		return this.enableTripleRefSupport;
+	}
+
+	/**
+	 * Enable or disable the support for RDF 1.2 triple term evaluation
+	 *
+	 *
+	 * @param flag to enable RDF 1.2 triple term support.
+	 * @return the current config
+	 * @see #isEnableTripleRefSupport()
+	 */
+	public FedXConfig withEnableTripleRefSupport(boolean flag) {
+		this.enableTripleRefSupport = flag;
+		return this;
+	}
+
 }

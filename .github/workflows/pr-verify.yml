@@ -16,14 +16,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Check formatting
-        run: mvn -B --quiet -T 2C formatter:validate impsort:check xml-format:xml-check
+        run: mvn -B -Pformatting spotless:check
       - name: Quick compile
         run: mvn -B --quiet -T 2C compile -DskipTests -Pquick
       - name: Download all other dependencies
@@ -34,10 +36,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Compile (mvn clean install)
@@ -50,9 +54,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        jdk: [ 11, 24 ]
+        jdk: [ 25 ]
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
@@ -62,7 +68,7 @@ jobs:
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Test
-        run: mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B test -DskipITs -P-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -75,16 +81,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PskipUnitTests,-formatting -Dmaven.javadoc.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -96,16 +104,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Build
         run: mvn --quiet clean && mvn -B --quiet -T 2C install -Pquick
       - name: Verify
-        run: mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
+        run: exec ./scripts/ci/run-with-thread-dump.sh mvn -B verify -PslowTestsOnly,-skipSlowTests,-formatting -Dmaven.javadoc.skip -Djapicmp.skip -Denforcer.skip -Danimal.sniffer.skip
       - name: Publish Test Report
         if: failure()
         uses: scacap/action-surefire-report@v1.9.0
@@ -117,10 +127,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Run install
@@ -130,14 +142,25 @@ jobs:
 
 
   e2e:
+    name: e2e (${{ matrix.runtime.label }})
     needs: formatting-and-quick-compile
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        runtime:
+          - label: Spring Boot
+            argument: spring-boot
+          - label: Docker Tomcat
+            argument: docker-tomcat
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 11
+          java-version: 25
           distribution: 'temurin'
           cache: maven
       - name: Install dependencies
@@ -145,15 +168,34 @@ jobs:
       - name: Install Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: 18
-      - name: Run end-to-end tests of RDF4J Server and Workbench
+          node-version: 22
+      - name: Run end-to-end tests of RDF4J Server and Workbench (${{ matrix.runtime.label }})
         working-directory: ./e2e
-        run: ./run.sh
+        run: exec ../scripts/ci/run-with-thread-dump.sh ./run.sh ${{ matrix.runtime.argument }}
+
+  frontend-unit-tests:
+    needs: formatting-and-quick-compile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: e2e/package-lock.json
+      - name: Install dependencies
+        working-directory: ./e2e
+        run: npm ci
+      - name: Run frontend unit tests
+        working-directory: ./e2e
+        run: npm run test:unit
 
   copyright-check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Register JVM thread dump on cancel
+        uses: ./.github/actions/thread-dump-post
       - name: check copyright header present
         run: scripts/checkCopyrightPresent.sh
-

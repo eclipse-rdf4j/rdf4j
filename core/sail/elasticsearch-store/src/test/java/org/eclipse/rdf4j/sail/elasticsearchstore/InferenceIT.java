@@ -41,7 +41,8 @@ public class InferenceIT extends AbstractElasticsearchStoreIT {
 	@BeforeAll
 	public static void beforeClass() {
 		TestHelpers.openClient();
-		singletonClientProvider = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		singletonClientProvider = new SingletonClientProvider(elasticsearchHost(), elasticsearchPort(),
+				elasticsearchCluster());
 	}
 
 	@AfterAll

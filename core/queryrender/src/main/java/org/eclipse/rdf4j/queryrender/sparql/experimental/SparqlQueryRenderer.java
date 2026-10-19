@@ -89,7 +89,7 @@ public class SparqlQueryRenderer extends BaseTupleExprRenderer implements QueryR
 			ParsedQueryPreprocessor parserVisitor = new ParsedQueryPreprocessor();
 			PreprocessedQuerySerializer serializerVisitor = new PreprocessedQuerySerializer();
 			SerializableParsedUpdate toSerialize = parserVisitor
-					.transformToSerialize((UpdateExpr) updateExpr, theUpdate.getDatasetMapping().get(updateExpr));
+					.transformToSerialize(updateExpr, theUpdate.getDatasetMapping().get(updateExpr));
 			exprBuilder.append(serializerVisitor.serialize(toSerialize));
 			if (multipleExpressions) {
 				exprBuilder.append(";\n");

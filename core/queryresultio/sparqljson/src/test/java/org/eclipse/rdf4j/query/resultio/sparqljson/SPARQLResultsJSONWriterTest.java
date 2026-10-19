@@ -34,7 +34,7 @@ public class SPARQLResultsJSONWriterTest extends AbstractTupleQueryResultWriterT
 		return new RioSetting<?>[] {
 				BasicWriterSettings.PRETTY_PRINT,
 				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL,
-				BasicWriterSettings.ENCODE_RDF_STAR,
+				BasicWriterSettings.ENCODE_TRIPLE_TERMS,
 				BasicQueryWriterSettings.JSONP_CALLBACK
 		};
 	}

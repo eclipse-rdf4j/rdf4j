@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.federation;
 
 import java.io.File;
-import java.io.IOException;
 
 import org.eclipse.rdf4j.federated.FedXFactory;
 import org.eclipse.rdf4j.federated.repository.FedXRepository;

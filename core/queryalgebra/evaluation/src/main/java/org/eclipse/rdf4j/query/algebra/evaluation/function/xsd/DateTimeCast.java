@@ -41,8 +41,7 @@ public class DateTimeCast extends CastFunction {
 
 	@Override
 	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
-		if (value instanceof Literal) {
-			Literal literal = (Literal) value;
+		if (value instanceof Literal literal) {
 			CoreDatatype datatype = literal.getCoreDatatype();
 
 			if (datatype == CoreDatatype.XSD.DATE) {

@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
 import java.util.ArrayList;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -54,6 +55,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 	private Boolean deactivated;
 	private final Set<Namespace> namespaces;
 	private final Model prefixes;
+	private final boolean hasMessageTemplateVariables;
 
 	public SparqlConstraintComponent(Resource id, ShapeSource shapeSource, Shape shape) {
 		super(id);
@@ -96,6 +98,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 			});
 		}
 
+		hasMessageTemplateVariables = containsMessageTemplateVariables(message);
+
 		var shaclNamespaces = ShaclPrefixParser.extractNamespaces(id, shapeSource);
 		prefixes = shaclNamespaces.getModel();
 		namespaces = shaclNamespaces.getNamespaces();
@@ -115,6 +119,21 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 		this.deactivated = deactivated;
 		this.prefixes = prefixes;
 		this.namespaces = namespaces;
+		this.hasMessageTemplateVariables = containsMessageTemplateVariables(message);
+	}
+
+	public boolean hasMessageTemplateVariables() {
+		return hasMessageTemplateVariables;
+	}
+
+	private static boolean containsMessageTemplateVariables(List<Literal> messages) {
+		for (Literal literal : messages) {
+			String label = literal.getLabel();
+			if (label.contains("{?") || label.contains("{$")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	@Override
@@ -155,6 +174,10 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 			Path path = getTargetChain().getPath().get();
 			String s = path.toSparqlPathString();
 			select = select.replace(" $PATH ", " " + s + " ");
+			if (select.contains("$PATH")) {
+				throw new IllegalStateException(
+						"Illegal use of $PATH in SPARQL constraint for property shape " + getId());
+			}
 		}
 
 		PlanNode allTargets;
@@ -176,7 +199,8 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 		}
 
 		return new SparqlConstraintSelect(connectionsGroup.getBaseConnection(), allTargets, select, scope,
-				validationSettings.getDataGraph(), produceValidationReports, this, shape);
+				validationSettings.getDataGraph(), produceValidationReports, this, shape,
+				connectionsGroup.isIncludeInferredStatements());
 
 	}
 
@@ -254,7 +278,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -280,7 +304,7 @@ public class SparqlConstraintComponent extends AbstractConstraintComponent imple
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		int result = (produceValidationReports ? 1 : 0);
 		result = 31 * result + select.hashCode();
 		result = 31 * result + originalSelect.hashCode();

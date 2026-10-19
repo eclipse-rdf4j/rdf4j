@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.federated.evaluation.iterator;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.FilterIteration;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
@@ -30,10 +30,10 @@ public class FilteringIteration extends FilterIteration<BindingSet> {
 	private static final Logger log = LoggerFactory.getLogger(FilteringIteration.class);
 
 	protected final FilterValueExpr filterExpr;
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 
 	public FilteringIteration(FilterValueExpr filterExpr, CloseableIteration<BindingSet> iter,
-			FederationEvalStrategy strategy)
+			FederationEvaluationStrategy strategy)
 			throws QueryEvaluationException {
 		super(iter);
 		this.filterExpr = filterExpr;

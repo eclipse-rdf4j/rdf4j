@@ -31,13 +31,14 @@ import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.transaction.IsolationLevel;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.ModelFactory;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Statements;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
@@ -122,6 +123,40 @@ public abstract class Changeset implements SailSink, ModelFactory {
 	private volatile boolean statementCleared;
 
 	private boolean closed;
+	private IsolationLevel sinkIsolationLevel = IsolationLevels.NONE;
+
+	public static boolean isOrderIndependent(Changeset changeset1, Changeset changeset2) {
+		Objects.requireNonNull(changeset1, "changeset1");
+		Objects.requireNonNull(changeset2, "changeset2");
+
+		boolean c1StatementChanges = hasStatementChanges(changeset1);
+		boolean c2StatementChanges = hasStatementChanges(changeset2);
+		boolean c1NamespaceChanges = hasNamespaceChanges(changeset1);
+		boolean c2NamespaceChanges = hasNamespaceChanges(changeset2);
+
+		// Both changesets are order independent if they don't add or remove anything that the other changeset modifies.
+		// To simplify the check we will assume that if one changeset only modifies namespaces and the other only
+		// statements then they are order independent.
+		if ((c1NamespaceChanges && !c1StatementChanges && c2StatementChanges && !c2NamespaceChanges)
+				|| (c2NamespaceChanges && !c2StatementChanges && c1StatementChanges && !c1NamespaceChanges)) {
+			return true;
+		}
+
+		return false;
+	}
+
+	private static boolean hasNamespaceChanges(Changeset changeset) {
+		Map<String, String> addedNamespaces = changeset.getAddedNamespaces();
+		Set<String> removedPrefixes = changeset.getRemovedPrefixes();
+		return changeset.namespaceCleared || (addedNamespaces != null && !addedNamespaces.isEmpty())
+				|| (removedPrefixes != null && !removedPrefixes.isEmpty());
+	}
+
+	private static boolean hasStatementChanges(Changeset changeset) {
+		Set<Resource> deprecatedContexts = changeset.getDeprecatedContexts();
+		return changeset.statementCleared || changeset.hasApproved() || changeset.hasDeprecated()
+				|| (deprecatedContexts != null && !deprecatedContexts.isEmpty());
+	}
 
 	@Override
 	public void close() throws SailException {
@@ -142,12 +177,12 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		if (prepend != null && observed != null) {
 			for (SimpleStatementPattern p : observed) {
-				Resource subj = p.getSubject();
-				IRI pred = p.getPredicate();
-				Value obj = p.getObject();
-				Resource context = p.getContext();
+				Resource subj = p.subject();
+				IRI pred = p.predicate();
+				Value obj = p.object();
+				Resource context = p.context();
 				Resource[] contexts;
-				if (p.isAllContexts()) {
+				if (p.allContexts()) {
 					contexts = new Resource[0];
 				} else {
 					contexts = new Resource[] { context };
@@ -506,6 +541,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		assert !closed;
 		assert !from.closed;
 
+		this.sinkIsolationLevel = from.sinkIsolationLevel;
 		this.observed = from.observed;
 		this.approved = from.approved;
 		this.approvedEmpty = from.approvedEmpty;
@@ -517,6 +553,14 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		this.removedPrefixes = from.removedPrefixes;
 		this.namespaceCleared = from.namespaceCleared;
 		this.statementCleared = from.statementCleared;
+	}
+
+	IsolationLevel getSinkIsolationLevel() {
+		return sinkIsolationLevel;
+	}
+
+	void setSinkIsolationLevel(IsolationLevel sinkIsolationLevel) {
+		this.sinkIsolationLevel = Objects.requireNonNull(sinkIsolationLevel);
 	}
 
 	/**
@@ -571,11 +615,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 			return observed.stream()
 					.map(simpleStatementPattern -> new StatementPattern(
-							new Var("s", simpleStatementPattern.getSubject()),
-							new Var("p", simpleStatementPattern.getPredicate()),
-							new Var("o", simpleStatementPattern.getObject()),
-							simpleStatementPattern.isAllContexts() ? null
-									: new Var("c", simpleStatementPattern.getContext())
+							Var.of("s", simpleStatementPattern.subject()),
+							Var.of("p", simpleStatementPattern.predicate()),
+							Var.of("o", simpleStatementPattern.object()),
+							simpleStatementPattern.allContexts() ? null
+									: Var.of("c", simpleStatementPattern.context())
 					)
 					)
 					.collect(Collectors.toCollection(HashSet::new));
@@ -765,7 +809,7 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	}
 
-	Iterable<Triple> getApprovedTriples(Resource subj, IRI pred, Value obj) {
+	Iterable<TripleTerm> getApprovedTriples(Resource subj, IRI pred, Value obj) {
 		assert !closed;
 		if (approved == null || approvedEmpty) {
 			return Collections.emptyList();
@@ -775,9 +819,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 		try {
 			// TODO none of this is particularly well thought-out in terms of performance, but we are aiming
 			// for functionally complete first.
-			Stream<Triple> approvedSubjectTriples = approved.parallelStream()
-					.filter(st -> st.getSubject().isTriple())
-					.map(st -> (Triple) st.getSubject())
+			Stream<TripleTerm> approvedSubjectTriples = approved.parallelStream()
+					.filter(st -> st.getSubject().isTripleTerm())
+					.map(st -> (TripleTerm) st.getSubject())
 					.filter(t -> {
 						if (subj != null && !subj.equals(t.getSubject())) {
 							return false;
@@ -788,9 +832,9 @@ public abstract class Changeset implements SailSink, ModelFactory {
 						return obj == null || obj.equals(t.getObject());
 					});
 
-			Stream<Triple> approvedObjectTriples = approved.parallelStream()
-					.filter(st -> st.getObject().isTriple())
-					.map(st -> (Triple) st.getObject())
+			Stream<TripleTerm> approvedObjectTriples = approved.parallelStream()
+					.filter(st -> st.getObject().isTripleTerm())
+					.map(st -> (TripleTerm) st.getObject())
 					.filter(t -> {
 						if (subj != null && !subj.equals(t.getSubject())) {
 							return false;
@@ -1009,57 +1053,11 @@ public abstract class Changeset implements SailSink, ModelFactory {
 
 	}
 
-	public static class SimpleStatementPattern {
-		final private Resource subject;
-		final private IRI predicate;
-		final private Value object;
-		final private Resource context;
-
-		// true if the context is the union of all contexts
-		final private boolean allContexts;
-
-		public SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
-				boolean allContexts) {
-			this.subject = subject;
-			this.predicate = predicate;
-			this.object = object;
-			this.context = context;
-			this.allContexts = allContexts;
-		}
-
-		public Resource getSubject() {
-			return subject;
-		}
-
-		public IRI getPredicate() {
-			return predicate;
-		}
-
-		public Value getObject() {
-			return object;
-		}
-
-		public Resource getContext() {
-			return context;
-		}
-
-		public boolean isAllContexts() {
-			return allContexts;
-		}
-
-		@Override
-		public boolean equals(Object o) {
-			if (this == o) {
-				return true;
-			}
-			if (o == null || getClass() != o.getClass()) {
-				return false;
-			}
-			SimpleStatementPattern that = (SimpleStatementPattern) o;
-			return allContexts == that.allContexts && Objects.equals(subject, that.subject)
-					&& Objects.equals(predicate, that.predicate) && Objects.equals(object, that.object)
-					&& Objects.equals(context, that.context);
-		}
+	/**
+	 * @param allContexts true if the context is the union of all contexts
+	 */
+	public record SimpleStatementPattern(Resource subject, IRI predicate, Value object, Resource context,
+			boolean allContexts) {
 
 		@Override
 		public int hashCode() {

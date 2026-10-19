@@ -58,7 +58,14 @@ class GroupGraphPattern extends QueryElementCollection<GraphPattern> implements 
 	@Override
 	public GroupGraphPattern and(GraphPattern... patterns) {
 		if (isEmpty() && patterns.length == 1 && (isGGP(patterns[0]))) {
-			copy(GraphPatterns.extractOrConvertToGGP(patterns[0]));
+			GroupGraphPattern ggp = GraphPatterns.extractOrConvertToGGP(patterns[0]);
+			// Only copy if it's a plain GroupGraphPattern, not a specialized subclass
+			// like FilterExistsGraphPattern or MinusGraphPattern which override getQueryString()
+			if (ggp.getClass() == GroupGraphPattern.class) {
+				copy(ggp);
+			} else {
+				addElements(patterns);
+			}
 		} else {
 			addElements(patterns);
 		}

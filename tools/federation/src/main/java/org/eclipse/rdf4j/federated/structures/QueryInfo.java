@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.PassThroughTupleExpr;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTask;
 import org.eclipse.rdf4j.federated.util.QueryStringUtil;
 import org.eclipse.rdf4j.model.IRI;
@@ -59,7 +59,7 @@ public class QueryInfo {
 
 	private final FederationContext federationContext;
 
-	private final FederationEvalStrategy strategy;
+	private final FederationEvaluationStrategy strategy;
 
 	protected boolean done = false;
 
@@ -75,7 +75,7 @@ public class QueryInfo {
 	 * @param dataset           the {@link Dataset}
 	 */
 	public QueryInfo(String query, String baseURI, QueryType queryType, int maxExecutionTime, boolean includeInferred,
-			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
+			FederationContext federationContext, FederationEvaluationStrategy strategy, Dataset dataset) {
 		super();
 		this.queryID = federationContext.getQueryManager().getNextQueryId();
 
@@ -96,7 +96,7 @@ public class QueryInfo {
 	}
 
 	public QueryInfo(Resource subj, IRI pred, Value obj, int maxExecutionTime, boolean includeInferred,
-			FederationContext federationContext, FederationEvalStrategy strategy, Dataset dataset) {
+			FederationContext federationContext, FederationEvaluationStrategy strategy, Dataset dataset) {
 		this(QueryStringUtil.toString(subj, pred, obj), null, QueryType.GET_STATEMENTS, maxExecutionTime,
 				includeInferred,
 				federationContext, strategy, dataset);
@@ -130,9 +130,9 @@ public class QueryInfo {
 	}
 
 	/**
-	 * @return the {@link FederationEvalStrategy} active in the current query context
+	 * @return the {@link FederationEvaluationStrategy} active in the current query context
 	 */
-	public FederationEvalStrategy getStrategy() {
+	public FederationEvaluationStrategy getStrategy() {
 		return this.strategy;
 	}
 

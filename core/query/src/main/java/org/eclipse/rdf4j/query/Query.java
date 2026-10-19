@@ -92,8 +92,9 @@ public interface Query extends Operation {
 	 *
 	 * @param level The explanation level that should be used to create the explanation. Choose between: Unoptimized (as
 	 *              parsed without optimizations) , Optimized (as is actually going to be used), Executed (as was
-	 *              executed/evaluated, including some real performance metrics), Timed (as was executed/evaluated
-	 *              including all real performance metrics). Executed and Timed level can potentially be slow.
+	 *              executed/evaluated with actual result sizes), Telemetry (as was executed/evaluated, including
+	 *              runtime telemetry metrics), Timed (as was executed/evaluated including timing for each plan node).
+	 *              Executed, Telemetry and Timed levels can potentially be slow.
 	 * @return The explanation that we generated, which can be viewed in a human readable format with toString(), as
 	 *         JSON or as a simplified query plan object structure.
 	 */

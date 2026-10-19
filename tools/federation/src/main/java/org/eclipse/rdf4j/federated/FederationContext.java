@@ -13,7 +13,7 @@ package org.eclipse.rdf4j.federated;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionCache;
 import org.eclipse.rdf4j.federated.cache.SourceSelectionMemoryCache;
 import org.eclipse.rdf4j.federated.evaluation.DelegateFederatedServiceResolver;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.monitoring.Monitoring;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
@@ -87,9 +87,9 @@ public class FederationContext {
 	}
 
 	/**
-	 * Create a fresh {@link FederationEvalStrategy} using information from this federation context.
+	 * Create a fresh {@link FederationEvaluationStrategy} using information from this federation context.
 	 */
-	public FederationEvalStrategy createStrategy(Dataset dataset) {
+	public FederationEvaluationStrategy createStrategy(Dataset dataset) {
 		TripleSource tripleSource = null;
 		EvaluationStatistics evaluationStatistics = null;
 		return manager.getFederationEvaluationStrategyFactory()

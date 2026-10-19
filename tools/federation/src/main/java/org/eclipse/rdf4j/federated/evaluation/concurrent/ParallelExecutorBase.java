@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.join.JoinExecutorBase;
 import org.eclipse.rdf4j.federated.evaluation.union.UnionExecutorBase;
 import org.eclipse.rdf4j.federated.exception.ExceptionUtil;
@@ -41,7 +41,7 @@ public abstract class ParallelExecutorBase<T> extends LookAheadIteration<T>
 	protected static final AtomicLong NEXT_EXECUTOR_ID = new AtomicLong(0L);
 
 	/* Constants */
-	protected final FederationEvalStrategy strategy; // the evaluation strategy
+	protected final FederationEvaluationStrategy strategy; // the evaluation strategy
 	protected final long executorId; // the executor id
 	protected final QueryInfo queryInfo;
 

@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * WriterSettings for the N-Triples writer features.
  *

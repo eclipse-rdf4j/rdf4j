@@ -41,10 +41,7 @@ public class BooleanQueryResultFormat extends QueryResultFormat {
 	 * SPARQL Query Results JSON Format.
 	 */
 	public static final BooleanQueryResultFormat JSON = new BooleanQueryResultFormat("SPARQL/JSON",
-			// Note: The MIME type for SPARQL-star JSON is handled by this format in order to handle BooleanQueryResult
-			// when SPARQL-star JSON is requested.
-			Arrays.asList("application/sparql-results+json", "application/json",
-					"application/x-sparqlstar-results+json"),
+			Arrays.asList("application/sparql-results+json", "application/json"),
 			StandardCharsets.UTF_8, Arrays.asList("srj", "json"), SPARQL_RESULTS_JSON_URI);
 
 	/**

@@ -30,8 +30,7 @@ public class DecimalCast extends CastFunction {
 
 	@Override
 	protected Literal convert(ValueFactory valueFactory, Value value) throws ValueExprEvaluationException {
-		if (value instanceof Literal) {
-			Literal literal = (Literal) value;
+		if (value instanceof Literal literal) {
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 
 			if (datatype != null && datatype.isNumericDatatype()) {

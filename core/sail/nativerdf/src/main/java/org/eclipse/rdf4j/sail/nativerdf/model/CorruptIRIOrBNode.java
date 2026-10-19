@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.nativerdf.model;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 import org.apache.commons.codec.binary.Hex;
 import org.eclipse.rdf4j.model.BNode;
@@ -63,17 +64,94 @@ public class CorruptIRIOrBNode extends CorruptValue implements IRI, BNode {
 	@Override
 	public String getLocalName() {
 		byte[] data = getData();
-		if (data != null && data.length < 1024) {
-			try {
-				String localName = new String(data, 5, data.length - 5, StandardCharsets.UTF_8);
-				return "CORRUPT_" + UrlEscapers.urlPathSegmentEscaper().escape(localName);
-			} catch (Throwable ignored) {
+		if (data != null && data.length > 0) {
+			// check if all bytes are zero
+			boolean allZero = true;
+			for (byte b : data) {
+				if (b != 0) {
+					allZero = false;
+					break;
+				}
 			}
 
-			return "CORRUPT_" + Hex.encodeHexString(data);
+			if (allZero) {
+				return "CORRUPT_ID_" + getInternalID() + "_all_" + data.length + "_data_bytes_are_0x00";
+			}
+
+			data = truncateData(data);
+
+			// 1) Try full UTF-8 decode of the slice
+			if (data.length > 0) {
+				try {
+					String utf8 = new String(data, StandardCharsets.UTF_8);
+					// If replacement character is not present, we got a clean decode
+					if (utf8.indexOf('\uFFFD') < 0 && !utf8.trim().isEmpty()) {
+						return "CORRUPT_ID_" + getInternalID() + "_" + UrlEscapers.urlPathSegmentEscaper().escape(utf8);
+					}
+				} catch (Throwable ignored) {
+					// fall through to recovery strategies
+				}
+			}
+
+			// 2) Try to narrow down to a valid UTF-8 decodable substring (avoid replacement char)
+			String recoveredUtf8 = null;
+			int bestByteLen = 0;
+			for (int start = 0; start < data.length; start++) {
+				for (int end = data.length; end > start; end--) {
+					int candidateLen = end - start;
+					if (candidateLen <= bestByteLen) {
+						break; // can't beat current best
+					}
+					try {
+						String s = new String(data, start, candidateLen, StandardCharsets.UTF_8);
+						if (s.indexOf('\uFFFD') < 0) {
+							recoveredUtf8 = s;
+							bestByteLen = candidateLen;
+							break; // no need to try smaller end for this start
+						}
+					} catch (Throwable ignored) {
+						// continue scanning
+					}
+				}
+			}
+			if (recoveredUtf8 != null && !recoveredUtf8.trim().isEmpty()) {
+				return "CORRUPT_ID_" + getInternalID() + "_"
+						+ UrlEscapers.urlPathSegmentEscaper().escape(recoveredUtf8);
+			}
+
+			// 3) Try ASCII: find the longest contiguous run of printable US-ASCII bytes and use that
+			int bestAsciiStart = -1;
+			int bestAsciiLen = 0;
+			int i = 0;
+			while (i < data.length) {
+				// printable ASCII range 0x20 (space) to 0x7E (~)
+				if (data[i] >= 0x20 && data[i] <= 0x7E) {
+					int runStart = i;
+					while (i < data.length && data[i] >= 0x20 && data[i] <= 0x7E) {
+						i++;
+					}
+					int runLen = i - runStart;
+					if (runLen > bestAsciiLen) {
+						bestAsciiLen = runLen;
+						bestAsciiStart = runStart;
+					}
+				} else {
+					i++;
+				}
+			}
+			if (bestAsciiLen > 0) {
+				String ascii = new String(data, bestAsciiStart, bestAsciiLen, StandardCharsets.US_ASCII);
+				if (!ascii.trim().isEmpty()) {
+					return "CORRUPT_ID_" + getInternalID() + "_" + UrlEscapers.urlPathSegmentEscaper().escape(ascii);
+				}
+			}
+
+			// 4) Fallback: hex-encode the entire raw data
+			return "CORRUPT_ID_" + getInternalID() + "_HEX_"
+					+ Hex.encodeHexString(Arrays.copyOfRange(data, 0, data.length));
 		}
 
-		return "CORRUPT";
+		return "CORRUPT_ID_" + getInternalID();
 	}
 
 	@Override

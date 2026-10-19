@@ -209,8 +209,9 @@ public enum RDFTestDataset {
 
 	private void extractFromGzip(File downloadFile, File dataFile) throws IOException {
 		System.out.println("Extracting " + downloadFile + " to " + dataFile.getName());
-		GZIPInputStream in = new GZIPInputStream(new FileInputStream(downloadFile));
-		IOUtil.writeStream(in, dataFile);
+		try (GZIPInputStream in = new GZIPInputStream(new FileInputStream(downloadFile))) {
+			IOUtil.writeStream(in, dataFile);
+		}
 	}
 
 }

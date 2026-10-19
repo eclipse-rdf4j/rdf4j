@@ -10,10 +10,16 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.spring.repository.remote;
 
+import static com.github.tomakehurst.wiremock.client.WireMock.aResponse;
+import static com.github.tomakehurst.wiremock.client.WireMock.configureFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.equalTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.get;
+import static com.github.tomakehurst.wiremock.client.WireMock.getRequestedFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.stubFor;
+import static com.github.tomakehurst.wiremock.client.WireMock.urlEqualTo;
+import static com.github.tomakehurst.wiremock.client.WireMock.verify;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
-import static org.mockserver.model.HttpRequest.request;
-import static org.mockserver.model.HttpResponse.response;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -21,41 +27,44 @@ import java.nio.charset.StandardCharsets;
 import org.apache.commons.io.IOUtils;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.spring.support.ConfigurationException;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockserver.client.MockServerClient;
-import org.mockserver.junit.jupiter.MockServerExtension;
-import org.mockserver.matchers.Times;
-import org.mockserver.model.MediaType;
-import org.mockserver.model.NottableString;
-import org.mockserver.verify.VerificationTimes;
 
-@ExtendWith(MockServerExtension.class)
+import com.github.tomakehurst.wiremock.WireMockServer;
+import com.github.tomakehurst.wiremock.core.WireMockConfiguration;
+
 class RemoteRepositoryConfigTest {
 
+	private WireMockServer server;
 	private final RemoteRepositoryConfig remoteRepositoryConfig = new RemoteRepositoryConfig();
+	private String baseUrl;
 
 	@BeforeEach
-	void setUp(MockServerClient client) throws Exception {
-		client.when(
-				request()
-						.withMethod("GET")
-						.withPath("/repositories"),
-				Times.once()
-		)
-				.respond(
-						response()
-								.withContentType(MediaType.parse("application/sparql-results+json;charset=UTF-8"))
-								.withBody(readFileToString("repositories.srj"))
-				);
+	void setUp() throws Exception {
+		server = new WireMockServer(WireMockConfiguration.options().dynamicPort().templatingEnabled(false));
+		server.start();
+		configureFor("localhost", server.port());
+		baseUrl = "http://localhost:" + server.port();
+
+		stubFor(get(urlEqualTo("/repositories"))
+				.willReturn(aResponse()
+						.withHeader("Content-Type", "application/sparql-results+json;charset=UTF-8")
+						.withBody(readFileToString("repositories.srj"))));
+	}
+
+	@AfterEach
+	void tearDown() {
+		if (server != null) {
+			server.stop();
+		}
 	}
 
 	@Test
-	void getRemoteRepository(MockServerClient client) {
+	void getRemoteRepository() {
 		// Arrange
 		RemoteRepositoryProperties properties = new RemoteRepositoryProperties();
-		properties.setManagerUrl("http://localhost:" + client.getPort());
+		properties.setManagerUrl(baseUrl);
 		properties.setName("test-repo");
 
 		// Act
@@ -63,20 +72,15 @@ class RemoteRepositoryConfigTest {
 
 		// Assert
 		assertThat(repository).isNotNull();
-		client.verify(
-				request()
-						.withMethod("GET")
-						.withPath("/repositories")
-						.withHeader(NottableString.not("Authorization")),
-				VerificationTimes.once()
-		);
+		verify(1, getRequestedFor(urlEqualTo("/repositories"))
+				.withoutHeader("Authorization"));
 	}
 
 	@Test
-	void getRemoteRepositoryWithUsernameAndPassword(MockServerClient client) {
+	void getRemoteRepositoryWithUsernameAndPassword() {
 		// Arrange
 		RemoteRepositoryProperties properties = new RemoteRepositoryProperties();
-		properties.setManagerUrl("http://localhost:" + client.getPort());
+		properties.setManagerUrl(baseUrl);
 		properties.setName("test-repo");
 		properties.setUsername("admin");
 		properties.setPassword("1234");
@@ -86,13 +90,8 @@ class RemoteRepositoryConfigTest {
 
 		// Assert
 		assertThat(repository).isNotNull();
-		client.verify(
-				request()
-						.withMethod("GET")
-						.withPath("/repositories")
-						.withHeader("Authorization", "Basic YWRtaW46MTIzNA=="),
-				VerificationTimes.once()
-		);
+		verify(1, getRequestedFor(urlEqualTo("/repositories"))
+				.withHeader("Authorization", equalTo("Basic YWRtaW46MTIzNA==")));
 	}
 
 	@Test

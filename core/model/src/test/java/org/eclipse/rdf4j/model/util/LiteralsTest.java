@@ -18,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.time.Instant;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.IllformedLocaleException;
@@ -105,6 +106,17 @@ public class LiteralsTest {
 		// invalid
 		assertThatExceptionOfType(IllformedLocaleException.class)
 				.isThrownBy(() -> Literals.normalizeLanguageTag("ru-ua-latn"));
+	}
+
+	@Test
+	public void valuesLiteralSupportsInstant() {
+		Instant instant = Instant.parse("2022-08-01T21:14:38.470534100Z");
+
+		Literal literal = Values.literal(instant);
+
+		assertThat(Instant.parse(literal.getLabel())).isEqualTo(instant);
+		assertThat(literal.getDatatype()).isEqualTo(XSD.DATETIME);
+		assertThat(literal.temporalAccessorValue()).isEqualTo(instant);
 	}
 
 	/**

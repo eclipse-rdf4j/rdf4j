@@ -16,10 +16,11 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 
 @InternalUseOnly
-public class TripleSourceIterationWrapper<T> implements CloseableIteration<T> {
+public class TripleSourceIterationWrapper<T> implements CloseableIteration<T>, IndexReportingIterator {
 
 	private final CloseableIteration<? extends T> delegate;
 	private boolean closed = false;
@@ -107,5 +108,37 @@ public class TripleSourceIterationWrapper<T> implements CloseableIteration<T> {
 			closed = true;
 			delegate.close();
 		}
+	}
+
+	@Override
+	public String getIndexName() {
+		IndexReportingIterator reporter = indexReporter();
+		if (reporter == null) {
+			return null;
+		}
+		String indexName = reporter.getIndexName();
+		return indexName == null || indexName.isEmpty() ? null : indexName;
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsScannedActual();
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsMatchedActual();
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		IndexReportingIterator reporter = indexReporter();
+		return reporter == null ? -1 : reporter.getSourceRowsFilteredActual();
+	}
+
+	private IndexReportingIterator indexReporter() {
+		return delegate instanceof IndexReportingIterator ? (IndexReportingIterator) delegate : null;
 	}
 }

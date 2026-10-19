@@ -7,7 +7,13 @@ var workbench;
 (function (workbench) {
     var create;
     (function (create) {
-        create.id = $('#id');
+        function findFieldByRole(role, fallbackSelector) {
+            var field = $('[data-field-role="' + role + '"]');
+            return field.length ? field : $(fallbackSelector);
+        }
+        create.findFieldByRole = findFieldByRole;
+        create.id = findFieldByRole('repository-id', '#id');
+        create.title = findFieldByRole('repository-title', '#title');
     })(create = workbench.create || (workbench.create = {}));
 })(workbench || (workbench = {}));
 /**
@@ -47,7 +53,7 @@ workbench.addLoad(function createPageLoaded() {
      * Disables the create button if the id field doesn't have any text.
      */
     function disableCreateIfEmptyId() {
-        $('input#create').prop('disabled', !(/.+/.test($('#id').val())));
+        $('input#create').prop('disabled', !(/.+/.test(workbench.create.id.val())));
     }
     // Populate parameters
     var elements = workbench.getQueryStringElements();
@@ -58,13 +64,13 @@ workbench.addLoad(function createPageLoaded() {
             workbench.create.id.val(value);
         }
         if (pair[0] == 'title') {
-            $('#title').val(value);
+            workbench.create.title.val(value);
         }
     }
     disableCreateIfEmptyId();
     // Calls another function with a delay of 0 msec. (Workaround for 
     // annoying browser behavior.)
-    $('#id').on('keydown paste cut', function () {
+    workbench.create.id.on('keydown paste cut', function () {
         setTimeout(disableCreateIfEmptyId, 0);
     });
 });

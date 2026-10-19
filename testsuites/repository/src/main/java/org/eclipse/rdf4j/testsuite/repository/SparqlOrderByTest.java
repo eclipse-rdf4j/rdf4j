@@ -100,11 +100,27 @@ public abstract class SparqlOrderByTest {
 
 	@AfterEach
 	public void tearDown() {
-		conn.close();
-		conn = null;
+		try {
+			conn.close();
+			conn = null;
+		} finally {
+			try {
+				repository.shutDown();
+			} finally {
+				cleanupRepositoryDataDir(repository);
+				repository = null;
+			}
+		}
+	}
 
-		repository.shutDown();
-		repository = null;
+	protected boolean deleteDataDirAfterShutdown() {
+		return false;
+	}
+
+	protected void cleanupRepositoryDataDir(Repository repository) {
+		if (deleteDataDirAfterShutdown()) {
+			RepositoryDirCleanup.deleteDir(repository.getDataDir());
+		}
 	}
 
 	private void createEmployee(String id, String name, int empId) throws RepositoryException {

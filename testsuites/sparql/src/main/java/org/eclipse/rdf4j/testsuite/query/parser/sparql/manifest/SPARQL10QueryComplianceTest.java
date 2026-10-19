@@ -51,6 +51,6 @@ public abstract class SPARQL10QueryComplianceTest extends SPARQLQueryComplianceT
 
 	@TestFactory
 	public Collection<DynamicTest> tests() {
-		return getTestData("testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl");
+		return getTestData("testcases-sparql-1.0-w3c/data-r2/manifest-evaluation.ttl", true);
 	}
 }

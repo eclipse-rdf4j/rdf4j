@@ -41,8 +41,11 @@ public class TestLmdbStoreMemoryOverflow {
 
 	private RepositoryConnection testCon2;
 
+	private File dataDir;
+
 	@BeforeEach
 	public void setUp(@TempDir File dataDir) {
+		this.dataDir = dataDir;
 		testRepository = createRepository(dataDir);
 		testRepository.init();
 	}
@@ -63,9 +66,19 @@ public class TestLmdbStoreMemoryOverflow {
 
 	@AfterEach
 	public void tearDown() {
-		testCon2.close();
-		testCon.close();
-		testRepository.shutDown();
+		try {
+			if (testCon2 != null) {
+				testCon2.close();
+			}
+			if (testCon != null) {
+				testCon.close();
+			}
+			if (testRepository != null) {
+				testRepository.shutDown();
+			}
+		} finally {
+			LmdbTestUtil.deleteDir(dataDir);
+		}
 	}
 
 	@ParameterizedTest

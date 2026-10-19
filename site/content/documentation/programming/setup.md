@@ -134,10 +134,6 @@ What you need to do is to decide which logging implementation you are going to u
 
 One thing to keep in mind when configuring logging is that SLF4J expects only a single logger implementation on the classpath. Thus, you should choose only a single logger. In addition, if parts of your code depend on projects that use other logging frameworks directly, you can include a Legacy Bridge which makes sure calls to the legacy logger get redirected to SLF4J (and from there on, to your logger of choice).
 
-In particular, when working with RDF4J’s HTTPRepository or SPARQLRepository libraries, you should include the `jcl-over-slf4j` legacy bridge. This is because RDF4J internally uses the Apache Commons HttpClient, which relies on JCL (Jakarta Commons Logging). You can do without this if your own app is a webapp, to be deployed in e.g. Tomcat, but otherwise, your application will probably show a lot of debug log messages on standard output, starting with something like:
-
-    DEBUG httpclient.wire.header
-
-When you set this up correctly, you can have a single logger configuration for your entire project, and you will be able to control both this kind of logging by third party libraries and by RDF4J itself using this single config.
+When you set this up correctly, you can have a single logger configuration for your entire project, and you will be able to control logging by third party libraries and by RDF4J itself using this single config.
 
 The RDF4J framework itself does not prescribe a particular logger implementation (after all, that’s the whole point of SLF4J, that you get to choose your preferred logger). However, several of the applications included in RDF4J (such as RDF4J Server, Workbench, and the command line console) do use a logger implementation. The server and console application both use logback, which is the successor to log4j and a native implementation of SLF4J. The Workbench uses `java.util.logging` instead.

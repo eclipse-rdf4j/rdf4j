@@ -21,7 +21,9 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.values.ScopedQueryValueEvaluationStep;
-import org.eclipse.rdf4j.query.algebra.evaluation.iterator.*;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.BadlyDesignedLeftJoinIterator;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.HashJoinIteration;
+import org.eclipse.rdf4j.query.algebra.evaluation.iterator.LeftJoinIterator;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
 
@@ -35,8 +37,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 
 	public static QueryEvaluationStep supply(EvaluationStrategy strategy, LeftJoin leftJoin,
 			QueryEvaluationContext context) {
-		QueryEvaluationStep left = strategy.precompile(leftJoin.getLeftArg(), context);
-		QueryEvaluationStep right = strategy.precompile(leftJoin.getRightArg(), context);
+		boolean runtimeTelemetryTrackingActive = strategy.isTrackResultSize() || strategy.isTrackTime();
+		QueryEvaluationStep left = JoinMetricsTracking
+				.wrapLeftInput(strategy.precompile(leftJoin.getLeftArg(), context), leftJoin, leftJoin.getLeftArg(),
+						runtimeTelemetryTrackingActive);
+		QueryEvaluationStep right = JoinMetricsTracking
+				.wrapRightInput(strategy.precompile(leftJoin.getRightArg(), context), leftJoin, leftJoin.getRightArg(),
+						runtimeTelemetryTrackingActive);
 		if (TupleExprs.containsSubquery(leftJoin.getRightArg())) {
 			Set<String> leftBindingNames = leftJoin.getLeftArg().getBindingNames();
 			Set<String> rightBindingNames = leftJoin.getRightArg().getBindingNames();
@@ -172,11 +179,13 @@ public final class LeftJoinQueryEvaluationStep implements QueryEvaluationStep {
 		} else if (canEvaluateConditionBasedOnLeftHandSide(join)) {
 			return new PreFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition));
+					new ScopedQueryValueEvaluationStep(join.getAssuredBindingNames(), joinCondition),
+					join);
 		} else {
 			return new PostFilterQueryEvaluationStep(
 					prepareRightArg,
-					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition));
+					new ScopedQueryValueEvaluationStep(scopeBindingNames, joinCondition),
+					join);
 		}
 	}
 

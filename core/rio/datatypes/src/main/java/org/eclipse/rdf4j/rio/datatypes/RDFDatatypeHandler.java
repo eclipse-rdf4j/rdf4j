@@ -37,8 +37,10 @@ public class RDFDatatypeHandler implements DatatypeHandler {
 		}
 
 		return org.eclipse.rdf4j.model.vocabulary.RDF.LANGSTRING.equals(datatypeUri)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.DIRLANGSTRING.equals(datatypeUri)
 				|| org.eclipse.rdf4j.model.vocabulary.RDF.XMLLITERAL.equals(datatypeUri)
-				|| org.eclipse.rdf4j.model.vocabulary.RDF.HTML.equals(datatypeUri);
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.HTML.equals(datatypeUri)
+				|| org.eclipse.rdf4j.model.vocabulary.RDF.JSON.equals(datatypeUri);
 	}
 
 	@Override

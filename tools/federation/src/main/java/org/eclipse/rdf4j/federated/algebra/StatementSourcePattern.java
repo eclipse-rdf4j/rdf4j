@@ -50,10 +50,6 @@ public class StatementSourcePattern extends FedXStatementPattern {
 		this.federationContext = queryInfo.getFederationContext();
 	}
 
-	public void addStatementSource(StatementSource statementSource) {
-		statementSources.add(statementSource);
-	}
-
 	@Override
 	public CloseableIteration<BindingSet> evaluate(BindingSet bindings)
 			throws QueryEvaluationException {

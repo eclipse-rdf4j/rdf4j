@@ -13,25 +13,33 @@ package org.eclipse.rdf4j.sail.elasticsearchstore.compliance;
 import org.eclipse.rdf4j.sail.NotifyingSail;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore;
+import org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStoreTestContainerSupport;
 import org.eclipse.rdf4j.sail.elasticsearchstore.SingletonClientProvider;
 import org.eclipse.rdf4j.sail.elasticsearchstore.TestHelpers;
 import org.eclipse.rdf4j.testsuite.sail.SailConcurrencyTest;
 import org.eclipse.rdf4j.testsuite.sail.SailInterruptTest;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.junit.jupiter.Container;
+import org.testcontainers.junit.jupiter.Testcontainers;
 
 /**
  * An extension of {@link SailConcurrencyTest} for testing the class
  * {@link org.eclipse.rdf4j.sail.elasticsearchstore.ElasticsearchStore}.
  */
+@Testcontainers
 public class ElasticsearchStoreInterruptIT extends SailInterruptTest {
+
+	@Container
+	private static final GenericContainer<?> elasticsearch = ElasticsearchStoreTestContainerSupport.getContainer();
 
 	private static SingletonClientProvider clientPool;
 
 	@BeforeAll
 	public static void beforeClass() {
 		TestHelpers.openClient();
-		clientPool = new SingletonClientProvider("localhost", TestHelpers.PORT, TestHelpers.CLUSTER);
+		clientPool = new SingletonClientProvider(TestHelpers.HOST, TestHelpers.PORT, TestHelpers.CLUSTER);
 	}
 
 	@AfterAll

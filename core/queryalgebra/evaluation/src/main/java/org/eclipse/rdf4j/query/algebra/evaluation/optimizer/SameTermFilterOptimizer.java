@@ -97,8 +97,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			}
 
 			if (leftArg instanceof Var || rightArg instanceof Var) {
-				if (filterArg instanceof ArbitraryLengthPath && leftArg instanceof Var && rightArg instanceof Var) {
-					final ArbitraryLengthPath alp = (ArbitraryLengthPath) filterArg;
+				if (filterArg instanceof ArbitraryLengthPath alp && leftArg instanceof Var && rightArg instanceof Var) {
 					final List<Var> sameTermArgs = Arrays.asList((Var) leftArg, (Var) rightArg);
 
 					if (sameTermArgs.contains(alp.getSubjectVar()) && sameTermArgs.contains(alp.getObjectVar())) {
@@ -146,8 +145,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		private boolean isUnboundVar(ValueExpr valueExpr, Set<String> bindingNames) {
-			if (valueExpr instanceof Var) {
-				Var var = (Var) valueExpr;
+			if (valueExpr instanceof Var var) {
 				return !var.hasValue() && !bindingNames.contains(var.getName());
 			}
 			return false;
@@ -170,7 +168,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			// Replace SameTerm-filter with an Extension, the old variable name
 			// might still be relevant to nodes higher in the tree
 			Extension extension = new Extension(filter.getArg());
-			extension.addElement(new ExtensionElem(new Var(newVar.getName()), oldVar.getName()));
+			extension.addElement(new ExtensionElem(Var.of(newVar.getName()), oldVar.getName()));
 			filter.replaceWith(extension);
 		}
 
@@ -292,7 +290,7 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Var var) {
 			if (var.getName().equals(varName)) {
-				var.replaceWith(new Var(varName, value, var.isAnonymous(), var.isConstant()));
+				var.replaceWith(Var.of(varName, value, var.isAnonymous(), var.isConstant()));
 			}
 		}
 	}

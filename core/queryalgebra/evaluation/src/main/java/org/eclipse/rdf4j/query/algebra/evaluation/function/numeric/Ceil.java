@@ -40,8 +40,7 @@ public class Ceil implements Function {
 			throw new ValueExprEvaluationException("CEIL requires exactly 1 argument, got " + args.length);
 		}
 
-		if (args[0] instanceof Literal) {
-			Literal literal = (Literal) args[0];
+		if (args[0]instanceof Literal literal) {
 
 			CoreDatatype.XSD datatype = literal.getCoreDatatype().asXSDDatatypeOrNull();
 

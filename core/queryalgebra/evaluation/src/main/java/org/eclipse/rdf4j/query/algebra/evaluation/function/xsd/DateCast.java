@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.function.xsd;
 
 import static javax.xml.datatype.DatatypeConstants.FIELD_UNDEFINED;
-
 import static org.eclipse.rdf4j.model.datatypes.XMLDatatypeUtil.isValidDate;
 
 import javax.xml.datatype.XMLGregorianCalendar;
@@ -42,8 +41,7 @@ public class DateCast extends CastFunction {
 
 	@Override
 	protected Literal convert(ValueFactory vf, Value value) throws ValueExprEvaluationException {
-		if (value instanceof Literal) {
-			Literal literal = (Literal) value;
+		if (value instanceof Literal literal) {
 			CoreDatatype datatype = literal.getCoreDatatype();
 
 			if (CoreDatatype.XSD.STRING == datatype || CoreDatatype.XSD.DATETIME == datatype) {

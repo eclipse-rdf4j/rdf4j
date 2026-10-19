@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.rio.helpers;
 
 import org.eclipse.rdf4j.rio.RDFWriter;
-import org.eclipse.rdf4j.rio.RioSetting;
 
 /**
  * A class encapsulating writer settings that XML writers may support.

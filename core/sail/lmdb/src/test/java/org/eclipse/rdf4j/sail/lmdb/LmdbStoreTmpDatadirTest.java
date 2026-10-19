@@ -29,6 +29,7 @@ public class LmdbStoreTmpDatadirTest {
 
 		store.shutDown();
 		assertTrue("Data dir does not exist anymore", dataDir.exists());
+		LmdbTestUtil.deleteDir(dataDir);
 	}
 
 	@Test
@@ -69,5 +70,6 @@ public class LmdbStoreTmpDatadirTest {
 
 		assertFalse("Temp data dir still exists", tmpDataDir.exists());
 		assertTrue("Data dir does not exist anymore", dataDir.exists());
+		LmdbTestUtil.deleteDir(dataDir);
 	}
 }

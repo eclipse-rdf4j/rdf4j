@@ -122,7 +122,7 @@ public class ContextCollector extends AbstractQueryModelVisitor<Exception> {
 	 * {@inheritDoc}
 	 */
 	@Override
-	public void meet(StatementPattern thePattern) throws Exception {
+	public void meet(StatementPattern thePattern) {
 		Var aCtxVar = thePattern.getContextVar();
 
 		if (aCtxVar != null) {

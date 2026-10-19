@@ -12,7 +12,6 @@ package org.eclipse.rdf4j.query.resultio;
 
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
-import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 import org.eclipse.rdf4j.rio.helpers.StringRioSetting;
 
 /**

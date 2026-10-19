@@ -54,6 +54,13 @@ input,select {
 	margin: 1pt;
 }
 
+
+input[type="radio"], input[type="checkbox"] {
+	margin-top: 0.2em;
+	vertical-align: text-top;
+}
+
+
 ul {
 	margin: 0;
 	margin-bottom: 10px;
@@ -107,7 +114,7 @@ div.resource:hover > a.resourceURL {
 
 .product {
 	margin-left: 20px;
-}	
+}
 
 
 #search {

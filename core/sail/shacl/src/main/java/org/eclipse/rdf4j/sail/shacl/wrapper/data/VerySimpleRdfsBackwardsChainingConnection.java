@@ -36,26 +36,37 @@ import org.slf4j.LoggerFactory;
 public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWrapper {
 
 	private final RdfsSubClassOfReasoner rdfsSubClassOfReasoner;
+	private final boolean includeInferredStatements;
 	private static final Logger logger = LoggerFactory.getLogger(VerySimpleRdfsBackwardsChainingConnection.class);
 
 	public VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
 			RdfsSubClassOfReasoner rdfsSubClassOfReasoner) {
+		this(wrappedCon, rdfsSubClassOfReasoner, false);
+	}
+
+	public VerySimpleRdfsBackwardsChainingConnection(SailConnection wrappedCon,
+			RdfsSubClassOfReasoner rdfsSubClassOfReasoner, boolean includeInferredStatements) {
 		super(wrappedCon);
 		this.rdfsSubClassOfReasoner = rdfsSubClassOfReasoner;
+		this.includeInferredStatements = includeInferredStatements;
 	}
 
 	@Override
 	public boolean hasStatement(Resource subj, IRI pred, Value obj, boolean includeInferred, Resource... contexts)
 			throws SailException {
 
-		boolean hasStatement = super.hasStatement(subj, pred, obj, false, contexts);
+		boolean includeBaseInferred = includeInferredStatements && includeInferred;
+		if (rdfsSubClassOfReasoner == null) {
+			return super.hasStatement(subj, pred, obj, includeBaseInferred, contexts);
+		}
+
+		boolean hasStatement = super.hasStatement(subj, pred, obj, includeBaseInferred, contexts);
 
 		if (hasStatement) {
 			return true;
 		}
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
-				&& RDF.TYPE.equals(pred)) {
+		if (obj != null && obj.isResource() && RDF.TYPE.equals(pred)) {
 
 			Set<Resource> types = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (types.size() == 1) {
@@ -63,7 +74,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 			}
 			if (types.size() > 10) {
 				try (CloseableIteration<? extends Statement> statements = super.getStatements(subj,
-						RDF.TYPE, null, false, contexts)) {
+						RDF.TYPE, null, includeBaseInferred, contexts)) {
 					return statements.stream()
 							.map(Statement::getObject)
 							.filter(Value::isResource)
@@ -73,7 +84,7 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 			} else {
 				return types
 						.stream()
-						.anyMatch(type -> super.hasStatement(subj, pred, type, false, contexts));
+						.anyMatch(type -> super.hasStatement(subj, pred, type, includeBaseInferred, contexts));
 			}
 
 		}
@@ -85,13 +96,14 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 	public CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred, Value obj,
 			boolean includeInferred, Resource... contexts) throws SailException {
 
-		if (rdfsSubClassOfReasoner != null && includeInferred && obj != null && obj.isResource()
+		boolean includeBaseInferred = includeInferredStatements && includeInferred;
+		if (rdfsSubClassOfReasoner != null && obj != null && obj.isResource()
 				&& RDF.TYPE.equals(pred)) {
 			Set<Resource> inferredTypes = rdfsSubClassOfReasoner.backwardsChain((Resource) obj);
 			if (inferredTypes.size() > 1) {
 
 				CloseableIteration<Statement>[] statementsMatchingInferredTypes = inferredTypes.stream()
-						.map(r -> super.getStatements(subj, pred, r, false, contexts))
+						.map(r -> super.getStatements(subj, pred, r, includeBaseInferred, contexts))
 						.toArray(CloseableIteration[]::new);
 
 				return new LookAheadIteration<>() {
@@ -143,6 +155,6 @@ public class VerySimpleRdfsBackwardsChainingConnection extends SailConnectionWra
 			}
 		}
 
-		return super.getStatements(subj, pred, obj, includeInferred, contexts);
+		return super.getStatements(subj, pred, obj, includeBaseInferred, contexts);
 	}
 }

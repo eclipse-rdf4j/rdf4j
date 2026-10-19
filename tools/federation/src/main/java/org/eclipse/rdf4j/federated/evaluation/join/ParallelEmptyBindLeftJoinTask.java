@@ -14,7 +14,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.federated.algebra.EmptyStatementPattern;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutor;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelTaskBase;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -29,12 +29,13 @@ import org.eclipse.rdf4j.repository.sparql.federation.CollectionIteration;
  */
 public class ParallelEmptyBindLeftJoinTask extends ParallelTaskBase<BindingSet> {
 
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final EmptyStatementPattern rightArg;
 	protected final List<BindingSet> bindings;
 	protected final ParallelExecutor<BindingSet> joinControl;
 
-	public ParallelEmptyBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl, FederationEvalStrategy strategy,
+	public ParallelEmptyBindLeftJoinTask(ParallelExecutor<BindingSet> joinControl,
+			FederationEvaluationStrategy strategy,
 			EmptyStatementPattern expr, List<BindingSet> bindings) {
 		this.strategy = strategy;
 		this.rightArg = expr;

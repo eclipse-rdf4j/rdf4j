@@ -14,6 +14,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
+import java.io.ByteArrayInputStream;
+import java.nio.charset.StandardCharsets;
+
+import org.eclipse.rdf4j.common.xml.XMLReaderFactory;
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.BooleanQueryResultParser;
 import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.QueryResultParser;
@@ -25,6 +31,9 @@ import org.eclipse.rdf4j.rio.helpers.XMLParserSettings;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.xml.sax.SAXException;
+import org.xml.sax.SAXNotRecognizedException;
+import org.xml.sax.helpers.XMLFilterImpl;
 
 /**
  * Custom tests for SPARQL/XML Parser.
@@ -182,6 +191,75 @@ public class SPARQLXMLParserCustomTest {
 
 	@Test
 	public void testSupportedSettings() {
-		assertTrue(!QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL).getSupportedSettings().isEmpty());
+		QueryResultParser parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL);
+		assertTrue(!parser.getSupportedSettings().isEmpty());
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.CUSTOM_XML_READER));
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.DISALLOW_DOCTYPE_DECL));
+		assertTrue(parser.getSupportedSettings().contains(XMLParserSettings.LOAD_EXTERNAL_DTD));
+	}
+
+	@Test
+	public void testBooleanParserConfigCanAllowDoctypeDecl() throws Exception {
+		BooleanQueryResultParser parser = QueryResultIO.createBooleanParser(BooleanQueryResultFormat.SPARQL);
+		parser.set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		String document = "<?xml version=\"1.0\"?>\n"
+				+ "<!DOCTYPE sparql><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\"><boolean>true</boolean></sparql>";
+
+		boolean result = parser.parse(new ByteArrayInputStream(document.getBytes(StandardCharsets.UTF_8)));
+
+		assertTrue(result);
+	}
+
+	@Test
+	public void testTupleParserConfigCanAllowDoctypeDecl() throws Exception {
+		QueryResultCollector handler = new QueryResultCollector();
+		QueryResultParser parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
+				.setQueryResultHandler(handler);
+		parser.set(XMLParserSettings.DISALLOW_DOCTYPE_DECL, false);
+		String document = "<?xml version=\"1.0\"?>\n"
+				+ "<!DOCTYPE sparql><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+				+ "<head><variable name=\"x\"/></head>"
+				+ "<results><result><binding name=\"x\"><literal>value</literal></binding></result></results>"
+				+ "</sparql>";
+
+		parser.parseQueryResult(new ByteArrayInputStream(document.getBytes(StandardCharsets.UTF_8)));
+
+		assertEquals("value", handler.getBindingSets().get(0).getValue("x").stringValue());
+	}
+
+	@Test
+	public void tupleParserReportsXmlReaderConfigurationWarningsBeforeParse() throws Exception {
+		QueryResultCollector handler = new QueryResultCollector();
+		ParseErrorCollector errorCollector = new ParseErrorCollector();
+		QueryResultParser parser = QueryResultIO.createTupleParser(TupleQueryResultFormat.SPARQL)
+				.setQueryResultHandler(handler)
+				.setParseErrorListener(errorCollector);
+		parser.set(XMLParserSettings.CUSTOM_XML_READER, new RejectingFeatureXMLReader());
+		String document = "<?xml version=\"1.0\"?>\n"
+				+ "<sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+				+ "<head><variable name=\"x\"/></head>"
+				+ "<results><result><binding name=\"x\"><literal>value</literal></binding></result></results>"
+				+ "</sparql>";
+
+		parser.parseQueryResult(new ByteArrayInputStream(document.getBytes(StandardCharsets.UTF_8)));
+
+		assertEquals("value", handler.getBindingSets().get(0).getValue("x").stringValue());
+		assertEquals(4, errorCollector.getWarnings().size());
+		assertTrue(errorCollector.getWarnings()
+				.stream()
+				.allMatch(warning -> warning.contains("is not a recognized SAX feature.")
+						&& warning.endsWith("(-1, -1)")));
+	}
+
+	private static final class RejectingFeatureXMLReader extends XMLFilterImpl {
+
+		RejectingFeatureXMLReader() throws SAXException {
+			super(XMLReaderFactory.createXMLReader());
+		}
+
+		@Override
+		public void setFeature(String name, boolean value) throws SAXNotRecognizedException {
+			throw new SAXNotRecognizedException(name);
+		}
 	}
 }

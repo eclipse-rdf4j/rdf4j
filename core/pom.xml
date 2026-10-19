@@ -4,7 +4,7 @@
 	<parent>
 		<groupId>org.eclipse.rdf4j</groupId>
 		<artifactId>rdf4j</artifactId>
-		<version>5.2.1-SNAPSHOT</version>
+		<version>6.1.1-SNAPSHOT</version>
 	</parent>
 	<artifactId>rdf4j-core</artifactId>
 	<packaging>pom</packaging>
@@ -12,6 +12,9 @@
 		<module>common</module>
 		<module>model-api</module>
 		<module>model-vocabulary</module>
+		<module>model-vocabulary-annotation</module>
+		<module>model-vocabulary-biblio</module>
+		<module>model-vocabulary-eu</module>
 		<module>model</module>
 		<module>sparqlbuilder</module>
 		<module>rio</module>
@@ -40,6 +43,9 @@
 						<artifactId>maven-surefire-plugin</artifactId>
 						<configuration>
 							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -47,6 +53,9 @@
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
 							<groups>slow</groups>
+							<properties>
+								<includeTags>slow</includeTags>
+							</properties>
 						</configuration>
 					</plugin>
 				</plugins>
@@ -55,8 +64,7 @@
 		<profile>
 			<id>skipSlowTests</id>
 			<activation>
-				<!-- active on all Java 11 and higher builds by default -->
-				<jdk>[11,)</jdk>
+				<jdk>[25,)</jdk>
 			</activation>
 			<build>
 				<plugins>
@@ -65,6 +73,9 @@
 						<artifactId>maven-surefire-plugin</artifactId>
 						<configuration>
 							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
 						</configuration>
 					</plugin>
 					<plugin>
@@ -72,6 +83,9 @@
 						<artifactId>maven-failsafe-plugin</artifactId>
 						<configuration>
 							<excludedGroups>slow</excludedGroups>
+							<properties>
+								<excludeTags>slow</excludeTags>
+							</properties>
 						</configuration>
 					</plugin>
 				</plugins>

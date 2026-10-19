@@ -61,6 +61,27 @@ public class RdfsShaclConnectionTest {
 	}
 
 	@Test
+	public void testHasStatementWithoutInferredKeepsRdfsReasoning() {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.init();
+
+		fill(shaclSail);
+
+		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
+					.createReasoner((ShaclSailConnection) connection, new ValidationSettings());
+			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
+					connection,
+					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
+
+			Assertions.assertTrue(connection2.hasStatement(aSubSub, RDF.TYPE, sup, false));
+		}
+		shaclSail.shutDown();
+
+	}
+
+	@Test
 	public void testGetStatement() {
 
 		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
@@ -94,6 +115,34 @@ public class RdfsShaclConnectionTest {
 					.stream()) {
 				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
 				Set<Statement> expected = Set.of(vf.createStatement(aSubSub, RDF.TYPE, subSub));
+				Assertions.assertEquals(expected, collect);
+			}
+		}
+
+		shaclSail.shutDown();
+
+	}
+
+	@Test
+	public void testGetStatementWithoutInferredKeepsRdfsReasoning() {
+
+		ShaclSail shaclSail = new ShaclSail(new MemoryStore());
+		shaclSail.init();
+
+		fill(shaclSail);
+
+		try (NotifyingSailConnection connection = shaclSail.getConnection()) {
+			((ShaclSailConnection) connection).rdfsSubClassOfReasoner = RdfsSubClassOfReasoner
+					.createReasoner((ShaclSailConnection) connection, new ValidationSettings());
+
+			VerySimpleRdfsBackwardsChainingConnection connection2 = new VerySimpleRdfsBackwardsChainingConnection(
+					connection,
+					((ShaclSailConnection) connection).getRdfsSubClassOfReasoner());
+
+			try (Stream<? extends Statement> stream = connection2.getStatements(aSubSub, RDF.TYPE, sup, false)
+					.stream()) {
+				Set<? extends Statement> collect = stream.collect(Collectors.toSet());
+				Set<Statement> expected = Set.of(vf.createStatement(aSubSub, RDF.TYPE, sup));
 				Assertions.assertEquals(expected, collect);
 			}
 		}

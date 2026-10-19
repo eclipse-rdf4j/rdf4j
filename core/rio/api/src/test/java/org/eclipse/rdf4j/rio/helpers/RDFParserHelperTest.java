@@ -13,6 +13,7 @@ package org.eclipse.rdf4j.rio.helpers;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -82,8 +83,8 @@ public class RDFParserHelperTest {
 	public final void testCreateLiteralLabelNull() {
 		assertThatThrownBy(
 				() -> RDFParserHelper.createLiteral(null, null, null, parserConfig, errListener, valueFactory))
-				.isInstanceOf(NullPointerException.class)
-				.hasMessage("Cannot create a literal using a null label");
+						.isInstanceOf(NullPointerException.class)
+						.hasMessage("Cannot create a literal using a null label");
 	}
 
 	/**
@@ -114,6 +115,33 @@ public class RDFParserHelperTest {
 		assertEquals(LABEL_TESTA, literal.getLabel());
 		assertEquals(LANG_EN, literal.getLanguage().orElse(null));
 		assertEquals(RDF.LANGSTRING, literal.getDatatype());
+	}
+
+	/**
+	 * Test method for
+	 * {@link org.eclipse.rdf4j.rio.helpers.RDFParserHelper#createLiteral(java.lang.String, java.lang.String, org.eclipse.rdf4j.model.URI, org.eclipse.rdf4j.rio.ParserConfig, org.eclipse.rdf4j.rio.ParseErrorListener, org.eclipse.rdf4j.model.ValueFactory)}
+	 * .
+	 */
+	@Test
+	public final void testCreateLiteralLabelAndLanguageAndDirection() {
+		Literal literalLTR = RDFParserHelper.createLiteral(LABEL_TESTA, LANG_EN + "--ltr", null, parserConfig,
+				errListener,
+				valueFactory);
+		Literal literalRTL = RDFParserHelper.createLiteral(LABEL_TESTA, "ar--rtl", null, parserConfig, errListener,
+				valueFactory);
+
+		assertEquals(LABEL_TESTA, literalLTR.getLabel());
+		assertEquals(LANG_EN, literalLTR.getLanguage().orElse(null));
+		assertEquals(Literal.BaseDirection.LTR, literalLTR.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, literalLTR.getDatatype());
+
+		assertEquals(LABEL_TESTA, literalRTL.getLabel());
+		assertEquals("ar", literalRTL.getLanguage().orElse(null));
+		assertEquals(Literal.BaseDirection.RTL, literalRTL.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, literalRTL.getDatatype());
+
+		assertThrows(RDFParseException.class, () -> RDFParserHelper.createLiteral(LABEL_TESTA, "he--jsldkfjds", null,
+				parserConfig, errListener, valueFactory));
 	}
 
 	/**
@@ -168,7 +196,16 @@ public class RDFParserHelperTest {
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		assertThatThrownBy(() -> RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.LANGSTRING, parserConfig,
 				errListener, valueFactory))
-				.isInstanceOf(RDFParseException.class);
+						.isInstanceOf(RDFParseException.class);
+	}
+
+	@Test
+	public final void testCreateLiteralLabelNoLanguageWithRDFDirLangStringWithVerify() {
+		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
+		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
+		assertThatThrownBy(() -> RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.DIRLANGSTRING, parserConfig,
+				errListener, valueFactory))
+						.isInstanceOf(RDFParseException.class);
 	}
 
 	@Test
@@ -181,14 +218,23 @@ public class RDFParserHelperTest {
 	}
 
 	@Test
+	public final void testCreateLiteralLabelNoLanguageWithRDFDirLangStringWithNoVerify() {
+		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, false);
+		Literal literal = RDFParserHelper.createLiteral(LABEL_TESTA, null, RDF.DIRLANGSTRING, parserConfig, errListener,
+				valueFactory);
+		assertFalse(literal.getLanguage().isPresent());
+		assertEquals(XSD.STRING, literal.getDatatype());
+	}
+
+	@Test
 	public final void testReportErrorStringFatalActive() {
 		parserConfig.set(BasicParserSettings.VERIFY_DATATYPE_VALUES, true);
 		assertTrue(parserConfig.get(BasicParserSettings.VERIFY_DATATYPE_VALUES));
 		assertThatThrownBy(
 				() -> RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, BasicParserSettings.VERIFY_DATATYPE_VALUES,
 						parserConfig, errListener))
-				.isInstanceOf(RDFParseException.class)
-				.hasMessage(TEST_MESSAGE_FOR_FAILURE);
+								.isInstanceOf(RDFParseException.class)
+								.hasMessage(TEST_MESSAGE_FOR_FAILURE);
 		assertErrorListener(0, 1, 0);
 	}
 
@@ -227,8 +273,8 @@ public class RDFParserHelperTest {
 				() -> RDFParserHelper.reportError(TEST_MESSAGE_FOR_FAILURE, 1, 1,
 						BasicParserSettings.VERIFY_DATATYPE_VALUES,
 						parserConfig, errListener))
-				.isInstanceOf(RDFParseException.class)
-				.hasMessageContaining(TEST_MESSAGE_FOR_FAILURE);
+								.isInstanceOf(RDFParseException.class)
+								.hasMessageContaining(TEST_MESSAGE_FOR_FAILURE);
 
 		assertErrorListener(0, 1, 0);
 	}

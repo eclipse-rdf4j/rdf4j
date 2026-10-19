@@ -48,7 +48,7 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 		assertTrue(transactionFaild);
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -61,8 +61,8 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 	}
 
 	private void failedTransactionAdd(int count) {
-		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER);
+		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats(elasticsearchHost(),
+				elasticsearchPort(), elasticsearchCluster());
 
 		ElasticsearchStore es = new ElasticsearchStore(clientProvider, "testindex");
 		SailRepository elasticsearchStore = new SailRepository(es);
@@ -113,7 +113,7 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 		assertTrue(transactionFaild);
 
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -127,7 +127,7 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 
 	private void fill(int count) {
 		SailRepository elasticsearchStore = new SailRepository(
-				new ElasticsearchStore("localhost", TestHelpers.PORT, TestHelpers.CLUSTER, "testindex"));
+				new ElasticsearchStore(elasticsearchHost(), elasticsearchPort(), elasticsearchCluster(), "testindex"));
 
 		try (SailRepositoryConnection connection = elasticsearchStore.getConnection()) {
 
@@ -142,8 +142,8 @@ public class ElasticsearchStoreWalIT extends AbstractElasticsearchStoreIT {
 	}
 
 	private void failedTransactionRemove() {
-		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats("localhost",
-				TestHelpers.PORT, TestHelpers.CLUSTER);
+		ClientProviderWithDebugStats clientProvider = new ClientProviderWithDebugStats(elasticsearchHost(),
+				elasticsearchPort(), elasticsearchCluster());
 
 		ElasticsearchStore es = new ElasticsearchStore(clientProvider, "testindex");
 		SailRepository elasticsearchStore = new SailRepository(es);

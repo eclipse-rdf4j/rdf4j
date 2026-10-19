@@ -15,14 +15,6 @@ import java.io.OutputStream;
 import java.util.Optional;
 import java.util.regex.Pattern;
 
-import javax.servlet.Servlet;
-import javax.servlet.ServletConfig;
-import javax.servlet.ServletException;
-import javax.servlet.ServletRequest;
-import javax.servlet.ServletResponse;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-
 import org.eclipse.rdf4j.common.app.AppConfiguration;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.resultio.BasicQueryWriterSettings;
@@ -34,8 +26,17 @@ import org.eclipse.rdf4j.query.resultio.UnsupportedQueryResultFormatException;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
+import org.eclipse.rdf4j.workbench.util.WorkbenchTupleResultWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.servlet.Servlet;
+import jakarta.servlet.ServletConfig;
+import jakarta.servlet.ServletException;
+import jakarta.servlet.ServletRequest;
+import jakarta.servlet.ServletResponse;
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 
 public abstract class AbstractServlet implements Servlet {
 
@@ -193,6 +194,10 @@ public abstract class AbstractServlet implements Servlet {
 			resultFormat = TupleQueryResultFormat.SPARQL;
 		}
 
+		if (TupleQueryResultFormat.SPARQL.equals(resultFormat)) {
+			return new WorkbenchTupleResultWriter(outputStream);
+		}
+
 		return QueryResultIO.createWriter(resultFormat, outputStream);
 	}
 
@@ -219,7 +224,7 @@ public abstract class AbstractServlet implements Servlet {
 		} else {
 			// If the JSON-P check above failed, use the normal methods to
 			// determine output format
-			resultWriter = getResultWriter(req, resp, resp.getOutputStream());
+			resultWriter = getResultWriter(req, resp, outputStream);
 			contentType = resultWriter.getQueryResultFormat().getDefaultMIMEType();
 		}
 

@@ -14,6 +14,7 @@ import java.io.IOException;
 import java.util.NoSuchElementException;
 
 import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
+import org.eclipse.rdf4j.common.iteration.IndexReportingIterator;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
@@ -24,7 +25,7 @@ import org.eclipse.rdf4j.sail.SailException;
  * A statement iterator that wraps a RecordIterator containing statement records and translates these records to
  * {@link Statement} objects.
  */
-class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
+class LmdbStatementIterator extends AbstractCloseableIteration<Statement> implements IndexReportingIterator {
 
 	/*-----------*
 	 * Variables *
@@ -58,17 +59,17 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 				return null;
 			}
 
-			long subjID = quad[TripleStore.SUBJ_IDX];
+			long subjID = quad[TripleIndex.SUBJ_IDX];
 			Resource subj = (Resource) valueStore.getLazyValue(subjID);
 
-			long predID = quad[TripleStore.PRED_IDX];
+			long predID = quad[TripleIndex.PRED_IDX];
 			IRI pred = (IRI) valueStore.getLazyValue(predID);
 
-			long objID = quad[TripleStore.OBJ_IDX];
+			long objID = quad[TripleIndex.OBJ_IDX];
 			Value obj = valueStore.getLazyValue(objID);
 
 			Resource context = null;
-			long contextID = quad[TripleStore.CONTEXT_IDX];
+			long contextID = quad[TripleIndex.CONTEXT_IDX];
 			if (contextID != 0) {
 				context = (Resource) valueStore.getLazyValue(contextID);
 			}
@@ -134,5 +135,25 @@ class LmdbStatementIterator extends AbstractCloseableIteration<Statement> {
 	@Override
 	public void remove() {
 		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public String getIndexName() {
+		return recordIt.getIndexName();
+	}
+
+	@Override
+	public long getSourceRowsScannedActual() {
+		return recordIt.getSourceRowsScannedActual();
+	}
+
+	@Override
+	public long getSourceRowsMatchedActual() {
+		return recordIt.getSourceRowsMatchedActual();
+	}
+
+	@Override
+	public long getSourceRowsFilteredActual() {
+		return recordIt.getSourceRowsFilteredActual();
 	}
 }

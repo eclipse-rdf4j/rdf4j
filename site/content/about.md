@@ -31,17 +31,21 @@ This is useful if you are already using Elasticsearch for other things in your p
 A good usecase is if you need reference data or an ontology for your application. The built-in read cache makes it a good choice for data that updates infrequently,
 though for most usecases the NativeStore will be considerably faster.
 
+{{< alert title="Licensing note" color="warning" >}}
+Elasticsearch itself is distributed under the Elastic License (with SSPL as an alternative). If you intend to use the optional Elasticsearch-backed features in RDF4J, please make sure to evaluate whether the licensing terms of Elasticsearch align with the needs of your project before adopting it.
+{{< /alert >}}
+
 On top of these core databases, RDF4J offers a number of functional extensions. These extensions add functionality such as improved full-text search, RDFS inferencing, rule-based reasoning and validation using SHACL/SPIN, and geospatial querying support. For more information see the [RDF4J documentation](/documentation).
 
 ### Third party database solutions
 
 The core RDF4J databases are mainly intended for small to medium-sized datasets. However, RDF4J-compatible databases are developed by several third parties, both open-source/free and commercial, and they often offer better scalability or other extended features. Because these triplestores are compatible with the RDF4J APIs, you will be able to switch your project to a different database with a minimal amount of code changes. Here, we list a few options, in no particular order of preference.
 
-#### Ontotext GraphDB
+#### Graphwise GraphDB
 
-[Ontotext GraphDB](http://www.ontotext.com/products/ontotext-graphdb/) is a leading RDF triplestore built on OWL (Ontology Web Language) standards.  GraphDB handles massive loads, queries and OWL inferencing in real time. Ontotext offers GraphDB in several editions, including  GraphDB™ Free, GraphDB™ Standard and GraphDB™ Enterprise.
+[Graphwise GraphDB](https://graphwise.ai/components/graphdb/) is an enterprise semantic database that unifies complex, interconnected data into an AI-ready environment. Built to handle relationships where traditional databases struggle, it integrates directly into AI workflows to improve LLM accuracy while guaranteeing high availability and zero data loss.
 
-Ontotext are a long-term contributor to the RDF4J project.
+Graphwise is a long-term contributor to the RDF4J project.
 
 #### Halyard
 

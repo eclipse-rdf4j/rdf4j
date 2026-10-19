@@ -43,6 +43,8 @@ import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.GroupConcat;
 import org.eclipse.rdf4j.query.algebra.GroupElem;
+import org.eclipse.rdf4j.query.algebra.HasLang;
+import org.eclipse.rdf4j.query.algebra.HasLangDir;
 import org.eclipse.rdf4j.query.algebra.IRIFunction;
 import org.eclipse.rdf4j.query.algebra.If;
 import org.eclipse.rdf4j.query.algebra.In;
@@ -52,10 +54,12 @@ import org.eclipse.rdf4j.query.algebra.IsBNode;
 import org.eclipse.rdf4j.query.algebra.IsLiteral;
 import org.eclipse.rdf4j.query.algebra.IsNumeric;
 import org.eclipse.rdf4j.query.algebra.IsResource;
+import org.eclipse.rdf4j.query.algebra.IsTriple;
 import org.eclipse.rdf4j.query.algebra.IsURI;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.Label;
 import org.eclipse.rdf4j.query.algebra.Lang;
+import org.eclipse.rdf4j.query.algebra.LangDir;
 import org.eclipse.rdf4j.query.algebra.LangMatches;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.Load;
@@ -85,6 +89,7 @@ import org.eclipse.rdf4j.query.algebra.SingletonSet;
 import org.eclipse.rdf4j.query.algebra.Slice;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.Str;
+import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Union;
@@ -366,7 +371,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(Coalesce node) throws RuntimeException {
-		node.getArguments().stream().forEach(arg -> ensureNonAnonymousVar(arg));
+		node.getArguments().forEach(arg -> ensureNonAnonymousVar(arg));
 		super.meet(node);
 	}
 
@@ -459,10 +464,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(Filter node) throws RuntimeException {
-		boolean maybeHaving = false;
-		if (currentQueryProfile.groupBy == null) {
-			maybeHaving = true;
-		}
+		boolean maybeHaving = currentQueryProfile.groupBy == null;
 
 		if (currentQueryProfile.whereClause == null) {
 			currentQueryProfile.whereClause = node;
@@ -478,7 +480,7 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(FunctionCall node) throws RuntimeException {
-		node.getArgs().stream().forEach(arg -> ensureNonAnonymousVar(arg));
+		node.getArgs().forEach(arg -> ensureNonAnonymousVar(arg));
 		super.meet(node);
 	}
 
@@ -591,6 +593,32 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 	}
 
 	@Override
+	public void meet(LangDir node) throws RuntimeException {
+		ensureNonAnonymousVar(node.getArg());
+		super.meet(node);
+	}
+
+	@Override
+	public void meet(StrLangDir node) throws RuntimeException {
+		ensureNonAnonymousVar(node.getLexicalFormArg());
+		ensureNonAnonymousVar(node.getLangArg());
+		ensureNonAnonymousVar(node.getDirArg());
+		super.meet(node);
+	}
+
+	@Override
+	public void meet(HasLang node) throws RuntimeException {
+		ensureNonAnonymousVar(node.getArg());
+		super.meet(node);
+	}
+
+	@Override
+	public void meet(HasLangDir node) throws RuntimeException {
+		ensureNonAnonymousVar(node.getArg());
+		super.meet(node);
+	}
+
+	@Override
 	public void meet(LangMatches node) throws RuntimeException {
 		ensureNonAnonymousVar(node.getLeftArg());
 		ensureNonAnonymousVar(node.getRightArg());
@@ -651,10 +679,8 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 		Projection fakeProjection = new Projection();
 
 		node.getProjections()
-				.stream()
 				.forEach(
 						projList -> projList.getElements()
-								.stream()
 								.forEach(
 										elem -> fakeProjection.getProjectionElemList().addElement(elem)));
 		fakeProjection.setArg(node.getArg().clone());
@@ -831,6 +857,12 @@ class ParsedQueryPreprocessor extends AbstractQueryModelVisitor<RuntimeException
 
 	@Override
 	public void meet(ZeroLengthPath node) throws RuntimeException {
+		super.meet(node);
+	}
+
+	@Override
+	public void meet(IsTriple node) throws RuntimeException {
+		ensureNonAnonymousVar(node.getArg());
 		super.meet(node);
 	}
 

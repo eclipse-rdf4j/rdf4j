@@ -310,6 +310,13 @@ listed in the Javadoc documentation:
 
 The Javadoc documentation shows which settings are available, and what their system property keys and their default values are.
 
+Common XML readers created through `XMLReaderFactory` or `DocumentUtil` use secure defaults: secure processing is
+enabled, DOCTYPE declarations are rejected, external general and parameter entities are disabled, and external DTD
+loading is disabled. Built-in Rio XML parsers also apply their `XMLParserSettings` from `ParserConfig`, including
+`CUSTOM_XML_READER`, after reader creation. Use `ParserConfig` or system properties named after the `XMLParserSettings`
+feature keys to override Rio parser behavior. The `org.eclipse.rdf4j.common.xml.*` JVM system properties documented in
+the `XMLReaderFactory` Javadoc configure the common XML reader defaults.
+
 ### Programmatic configuration
 
 The Rio parser/writer configuration can be retrieved and modified via `RDFParser.getParserConfig()` / `RDFWriter.getWriterConfig()`. This returns a {{< javadoc "RioConfig" "rio/RioConfig.html" >}} object, which is a collection for the various supported parser/writer settings. Each configuration option can be added to this object with a value of choice.
@@ -352,6 +359,21 @@ To allow reconfiguring a Rio parser/writer in a runtime deployment (for example 
 The Javadoc for each parser/writer setting documents the system property name by which it can be reconfigured. For example, `BasicParserSettings.VERIFY_LANGUAGE_TAGS` (which determines if Rio verifies that language tags are standards-compliant) can be disabled by using the following command line switch:
 
     -Dorg.eclipse.rdf4j.rio.verify_language_tags=false
+
+Common XML reader security is configured separately from Rio parser settings. These defaults harden RDF4J against XXE
+attacks by enabling secure processing, rejecting DOCTYPE declarations, and disabling external DTDs and external
+entities. They can be changed with the following system properties, set before XML readers are created:
+
+| System property | Default |
+| --- | --- |
+| `org.eclipse.rdf4j.common.xml.secure-processing` | `true` |
+| `org.eclipse.rdf4j.common.xml.disallow-doctype-decl` | `true` |
+| `org.eclipse.rdf4j.common.xml.load-external-dtd` | `false` |
+| `org.eclipse.rdf4j.common.xml.external-general-entities` | `false` |
+| `org.eclipse.rdf4j.common.xml.external-parameter-entities` | `false` |
+
+For built-in Rio XML parsers, use `XMLParserSettings` through `ParserConfig` or `-D` properties named after the relevant
+setting keys, for example `-Dhttp://apache.org/xml/features/disallow-doctype-decl=false`.
 
 ### Some notes on parsing RDF/XML and JAXP limits
 

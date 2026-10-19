@@ -14,11 +14,14 @@ import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Function;
 import java.util.function.Predicate;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
+import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -63,6 +66,10 @@ public interface QueryEvaluationContext {
 		private final Dataset dataset;
 		private final ValueFactory valueFactory;
 		private final Comparator<Value> comparator;
+		private BindingSet bnodeSolutionBindings;
+		private Map<String, BNode> bnodesByLabel;
+		private long bnodeSolutionId;
+		private long bnodeId;
 
 		/**
 		 * Set the shared now value to a preexisting object
@@ -150,6 +157,18 @@ public interface QueryEvaluationContext {
 		public Dataset getDataset() {
 			return dataset;
 		}
+
+		@Override
+		public synchronized BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
+			if (bindings != bnodeSolutionBindings) {
+				bnodeSolutionBindings = bindings;
+				bnodesByLabel = new HashMap<>();
+				bnodeSolutionId++;
+			}
+
+			return bnodesByLabel.computeIfAbsent(nodeLabel,
+					ignored -> valueFactory.createBNode(nodeLabel + "_" + bnodeSolutionId + "_" + bnodeId++));
+		}
 	}
 
 	/**
@@ -161,6 +180,12 @@ public interface QueryEvaluationContext {
 	 * @return The dataset that this query is operation on.
 	 */
 	Dataset getDataset();
+
+	default BNode getOrCreateBNode(String nodeLabel, BindingSet bindings, ValueFactory valueFactory) {
+		return valueFactory.createBNode(
+				nodeLabel + "_" + System.identityHashCode(bindings) + "_"
+						+ Integer.toUnsignedString(nodeLabel.hashCode()));
+	}
 
 	default MutableBindingSet createBindingSet() {
 		return new QueryBindingSet();

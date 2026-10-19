@@ -182,11 +182,18 @@ The LuceneSail can currently be used with three SearchIndex implementations:
 |------------------ |-----------------------------------------------------------|---------------------------------------|-------------------------|
 | Apache Lucene     | `org.eclipse.rdf4j.sail.lucene.impl.LuceneIndex`          | `rdf4j-sail-lucene`                   | yes                      |
 | ElasticSearch     | `org.eclipse.rdf4j.sail.elasticsearch.ElasticsearchIndex` | `rdf4j-sail-elasticsearch`            | no                      |
-| Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`                   | `rdf4j-sail-solr`                     | no                      |
+| Apache Solr       | `org.eclipse.rdf4j.sail.solr.SolrIndex`                   | `rdf4j-sail-solr` (deprecated for removal) | no                      |
+
+> **Warning**
+> The Solr-based SearchIndex (`rdf4j-sail-solr`) is deprecated for removal as of RDF4J 5.3.0. Prefer the Lucene
+> and Elasticsearch integrations instead.
 
 Each SearchIndex implementation can easily be extended if you need to add extra features or store/access data with a different schema.
 
-The following example uses a local Solr instance running on the default port 8983. Make sure that both the Apache httpcore and commons-logging jars are in the classpath, and that the Solr core uses an appropriate schema (an example can be found in RDF4J’s embedded solr source code on GitHub).
+The following example uses a local Solr instance running on the default port 8983. Solr support is deprecated for
+removal; the example is provided for existing deployments only. Make sure that both the Apache httpcore and
+commons-logging jars are in the classpath, and that the Solr core uses an appropriate schema (an example can be found
+in RDF4J’s embedded solr source code on GitHub).
 
 ```java
 import org.eclipse.rdf4j.sail.solr.SolrIndex;
@@ -202,4 +209,3 @@ If needed, the Solr Client can be accessed via:
 SolrIndex index = (SolrIndex) luceneSail.getLuceneIndex();
 SolrClient client = index.getClient();
 ```
-

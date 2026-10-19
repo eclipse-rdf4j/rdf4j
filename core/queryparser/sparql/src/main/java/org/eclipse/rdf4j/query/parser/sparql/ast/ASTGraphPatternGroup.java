@@ -33,8 +33,14 @@ public class ASTGraphPatternGroup extends SimpleNode {
 				|| this.parent instanceof ASTNotExistsFunc
 				|| this.parent instanceof ASTGraphGraphPattern
 				|| this.parent instanceof ASTWhereClause)) {
+
+			if (this.parent instanceof ASTUnionGraphPattern) {
+				return ((ASTUnionGraphPattern) this.parent).isScopeChange();
+			}
+
 			return true;
 		}
+
 		return super.isScopeChange();
 	}
 }

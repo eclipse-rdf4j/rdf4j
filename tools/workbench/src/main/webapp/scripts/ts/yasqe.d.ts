@@ -9,6 +9,7 @@ interface YASQE_Instance extends CodeMirror.EditorFromTextArea {
 
 interface YASQE_Config extends CodeMirror.EditorConfiguration {
 	consumeShareLink(): any;
+	persistent?: any;
 }
 
 interface Token {
@@ -53,6 +54,8 @@ interface YASQE_Static {
 	
 	fromTextArea(host: HTMLTextAreaElement,
 		options?: YASQE_Config): YASQE_Instance;
+
+	storeQuery(yasqe: YASQE_Instance): void;
 
 	registerAutocompleter(name: string,
 		autocompleter:(yasqe:YASQE_Instance, name:string) => any): void;

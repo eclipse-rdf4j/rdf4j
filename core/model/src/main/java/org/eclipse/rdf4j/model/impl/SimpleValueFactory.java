@@ -26,7 +26,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.AbstractValueFactory;
@@ -48,6 +48,17 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	// static UUID as prefix together with a thread safe incrementing long ensures unique blank nodes.
 	private final static String uniqueIdPrefix = UUID.randomUUID().toString().replace("-", "");
 	private final static AtomicLong uniqueIdSuffix = new AtomicLong();
+
+	// Pre-built strings for lengths 0 through 9
+	private static final String[] RANDOMIZE_LENGTH = new String[10];
+
+	static {
+		StringBuilder sb = new StringBuilder();
+		for (int i = 0; i <= 9; i++) {
+			RANDOMIZE_LENGTH[i] = sb.toString();
+			sb.append(i);
+		}
+	}
 
 	private static final DatatypeFactory datatypeFactory;
 
@@ -104,6 +115,11 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
+	public Literal createLiteral(String value, String language, Literal.BaseDirection baseDirection) {
+		return new SimpleLiteral(value, language, baseDirection);
+	}
+
+	@Override
 	public Literal createLiteral(boolean b) {
 		return b ? BooleanLiteral.TRUE : BooleanLiteral.FALSE;
 	}
@@ -124,13 +140,18 @@ public class SimpleValueFactory extends AbstractValueFactory {
 	}
 
 	@Override
-	public Triple createTriple(Resource subject, IRI predicate, Value object) {
-		return new SimpleTriple(subject, predicate, object);
+	public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+		return new SimpleTripleTerm(subject, predicate, object);
 	}
 
 	@Override
 	public BNode createBNode() {
-		return createBNode(uniqueIdPrefix + uniqueIdSuffix.incrementAndGet());
+		long l = uniqueIdSuffix.incrementAndGet();
+		// reverse the string representation of the long to ensure that the BNode IDs are not monotonically increasing
+		StringBuilder sb = new StringBuilder(Long.toString(l));
+		sb.reverse();
+		sb.append(uniqueIdPrefix).append(RANDOMIZE_LENGTH[(int) (Math.abs(l % RANDOMIZE_LENGTH.length))]);
+		return createBNode(sb.toString());
 	}
 
 	/**

@@ -11,7 +11,6 @@
 package org.eclipse.rdf4j.sail.nativerdf;
 
 import static java.nio.charset.StandardCharsets.US_ASCII;
-
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -20,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.util.Arrays;
 
 import org.eclipse.rdf4j.common.io.NioFile;
 import org.eclipse.rdf4j.model.IRI;
@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.nativerdf.btree.RecordIterator;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -86,7 +87,11 @@ public class NativeStoreTxnTest {
 		for (File file : repoDir.listFiles()) {
 			System.out.println("# " + file.getName());
 		}
-		assertEquals(15, repoDir.listFiles().length);
+		// With WAL enabled a 'wal' directory may be present; exclude it from the legacy count
+		int nonWalCount = (int) Arrays.stream(repoDir.listFiles())
+				.filter(f -> !ValueStoreWalConfig.DEFAULT_DIRECTORY_NAME.equals(f.getName()))
+				.count();
+		assertEquals(15, nonWalCount);
 
 		// make sure there is no txncacheXXX.dat file
 		assertFalse(Files.list(repoDir.getAbsoluteFile().toPath())
@@ -148,7 +153,7 @@ public class NativeStoreTxnTest {
 			tripleStore.close();
 		}
 
-		TxnStatusFile.TxnStatus currentStatus = new TxnStatusFile(repo.getDataDir()).getTxnStatus();
+		TxnStatusFile.TxnStatus currentStatus = new TxnStatusFile(repo.getDataDir(), false).getTxnStatus();
 
 		assertEquals(TxnStatusFile.TxnStatus.NONE, currentStatus);
 	}

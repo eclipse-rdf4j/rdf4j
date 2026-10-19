@@ -36,7 +36,12 @@ abstract class InitializationBenchmark {
 	@BenchmarkMode(Mode.AverageTime)
 	@OutputTimeUnit(TimeUnit.MILLISECONDS)
 	public void init() {
-		getSail(null).init();
+		SailRepository sail = getSail(null);
+		try {
+			sail.init();
+		} finally {
+			sail.shutDown();
+		}
 	}
 
 }

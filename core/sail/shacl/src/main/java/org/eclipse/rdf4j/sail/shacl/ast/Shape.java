@@ -14,6 +14,7 @@ import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
+import org.eclipse.rdf4j.common.exception.RDF4JException;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Model;
@@ -43,6 +45,7 @@ import org.eclipse.rdf4j.sail.SailException;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
+import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AbstractConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.AndConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClassConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents.ClosedConstraintComponent;
@@ -104,6 +107,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 	List<Target> target = new ArrayList<>();
 
 	boolean deactivated;
+	private Boolean rdfsSubClassReasoningOverride;
+	private Boolean includeInferredStatementsOverride;
 	List<Literal> message;
 	Severity severity;
 
@@ -116,6 +121,8 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 	public Shape(Shape shape) {
 		this.deactivated = shape.deactivated;
+		this.rdfsSubClassReasoningOverride = shape.rdfsSubClassReasoningOverride;
+		this.includeInferredStatementsOverride = shape.includeInferredStatementsOverride;
 		this.message = shape.message;
 		this.severity = shape.severity;
 		this.id = shape.id;
@@ -131,6 +138,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		this.id = properties.getId();
 		this.contexts = shapeSource.getActiveContexts();
 		this.severity = Severity.fromIri(properties.getSeverity());
+
+		if (parseSettings.parseEclipseRdf4jShaclExtensions()) {
+			this.rdfsSubClassReasoningOverride = properties.getRdfsSubClassReasoning();
+			this.includeInferredStatementsOverride = properties.getIncludeInferredStatements();
+		}
 
 		if (!properties.getTargetClass().isEmpty()) {
 			target.add(new TargetClass(properties.getTargetClass()));
@@ -201,7 +213,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		modelBuilder.subject(getId());
 
 		if (deactivated) {
-			modelBuilder.add(SHACL.DEACTIVATED, deactivated);
+			modelBuilder.add(SHACL.DEACTIVATED, true);
 		}
 
 		for (Literal literal : message) {
@@ -214,6 +226,12 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		if (severity != null) {
 			modelBuilder.add(SHACL.SEVERITY_PROP, severity.getIri());
+		}
+		if (rdfsSubClassReasoningOverride != null) {
+			modelBuilder.add(RSX.rdfsSubClassReasoning, rdfsSubClassReasoningOverride);
+		}
+		if (includeInferredStatementsOverride != null) {
+			modelBuilder.add(RSX.includeInferredStatements, includeInferredStatementsOverride);
 		}
 
 		model.addAll(modelBuilder.build());
@@ -421,7 +439,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 							.generateSparqlValidationQuery(connectionsGroup, validationSettings, false, false,
 									Scope.none)
 							.getValidationPlan(connectionsGroup.getBaseConnection(), validationSettings.getDataGraph(),
-									getContexts()),
+									getContexts(), connectionsGroup.isIncludeInferredStatements()),
 							this, connectionsGroup);
 				} else {
 					logger.debug("Use fall back validation approach for bulk validation instead of SPARQL for shape {}",
@@ -476,6 +494,22 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		return deactivated;
 	}
 
+	public Boolean getRdfsSubClassReasoningOverride() {
+		return rdfsSubClassReasoningOverride;
+	}
+
+	public Boolean getIncludeInferredStatementsOverride() {
+		return includeInferredStatementsOverride;
+	}
+
+	public boolean usesRdfsSubClassReasoning(boolean defaultValue) {
+		return rdfsSubClassReasoningOverride == null ? defaultValue : rdfsSubClassReasoningOverride;
+	}
+
+	public boolean usesIncludeInferredStatements(boolean defaultValue) {
+		return includeInferredStatementsOverride == null ? defaultValue : includeInferredStatementsOverride;
+	}
+
 	@Override
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
@@ -513,6 +547,13 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		return message;
 	}
 
+	/**
+	 * @return any explicit sh:message values defined on this shape, without falling back to constraint defaults.
+	 */
+	public final List<Literal> getExplicitMessages() {
+		return message;
+	}
+
 	@Override
 	public List<Literal> getDefaultMessage() {
 		return constraintComponents
@@ -523,7 +564,7 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public final boolean equals(Object o) {
 		if (this == o) {
 			return true;
 		}
@@ -531,7 +572,23 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			return false;
 		}
 
+		return equals((Shape) o, new IdentityHashMap<>());
+	}
+
+	@Override
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> comparisonGuard) {
+		Object alreadyComparing = comparisonGuard.get(this);
+		if (alreadyComparing == o) {
+			return true;
+		}
+
+		if (!(o instanceof Shape)) {
+			return false;
+		}
+
 		Shape shape = (Shape) o;
+
+		comparisonGuard.put(this, shape);
 
 		if (produceValidationReports != shape.produceValidationReports) {
 			return false;
@@ -548,20 +605,96 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 		if (severity != shape.severity) {
 			return false;
 		}
-		if (!Objects.equals(constraintComponents, shape.constraintComponents)) {
+		if (!Objects.equals(rdfsSubClassReasoningOverride, shape.rdfsSubClassReasoningOverride)) {
 			return false;
 		}
+		if (!Objects.equals(includeInferredStatementsOverride, shape.includeInferredStatementsOverride)) {
+			return false;
+		}
+
+		if (constraintComponents.size() != shape.constraintComponents.size()) {
+			return false;
+		}
+
+		boolean[] matchedRightSide = new boolean[shape.constraintComponents.size()];
+
+		for (int i = 0; i < constraintComponents.size(); i++) {
+			ConstraintComponent left = constraintComponents.get(i);
+
+			if (left == null) {
+				continue;
+			}
+
+			int matchIndex = -1;
+
+			if (!matchedRightSide[i]) {
+				ConstraintComponent right = shape.constraintComponents.get(i);
+				if (left.equals(right, comparisonGuard)) {
+					matchIndex = i;
+				}
+			}
+
+			if (matchIndex == -1) {
+				for (int j = 0; j < shape.constraintComponents.size(); j++) {
+					if (matchedRightSide[j]) {
+						continue;
+					}
+					ConstraintComponent candidate = shape.constraintComponents.get(j);
+					if (left.equals(candidate, comparisonGuard)) {
+						matchIndex = j;
+						break;
+					}
+				}
+			}
+
+			if (matchIndex == -1) {
+				return false;
+			}
+
+			matchedRightSide[matchIndex] = true;
+		}
+
 		return true;
 	}
 
 	@Override
-	public int hashCode() {
+	public final int hashCode() {
+		return hashCode(new IdentityHashMap<>());
+	}
+
+	@Override
+	public int hashCode(IdentityHashMap<Shape, Boolean> cycleDetection) {
+		if (cycleDetection.put(this, Boolean.TRUE) != null) {
+			throw new ShaclShapeParsingException("Recursive shape definition detected while computing hashCode",
+					getId());
+		}
+
 		int result = (produceValidationReports ? 1 : 0);
 		result = 31 * result + (target != null ? target.hashCode() : 0);
 		result = 31 * result + (deactivated ? 1 : 0);
 		result = 31 * result + (message != null ? message.hashCode() : 0);
 		result = 31 * result + (severity != null ? severity.hashCode() : 0);
-		result = 31 * result + (constraintComponents != null ? constraintComponents.hashCode() : 0);
+		result = 31 * result + (rdfsSubClassReasoningOverride != null ? rdfsSubClassReasoningOverride.hashCode() : 0);
+		result = 31 * result
+				+ (includeInferredStatementsOverride != null ? includeInferredStatementsOverride.hashCode() : 0);
+
+		long temp = 0;
+
+		for (ConstraintComponent constraintComponent : constraintComponents) {
+			int componentHash;
+			if (constraintComponent instanceof Shape) {
+				componentHash = constraintComponent.hashCode(cycleDetection);
+			} else if (constraintComponent instanceof AbstractConstraintComponent) {
+				componentHash = constraintComponent.hashCode(cycleDetection);
+			} else {
+				componentHash = constraintComponent != null ? constraintComponent.hashCode() : 0;
+			}
+			temp += componentHash;
+		}
+
+		result = 31 * result + Long.hashCode(temp);
+
+		cycleDetection.remove(this);
 		return result;
 	}
 
@@ -569,26 +702,42 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 
 		public static List<ContextWithShape> getShapes(ShapeSource shapeSource, ParseSettings parseSettings) {
 
-			List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
-
-			return getShapes(parsed);
+			try {
+				List<ContextWithShape> parsed = parse(shapeSource, parseSettings);
+				return getShapes(parsed);
+			} catch (RDF4JException e) {
+				logger.error(e.getMessage(), e);
+				throw e;
+			} catch (Throwable e) {
+				logger.error("Unexpected error while parsing shapes", e);
+				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
+			}
 
 		}
 
 		public static List<ContextWithShape> getShapes(List<ContextWithShape> parsed) {
-			return parsed.stream()
-					.flatMap(contextWithShapes -> {
-						List<Shape> split = split(contextWithShapes.getShape());
-						calculateTargetChain(split);
-						calculateIfProducesValidationResult(split);
-						return split.stream().map(s -> {
-							return new ContextWithShape(contextWithShapes.getDataGraph(),
-									contextWithShapes.getShapeGraph(), s);
-						});
-					})
-					.filter(ContextWithShape::hasShape)
-					.distinct()
-					.collect(Collectors.toList());
+			try {
+				return parsed.stream()
+						.flatMap(contextWithShapes -> {
+							List<Shape> split = split(contextWithShapes.getShape());
+							calculateTargetChain(split);
+							calculateIfProducesValidationResult(split);
+							return split.stream().map(s -> {
+								return new ContextWithShape(contextWithShapes.getDataGraph(),
+										contextWithShapes.getShapeGraph(), s);
+							});
+						})
+						.filter(ContextWithShape::hasShape)
+						.distinct()
+						.peek(a -> a.getShape().verifyNotRecursive())
+						.collect(Collectors.toList());
+			} catch (RDF4JException e) {
+				logger.error(e.getMessage(), e);
+				throw e;
+			} catch (Throwable e) {
+				logger.error("Unexpected error while parsing shapes", e);
+				throw new ShaclShapeParsingException("Unexpected error while parsing shapes", e);
+			}
 		}
 
 		private static void calculateIfProducesValidationResult(List<Shape> split) {
@@ -748,6 +897,11 @@ abstract public class Shape implements ConstraintComponent, Identifiable {
 			}
 		}
 
+	}
+
+	private void verifyNotRecursive() {
+		// calling hashCode will throw an exception if recursion is detected
+		int i = hashCode(new IdentityHashMap<>());
 	}
 
 	@Override

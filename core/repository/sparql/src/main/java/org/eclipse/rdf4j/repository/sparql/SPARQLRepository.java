@@ -15,13 +15,13 @@ import java.lang.ref.Cleaner;
 import java.util.Collections;
 import java.util.Map;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.concurrent.locks.diagnostics.ConcurrentCleaner;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.HttpClientSessionManager;
 import org.eclipse.rdf4j.http.client.SPARQLProtocolSession;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -138,12 +138,12 @@ public class SPARQLRepository extends AbstractRepository implements HttpClientDe
 	}
 
 	@Override
-	public final HttpClient getHttpClient() {
+	public final RDF4JHttpClient getHttpClient() {
 		return getHttpClientSessionManager().getHttpClient();
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		SharedHttpClientSessionManager toSetDependentClient = dependentClient;
 		if (toSetDependentClient == null) {
 			getHttpClientSessionManager();

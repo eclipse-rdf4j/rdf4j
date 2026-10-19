@@ -11,9 +11,7 @@
 package org.eclipse.rdf4j.repository.http.helpers;
 
 import org.eclipse.rdf4j.repository.http.HTTPRepository;
-import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.IntegerRioSetting;
-import org.eclipse.rdf4j.rio.helpers.RioSettingImpl;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

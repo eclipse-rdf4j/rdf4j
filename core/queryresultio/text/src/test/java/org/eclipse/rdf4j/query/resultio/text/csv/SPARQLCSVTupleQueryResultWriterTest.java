@@ -15,8 +15,6 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BasicWriterSettings;
 import org.eclipse.rdf4j.testsuite.query.resultio.AbstractTupleQueryResultWriterTest;
-import org.junit.jupiter.api.Disabled;
-import org.junit.jupiter.api.Test;
 
 /**
  * @author Jeen Broekstra
@@ -34,21 +32,9 @@ public class SPARQLCSVTupleQueryResultWriterTest extends AbstractTupleQueryResul
 	}
 
 	@Override
-	@Disabled("pending implementation of RDF-star extensions for the csv format")
-	@Test
-	public void testRDFStarHandling_NoEncoding() {
-	}
-
-	@Override
-	@Disabled("pending implementation of RDF-star extensions for the csv format")
-	@Test
-	public void testRDFStarHandling_DeepNesting() {
-	}
-
-	@Override
 	protected RioSetting<?>[] getExpectedSupportedSettings() {
 		return new RioSetting<?>[] {
-				BasicWriterSettings.ENCODE_RDF_STAR,
+				BasicWriterSettings.ENCODE_TRIPLE_TERMS,
 				BasicWriterSettings.XSD_STRING_TO_PLAIN_LITERAL
 		};
 	}

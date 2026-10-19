@@ -12,7 +12,7 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -73,7 +73,7 @@ public class MultiProjection extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getBindingNames() {
-		Set<String> bindingNames = new HashSet<>();
+		Set<String> bindingNames = new LinkedHashSet<>();
 
 		for (ProjectionElemList projElemList : projections) {
 			bindingNames.addAll(projElemList.getProjectedNames());
@@ -84,7 +84,7 @@ public class MultiProjection extends UnaryTupleOperator {
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<>();
+		Set<String> bindingNames = new LinkedHashSet<>();
 
 		if (!projections.isEmpty()) {
 			Set<String> assuredSourceNames = getArg().getAssuredBindingNames();

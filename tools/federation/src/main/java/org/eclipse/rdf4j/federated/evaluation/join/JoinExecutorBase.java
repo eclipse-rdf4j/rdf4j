@@ -14,7 +14,7 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.evaluation.concurrent.ParallelExecutorBase;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
@@ -39,7 +39,7 @@ public abstract class JoinExecutorBase<T> extends ParallelExecutorBase<T> {
 	protected Set<String> joinVars; // might be unknown (i.e. null for some implementations)
 	protected CloseableIteration<T> leftIter;
 
-	public JoinExecutorBase(FederationEvalStrategy strategy, CloseableIteration<T> leftIter,
+	public JoinExecutorBase(FederationEvaluationStrategy strategy, CloseableIteration<T> leftIter,
 			TupleExpr rightArg,
 			BindingSet bindings, QueryInfo queryInfo) throws QueryEvaluationException {
 		super(queryInfo);

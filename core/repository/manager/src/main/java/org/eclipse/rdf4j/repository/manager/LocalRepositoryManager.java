@@ -27,11 +27,11 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 
-import org.apache.http.client.HttpClient;
 import org.eclipse.rdf4j.common.io.FileUtil;
 import org.eclipse.rdf4j.http.client.HttpClientDependent;
 import org.eclipse.rdf4j.http.client.SessionManagerDependent;
 import org.eclipse.rdf4j.http.client.SharedHttpClientSessionManager;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.util.Configurations;
@@ -134,7 +134,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public HttpClient getHttpClient() {
+	public RDF4JHttpClient getHttpClient() {
 		SharedHttpClientSessionManager nextClient = client;
 		if (nextClient == null) {
 			return null;
@@ -144,7 +144,7 @@ public class LocalRepositoryManager extends RepositoryManager {
 	}
 
 	@Override
-	public void setHttpClient(HttpClient httpClient) {
+	public void setHttpClient(RDF4JHttpClient httpClient) {
 		getSesameClient().setHttpClient(httpClient);
 	}
 

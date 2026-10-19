@@ -10,30 +10,31 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.http.client;
 
-import org.apache.http.client.HttpClient;
+import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
 
 /**
- * Common interface for objects, such as Repository and RepositoryConnection, that are dependent on {@link HttpClient}.
+ * Common interface for objects, such as Repository and RepositoryConnection, that are dependent on
+ * {@link RDF4JHttpClient}.
  *
  * @author James Leigh
  */
 public interface HttpClientDependent {
 
 	/**
-	 * {@link HttpClient} that has been assigned or has been used by this object. The life cycle might not be or might
-	 * be tied to this object, depending on whether {@link HttpClient} was passed to or created by this object
-	 * respectively.
+	 * {@link RDF4JHttpClient} that has been assigned or has been used by this object. The life cycle might not be or
+	 * might be tied to this object, depending on whether {@link RDF4JHttpClient} was passed to or created by this
+	 * object respectively.
 	 *
-	 * @return an {@link HttpClient} instance or null
+	 * @return an {@link RDF4JHttpClient} instance or null
 	 */
-	HttpClient getHttpClient();
+	RDF4JHttpClient getHttpClient();
 
 	/**
-	 * Assign an {@link HttpClient} that this object should use. The life cycle of the given {@link HttpClient} is
-	 * independent of this object. Closing or shutting down this object does not have any impact on the given client.
-	 * Callers must ensure that the given client is properly closed elsewhere.
+	 * Assign an {@link RDF4JHttpClient} that this object should use. The life cycle of the given
+	 * {@link RDF4JHttpClient} is independent of this object. Closing or shutting down this object does not have any
+	 * impact on the given client. Callers must ensure that the given client is properly closed elsewhere.
 	 *
 	 * @param client
 	 */
-	void setHttpClient(HttpClient client);
+	void setHttpClient(RDF4JHttpClient client);
 }

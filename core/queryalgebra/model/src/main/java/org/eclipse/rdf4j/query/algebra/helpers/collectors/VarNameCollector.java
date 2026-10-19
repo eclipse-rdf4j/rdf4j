@@ -39,6 +39,15 @@ public class VarNameCollector extends AbstractSimpleQueryModelVisitor<RuntimeExc
 		return collector.getVarNames();
 	}
 
+	public static Set<String> process(List<? extends QueryModelNode> nodes) {
+		VarNameCollector collector = new VarNameCollector();
+		for (QueryModelNode node : nodes) {
+			node.visit(collector);
+		}
+
+		return collector.getVarNames();
+	}
+
 	public Set<String> getVarNames() {
 		if (varNamesSet == null) {
 			if (varNames.isEmpty()) {

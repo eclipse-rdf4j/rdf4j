@@ -1,0 +1,3527 @@
+@prefix dc:    <http://purl.org/dc/terms/> .
+@prefix rdfs:  <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix earl:  <http://www.w3.org/ns/earl#> .
+@prefix foaf:  <http://xmlns.com/foaf/0.1/> .
+@prefix rdf:   <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix doap:  <http://usefulinc.com/ns/doap#> .
+@prefix ttlTests: <http://www.w3.org/2013/TurtleTests/manifest.ttl#> .
+
+<>      dc:issued          "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+        foaf:maker         <http://www.di.uniovi.es/~labra#me> ;
+        foaf:primaryTopic  <http://purl.org/weso/wesin> .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-base-04 ;
+  foaf:name        "turtle-syntax-base-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-prefix-01 ;
+  foaf:name        "turtle-syntax-bad-prefix-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-file-02 ;
+  foaf:name        "turtle-syntax-file-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-16 ;
+  foaf:name        "turtle-subm-16"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-17 ;
+  foaf:name        "turtle-subm-17"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-07 ;
+  foaf:name        "turtle-syntax-bad-string-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_numeric_escape4 ;
+  foaf:name        "literal_with_numeric_escape4"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-struct-04 ;
+  foaf:name        "turtle-syntax-struct-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-05 ;
+  foaf:name        "turtle-syntax-bad-struct-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:positive_numeric ;
+  foaf:name        "positive_numeric"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:collection_subject ;
+  foaf:name        "collection_subject"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-lists-03 ;
+  foaf:name        "turtle-syntax-lists-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-uri-01 ;
+  foaf:name        "turtle-syntax-bad-uri-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-06 ;
+  foaf:name        "turtle-syntax-number-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:underscore_in_localName ;
+  foaf:name        "underscore_in_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-pname-03 ;
+  foaf:name        "turtle-syntax-bad-pname-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-pname-01 ;
+  foaf:name        "turtle-syntax-bad-pname-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-06 ;
+  foaf:name        "turtle-syntax-bad-string-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-09 ;
+  foaf:name        "turtle-syntax-bad-struct-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-ns-dot-start ;
+  foaf:name        "turtle-syntax-bad-ns-dot-start"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-struct-05 ;
+  foaf:name        "turtle-syntax-struct-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:IRI_with_four_digit_numeric_escape ;
+  foaf:name        "IRI_with_four_digit_numeric_escape"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-07 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:predicateObjectList_with_two_objectLists ;
+  foaf:name        "predicateObjectList_with_two_objectLists"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-ns-dots ;
+  foaf:name        "turtle-syntax-ns-dots"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-num-05 ;
+  foaf:name        "turtle-syntax-bad-num-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-11 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-11"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2_with_UTF8_boundaries ;
+  foaf:name        "LITERAL_LONG2_with_UTF8_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:repeated_semis_not_at_end ;
+  foaf:name        "repeated_semis_not_at_end"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-base-02 ;
+  foaf:name        "turtle-syntax-bad-base-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-struct-02 ;
+  foaf:name        "turtle-eval-struct-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-05 ;
+  foaf:name        "turtle-syntax-prefix-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_true ;
+  foaf:name        "literal_true"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-06 ;
+  foaf:name        "turtle-subm-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-26 ;
+  foaf:name        "turtle-subm-26"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-uri-04 ;
+  foaf:name        "turtle-syntax-uri-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-missing-ns-dot-start ;
+  foaf:name        "turtle-syntax-bad-missing-ns-dot-start"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:nested_blankNodePropertyLists ;
+  foaf:name        "nested_blankNodePropertyLists"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:repeated_semis_at_end ;
+  foaf:name        "repeated_semis_at_end"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-missing-ns-dot-end ;
+  foaf:name        "turtle-syntax-bad-missing-ns-dot-end"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_with_non_leading_extras ;
+  foaf:name        "labeled_blank_node_with_non_leading_extras"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-01 ;
+  foaf:name        "turtle-syntax-bad-struct-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-10 ;
+  foaf:name        "turtle-subm-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_escaped_LINE_FEED ;
+  foaf:name        "literal_with_escaped_LINE_FEED"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_escaped_BACKSPACE ;
+  foaf:name        "literal_with_escaped_BACKSPACE"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL2_with_UTF8_boundaries ;
+  foaf:name        "LITERAL2_with_UTF8_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_nfc_PN_CHARS_BASE_character_boundaries ;
+  foaf:name        "localName_with_nfc_PN_CHARS_BASE_character_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2_with_1_squote ;
+  foaf:name        "LITERAL_LONG2_with_1_squote"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-13 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-13"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-05 ;
+  foaf:name        "turtle-subm-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-15 ;
+  foaf:name        "turtle-syntax-bad-struct-15"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefix_with_non_leading_extras ;
+  foaf:name        "prefix_with_non_leading_extras"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefix_reassigned_and_used ;
+  foaf:name        "prefix_reassigned_and_used"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:bareword_decimal ;
+  foaf:name        "bareword_decimal"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:objectList_with_two_objects ;
+  foaf:name        "objectList_with_two_objects"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:langtagged_LONG ;
+  foaf:name        "langtagged_LONG"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-12 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-12"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2 ;
+  foaf:name        "LITERAL_LONG2"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_with_leading_digit ;
+  foaf:name        "labeled_blank_node_with_leading_digit"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-ln-dash-start ;
+  foaf:name        "turtle-syntax-bad-ln-dash-start"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-14 ;
+  foaf:name        "turtle-subm-14"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-16 ;
+  foaf:name        "turtle-syntax-bad-struct-16"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-04 ;
+  foaf:name        "turtle-syntax-string-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-04 ;
+  foaf:name        "turtle-syntax-prefix-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-18 ;
+  foaf:name        "turtle-subm-18"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-13 ;
+  foaf:name        "turtle-subm-13"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-02 ;
+  foaf:name        "turtle-syntax-prefix-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-24 ;
+  foaf:name        "turtle-subm-24"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:langtagged_non_LONG ;
+  foaf:name        "langtagged_non_LONG"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-uri-05 ;
+  foaf:name        "turtle-syntax-bad-uri-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-ln-dots ;
+  foaf:name        "turtle-syntax-ln-dots"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-08 ;
+  foaf:name        "turtle-syntax-string-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_with_leading_underscore ;
+  foaf:name        "labeled_blank_node_with_leading_underscore"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-uri-04 ;
+  foaf:name        "turtle-syntax-bad-uri-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-base-02 ;
+  foaf:name        "turtle-syntax-base-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:old_style_base ;
+  foaf:name        "old_style_base"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-pname-esc-03 ;
+  foaf:name        "turtle-syntax-pname-esc-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-kw-02 ;
+  foaf:name        "turtle-syntax-bad-kw-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-25 ;
+  foaf:name        "turtle-subm-25"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:SPARQL_style_base ;
+  foaf:name        "SPARQL_style_base"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-06 ;
+  foaf:name        "turtle-syntax-string-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-09 ;
+  foaf:name        "turtle-syntax-string-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-prefix-05 ;
+  foaf:name        "turtle-syntax-bad-prefix-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:blankNodePropertyList_with_multiple_triples ;
+  foaf:name        "blankNodePropertyList_with_multiple_triples"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-blank-label ;
+  foaf:name        "turtle-syntax-blank-label"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-kw-03 ;
+  foaf:name        "turtle-syntax-kw-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-15 ;
+  foaf:name        "turtle-subm-15"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-pname-esc-01 ;
+  foaf:name        "turtle-syntax-pname-esc-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-kw-01 ;
+  foaf:name        "turtle-syntax-kw-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-01 ;
+  foaf:name        "turtle-syntax-number-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-prefix-03 ;
+  foaf:name        "turtle-syntax-bad-prefix-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:anonymous_blank_node_subject ;
+  foaf:name        "anonymous_blank_node_subject"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-07 ;
+  foaf:name        "turtle-syntax-bnode-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-05 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:bareword_a_predicate ;
+  foaf:name        "bareword_a_predicate"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-uri-03 ;
+  foaf:name        "turtle-syntax-uri-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-blank-label-dot-end ;
+  foaf:name        "turtle-syntax-bad-blank-label-dot-end"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-01 ;
+  foaf:name        "turtle-syntax-prefix-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL1_all_controls ;
+  foaf:name        "LITERAL1_all_controls"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-08 ;
+  foaf:name        "turtle-syntax-bnode-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-esc-03 ;
+  foaf:name        "turtle-syntax-bad-esc-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-10 ;
+  foaf:name        "turtle-syntax-bnode-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:anonymous_blank_node_object ;
+  foaf:name        "anonymous_blank_node_object"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG1_with_1_squote ;
+  foaf:name        "LITERAL_LONG1_with_1_squote"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:SPARQL_style_prefix ;
+  foaf:name        "SPARQL_style_prefix"
+] .
+
+<http://www.di.uniovi.es/~labra#me>
+        foaf:homepage  "http://www.di.uniovi.es/~labra" ;
+        foaf:name      "Jose Emilio Labra Gayo" .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-07 ;
+  foaf:name        "turtle-subm-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-base-01 ;
+  foaf:name        "turtle-syntax-base-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-ns-dot-end ;
+  foaf:name        "turtle-syntax-bad-ns-dot-end"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:number_sign_following_localName ;
+  foaf:name        "number_sign_following_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-02 ;
+  foaf:name        "turtle-syntax-string-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-pname-02 ;
+  foaf:name        "turtle-syntax-bad-pname-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-10 ;
+  foaf:name        "turtle-syntax-bad-struct-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-11 ;
+  foaf:name        "turtle-syntax-string-11"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-21 ;
+  foaf:name        "turtle-subm-21"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:IRIREF_datatype ;
+  foaf:name        "IRIREF_datatype"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-08 ;
+  foaf:name        "turtle-syntax-bad-struct-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-04 ;
+  foaf:name        "turtle-syntax-bad-struct-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-04 ;
+  foaf:name        "turtle-syntax-bnode-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-base-03 ;
+  foaf:name        "turtle-syntax-bad-base-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-number-dot-in-anon ;
+  foaf:name        "turtle-syntax-bad-number-dot-in-anon"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-04 ;
+  foaf:name        "turtle-subm-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-10 ;
+  foaf:name        "turtle-syntax-number-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:bareword_integer ;
+  foaf:name        "bareword_integer"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-num-04 ;
+  foaf:name        "turtle-syntax-bad-num-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:comment_following_localName ;
+  foaf:name        "comment_following_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-04 ;
+  foaf:name        "turtle-syntax-bad-string-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-08 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-14 ;
+  foaf:name        "turtle-syntax-bad-struct-14"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefixed_IRI_object ;
+  foaf:name        "prefixed_IRI_object"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-05 ;
+  foaf:name        "turtle-syntax-bnode-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_REVERSE_SOLIDUS ;
+  foaf:name        "literal_with_REVERSE_SOLIDUS"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2_with_2_squotes ;
+  foaf:name        "LITERAL_LONG2_with_2_squotes"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG1_ascii_boundaries ;
+  foaf:name        "LITERAL_LONG1_ascii_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-09 ;
+  foaf:name        "turtle-syntax-bnode-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-01 ;
+  foaf:name        "turtle-syntax-bad-string-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-bad-03 ;
+  foaf:name        "turtle-eval-bad-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_CARRIAGE_RETURN ;
+  foaf:name        "literal_with_CARRIAGE_RETURN"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-esc-01 ;
+  foaf:name        "turtle-syntax-bad-esc-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL2 ;
+  foaf:name        "LITERAL2"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG1 ;
+  foaf:name        "LITERAL_LONG1"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-27 ;
+  foaf:name        "turtle-subm-27"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-11 ;
+  foaf:name        "turtle-subm-11"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-11 ;
+  foaf:name        "turtle-syntax-bad-struct-11"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2_with_REVERSE_SOLIDUS ;
+  foaf:name        "LITERAL_LONG2_with_REVERSE_SOLIDUS"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefixed_IRI_predicate ;
+  foaf:name        "prefixed_IRI_predicate"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-09 ;
+  foaf:name        "turtle-subm-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-LITERAL2_with_langtag_and_datatype ;
+  foaf:name        "turtle-syntax-bad-num-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:nested_collection ;
+  foaf:name        "nested_collection"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:percent_escaped_localName ;
+  foaf:name        "percent_escaped_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-uri-02 ;
+  foaf:name        "turtle-syntax-bad-uri-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:negative_numeric ;
+  foaf:name        "negative_numeric"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_subject ;
+  foaf:name        "labeled_blank_node_subject"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefix_with_PN_CHARS_BASE_character_boundaries ;
+  foaf:name        "prefix_with_PN_CHARS_BASE_character_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-struct-01 ;
+  foaf:name        "turtle-eval-struct-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-num-02 ;
+  foaf:name        "turtle-syntax-bad-num-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:comment_following_PNAME_NS ;
+  foaf:name        "comment_following_PNAME_NS"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-base-01 ;
+  foaf:name        "turtle-syntax-bad-base-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL1_ascii_boundaries ;
+  foaf:name        "LITERAL1_ascii_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:blankNodePropertyList_as_subject ;
+  foaf:name        "blankNodePropertyList_as_subject"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:blankNodePropertyList_as_object ;
+  foaf:name        "blankNodePropertyList_as_object"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-datatypes-02 ;
+  foaf:name        "turtle-syntax-datatypes-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-uri-03 ;
+  foaf:name        "turtle-syntax-bad-uri-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-19 ;
+  foaf:name        "turtle-subm-19"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:lantag_with_subtag ;
+  foaf:name        "lantag_with_subtag"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-09 ;
+  foaf:name        "turtle-syntax-prefix-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-struct-02 ;
+  foaf:name        "turtle-syntax-struct-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:IRI_with_all_punctuation ;
+  foaf:name        "IRI_with_all_punctuation"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG1_with_UTF8_boundaries ;
+  foaf:name        "LITERAL_LONG1_with_UTF8_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-01 ;
+  foaf:name        "turtle-syntax-bnode-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-struct-03 ;
+  foaf:name        "turtle-syntax-struct-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-bad-02 ;
+  foaf:name        "turtle-eval-bad-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-03 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-08 ;
+  foaf:name        "turtle-syntax-prefix-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-struct-01 ;
+  foaf:name        "turtle-syntax-struct-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:bareword_double ;
+  foaf:name        "bareword_double"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_leading_underscore ;
+  foaf:name        "localName_with_leading_underscore"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-kw-04 ;
+  foaf:name        "turtle-syntax-bad-kw-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-07 ;
+  foaf:name        "turtle-syntax-number-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-08 ;
+  foaf:name        "turtle-subm-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-09 ;
+  foaf:name        "turtle-syntax-number-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_FORM_FEED ;
+  foaf:name        "literal_with_FORM_FEED"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-lists-04 ;
+  foaf:name        "turtle-syntax-lists-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_object ;
+  foaf:name        "labeled_blank_node_object"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-str-esc-01 ;
+  foaf:name        "turtle-syntax-str-esc-01"
+] .
+
+<http://purl.org/weso/wesin>
+        a                          doap:Project , earl:Software , earl:TestSubject ;
+        dc:creator                 <http://www.di.uniovi.es/~labra#me> ;
+        dc:date                    "2013-08-29"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+        dc:description             "WESIN - Web Semantics using Inductive Graphs"@en ;
+        dc:title                   "Wesin" ;
+        doap:developer             <http://www.di.uniovi.es/~labra#me> ;
+        doap:documenter            <http://www.di.uniovi.es/~labra#me> ;
+        doap:download-page         "http://purl.org/weso/wesin" ;
+        doap:homepage              "http://purl.org/weso/wesin" ;
+        doap:implements            "http://www.w3.org/TR/turtle/" ;
+        doap:maintainer            <http://www.di.uniovi.es/~labra#me> ;
+        doap:maker                 <http://www.di.uniovi.es/~labra#me> ;
+        doap:name                  "Wesin" ;
+        doap:programming-language  "Scala" ;
+        doap:release               [ a             doap:Version ;
+                                     doap:created  "2013-08-28"^^<http://www.w3.org/2001/XMLSchema#date> ;
+                                     doap:name     "Wesin"
+                                   ] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-base-03 ;
+  foaf:name        "turtle-syntax-base-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-03 ;
+  foaf:name        "turtle-syntax-bnode-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-06 ;
+  foaf:name        "turtle-syntax-bnode-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-03 ;
+  foaf:name        "turtle-syntax-bad-struct-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:sole_blankNodePropertyList ;
+  foaf:name        "sole_blankNodePropertyList"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-lists-05 ;
+  foaf:name        "turtle-syntax-lists-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-07 ;
+  foaf:name        "turtle-syntax-string-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-num-01 ;
+  foaf:name        "turtle-syntax-bad-num-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_LINE_FEED ;
+  foaf:name        "literal_with_LINE_FEED"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_CHARACTER_TABULATION ;
+  foaf:name        "literal_with_CHARACTER_TABULATION"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-str-esc-02 ;
+  foaf:name        "turtle-syntax-str-esc-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-07 ;
+  foaf:name        "turtle-syntax-bad-struct-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bnode-02 ;
+  foaf:name        "turtle-syntax-bnode-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:labeled_blank_node_with_PN_CHARS_BASE_character_boundaries ;
+  foaf:name        "labeled_blank_node_with_PN_CHARS_BASE_character_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-prefix-02 ;
+  foaf:name        "turtle-syntax-bad-prefix-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-02 ;
+  foaf:name        "turtle-syntax-bad-struct-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_assigned_nfc_bmp_PN_CHARS_BASE_character_boundaries ;
+  foaf:name        "localName_with_assigned_nfc_bmp_PN_CHARS_BASE_character_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-prefix-04 ;
+  foaf:name        "turtle-syntax-bad-prefix-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:empty_collection ;
+  foaf:name        "empty_collection"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-02 ;
+  foaf:name        "turtle-syntax-number-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-ln-escape-start ;
+  foaf:name        "turtle-syntax-bad-ln-escape-start"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-03 ;
+  foaf:name        "turtle-syntax-string-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_non_leading_extras ;
+  foaf:name        "localName_with_non_leading_extras"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-pname-esc-02 ;
+  foaf:name        "turtle-syntax-pname-esc-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-kw-01 ;
+  foaf:name        "turtle-syntax-bad-kw-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-06 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-03 ;
+  foaf:name        "turtle-syntax-prefix-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_escaped_CARRIAGE_RETURN ;
+  foaf:name        "literal_with_escaped_CARRIAGE_RETURN"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:last ;
+  foaf:name        "last"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-03 ;
+  foaf:name        "turtle-syntax-bad-string-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-uri-01 ;
+  foaf:name        "turtle-syntax-uri-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-02 ;
+  foaf:name        "turtle-subm-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-12 ;
+  foaf:name        "turtle-syntax-bad-struct-12"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefixed_name_datatype ;
+  foaf:name        "prefixed_name_datatype"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-07 ;
+  foaf:name        "turtle-syntax-prefix-07"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-09 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-09"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-kw-05 ;
+  foaf:name        "turtle-syntax-bad-kw-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG1_with_2_squotes ;
+  foaf:name        "LITERAL_LONG1_with_2_squotes"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-22 ;
+  foaf:name        "turtle-subm-22"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-lang-01 ;
+  foaf:name        "turtle-syntax-bad-lang-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-23 ;
+  foaf:name        "turtle-subm-23"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-file-03 ;
+  foaf:name        "turtle-syntax-file-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-esc-02 ;
+  foaf:name        "turtle-syntax-bad-esc-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL1_with_UTF8_boundaries ;
+  foaf:name        "LITERAL1_with_UTF8_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:IRI_subject ;
+  foaf:name        "IRI_subject"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-str-esc-03 ;
+  foaf:name        "turtle-syntax-str-esc-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:collection_object ;
+  foaf:name        "collection_object"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_escaped_FORM_FEED ;
+  foaf:name        "literal_with_escaped_FORM_FEED"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-20 ;
+  foaf:name        "turtle-subm-20"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-02 ;
+  foaf:name        "turtle-syntax-bad-string-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-01 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries ;
+  foaf:name        "localName_with_assigned_nfc_PN_CHARS_BASE_character_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:first ;
+  foaf:name        "first"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:two_LITERAL_LONG2s ;
+  foaf:name        "two_LITERAL_LONG2s"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_numeric_escape8 ;
+  foaf:name        "literal_with_numeric_escape8"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-12 ;
+  foaf:name        "turtle-subm-12"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-ln-escape ;
+  foaf:name        "turtle-syntax-bad-ln-escape"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-bad-01 ;
+  foaf:name        "turtle-eval-bad-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:reserved_escaped_localName ;
+  foaf:name        "reserved_escaped_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localName_with_leading_digit ;
+  foaf:name        "localName_with_leading_digit"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-num-03 ;
+  foaf:name        "turtle-syntax-bad-num-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:prefix_only_IRI ;
+  foaf:name        "prefix_only_IRI"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:double_lower_case_e ;
+  foaf:name        "double_lower_case_e"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-02 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:numeric_with_leading_0 ;
+  foaf:name        "numeric_with_leading_0"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-04 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL2_ascii_boundaries ;
+  foaf:name        "LITERAL2_ascii_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:default_namespace_IRI ;
+  foaf:name        "default_namespace_IRI"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-13 ;
+  foaf:name        "turtle-syntax-bad-struct-13"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_escaped_CHARACTER_TABULATION ;
+  foaf:name        "literal_with_escaped_CHARACTER_TABULATION"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-string-05 ;
+  foaf:name        "turtle-syntax-bad-string-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL1 ;
+  foaf:name        "LITERAL1"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-08 ;
+  foaf:name        "turtle-syntax-number-08"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-03 ;
+  foaf:name        "turtle-subm-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-kw-03 ;
+  foaf:name        "turtle-syntax-bad-kw-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL_LONG2_ascii_boundaries ;
+  foaf:name        "LITERAL_LONG2_ascii_boundaries"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:langtagged_LONG_with_subtag ;
+  foaf:name        "langtagged_LONG_with_subtag"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-subm-01 ;
+  foaf:name        "turtle-subm-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-10 ;
+  foaf:name        "turtle-syntax-string-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-esc-04 ;
+  foaf:name        "turtle-syntax-bad-esc-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:LITERAL1_all_punctuation ;
+  foaf:name        "LITERAL1_all_punctuation"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:old_style_prefix ;
+  foaf:name        "old_style_prefix"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-kw-02 ;
+  foaf:name        "turtle-syntax-kw-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-03 ;
+  foaf:name        "turtle-syntax-number-03"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-n3-extras-10 ;
+  foaf:name        "turtle-syntax-bad-n3-extras-10"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-05 ;
+  foaf:name        "turtle-syntax-number-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-11 ;
+  foaf:name        "turtle-syntax-number-11"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-file-01 ;
+  foaf:name        "turtle-syntax-file-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:blankNodePropertyList_containing_collection ;
+  foaf:name        "blankNodePropertyList_containing_collection"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:HYPHEN_MINUS_in_localName ;
+  foaf:name        "HYPHEN_MINUS_in_localName"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-05 ;
+  foaf:name        "turtle-syntax-string-05"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-uri-02 ;
+  foaf:name        "turtle-syntax-uri-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-eval-bad-04 ;
+  foaf:name        "turtle-eval-bad-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-17 ;
+  foaf:name        "turtle-syntax-bad-struct-17"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:number_sign_following_PNAME_NS ;
+  foaf:name        "number_sign_following_PNAME_NS"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-number-04 ;
+  foaf:name        "turtle-syntax-number-04"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_with_BACKSPACE ;
+  foaf:name        "literal_with_BACKSPACE"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-string-01 ;
+  foaf:name        "turtle-syntax-string-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-ln-colons ;
+  foaf:name        "turtle-syntax-ln-colons"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-datatypes-01 ;
+  foaf:name        "turtle-syntax-datatypes-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-lists-01 ;
+  foaf:name        "turtle-syntax-lists-01"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:IRI_with_eight_digit_numeric_escape ;
+  foaf:name        "IRI_with_eight_digit_numeric_escape"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-prefix-06 ;
+  foaf:name        "turtle-syntax-prefix-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:literal_false ;
+  foaf:name        "literal_false"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-lists-02 ;
+  foaf:name        "turtle-syntax-lists-02"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:turtle-syntax-bad-struct-06 ;
+  foaf:name        "turtle-syntax-bad-struct-06"
+] .
+
+[ a                earl:Assertion ;
+  earl:assertedBy  <http://www.di.uniovi.es/~labra#me> ;
+  earl:mode        earl:automatic ;
+  earl:result      [ a             earl:TestResult ;
+                     dc:date       "2013-08-30T08:01:13"^^<http://www.w3.org/2001/XMLSchema#dateTime> ;
+                     earl:outcome  earl:passed
+                   ] ;
+  earl:subject     <http://purl.org/weso/wesin> ;
+  earl:test        ttlTests:localname_with_COLON ;
+  foaf:name        "localname_with_COLON"
+] .

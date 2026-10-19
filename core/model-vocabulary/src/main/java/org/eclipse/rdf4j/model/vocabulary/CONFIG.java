@@ -4,7 +4,7 @@
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Eclipse Distribution License v1.0
  * which accompanies this distribution, and is available at
- * http://www.eclipse.org/org/documents/edl-v10.php
+ * http://www.eclipse.org/org/documents/edl-v10.php.
  *
  * SPDX-License-Identifier: BSD-3-Clause
  *******************************************************************************/
@@ -213,7 +213,7 @@ public class CONFIG {
 		public final static IRI impl = createIRI(NAMESPACE, "sail.impl");
 
 		/**
-		 * <var>tag:rdf4j.org,2023:config/sail.iterationCacheSyncTreshold</var>
+		 * <var>tag:rdf4j.org,2023:config/sail.iterationCacheSyncThreshold</var>
 		 */
 		public final static IRI iterationCacheSyncThreshold = createIRI(NAMESPACE,
 				"sail.iterationCacheSyncThreshold");
@@ -230,6 +230,17 @@ public class CONFIG {
 		/** <var>tag:rdf4j.org,2023:config/sail.defaultQueryEvaluationMode</var> */
 		public final static IRI defaultQueryEvaluationMode = createIRI(NAMESPACE,
 				"sail.defaultQueryEvaluationMode");
+
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogThresholdSeconds</var> */
+		public final static IRI slowQueryLogThresholdSeconds = createIRI(NAMESPACE,
+				"sail.slowQueryLogThresholdSeconds");
+
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogFirstResultThresholdSeconds</var> */
+		public final static IRI slowQueryLogFirstResultThresholdSeconds = createIRI(NAMESPACE,
+				"sail.slowQueryLogFirstResultThresholdSeconds");
+
+		/** <var>tag:rdf4j.org,2023:config/sail.slowQueryLogFile</var> */
+		public final static IRI slowQueryLogFile = createIRI(NAMESPACE, "sail.slowQueryLogFile");
 	}
 
 	/**
@@ -276,6 +287,28 @@ public class CONFIG {
 		 * <var>tag:rdf4j.org,2023:config/native.namespaceIDCacheSize</var>
 		 */
 		public final static IRI namespaceIDCacheSize = createIRI(NAMESPACE, "native.namespaceIDCacheSize");
+
+		// ValueStore WAL configuration properties
+		/** <var>tag:rdf4j.org,2023:config/native.walMaxSegmentBytes</var> */
+		public final static IRI walMaxSegmentBytes = createIRI(NAMESPACE, "native.walMaxSegmentBytes");
+		/** <var>tag:rdf4j.org,2023:config/native.walQueueCapacity</var> */
+		public final static IRI walQueueCapacity = createIRI(NAMESPACE, "native.walQueueCapacity");
+		/** <var>tag:rdf4j.org,2023:config/native.walBatchBufferBytes</var> */
+		public final static IRI walBatchBufferBytes = createIRI(NAMESPACE, "native.walBatchBufferBytes");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncPolicy</var> */
+		public final static IRI walSyncPolicy = createIRI(NAMESPACE, "native.walSyncPolicy");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncIntervalMillis</var> */
+		public final static IRI walSyncIntervalMillis = createIRI(NAMESPACE, "native.walSyncIntervalMillis");
+		/** <var>tag:rdf4j.org,2023:config/native.walIdlePollIntervalMillis</var> */
+		public final static IRI walIdlePollIntervalMillis = createIRI(NAMESPACE, "native.walIdlePollIntervalMillis");
+		/** <var>tag:rdf4j.org,2023:config/native.walDirectoryName</var> */
+		public final static IRI walDirectoryName = createIRI(NAMESPACE, "native.walDirectoryName");
+		/** <var>tag:rdf4j.org,2023:config/native.walSyncBootstrapOnOpen</var> */
+		public final static IRI walSyncBootstrapOnOpen = createIRI(NAMESPACE, "native.walSyncBootstrapOnOpen");
+		/** <var>tag:rdf4j.org,2023:config/native.walAutoRecoverOnOpen</var> */
+		public final static IRI walAutoRecoverOnOpen = createIRI(NAMESPACE, "native.walAutoRecoverOnOpen");
+		/** <var>tag:rdf4j.org,2025:config/native.walEnabled</var> */
+		public final static IRI walEnabled = createIRI(NAMESPACE, "native.walEnabled");
 	}
 
 	/**
@@ -319,6 +352,12 @@ public class CONFIG {
 		 */
 		public final static IRI rdfsSubClassReasoning = createIRI(NAMESPACE,
 				"shacl.rdfsSubClassReasoning");
+
+		/**
+		 * <code>tag:rdf4j.org,2023:config/shacl.includeInferredStatements</code>
+		 */
+		public final static IRI includeInferredStatements = createIRI(NAMESPACE,
+				"shacl.includeInferredStatements");
 
 		/**
 		 * <code>tag:rdf4j.org,2023:config/shacl.performanceLogging</code>

@@ -12,14 +12,14 @@ package org.eclipse.rdf4j.query.algebra;
 
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 
 /**
- * Triple lookup reference. Allow retrieval of RDF-star triples
+ * TripleTerm lookup reference. Allow retrieval of RDF-star triples
  **/
 public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 
@@ -100,7 +100,7 @@ public class TripleRef extends AbstractQueryModelNode implements TupleExpr {
 
 	@Override
 	public Set<String> getAssuredBindingNames() {
-		Set<String> bindingNames = new HashSet<>(8);
+		Set<String> bindingNames = new LinkedHashSet<>(8);
 
 		if (subjectVar != null) {
 			bindingNames.add(subjectVar.getName());

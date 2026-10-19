@@ -11,6 +11,7 @@
 
 package org.eclipse.rdf4j.sail.shacl.ast.constraintcomponents;
 
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Set;
 
@@ -23,6 +24,7 @@ import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.SHACL;
 import org.eclipse.rdf4j.sail.shacl.SourceConstraintComponent;
 import org.eclipse.rdf4j.sail.shacl.ValidationSettings;
+import org.eclipse.rdf4j.sail.shacl.ast.Shape;
 import org.eclipse.rdf4j.sail.shacl.ast.SparqlFragment;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher;
 import org.eclipse.rdf4j.sail.shacl.ast.StatementMatcher.Variable;
@@ -101,7 +103,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 					allTargets = new FilterByPredicateObject(
 							connectionsGroup.getBaseConnection(),
 							validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
-							allTargets, false, FilterByPredicateObject.FilterOn.value, true, connectionsGroup);
+							allTargets, false, FilterByPredicateObject.FilterOn.value,
+							connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 
 					return allTargets;
 
@@ -134,7 +137,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, validationSettings.getDataGraph(),
-							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
+							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null,
+							connectionsGroup.isIncludeInferredStatements());
 
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget(Scope.nodeShape,
@@ -179,14 +183,16 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				falseNode = new FilterByPredicateObject(
 						connectionsGroup.getAddedStatements(),
 						validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
-						falseNode, false, FilterByPredicateObject.FilterOn.value, false, connectionsGroup);
+						falseNode, false, FilterByPredicateObject.FilterOn.value,
+						connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 			}
 
 			// filter by type against the base sail
 			falseNode = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
-					falseNode, false, FilterByPredicateObject.FilterOn.value, true, connectionsGroup);
+					falseNode, false, FilterByPredicateObject.FilterOn.value,
+					connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 
 			return falseNode;
 
@@ -207,7 +213,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 				if (connectionsGroup.getStats().hasRemoved()) {
 					PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 							clazz, validationSettings.getDataGraph(),
-							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null);
+							UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(scope), null,
+							connectionsGroup.isIncludeInferredStatements());
 					deletedTypes = getTargetChain()
 							.getEffectiveTarget(scope, connectionsGroup.getRdfsSubClassOfReasoner(),
 									stableRandomVariableProvider)
@@ -225,7 +232,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			PlanNode falseNode = new FilterByPredicateObject(
 					connectionsGroup.getBaseConnection(),
 					validationSettings.getDataGraph(), RDF.TYPE, clazzSet,
-					addedTargets, false, FilterByPredicateObject.FilterOn.value, true, connectionsGroup);
+					addedTargets, false, FilterByPredicateObject.FilterOn.value,
+					connectionsGroup.isIncludeInferredStatements(), connectionsGroup);
 
 			return falseNode;
 
@@ -249,7 +257,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			if (connectionsGroup.getStats().hasRemoved()) {
 				PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE,
 						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape),
-						null);
+						null, connectionsGroup.isIncludeInferredStatements());
 				deletedTypes = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -267,7 +275,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 			if (connectionsGroup.getStats().hasAdded()) {
 				PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE,
 						clazz, dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape),
-						null);
+						null, connectionsGroup.isIncludeInferredStatements());
 				addedTypes = getTargetChain()
 						.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 								stableRandomVariableProvider)
@@ -290,7 +298,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// removed type statements that match clazz could affect sh:or
 		if (connectionsGroup.getStats().hasRemoved()) {
 			PlanNode deletedTypes = new UnorderedSelect(connectionsGroup.getRemovedStatements(), null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null,
+					connectionsGroup.isIncludeInferredStatements());
 			deletedTypes = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
@@ -307,7 +316,8 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 		// added type statements that match clazz could affect sh:not
 		if (connectionsGroup.getStats().hasAdded()) {
 			PlanNode addedTypes = new UnorderedSelect(connectionsGroup.getAddedStatements(), null, RDF.TYPE, clazz,
-					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null);
+					dataGraph, UnorderedSelect.Mapper.SubjectScopedMapper.getFunction(Scope.nodeShape), null,
+					connectionsGroup.isIncludeInferredStatements());
 			addedTypes = getTargetChain()
 					.getEffectiveTarget(Scope.nodeShape, connectionsGroup.getRdfsSubClassOfReasoner(),
 							stableRandomVariableProvider)
@@ -328,8 +338,12 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	public boolean requiresEvaluation(ConnectionsGroup connectionsGroup, Scope scope, Resource[] dataGraph,
 			StatementMatcher.StableRandomVariableProvider stableRandomVariableProvider) {
 		return super.requiresEvaluation(connectionsGroup, scope, dataGraph, stableRandomVariableProvider)
-				|| connectionsGroup.getRemovedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph)
-				|| connectionsGroup.getAddedStatements().hasStatement(null, RDF.TYPE, clazz, true, dataGraph);
+				|| connectionsGroup.getRemovedStatements()
+						.hasStatement(null, RDF.TYPE, clazz,
+								connectionsGroup.isIncludeInferredStatements(), dataGraph)
+				|| connectionsGroup.getAddedStatements()
+						.hasStatement(null, RDF.TYPE, clazz,
+								connectionsGroup.isIncludeInferredStatements(), dataGraph);
 	}
 
 	@Override
@@ -403,7 +417,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public boolean equals(Object o) {
+	public boolean equals(ConstraintComponent o, IdentityHashMap<Shape, Shape> kvIdentityHashMap) {
 		if (this == o) {
 			return true;
 		}
@@ -417,7 +431,7 @@ public class ClassConstraintComponent extends AbstractConstraintComponent {
 	}
 
 	@Override
-	public int hashCode() {
+	public int hashCode(IdentityHashMap<Shape, Boolean> identityHashMap) {
 		return clazz.hashCode() + "ClassConstraintComponent".hashCode();
 	}
 }

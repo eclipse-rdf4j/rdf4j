@@ -22,15 +22,17 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Focused tests that directly exercise TripleStore.TripleIndex#toKey to provide coverage for behavior-neutral
- * optimizations such as internal key encoding caching.
+ * Focused tests that directly exercise TripleIndex#toKey to provide coverage for behavior-neutral optimizations such as
+ * internal key encoding caching.
  */
 class TripleIndexToKeyCacheTest {
 
 	private TripleStore tripleStore;
+	private File dataDir;
 
 	@BeforeEach
 	void setup(@TempDir File dataDir) throws Exception {
+		this.dataDir = dataDir;
 		// Create a small store; index set is irrelevant for constructing standalone TripleIndex instances
 		tripleStore = new TripleStore(dataDir, new LmdbStoreConfig("spoc,posc"), null);
 	}
@@ -40,6 +42,7 @@ class TripleIndexToKeyCacheTest {
 		if (tripleStore != null) {
 			tripleStore.close();
 		}
+		LmdbTestUtil.deleteDir(dataDir);
 	}
 
 	@Test
@@ -50,7 +53,9 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("spoc");
+		tripleStore.startTransaction();
+		TripleIndex index = new TripleIndex("spoc", "spoc", true, tripleStore.env, tripleStore.writeTxn);
+		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
 		ByteBuffer actual = ByteBuffer.allocate(len);
@@ -76,7 +81,9 @@ class TripleIndexToKeyCacheTest {
 		long obj = Long.MAX_VALUE;
 		long context = Long.MAX_VALUE;
 
-		TripleStore.TripleIndex index = tripleStore.new TripleIndex("posc");
+		tripleStore.startTransaction();
+		TripleIndex index = new TripleIndex("posc", "posc", true, tripleStore.env, tripleStore.writeTxn);
+		tripleStore.endTransaction(true);
 
 		int len = Varint.calcListLengthUnsigned(subj, pred, obj, context);
 		ByteBuffer actual = ByteBuffer.allocate(len);

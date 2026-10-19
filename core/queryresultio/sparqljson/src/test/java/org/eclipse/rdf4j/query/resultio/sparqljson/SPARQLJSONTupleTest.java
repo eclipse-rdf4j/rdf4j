@@ -19,17 +19,26 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.TupleQueryResult;
+import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
+import org.eclipse.rdf4j.query.impl.ListBindingSet;
 import org.eclipse.rdf4j.query.resultio.BooleanQueryResultFormat;
+import org.eclipse.rdf4j.query.resultio.QueryResultIO;
 import org.eclipse.rdf4j.query.resultio.QueryResultParseException;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultFormat;
 import org.eclipse.rdf4j.query.resultio.helpers.QueryResultCollector;
@@ -301,8 +310,8 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
@@ -345,8 +354,8 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
@@ -364,8 +373,8 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
@@ -382,10 +391,53 @@ public class SPARQLJSONTupleTest extends AbstractQueryResultIOTupleTest {
 		parser.parseQueryResult(stream);
 
 		assertThat(handler.getBindingNames().size()).isEqualTo(3);
-		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof Triple);
-		Triple a = (Triple) handler.getBindingSets().get(0).getValue("a");
+		assertThat(handler.getBindingSets()).hasSize(1).allMatch(bs -> bs.getValue("a") instanceof TripleTerm);
+		TripleTerm a = (TripleTerm) handler.getBindingSets().get(0).getValue("a");
 		assertThat(a.getSubject().stringValue()).isEqualTo("http://example.org/bob");
 		assertThat(a.getPredicate().stringValue()).isEqualTo("http://xmlns.com/foaf/0.1/age");
 		assertThat(a.getObject().stringValue()).isEqualTo("23");
+	}
+
+	@Test
+	public void directedLanguageLiteralRoundTripsBaseDirection() throws Exception {
+		Literal literal = SimpleValueFactory.getInstance().createLiteral("مرحبا", "ar", Literal.BaseDirection.RTL);
+
+		String json = writeSingleValue(literal);
+		assertThat(json).containsPattern("\"its:dir\"\\s*:\\s*\"rtl\"");
+
+		Literal parsed = (Literal) parseSingleValue(json);
+		assertEquals("ar", parsed.getLanguage().orElse(null));
+		assertEquals(Literal.BaseDirection.RTL, parsed.getBaseDirection());
+		assertEquals(RDF.DIRLANGSTRING, parsed.getDatatype());
+	}
+
+	@Test
+	public void directedLanguageLiteralInTripleTermRoundTripsBaseDirection() throws Exception {
+		SimpleValueFactory vf = SimpleValueFactory.getInstance();
+		Literal literal = vf.createLiteral("x", "en", Literal.BaseDirection.LTR);
+		TripleTerm triple = vf.createTripleTerm(vf.createIRI("http://example.org/s"),
+				vf.createIRI("http://example.org/p"), literal);
+
+		String json = writeSingleValue(triple);
+		assertThat(json).containsPattern("\"its:dir\"\\s*:\\s*\"ltr\"");
+
+		TripleTerm parsed = (TripleTerm) parseSingleValue(json);
+		assertEquals(literal, parsed.getObject());
+	}
+
+	private String writeSingleValue(Value value) throws Exception {
+		List<String> bindingNames = List.of("value");
+		TupleQueryResult result = new IteratingTupleQueryResult(bindingNames,
+				List.of(new ListBindingSet(bindingNames, value)));
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		QueryResultIO.writeTuple(result, TupleQueryResultFormat.JSON, output);
+		return output.toString(StandardCharsets.UTF_8);
+	}
+
+	private Value parseSingleValue(String json) throws Exception {
+		QueryResultCollector collector = new QueryResultCollector();
+		QueryResultIO.parseTuple(new ByteArrayInputStream(json.getBytes(StandardCharsets.UTF_8)),
+				TupleQueryResultFormat.JSON, collector, SimpleValueFactory.getInstance());
+		return collector.getBindingSets().get(0).getValue("value");
 	}
 }

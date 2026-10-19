@@ -17,9 +17,9 @@ import java.util.Set;
 
 import org.eclipse.rdf4j.rio.RioSetting;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * A {@link RioSetting} with a {@link Set} value. The given default for the setting can be overridden by means of a
@@ -41,7 +41,7 @@ public final class SetRioSetting<T> extends AbstractRioSetting<Set<T>> {
 		try {
 			return new HashSet<>(objectMapper.readValue(stringRepresentation, new TypeReference<List<T>>() {
 			}));
-		} catch (JsonProcessingException e) {
+		} catch (JacksonException e) {
 			throw new RuntimeException(e);
 		}
 	}

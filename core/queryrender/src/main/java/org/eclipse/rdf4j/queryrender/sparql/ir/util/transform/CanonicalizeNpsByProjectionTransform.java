@@ -1,0 +1,125 @@
+/*******************************************************************************
+ * Copyright (c) 2025 Eclipse RDF4J contributors.
+ *
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Eclipse Distribution License v1.0
+ * which accompanies this distribution, and is available at
+ * http://www.eclipse.org/org/documents/edl-v10.php.
+ *
+ * SPDX-License-Identifier: BSD-3-Clause
+ *******************************************************************************/
+package org.eclipse.rdf4j.queryrender.sparql.ir.util.transform;
+
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrBGP;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrExists;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrFilter;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNode;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrNot;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrPathTriple;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrProjectionItem;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrSubSelect;
+import org.eclipse.rdf4j.queryrender.sparql.ir.IrUnion;
+
+/**
+ * Canonicalize orientation of bare negated property set path triples ("!(...)") using SELECT projection order when
+ * available: prefer the endpoint that appears earlier in the projection list as the subject. If only one endpoint
+ * appears in the projection, prefer that endpoint as subject. Do not flip when either endpoint is an internal
+ * _anon_path_* bridge var. Path text is inverted member-wise when flipped to preserve semantics.
+ */
+public final class CanonicalizeNpsByProjectionTransform extends BaseTransform {
+
+	private CanonicalizeNpsByProjectionTransform() {
+	}
+
+	public static IrBGP apply(IrBGP bgp, IrSelect select) {
+		if (bgp == null) {
+			return null;
+		}
+		// Build projection order map: varName -> index (lower is earlier)
+		final Map<String, Integer> projIndex = new HashMap<>();
+		if (select != null && select.getProjection() != null) {
+			List<IrProjectionItem> items = select.getProjection();
+			for (int i = 0; i < items.size(); i++) {
+				IrProjectionItem it = items.get(i);
+				if (it != null && it.getVarName() != null && !it.getVarName().isEmpty()) {
+					projIndex.putIfAbsent(it.getVarName(), i);
+				}
+			}
+		}
+
+		List<IrNode> out = new ArrayList<>();
+		for (IrNode n : bgp.getLines()) {
+			IrNode m = n;
+			if (n instanceof IrPathTriple) {
+				IrPathTriple pt = (IrPathTriple) n;
+				String path = pt.getPathText();
+				if (path != null) {
+					String t = path.trim();
+					if (t.startsWith("!(") && t.endsWith(")")) {
+						Var s = pt.getSubject();
+						Var o = pt.getObject();
+						// Only flip when both are user vars (non-constants) and not anon path bridges
+						if (s != null && o != null && !s.hasValue() && !o.hasValue()
+								&& !isAnonPathVar(s) && !isAnonPathVar(o)) {
+							String sName = s.getName();
+							String oName = o.getName();
+							Integer si = sName == null ? null : projIndex.get(sName);
+							Integer oi = oName == null ? null : projIndex.get(oName);
+							boolean flip;
+							// Only object is projected: prefer it as subject
+							// keep as-is when neither or only subject is projected
+							if (si != null && oi != null) {
+								// Flip when the current subject appears later than the object in projection
+								flip = si > oi;
+							} else {
+								flip = si == null && oi != null;
+							}
+							if (flip) {
+								String inv = invertNegatedPropertySet(t);
+								if (inv != null) {
+									IrPathTriple np = new IrPathTriple(o, inv, s, false, pt.getPathVars());
+									m = np;
+								}
+							}
+						}
+					}
+				}
+			} else if (n instanceof IrUnion) {
+				// Do not alter orientation inside UNION branches; preserve branch subjects/objects.
+				m = n;
+			} else if (n instanceof IrFilter) {
+				// Descend into FILTER EXISTS / NOT EXISTS bodies to canonicalize inner NPS orientation
+				IrFilter f = (IrFilter) n;
+				if (f.getBody() instanceof IrExists) {
+					IrExists ex = (IrExists) f.getBody();
+					IrFilter nf = new IrFilter(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()),
+							f.isNewScope());
+					m = nf;
+				} else if (f.getBody() instanceof IrNot && ((IrNot) f.getBody()).getInner() instanceof IrExists) {
+					IrNot not = (IrNot) f.getBody();
+					IrExists ex = (IrExists) not.getInner();
+					IrFilter nf = new IrFilter(
+							new IrNot(new IrExists(apply(ex.getWhere(), select), ex.isNewScope()), false),
+							f.isNewScope());
+					m = nf;
+				} else {
+					m = n;
+				}
+			} else if (n instanceof IrSubSelect) {
+				// keep as-is
+			} else {
+				// Generic container recursion (except UNION which we keep as-is above)
+				m = BaseTransform.rewriteContainers(n, child -> apply(child, select));
+			}
+			out.add(m);
+		}
+		return BaseTransform.bgpWithLines(bgp, out);
+	}
+}

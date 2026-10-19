@@ -89,6 +89,8 @@ public class ShaclProperties {
 	private Boolean deactivated = null;
 
 	private Boolean uniqueLang = null;
+	private Boolean rdfsSubClassReasoning = null;
+	private Boolean includeInferredStatements = null;
 
 	private Boolean closed = null;
 	private Resource ignoredProperties;
@@ -411,6 +413,30 @@ public class ShaclProperties {
 						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
 					}
 					break;
+				case "http://rdf4j.org/shacl-extensions#rdfsSubClassReasoning":
+					if (rdfsSubClassReasoning != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, rdfsSubClassReasoning, object);
+					}
+					try {
+						rdfsSubClassReasoning = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
+					break;
+				case "http://rdf4j.org/shacl-extensions#includeInferredStatements":
+					if (includeInferredStatements != null) {
+						throw getExceptionForAlreadyPopulated(id, predicate, includeInferredStatements, object);
+					}
+					try {
+						includeInferredStatements = ((Literal) object).booleanValue();
+					} catch (ClassCastException e) {
+						throw getExceptionForCastIssue(id, predicate, Literal.class, object);
+					} catch (IllegalArgumentException e) {
+						throw getExceptionForLiteralFormatIssue(id, predicate, object, Boolean.class);
+					}
+					break;
 				case "http://www.w3.org/ns/shacl#closed":
 					if (closed != null) {
 						throw getExceptionForAlreadyPopulated(id, predicate, closed, object);
@@ -642,8 +668,8 @@ public class ShaclProperties {
 			actualClassName = "Literal";
 		} else if (object.isBNode()) {
 			actualClassName = "BNode";
-		} else if (object.isTriple()) {
-			actualClassName = "Triple";
+		} else if (object.isTripleTerm()) {
+			actualClassName = "triple";
 		} else {
 			assert false;
 			actualClassName = object.getClass().getSimpleName();
@@ -749,6 +775,14 @@ public class ShaclProperties {
 
 	public boolean isUniqueLang() {
 		return uniqueLang != null && uniqueLang;
+	}
+
+	public Boolean getRdfsSubClassReasoning() {
+		return rdfsSubClassReasoning;
+	}
+
+	public Boolean getIncludeInferredStatements() {
+		return includeInferredStatements;
 	}
 
 	public Resource getId() {

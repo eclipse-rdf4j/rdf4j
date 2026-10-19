@@ -40,11 +40,11 @@ public class Concat implements Function {
 
 		StringBuilder concatBuilder = new StringBuilder();
 		String commonLanguageTag = null;
+		Literal.BaseDirection commonDirection = null;
 		boolean useLanguageTag = true;
 
 		for (Value arg : args) {
-			if (arg instanceof Literal) {
-				Literal lit = (Literal) arg;
+			if (arg instanceof Literal lit) {
 
 				if (!QueryEvaluationUtility.isStringLiteral(lit)) {
 					throw new ValueExprEvaluationException("unexpected datatype for CONCAT operand: " + lit);
@@ -57,6 +57,16 @@ public class Concat implements Function {
 						commonLanguageTag = lit.getLanguage().get();
 					} else if (!commonLanguageTag.equals(lit.getLanguage().orElse(null))) {
 						commonLanguageTag = null;
+						useLanguageTag = false;
+					}
+					// Track base direction (ltr/rtl) consistency across all language-tagged literals
+					// First literal sets the expected direction (even if NONE)
+					if (useLanguageTag && commonDirection == null) {
+						commonDirection = lit.getBaseDirection();
+					}
+					// If any subsequent literal has a different direction, drop direction metadata
+					else if (commonDirection != lit.getBaseDirection()) {
+						commonDirection = null;
 						useLanguageTag = false;
 					}
 				} else {
@@ -72,13 +82,15 @@ public class Concat implements Function {
 		Literal result;
 
 		if (useLanguageTag) {
-			result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag);
+			if (commonDirection != null) {
+				result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag, commonDirection);
+			} else {
+				result = valueFactory.createLiteral(concatBuilder.toString(), commonLanguageTag);
+			}
 		} else {
 			result = valueFactory.createLiteral(concatBuilder.toString());
 		}
 
 		return result;
-
 	}
-
 }

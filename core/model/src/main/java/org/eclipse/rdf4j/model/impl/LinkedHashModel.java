@@ -75,13 +75,17 @@ public class LinkedHashModel extends AbstractModel {
 	}
 
 	public LinkedHashModel(int size) {
+		this(size, null);
+	}
+
+	LinkedHashModel(int size, LinkedHashSet<ModelStatement> pooledStatements) {
 		super();
 
 		// assume fewer unique values than statements (eg. some reuse of nodes instatements)
 		values = new HashMap<>(size, 0.75f);
 
 		// compensate for the loadfactor by multiplying by 2
-		statements = new LinkedHashSet<>(size * 2, 0.75f);
+		statements = pooledStatements != null ? pooledStatements : new LinkedHashSet<>(size * 2, 0.75f);
 	}
 
 	public LinkedHashModel(Set<Namespace> namespaces, Collection<? extends Statement> c) {

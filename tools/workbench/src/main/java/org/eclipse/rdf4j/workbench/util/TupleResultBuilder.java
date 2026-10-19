@@ -85,6 +85,13 @@ public class TupleResultBuilder {
 		return this;
 	}
 
+	public TupleResultBuilder metadata(String name, Object value) {
+		if (out instanceof WorkbenchTupleResultWriter) {
+			((WorkbenchTupleResultWriter) out).addMetadata(name, value);
+		}
+		return this;
+	}
+
 	/**
 	 * {@link #start(String...)} must be called before using this method.
 	 *

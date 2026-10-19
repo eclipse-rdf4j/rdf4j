@@ -16,6 +16,7 @@ import org.eclipse.rdf4j.sail.config.SailConfigException;
 import org.eclipse.rdf4j.sail.config.SailFactory;
 import org.eclipse.rdf4j.sail.config.SailImplConfig;
 import org.eclipse.rdf4j.sail.nativerdf.NativeStore;
+import org.eclipse.rdf4j.sail.nativerdf.wal.ValueStoreWalConfig;
 
 /**
  * A {@link SailFactory} that creates {@link NativeStore}s based on RDF configuration data.
@@ -56,6 +57,10 @@ public class NativeStoreFactory implements SailFactory {
 			NativeStoreConfig nativeConfig = (NativeStoreConfig) config;
 
 			nativeConfig.getDefaultQueryEvaluationMode().ifPresent(nativeStore::setDefaultQueryEvaluationMode);
+			nativeStore.setSlowQueryLogThresholdSeconds(nativeConfig.getSlowQueryLogThresholdSeconds());
+			nativeStore.setSlowQueryLogFirstResultThresholdSeconds(
+					nativeConfig.getSlowQueryLogFirstResultThresholdSeconds());
+			nativeStore.setSlowQueryLogFile(nativeConfig.getSlowQueryLogFile());
 			nativeStore.setTripleIndexes(nativeConfig.getTripleIndexes());
 			nativeStore.setForceSync(nativeConfig.getForceSync());
 
@@ -74,6 +79,39 @@ public class NativeStoreFactory implements SailFactory {
 			if (nativeConfig.getIterationCacheSyncThreshold() > 0) {
 				nativeStore.setIterationCacheSyncThreshold(nativeConfig.getIterationCacheSyncThreshold());
 			}
+
+			if (nativeConfig.getWalMaxSegmentBytes() > 0) {
+				nativeStore.setWalMaxSegmentBytes(nativeConfig.getWalMaxSegmentBytes());
+			}
+
+			if (nativeConfig.getWalQueueCapacity() > 0) {
+				nativeStore.setWalQueueCapacity(nativeConfig.getWalQueueCapacity());
+			}
+			if (nativeConfig.getWalBatchBufferBytes() > 0) {
+				nativeStore.setWalBatchBufferBytes(nativeConfig.getWalBatchBufferBytes());
+			}
+			if (nativeConfig.getWalSyncPolicy() != null) {
+				try {
+					nativeStore.setWalSyncPolicy(ValueStoreWalConfig.SyncPolicy
+							.valueOf(nativeConfig.getWalSyncPolicy().toUpperCase()));
+				} catch (IllegalArgumentException e) {
+					throw new SailConfigException("Invalid walSyncPolicy: " + nativeConfig.getWalSyncPolicy());
+				}
+			}
+			if (nativeConfig.getWalSyncIntervalMillis() >= 0) {
+				nativeStore.setWalSyncIntervalMillis(nativeConfig.getWalSyncIntervalMillis());
+			}
+			if (nativeConfig.getWalIdlePollIntervalMillis() >= 0) {
+				nativeStore.setWalIdlePollIntervalMillis(nativeConfig.getWalIdlePollIntervalMillis());
+			}
+			if (nativeConfig.getWalDirectoryName() != null) {
+				nativeStore.setWalDirectoryName(nativeConfig.getWalDirectoryName());
+			}
+			// New: allow configuring synchronous WAL bootstrap during open
+			nativeStore.setWalSyncBootstrapOnOpen(nativeConfig.getWalSyncBootstrapOnOpen());
+			// New: allow configuring auto-recovery of ValueStore from WAL during open
+			nativeStore.setWalAutoRecoverOnOpen(nativeConfig.getWalAutoRecoverOnOpen());
+			nativeStore.setWalEnabled(nativeConfig.getWalEnabled());
 
 			EvaluationStrategyFactory evalStratFactory = nativeConfig.getEvaluationStrategyFactory();
 			if (evalStratFactory != null) {

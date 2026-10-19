@@ -13,7 +13,6 @@ package org.eclipse.rdf4j.rio.binary;
 
 import java.nio.charset.StandardCharsets;
 
-import org.eclipse.rdf4j.rio.RioSetting;
 import org.eclipse.rdf4j.rio.helpers.BooleanRioSetting;
 import org.eclipse.rdf4j.rio.helpers.LongRioSetting;
 import org.eclipse.rdf4j.rio.helpers.StringRioSetting;

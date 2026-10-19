@@ -12,13 +12,10 @@ package org.eclipse.rdf4j.federated.evaluation;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
-import org.eclipse.rdf4j.common.iteration.ExceptionConvertingIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FilterValueExpr;
-import org.eclipse.rdf4j.federated.algebra.PrecompiledQueryNode;
 import org.eclipse.rdf4j.federated.endpoint.Endpoint;
 import org.eclipse.rdf4j.federated.evaluation.iterator.FilteringIteration;
-import org.eclipse.rdf4j.federated.evaluation.iterator.InsertBindingsIteration;
 import org.eclipse.rdf4j.federated.evaluation.iterator.StatementConversionIteration;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.federated.util.FedXUtil;
@@ -32,15 +29,9 @@ import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.TupleExpr;
-import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
-import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
-import org.eclipse.rdf4j.sail.SailConnection;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
 /**
  * A triple source to be used on any repository.
@@ -48,8 +39,6 @@ import org.slf4j.LoggerFactory;
  * @author Andreas Schwarte
  */
 public class SailTripleSource extends TripleSourceBase {
-
-	private static final Logger log = LoggerFactory.getLogger(SailTripleSource.class);
 
 	SailTripleSource(Endpoint endpoint, FederationContext federationContext) {
 		super(federationContext, endpoint);
@@ -117,16 +106,7 @@ public class SailTripleSource extends TripleSourceBase {
 				repoResult = conn.getStatements(subj, pred, obj,
 						queryInfo.getIncludeInferred(), contexts);
 
-// XXX implementation remark and TODO taken from Sesame
-				// The same variable might have been used multiple times in this
-				// StatementPattern, verify value equality in those cases.
-
-				resultHolder.set(new ExceptionConvertingIteration<>(repoResult) {
-					@Override
-					protected QueryEvaluationException convert(RuntimeException arg0) {
-						return new QueryEvaluationException(arg0);
-					}
-				});
+				resultHolder.set(repoResult);
 			} catch (Throwable t) {
 				if (repoResult != null) {
 					repoResult.close();
@@ -171,58 +151,5 @@ public class SailTripleSource extends TripleSourceBase {
 
 		// in all other cases: try to use the Repository API
 		return false;
-	}
-
-	@SuppressWarnings("unchecked")
-	@Override
-	public CloseableIteration<BindingSet> getStatements(
-			TupleExpr preparedQuery,
-			BindingSet bindings, FilterValueExpr filterExpr, QueryInfo queryInfo)
-			throws RepositoryException, MalformedQueryException,
-			QueryEvaluationException {
-
-		/*
-		 * Implementation note:
-		 *
-		 * a special strategy is registered for NativeStore instances. The specialized strategy allows to evaluate
-		 * prepared queries without prior (obsolete) optimization.
-		 */
-		return withConnection((conn, resultHolder) -> {
-
-			SailConnection sailConn = ((SailRepositoryConnection) conn).getSailConnection();
-
-			PrecompiledQueryNode precompiledQueryNode = null;
-			try {
-				// optimization attempt: use precompiled query
-				precompiledQueryNode = new PrecompiledQueryNode(preparedQuery);
-			} catch (Exception e) {
-				log.warn("Precompiled query optimization for native store could not be applied: " + e.getMessage());
-				log.debug("Details:", e);
-			}
-
-			CloseableIteration<BindingSet> res = null;
-			try {
-				if (precompiledQueryNode != null) {
-					res = (CloseableIteration<BindingSet>) sailConn.evaluate(
-							precompiledQueryNode, null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
-				} else {
-					// fallback: attempt the original tuple expression
-					res = (CloseableIteration<BindingSet>) sailConn.evaluate(preparedQuery,
-							null, EmptyBindingSet.getInstance(), queryInfo.getIncludeInferred());
-				}
-
-				if (!bindings.isEmpty()) {
-					res = new InsertBindingsIteration(res, bindings);
-				}
-
-				resultHolder.set(res);
-			} catch (Throwable t) {
-				if (res != null) {
-					res.close();
-				}
-				throw t;
-			}
-
-		});
 	}
 }

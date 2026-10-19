@@ -10,8 +10,6 @@
  *******************************************************************************/
 package org.eclipse.rdf4j.rio.helpers;
 
-import org.eclipse.rdf4j.rio.RioSetting;
-
 /**
  * A class encapsulating writer settings that Turtle writers may support.
  *
@@ -37,6 +35,19 @@ public class TurtleWriterSettings {
 	@Deprecated(since = "4.3.0", forRemoval = true)
 	public static final BooleanRioSetting ABBREVIATE_NUMBERS = new BooleanRioSetting(
 			"org.eclipse.rdf4j.rio.turtle.abbreviate_numbers", "Abbreviate numbers", Boolean.TRUE);
+
+	/**
+	 * Boolean setting for Turtle/Trig writers to determine whether they should use RDF style directives: '@prefix',
+	 * '@base' and '@version' if set to false, or SPARQL style directives: 'PREFIX', 'BASE' and 'VERSION' if set to
+	 * true.
+	 * <p>
+	 * Defaults to false.
+	 * <p>
+	 * Can be overridden by setting system property {@code org.eclipse.rdf4j.rio.use_sparql_style_directives}.
+	 */
+	public static final BooleanRioSetting USE_SPARQL_STYLE_DIRECTIVES = new BooleanRioSetting(
+			"org.eclipse.rdf4j.rio.use_sparql_style_directives",
+			"Use SPARQL style directives BASE, PREFIX and VERSION.", Boolean.FALSE);
 
 	/**
 	 * Private default constructor.

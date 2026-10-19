@@ -15,7 +15,7 @@
 	<fileSets>
 		<fileSet>
 			<directory>..</directory>
-			<outputDirectory/>
+			<outputDirectory />
 			<includes>
 				<include>*.txt</include>
 			</includes>
@@ -49,15 +49,15 @@
 		</file>
 		<file>
 			<source>../edl-v1.0.txt</source>
-			<outputDirectory/>
+			<outputDirectory />
 		</file>
 		<file>
 			<source>../about.md</source>
-			<outputDirectory/>
+			<outputDirectory />
 		</file>
 		<file>
 			<source>../notice.md</source>
-			<outputDirectory/>
+			<outputDirectory />
 		</file>
 	</files>
 </assembly>

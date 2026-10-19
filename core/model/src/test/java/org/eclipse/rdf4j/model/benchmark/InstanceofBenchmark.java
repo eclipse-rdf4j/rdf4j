@@ -20,7 +20,7 @@ import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleIRI;
@@ -96,7 +96,7 @@ public class InstanceofBenchmark {
 			if (subject instanceof BNode) {
 				count += 3;
 			}
-			if (subject instanceof Triple) {
+			if (subject instanceof TripleTerm) {
 				count += 4;
 			}
 			if (subject instanceof Resource) {
@@ -123,7 +123,7 @@ public class InstanceofBenchmark {
 			if (subject.isBNode()) {
 				count += 3;
 			}
-			if (subject.isTriple()) {
+			if (subject.isTripleTerm()) {
 				count += 4;
 			}
 			if (subject.isResource()) {

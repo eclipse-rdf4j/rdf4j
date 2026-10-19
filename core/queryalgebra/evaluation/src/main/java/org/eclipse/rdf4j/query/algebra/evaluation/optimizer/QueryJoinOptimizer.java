@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.BiFunction;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.algebra.AbstractQueryModelNode;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Lateral;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
@@ -66,6 +68,8 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 	@Experimental
 	public static boolean USE_MERGE_JOIN_FOR_LAST_STATEMENT_PATTERNS_WHEN_CROSS_JOIN = true;
+
+	private static final int FULL_PAIRWISE_START_LIMIT = 6;
 
 	protected final EvaluationStatistics statistics;
 	private final boolean trackResultSize;
@@ -129,6 +133,21 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		@Override
+		public void meet(Lateral lateral) {
+			lateral.getLeftArg().visit(this);
+
+			Set<String> origBoundVars = boundVars;
+			try {
+				boundVars = new HashSet<>(boundVars);
+				boundVars.addAll(lateral.getRightInputBindingNames());
+
+				lateral.getRightArg().visit(this);
+			} finally {
+				boundVars = origBoundVars;
+			}
+		}
+
+		@Override
 		public void meet(StatementPattern node) throws RuntimeException {
 			node.setResultSizeEstimate(Math.max(statistics.getCardinality(node), node.getResultSizeEstimate()));
 		}
@@ -146,6 +165,11 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 
 		@Override
 		public void meet(Join node) {
+			if (containsLateral(node)) {
+				node.visitChildren(this);
+				return;
+			}
+
 			Set<String> origBoundVars = boundVars;
 			try {
 				boundVars = new HashSet<>(boundVars);
@@ -230,10 +254,14 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					}
 				}
 
+				if (statistics.supportsJoinEstimation() && orderedJoinArgs.size() > 2) {
+					orderedJoinArgs = reorderJoinArgs(orderedJoinArgs);
+				}
+
 				// Build new join hierarchy
 				TupleExpr priorityJoins = null;
 				if (!priorityArgs.isEmpty()) {
-					priorityJoins = priorityArgs.get(0);
+					priorityJoins = priorityArgs.getFirst();
 
 					for (int i = 1; i < priorityArgs.size(); i++) {
 						priorityJoins = new Join(priorityJoins, priorityArgs.get(i));
@@ -281,7 +309,6 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 					// Note: generated hierarchy is right-recursive to help the
 					// IterativeEvaluationOptimizer to factor out the left-most join
 					// argument
-					int i = orderedJoinArgs.size() - 1;
 					TupleExpr right = orderedJoinArgs.removeLast();
 					if (!orderedJoinArgs.isEmpty()) {
 						TupleExpr left = orderedJoinArgs.removeLast();
@@ -325,6 +352,158 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+		private boolean containsLateral(TupleExpr tupleExpr) {
+			LateralFinder finder = new LateralFinder();
+			tupleExpr.visit(finder);
+			return finder.found;
+		}
+
+		private class LateralFinder extends AbstractSimpleQueryModelVisitor<RuntimeException> {
+
+			private boolean found;
+
+			private LateralFinder() {
+				super(false);
+			}
+
+			@Override
+			public void meet(Lateral node) {
+				found = true;
+			}
+		}
+
+		/**
+		 * This can be used by the upcoming sketch based estimator to reorder joins based on estimated join cost.
+		 *
+		 * @param orderedJoinArgs
+		 * @return
+		 */
+		private Deque<TupleExpr> reorderJoinArgs(Deque<TupleExpr> orderedJoinArgs) {
+			// Copy input into a mutable list
+			List<TupleExpr> tupleExprs = new ArrayList<>(orderedJoinArgs);
+			Deque<TupleExpr> ret = new ArrayDeque<>();
+
+			// Memo table: for each (a, b), stores statistics.getCardinality(new Join(a,b))
+			Map<TupleExpr, Map<TupleExpr, Double>> cardCache = new HashMap<>();
+
+			// Helper to look up or compute & cache the cardinality of Join(a,b).
+			// Avoid mutating the outer cache inside a computeIfAbsent lambda to prevent
+			// ConcurrentModificationException on some Map implementations/JDKs.
+			BiFunction<TupleExpr, TupleExpr, Double> getCard = (a, b) -> {
+				Map<TupleExpr, Double> inner = cardCache.computeIfAbsent(a, k -> new HashMap<>());
+				Double cached = inner.get(b);
+				if (cached != null) {
+					return cached;
+				}
+				double c = statistics.getCardinality(new Join(a, b));
+				inner.put(b, c);
+				cardCache.computeIfAbsent(b, k -> new HashMap<>()).put(a, c);
+				return c;
+			};
+
+			while (!tupleExprs.isEmpty()) {
+				if (ret.isEmpty()) {
+					TupleExpr bestStart = selectBestStartingExpr(tupleExprs, getCard);
+					if (bestStart != null) {
+						tupleExprs.remove(bestStart);
+						ret.addLast(bestStart);
+						continue;
+					}
+				}
+
+				// If ret is empty or next isn’t a StatementPattern, just drain in original order
+				if (ret.isEmpty() || !(tupleExprs.getFirst() instanceof StatementPattern)) {
+					ret.addLast(tupleExprs.removeFirst());
+					continue;
+				}
+
+				// Find the tupleExpr in tupleExprs whose join with any in ret has minimal cardinality
+				TupleExpr bestCandidate = null;
+				double bestCost = Double.MAX_VALUE;
+				for (TupleExpr cand : tupleExprs) {
+					if (!statementPatternWithMinimumOneConstant(cand)) {
+						continue;
+					}
+
+					// compute the minimum join‐cost between cand and anything in ret
+					for (TupleExpr prev : ret) {
+						if (!statementPatternWithMinimumOneConstant(prev)) {
+							continue;
+						}
+						double cost = getCard.apply(prev, cand);
+						if (cost < bestCost) {
+							bestCost = cost;
+							bestCandidate = cand;
+						}
+					}
+				}
+
+				// If we found a cheap StatementPattern, pick it; otherwise just take the head
+				if (bestCandidate != null) {
+					tupleExprs.remove(bestCandidate);
+					ret.addLast(bestCandidate);
+				} else {
+					ret.addLast(tupleExprs.removeFirst());
+				}
+			}
+
+			return ret;
+		}
+
+		private TupleExpr selectBestStartingExpr(List<TupleExpr> tupleExprs,
+				BiFunction<TupleExpr, TupleExpr, Double> getCard) {
+			List<TupleExpr> candidates = new ArrayList<>();
+			for (TupleExpr tupleExpr : tupleExprs) {
+				if (statementPatternWithMinimumOneConstant(tupleExpr)) {
+					candidates.add(tupleExpr);
+				}
+			}
+
+			if (candidates.size() < 2) {
+				// we don't have multiple candidates, so there is nothing to compare against
+				return null;
+			}
+
+			Map<TupleExpr, Double> singleCard = new HashMap<>(candidates.size());
+			for (TupleExpr candidate : candidates) {
+				singleCard.put(candidate, statistics.getCardinality(candidate));
+			}
+
+			List<TupleExpr> primary = new ArrayList<>(candidates);
+			if (primary.size() > FULL_PAIRWISE_START_LIMIT) {
+				primary.sort(Comparator.comparingDouble(singleCard::get));
+				primary = new ArrayList<>(primary.subList(0, Math.min(3, primary.size())));
+			}
+
+			TupleExpr bestA = null;
+			TupleExpr bestB = null;
+			double bestCost = Double.MAX_VALUE;
+
+			for (TupleExpr a : primary) {
+				for (TupleExpr b : candidates) {
+					if (a == b) {
+						continue;
+					}
+
+					double cost = getCard.apply(a, b);
+					if (cost < bestCost) {
+						bestCost = cost;
+						bestA = a;
+						bestB = b;
+					}
+				}
+			}
+
+			if (bestA == null) {
+				return null;
+			}
+
+			double cardA = singleCard.get(bestA);
+			double cardB = singleCard.get(bestB);
+
+			return cardA <= cardB ? bestA : bestB;
+		}
+
 		private void optimizeInNewScope(List<TupleExpr> subSelects) {
 			for (TupleExpr subSelect : subSelects) {
 				subSelect.visit(new JoinVisitor());
@@ -334,10 +513,9 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		private boolean joinSizeIsTooDifferent(double cardinality, double second) {
 			if (cardinality > second && cardinality / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > second) {
 				return true;
-			} else if (second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality) {
-				return true;
+			} else {
+				return second > cardinality && second / MERGE_JOIN_CARDINALITY_SIZE_DIFF_MULTIPLIER > cardinality;
 			}
-			return false;
 		}
 
 		private boolean joinOnMultipleVars(TupleExpr first, TupleExpr second) {
@@ -365,8 +543,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		}
 
 		protected <L extends List<TupleExpr>> L getJoinArgs(TupleExpr tupleExpr, L joinArgs) {
-			if (tupleExpr instanceof Join) {
-				Join join = (Join) tupleExpr;
+			if (tupleExpr instanceof Join join) {
 				getJoinArgs(join.getLeftArg(), joinArgs);
 				getJoinArgs(join.getRightArg(), joinArgs);
 			} else {
@@ -598,7 +775,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 		protected TupleExpr selectNextTupleExpr(List<TupleExpr> expressions, Map<TupleExpr, Double> cardinalityMap,
 				Map<TupleExpr, List<Var>> varsMap, Map<Var, Integer> varFreqMap) {
 			if (expressions.size() == 1) {
-				TupleExpr tupleExpr = expressions.get(0);
+				TupleExpr tupleExpr = expressions.getFirst();
 				if (tupleExpr.getCostEstimate() < 0) {
 					tupleExpr.setCostEstimate(getTupleExprCost(tupleExpr, cardinalityMap, varsMap, varFreqMap));
 				}
@@ -641,7 +818,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				Set<Var> varsUsedInOtherExpressions = varFreqMap.keySet();
 
 				for (String assuredBindingName : tupleExpr.getAssuredBindingNames()) {
-					if (varsUsedInOtherExpressions.contains(new Var(assuredBindingName))) {
+					if (varsUsedInOtherExpressions.contains(Var.of(assuredBindingName))) {
 						return 0;
 					}
 				}
@@ -714,7 +891,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return List.of();
 			}
 			if (size == 1) {
-				Var var = vars.get(0);
+				Var var = vars.getFirst();
 				if (!var.hasValue() && var.getName() != null && !boundVars.contains(var.getName())) {
 					return List.of(var);
 				} else {
@@ -745,7 +922,7 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 				return 0;
 			}
 			if (ownUnboundVars.size() == 1) {
-				return varFreqMap.get(ownUnboundVars.get(0)) - 1;
+				return varFreqMap.get(ownUnboundVars.getFirst()) - 1;
 			} else {
 				int result = -ownUnboundVars.size();
 				for (Var var : new HashSet<>(ownUnboundVars)) {
@@ -828,6 +1005,17 @@ public class QueryJoinOptimizer implements QueryOptimizer {
 			}
 		}
 
+	}
+
+	private static boolean statementPatternWithMinimumOneConstant(TupleExpr cand) {
+		return cand instanceof StatementPattern && ((((StatementPattern) cand).getSubjectVar() != null
+				&& ((StatementPattern) cand).getSubjectVar().hasValue())
+				|| (((StatementPattern) cand).getPredicateVar() != null
+						&& ((StatementPattern) cand).getPredicateVar().hasValue())
+				|| (((StatementPattern) cand).getObjectVar() != null
+						&& ((StatementPattern) cand).getObjectVar().hasValue())
+				|| (((StatementPattern) cand).getContextVar() != null
+						&& ((StatementPattern) cand).getContextVar().hasValue()));
 	}
 
 	private static int getUnionSize(Set<String> currentListNames, Set<String> candidateBindingNames) {

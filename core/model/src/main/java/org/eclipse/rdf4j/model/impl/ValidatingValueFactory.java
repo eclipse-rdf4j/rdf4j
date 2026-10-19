@@ -25,7 +25,7 @@ import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
 import org.eclipse.rdf4j.model.Resource;
 import org.eclipse.rdf4j.model.Statement;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
@@ -134,10 +134,15 @@ public class ValidatingValueFactory implements ValueFactory {
 
 	@Override
 	public Literal createLiteral(String label, String language) {
+		return createLiteral(label, language, Literal.BaseDirection.NONE);
+	}
+
+	@Override
+	public Literal createLiteral(String label, String language, Literal.BaseDirection baseDirection) {
 		if (!Literals.isValidLanguageTag(language)) {
 			throw new IllegalArgumentException("Not a valid language tag: " + language);
 		}
-		return delegate.createLiteral(label, language);
+		return delegate.createLiteral(label, language, baseDirection);
 	}
 
 	@Override
@@ -231,8 +236,8 @@ public class ValidatingValueFactory implements ValueFactory {
 	}
 
 	@Override
-	public Triple createTriple(Resource subject, IRI predicate, Value object) {
-		return delegate.createTriple(subject, predicate, object);
+	public TripleTerm createTripleTerm(Resource subject, IRI predicate, Value object) {
+		return delegate.createTripleTerm(subject, predicate, object);
 	}
 
 	private boolean isMember(int[][] set, int cp) {

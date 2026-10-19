@@ -65,11 +65,19 @@ public class BCP47LanguageHandler implements LanguageHandler {
 	@Override
 	public Literal normalizeLanguage(String literalValue, String languageTag, ValueFactory valueFactory)
 			throws LiteralUtilException {
+		return normalizeLanguage(literalValue, languageTag, Literal.BaseDirection.NONE, valueFactory);
+	}
+
+	@Override
+	public Literal normalizeLanguage(String literalValue, String languageTag, Literal.BaseDirection baseDir,
+			ValueFactory valueFactory)
+			throws LiteralUtilException {
 		Objects.requireNonNull(languageTag, "Language tag cannot be null");
 		Objects.requireNonNull(literalValue, "Literal value cannot be null");
 
 		try {
-			return valueFactory.createLiteral(literalValue, Literals.normalizeLanguageTag(languageTag));
+			return valueFactory.createLiteral(literalValue,
+					Literals.normalizeLanguageTag(languageTag), baseDir);
 		} catch (IllformedLocaleException e) {
 			throw new LiteralUtilException("Could not normalize BCP47 language tag", e);
 		}

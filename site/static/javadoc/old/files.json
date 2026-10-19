@@ -1,0 +1,308 @@
+[
+  {
+    "name": "5.1.2.tgz",
+    "href": "5.1.2.tgz",
+    "size": 12880093,
+    "lastModified": "2025-11-02T11:23:57.733154Z"
+  },
+  {
+    "name": "5.1.1.tgz",
+    "href": "5.1.1.tgz",
+    "size": 12879603,
+    "lastModified": "2025-11-02T11:23:57.689839Z"
+  },
+  {
+    "name": "5.1.0.tgz",
+    "href": "5.1.0.tgz",
+    "size": 8373660,
+    "lastModified": "2025-11-02T11:23:57.651304Z"
+  },
+  {
+    "name": "5.1.0-M1.tgz",
+    "href": "5.1.0-M1.tgz",
+    "size": 8347155,
+    "lastModified": "2025-11-02T11:23:57.621344Z"
+  },
+  {
+    "name": "5.0.2.tgz",
+    "href": "5.0.2.tgz",
+    "size": 7373982,
+    "lastModified": "2025-11-02T11:23:57.584732Z"
+  },
+  {
+    "name": "5.0.1.tgz",
+    "href": "5.0.1.tgz",
+    "size": 7375279,
+    "lastModified": "2025-11-02T11:23:57.559888Z"
+  },
+  {
+    "name": "5.0.0.tgz",
+    "href": "5.0.0.tgz",
+    "size": 7372556,
+    "lastModified": "2025-11-02T11:23:57.535421Z"
+  },
+  {
+    "name": "5.0.0-M3.tgz",
+    "href": "5.0.0-M3.tgz",
+    "size": 7370351,
+    "lastModified": "2025-11-02T11:23:57.510946Z"
+  },
+  {
+    "name": "5.0.0-M2.tgz",
+    "href": "5.0.0-M2.tgz",
+    "size": 7186122,
+    "lastModified": "2025-11-02T11:23:57.477138Z"
+  },
+  {
+    "name": "5.0.0-M1.tgz",
+    "href": "5.0.0-M1.tgz",
+    "size": 7283857,
+    "lastModified": "2025-11-02T11:23:57.451740Z"
+  },
+  {
+    "name": "4.3.15.tgz",
+    "href": "4.3.15.tgz",
+    "size": 8534757,
+    "lastModified": "2025-11-02T11:23:57.198581Z"
+  },
+  {
+    "name": "4.3.14.tgz",
+    "href": "4.3.14.tgz",
+    "size": 8535562,
+    "lastModified": "2025-11-02T11:23:57.169279Z"
+  },
+  {
+    "name": "4.3.13.tgz",
+    "href": "4.3.13.tgz",
+    "size": 7645239,
+    "lastModified": "2025-11-02T11:23:57.131255Z"
+  },
+  {
+    "name": "4.3.12.tgz",
+    "href": "4.3.12.tgz",
+    "size": 7643334,
+    "lastModified": "2025-11-02T11:23:57.104730Z"
+  },
+  {
+    "name": "4.3.11.tgz",
+    "href": "4.3.11.tgz",
+    "size": 7610088,
+    "lastModified": "2025-11-02T11:23:57.078027Z"
+  },
+  {
+    "name": "4.3.10.tgz",
+    "href": "4.3.10.tgz",
+    "size": 7609077,
+    "lastModified": "2025-11-02T11:23:57.051777Z"
+  },
+  {
+    "name": "4.3.9.tgz",
+    "href": "4.3.9.tgz",
+    "size": 7610480,
+    "lastModified": "2025-11-02T11:23:57.426590Z"
+  },
+  {
+    "name": "4.3.8.tgz",
+    "href": "4.3.8.tgz",
+    "size": 7613057,
+    "lastModified": "2025-11-02T11:23:57.400210Z"
+  },
+  {
+    "name": "4.3.7.tgz",
+    "href": "4.3.7.tgz",
+    "size": 7611841,
+    "lastModified": "2025-11-02T11:23:57.366652Z"
+  },
+  {
+    "name": "4.3.6.tgz",
+    "href": "4.3.6.tgz",
+    "size": 7610450,
+    "lastModified": "2025-11-02T11:23:57.339767Z"
+  },
+  {
+    "name": "4.3.5.tgz",
+    "href": "4.3.5.tgz",
+    "size": 7605316,
+    "lastModified": "2025-11-02T11:23:57.313006Z"
+  },
+  {
+    "name": "4.3.4.tgz",
+    "href": "4.3.4.tgz",
+    "size": 7603347,
+    "lastModified": "2025-11-02T11:23:57.286265Z"
+  },
+  {
+    "name": "4.3.3.tgz",
+    "href": "4.3.3.tgz",
+    "size": 7604064,
+    "lastModified": "2025-11-02T11:23:57.252664Z"
+  },
+  {
+    "name": "4.3.2.tgz",
+    "href": "4.3.2.tgz",
+    "size": 8396965,
+    "lastModified": "2025-11-02T11:23:57.226887Z"
+  },
+  {
+    "name": "4.3.1.tgz",
+    "href": "4.3.1.tgz",
+    "size": 7602676,
+    "lastModified": "2025-11-02T11:23:57.017352Z"
+  },
+  {
+    "name": "4.3.0.tgz",
+    "href": "4.3.0.tgz",
+    "size": 7608870,
+    "lastModified": "2025-11-02T11:23:56.991778Z"
+  },
+  {
+    "name": "4.2.4.tgz",
+    "href": "4.2.4.tgz",
+    "size": 8395634,
+    "lastModified": "2025-11-02T11:23:56.966494Z"
+  },
+  {
+    "name": "4.2.3.tgz",
+    "href": "4.2.3.tgz",
+    "size": 7591427,
+    "lastModified": "2025-11-02T11:23:56.930356Z"
+  },
+  {
+    "name": "4.2.2.tgz",
+    "href": "4.2.2.tgz",
+    "size": 7586531,
+    "lastModified": "2025-11-02T11:23:56.904933Z"
+  },
+  {
+    "name": "4.2.1.tgz",
+    "href": "4.2.1.tgz",
+    "size": 7651298,
+    "lastModified": "2025-11-02T11:23:56.878734Z"
+  },
+  {
+    "name": "4.2.0.tgz",
+    "href": "4.2.0.tgz",
+    "size": 7645693,
+    "lastModified": "2025-11-02T11:23:56.853637Z"
+  },
+  {
+    "name": "4.1.3.tgz",
+    "href": "4.1.3.tgz",
+    "size": 7595213,
+    "lastModified": "2025-11-02T11:23:56.819525Z"
+  },
+  {
+    "name": "4.1.2.tgz",
+    "href": "4.1.2.tgz",
+    "size": 7595246,
+    "lastModified": "2025-11-02T11:23:56.793472Z"
+  },
+  {
+    "name": "4.1.1.tgz",
+    "href": "4.1.1.tgz",
+    "size": 7584726,
+    "lastModified": "2025-11-02T11:23:56.766398Z"
+  },
+  {
+    "name": "4.1.0.tgz",
+    "href": "4.1.0.tgz",
+    "size": 7577048,
+    "lastModified": "2025-11-02T11:23:56.740131Z"
+  },
+  {
+    "name": "4.1.0-M1.tgz",
+    "href": "4.1.0-M1.tgz",
+    "size": 7551349,
+    "lastModified": "2025-11-02T11:23:56.704563Z"
+  },
+  {
+    "name": "4.0.4.tgz",
+    "href": "4.0.4.tgz",
+    "size": 7433683,
+    "lastModified": "2025-11-02T11:23:56.678166Z"
+  },
+  {
+    "name": "4.0.3.tgz",
+    "href": "4.0.3.tgz",
+    "size": 7432236,
+    "lastModified": "2025-11-02T11:23:56.652027Z"
+  },
+  {
+    "name": "4.0.2.tgz",
+    "href": "4.0.2.tgz",
+    "size": 7249038,
+    "lastModified": "2025-11-02T11:23:56.625635Z"
+  },
+  {
+    "name": "4.0.1.tgz",
+    "href": "4.0.1.tgz",
+    "size": 7222832,
+    "lastModified": "2025-11-02T11:23:56.593105Z"
+  },
+  {
+    "name": "4.0.0.tgz",
+    "href": "4.0.0.tgz",
+    "size": 7213862,
+    "lastModified": "2025-11-02T11:23:56.568175Z"
+  },
+  {
+    "name": "4.0.0-M3.tgz",
+    "href": "4.0.0-M3.tgz",
+    "size": 7213039,
+    "lastModified": "2025-11-02T11:23:56.543167Z"
+  },
+  {
+    "name": "4.0.0-M2.tgz",
+    "href": "4.0.0-M2.tgz",
+    "size": 6986103,
+    "lastModified": "2025-11-02T11:23:56.517639Z"
+  },
+  {
+    "name": "3.6.3.tgz",
+    "href": "3.6.3.tgz",
+    "size": 6483996,
+    "lastModified": "2025-11-02T11:23:56.486378Z"
+  },
+  {
+    "name": "3.6.0.tgz",
+    "href": "3.6.0.tgz",
+    "size": 6453661,
+    "lastModified": "2025-11-02T11:23:56.463273Z"
+  },
+  {
+    "name": "3.5.0.tgz",
+    "href": "3.5.0.tgz",
+    "size": 6520344,
+    "lastModified": "2025-11-02T11:23:56.440281Z"
+  },
+  {
+    "name": "3.4.3.tgz",
+    "href": "3.4.3.tgz",
+    "size": 6378669,
+    "lastModified": "2025-11-02T11:23:56.416077Z"
+  },
+  {
+    "name": "3.3.0.tgz",
+    "href": "3.3.0.tgz",
+    "size": 6351007,
+    "lastModified": "2025-11-02T11:23:56.381962Z"
+  },
+  {
+    "name": "3.2.0.tgz",
+    "href": "3.2.0.tgz",
+    "size": 6243121,
+    "lastModified": "2025-11-02T11:23:56.358226Z"
+  },
+  {
+    "name": "3.1.0.tgz",
+    "href": "3.1.0.tgz",
+    "size": 5906762,
+    "lastModified": "2025-11-02T11:23:56.334012Z"
+  },
+  {
+    "name": "3.0.4.tgz",
+    "href": "3.0.4.tgz",
+    "size": 5063374,
+    "lastModified": "2025-11-02T11:23:56.311946Z"
+  }
+]

@@ -14,7 +14,7 @@ import java.util.Objects;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
-import org.eclipse.rdf4j.model.Triple;
+import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.rio.helpers.NTriplesUtil;
@@ -167,6 +167,10 @@ public abstract class Protocol {
 	public static final String OFFSET_PARAM_NAME = "offset";
 
 	public static final String EXPLAIN_PARAM_NAME = "explain";
+
+	public static final String EXPLAIN_REQUEST_ID_PARAM_NAME = "explain-request-id";
+
+	public static final String CANCEL_EXPLAIN_PARAM_NAME = "cancel-explain";
 
 	/**
 	 * Parameter name for the query language parameter.
@@ -538,8 +542,8 @@ public abstract class Protocol {
 			return null;
 		} else {
 			Resource context = decodeResource(encodedValue, valueFactory);
-			// Context must be an IRI or BNode but never Triple
-			if (context instanceof Triple) {
+			// Context must be an IRI or BNode but never TripleTerm
+			if (context instanceof TripleTerm) {
 				throw new IllegalArgumentException("Invalid context value: " + encodedValue);
 			}
 			return context;

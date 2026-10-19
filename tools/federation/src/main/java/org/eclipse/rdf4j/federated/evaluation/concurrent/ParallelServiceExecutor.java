@@ -18,7 +18,7 @@ import org.eclipse.rdf4j.common.iteration.Iterations;
 import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.federated.FederationContext;
 import org.eclipse.rdf4j.federated.algebra.FedXService;
-import org.eclipse.rdf4j.federated.evaluation.FederationEvalStrategy;
+import org.eclipse.rdf4j.federated.evaluation.FederationEvaluationStrategy;
 import org.eclipse.rdf4j.federated.structures.QueryInfo;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -48,7 +48,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 	protected static final Logger log = LoggerFactory.getLogger(ParallelServiceExecutor.class);
 
 	protected final FedXService service;
-	protected final FederationEvalStrategy strategy;
+	protected final FederationEvaluationStrategy strategy;
 	protected final BindingSet bindings;
 	protected final FederationContext federationContext;
 
@@ -65,7 +65,7 @@ public class ParallelServiceExecutor extends LookAheadIteration<BindingSet>
 	 * @param federationContext
 	 */
 	public ParallelServiceExecutor(FedXService service,
-			FederationEvalStrategy strategy, BindingSet bindings, FederationContext federationContext) {
+			FederationEvaluationStrategy strategy, BindingSet bindings, FederationContext federationContext) {
 		super();
 		this.service = service;
 		this.strategy = strategy;

@@ -86,9 +86,10 @@ public class WriterBenchmark {
 
 	@Benchmark
 	@BenchmarkMode(Mode.AverageTime)
-	public void writer() {
-		OutputStream out = new NullOutputStream();
-		Rio.write(model, out, writerFormat);
+	public void writer() throws java.io.IOException {
+		try (OutputStream out = new NullOutputStream()) {
+			Rio.write(model, out, writerFormat);
+		}
 	}
 
 }

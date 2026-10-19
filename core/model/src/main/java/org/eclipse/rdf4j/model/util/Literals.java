@@ -473,7 +473,8 @@ public class Literals {
 	 * @return True if the literal has a language tag attached to it and false otherwise.
 	 */
 	public static boolean isLanguageLiteral(Literal literal) {
-		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING;
+		return literal.getCoreDatatype() == CoreDatatype.RDF.LANGSTRING
+				|| literal.getCoreDatatype() == CoreDatatype.RDF.DIRLANGSTRING;
 	}
 
 	/**
@@ -495,7 +496,7 @@ public class Literals {
 		new Locale.Builder().setLanguageTag(languageTag);
 
 		// all subtags are case-insensitive
-		String normalizedTag = languageTag.toLowerCase();
+		final String normalizedTag = languageTag.toLowerCase();
 
 		String[] subtags = normalizedTag.split("-");
 		for (int i = 1; i < subtags.length; i++) {

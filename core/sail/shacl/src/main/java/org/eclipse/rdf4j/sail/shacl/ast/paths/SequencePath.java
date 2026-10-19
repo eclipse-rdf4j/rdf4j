@@ -112,7 +112,7 @@ public class SequencePath extends Path {
 		PlanNode unorderedSelect = new Select(connectionsGroup.getAddedStatements(), targetQueryFragment,
 				null, new AllTargetsPlanNode.AllTargetsBindingSetMapper(List.of("subject", "value"),
 						ConstraintComponent.Scope.propertyShape, true, dataGraph),
-				dataGraph);
+				dataGraph, connectionsGroup.isIncludeInferredStatements());
 
 		if (planNodeWrapper != null) {
 			unorderedSelect = planNodeWrapper.apply(unorderedSelect);

@@ -13,7 +13,8 @@ package org.eclipse.rdf4j.federated.endpoint;
 import java.io.File;
 import java.io.FileReader;
 import java.net.MalformedURLException;
-import java.net.URL;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -86,12 +87,12 @@ public class EndpointFactory {
 	 */
 	public static Endpoint loadSPARQLEndpoint(String endpoint) throws FedXException {
 		try {
-			String id = new URL(endpoint).getHost();
+			String id = new URI(endpoint).toURL().getHost();
 			if (id.equals("localhost")) {
-				id = id + "_" + new URL(endpoint).getPort();
+				id = id + "_" + new URI(endpoint).toURL().getPort();
 			}
 			return loadSPARQLEndpoint("http://" + id, endpoint);
-		} catch (MalformedURLException e) {
+		} catch (URISyntaxException | MalformedURLException e) {
 			throw new FedXException("Malformed URL: " + endpoint);
 		}
 	}

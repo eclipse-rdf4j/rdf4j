@@ -42,6 +42,11 @@ public class NQuadsWriter extends NTriplesWriter {
 	@Override
 	public void consumeStatement(Statement st) throws RDFHandlerException {
 		try {
+			// Detect RDF 1.2 features and emit version announcement before
+			// the first affected quad is written.
+			noteRdf12Feature(st.getSubject(), st.getObject());
+			ensureVersionAnnouncement();
+
 			// SUBJECT
 			writeValue(st.getSubject());
 			writer.write(" ");

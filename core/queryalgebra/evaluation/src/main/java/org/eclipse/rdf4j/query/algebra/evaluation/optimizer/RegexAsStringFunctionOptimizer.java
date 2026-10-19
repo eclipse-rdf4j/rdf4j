@@ -58,8 +58,7 @@ public class RegexAsStringFunctionOptimizer implements QueryOptimizer {
 			final ValueExpr flagsArg = node.getFlagsArg();
 			if (flagsArg == null || flagsArg.toString().isEmpty()) {
 				// if we have no flags then we can not be in case insensitive mode
-				if (node.getPatternArg() instanceof ValueConstant) {
-					ValueConstant vc = (ValueConstant) node.getPatternArg();
+				if (node.getPatternArg()instanceof ValueConstant vc) {
 					String regex = vc.getValue().stringValue();
 					final boolean anchoredAtStart = regex.startsWith("^");
 					final boolean anchoredAtEnd = regex.endsWith("$");
