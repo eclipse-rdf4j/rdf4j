@@ -71,8 +71,9 @@ import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Verifies complete generated AAS Q3 results and selective native access against a legal independent-value-scan control.
- * The access projection counts source requests and returned/count rows; it is not the whole planned physical scalar.
+ * Verifies complete generated AAS Q3 results and selective native access against a legal independent-value-scan
+ * control. The access projection counts source requests and returned/count rows; it is not the whole planned physical
+ * scalar.
  */
 class LmdbAASQuery3WholePlanAccessProofTest {
 	private static final int LINES = 100;
@@ -83,21 +84,20 @@ class LmdbAASQuery3WholePlanAccessProofTest {
 	private static final long VALUES = (long) LINES * (3 + 15 * DRIVES + 10 * SENSORS);
 	private static final long VALUE_ACCESS_BOUND = 4 * RATED;
 	/*
-	 * For L lines, D drives and S sensors, the generator has R=L*D ratedPower properties, A=L*(1+D+S) AAS
-	 * type rows and V=L*(3+15D+10S) value rows. Each line contributes three own value rows, three reference
-	 * keys per relationship, twelve other value rows per drive, and seven per sensor.
+	 * For L lines, D drives and S sensors, the generator has R=L*D ratedPower properties, A=L*(1+D+S) AAS type rows and
+	 * V=L*(3+15D+10S) value rows. Each line contributes three own value rows, three reference keys per relationship,
+	 * twelve other value rows per drive, and seven per sensor.
 	 *
-	 * Exact-match statement-access projection: P=2*returned-or-counted rows + 2*source requests. The unit
-	 * weights mirror scanned/result rows and seek/open terms in LmdbPackedCostModel's statement-access cost;
-	 * this projection does not observe filtered cursor rows, path/operator/aggregate CPU, or hash memory.
-	 * Selective value access costs at most 4R; an independent full-value scan costs 2V+2 and must be rejected.
+	 * Exact-match statement-access projection: P=2*returned-or-counted rows + 2*source requests. The unit weights
+	 * mirror scanned/result rows and seek/open terms in LmdbPackedCostModel's statement-access cost; this projection
+	 * does not observe filtered cursor rows, path/operator/aggregate CPU, or hash memory. Selective value access costs
+	 * at most 4R; an independent full-value scan costs 2V+2 and must be rejected.
 	 *
-	 * Whole-query statement-access ceiling, from a legal selective traversal of the generated graph:
-	 * anchor 2R+2; direct value 4R; reverse path 6R; zero-length membership at most 4R;
-	 * reverse component element 6R; component submodel 6R; resolvesTo 6R; second reference 4R;
-	 * relationship type 4R; line element 4R; line submodel 6R; independent AAS type 2A+2.
-	 * Environment and shell both reference each component/line submodel, so those fanouts are included.
-	 * The total is 52R+2A+4; it does not bound the whole planned scalar or claim global plan optimality.
+	 * Whole-query statement-access ceiling, from a legal selective traversal of the generated graph: anchor 2R+2;
+	 * direct value 4R; reverse path 6R; zero-length membership at most 4R; reverse component element 6R; component
+	 * submodel 6R; resolvesTo 6R; second reference 4R; relationship type 4R; line element 4R; line submodel 6R;
+	 * independent AAS type 2A+2. Environment and shell both reference each component/line submodel, so those fanouts
+	 * are included. The total is 52R+2A+4; it does not bound the whole planned scalar or claim global plan optimality.
 	 */
 	private static final long ALL_STATEMENT_ACCESS_BOUND = 52 * RATED + 2 * AAS + 4;
 	private static final String VALUE = "https://admin-shell.io/aas/3/value";
