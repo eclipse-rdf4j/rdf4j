@@ -498,7 +498,12 @@ public final class ArrayBindingBasedQueryEvaluationContext implements QueryEvalu
 				// BindingSet anyway
 				if (!(node.isConstant() && node.getParentNode() instanceof StatementPattern)) {
 					Var replacement = Var.of(varNames.computeIfAbsent(node.getName(), k -> k), node.getValue(),
-							node.isAnonymous(), node.isConstant());
+							node.isAnonymous(), node.isConstant(), node.isBNode());
+					if (node.hasApiInputOrigin()) {
+						replacement = replacement.withApiInputOrigin();
+					}
+					replacement.setGraphContextDepth(node.getGraphContextDepth());
+					replacement.setVariableScopeChange(node.isVariableScopeChange());
 					node.replaceWith(replacement);
 				}
 			}

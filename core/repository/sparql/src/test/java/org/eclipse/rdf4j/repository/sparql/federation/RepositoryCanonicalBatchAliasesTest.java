@@ -14,33 +14,167 @@ package org.eclipse.rdf4j.repository.sparql.federation;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.MalformedQueryException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.ProjectionElemList;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.evaluation.federation.FederatedServiceIdentity;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.junit.jupiter.api.Test;
 
 class RepositoryCanonicalBatchAliasesTest {
+
+	@Test
+	void directRemoteBindingEnrichmentRetainsCallerSnapshotAcrossRepeatedAdapters() {
+		var vf = SimpleValueFactory.getInstance();
+		Object epoch = new Object();
+		Value canonicalAlias = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
+				.map(vf.createBNode("canonical"));
+		Value callerPredicate = vf.createIRI("urn:caller-predicate");
+		Value callerEndpoint = vf.createIRI("urn:caller-endpoint");
+		Value servicePredicate = vf.createIRI("urn:service-predicate");
+		Value endpoint = vf.createIRI("urn:remote");
+		var input = new MapBindingSet();
+		input.addBinding("s", canonicalAlias);
+		input.addBinding("p", callerPredicate);
+		input.addBinding("endpoint", callerEndpoint);
+		var additional = new MapBindingSet();
+		additional.addBinding("p", servicePredicate);
+		additional.addBinding("endpoint", endpoint);
+		Set<String> relevantNames = Set.of("s", "p", "endpoint");
+
+		BindingSet prepared = RemoteBNode.toRemoteBindings(input, additional, relevantNames, epoch, true, true);
+		assertEquals(servicePredicate, prepared.getValue("p"));
+		assertEquals(endpoint, prepared.getValue("endpoint"));
+		assertOriginalCallerBindings(input, canonicalAlias, callerPredicate, callerEndpoint, prepared);
+
+		BindingSet preparedAgain = RemoteBNode.toRemoteBindings(prepared, additional, relevantNames, epoch, true, true);
+		assertEquals(servicePredicate, preparedAgain.getValue("p"));
+		assertEquals(endpoint, preparedAgain.getValue("endpoint"));
+		assertOriginalCallerBindings(input, canonicalAlias, callerPredicate, callerEndpoint, preparedAgain);
+	}
+
+	@Test
+	void prepareBindingsKeepsCallerAuthorityForSameNamedRuntimeVariable() throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		Object epoch = new Object();
+		Service service = parseService("?endpoint { ?s ?p ?o }");
+		Value callerPredicate = vf.createIRI("urn:caller-predicate");
+		Value runtimePredicate = vf.createIRI("urn:runtime-predicate");
+		Value callerEndpoint = vf.createIRI("urn:caller-endpoint");
+		service.setArg(new StatementPattern(Var.of("s"), Var.of("p", runtimePredicate, false, false), Var.of("o")));
+		var input = new MapBindingSet();
+		input.addBinding("s", RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
+				.map(vf.createBNode("canonical")));
+		input.addBinding("p", callerPredicate);
+		input.addBinding("endpoint", callerEndpoint);
+
+		BindingSet prepared = FederatedServiceIdentity.prepareBindings(service, input, epoch, true, true);
+		assertSame(callerPredicate, prepared.getValue("p"));
+		assertSame(callerEndpoint, prepared.getValue("endpoint"));
+		BindingSet originals = RemoteBNode.originalBindings(prepared);
+		assertEquals(input.getBindingNames(), originals.getBindingNames());
+		assertSame(input.getValue("s"), originals.getValue("s"));
+		assertSame(callerPredicate, originals.getValue("p"));
+		assertSame(callerEndpoint, originals.getValue("endpoint"));
+	}
+
+	@Test
+	void parsedFixedServiceConstantsDoNotConstrainSameNamedCallerBindings() throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		Object epoch = new Object();
+		Service service = parseService("<urn:fixed-endpoint> { ?s <urn:fixed-predicate> ?o }");
+		Var fixedEndpoint = service.getServiceRef();
+		Var fixedPredicate = constantVar(service, vf.createIRI("urn:fixed-predicate"));
+		assertTrue(fixedEndpoint.hasValue());
+		assertTrue(fixedEndpoint.isAnonymous());
+		assertTrue(fixedEndpoint.isConstant());
+		assertTrue(fixedPredicate.hasValue());
+		assertTrue(fixedPredicate.isAnonymous());
+		assertTrue(fixedPredicate.isConstant());
+
+		Value callerEndpoint = vf.createIRI("urn:unrelated-endpoint");
+		Value callerPredicate = vf.createIRI("urn:unrelated-predicate");
+		var input = new MapBindingSet();
+		input.addBinding(fixedEndpoint.getName(), callerEndpoint);
+		input.addBinding(fixedPredicate.getName(), callerPredicate);
+
+		BindingSet prepared = FederatedServiceIdentity.prepareBindings(service, input, epoch, true, true);
+		assertSame(callerEndpoint, prepared.getValue(fixedEndpoint.getName()));
+		assertSame(callerPredicate, prepared.getValue(fixedPredicate.getName()));
+		assertEquals(input.getBindingNames(), RemoteBNode.originalBindings(prepared).getBindingNames());
+		assertFalse(FederatedServiceIdentity.relevantBindingNames(service).contains(fixedEndpoint.getName()));
+		assertFalse(FederatedServiceIdentity.relevantBindingNames(service).contains(fixedPredicate.getName()));
+	}
+
+	private static Service parseService(String servicePattern) throws Exception {
+		TupleExpr tupleExpr = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT * WHERE { SERVICE " + servicePattern + " }", null).getTupleExpr();
+		List<Service> services = new ArrayList<>();
+		tupleExpr.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Service service) {
+				services.add(service);
+			}
+		});
+		assertEquals(1, services.size());
+		return services.get(0);
+	}
+
+	private static Var constantVar(Service service, Value value) {
+		List<Var> variables = new ArrayList<>();
+		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(Var variable) {
+				if (variable.hasValue() && value.equals(variable.getValue())) {
+					variables.add(variable);
+				}
+			}
+		});
+		assertEquals(1, variables.size());
+		return variables.get(0);
+	}
+
+	private static void assertOriginalCallerBindings(BindingSet input, Value canonicalAlias, Value callerPredicate,
+			Value callerEndpoint, BindingSet prepared) {
+		BindingSet original = RemoteBNode.originalBindings(prepared);
+		assertEquals(input.getBindingNames(), original.getBindingNames());
+		assertSame(canonicalAlias, original.getValue("s"));
+		assertEquals(callerPredicate, original.getValue("p"));
+		assertEquals(callerEndpoint, original.getValue("endpoint"));
+	}
 
 	@Test
 	void batchReconstructionRetainsEachInputsAliasForTheSameCanonicalIdentity() {
@@ -83,6 +217,66 @@ class RepositoryCanonicalBatchAliasesTest {
 			assertEquals(first, rows.next().getValue("s"));
 			assertEquals(second, rows.next().getValue("s"));
 			assertFalse(rows.hasNext());
+		}
+	}
+
+	@Test
+	void singleInvocationFallbackRetainsEachCanonicalInputAlias() {
+		var vf = SimpleValueFactory.getInstance();
+		for (String reason : List.of("oversized", "subquery", "rewrite-failure")) {
+			Object epoch = new Object();
+			Value first = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
+					.map(vf.createBNode("canonical"));
+			Value second = RemoteBNode.newResponseScope(new BlankNodeAllocationScope(), vf, epoch, true)
+					.map(vf.createBNode("canonical"));
+			assertNotEquals(first, second);
+			var firstInput = new MapBindingSet();
+			firstInput.addBinding("s", first);
+			var secondInput = new MapBindingSet();
+			secondInput.addBinding("s", second);
+			Repository repository = mock(Repository.class);
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			TupleQuery query = mock(TupleQuery.class);
+			when(repository.getConnection()).thenReturn(connection);
+			when(connection.prepareTupleQuery(any(QueryLanguage.class), anyString(), isNull())).thenAnswer(call -> {
+				String text = call.getArgument(1);
+				if (reason.equals("rewrite-failure") && text.contains("VALUES")) {
+					throw new MalformedQueryException("Reject the combined VALUES request");
+				}
+				return query;
+			});
+			var remoteRow = new MapBindingSet();
+			remoteRow.addBinding("s", vf.createBNode("canonical"));
+			remoteRow.addBinding("o", vf.createLiteral("remote"));
+			when(query.evaluate()).thenAnswer(ignored -> new IteratingTupleQueryResult(
+					List.of("s", "o"), List.of(remoteRow)));
+			TupleExpr expression = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")),
+					Var.of("o"));
+			String body = "?s <urn:p> ?o";
+			if (reason.equals("subquery")) {
+				expression = new Projection(expression,
+						new ProjectionElemList(new ProjectionElem("s"), new ProjectionElem("o")));
+				body = "{ SELECT ?s ?o WHERE { " + body + " } }";
+			}
+			var service = new Service(Var.of("endpoint", vf.createIRI("urn:remote")), expression,
+					body, Map.of(), null, false);
+			var endpoint = new RepositoryFederatedService(repository);
+			endpoint.setBoundJoinBlockSize(reason.equals("oversized") ? 1 : 0);
+			endpoint.setBNodeIdentityScope(epoch);
+			endpoint.setBlankNodeReferencesSupported(true);
+			endpoint.setCanonicalBNodeIDsSupported(true);
+			List<Value> aliases = new ArrayList<>();
+			try (var rows = endpoint.evaluate(service,
+					new CloseableIteratorIteration<>(List.<BindingSet>of(firstInput, secondInput).iterator()), null)) {
+				while (rows.hasNext()) {
+					BindingSet row = rows.next();
+					assertEquals(Set.of("s", "o"), row.getBindingNames());
+					assertEquals(vf.createLiteral("remote"), row.getValue("o"));
+					aliases.add(row.getValue("s"));
+				}
+			}
+			assertEquals(List.of(first, second), aliases, reason);
+			verify(query, times(1)).evaluate();
 		}
 	}
 }

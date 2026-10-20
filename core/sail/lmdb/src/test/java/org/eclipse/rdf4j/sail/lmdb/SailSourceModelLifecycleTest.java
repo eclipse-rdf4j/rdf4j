@@ -17,6 +17,7 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -69,16 +70,26 @@ class SailSourceModelLifecycleTest {
 
 		Set<Statement> approved = new java.util.HashSet<>();
 		AtomicInteger largestBatch = new AtomicInteger();
-		doAnswer(invocation -> recordBatch(invocation, approved, largestBatch))
+		AtomicInteger pendingRows = new AtomicInteger();
+		doAnswer(invocation -> {
+			int pending = pendingRows.addAndGet(statements(invocation).size());
+			assertThat(pending).as("import publication state must remain bounded across approval batches")
+					.isLessThanOrEqualTo(IMPORT_BATCH_SIZE);
+			return recordBatch(invocation, approved, largestBatch);
+		})
 				.when(sink)
 				.approveAll(anySet(), anySet());
+		doAnswer(invocation -> {
+			pendingRows.set(0);
+			return null;
+		}).when(sink).flush();
 
 		new SailSourceModel(store, bulk);
 
 		assertThat(approved).hasSize(2050);
 		assertThat(largestBatch.get()).isLessThanOrEqualTo(IMPORT_BATCH_SIZE);
 		verify(sink).setNamespace("ex", "urn:example:");
-		verify(sink).flush();
+		verify(sink, times(3)).flush();
 	}
 
 	@Test

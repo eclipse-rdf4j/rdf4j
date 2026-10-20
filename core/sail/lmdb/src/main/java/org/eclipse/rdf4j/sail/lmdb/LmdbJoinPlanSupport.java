@@ -58,6 +58,7 @@ import org.eclipse.rdf4j.query.algebra.ZeroLengthPath;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterSelectivityKeys;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.JoinOrderPlanner;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.algebra.helpers.collectors.VarNameCollector;
@@ -301,6 +302,9 @@ final class LmdbJoinPlanSupport {
 	}
 
 	static Optional<Set<String>> positionableBindingSetAssignmentNames(TupleExpr tupleExpr) {
+		if (!QueryEvaluationUtility.isRepeatable(tupleExpr)) {
+			return Optional.empty();
+		}
 		if (tupleExpr instanceof BindingSetAssignment) {
 			return Optional.of(tupleExpr.getAssuredBindingNames());
 		}
@@ -428,7 +432,8 @@ final class LmdbJoinPlanSupport {
 	static boolean isJoinOrderSeparator(TupleExpr tupleExpr) {
 		return tupleExpr instanceof Lateral || TupleExprs.isVariableScopeChange(tupleExpr)
 				|| TupleExprs.containsExtension(tupleExpr)
-				|| TupleExprs.containsSubquery(tupleExpr);
+				|| TupleExprs.containsSubquery(tupleExpr)
+				|| !QueryEvaluationUtility.isRepeatable(tupleExpr);
 	}
 
 	static boolean isValidPassRatio(double passRatio) {

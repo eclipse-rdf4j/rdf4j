@@ -47,6 +47,36 @@ The earlier cursor-renewal path could make a read appear to continue after a res
 generation consistency: eligible unobserved work may be replayed, while an observed or otherwise ineligible result is
 invalidated rather than allowed to proceed on a different native view.
 
+## Reference-count repair for existing format-2 stores
+
+Existing LMDB format-2 stores keep reference-count repair disabled by default so opening and closing them preserves
+the marker schema understood by earlier versions. LMDB logs a warning with instructions to enable repair and a link to
+[issue #6095](https://github.com/eclipse-rdf4j/rdf4j/issues/6095), which describes historical component reference counts
+being reset across transactions. Corrected counting applies to new writes in either mode; repairing already persisted
+counts requires opting in:
+
+```java
+LmdbStoreConfig config = new LmdbStoreConfig()
+        .setLegacyReferenceCountRepairEnabled(true);
+```
+
+The corresponding RDF configuration property is
+`<http://rdf4j.org/config/sail/lmdb#legacyReferenceCountRepairEnabled> true`.
+
+While repair is disabled, RDF additions, removals, commits, and rollbacks retain their normal semantics. Dictionary
+reclamation is deferred because historical counts are unverified. Removed-value candidates remain in the durable
+retirement queue; enabling repair reconstructs counts from live dictionary owners before checking statement liveness
+and reclaiming those candidates. Deferred dictionary records can consume additional disk space.
+
+Enabled repair uses integrity metadata that earlier reference-count readers cannot read. Before downgrading, close the
+store and reopen it once with `setLegacyReferenceCountRepairEnabled(false)`, then close it normally. Disabled mode
+preserves an absent or historical one-byte marker. If a previous opener wrote recognized structured integrity metadata,
+disabled mode removes that metadata without declaring the counts repaired, so an earlier repair reader sees an absent
+marker and performs its own atomic reconstruction. Unknown metadata schemas are rejected.
+
+Format-6 stores always retain reference-count repair, integrity validation, and dictionary reclamation regardless of
+this setting. This option does not change a store's persisted format or make format 6 readable by earlier versions.
+
 ## Map sizing and reader lifetime
 
 `autoGrow` remains enabled by default. When growth is needed, LMDB must remap its environment while native readers are

@@ -40,20 +40,25 @@ public final class LocalBNodeReferences {
 	}
 
 	public static Set<String> collect(QueryModelNode expression) {
-		return scan(expression, null);
+		return scan(expression, null, null);
 	}
 
-	public record Analysis(Set<String> ids, List<IdentityStamp> structure) {
+	public record Analysis(Set<String> ids, List<IdentityStamp> structure, List<Value> runtimeValues) {
+		public Analysis(Set<String> ids, List<IdentityStamp> structure) {
+			this(ids, structure, List.of());
+		}
+
 		public Analysis {
 			ids = Set.copyOf(ids);
 			structure = List.copyOf(structure);
+			runtimeValues = List.copyOf(runtimeValues);
 		}
 
 		/** All occupied blank-node IDs, independently of whether they denote fixed local references. */
 		public Set<String> knownIds() {
 			Set<String> known = new HashSet<>(ids);
 			for (IdentityStamp stamp : structure) {
-				if (stamp.identity() instanceof BNode) {
+				if (stamp.identity() instanceof BNode && stamp.state() != null) {
 					known.add(stamp.state());
 				}
 			}
@@ -64,10 +69,12 @@ public final class LocalBNodeReferences {
 	/** Captures exact local ownership and recursive value identities without retaining them in execution state. */
 	public static Analysis analyze(QueryModelNode expression) {
 		List<IdentityStamp> structure = new ArrayList<>();
-		return new Analysis(scan(expression, structure), structure);
+		List<Value> runtimeValues = new ArrayList<>();
+		return new Analysis(scan(expression, structure, runtimeValues), structure, runtimeValues);
 	}
 
-	private static Set<String> scan(QueryModelNode expression, List<IdentityStamp> structure) {
+	private static Set<String> scan(QueryModelNode expression, List<IdentityStamp> structure,
+			List<Value> runtimeValues) {
 		Set<String> ids = new HashSet<>();
 		if (expression != null) {
 			ArrayDeque<QueryModelNode> pendingNodes = new ArrayDeque<>();
@@ -104,8 +111,19 @@ public final class LocalBNodeReferences {
 
 				@Override
 				public void meet(Var variable) {
-					stamp(variable, Boolean.toString(variable.isConstant()));
-					value(variable.getValue());
+					boolean apiInputOrigin = variable.hasApiInputOrigin();
+					stamp(variable, variable.isConstant() + ":" + apiInputOrigin);
+					Value variableValue = variable.getValue();
+					if (apiInputOrigin) {
+						if (variableValue != null) {
+							if (runtimeValues != null) {
+								runtimeValues.add(variableValue);
+							}
+							stampValueRoot(variableValue);
+						}
+					} else {
+						value(variableValue);
+					}
 				}
 
 				@Override
@@ -175,6 +193,10 @@ public final class LocalBNodeReferences {
 					} else {
 						stamp(value, null);
 					}
+				}
+
+				private void stampValueRoot(Value value) {
+					stamp(value, null);
 				}
 			};
 			pendingNodes.addLast(expression);

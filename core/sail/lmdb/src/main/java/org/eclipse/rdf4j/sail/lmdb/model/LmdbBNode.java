@@ -18,6 +18,7 @@ import java.io.ObjectStreamException;
 import java.io.ObjectStreamField;
 import java.util.function.Function;
 
+import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleBNode;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
@@ -126,6 +127,12 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 		}
 	}
 
+	@Experimental
+	@Override
+	public long retainedLexicalLength() {
+		return initialized ? super.getID().length() : -1L;
+	}
+
 	@Override
 	public long getInternalID() {
 		return identity.id();
@@ -149,6 +156,23 @@ public class LmdbBNode extends SimpleBNode implements LmdbResource {
 				if (!initialized) {
 					InternalIdentity resolving = identity;
 					boolean resolved = resolving.revision().resolveValue(resolving.id(), this);
+					initialized = resolved;
+					if (resolved) {
+						resolving.revision().valueInitialized(resolving.id(), this);
+					}
+				}
+			}
+		}
+	}
+
+	@Experimental
+	@Override
+	public void init(Resolver resolver) {
+		if (!initialized) {
+			synchronized (this) {
+				if (!initialized) {
+					InternalIdentity resolving = identity;
+					boolean resolved = resolver.resolve(resolving.id(), this);
 					initialized = resolved;
 					if (resolved) {
 						resolving.revision().valueInitialized(resolving.id(), this);

@@ -191,7 +191,7 @@ class OptimizerInputPreservationTest {
 	}
 
 	@Test
-	void compilingFilteredJoinDoesNotConsumeOneShotRows() {
+	void compilingFilteredJoinCapturesOneShotRowsOnce() {
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setDeclaredBindingNames(Set.of("x"));
 		OneShotRows rows = new OneShotRows(List.of(new ListBindingSet(List.of("x"), VF.createLiteral(1))));
@@ -199,30 +199,35 @@ class OptimizerInputPreservationTest {
 		QueryRoot root = new QueryRoot(new Filter(new Join(values("y", VF.createLiteral(2)), assignment),
 				new Compare(Var.of("x"), new ValueConstant(VF.createLiteral(0)), Compare.CompareOp.GT)));
 		QueryEvaluationStep compiled = strategy().precompile(root);
-		assertThat(rows.index).isZero();
-		try (CloseableIteration<BindingSet> result = compiled.evaluate(EmptyBindingSet.getInstance())) {
-			assertThat(result.hasNext()).isTrue();
-			assertThat(result.next().getValue("x")).isEqualTo(VF.createLiteral(1));
-			assertThat(result.hasNext()).isFalse();
+		// Preparation captures a one-shot source exactly once; every evaluation replays the captured rows.
+		assertThat(rows.index).isEqualTo(1);
+		for (int invocation = 0; invocation < 2; invocation++) {
+			try (CloseableIteration<BindingSet> result = compiled.evaluate(EmptyBindingSet.getInstance())) {
+				assertThat(result.hasNext()).isTrue();
+				assertThat(result.next().getValue("x")).isEqualTo(VF.createLiteral(1));
+				assertThat(result.hasNext()).isFalse();
+			}
 		}
+		assertThat(rows.index).isEqualTo(1);
 	}
 
 	@Test
-	void volatileSourcesAreEvaluatedOnlyAtRuntimeForEveryInvocation() {
+	void volatileSourcesAreSnapshottedOnceAtPreparation() {
 		AtomicInteger calls = new AtomicInteger();
 		BindingSetAssignment assignment = new BindingSetAssignment();
 		assignment.setDeclaredBindingNames(Set.of("x"));
 		assignment.setBindingSets(() -> List.<BindingSet>of(new ListBindingSet(List.of("x"),
 				VF.createLiteral(calls.incrementAndGet()))).iterator());
 		QueryEvaluationStep compiled = strategy().precompile(new QueryRoot(assignment));
-		assertThat(calls).hasValue(0);
+		// The prepared plan snapshots a volatile source once; both invocations see the captured row.
+		assertThat(calls).hasValue(1);
 		for (int invocation = 1; invocation <= 2; invocation++) {
 			try (CloseableIteration<BindingSet> rows = compiled.evaluate(EmptyBindingSet.getInstance())) {
-				assertThat(rows.next().getValue("x")).isEqualTo(VF.createLiteral(invocation));
+				assertThat(rows.next().getValue("x")).isEqualTo(VF.createLiteral(1));
 				assertThat(rows.hasNext()).isFalse();
 			}
 		}
-		assertThat(calls).hasValue(2);
+		assertThat(calls).hasValue(1);
 	}
 
 	@Test

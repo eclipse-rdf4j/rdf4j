@@ -23,6 +23,7 @@ import org.eclipse.rdf4j.benchmark.common.BenchmarkResources;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Model;
 import org.eclipse.rdf4j.model.Statement;
+import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
@@ -54,14 +55,18 @@ import org.openjdk.jmh.runner.options.OptionsBuilder;
  * levels.
  */
 @State(Scope.Benchmark)
-@Warmup(iterations = 3, time = 3, timeUnit = TimeUnit.SECONDS)
+@Warmup(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @BenchmarkMode(Mode.AverageTime)
-@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC" })
-@Measurement(iterations = 3, time = 3, timeUnit = TimeUnit.SECONDS)
+@Fork(value = 1, jvmArgs = { "-Xms2G", "-Xmx2G", "-XX:+UseG1GC",
+		"-Drdf4j.lmdb.directAdjacency.synchronousMaintenance=true"
+})
+
+@Measurement(iterations = 5, time = 1, timeUnit = TimeUnit.SECONDS)
 @OutputTimeUnit(TimeUnit.MILLISECONDS)
 public class DatagovLoadIsolationBenchmark {
 
 	private static final String DATA_FILE = "benchmarkFiles/datagovbe-valid.ttl.gz";
+	private static final String FIRST_QUERY = "SELECT * WHERE { ?s a ?type. ?s ?b ?c. }";
 
 	@Param({ "NONE", "READ_COMMITTED" })
 //	@Param({ "READ_COMMITTED" })
@@ -70,7 +75,7 @@ public class DatagovLoadIsolationBenchmark {
 	@Param({ "1024" })
 	public int bulkOperationSize;
 
-	@Param({ "true" })
+	@Param({ "false", "true" })
 	public boolean automaticEvaluationStrategy;
 
 //	@Param({ "LOSSY_CONCURRENT", "CONCURRENT", "BOUNDED_CONCURRENT", "ADAPTIVE_SLOT", "MEMOIZING_SLOT", "COMPACT_SLOT",
@@ -134,7 +139,14 @@ public class DatagovLoadIsolationBenchmark {
 			connection.commit();
 		}
 
-		return connection.hasStatement(null, null, null, true);
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery(FIRST_QUERY)
+				.evaluate()) {
+			if (evaluate.hasNext()) {
+				evaluate.next();
+				return true;
+			}
+		}
+		throw new IllegalStateException("The first SPARQL query produced no row after batched loading");
 	}
 
 	boolean loadOnce(LmdbStoreConfig config) throws IOException {
@@ -144,7 +156,14 @@ public class DatagovLoadIsolationBenchmark {
 		connection.begin(isolationLevel);
 		connection.add(data);
 		connection.commit();
-		return connection.hasStatement(null, null, null, true);
+		try (TupleQueryResult evaluate = connection.prepareTupleQuery(FIRST_QUERY)
+				.evaluate()) {
+			if (evaluate.hasNext()) {
+				evaluate.next();
+				return true;
+			}
+		}
+		throw new IllegalStateException("The first SPARQL query produced no row after single-transaction loading");
 	}
 
 	@TearDown(Level.Invocation)
@@ -182,6 +201,11 @@ public class DatagovLoadIsolationBenchmark {
 		if (!automaticEvaluationStrategy) {
 			config.setEvaluationStrategyFactoryClassName(DefaultEvaluationStrategyFactory.class.getName());
 		}
+		config.setSketchEstimatorEnabled(false);
+//		config.setNativeEvaluationEnabled(false);
+//		config.setDirectAdjacencyEnabled(false);
+		config.setValueOverlayEnabled(false);
+
 		return config;
 	}
 

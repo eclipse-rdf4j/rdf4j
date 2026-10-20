@@ -91,7 +91,7 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 				// enforce that equality when the body independently binds the same name.
 				for (Var variable : statement.getVarList()) {
 					if (!variable.isConstant() && graphName.getName().equals(variable.getName())
-							&& !graphName.getValue().equals(variable.getValue())) {
+							&& (!graphName.hasValue() || !graphName.getValue().equals(variable.getValue()))) {
 						return false;
 					}
 				}
@@ -101,6 +101,25 @@ public class GraphScopeOptimizer implements QueryOptimizer {
 		return expression.getClass() == Join.class
 				&& isPositiveBasicGraphPattern(((Join) expression).getLeftArg(), graphName)
 				&& isPositiveBasicGraphPattern(((Join) expression).getRightArg(), graphName);
+	}
+
+	/**
+	 * Tests the structural proof without cloning or changing the supplied graph. Backend admission and rewriting must
+	 * use the same proof; graph membership and invocation compatibility remain the caller's responsibility.
+	 */
+	public static boolean canLowerPositiveBasicGraphPattern(Graph graph) {
+		return isPositiveBasicGraphPattern(graph.getArg(), graph.getGraphName());
+	}
+
+	/**
+	 * Builds a physical named-context BGP when its body cannot observe the selector before export. Backend compilers
+	 * may use this same proof for variable selectors, provided they separately preserve graph membership, invocation
+	 * compatibility and default-alias selection. The returned tree is detached; the supplied algebra is unchanged.
+	 */
+	public static TupleExpr lowerPositiveBasicGraphPattern(Graph graph) {
+		return canLowerPositiveBasicGraphPattern(graph)
+				? lowerBasicGraphPattern(graph.getArg().clone(), graph.getGraphName())
+				: null;
 	}
 
 	private static TupleExpr lowerBasicGraphPattern(TupleExpr expression, Var graphName) {

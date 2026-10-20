@@ -47,6 +47,9 @@ public final class BlankNodeAllocationScope {
 	private static final Map<OwnerReference, BlankNodeAllocationScope> SCOPES = new HashMap<>();
 
 	private final Set<String> unavailable = new HashSet<>();
+	private final Set<BNode> pendingBNodeReservations = Collections.newSetFromMap(new IdentityHashMap<>());
+	private final Set<TripleTerm> pendingTripleTermReservations = Collections
+			.newSetFromMap(new IdentityHashMap<>());
 	private final Map<Object, Map<String, String>> remoteAliases = new IdentityHashMap<>();
 	private final Object remoteIdentityOwner = new Object();
 	private final ReferenceQueue<Object> solutionQueue = new ReferenceQueue<>();
@@ -69,6 +72,23 @@ public final class BlankNodeAllocationScope {
 	public BlankNodeAllocationScope(String namespace, Predicate<String> alreadyKnown) {
 		this.namespace = Objects.requireNonNull(namespace);
 		this.alreadyKnown = alreadyKnown;
+	}
+
+	/**
+	 * Creates independent execution state carrying this request's reservation and read-only backend authority. Pending
+	 * value roots are copied by identity without inspecting them; flushing one scope does not consume another scope's
+	 * reservations. Allocations, solution occurrences, remote aliases and their ownership are fresh. Algebra reference
+	 * snapshots remain with the preparing strategy: copying occupied IDs must never grant new lexical reference roles.
+	 */
+	public synchronized BlankNodeAllocationScope newEvaluationScope() {
+		BlankNodeAllocationScope evaluation = new BlankNodeAllocationScope("rdf4j-" + UUID.randomUUID() + "-",
+				alreadyKnown);
+		evaluation.unavailable.addAll(unavailable);
+		evaluation.pendingBNodeReservations.addAll(pendingBNodeReservations);
+		evaluation.pendingTripleTermReservations.addAll(pendingTripleTermReservations);
+		evaluation.fixedReferences = fixedReferences;
+		evaluation.localIdentityResolver = localIdentityResolver;
+		return evaluation;
 	}
 
 	/** Captures the executing local backend's read-only membership lookup before deferred or remote work begins. */
@@ -157,7 +177,7 @@ public final class BlankNodeAllocationScope {
 		known.addAll(ids);
 		for (IdentityStamp stamp : structure) {
 			stamps.add(new WeakIdentityStamp(new WeakReference<>(stamp.identity()), stamp.state()));
-			if (stamp.identity() instanceof BNode) {
+			if (stamp.identity() instanceof BNode && stamp.state() != null) {
 				known.add(stamp.state());
 			}
 		}
@@ -218,9 +238,22 @@ public final class BlankNodeAllocationScope {
 		if (value == null) {
 			return;
 		}
-		ArrayDeque<Value> pending = new ArrayDeque<>();
+		if (value instanceof BNode) {
+			pendingBNodeReservations.add((BNode) value);
+		} else if (value instanceof TripleTerm) {
+			// Reserving query inputs must not decode a foreign composite before the query needs an allocation.
+			pendingTripleTermReservations.add((TripleTerm) value);
+		}
+	}
+
+	private void reservePendingTripleTerms() {
+		if (pendingTripleTermReservations.isEmpty()) {
+			return;
+		}
+		Set<TripleTerm> roots = Collections.newSetFromMap(new IdentityHashMap<>());
+		roots.addAll(pendingTripleTermReservations);
+		ArrayDeque<Value> pending = new ArrayDeque<>(roots);
 		Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
-		pending.add(value);
 		while (!pending.isEmpty()) {
 			Value current = pending.removeLast();
 			if (!visited.add(current)) {
@@ -234,6 +267,14 @@ public final class BlankNodeAllocationScope {
 				pending.add(triple.getObject());
 			}
 		}
+		pendingTripleTermReservations.removeAll(roots);
+	}
+
+	private void reservePendingBNodes() {
+		for (BNode bnode : pendingBNodeReservations) {
+			unavailable.add(bnode.getID());
+		}
+		pendingBNodeReservations.clear();
 	}
 
 	public synchronized void reserve(BindingSet bindings) {
@@ -264,6 +305,8 @@ public final class BlankNodeAllocationScope {
 	}
 
 	private BNode createBNode(ValueFactory factory, String label) {
+		reservePendingBNodes();
+		reservePendingTripleTerms();
 		Predicate<String> known = alreadyKnown;
 		if (known == null && localIdentityResolver != null) {
 			known = localIdentityResolver::hasBNodeId;

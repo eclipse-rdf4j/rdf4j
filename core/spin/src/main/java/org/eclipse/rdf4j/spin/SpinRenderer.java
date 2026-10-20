@@ -18,6 +18,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import org.eclipse.rdf4j.model.BNode;
@@ -35,6 +36,7 @@ import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.And;
+import org.eclipse.rdf4j.query.algebra.ArbitraryLengthPath;
 import org.eclipse.rdf4j.query.algebra.Avg;
 import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
@@ -97,11 +99,13 @@ import org.eclipse.rdf4j.query.algebra.Str;
 import org.eclipse.rdf4j.query.algebra.StrLangDir;
 import org.eclipse.rdf4j.query.algebra.Sum;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.parser.ParsedBooleanQuery;
 import org.eclipse.rdf4j.query.parser.ParsedDescribeQuery;
@@ -600,15 +604,42 @@ public class SpinRenderer {
 		}
 
 		private void renderPatternList(IRI property, TupleExpr body) throws RDFHandlerException {
-			if (body instanceof SingletonSet) {
+			renderPatternList(property, body, false);
+		}
+
+		private void renderPatternList(IRI property, TupleExpr body, boolean scopeChange) throws RDFHandlerException {
+			if (body instanceof SingletonSet && (scopeChange || !isScopeChange(body))) {
 				handler.handleStatement(valueFactory.createStatement(subject, property, RDF.NIL));
 				return;
 			}
 			Resource head = valueFactory.createBNode();
 			handler.handleStatement(valueFactory.createStatement(subject, property, head));
 			ListContext previous = newList(head);
-			body.visit(this);
+			renderPattern(body, scopeChange);
 			endList(previous);
+		}
+
+		private boolean isScopeChange(TupleExpr body) {
+			return body instanceof VariableScopeChange scope && scope.isVariableScopeChange();
+		}
+
+		private boolean hasIntrinsicScope(TupleExpr body) {
+			if (body instanceof Union) {
+				return true;
+			}
+			while (body instanceof Slice || body instanceof Distinct || body instanceof Reduced) {
+				body = ((UnaryTupleOperator) body).getArg();
+			}
+			return body instanceof Projection projection && projection.isSubquery();
+		}
+
+		/** Element lists preserve ordinary group boundaries not already encoded by an element's syntax. */
+		private void renderPattern(TupleExpr body, boolean scopeChange) throws RDFHandlerException {
+			if (isScopeChange(body) && !scopeChange && !hasIntrinsicScope(body)) {
+				renderPatternListEntry(body);
+			} else {
+				body.visit(this);
+			}
 		}
 
 		private void renderPatternListEntry(TupleExpr body) throws RDFHandlerException {
@@ -655,10 +686,10 @@ public class SpinRenderer {
 				// this is the first Extension node and has already been handled
 				// by meetExtension()
 				// to produce inline bindings in SELECT so we can skip it here
-				node.getArg().visit(this);
+				renderPattern(node.getArg(), false);
 			} else {
 				// any further Extension nodes produce BIND() clauses
-				node.getArg().visit(this);
+				renderPattern(node.getArg(), false);
 				for (ExtensionElem elem : node.getElements()) {
 					elem.visit(this);
 				}
@@ -720,6 +751,48 @@ public class SpinRenderer {
 		}
 
 		@Override
+		public void meet(ArbitraryLengthPath node) throws RDFHandlerException {
+			// The parser's ModPath grammar has one fixed predicate. Inverse paths use the actual edge endpoints.
+			// More complex path algebra needs additional SPIN path grammar support.
+			if (!(node.getPathExpression()instanceof StatementPattern pattern)
+					|| !pattern.getPredicateVar().isConstant()
+					|| !(pattern.getPredicateVar().getValue() instanceof IRI)
+					|| pattern.getScope() != node.getScope()
+					|| !Objects.equals(pattern.getContextVar(), node.getContextVar())
+					|| !(pattern.getSubjectVar().equals(node.getSubjectVar())
+							&& pattern.getObjectVar().equals(node.getObjectVar())
+							|| pattern.getSubjectVar().equals(node.getObjectVar())
+									&& pattern.getObjectVar().equals(node.getSubjectVar()))) {
+				throw new UnsupportedOperationException(
+						"Unsupported SPIN path expression: " + node.getPathExpression());
+			}
+			ListContext ctxList = null;
+			if (StatementPattern.Scope.NAMED_CONTEXTS == node.getScope()) {
+				ctxList = getNamedGraph(node.getContextVar());
+			}
+			listEntry();
+			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.TRIPLE_PATH_CLASS));
+			predicate = SP.SUBJECT_PROPERTY;
+			pattern.getSubjectVar().visit(this);
+			predicate = SP.OBJECT_PROPERTY;
+			pattern.getObjectVar().visit(this);
+			Resource path = valueFactory.createBNode();
+			handler.handleStatement(valueFactory.createStatement(subject, SP.PATH_PROPERTY, path));
+			subject = path;
+			handler.handleStatement(valueFactory.createStatement(path, RDF.TYPE, SP.MOD_PATH_CLASS));
+			predicate = SP.SUB_PATH_PROPERTY;
+			pattern.getPredicateVar().visit(this);
+			handler.handleStatement(valueFactory.createStatement(path, SP.MOD_MIN_PROPERTY,
+					valueFactory.createLiteral(node.getMinLength())));
+			handler.handleStatement(
+					valueFactory.createStatement(path, SP.MOD_MAX_PROPERTY, valueFactory.createLiteral(-2)));
+			predicate = null;
+			if (ctxList != null) {
+				restoreNamedGraph(ctxList);
+			}
+		}
+
+		@Override
 		public void meet(Var node) throws RDFHandlerException {
 			Value value;
 			if (node.isConstant()) {
@@ -738,7 +811,7 @@ public class SpinRenderer {
 		@Override
 		public void meet(Filter node) throws RDFHandlerException {
 			hasGroup = false;
-			node.getArg().visit(this);
+			renderPattern(node.getArg(), false);
 			if (!hasGroup) {
 				listEntry();
 				handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.FILTER_CLASS));
@@ -1118,14 +1191,14 @@ public class SpinRenderer {
 		@Override
 		public void meet(Group node) throws RDFHandlerException {
 			// skip over GroupElem - leave this to the GroupVisitor later
-			node.getArg().visit(this);
+			renderPattern(node.getArg(), false);
 			hasGroup = true;
 		}
 
 		@Override
 		public void meet(Order node) throws RDFHandlerException {
 			// skip over OrderElem - leave this to the OrderVisitor later
-			node.getArg().visit(this);
+			renderPattern(node.getArg(), false);
 		}
 
 		@Override
@@ -1155,24 +1228,13 @@ public class SpinRenderer {
 
 		@Override
 		public void meet(Join node) throws RDFHandlerException {
-			boolean isGroupGraphPattern = (node.getRightArg() instanceof Join);
-			if (!isGroupGraphPattern) {
-				super.meet(node);
-			} else {
-				listEntry();
-				ListContext leftGroupCtx = newList(subject);
-				node.getLeftArg().visit(this);
-				endList(leftGroupCtx);
-				listEntry();
-				ListContext rightGroupCtx = newList(subject);
-				node.getRightArg().visit(this);
-				endList(rightGroupCtx);
-			}
+			renderPattern(node.getLeftArg(), false);
+			renderPattern(node.getRightArg(), false);
 		}
 
 		@Override
 		public void meet(LeftJoin node) throws RDFHandlerException {
-			node.getLeftArg().visit(this);
+			renderPattern(node.getLeftArg(), false);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.OPTIONAL_CLASS));
 			renderPatternList(SP.ELEMENTS_PROPERTY, node.getRightArg());
@@ -1192,10 +1254,10 @@ public class SpinRenderer {
 
 		@Override
 		public void meet(Difference node) throws RDFHandlerException {
-			node.getLeftArg().visit(this);
+			renderPattern(node.getLeftArg(), false);
 			listEntry();
 			handler.handleStatement(valueFactory.createStatement(subject, RDF.TYPE, SP.MINUS_CLASS));
-			renderPatternList(SP.ELEMENTS_PROPERTY, node.getRightArg());
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getRightArg(), true);
 		}
 
 		@Override
@@ -1208,7 +1270,7 @@ public class SpinRenderer {
 			predicate = SP.SERVICE_URI_PROPERTY;
 			node.getServiceRef().visit(this);
 			predicate = null;
-			renderPatternList(SP.ELEMENTS_PROPERTY, node.getArg());
+			renderPatternList(SP.ELEMENTS_PROPERTY, node.getArg(), true);
 		}
 
 		@Override

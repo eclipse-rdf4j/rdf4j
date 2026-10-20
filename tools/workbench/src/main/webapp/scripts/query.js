@@ -361,7 +361,8 @@ var workbench;
                 primaryQueryHash: '',
                 compareQueryHash: '',
                 explainLevel: 'Optimized',
-                explainFormat: 'text'
+                explainFormat: 'text',
+                forcedLmdbExecutionStrategy: ''
             };
         }
         function collectCurrentInputs() {
@@ -369,7 +370,8 @@ var workbench;
                 primaryQueryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                 compareQueryHash: buildQueryHash(getPaneRawQueryValue('compare')),
                 explainLevel: getNormalizedExplainLevel($('#explain-level').val()),
-                explainFormat: getNormalizedExplainFormat($('#explain-format').val())
+                explainFormat: getNormalizedExplainFormat($('#explain-format').val()),
+                forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : $('#lmdb-forced-strategy').val() || ''
             };
         }
         function createRequestSignature(paneKey, source, requestId, groupId) {
@@ -382,6 +384,7 @@ var workbench;
                 queryHash: getPaneQueryHashFromInputs(paneKey, currentInputs),
                 level: currentInputs.explainLevel,
                 format: currentInputs.explainFormat,
+                forcedLmdbExecutionStrategy: currentInputs.forcedLmdbExecutionStrategy,
                 groupId: groupId,
                 startedAt: Date.now()
             };
@@ -422,9 +425,11 @@ var workbench;
                 queryHash: explanation.queryHash,
                 level: explanation.level,
                 requestedFormat: explanation.requestedFormat,
+                forcedLmdbExecutionStrategy: explanation.forcedLmdbExecutionStrategy,
                 responseFormat: explanation.responseFormat,
                 view: explanation.view,
                 rawContent: explanation.rawContent,
+                strategyDecisions: cloneStrategyDecisions(explanation.strategyDecisions),
                 displayContent: explanation.displayContent,
                 lineSeparator: explanation.lineSeparator,
                 plan: explanation.plan,
@@ -449,9 +454,11 @@ var workbench;
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.view,
                 explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || []),
                 explanation.lineSeparator,
                 getExplanationDisplayContent(explanation),
                 String(!!explanation.timedOut)
@@ -465,8 +472,10 @@ var workbench;
                 explanation.queryHash,
                 explanation.level,
                 explanation.requestedFormat,
+                explanation.forcedLmdbExecutionStrategy,
                 explanation.responseFormat,
                 explanation.rawContent,
+                JSON.stringify(explanation.strategyDecisions || []),
                 explanation.lineSeparator,
                 getExplanationDisplayContent(explanation)
             ].join('||');
@@ -499,6 +508,9 @@ var workbench;
             }
             if (explanation.requestedFormat !== inputs.explainFormat) {
                 staleReasons.push('format');
+            }
+            if (explanation.forcedLmdbExecutionStrategy !== inputs.forcedLmdbExecutionStrategy) {
+                staleReasons.push('strategy');
             }
             return staleReasons;
         }
@@ -552,6 +564,7 @@ var workbench;
                 && left.queryHash === right.queryHash
                 && left.level === right.level
                 && left.format === right.format
+                && left.forcedLmdbExecutionStrategy === right.forcedLmdbExecutionStrategy
                 && left.groupId === right.groupId;
         }
         function getEventSignatureForPane(event, paneKey) {
@@ -633,6 +646,7 @@ var workbench;
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'EXPLAIN_LEVEL_CHANGED':
                 case 'EXPLAIN_FORMAT_CHANGED':
+                case 'FORCED_STRATEGY_CHANGED':
                     return restorePaneStateFromPrevious(paneState, paneKey, inputs, layout);
                 case 'DOT_RENDER_OK':
                     if (paneState.kind !== 'ready'
@@ -1831,6 +1845,67 @@ var workbench;
             }
             restoreExplainButtonViewportTopIfNeeded(paneKey);
         }
+        function cloneStrategyDecisions(reports) {
+            return Array.isArray(reports) ? JSON.parse(JSON.stringify(reports)) : undefined;
+        }
+        function createStrategyDecisionTables(reports) {
+            var surface = document.createElement('div');
+            surface.className = 'query-strategy-decisions';
+            (reports || []).forEach(function (report) {
+                var section = document.createElement('section');
+                var heading = document.createElement('h3');
+                heading.textContent = report.decisionPoint;
+                section.appendChild(heading);
+                var summary = document.createElement('p');
+                summary.className = 'query-strategy-decisions__selection';
+                var selected = report.wouldSelect || (report.mode === 'runtime dependent' ? 'Runtime dependent'
+                    : report.mode === 'no dispatch' ? 'No strategy required' : 'No eligible strategy');
+                summary.textContent = 'Would select now: ' + selected
+                    + ' (' + report.mode + ')' + (report.fallback ? '; fallback: ' + report.fallback : '');
+                section.appendChild(summary);
+                var reason = document.createElement('p');
+                reason.textContent = report.reason || '';
+                section.appendChild(reason);
+                var table = document.createElement('table');
+                var head = document.createElement('thead');
+                var headers = document.createElement('tr');
+                ['Priority', 'Strategy', 'Can attempt?', 'Decision', 'Reason'].forEach(function (label) {
+                    var cell = document.createElement('th');
+                    cell.setAttribute('scope', 'col');
+                    cell.textContent = label;
+                    headers.appendChild(cell);
+                });
+                head.appendChild(headers);
+                table.appendChild(head);
+                var body = document.createElement('tbody');
+                (report.candidates || []).forEach(function (candidate) {
+                    var row = document.createElement('tr');
+                    if (candidate.strategy === report.wouldSelect)
+                        row.className = 'query-strategy-decisions__selected';
+                    var eligibility = candidate.canAttempt === true ? 'Yes'
+                        : candidate.canAttempt === false ? 'No' : 'Runtime dependent';
+                    [candidate.priority == null ? '—' : String(candidate.priority), candidate.strategy, eligibility,
+                        candidate.decision, candidate.declineReason || candidate.condition || ''].forEach(function (value) {
+                        var cell = document.createElement('td');
+                        cell.textContent = value;
+                        row.appendChild(cell);
+                    });
+                    body.appendChild(row);
+                });
+                table.appendChild(body);
+                section.appendChild(table);
+                surface.appendChild(section);
+            });
+            return surface;
+        }
+        function renderStrategyDecisions(paneKey, explanation) {
+            var pane = getPaneState(paneKey);
+            var surface = $('#' + pane.explanationId + '-strategies');
+            surface.empty();
+            if (explanation && explanation.strategyDecisions && explanation.strategyDecisions.length) {
+                surface.append(createStrategyDecisionTables(explanation.strategyDecisions));
+            }
+        }
         function getSharedHotspotSummary() {
             if (explanationHighlightMode !== 'hotspot') {
                 return null;
@@ -2146,6 +2221,9 @@ var workbench;
             var renderContentKey = getStableExplanationContentKey(paneDisplayExplanation)
                 + '||' + explanationHighlightMode + '||' + String(sharedMaximum)
                 + '||' + JSON.stringify(explanationHiddenProperties);
+            if (lastRenderedExplanationKeys[paneKey] !== renderContentKey || !paneDisplayExplanation) {
+                renderStrategyDecisions(paneKey, paneDisplayExplanation);
+            }
             $('#' + paneState.copyButtonId).prop('disabled', !paneDisplayExplanation);
             if (!rowVisible) {
                 renderPaneStatus(paneKey, '', '', false);
@@ -2702,12 +2780,14 @@ var workbench;
             $('#explanation-timeout').attr('placeholder', queryTimeout);
             $('#explanation-timeout-help').text(getExplanationTimeoutHelp(queryTimeout));
         }
-        function serializeExplainFormData(queryValue, level, format, serverRequestId) {
+        function serializeExplainFormData(queryValue, level, format, serverRequestId, forcedLmdbExecutionStrategy) {
+            forcedLmdbExecutionStrategy = forcedLmdbExecutionStrategy || '';
             var serializedForm = $('form[action="query"]').serializeArray();
             var transportFormat = getNormalizedExplainFormat(format) === 'text' ? 'json' : format;
             var seenAction = false;
             var seenExplain = false;
             var seenFormat = false;
+            var seenForcedLmdbExecutionStrategy = false;
             var seenInfer = false;
             var seenQuery = false;
             var seenExplainRequestId = false;
@@ -2723,6 +2803,10 @@ var workbench;
                 else if (serializedForm[i].name === 'explain-format') {
                     serializedForm[i].value = transportFormat;
                     seenFormat = true;
+                }
+                else if (serializedForm[i].name === 'lmdb-forced-strategy') {
+                    serializedForm[i].value = forcedLmdbExecutionStrategy;
+                    seenForcedLmdbExecutionStrategy = true;
                 }
                 else if (serializedForm[i].name === 'infer') {
                     seenInfer = true;
@@ -2744,6 +2828,9 @@ var workbench;
             }
             if (!seenFormat) {
                 serializedForm.push({ name: 'explain-format', value: transportFormat });
+            }
+            if (!seenForcedLmdbExecutionStrategy) {
+                serializedForm.push({ name: 'lmdb-forced-strategy', value: forcedLmdbExecutionStrategy });
             }
             // An unchecked checkbox is not serialized: send its explicit false, but only for an enabled control (a
             // disabled one is turned off by policy and must not be sent at all).
@@ -3039,9 +3126,11 @@ var workbench;
                 queryHash: signature.queryHash,
                 level: signature.level,
                 requestedFormat: signature.format,
+                forcedLmdbExecutionStrategy: signature.forcedLmdbExecutionStrategy,
                 responseFormat: responseFormat,
                 view: explanationView,
                 rawContent: explanationText,
+                strategyDecisions: cloneStrategyDecisions(response.strategyDecisions),
                 displayContent: displayContent,
                 lineSeparator: lineSeparator,
                 plan: parsedPlan,
@@ -3069,7 +3158,7 @@ var workbench;
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format, signature.serverRequestId),
+                data: serializeExplainFormData(getPaneRawQueryValue('primary'), signature.level, signature.format, signature.serverRequestId, signature.forcedLmdbExecutionStrategy),
                 error: function (jqXHR, textStatus, errorThrown) {
                     if (activePrimaryRequestSignature && signaturesMatch(activePrimaryRequestSignature, signature)) {
                         cancelUnansweredExplanation(jqXHR, textStatus, signature);
@@ -3182,6 +3271,11 @@ var workbench;
             refreshVisibleQueryEditors();
         }
         function handleQueryPageInputChange(eventType) {
+            // Editor initialization emits changes before the server response has been hydrated.
+            // Its initial content must remain in the DOM until initializeExplanationView reads it.
+            if (queryPageState && queryPageState.lifecycle === 'bootstrapping') {
+                return;
+            }
             if (activeComparePendingRequests > 0) {
                 cancelCompareExplain();
             }
@@ -3200,7 +3294,8 @@ var workbench;
             if (eventType === 'PRIMARY_QUERY_CHANGED'
                 || eventType === 'COMPARE_QUERY_CHANGED'
                 || eventType === 'EXPLAIN_LEVEL_CHANGED'
-                || eventType === 'EXPLAIN_FORMAT_CHANGED') {
+                || eventType === 'EXPLAIN_FORMAT_CHANGED'
+                || eventType === 'FORCED_STRATEGY_CHANGED') {
                 handleQueryPageInputChange(eventType);
             }
         }
@@ -3394,7 +3489,7 @@ var workbench;
                 url: 'query',
                 type: 'POST',
                 dataType: 'json',
-                data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format, signature.serverRequestId),
+                data: serializeExplainFormData(getPaneRawQueryValue(signature.pane), signature.level, signature.format, signature.serverRequestId, signature.forcedLmdbExecutionStrategy),
                 error: function (jqXHR, textStatus, errorThrown) {
                     if (activeCompareRequestSignatures[signature.pane]
                         && signaturesMatch(activeCompareRequestSignatures[signature.pane], signature)) {
@@ -3767,6 +3862,16 @@ var workbench;
         query_1.copyExplanation = copyExplanation;
         function initializeExplanationView() {
             var initialExplanation = $('#query-explanation').text();
+            var initialStrategies;
+            var serializedStrategies = $('#query-explanation').attr('data-strategy-decisions');
+            if (serializedStrategies) {
+                try {
+                    initialStrategies = cloneStrategyDecisions(JSON.parse(serializedStrategies));
+                }
+                catch (parseError) {
+                    initialStrategies = undefined;
+                }
+            }
             var initialFormat = getNormalizedExplainFormat($('#query-explanation').attr('data-format') || $('#explain-format').val() || 'text');
             var hydratedExplanation = null;
             if (initialExplanation) {
@@ -3777,9 +3882,11 @@ var workbench;
                     source: 'primary-explain',
                     queryHash: buildQueryHash(getPaneRawQueryValue('primary')),
                     level: getNormalizedExplainLevel($('#explain-level').val()),
-                    format: initialFormat
+                    format: initialFormat,
+                    forcedLmdbExecutionStrategy: $('#lmdb-forced-strategy').prop('disabled') ? '' : $('#lmdb-forced-strategy').val() || ''
                 }, {
                     content: initialExplanation,
+                    strategyDecisions: initialStrategies,
                     format: initialFormat,
                     error: ''
                 }, initialFormat);
@@ -4053,6 +4160,73 @@ var workbench;
             updateCompareActionState();
         }
         query_1.refreshCompareActionState = refreshCompareActionState;
+        var lmdbStrategyRequest = null;
+        var lmdbStrategyGeneration = 0;
+        /** Only the live page's selected repository may enable query forcing. */
+        function loadLmdbForceableStrategies() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var field = $('#lmdb-forced-strategy-field');
+            var element = select.get(0);
+            var endpoint = queryEndpoint();
+            var generation = ++lmdbStrategyGeneration;
+            var preferred = select.data('preferred-value') || select.val() || '';
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
+            function isCurrent() {
+                return generation === lmdbStrategyGeneration && endpoint === queryEndpoint()
+                    && document.getElementById('lmdb-forced-strategy') === element;
+            }
+            function clearSelection() {
+                select.empty().append($('<option></option>').attr('value', '')).val('').prop('disabled', true);
+                field.prop('hidden', true);
+            }
+            clearSelection();
+            lmdbStrategyRequest = $.ajax({
+                url: endpoint, type: 'GET', dataType: 'json', data: { action: 'lmdb-strategies' }
+            });
+            lmdbStrategyRequest.done(function (response) {
+                if (!isCurrent()) {
+                    return;
+                }
+                lmdbStrategyRequest = null;
+                var strategies = response.strategies || [];
+                if (!response.available || strategies.length === 0) {
+                    return;
+                }
+                $.each(strategies, function (index, strategy) {
+                    select.append($('<option></option>')
+                        .attr('value', strategy.name)
+                        .attr('title', strategy.description)
+                        .text(strategy.name));
+                });
+                var offered = strategies.some(function (strategy) { return strategy.name === preferred; });
+                select.val(offered ? preferred : '').prop('disabled', false);
+                field.prop('hidden', false);
+            }).fail(function () {
+                if (isCurrent()) {
+                    lmdbStrategyRequest = null;
+                    clearSelection();
+                }
+            });
+        }
+        query_1.loadLmdbForceableStrategies = loadLmdbForceableStrategies;
+        function initializeLmdbForcedStrategy() {
+            var select = $('#lmdb-forced-strategy');
+            if (select.length === 0) {
+                return;
+            }
+            var remembered = workbench.getCookie('lmdb-forced-strategy');
+            if (remembered) {
+                select.data('preferred-value', remembered);
+            }
+            loadLmdbForceableStrategies();
+        }
+        query_1.initializeLmdbForcedStrategy = initializeLmdbForcedStrategy;
         /**
          * Mount the Query page in outlet (plan task M9.1): fill the editor from the URL, the session draft or the
          * cookies, set up the explanation and compare views, and bind the page's controls. Element handlers and
@@ -4212,6 +4386,7 @@ var workbench;
             setQueryValue($.trim(getQueryValue()));
             initializeExplanationView();
             initializeCompareUi();
+            initializeLmdbForcedStrategy();
             workbench.tabs.bind(outlet.querySelector('#query-output [role="tablist"]'));
             var queryOutput = outlet.querySelector('#query-output');
             var onResultSummary = function (event) {
@@ -4290,6 +4465,9 @@ var workbench;
             on('#explain-format', 'change', function () {
                 notifyQueryPageInputChange('EXPLAIN_FORMAT_CHANGED');
             });
+            on('#lmdb-forced-strategy', 'change', function () {
+                notifyQueryPageInputChange('FORCED_STRATEGY_CHANGED');
+            });
             on('#query-timeout', 'input change', syncExplanationTimeoutControls);
             on('#query-diff-modal', 'click', function (event) {
                 if (event.target && event.target.id === 'query-diff-modal') {
@@ -4344,6 +4522,11 @@ var workbench;
          * route's dispose and the unit tests use it.
          */
         function resetState(reason) {
+            ++lmdbStrategyGeneration;
+            if (lmdbStrategyRequest) {
+                lmdbStrategyRequest.abort();
+                lmdbStrategyRequest = null;
+            }
             ['primary', 'compare'].forEach(function (controllerKey) {
                 var uiState = getExplainRequestUiState(controllerKey);
                 clearTimeout(uiState.spinnerDelayTimeoutId);
@@ -4446,6 +4629,7 @@ var workbench;
             createFallbackRequestId: generateRequestId,
             createInitialQueryPageState: createInitialQueryPageState,
             createJsonScalarElement: createJsonScalarElement,
+            createStrategyDecisionTables: createStrategyDecisionTables,
             createJsonTreeNode: createJsonTreeNode,
             createReadyPaneState: createReadyPaneState,
             createRequestSignature: createRequestSignature,

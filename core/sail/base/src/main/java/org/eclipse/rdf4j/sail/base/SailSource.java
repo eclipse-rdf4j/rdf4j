@@ -358,6 +358,15 @@ public interface SailSource extends SailClosable {
 		return NumericWriteEstimate.EMPTY;
 	}
 
+	/**
+	 * Estimates combined capacity with the exact terminal sources contributing statements. The context is an immutable
+	 * identity set; empty sibling sources do not contribute. Existing estimators retain their single-input dispatch.
+	 */
+	@InternalUseOnly
+	default NumericWriteEstimate estimateWritePreflight(StatementInput input, Set<SailSource> statementContributors) {
+		return estimateWritePreflight(input);
+	}
+
 	/** A physical forecast can be retired independently of its cached logical numeric estimate. */
 	@InternalUseOnly
 	interface WritePreflightScope extends SailClosable {

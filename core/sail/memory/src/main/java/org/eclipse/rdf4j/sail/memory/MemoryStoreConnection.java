@@ -12,6 +12,7 @@
 
 package org.eclipse.rdf4j.sail.memory;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -90,6 +91,12 @@ public class MemoryStoreConnection extends SailSourceConnection implements Threa
 	protected void addStatementInternal(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		// assume the triple is not yet present in the triple store
 		sailChangedEvent.setStatementsAdded(true);
+	}
+
+	@Override
+	@InternalUseOnly
+	protected Class<? extends SailSourceConnection> bulkApprovalOwner() {
+		return MemoryStoreConnection.class;
 	}
 
 	@Override

@@ -115,6 +115,62 @@ public class ExpressionErrorSemanticsTest {
 
 	@ParameterizedTest
 	@EnumSource(QueryEvaluationMode.class)
+	public void nestedTripleComponentCallsRespectLazyBranchesAndEvaluationCount(QueryEvaluationMode mode) {
+		AtomicInteger calls = new AtomicInteger();
+		Function counter = new Function() {
+			@Override
+			public String getURI() {
+				return "urn:triple:nested-counter";
+			}
+
+			@Override
+			public boolean mustReturnDifferentResult() {
+				return true;
+			}
+
+			@Override
+			public Value evaluate(ValueFactory factory, Value... args) {
+				calls.incrementAndGet();
+				return factory.createLiteral("counted");
+			}
+		};
+		FunctionRegistry.getInstance().add(counter);
+		try {
+			for (boolean optimize : List.of(false, true)) {
+				for (String component : List.of("SUBJECT", "PREDICATE", "OBJECT")) {
+					String triple = "TRIPLE(<urn:s>,<urn:p>,<urn:triple:nested-counter>())";
+					String nested = component + "(" + triple + ")";
+					for (String expression : List.of("IF(false," + nested + ",'safe')",
+							"COALESCE('safe'," + nested + ")", "IF(false," + component
+									+ "(COALESCE(?unbound," + triple + ")),'safe')")) {
+						calls.set(0);
+						assertThat(evaluate(mode, "SELECT (" + expression + " AS ?x) WHERE {}", optimize))
+								.singleElement()
+								.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo("safe"));
+						assertThat(calls).as("%s, optimize=%s", expression, optimize).hasValue(0);
+					}
+					String expected = component.equals("SUBJECT") ? "urn:s"
+							: component.equals("PREDICATE") ? "urn:p" : "counted";
+					for (String expression : List.of(nested, "IF(true," + nested + ",'unused')",
+							"COALESCE(?unbound," + nested + ")", component + "(COALESCE(?unbound," + triple + "))")) {
+						calls.set(0);
+						assertThat(evaluate(mode, "SELECT (" + expression + " AS ?x) WHERE {}", optimize))
+								.singleElement()
+								.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo(expected));
+						assertThat(calls).as("%s, optimize=%s", expression, optimize).hasValue(1);
+					}
+					assertThat(evaluate(mode, "SELECT (COALESCE(" + component + "(42),'safe') AS ?x) WHERE {}",
+							optimize)).singleElement()
+									.satisfies(row -> assertThat(row.getValue("x").stringValue()).isEqualTo("safe"));
+				}
+			}
+		} finally {
+			FunctionRegistry.getInstance().remove(counter);
+		}
+	}
+
+	@ParameterizedTest
+	@EnumSource(QueryEvaluationMode.class)
 	public void ifConditionErrorsPropagateThroughNestedExpressions(QueryEvaluationMode mode) {
 		for (boolean optimize : List.of(false, true)) {
 			for (String condition : List.of("?unbound", "!?unbound", "1 / 0", "<urn:error>",

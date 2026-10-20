@@ -56,6 +56,21 @@ import org.junit.jupiter.api.Test;
 public class ConstantOptimizerTest extends QueryOptimizerTest {
 
 	@Test
+	public void nowIsNotFoldedIntoReusablePlan() throws RDF4JException {
+		ParsedQuery query = QueryParserUtil.parseQuery(QueryLanguage.SPARQL,
+				"SELECT ?now WHERE { BIND(NOW() AS ?now) }", null);
+		EvaluationStrategy strategy = new StrictEvaluationStrategy(new EmptyTripleSource(), null);
+
+		TupleExpr optimized = optimize(query.getTupleExpr().clone(), new QueryBindingSet(), strategy);
+		AlgebraFinder finder = new AlgebraFinder();
+		optimized.visit(finder);
+
+		assertThat(finder.functionCallFound)
+				.as("NOW must remain query-scoped instead of becoming a reusable plan constant")
+				.isTrue();
+	}
+
+	@Test
 	public void invalidConstantIfConditionRetainsItsError() {
 		EvaluationStrategy strategy = new DefaultEvaluationStrategy(new EmptyTripleSource(), null);
 		for (String condition : List.of("<urn:error>", "'text'@en", "'text'^^<urn:datatype>")) {

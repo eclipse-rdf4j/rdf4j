@@ -192,9 +192,9 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 */
 	@Override
 	public void meet(Exists theOp) throws Exception {
-		mBuffer.append(" exists(");
+		mBuffer.append(" EXISTS {");
 		mBuffer.append(renderTupleExpr(theOp.getSubQuery()));
-		mBuffer.append(")");
+		mBuffer.append('}');
 	}
 
 	/**
@@ -218,7 +218,7 @@ final class SparqlValueExprRenderer extends AbstractQueryModelVisitor<Exception>
 	 */
 	private String renderTupleExpr(TupleExpr theExpr) throws Exception {
 		SparqlTupleExprRenderer aRenderer = new SparqlTupleExprRenderer();
-		return aRenderer.render(theExpr);
+		return aRenderer.renderGraphPattern(theExpr);
 	}
 
 	/**

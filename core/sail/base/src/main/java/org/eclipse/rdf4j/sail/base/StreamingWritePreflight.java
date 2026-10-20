@@ -174,11 +174,14 @@ public final class StreamingWritePreflight implements SailClosable {
 				}
 				List<StatementInput.Generation> generations = group.input.generations();
 				SailSource.NumericWriteEstimate estimate = old != null && old.generations.equals(generations)
-						? old.estimate
-						: group.source.estimateWritePreflight(group.input);
+						&& old.statementContributors.size() == group.statementContributors.size()
+						&& old.statementContributors.containsAll(group.statementContributors)
+								? old.estimate
+								: group.source.estimateWritePreflight(group.input, group.statementContributors);
 				graph.validateInputs();
 				SailSource.WritePreflightScope scope = group.source.beginWritePreflight(estimate, owner.owner());
-				candidates.put(group.key, new Registration(generations, estimate, owner, scope));
+				candidates.put(group.key,
+						new Registration(generations, group.statementContributors, estimate, owner, scope));
 				for (SailSource terminal : group.terminals) {
 					frame.owners.put(terminal, owner.owner());
 				}
@@ -454,7 +457,8 @@ public final class StreamingWritePreflight implements SailClosable {
 		}
 	}
 
-	private record Registration(List<StatementInput.Generation> generations, SailSource.NumericWriteEstimate estimate,
+	private record Registration(List<StatementInput.Generation> generations, Set<SailSource> statementContributors,
+			SailSource.NumericWriteEstimate estimate,
 			SailSource.WriteOwner owner, SailSource.WritePreflightScope scope) {
 	}
 
@@ -485,6 +489,7 @@ public final class StreamingWritePreflight implements SailClosable {
 		private final GroupKey key;
 		private final SailSource source;
 		private final Set<SailSource> terminals = identitySet();
+		private Set<SailSource> statementContributors = identitySet();
 		private final List<StatementInput> inputs = new ArrayList<>();
 		private CombinedInput input;
 
@@ -600,8 +605,18 @@ public final class StreamingWritePreflight implements SailClosable {
 				Group group = groups.computeIfAbsent(key, ignored -> new Group(key, route.source));
 				group.terminals.add(route.source);
 				group.inputs.addAll(route.inputs);
+				for (StatementInput input : route.inputs) {
+					if (input.hasStatements()) {
+						group.statementContributors.add(route.source);
+						break;
+					}
+				}
 			}
 			for (Group group : groups.values()) {
+				// Copy into another identity set: semantic equals must not collapse distinct terminal capabilities.
+				Set<SailSource> contributors = identitySet();
+				contributors.addAll(group.statementContributors);
+				group.statementContributors = Collections.unmodifiableSet(contributors);
 				group.input = new CombinedInput(group.inputs);
 			}
 		}

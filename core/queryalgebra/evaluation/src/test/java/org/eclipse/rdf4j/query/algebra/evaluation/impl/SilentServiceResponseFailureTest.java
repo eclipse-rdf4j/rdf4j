@@ -34,8 +34,8 @@ class SilentServiceResponseFailureTest {
 	@Test
 	void silentResponseFailureDiscardsPartialRowsAndReturnsInputOnce() {
 		var vf = SimpleValueFactory.getInstance();
-		var pattern = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p")), Var.of("o"));
-		var service = new Service(Var.of("endpoint", vf.createIRI("urn:service")), pattern,
+		var pattern = new StatementPattern(Var.of("s"), Var.of("p", vf.createIRI("urn:p"), true, true), Var.of("o"));
+		var service = new Service(Var.of("endpoint", vf.createIRI("urn:service"), true, true), pattern,
 				"?s <urn:p> ?o", Map.of(), null, true);
 		var input = new MapBindingSet();
 		input.addBinding("s", vf.createIRI("urn:s"));

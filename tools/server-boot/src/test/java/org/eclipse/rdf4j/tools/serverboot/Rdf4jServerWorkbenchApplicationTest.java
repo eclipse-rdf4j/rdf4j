@@ -179,6 +179,22 @@ class Rdf4jServerWorkbenchApplicationTest {
 	}
 
 	@Test
+	void removedGlobalLmdbRoutesAreUnavailable() {
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		headers.set("X-RDF4J-Admin-Request", "true");
+		for (String resource : List.of("properties", "strategies")) {
+			String route = serverUrl() + "/system/lmdb/" + resource;
+			for (HttpMethod method : List.of(HttpMethod.GET, HttpMethod.POST)) {
+				ResponseEntity<String> response = restTemplate.exchange(route, method,
+						new HttpEntity<>("name=rdf4j.lmdb.markJoin.enabled&enabled=true", headers), String.class);
+				assertThat(response.getStatusCode()).as("%s %s", method, route).isEqualTo(HttpStatus.NOT_FOUND);
+			}
+		}
+		assertThat(rdf4jServerServlet.getUrlMappings()).noneMatch(mapping -> mapping.contains("/system/lmdb/"));
+	}
+
+	@Test
 	void serverProtocolEndpointResponds() {
 		ResponseEntity<String> response = restTemplate.getForEntity(
 				"http://localhost:" + port + "/rdf4j-server/protocol", String.class);

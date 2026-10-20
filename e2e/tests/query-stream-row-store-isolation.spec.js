@@ -20,7 +20,7 @@
 const { test, expect } = require('@playwright/test');
 const { createSeededRepository, deleteRepository, repositoryPageUrl, serverBaseUrl, uniqueRepositoryId,
 	waitForRoute } = require('./workbench-test-helpers.js');
-const { DATABASE_PREFIX, largeQuery, storedResults, waitForStoredQueryRows } = require('../row-store-helpers.js');
+const { DATABASE_PREFIX, largeQuery, storedResults, waitForStoredResult } = require('../row-store-helpers.js');
 
 const REPOSITORY_ID = uniqueRepositoryId('row-store-isolation');
 const LEGACY_DATABASE = 'rdf4j-workbench-query-results';
@@ -129,10 +129,13 @@ test('pages and a large query result work while another tab holds write transact
 	await page.locator('#exec').click();
 	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
 		{ timeout: 30000 });
-	const ownStore = await waitForStoredQueryRows(page, before, 12000);
+	const readyStore = await waitForStoredResult(page, before, 12000);
+	expect(readyStore.metadataCount).toBe(12000);
+	expect(readyStore.physicalRowCount).toBe(12000);
 	const stored = await storedResults(page);
 	const own = stored.databases.filter((id) => DATABASE_PREFIX + id !== otherStore);
-	expect(own, 'the result is in a database of its own').toEqual([ownStore.id]);
+	expect(own, 'the result is in a database of its own').toHaveLength(1);
+	expect(own).toContain(readyStore.id);
 	await page.keyboard.press('End');
 	await expect(page.locator('#query-results tbody tr[data-query-row-index="11999"]')).toBeAttached();
 	expect(pageErrors).toEqual([]);

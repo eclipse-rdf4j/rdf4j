@@ -171,21 +171,41 @@ public class PrefixDeclProcessor {
 			assert colonIdx >= 0 : "colonIdx should be >= 0: " + colonIdx;
 
 			String prefix = qname.substring(0, colonIdx);
-			String localName = qname.substring(colonIdx + 1);
+			int localNameStart = colonIdx + 1;
 
 			String namespace = prefixMap.get(prefix);
 			if (namespace == null) {
 				throw new VisitorException("QName '" + qname + "' uses an undefined prefix");
 			}
 
-			localName = unescapeLocalName(localName);
-
 			// Replace the qname node with a new IRI node in the parent node
 			ASTIRI iriNode = new ASTIRI(SyntaxTreeBuilderTreeConstants.JJTIRI);
-			iriNode.setValue(namespace + localName);
+			iriNode.setValue(expandQName(namespace, qname, localNameStart));
 			qnameNode.jjtReplaceWith(iriNode);
 
 			return null;
+		}
+
+		private static String expandQName(String namespace, String qname, int localNameStart) {
+			int escape = qname.indexOf('\\', localNameStart);
+			if (escape < 0) {
+				return namespace + qname.substring(localNameStart);
+			}
+
+			// The PNAME_LN lexer rule guarantees that every backslash in PN_LOCAL starts PN_LOCAL_ESC.
+			final int length = qname.length();
+			StringBuilder iri = new StringBuilder(namespace.length() + length - localNameStart - 1);
+			iri.append(namespace);
+
+			int copyFrom = localNameStart;
+			do {
+				iri.append(qname, copyFrom, escape);
+				iri.append(qname.charAt(escape + 1));
+				copyFrom = escape + 2;
+				escape = qname.indexOf('\\', copyFrom);
+			} while (escape >= 0);
+
+			return iri.append(qname, copyFrom, length).toString();
 		}
 
 		@Override

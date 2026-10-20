@@ -21,10 +21,13 @@ import static org.lwjgl.system.MemoryStack.stackPush;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
+import static org.lwjgl.util.lmdb.LMDB.mdb_env_set_mapsize;
 import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,6 +36,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.eclipse.rdf4j.sail.lmdb.TxnManager.Txn;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
@@ -123,6 +127,16 @@ public class TripleStoreAutoGrowTest {
 					"The cached aligned write should grow the native LMDB map before the estimator reads it");
 			assertEquals(1.0 + batch.subj.length, cachedStore.cardinality(-1, 7, -1, -1));
 		}
+	}
+
+	@Test
+	public void reserveWriteCapacityAdvancesMappingGeneration() throws Exception {
+		long before = mappingGeneration(tripleStore);
+
+		tripleStore.reserveWriteCapacity(1L << 20);
+
+		assertTrue(mappingGeneration(tripleStore) > before,
+				"automatic resize must invalidate estimator mappings");
 	}
 
 	private static int batchSizeForMapGrowth(long mapSize) {
@@ -538,6 +552,7 @@ public class TripleStoreAutoGrowTest {
 			int[] callbackCounts = new int[batch.subj.length];
 
 			fallbackStore.startTransaction();
+			assertFalse(requiresResize(fallbackStore), "the healthy writer must enter before the resize threshold");
 			assertDoesNotThrow(
 					() -> fallbackStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context,
 							batch.subj.length, true, index -> callbackCounts[index]++));
@@ -636,6 +651,50 @@ public class TripleStoreAutoGrowTest {
 			assertEquals(MDB_SUCCESS, mdb_env_info(store.env, info));
 			return info.me_mapsize();
 		}
+	}
+
+	private static long mappingGeneration(TripleStore store) throws Exception {
+		Field field = TripleStore.class.getDeclaredField("mappingGeneration");
+		field.setAccessible(true);
+		return ((AtomicLong) field.get(store)).get();
+	}
+
+	private static int getPageSize(TripleStore store) throws Exception {
+		Field pageSizeField = TripleStore.class.getDeclaredField("pageSize");
+		pageSizeField.setAccessible(true);
+		return pageSizeField.getInt(store);
+	}
+
+	private static boolean requiresResize(TripleStore store) throws Exception {
+		Method requiresResize = TripleStore.class.getDeclaredMethod("requiresResize");
+		requiresResize.setAccessible(true);
+		return (boolean) requiresResize.invoke(store);
+	}
+
+	private static long getLongField(TripleStore store, String fieldName) throws Exception {
+		Field field = TripleStore.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return field.getLong(store);
+	}
+
+	private static void setLongField(TripleStore store, String fieldName, long value) throws Exception {
+		Field field = TripleStore.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		field.setLong(store, value);
+	}
+
+	private static void forceRecordCache(TripleStore store) throws Exception {
+		Field recordCacheField = TripleStore.class.getDeclaredField("recordCache");
+		recordCacheField.setAccessible(true);
+		File cacheDir = new File(getFileField(store, "dir"), "forced-record-cache");
+		assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
+		recordCacheField.set(store, new TxnRecordCache(cacheDir));
+	}
+
+	private static File getFileField(TripleStore store, String fieldName) throws Exception {
+		Field field = TripleStore.class.getDeclaredField(fieldName);
+		field.setAccessible(true);
+		return (File) field.get(store);
 	}
 
 	private static List<Long> expectedContextIds(StatementBatch batch) {
@@ -872,5 +931,157 @@ public class TripleStoreAutoGrowTest {
 		} finally {
 			LmdbTestUtil.deleteDir(dataDir);
 		}
+	}
+
+	@Test
+	public void testRecordCacheReplayRegistersContextsForAlignedBatch() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp");
+		config.setTripleDBSize(8L * 1024 * 1024);
+		try (TripleStore cachedStore = new TripleStore(new File(dataDir, "aligned-bulk-record-cache"), config, null)) {
+			StatementBatch batch = createBatch(200_000L, 8);
+			forceRecordCache(cachedStore);
+
+			cachedStore.startTransaction();
+			cachedStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context, batch.subj.length, true);
+			assertDoesNotThrow(cachedStore::commit);
+			assertBatchStoredWithContexts(cachedStore, batch);
+		}
+	}
+
+	@Test
+	public void testAlignedBulkContextFallbackReplaysBatchOnce() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc,ospc,cspo,cpos,cosp");
+		config.setTripleDBSize(8L * 1024 * 1024);
+		File storeDir = new File(dataDir, "aligned-bulk-context-fallback");
+		try (TripleStore fallbackStore = new TripleStore(storeDir, config, null)) {
+			long targetRemainingCapacity = LmdbUtil.MIN_FREE_SPACE + getPageSize(fallbackStore);
+			StatementBatch batch = createBatchExceedingRemainingCapacity(dataDir, config, targetRemainingCapacity);
+			shrinkMapToRemainingCapacity(fallbackStore, targetRemainingCapacity);
+
+			fallbackStore.startTransaction();
+			assertFalse(requiresResize(fallbackStore), "the healthy writer must enter before the resize threshold");
+			assertDoesNotThrow(
+					() -> fallbackStore.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context,
+							batch.subj.length, true));
+			assertDoesNotThrow(fallbackStore::commit);
+
+			assertBatchStoredWithContexts(fallbackStore, batch);
+		}
+	}
+
+	@Test
+	public void testCachedInferredPromotionKeepsContextCountsBalanced() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		try (TripleStore cachedStore = new TripleStore(new File(dataDir, "cached-inferred-promotion"), config, null)) {
+			long subject = 101L;
+			long predicate = 202L;
+			long object = 303L;
+			long context = 404L;
+
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, false));
+			cachedStore.commit();
+
+			forceRecordCache(cachedStore);
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, true));
+			cachedStore.commit();
+
+			cachedStore.startTransaction();
+			cachedStore.removeTriplesByContext(subject, predicate, object, context, true, quad -> {
+			});
+			cachedStore.commit();
+
+			try (Txn txn = cachedStore.getTxnManager().createReadTxn()) {
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, true)));
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, false)));
+				assertTrue(contextIds(cachedStore.getContexts(txn)).isEmpty(),
+						"Removing the promoted explicit statement should also clear the last context entry");
+			}
+		}
+	}
+
+	@Test
+	public void testCachedDuplicateExplicitAddKeepsContextCountsBalanced() throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc");
+		try (TripleStore cachedStore = new TripleStore(new File(dataDir, "cached-duplicate-explicit"), config, null)) {
+			long subject = 501L;
+			long predicate = 502L;
+			long object = 503L;
+			long context = 504L;
+
+			cachedStore.startTransaction();
+			assertTrue(cachedStore.storeTriple(subject, predicate, object, context, true));
+			cachedStore.commit();
+
+			forceRecordCache(cachedStore);
+			cachedStore.startTransaction();
+			assertFalse(cachedStore.storeTriple(subject, predicate, object, context, true),
+					"Cached duplicate explicit add should not report a new statement");
+			cachedStore.commit();
+
+			cachedStore.startTransaction();
+			cachedStore.removeTriplesByContext(subject, predicate, object, context, true, quad -> {
+			});
+			cachedStore.commit();
+
+			try (Txn txn = cachedStore.getTxnManager().createReadTxn()) {
+				assertEquals(0, count(cachedStore.getTriples(txn, -1, -1, -1, -1, true)));
+				assertTrue(contextIds(cachedStore.getContexts(txn)).isEmpty(),
+						"Deleting the last persisted statement should also clear the cached context entry");
+			}
+		}
+	}
+
+	private static StatementBatch createBatchExceedingRemainingCapacity(File dataDir, LmdbStoreConfig config,
+			long targetRemainingCapacity)
+			throws Exception {
+		for (int statementCount = 256; statementCount <= 4096; statementCount *= 2) {
+			StatementBatch batch = createBatch(100_000L, statementCount);
+			long batchBytes = measureAlignedBatchBytes(new File(dataDir, "aligned-bulk-measure-" + statementCount),
+					config, batch);
+			if (batchBytes > targetRemainingCapacity) {
+				return batch;
+			}
+		}
+		throw new AssertionError("Aligned batch never exceeded remaining map capacity");
+	}
+
+	private static long measureAlignedBatchBytes(File dir, LmdbStoreConfig config, StatementBatch batch)
+			throws Exception {
+		try (TripleStore store = new TripleStore(dir, config, null)) {
+			store.startTransaction();
+			try {
+				long usedBefore = currentCapacityUsage(store);
+				store.storeTriplesAligned(batch.subj, batch.pred, batch.obj, batch.context, batch.subj.length, true);
+				long usedAfter = currentCapacityUsage(store);
+				assertTrue(usedAfter > usedBefore, "Aligned batch should consume LMDB map space");
+				return usedAfter - usedBefore;
+			} finally {
+				store.rollback();
+			}
+		}
+	}
+
+	private static void shrinkMapToRemainingCapacity(TripleStore store, long targetRemainingCapacity) throws Exception {
+		store.startTransaction();
+		long usedCapacity;
+		try {
+			usedCapacity = currentCapacityUsage(store);
+		} finally {
+			store.rollback();
+		}
+
+		long newMapSize = alignToPageSize(usedCapacity + targetRemainingCapacity, getPageSize(store));
+		LmdbUtil.E(mdb_env_set_mapsize(getLongField(store, "env"), newMapSize));
+		setLongField(store, "mapSize", newMapSize);
+	}
+
+	private static long currentCapacityUsage(TripleStore store) throws Exception {
+		return LmdbUtil.getNewSize(getPageSize(store), getLongField(store, "writeTxn"), 0);
+	}
+
+	private static long alignToPageSize(long value, long pageSize) {
+		return value % pageSize == 0 ? value : value + pageSize - (value % pageSize);
 	}
 }

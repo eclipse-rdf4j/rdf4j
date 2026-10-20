@@ -40,6 +40,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 
 	private static final int WAVE_VALUES = 1024;
+	private static final ThreadLocal<RepositoryValueIteration<?>> SOURCE_PULL = new ThreadLocal<>();
 
 	private record PendingValue(LmdbValue value, LmdbValue.InternalIdentity identity) {
 	}
@@ -130,7 +131,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 			return false;
 		}
 		// Iterator availability may run user callbacks or block. Never request a later row before this one escapes.
-		boolean available = source.hasNext();
+		boolean available = sourceHasNext();
 		if (closed.get()) {
 			return false;
 		}
@@ -139,7 +140,7 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 			close();
 			return false;
 		}
-		T nextRow = extractor.snapshot(source.next());
+		T nextRow = extractor.snapshot(sourceNext());
 		if (closed.get()) {
 			return false;
 		}
@@ -163,6 +164,39 @@ final class RepositoryValueIteration<T> implements CloseableIteration<T> {
 		row = nextRow;
 		rowReady = true;
 		return true;
+	}
+
+	/** A repository pull already owns cold values until its complete current-row wave finishes. */
+	boolean isPullingSource() {
+		return !closed.get() && SOURCE_PULL.get() == this;
+	}
+
+	private boolean sourceHasNext() {
+		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
+		SOURCE_PULL.set(this);
+		try {
+			return source.hasNext();
+		} finally {
+			restoreSourcePull(previous);
+		}
+	}
+
+	private T sourceNext() {
+		RepositoryValueIteration<?> previous = SOURCE_PULL.get();
+		SOURCE_PULL.set(this);
+		try {
+			return source.next();
+		} finally {
+			restoreSourcePull(previous);
+		}
+	}
+
+	private static void restoreSourcePull(RepositoryValueIteration<?> previous) {
+		if (previous == null) {
+			SOURCE_PULL.remove();
+		} else {
+			SOURCE_PULL.set(previous);
+		}
 	}
 
 	/** Cheap check that a root needs no owner scope, decode or child traversal; uncertain shapes take the full path. */

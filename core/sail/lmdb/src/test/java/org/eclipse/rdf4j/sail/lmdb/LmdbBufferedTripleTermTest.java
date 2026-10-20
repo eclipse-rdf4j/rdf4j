@@ -54,8 +54,12 @@ import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
@@ -67,6 +71,7 @@ import org.eclipse.rdf4j.sail.features.SailResultValueExtractor;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailConnectionWrapper;
 import org.eclipse.rdf4j.sail.helpers.NotifyingSailWrapper;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -292,6 +297,75 @@ class LmdbBufferedTripleTermTest {
 			assertCompleteValue(expectedChild, child);
 			repository.shutDown();
 			assertCompleteValue(expectedChild, child);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void rawBindingChildOwnsItsEpochAfterResultClosure(boolean nativeEvaluation, @TempDir File directory)
+			throws Exception {
+		Seed seed = seed(directory);
+		LmdbStore store = newStore(directory);
+		store.setEvaluationStrategyFactory(nativeEvaluation
+				? new LmdbNativeEvaluationStrategyFactory(store.getFederatedServiceResolver())
+				: new DefaultEvaluationStrategyFactory());
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		Value child;
+		Value expected = ((TripleTerm) seed.statements.get(0).getObject()).getObject();
+		try {
+			try (NotifyingSailConnection reader = store.getConnection()) {
+				String query = "SELECT ?o WHERE { <" + seed.statements.get(0).getSubject().stringValue()
+						+ "> ?p ?o }";
+				var expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+				try (CloseableIteration<? extends BindingSet> rows = reader.evaluate(expression, null,
+						EmptyBindingSet.getInstance(), false)) {
+					assertTrue(rows.hasNext());
+					LmdbValue parent = assertUnresolved(rows.next().getValue("o"));
+					child = ((TripleTerm) parent).getObject();
+					assertUnresolved(child);
+					assertFalse(rows.hasNext());
+				}
+			}
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.READ_COMMITTED);
+				writer.clear();
+				writer.commit();
+			}
+			assertUnresolved(child);
+			assertCompleteValue(expected, child);
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void rawContextIdOwnsItsEpochAfterSourceClosure(@TempDir File directory) throws Exception {
+		seed(directory);
+		LmdbStore store = newStore(directory);
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		Resource context;
+		try {
+			try (NotifyingSailConnection reader = store.getConnection();
+					CloseableIteration<? extends Resource> contexts = reader.getContextIDs()) {
+				assertTrue(contexts.hasNext());
+				context = contexts.next();
+				assertUnresolved(context);
+				while (contexts.hasNext()) {
+					contexts.next();
+				}
+			}
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.READ_COMMITTED);
+				writer.clear();
+				writer.commit();
+			}
+			assertUnresolved(context);
+			assertTrue(Stream.concat(Stream.of(CONTEXTS), Stream.of(SHARED_OWNER_CONTEXT))
+					.anyMatch(expected -> expected.equals(context)));
 		} finally {
 			repository.shutDown();
 		}

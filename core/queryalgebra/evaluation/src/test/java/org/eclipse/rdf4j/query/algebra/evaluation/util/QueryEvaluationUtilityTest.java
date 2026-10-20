@@ -21,18 +21,47 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
 import java.math.BigInteger;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import javax.xml.datatype.XMLGregorianCalendar;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.base.CoreDatatype;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
+import org.eclipse.rdf4j.query.algebra.AggregateFunctionCall;
+import org.eclipse.rdf4j.query.algebra.BNodeGenerator;
+import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Sample;
+import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
+import org.eclipse.rdf4j.query.algebra.ValueConstant;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.ValueExprEvaluationException;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.BooleanCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DateTimeCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DecimalCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.DoubleCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FloatCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.Function;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.IntegerCast;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.StringCast;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -42,7 +71,183 @@ import org.junit.jupiter.api.Test;
  */
 public class QueryEvaluationUtilityTest {
 
+	@Test
+	void numericOperatorsTreatNaNAsUnordered() {
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtility
+				.compareLiterals(left, right, operator)
+				.orElse(false));
+	}
+
+	@Test
+	void nanRetainsItsTotalOrderingIndependentlyOfNumericPredicates() {
+		for (CoreDatatype.XSD type : List.of(CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE)) {
+			Literal nan = f.createLiteral("NaN", type);
+			Literal finite = f.createLiteral(1);
+			assertEquals(QueryEvaluationUtility.Order.greater,
+					QueryEvaluationUtility.compareLiterals(nan, finite, true));
+			assertEquals(QueryEvaluationUtility.Order.smaller,
+					QueryEvaluationUtility.compareLiterals(finite, nan, true));
+			assertEquals(QueryEvaluationUtility.Order.equal,
+					QueryEvaluationUtility.compareLiterals(nan, nan, true));
+			assertTrue(new ValueComparator().compare(nan, finite) > 0);
+			assertTrue(new ValueComparator().compare(finite, nan) < 0);
+			assertEquals(0, new ValueComparator().compare(nan, nan));
+		}
+	}
+
+	@Test
+	void invalidFloatingLiteralIdentityKeepsItsExistingValueComparisonContract() {
+		Literal invalid = f.createLiteral("not-a-floating-value", CoreDatatype.XSD.DOUBLE);
+		for (CompareOp operator : CompareOp.values()) {
+			boolean expected = operator == EQ || operator == CompareOp.LE || operator == CompareOp.GE;
+			assertEquals(expected, QueryEvaluationUtil.compare(invalid, invalid, operator));
+			assertEquals(expected, QueryEvaluationUtility.compareLiterals(invalid, invalid, operator).orElse(false));
+		}
+	}
+
+	@Test
+	void specializedNumericOperatorsTreatNaNAsUnordered() {
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtil.compare(left, right, operator));
+		assertNaNComparisons((left, right, operator) -> QueryEvaluationUtil.compareLiterals(left, right, operator));
+	}
+
+	@Test
+	void specializedNumericOperatorsTreatSignedZerosAsEqual() {
+		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
+				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };
+		for (CoreDatatype.XSD leftType : types) {
+			for (CoreDatatype.XSD rightType : types) {
+				Literal left = f.createLiteral("-0", leftType);
+				Literal right = f.createLiteral("0", rightType);
+				for (CompareOp operator : CompareOp.values()) {
+					boolean expected = operator == EQ || operator == CompareOp.LE || operator == CompareOp.GE;
+					assertEquals(expected, QueryEvaluationUtil.compare(left, right, operator),
+							left + " " + operator + " " + right);
+					assertEquals(expected, QueryEvaluationUtil.compare(right, left, operator),
+							right + " " + operator + " " + left);
+				}
+			}
+		}
+	}
+
+	@Test
+	void specializedNumericOperatorsPromoteTheRoundedFloatValueToDouble() {
+		Literal left = f.createLiteral("16777217", CoreDatatype.XSD.FLOAT);
+		Literal right = f.createLiteral("16777217", CoreDatatype.XSD.DOUBLE);
+		for (CompareOp operator : CompareOp.values()) {
+			boolean forward = operator == LT || operator == CompareOp.LE || operator == NE;
+			boolean reverse = operator == CompareOp.GT || operator == CompareOp.GE || operator == NE;
+			assertEquals(forward, QueryEvaluationUtil.compare(left, right, operator), operator.toString());
+			assertEquals(reverse, QueryEvaluationUtil.compare(right, left, operator), operator.toString());
+		}
+	}
+
+	private void assertNaNComparisons(NumericOperator comparison) {
+		for (CoreDatatype.XSD type : List.of(CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE)) {
+			Literal nan = f.createLiteral("NaN", type);
+			for (Literal other : List.of(nan, f.createLiteral("NaN", type),
+					f.createLiteral("NaN",
+							type == CoreDatatype.XSD.FLOAT ? CoreDatatype.XSD.DOUBLE : CoreDatatype.XSD.FLOAT),
+					f.createLiteral(1), f.createLiteral(BigDecimal.ONE), f.createLiteral("-0", type),
+					f.createLiteral("INF", type), f.createLiteral("-INF", type))) {
+				for (CompareOp operator : CompareOp.values()) {
+					assertEquals(operator == NE, comparison.compare(nan, other, operator),
+							nan + " " + operator + " " + other);
+					assertEquals(operator == NE, comparison.compare(other, nan, operator),
+							other + " " + operator + " " + nan);
+				}
+			}
+		}
+	}
+
+	@FunctionalInterface
+	private interface NumericOperator {
+		boolean compare(Literal left, Literal right, CompareOp operator);
+	}
+
+	@Test
+	void signedZeroNumericComparisonsAreEqualAcrossDatatypes() {
+		CoreDatatype.XSD[] types = { CoreDatatype.XSD.INTEGER, CoreDatatype.XSD.DECIMAL,
+				CoreDatatype.XSD.FLOAT, CoreDatatype.XSD.DOUBLE };
+		for (CoreDatatype.XSD leftType : types) {
+			for (CoreDatatype.XSD rightType : types) {
+				for (String leftLabel : new String[] { "0", "-0", "+000" }) {
+					for (String rightLabel : new String[] { "0", "-0", "+000" }) {
+						Literal left = f.createLiteral(leftLabel, leftType);
+						Literal right = f.createLiteral(rightLabel, rightType);
+						assertEquals(QueryEvaluationUtility.Order.equal,
+								QueryEvaluationUtility.compareLiterals(left, right, true),
+								left + " compared with " + right);
+						assertEquals(0, new ValueComparator().compare(left, right));
+					}
+				}
+			}
+		}
+	}
+
+	@Test
+	void floatPromotionUsesTheRoundedFloatValue() {
+		for (String label : new String[] { "1e-45", "1.00000001", "16777217", "-16777217", "3.4028235e38" }) {
+			Literal floatLiteral = f.createLiteral(label, CoreDatatype.XSD.FLOAT);
+			Literal doubleLiteral = f.createLiteral(label, CoreDatatype.XSD.DOUBLE);
+			double promoted = (double) Float.parseFloat(label);
+			double parsed = Double.parseDouble(label);
+			QueryEvaluationUtility.Order expected = QueryEvaluationUtility.Order.from(Double.compare(promoted, parsed));
+			assertEquals(expected, QueryEvaluationUtility.compareLiterals(floatLiteral, doubleLiteral, true), label);
+			assertEquals(QueryEvaluationUtility.Order.from(Double.compare(parsed, promoted)),
+					QueryEvaluationUtility.compareLiterals(doubleLiteral, floatLiteral, true), label);
+			assertEquals(QueryEvaluationUtility.Order.equal,
+					QueryEvaluationUtility.compareLiterals(floatLiteral, f.createLiteral(promoted), true), label);
+		}
+	}
+
 	private final ValueFactory f = SimpleValueFactory.getInstance();
+
+	@Test
+	public void querySafetySnapshotRetainsPublicNoArgumentConstructorAndAnalyzesLazily() throws Exception {
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.QuerySafetySnapshot.class
+				.getConstructor()
+				.newInstance();
+
+		assertFalse(snapshot.isRepeatable(new BNodeGenerator()));
+		assertTrue(snapshot.isRepeatable(new SingletonSet()));
+	}
+
+	@Test
+	public void querySafetySummaryNameStorageGrowsLinearlyWithDistinctFacts() {
+		TupleExpr smallTree = treeWithDistinctSafetyNames(32);
+		TupleExpr largeTree = treeWithDistinctSafetyNames(64);
+		QueryEvaluationUtility.QuerySafetySnapshot small = QueryEvaluationUtility.querySafetySnapshot(smallTree);
+		QueryEvaluationUtility.QuerySafetySnapshot large = QueryEvaluationUtility.querySafetySnapshot(largeTree);
+
+		assertTrue(small.permitsBindingInjection(smallTree, Set.of("subject-0")));
+		assertFalse(small.permitsBindingInjection(smallTree, Set.of("filter-0")));
+		assertFalse(small.permitsBindingInjection(smallTree, Set.of("target-0")));
+		assertTrue(large.retainedNameFactStorageUnits() <= 3 * small.retainedNameFactStorageUnits(),
+				"doubling distinct fact names must not retain a copied fact set at every ancestor");
+	}
+
+	@Test
+	public void querySafetySnapshotSupportsVeryLongVariableNames() {
+		String name = "variable".repeat(512);
+		StatementPattern pattern = new StatementPattern(Var.of(name), Var.of("predicate"), Var.of("object"));
+		QueryEvaluationUtility.QuerySafetySnapshot snapshot = QueryEvaluationUtility.querySafetySnapshot(pattern);
+
+		assertTrue(snapshot.permitsBindingInjection(pattern, Set.of(name)),
+				"name facts must preserve the complete variable name without using name-length stack depth");
+	}
+
+	private TupleExpr treeWithDistinctSafetyNames(int size) {
+		TupleExpr result = null;
+		for (int i = 0; i < size; i++) {
+			StatementPattern pattern = new StatementPattern(Var.of("subject-" + i), Var.of("predicate-" + i),
+					Var.of("object-" + i));
+			TupleExpr branch = new Extension(new Filter(pattern, new Bound(Var.of("filter-" + i))),
+					new ExtensionElem(new ValueConstant(f.createLiteral(i)), "target-" + i));
+			result = result == null ? branch : new Join(result, branch);
+		}
+		return result;
+	}
 
 	private Literal arg1simple;
 
@@ -122,6 +327,92 @@ public class QueryEvaluationUtilityTest {
 
 		arg1unknown = f.createLiteral("foo", f.createIRI("http://example.com/datatype"));
 		arg2unknown = f.createLiteral("bar", f.createIRI("http://example.com/datatype"));
+	}
+
+	@Test
+	public void registryReplacementOfNowIsNotClassifiedAsQueryStable() {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Function replacement = new ReplacementNowFunction();
+		Optional<Function> previous = registry.add(replacement);
+		try {
+			assertFalse(QueryEvaluationUtility.isRepeatable(new FunctionCall("NOW")));
+		} finally {
+			registry.remove(replacement);
+			previous.ifPresent(registry::add);
+		}
+	}
+
+	@Test
+	public void serviceIsNotRepeatable() {
+		Service service = new Service(Var.of("serviceRef"), new SingletonSet(), "{ VALUES ?x { 1 } }", Map.of(),
+				null, false);
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(service));
+	}
+
+	@Test
+	public void tupleFunctionCallIsNotRepeatable() {
+		TupleFunctionCall call = new TupleFunctionCall();
+		call.setURI("urn:test:tuple-function");
+		call.addArg(new ValueConstant(f.createLiteral("input")));
+		call.addResultVar(Var.of("result"));
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+	}
+
+	@Test
+	public void sampleIsNotRepeatable() {
+		assertFalse(QueryEvaluationUtility.isRepeatable(new Sample(Var.of("value"))));
+	}
+
+	@Test
+	public void customAggregateFunctionCallIsNotRepeatable() {
+		AggregateFunctionCall call = new AggregateFunctionCall(List.of(Var.of("value")),
+				"urn:test:aggregate-function", false);
+
+		assertFalse(QueryEvaluationUtility.isRepeatable(call));
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedBooleanCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new BooleanCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDateTimeCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DateTimeCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDecimalCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DecimalCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedDoubleCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new DoubleCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedFloatCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new FloatCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedIntegerCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new IntegerCast());
+	}
+
+	@Test
+	@SuppressWarnings("deprecation")
+	public void deprecatedStringCastIsRepeatableWhenRegistered() {
+		assertRegisteredFunctionIsRepeatable(new StringCast());
 	}
 
 	@Test
@@ -726,5 +1017,33 @@ public class QueryEvaluationUtilityTest {
 			}
 		};
 		return right;
+	}
+
+	private static void assertRegisteredFunctionIsRepeatable(Function function) {
+		FunctionRegistry registry = FunctionRegistry.getInstance();
+		Optional<Function> previous = registry.add(function);
+		try {
+			assertSame(function, registry.get(function.getURI()).orElseThrow());
+			assertTrue(QueryEvaluationUtility.isRepeatable(function), function.getClass().getName());
+		} finally {
+			if (previous.isPresent()) {
+				registry.add(previous.orElseThrow());
+			} else {
+				registry.remove(function);
+			}
+		}
+	}
+
+	private static final class ReplacementNowFunction implements Function {
+
+		@Override
+		public String getURI() {
+			return "NOW";
+		}
+
+		@Override
+		public Value evaluate(ValueFactory valueFactory, Value... args) {
+			return valueFactory.createLiteral("replacement");
+		}
 	}
 }

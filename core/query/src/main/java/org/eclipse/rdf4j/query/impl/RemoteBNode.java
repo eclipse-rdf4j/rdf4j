@@ -15,8 +15,10 @@ import java.io.Serializable;
 import java.lang.ref.ReferenceQueue;
 import java.lang.ref.WeakReference;
 import java.math.BigInteger;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -300,11 +302,25 @@ public final class RemoteBNode extends SimpleBNode {
 
 	public static BindingSet toRemoteBindings(BindingSet bindings, Set<String> relevantNames, Object receivingScope,
 			boolean referenceSupport, boolean canonicalIDs) {
+		return toRemoteBindings(bindings, EmptyBindingSet.getInstance(), relevantNames, receivingScope,
+				referenceSupport, canonicalIDs);
+	}
+
+	/** Adds receiving-query terms without promoting them into the caller's original solution mapping. */
+	public static BindingSet toRemoteBindings(BindingSet bindings, BindingSet additionalBindings,
+			Set<String> relevantNames, Object receivingScope, boolean referenceSupport, boolean canonicalIDs) {
 		BindingSet original = originalBindings(bindings);
 		MapBindingSet source = new MapBindingSet(original.size());
-		MapBindingSet transported = new MapBindingSet(original.size());
+		MapBindingSet outgoing = new MapBindingSet(original.size() + additionalBindings.size());
 		for (Binding binding : original) {
 			source.addBinding(binding);
+			outgoing.addBinding(binding);
+		}
+		for (Binding binding : additionalBindings) {
+			outgoing.setBinding(binding.getName(), binding.getValue());
+		}
+		MapBindingSet transported = new MapBindingSet(outgoing.size());
+		for (Binding binding : outgoing) {
 			Value value = relevantNames.contains(binding.getName()) ? toRemoteValue(binding.getValue(),
 					receivingScope, referenceSupport, canonicalIDs) : binding.getValue();
 			transported.addBinding(binding.getName(), value);
@@ -398,43 +414,210 @@ public final class RemoteBNode extends SimpleBNode {
 
 	/** Only trusted value-copy boundaries call this with both the original and its semantic copy. */
 	public static Value preserveProvenance(Value original, Value captured) {
+		// No semantic copy means no alias can have been lost. In particular, do not walk an unchanged foreign triple
+		// tree just to prove that each of its children is still the same object.
+		if (original == captured && !(original instanceof RemoteBNode)) {
+			return captured;
+		}
 		if (original instanceof RemoteBNode remote) {
-			if (!(captured instanceof BNode) || !remote.getID().equals(((BNode) captured).getID())) {
-				throw new QueryEvaluationException("Unsupported blank-node identity: value copy changed its alias");
-			}
-			Provenance provenance = remote.getProvenance();
-			if (provenance == null) {
-				throw new QueryEvaluationException(
-						"Unsupported blank-node identity: remote provenance is no longer available");
-			}
-			if (captured == original || captured instanceof RemoteBNode copy && copy.registry == remote.registry
-					&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
-				return captured;
-			}
-			return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+			return preserveRemoteBNode(remote, captured);
 		}
 		if (original instanceof TripleTerm originalTriple && captured instanceof TripleTerm capturedTriple) {
-			Value subject = preserveProvenance(originalTriple.getSubject(), capturedTriple.getSubject());
-			Value object = preserveProvenance(originalTriple.getObject(), capturedTriple.getObject());
-			if (subject != capturedTriple.getSubject() || object != capturedTriple.getObject()) {
-				return SimpleValueFactory.getInstance()
-						.createTripleTerm((Resource) subject,
-								capturedTriple.getPredicate(), object);
-			}
+			return preserveTripleProvenance(originalTriple, capturedTriple);
 		}
-		if (containsRemoteIdentity(original) && !(captured instanceof TripleTerm)) {
+		if (!(captured instanceof TripleTerm) && containsRemoteIdentity(original)) {
 			throw new QueryEvaluationException("Unsupported blank-node identity: value copy lost nested provenance");
 		}
 		return captured;
 	}
 
+	private static Value preserveRemoteBNode(RemoteBNode remote, Value captured) {
+		if (!(captured instanceof BNode) || !remote.getID().equals(((BNode) captured).getID())) {
+			throw new QueryEvaluationException("Unsupported blank-node identity: value copy changed its alias");
+		}
+		Provenance provenance = remote.getProvenance();
+		if (provenance == null) {
+			throw new QueryEvaluationException(
+					"Unsupported blank-node identity: remote provenance is no longer available");
+		}
+		if (captured == remote || captured instanceof RemoteBNode copy && copy.registry == remote.registry
+				&& copy.localOwner == remote.localOwner && copy.getProvenance() == provenance) {
+			return captured;
+		}
+		return new RemoteBNode(((BNode) captured).getID(), remote.registry, remote.localOwner, provenance);
+	}
+
+	/** Preserves nested aliases without recursive calls or a second materialized copy of unchanged triples. */
+	private static Value preserveTripleProvenance(TripleTerm original, TripleTerm captured) {
+		if (original == captured) {
+			return captured;
+		}
+		Map<IdentityPair, Value> completed = new HashMap<>();
+		Set<IdentityPair> active = new HashSet<>();
+		ArrayDeque<PreservationFrame> pending = new ArrayDeque<>();
+		PreservationFrame root = new PreservationFrame(original, captured);
+		pending.push(root);
+		active.add(root.key);
+
+		while (!pending.isEmpty()) {
+			PreservationFrame frame = pending.peek();
+			Value known = completed.get(frame.key);
+			if (known != null) {
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (frame.original == frame.captured && !(frame.original instanceof RemoteBNode)) {
+				completed.put(frame.key, frame.captured);
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (frame.original instanceof RemoteBNode remote) {
+				completed.put(frame.key, preserveRemoteBNode(remote, frame.captured));
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (!(frame.original instanceof TripleTerm originalTriple)
+					|| !(frame.captured instanceof TripleTerm capturedTriple)) {
+				if (!(frame.captured instanceof TripleTerm) && containsRemoteIdentity(frame.original)) {
+					throw new QueryEvaluationException(
+							"Unsupported blank-node identity: value copy lost nested provenance");
+				}
+				completed.put(frame.key, frame.captured);
+				pending.pop();
+				active.remove(frame.key);
+				continue;
+			}
+
+			if (!frame.childrenLoaded) {
+				frame.originalSubject = originalTriple.getSubject();
+				frame.capturedSubject = capturedTriple.getSubject();
+				frame.originalObject = originalTriple.getObject();
+				frame.capturedObject = capturedTriple.getObject();
+				frame.subjectKey = new IdentityPair(frame.originalSubject, frame.capturedSubject);
+				frame.objectKey = new IdentityPair(frame.originalObject, frame.capturedObject);
+				frame.childrenLoaded = true;
+			}
+
+			if (frame.nextChild < 2) {
+				IdentityPair childKey = frame.nextChild == 0 ? frame.subjectKey : frame.objectKey;
+				Value originalChild = frame.nextChild == 0 ? frame.originalSubject : frame.originalObject;
+				Value capturedChild = frame.nextChild == 0 ? frame.capturedSubject : frame.capturedObject;
+				Value childResult = completed.get(childKey);
+				if (childResult != null) {
+					frame.setChildResult(frame.nextChild, childResult);
+					frame.nextChild++;
+					continue;
+				}
+				if (originalChild == capturedChild && !(originalChild instanceof RemoteBNode)) {
+					completed.put(childKey, capturedChild);
+					frame.setChildResult(frame.nextChild, capturedChild);
+					frame.nextChild++;
+					continue;
+				}
+				if (active.contains(childKey)) {
+					throw new QueryEvaluationException("Cyclic RDF value cannot preserve blank-node provenance");
+				}
+				active.add(childKey);
+				pending.push(new PreservationFrame(originalChild, capturedChild));
+				continue;
+			}
+
+			Value preserved = frame.preservedSubject != frame.capturedSubject
+					|| frame.preservedObject != frame.capturedObject
+							? SimpleValueFactory.getInstance()
+									.createTripleTerm((Resource) frame.preservedSubject,
+											capturedTriple.getPredicate(), frame.preservedObject)
+							: frame.captured;
+			completed.put(frame.key, preserved);
+			pending.pop();
+			active.remove(frame.key);
+		}
+
+		return completed.get(root.key);
+	}
+
+	private static final class PreservationFrame {
+		private final Value original;
+		private final Value captured;
+		private final IdentityPair key;
+		private Value originalSubject;
+		private Value capturedSubject;
+		private Value originalObject;
+		private Value capturedObject;
+		private Value preservedSubject;
+		private Value preservedObject;
+		private IdentityPair subjectKey;
+		private IdentityPair objectKey;
+		private int nextChild;
+		private boolean childrenLoaded;
+
+		private PreservationFrame(Value original, Value captured) {
+			this.original = original;
+			this.captured = captured;
+			key = new IdentityPair(original, captured);
+		}
+
+		private void setChildResult(int child, Value result) {
+			if (child == 0) {
+				preservedSubject = result;
+			} else {
+				preservedObject = result;
+			}
+		}
+	}
+
+	private static final class IdentityPair {
+		private final Value original;
+		private final Value captured;
+
+		private IdentityPair(Value original, Value captured) {
+			this.original = original;
+			this.captured = captured;
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * System.identityHashCode(original) + System.identityHashCode(captured);
+		}
+
+		@Override
+		public boolean equals(Object other) {
+			return this == other || other instanceof IdentityPair pair
+					&& original == pair.original && captured == pair.captured;
+		}
+	}
+
 	/** Identifies imported aliases for serializers that promise reusable local repository handles. */
 	public static boolean containsRemoteIdentity(Value value) {
+		if (value == null) {
+			return false;
+		}
 		if (value instanceof RemoteBNode) {
 			return true;
 		}
-		return value instanceof TripleTerm triple && (containsRemoteIdentity(triple.getSubject())
-				|| containsRemoteIdentity(triple.getObject()));
+		if (!(value instanceof TripleTerm)) {
+			return false;
+		}
+		Set<Value> visited = Collections.newSetFromMap(new IdentityHashMap<>());
+		ArrayDeque<Value> pending = new ArrayDeque<>();
+		pending.push(value);
+		while (!pending.isEmpty()) {
+			Value current = pending.pop();
+			if (current instanceof RemoteBNode) {
+				return true;
+			}
+			if (current instanceof TripleTerm triple && visited.add(current)) {
+				pending.push(triple.getSubject());
+				pending.push(triple.getObject());
+			}
+		}
+		return false;
 	}
 
 	private static final class Registry {
