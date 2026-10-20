@@ -100,7 +100,8 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private static final Set<String> INPUT_ONLY_JOIN_ALGORITHMS = Set.of(
 			"HashJoinIteration",
-			"InnerMergeJoinIterator");
+			"InnerMergeJoinIterator",
+			"ScopedLeftJoinIterator");
 	private static final Set<String> LEFT_ROW_JOIN_ALGORITHMS = Set.of(
 			"JoinIterator",
 			"ServiceJoinIterator",
@@ -115,6 +116,8 @@ public final class QueryAlgebraBindingAnalysis {
 	private final Map<QueryModelNode, Long> scopeIdentities = new IdentityHashMap<>();
 	private final Map<OutputKey, OutputFacts> outputCache = new HashMap<>();
 	private final Map<OutputKey, Boolean> resultSetModifierCache = new HashMap<>();
+	private final Map<ChildInputKey, ReadOnlyContext> childInputCache = new HashMap<>();
+	private final Map<OutputKey, ReadOnlyContext> leftJoinInputCache = new HashMap<>();
 	private final AtomicLong nextScopeIdentity = new AtomicLong(1);
 
 	private QueryAlgebraBindingAnalysis(TupleExpr root, BindingSet initialBindings, Set<String> externalNames,
@@ -130,7 +133,7 @@ public final class QueryAlgebraBindingAnalysis {
 		if (initialBindings != null) {
 			for (String name : initialBindings.getBindingNames()) {
 				Value value = initialBindings.getValue(name);
-				if (value != null) {
+				if (value != null && externalNames.contains(name)) {
 					values.put(name, value);
 				}
 			}
@@ -171,6 +174,16 @@ public final class QueryAlgebraBindingAnalysis {
 			if (values.getValue(name) != null) {
 				names.add(name);
 			}
+		}
+		if (!names.isEmpty() && root != null) {
+			root.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+				@Override
+				public void meet(Projection projection) {
+					// Private GRAPH inputs come from evaluator frames, never from same-spelled API parameters.
+					names.remove(projection.getInheritedGraphParameter());
+					super.meet(projection);
+				}
+			});
 		}
 		return new QueryAlgebraBindingAnalysis(root, values, names, Set.of(), bindingAssignment);
 	}
@@ -494,7 +507,23 @@ public final class QueryAlgebraBindingAnalysis {
 		return false;
 	}
 
+	/**
+	 * Reuses one evaluator transition for the same edge and input identity within this analysis. Derived frames are
+	 * immutable, and their identity keys output facts; rebuilding a frame would defeat those caches and recursively
+	 * expand already analyzed operands. Distinct input owners remain distinct without hashing or comparing RDF values.
+	 */
 	public ReadOnlyContext childInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		ChildInputKey key = new ChildInputKey(parent, child, input);
+		ReadOnlyContext cached = childInputCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		ReadOnlyContext result = computeChildInput(parent, child, input);
+		childInputCache.put(key, result);
+		return result;
+	}
+
+	private ReadOnlyContext computeChildInput(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
 		if (parent instanceof Graph) {
 			return input;
 		}
@@ -648,6 +677,9 @@ public final class QueryAlgebraBindingAnalysis {
 				scopeNames.addAll(join.getLeftArg().getBindingNames());
 			} else if (parent instanceof LeftJoin leftJoin && leftJoin.getRightArg() == child) {
 				scopeNames.addAll(leftJoin.getLeftArg().getBindingNames());
+			} else if (parent instanceof Lateral lateral && lateral.getRightArg() == child) {
+				// FilterIterator exposes the input bindings a LATERAL deliberately passes to its right operand.
+				scopeNames.addAll(lateral.getRightInputBindingNames());
 			}
 			child = parent;
 			parent = parent.getParentNode();
@@ -657,20 +689,24 @@ public final class QueryAlgebraBindingAnalysis {
 
 	private ReadOnlyContext joinRightInput(Join join, ReadOnlyContext input) {
 		TupleExpr right = join.getRightArg();
-		if (join.isMergeJoin()) {
-			// InnerMergeJoinIterator evaluates both sides from the join's incoming frame, then merges matching rows.
-			// Do not treat left-side outputs as inputs to the right side while optimizers are still planning this join.
-			return input;
-		}
 		String algorithm = join.getAlgorithmName();
 		if (algorithm == null || algorithm.isEmpty()) {
+			// Direct SERVICE joins are prepared before the merge candidate flag is considered.
+			if (right instanceof Service) {
+				return withOutput(input, outputFacts(join.getLeftArg(), input));
+			}
+			if (join.isMergeJoin()) {
+				// An unprepared merge candidate evaluates both sides from the incoming frame.
+				return input;
+			}
 			// Classify from the frame before this join's left side is evaluated. Modifier analysis roots itself at the
 			// right subtree, so its inherited input is preserved while parent links outside that subtree are ignored.
-			if (right instanceof Service || !isOutOfScopeForLeftBindings(right, input)) {
+			if (!isOutOfScopeForLeftBindings(right, input)) {
 				return withOutput(input, outputFacts(join.getLeftArg(), input));
 			}
 			return input;
 		}
+		// Preparation may have selected another contract after the optimizer marked a merge candidate.
 		if (INPUT_ONLY_JOIN_ALGORITHMS.contains(algorithm)) {
 			return input;
 		}
@@ -709,6 +745,20 @@ public final class QueryAlgebraBindingAnalysis {
 	 * evaluator restores those inherited values after the optional has been evaluated.
 	 */
 	private ReadOnlyContext leftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
+		// Both OPTIONAL operands and its condition derive from this same withheld-input frame. In particular, the
+		// right transition asks for the left facts again: sharing this frame keeps that lookup identical to the
+		// left transition instead of doubling the entire left subtree at each nested OPTIONAL.
+		OutputKey key = new OutputKey(leftJoin, input);
+		ReadOnlyContext cached = leftJoinInputCache.get(key);
+		if (cached != null) {
+			return cached;
+		}
+		ReadOnlyContext result = computeLeftJoinInput(leftJoin, input);
+		leftJoinInputCache.put(key, result);
+		return result;
+	}
+
+	private ReadOnlyContext computeLeftJoinInput(LeftJoin leftJoin, ReadOnlyContext input) {
 		if (TupleExprs.requiresIndependentEvaluation(leftJoin.getRightArg())) {
 			return input;
 		}
@@ -1692,12 +1742,26 @@ public final class QueryAlgebraBindingAnalysis {
 	private record OutputKey(TupleExpr expression, ReadOnlyContext input) {
 		@Override
 		public boolean equals(Object other) {
-			return other instanceof OutputKey key && expression == key.expression && input.equals(key.input);
+			return other instanceof OutputKey key && expression == key.expression && input == key.input;
 		}
 
 		@Override
 		public int hashCode() {
-			return 31 * System.identityHashCode(expression) + input.hashCode();
+			return 31 * System.identityHashCode(expression) + System.identityHashCode(input);
+		}
+	}
+
+	private record ChildInputKey(QueryModelNode parent, QueryModelNode child, ReadOnlyContext input) {
+		@Override
+		public boolean equals(Object other) {
+			return other instanceof ChildInputKey key && parent == key.parent && child == key.child
+					&& input == key.input;
+		}
+
+		@Override
+		public int hashCode() {
+			return 31 * (31 * System.identityHashCode(parent) + System.identityHashCode(child))
+					+ System.identityHashCode(input);
 		}
 	}
 

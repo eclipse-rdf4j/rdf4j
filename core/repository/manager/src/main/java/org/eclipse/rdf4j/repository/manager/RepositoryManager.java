@@ -191,6 +191,7 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 
 			baseName = buffer.toString();
 		}
+		baseName = prepareRepositoryID(baseName);
 
 		// First try if we can use the base name without an appended index
 		if (baseName != null && !baseName.isEmpty() && !hasRepositoryConfig(baseName)) {
@@ -211,6 +212,13 @@ public abstract class RepositoryManager implements RepositoryResolver, HttpClien
 		}
 
 		return baseName + index;
+	}
+
+	/**
+	 * Applies the manager's identifier policy to a generated candidate before checking its availability.
+	 */
+	String prepareRepositoryID(String repositoryID) {
+		return repositoryID;
 	}
 
 	/**

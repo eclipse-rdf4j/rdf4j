@@ -19,6 +19,8 @@ import java.util.NoSuchElementException;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -73,6 +75,9 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 				imported++;
 				if (batch.size() >= Math.max(1, AbstractMemoryOverflowModel.BATCH_SIZE)) {
 					target.approveAll(batch, contexts);
+					// Approval batches alone do not bound the writer's pending dictionary publication state.
+					// This private candidate is adopted only after the complete import succeeds.
+					target.flush();
 					batch.clear();
 					contexts.clear();
 				}
@@ -100,15 +105,16 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		final CloseableIteration<? extends Statement> stmts;
 
 		Statement last;
-		private boolean closed;
+		private final AtomicBoolean closed = new AtomicBoolean();
 
 		StatementIterator(CloseableIteration<? extends Statement> closeableIteration) {
 			this.stmts = closeableIteration;
+			openStatementIterators.add(this);
 		}
 
 		@Override
 		public boolean hasNext() {
-			if (closed) {
+			if (closed.get()) {
 				return false;
 			}
 			try {
@@ -126,7 +132,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 		@Override
 		public Statement next() {
-			if (closed) {
+			if (closed.get()) {
 				throw new NoSuchElementException();
 			}
 			try {
@@ -143,12 +149,13 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		}
 
 		private RuntimeException fail(Throwable failure) {
-			if (!closed) {
-				closed = true;
+			if (closed.compareAndSet(false, true)) {
 				try {
 					stmts.close();
 				} catch (Throwable closeFailure) {
 					addSuppressed(failure, closeFailure);
+				} finally {
+					openStatementIterators.remove(this);
 				}
 			}
 			if (failure instanceof SailException) {
@@ -159,14 +166,15 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 		@Override
 		public void close() {
-			if (closed) {
+			if (!closed.compareAndSet(false, true)) {
 				return;
 			}
-			closed = true;
 			try {
 				stmts.close();
 			} catch (SailException e) {
 				throw new ModelException(e);
+			} finally {
+				openStatementIterators.remove(this);
 			}
 		}
 
@@ -185,6 +193,8 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 	SailDataset dataset;
 
 	SailSink sink;
+
+	private final Set<StatementIterator> openStatementIterators = ConcurrentHashMap.newKeySet();
 
 	private long size;
 
@@ -245,16 +255,16 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 			sink = null;
 			dataset = null;
 		}
-		Throwable failure = null;
+		Throwable failure = closeOpenStatementIterators();
+		failure = closeResource(currentDataset, failure);
 		if (currentSink != null) {
 			try {
 				currentSink.flush();
 			} catch (Throwable e) {
-				failure = e;
+				failure = addSuppressed(failure, e);
 			}
 			failure = closeResource(currentSink, failure);
 		}
-		failure = closeResource(currentDataset, failure);
 		if (failure != null) {
 			throw propagate(failure);
 		}
@@ -485,7 +495,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 	}
 
 	@Override
-	public Iterator<Statement> iterator() {
+	public synchronized Iterator<Statement> iterator() {
 		try {
 			return new StatementIterator(dataset().getStatements(null, null, null));
 		} catch (SailException e) {
@@ -527,10 +537,12 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 
 			@Override
 			public Iterator<Statement> iterator() {
-				try {
-					return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
-				} catch (SailException e) {
-					throw new ModelException(e);
+				synchronized (SailSourceModel.this) {
+					try {
+						return new StatementIterator(dataset().getStatements(subj, pred, obj, contexts));
+					} catch (SailException e) {
+						throw new ModelException(e);
+					}
 				}
 			}
 
@@ -581,14 +593,15 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 			SailDataset staleDataset = dataset;
 			sink = null;
 			dataset = null;
-			Throwable failure = null;
+			Throwable failure = closeOpenStatementIterators();
+			// The pending publication can require map growth. Release our obsolete reader before it drains views.
+			failure = closeResource(staleDataset, failure);
 			try {
 				pendingSink.flush();
 			} catch (Throwable e) {
-				failure = e;
+				failure = addSuppressed(failure, e);
 			}
 			failure = closeResource(pendingSink, failure);
-			failure = closeResource(staleDataset, failure);
 			if (failure != null) {
 				throw propagate(failure);
 			}
@@ -597,6 +610,18 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 			dataset = source.dataset(level);
 		}
 		return dataset;
+	}
+
+	private Throwable closeOpenStatementIterators() {
+		Throwable failure = null;
+		for (StatementIterator iterator : openStatementIterators.toArray(StatementIterator[]::new)) {
+			try {
+				iterator.close();
+			} catch (RuntimeException | Error closeFailure) {
+				failure = addSuppressed(failure, closeFailure);
+			}
+		}
+		return failure;
 	}
 
 	private Throwable closeInputIterator(Iterator<?> iterator, Throwable failure) {
@@ -657,13 +682,7 @@ class SailSourceModel extends AbstractModel implements AutoCloseable {
 		if (dataset == null) {
 			return false;
 		}
-		CloseableIteration<? extends Statement> stmts;
-		stmts = dataset.getStatements(subj, pred, obj, contexts);
-		try {
-			return stmts.hasNext();
-		} finally {
-			stmts.close();
-		}
+		return dataset.hasStatements(subj, pred, obj, contexts);
 	}
 
 	private boolean isEmptyOrResourcePresent(Value[] contexts) {

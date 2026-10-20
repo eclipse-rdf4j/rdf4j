@@ -15,6 +15,7 @@ import java.util.Comparator;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Objects;
 import java.util.Queue;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -51,6 +52,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	// Should never be seen by code outside of this iterator
 	private static final String END = "$end_from_path_iteration";
 	private static final String START = "$start_from_path_iteration";
+	private static final String CONTEXT = "$context_from_path_iteration";
 
 	/**
 	 * Required as we can't prepare the queries yet.
@@ -207,6 +209,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			return (v, vp) -> ((ValuePair) vp).startValue = v;
 		case END:
 			return (v, vp) -> ((ValuePair) vp).endValue = v;
+		case CONTEXT:
+			return (v, vp) -> ((ValuePair) vp).contextValue = v;
 		default:
 			return (v, vp) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
@@ -226,6 +230,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			return (vp) -> ((ValuePair) vp).startValue;
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue;
+		case CONTEXT:
+			return (vp) -> ((ValuePair) vp).contextValue;
 		default:
 			return (vp) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
@@ -245,6 +251,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			return (vp) -> ((ValuePair) vp).startValue != null;
 		case END:
 			return (vp) -> ((ValuePair) vp).endValue != null;
+		case CONTEXT:
+			return (vp) -> ((ValuePair) vp).contextValue != null;
 		default:
 			return (vp) -> {
 				throw new IllegalStateException("A value is being asked to be set where we never expected one");
@@ -372,7 +380,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			v1 = getVarValue(startVar, startVarFixed, nextElement);
 			v2 = getVarValue(endVar, endVarFixed, nextElement);
 		}
-		return new ValuePair(v1, v2);
+		Value context = contextVar == null ? null
+				: contextVar.hasValue() ? contextVar.getValue() : nextElement.getValue(contextVar.getName());
+		return new ValuePair(v1, v2, context);
 	}
 
 	private void addBinding(MutableBindingSet bs, String name, Value value) {
@@ -486,8 +496,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				if (startVarFixed && endVarFixed) {
 
 					Value v = currentVp.getEndValue();
-					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v,
-							false);
+					Var startReplacement = createAnonVar(varNameAtPathLengthOf(currentLength), v, false, startVar);
 					Var endReplacement = createAnonVar(endVarName, null, false);
 
 					VarReplacer replacer = new VarReplacer(startVar, startReplacement, 0, false);
@@ -507,13 +516,20 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 					}
 
 					String varName = varNameAtPathLengthOf(currentLength);
-					Var replacement = createAnonVar(varName, v, true);
+					Var replacement = createAnonVar(varName, v, true, toBeReplaced);
 
 					VarReplacer replacer = new VarReplacer(toBeReplaced, replacement, 0, false);
 					pathExprClone.visit(replacer);
 				}
 
-				currentIter = evaluatePath(pathExprClone);
+				BindingSet stepBindings = bindings;
+				if (contextVar != null && currentVp.contextValue != null) {
+					// Continue in the graph that produced this frontier entry.
+					QueryBindingSet scopedBindings = new QueryBindingSet(bindings);
+					scopedBindings.setBinding(contextVar.getName(), currentVp.contextValue);
+					stepBindings = scopedBindings;
+				}
+				currentIter = evaluatePath(pathExprClone, stepBindings);
 			} else {
 				currentIter = null;
 			}
@@ -527,8 +543,12 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression) {
-		return context == null ? strategy.evaluate(expression, bindings)
-				: strategy.precompile(expression, context).evaluate(bindings);
+		return evaluatePath(expression, bindings);
+	}
+
+	private CloseableIteration<BindingSet> evaluatePath(TupleExpr expression, BindingSet stepBindings) {
+		return context == null ? strategy.evaluate(expression, stepBindings)
+				: strategy.precompile(expression, context).evaluate(stepBindings);
 	}
 
 	protected boolean isUnbound(Var var, BindingSet bindings) {
@@ -540,8 +560,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	}
 
 	/**
-	 * A specialized BingingSet that can only hold the start and end values of a Path. Minimizing unneeded memory use,
-	 * and allows specialization in the sets required to answer this part of a query.
+	 * A specialized BindingSet holding the endpoints and optional active graph of a path. Minimizing unneeded memory
+	 * use, and allows specialization in the sets required to answer this part of a query.
 	 */
 	public static class ValuePair implements MutableBindingSet {
 		private static final long serialVersionUID = 1L;
@@ -550,11 +570,18 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		private Value endValue;
 
+		private Value contextValue;
+
 		public ValuePair() {
 
 		}
 
 		public ValuePair(Value startValue, Value endValue) {
+			this(startValue, endValue, null);
+		}
+
+		ValuePair(Value startValue, Value endValue, Value contextValue) {
+			this.contextValue = contextValue;
 			this.startValue = startValue;
 			this.endValue = endValue;
 		}
@@ -579,6 +606,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			int result = 1;
 			result = prime * result + ((endValue == null) ? 0 : endValue.hashCode());
 			result = prime * result + ((startValue == null) ? 0 : startValue.hashCode());
+			result = prime * result + Objects.hashCode(contextValue);
 			return result;
 		}
 
@@ -607,19 +635,20 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			} else if (!startValue.equals(other.startValue)) {
 				return false;
 			}
-			return true;
+			return Objects.equals(contextValue, other.contextValue);
 		}
 
 		@Override
 		public Iterator<Binding> iterator() {
 			Binding sb = new SimpleBinding(START, startValue);
 			Binding eb = new SimpleBinding(END, endValue);
-			return List.of(sb, eb).iterator();
+			return contextValue == null ? List.of(sb, eb).iterator()
+					: List.of(sb, eb, new SimpleBinding(CONTEXT, contextValue)).iterator();
 		}
 
 		@Override
 		public Set<String> getBindingNames() {
-			return Set.of(START, END);
+			return contextValue == null ? Set.of(START, END) : Set.of(START, END, CONTEXT);
 		}
 
 		@Override
@@ -629,6 +658,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				return new SimpleBinding(START, startValue);
 			case END:
 				return new SimpleBinding(END, endValue);
+			case CONTEXT:
+				return contextValue == null ? null : new SimpleBinding(CONTEXT, contextValue);
 			default:
 				return null;
 			}
@@ -640,7 +671,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			case START:
 				return true;
 			case END:
-				return false;
+				return true;
+			case CONTEXT:
+				return contextValue != null;
 			default:
 				return false;
 			}
@@ -653,6 +686,8 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				return startValue;
 			case END:
 				return endValue;
+			case CONTEXT:
+				return contextValue;
 			default:
 				return null;
 			}
@@ -660,7 +695,7 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 
 		@Override
 		public int size() {
-			return 2;
+			return contextValue == null ? 2 : 3;
 		}
 
 		@Override
@@ -671,6 +706,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				break;
 			case END:
 				endValue = binding.getValue();
+				break;
+			case CONTEXT:
+				contextValue = binding.getValue();
 				break;
 			}
 		}
@@ -684,6 +722,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 			case END:
 				endValue = value;
 				break;
+			case CONTEXT:
+				contextValue = value;
+				break;
 			}
 
 		}
@@ -696,6 +737,9 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 				break;
 			case END:
 				endValue = binding.getValue();
+				break;
+			case CONTEXT:
+				contextValue = binding.getValue();
 				break;
 			}
 		}
@@ -737,6 +781,11 @@ public class PathIteration extends LookAheadIteration<BindingSet> {
 	private Var createAnonVar(String varName, Value v, boolean anonymous) {
 		namedIntermediateJoins.add(varName);
 		return Var.of(varName, v, anonymous, false);
+	}
+
+	private Var createAnonVar(String varName, Value value, boolean anonymous, Var source) {
+		Var replacement = createAnonVar(varName, value, anonymous);
+		return value != null && source.hasApiInputOrigin() ? replacement.withApiInputOrigin() : replacement;
 	}
 
 }

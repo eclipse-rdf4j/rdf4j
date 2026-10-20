@@ -1,0 +1,13 @@
+{
+  "base_fixture": "/Users/havardottestad/Documents/Programming/rdf4j/core/sail/lmdb/src/test/resources/lmdb-compat/v2-610-language-aliases.zip",
+  "base_fixture_sha256": "b0df7a432a8aa04cf555f54fdd77c7c6594cbc699787853bae15f05bf1968ca6",
+  "producer_revision": "39650fd2a0324d06133578c1cee620e0e456a585",
+  "producer_manifest": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/optimize/runtime/artifact-manifest.json",
+  "producer_manifest_sha256": "5aa975386febb28c3a976823a04b2c96b4fc7988c6fc536c5a898f0fcd7be068",
+  "producer_source": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-implementation/LmdbV2RetirementSchemaProducer.java",
+  "producer_source_sha256": "7879c3f07f25adf633253482342480d9e92f465d7c92422c6044e9f8b355c7e9",
+  "producer_class_sha256": "97587209dc42428905ab4b584239a8f60124fd641338e8d7ff0e567beaa12565",
+  "archive": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-implementation/v2-frozen-retirement-schema-20261004T152419Z/v2-610-optimize-retirement-schema.zip",
+  "archive_sha256": "c5b45e6eea82f8de5dd6e72f736823b6cfbf1d22a51e44cca8260a0214d82f98",
+  "metadata_completion": "Known authentic producer indexes only: spoc,posc,ospc and spoc,cspo; version2. No native relabel."
+}

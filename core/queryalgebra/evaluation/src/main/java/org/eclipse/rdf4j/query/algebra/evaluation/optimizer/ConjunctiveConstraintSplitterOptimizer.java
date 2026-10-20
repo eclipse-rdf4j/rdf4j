@@ -25,6 +25,7 @@ import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
@@ -53,6 +54,9 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 		@Override
 		public void meet(Filter filter) {
 			super.meet(filter);
+			if (!QueryEvaluationUtility.isRepeatable(filter.getCondition())) {
+				return;
+			}
 
 			List<ValueExpr> conjunctiveConstraints = new ArrayList<>(16);
 			getConjunctiveConstraints(filter.getCondition(), conjunctiveConstraints);
@@ -76,7 +80,7 @@ public class ConjunctiveConstraintSplitterOptimizer implements QueryOptimizer {
 		public void meet(LeftJoin node) {
 			super.meet(node);
 
-			if (node.getCondition() != null) {
+			if (node.getCondition() != null && QueryEvaluationUtility.isRepeatable(node.getCondition())) {
 				List<ValueExpr> conjunctiveConstraints = new ArrayList<>();
 				getConjunctiveConstraints(node.getCondition(), conjunctiveConstraints);
 				if (!conjunctiveConstraints.stream().allMatch(AlgebraEvaluationSafety::isRepeatable)) {

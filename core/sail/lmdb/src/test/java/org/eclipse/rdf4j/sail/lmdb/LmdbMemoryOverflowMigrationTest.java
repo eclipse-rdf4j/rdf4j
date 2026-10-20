@@ -13,9 +13,11 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doCallRealMethod;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -69,6 +71,21 @@ class LmdbMemoryOverflowMigrationTest {
 	}
 
 	@Test
+	void failedLaterImportRetainsOriginalRowsAndNamespacesAfterPublishedPrefix() throws Exception {
+		runInConstrainedHeap("import-after-prefix");
+	}
+
+	@Test
+	void failedLaterFlushRetainsOriginalRowsAndNamespacesAfterPublishedPrefix() throws Exception {
+		runInConstrainedHeap("flush-after-prefix");
+	}
+
+	@Test
+	void failedNamespaceImportRetainsOriginalRowsAndNamespacesAfterPublishedPrefix() throws Exception {
+		runInConstrainedHeap("namespace-after-prefix");
+	}
+
+	@Test
 	void closeClosesCachedModelResourcesBeforeStoreExactlyOnce() throws Exception {
 		runInConstrainedHeap("close-resources");
 	}
@@ -105,6 +122,15 @@ class LmdbMemoryOverflowMigrationTest {
 				verify(model.createdStore).close();
 				verify(model.createdSink).close();
 			});
+			break;
+		case "import-after-prefix":
+			assertFailedMigrationAfterPrefix(FailureMode.IMPORT_AFTER_PREFIX);
+			break;
+		case "flush-after-prefix":
+			assertFailedMigrationAfterPrefix(FailureMode.FLUSH_AFTER_PREFIX);
+			break;
+		case "namespace-after-prefix":
+			assertFailedMigrationAfterPrefix(FailureMode.NAMESPACE_AFTER_PREFIX);
 			break;
 		case "close-resources":
 			withPressure(FailureMode.NONE, (model, statement) -> {
@@ -152,6 +178,22 @@ class LmdbMemoryOverflowMigrationTest {
 		}
 	}
 
+	private static void assertFailedMigrationAfterPrefix(FailureMode mode) throws Exception {
+		withPressure(mode, (model, statement) -> {
+			Throwable failure = catchThrowable(model::spillToDiskIfNeeded);
+			assertThat(failure).isSameAs(model.migrationFailure);
+			assertThat(failure.getSuppressed()).containsExactly(model.sinkCloseFailure, model.storeCloseFailure);
+			assertThat(model.completedFlushes).isPositive();
+			assertThat(model.isSpilled()).isFalse();
+			assertThat(model).containsExactlyInAnyOrderElementsOf(model.originalRows);
+			assertThat(model.getNamespace("ex"))
+					.hasValueSatisfying(namespace -> assertThat(namespace.getName()).isEqualTo("urn:example:"));
+			assertThat(model.dataDirectory).doesNotExist();
+			verify(model.createdSink).close();
+			verify(model.createdStore).close();
+		});
+	}
+
 	private static void runInConstrainedHeap(String probe) throws Exception {
 		String classpath = System.getProperty("surefire.test.class.path");
 		if (classpath == null || classpath.isBlank()) {
@@ -185,9 +227,19 @@ class LmdbMemoryOverflowMigrationTest {
 		TestOverflowModel model = new TestOverflowModel(mode, statement);
 		try {
 			resetPressureState();
-			setPressureThresholds(-1, -1, -1, -1);
 			model.setNamespace("ex", "urn:example:");
 			model.add(statement);
+			model.originalRows.add(statement);
+			if (mode.afterPrefix()) {
+				var vf = SimpleValueFactory.getInstance();
+				for (int index = 0; index < 2 * AbstractMemoryOverflowModel.BATCH_SIZE + 1; index++) {
+					Statement row = vf.createStatement(vf.createIRI("urn:overflow:prefix:" + index),
+							statement.getPredicate(), vf.createLiteral("prefix value " + index));
+					model.add(row);
+					model.originalRows.add(row);
+				}
+			}
+			setPressureThresholds(-1, -1, -1, -1);
 			try (GcNotifications notifications = new GcNotifications()) {
 				notifications.requestGcAndAwait();
 			}
@@ -250,7 +302,14 @@ class LmdbMemoryOverflowMigrationTest {
 		NONE,
 		STORE_CREATION,
 		IMPORT,
-		STORE_CLOSE
+		STORE_CLOSE,
+		IMPORT_AFTER_PREFIX,
+		FLUSH_AFTER_PREFIX,
+		NAMESPACE_AFTER_PREFIX;
+
+		private boolean afterPrefix() {
+			return this == IMPORT_AFTER_PREFIX || this == FLUSH_AFTER_PREFIX || this == NAMESPACE_AFTER_PREFIX;
+		}
 	}
 
 	private static final class TestOverflowModel extends MemoryOverflowModel {
@@ -259,6 +318,12 @@ class LmdbMemoryOverflowMigrationTest {
 		private final FailureMode failureMode;
 		private final Statement statement;
 		private final SailException storeCloseFailure = new SailException("simulated store close failure");
+		private final SailException sinkCloseFailure = new SailException("simulated sink close failure");
+		private final SailException migrationFailure = new SailException("simulated migration failure after prefix");
+		private final List<Statement> originalRows = new ArrayList<>();
+		private int approvedBatches;
+		private int flushCalls;
+		private int completedFlushes;
 		private File dataDirectory;
 		private LmdbSailStore createdStore;
 		private SailSink createdSink;
@@ -270,6 +335,10 @@ class LmdbMemoryOverflowMigrationTest {
 			this.statement = statement;
 		}
 
+		private boolean isSpilled() {
+			return disk != null;
+		}
+
 		@Override
 		protected LmdbSailStore createSailStore(File dataDir) throws IOException, SailException {
 			dataDirectory = dataDir;
@@ -279,7 +348,7 @@ class LmdbMemoryOverflowMigrationTest {
 			createdStore = mock(LmdbSailStore.class);
 			doAnswer(invocation -> {
 				storeCloseHeldModelMonitor = Thread.holdsLock(this);
-				if (failureMode == FailureMode.STORE_CLOSE) {
+				if (failureMode == FailureMode.STORE_CLOSE || failureMode.afterPrefix()) {
 					throw storeCloseFailure;
 				}
 				return null;
@@ -292,10 +361,35 @@ class LmdbMemoryOverflowMigrationTest {
 			when(source.dataset(IsolationLevels.NONE)).thenReturn(createdDataset);
 			doAnswer(invocation -> new TrackingIteration(statement)).when(createdDataset)
 					.getStatements(any(), any(), any(), any(Resource[].class));
+			doCallRealMethod().when(createdDataset).hasStatements(any(), any(), any(), any(Resource[].class));
 			if (failureMode == FailureMode.IMPORT) {
 				doAnswer(invocation -> {
 					throw new SailException("simulated store import failure");
 				}).when(createdSink).approveAll(anySet(), anySet());
+			}
+			if (failureMode.afterPrefix()) {
+				doAnswer(invocation -> {
+					if (++approvedBatches == 2 && failureMode == FailureMode.IMPORT_AFTER_PREFIX) {
+						throw migrationFailure;
+					}
+					return null;
+				}).when(createdSink).approveAll(anySet(), anySet());
+				doAnswer(invocation -> {
+					if (++flushCalls == 2 && failureMode == FailureMode.FLUSH_AFTER_PREFIX) {
+						throw migrationFailure;
+					}
+					completedFlushes++;
+					return null;
+				}).when(createdSink).flush();
+				doAnswer(invocation -> {
+					if (failureMode == FailureMode.NAMESPACE_AFTER_PREFIX) {
+						throw migrationFailure;
+					}
+					return null;
+				}).when(createdSink).setNamespace("ex", "urn:example:");
+				doAnswer(invocation -> {
+					throw sinkCloseFailure;
+				}).when(createdSink).close();
 			}
 			return createdStore;
 		}

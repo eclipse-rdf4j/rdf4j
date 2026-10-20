@@ -403,7 +403,8 @@ class LmdbReadAttemptCancellationTest {
 							finishingThread.get().interrupt();
 						}
 						assertTrue(nativeReadExited.await(2, TimeUnit.SECONDS),
-								"Finalization must cancel its admitted native waiter before native contention is released");
+								() -> cancellationFailureContext(finish, asynchronous, nativeBarrier, nativeFailure,
+										finishingFailure, nativeThread, finishingThread));
 						assertNotNull(nativeFailure.get(), "The native admission must fail through cancellation");
 						assertInstanceOf(InterruptedException.class, nativeFailure.get().getCause());
 						if (!finish.interrupted()) {
@@ -461,6 +462,24 @@ class LmdbReadAttemptCancellationTest {
 			}
 		}
 		return false;
+	}
+
+	private static String cancellationFailureContext(Finish finish, boolean asynchronous, boolean nativeBarrier,
+			AtomicReference<Throwable> nativeFailure, AtomicReference<RuntimeException> finishingFailure,
+			AtomicReference<Thread> nativeThread, AtomicReference<Thread> finishingThread) {
+		return "Finalization must cancel its admitted native waiter before native contention is released; finish="
+				+ finish + " asynchronous=" + asynchronous + " nativeBarrier=" + nativeBarrier
+				+ " nativeFailure=" + nativeFailure.get() + " finishingFailure=" + finishingFailure.get()
+				+ "\nnative thread: " + threadContext(nativeThread.get())
+				+ "\nfinalizing thread: " + threadContext(finishingThread.get());
+	}
+
+	private static String threadContext(Thread thread) {
+		if (thread == null) {
+			return "not captured";
+		}
+		return thread.getName() + " state=" + thread.getState() + " alive=" + thread.isAlive()
+				+ " interrupted=" + thread.isInterrupted() + " stack=" + Arrays.toString(thread.getStackTrace());
 	}
 
 	private static void awaitWaitingIn(AtomicReference<Thread> reference, String method) {

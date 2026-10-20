@@ -17,12 +17,23 @@ import java.util.Set;
 import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Value;
-import org.eclipse.rdf4j.query.Binding;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Difference;
+import org.eclipse.rdf4j.query.algebra.ExtensionElem;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.ProjectionElem;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.Service;
+import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.algebra.helpers.TupleExprs;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -47,31 +58,142 @@ public final class FederatedServiceIdentity {
 	public static BindingSet prepareBindings(Service service, BindingSet bindings, Object receivingScope,
 			boolean referencesSupported, boolean canonicalIDs) {
 		validate(service, bindings, referencesSupported);
-		MapBindingSet all = new MapBindingSet();
-		for (Binding binding : RemoteBNode.originalBindings(bindings)) {
-			all.setBinding(binding.getName(), binding.getValue());
-		}
+		BindingSet originals = RemoteBNode.originalBindings(bindings);
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(service.getServiceExpr(),
+				originals);
+		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
+		BindingSet additional = runtimeAssignedInputs(service, originals,
+				outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : Set.of(), analysis);
+		return RemoteBNode.toRemoteBindings(bindings, additional, relevantBindingNames(service), receivingScope,
+				referencesSupported, canonicalIDs);
+	}
+
+	/**
+	 * Recovers invocation inputs retained only on algebra Vars. Values produced by the request itself are not inputs,
+	 * even when every output row has the same value. Caller bindings remain authoritative.
+	 */
+	public static BindingSet runtimeAssignedInputs(Service service, BindingSet originals, Set<String> visibleNames,
+			QueryAlgebraBindingAnalysis analysis) {
+		MapBindingSet additional = new MapBindingSet();
 		Var endpoint = service.getServiceRef();
-		if (endpoint.hasValue() && !endpoint.isAnonymous()) {
-			all.setBinding(endpoint.getName(), endpoint.getValue());
+		if (isRuntimeAssigned(endpoint) && !originals.hasBinding(endpoint.getName())) {
+			additional.addBinding(endpoint.getName(), endpoint.getValue());
 		}
-		Set<String> relevant = new HashSet<>(service.getServiceVars());
+		QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(service.getServiceExpr());
+		if (!outputs.guaranteedOutputsKnown()) {
+			return additional;
+		}
+		Set<String> produced = locallyProducedNames(service, analysis);
 		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
 			@Override
 			public void meet(Service nested) {
-				// Nested services retain their own lexical constants and receiving scope.
+				// Nested invocations own their inputs; their remote outputs are handled separately.
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+				}
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator subquery) {
+			}
+
+			@Override
+			public void meet(Difference difference) {
+				difference.getLeftArg().visit(this);
+			}
+
+			@Override
+			public void meet(Filter filter) {
+				filter.getArg().visit(this);
 			}
 
 			@Override
 			public void meet(Var variable) {
-				if (variable.hasValue() && !variable.isAnonymous()
-						&& !service.getBNodeReferenceVarNames().contains(variable.getName())) {
-					all.setBinding(variable.getName(), variable.getValue());
-					relevant.add(variable.getName());
+				String name = variable.getName();
+				if (isRuntimeAssigned(variable) && visibleNames.contains(name) && !originals.hasBinding(name)
+						&& !produced.contains(name) && outputs.guaranteedOutputs().contains(name)
+						&& variable.getValue().equals(outputs.fixedValues().get(name))) {
+					additional.setBinding(name, variable.getValue());
 				}
 			}
 		});
-		return RemoteBNode.toRemoteBindings(all, relevant, receivingScope, referencesSupported, canonicalIDs);
+		return additional;
+	}
+
+	private static Set<String> locallyProducedNames(Service service, QueryAlgebraBindingAnalysis analysis) {
+		Set<String> produced = new HashSet<>();
+		service.getServiceExpr().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(true) {
+			@Override
+			public void meet(BindingSetAssignment assignment) {
+				produced.addAll(assignment.getDeclaredBindingNames());
+			}
+
+			@Override
+			public void meet(ExtensionElem element) {
+				if (TupleExprs.isEvaluatedExtensionElement(element)) {
+					produced.add(element.getName());
+				}
+				super.meet(element);
+			}
+
+			@Override
+			public void meet(Group group) {
+				produced.addAll(group.getAggregateBindingNames());
+				super.meet(group);
+			}
+
+			@Override
+			public void meet(Projection projection) {
+				if (projection.isSubquery()) {
+					produced.addAll(projection.getBindingNames());
+				} else {
+					for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+						element.getProjectionAlias().ifPresent(produced::add);
+					}
+					super.meet(projection);
+				}
+			}
+
+			@Override
+			public void meet(Service nested) {
+				QueryAlgebraBindingAnalysis.OutputFacts outputs = analysis.outputFacts(nested);
+				produced.addAll(outputs.possibleOutputsKnown() ? outputs.possibleOutputs() : nested.getBindingNames());
+			}
+
+			@Override
+			public void meetOther(QueryModelNode node) {
+				if (node instanceof TupleFunctionCall call) {
+					for (Var result : call.getResultVars()) {
+						produced.add(result.getName());
+					}
+				} else {
+					super.meetOther(node);
+				}
+			}
+
+			@Override
+			public void meet(Difference difference) {
+				difference.getLeftArg().visit(this);
+			}
+
+			@Override
+			public void meet(Filter filter) {
+				filter.getArg().visit(this);
+			}
+
+			@Override
+			protected void meetSubQueryValueOperator(SubQueryValueOperator subquery) {
+			}
+		});
+		return produced;
+	}
+
+	private static boolean isRuntimeAssigned(Var variable) {
+		return variable.hasValue() && !variable.isAnonymous() && !variable.isConstant();
 	}
 
 	public static Set<String> relevantBindingNames(Service service) {

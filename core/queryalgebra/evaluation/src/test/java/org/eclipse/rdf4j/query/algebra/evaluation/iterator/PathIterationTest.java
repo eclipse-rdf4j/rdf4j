@@ -25,7 +25,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -74,6 +76,7 @@ import org.junit.jupiter.api.TestFactory;
 public class PathIterationTest {
 
 	private DefaultEvaluationStrategy evaluator;
+	private Model model;
 	private static final ValueFactory vf = SimpleValueFactory.getInstance();
 	private static final Resource one = vf.createIRI("https://example.org/", "one");
 	private static final Resource two = vf.createIRI("https://example.org/", "two");
@@ -82,6 +85,7 @@ public class PathIterationTest {
 	@BeforeEach
 	public void setUp() {
 		Model m = new LinkedHashModel();
+		model = m;
 		m.add(one, RDFS.SUBCLASSOF, two);
 		m.add(two, RDFS.SUBCLASSOF, three);
 
@@ -226,6 +230,75 @@ public class PathIterationTest {
 			}
 			verify(factory).close();
 		}));
+	}
+
+	@Test
+	public void graphIdentityIsRetainedAcrossEveryHop() {
+		Resource g1 = vf.createIRI("urn:g1");
+		Resource g2 = vf.createIRI("urn:g2");
+		model.clear();
+		model.add(one, RDFS.SUBCLASSOF, two, g1);
+		model.add(two, RDFS.SUBCLASSOF, three, g1);
+		model.add(one, RDFS.SUBCLASSOF, two, g2);
+		model.add(two, RDFS.SUBCLASSOF, one, g2);
+		Set<List<Value>> positive = Set.of(List.of(one, two, g1), List.of(two, three, g1),
+				List.of(one, three, g1), List.of(one, two, g2), List.of(two, one, g2),
+				List.of(one, one, g2), List.of(two, two, g2));
+		for (long minimum : new long[] { 0, 1 }) {
+			for (int fixed = 0; fixed < 4; fixed++) {
+				for (boolean boundGraph : new boolean[] { false, true }) {
+					Var start = Var.of("start");
+					Var end = Var.of("end");
+					Var graph = Var.of("graph");
+					QueryBindingSet input = new QueryBindingSet();
+					if ((fixed & 1) != 0) {
+						input.addBinding("start", one);
+					}
+					if ((fixed & 2) != 0) {
+						input.addBinding("end", two);
+					}
+					if (boundGraph) {
+						input.addBinding("graph", g1);
+					}
+					Set<List<Value>> expected = new HashSet<>(positive);
+					if (minimum == 0) {
+						expected.addAll(List.of(List.of(one, one, g1), List.of(two, two, g1),
+								List.of(three, three, g1)));
+					}
+					final int endpoints = fixed;
+					expected.removeIf(pair -> (endpoints & 1) != 0 && !pair.get(0).equals(one)
+							|| (endpoints & 2) != 0 && !pair.get(1).equals(two)
+							|| boundGraph && !pair.get(2).equals(g1));
+					StatementPattern step = new StatementPattern(Scope.NAMED_CONTEXTS, start,
+							Var.of("p", RDFS.SUBCLASSOF), end, graph);
+					for (int contextLayout = 0; contextLayout < 3; contextLayout++) {
+						QueryEvaluationContext context = switch (contextLayout) {
+						case 0 -> null;
+						case 1 -> new QueryEvaluationContext.Minimal(null);
+						default -> new ArrayBindingBasedQueryEvaluationContext(
+								new QueryEvaluationContext.Minimal(null),
+								ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery(
+										new QueryRoot(step.clone())),
+								null);
+						};
+						Set<List<Value>> actual = new HashSet<>();
+						try (PathIteration path = context == null
+								? new PathIteration(evaluator, Scope.NAMED_CONTEXTS, start, step, end, graph, minimum,
+										input)
+								: new PathIteration(evaluator, Scope.NAMED_CONTEXTS, start, step, end, graph, minimum,
+										input, context)) {
+							while (path.hasNext()) {
+								BindingSet row = path.next();
+								assertTrue(actual.add(List.of(row.getValue("start"), row.getValue("end"),
+										row.getValue("graph"))), "duplicate path in one graph");
+							}
+						}
+						assertEquals(expected, actual, "minimum=" + minimum + ", fixed=" + fixed + ", graph="
+								+ boundGraph + ", contextLayout=" + contextLayout);
+					}
+				}
+			}
+		}
 	}
 
 	@Test

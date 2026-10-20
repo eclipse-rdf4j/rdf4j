@@ -29,6 +29,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.function.IntConsumer;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
@@ -41,7 +42,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @Timeout(value = 15, unit = TimeUnit.SECONDS)
 class LmdbSailStoreVirtualThreadTest {
@@ -113,17 +114,19 @@ class LmdbSailStoreVirtualThreadTest {
 	}
 
 	@ParameterizedTest
-	@EnumSource(value = IsolationLevels.class, names = { "NONE", "READ_COMMITTED", "SNAPSHOT" })
+	@CsvSource({ "NONE,0", "READ_COMMITTED,0", "SNAPSHOT,0", "NONE,2", "READ_COMMITTED,2", "SNAPSHOT,2" })
 	void virtualCallersPreserveCommitRollbackAndNativeOwnerAffinity(IsolationLevels isolation,
-			@TempDir Path directory) throws Exception {
-		ObservedStore store = new ObservedStore(directory.toFile());
+			int bulkSize, @TempDir Path directory) throws Exception {
+		ObservedStore store = new ObservedStore(directory.toFile(), bulkSize);
 		SailRepository repository = new SailRepository(store);
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
 		IRI subject = vf.createIRI("urn:native-owner:subject");
 		IRI predicate = vf.createIRI("urn:native-owner:predicate");
+		int abandonedRows = bulkSize == 0 ? 1 : LmdbSailStore.INITIAL_BULK_OPERATION_CAPACITY + 1;
 		try (ExecutorService callers = Executors.newVirtualThreadPerTaskExecutor()) {
 			repository.init();
 			store.triples.events.clear();
+			store.triples.mutationCounts.clear();
 			Thread caller = callers.submit(() -> {
 				assertTrue(Thread.currentThread().isVirtual(), "exercise a public virtual-thread caller");
 				try (RepositoryConnection writer = repository.getConnection()) {
@@ -135,20 +138,26 @@ class LmdbSailStoreVirtualThreadTest {
 				try (SailSink abandoned = store.getBackingStore()
 						.getExplicitSailSource()
 						.sink(IsolationLevels.NONE)) {
-					abandoned.approve(subject, predicate, vf.createLiteral("abandoned"), null);
+					for (int row = 0; row < abandonedRows; row++) {
+						abandoned.approve(subject, predicate, vf.createLiteral("abandoned " + row), null);
+					}
 					abandoned.setNamespace("abandoned", "urn:abandoned:");
 					assertTrue(store.triples.twoMutations.await(5, TimeUnit.SECONDS),
 							"rollback must exercise an already-executed native mutation");
 				}
 				try (RepositoryConnection writer = repository.getConnection()) {
 					assertTrue(writer.hasStatement(subject, predicate, vf.createLiteral("committed"), false));
-					assertFalse(writer.hasStatement(subject, predicate, vf.createLiteral("abandoned"), false));
+					for (int row = 0; row < abandonedRows; row++) {
+						assertFalse(
+								writer.hasStatement(subject, predicate, vf.createLiteral("abandoned " + row), false));
+					}
 					assertEquals("urn:committed:", writer.getNamespace("owner"));
 					assertNull(writer.getNamespace("abandoned"));
 					writer.begin(isolation);
 					writer.add(subject, predicate, vf.createLiteral("after rollback"));
 					writer.commit();
 					assertTrue(writer.hasStatement(subject, predicate, vf.createLiteral("after rollback"), false));
+					assertEquals(2, writer.size());
 				}
 				return Thread.currentThread();
 			}).get(10, TimeUnit.SECONDS);
@@ -158,8 +167,10 @@ class LmdbSailStoreVirtualThreadTest {
 			assertFalse(asyncOwner.isVirtual(), "the explicitly asynchronous rollback uses a platform owner");
 			assertTrue(asyncOwner.isDaemon(), "the asynchronous native owner must be a daemon");
 			assertTrue(asyncOwner.getName().startsWith("LmdbTripleStore-Ingest-"));
-			// A single buffered isolated write fits one batch and retains its producer. NONE uses scalar async writes.
-			Thread repositoryOwner = isolation == IsolationLevels.NONE ? asyncOwner : caller;
+			assertEquals(List.of(1, bulkSize == 0 ? 1 : LmdbSailStore.INITIAL_BULK_OPERATION_CAPACITY, 1),
+					store.triples.mutationCounts, "the selected native prefix must really execute before rollback");
+			// Buffered isolated publication can retain its producer; scalar and NONE publication use ingestion.
+			Thread repositoryOwner = isolation == IsolationLevels.NONE || bulkSize == 0 ? asyncOwner : caller;
 			assertNativeOwner(store.triples.events.subList(0, 3), repositoryOwner);
 			assertNativeOwner(store.triples.events.subList(3, 6), asyncOwner);
 			assertNativeOwner(store.triples.events.subList(6, 9), repositoryOwner);
@@ -180,9 +191,10 @@ class LmdbSailStoreVirtualThreadTest {
 	private static final class ObservedStore extends LmdbStore {
 		private ObservedTriples triples;
 
-		private ObservedStore(File directory) {
+		private ObservedStore(File directory, int bulkSize) {
 			super(directory, new LmdbStoreConfig("spoc,ospc,psoc").setForceSync(false)
-					.setSketchEstimatorEnabled(false));
+					.setSketchEstimatorEnabled(false)
+					.setBulkOperationSize(bulkSize));
 		}
 
 		@Override
@@ -195,6 +207,7 @@ class LmdbSailStoreVirtualThreadTest {
 
 	private static final class ObservedTriples extends TripleStore {
 		private final List<NativeEvent> events = new CopyOnWriteArrayList<>();
+		private final List<Integer> mutationCounts = new CopyOnWriteArrayList<>();
 		private final CountDownLatch twoMutations = new CountDownLatch(2);
 
 		private ObservedTriples(File directory, StoreProperties properties, LmdbStoreConfig config, ValueStore values)
@@ -214,9 +227,20 @@ class LmdbSailStoreVirtualThreadTest {
 		public boolean storeTriple(long subject, long predicate, long object, long context, boolean explicit)
 				throws IOException {
 			boolean added = super.storeTriple(subject, predicate, object, context, explicit);
+			mutationCounts.add(1);
 			events.add(new NativeEvent("write", Thread.currentThread()));
 			twoMutations.countDown();
 			return added;
+		}
+
+		@Override
+		void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer) throws IOException {
+			super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, mayHaveInferred,
+					addedIndexConsumer);
+			mutationCounts.add(count);
+			events.add(new NativeEvent("write", Thread.currentThread()));
+			twoMutations.countDown();
 		}
 
 		@Override

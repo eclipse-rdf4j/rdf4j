@@ -19,6 +19,7 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
@@ -69,6 +70,18 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		additionalHeaders.put(testHeader, testValue);
 		session.setAdditionalHttpHeaders(additionalHeaders);
 		return session;
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void strategiesUseSelectedRepositoryEndpoint(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		String path = "/rdf4j-server/repositories/test/lmdb/strategies";
+		client.when(request().withMethod("GET").withPath(path))
+				.respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody("[]"));
+		assertThat(getRDF4JSession().getLmdbForceableStrategies()).isEmpty();
+		client.verify(request().withMethod("GET").withPath(path).withHeader(testHeader, testValue));
 	}
 
 	@ParameterizedTest(name = "[{0}]")
@@ -375,13 +388,22 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				Times.once())
 				.respond(
 						response()
-								.withBody("{\"type\":\"Projection\"}")
+								.withBody("""
+										{"type":"Projection","strategyDecisions":[{
+										"decisionPoint":"row/join dispatch","capturedAtMillis":123,
+										"mode":"normal","wouldSelect":"batch","reason":"current costs",
+										"candidates":[{"strategy":"batch","priority":1,"canAttempt":true,
+										"decision":"Would select now"}]}]}
+										""")
 								.withContentType(MediaType.APPLICATION_JSON)
 				);
 
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions()).hasSize(1);
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions().get(0).wouldSelect()).isEqualTo("batch");
+		assertThat(explanation.toString()).contains("Would select now");
 
 		client.verify(
 				request()

@@ -16,8 +16,10 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.lwjgl.util.lmdb.LMDB.MDB_MAP_FULL;
 import static org.lwjgl.util.lmdb.LMDB.MDB_SUCCESS;
@@ -25,6 +27,8 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_txn_abort;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -35,6 +39,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -66,6 +71,7 @@ import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.repository.RepositoryResult;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.sail.InterruptedSailException;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.SailConflictException;
 import org.eclipse.rdf4j.sail.SailException;
@@ -83,6 +89,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
 import org.junit.jupiter.params.provider.MethodSource;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.LoggerFactory;
 
 import ch.qos.logback.classic.Level;
@@ -101,6 +108,564 @@ class LmdbFrozenReplayTest {
 		ADD,
 		PREPARE,
 		COMMIT
+	}
+
+	@Test
+	void retainedReplayPreservesOtherBufferedRollback(@TempDir Path directory) throws Exception {
+		assertRetainedReplayPreservesBufferedPeer(directory, false, false);
+	}
+
+	@Test
+	void retainedReplayPreservesOtherBufferedCommit(@TempDir Path directory) throws Exception {
+		assertRetainedReplayPreservesBufferedPeer(directory, false, true);
+	}
+
+	@Test
+	void managedRetainedReplayPreservesOtherBufferedRollback(@TempDir Path directory) throws Exception {
+		assertRetainedReplayPreservesBufferedPeer(directory, true, false);
+	}
+
+	@Test
+	void managedRetainedReplayPreservesOtherBufferedCommit(@TempDir Path directory) throws Exception {
+		assertRetainedReplayPreservesBufferedPeer(directory, true, true);
+	}
+
+	static Stream<Arguments> queuedPublisherCases() {
+		return Stream.of(false, true)
+				.flatMap(managed -> Stream.of(false, true)
+						.flatMap(values -> Stream.of(false, true)
+								.map(commitPeer -> Arguments.of(managed, values, commitPeer))));
+	}
+
+	@ParameterizedTest
+	@MethodSource("queuedPublisherCases")
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void retainedReplayCompletesBeforeQueuedPublisher(boolean managed, boolean values, boolean commitPeer,
+			@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> rows = replayStatements(2);
+		Set<Statement> expected = commitPeer ? Set.copyOf(rows) : Set.of(rows.getFirst());
+		CountDownLatch capacityEntered = new CountDownLatch(1);
+		CountDownLatch releaseCapacity = new CountDownLatch(1);
+		AtomicReference<Thread> peerThread = new AtomicReference<>();
+		AtomicInteger notifications = new AtomicInteger();
+		store.addSailChangedListener(event -> notifications.incrementAndGet());
+		try {
+			repository.init();
+			store.probe.reset();
+			LmdbSailStore backing = store.getBackingStore();
+			try (SailRepositoryConnection writer = repository.getConnection();
+					SailRepositoryConnection peer = repository.getConnection();
+					ExecutorService executor = Executors.newFixedThreadPool(2)) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				peer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(rows.getFirst());
+				writer.setNamespace("replayed", "urn:replayed:");
+				peer.add(rows.getLast());
+				peer.setNamespace("peer", "urn:peer:");
+				long tripleBefore = store.probe.tripleStore.get().mapSizeBytes();
+				long valueBefore = store.probe.valueStore.get().mapSizeBytes();
+				store.probe.beforeCapacityCommitFailure.set(() -> {
+					capacityEntered.countDown();
+					awaitTestGate(releaseCapacity, "queued publication capacity failure");
+				});
+				(values ? store.probe.valueCommitCapacityFailureBudget
+						: store.probe.nativeCommitCapacityFailureBudget).set(1);
+				try (LmdbSailStore.MapGrowthAttempt warning = managed
+						? backing.beginMapGrowthWarning(writer.getSailConnection())
+						: null) {
+					Future<?> ownerCommit = executor.submit(writer::commit);
+					try {
+						assertTrue(capacityEntered.await(5, TimeUnit.SECONDS));
+						Future<?> peerCompletion = executor.submit(() -> {
+							peerThread.set(Thread.currentThread());
+							try (var publication = backing.getExplicitSailSource()
+									.beginPublication(peer.getSailConnection())) {
+								// Queue at native authority rather than the earlier metadata preflight barrier.
+							}
+							if (commitPeer) {
+								peer.commit();
+							} else {
+								peer.rollback();
+							}
+						});
+						awaitQueuedPublisher(peerThread);
+						assertFalse(ownerCommit.isDone(), "the owner retains its exclusive lease at the fault");
+						assertFalse(peerCompletion.isDone(), "the registered peer has no acquired lease yet");
+						releaseCapacity.countDown();
+						ownerCommit.get(10, TimeUnit.SECONDS);
+						peerCompletion.get(10, TimeUnit.SECONDS);
+					} finally {
+						releaseCapacity.countDown();
+					}
+				}
+				assertEquals(1, values ? store.probe.valueCommitCapacityFailures.get()
+						: store.probe.nativeCommitCapacityFailures.get());
+				assertTrue((values ? store.probe.valueStore.get().mapSizeBytes()
+						: store.probe.tripleStore.get().mapSizeBytes()) > (values ? valueBefore : tripleBefore));
+				assertEquals(0, store.probe.journalAllocations.get());
+				assertEquals(commitPeer ? 2 : 1, notifications.get(), "one acknowledgement per logical commit");
+			}
+			try (RepositoryConnection reader = repository.getConnection()) {
+				assertEquals(expected, readAllStatements(reader));
+				assertEquals("urn:replayed:", reader.getNamespace("replayed"));
+				assertEquals(commitPeer ? "urn:peer:" : null, reader.getNamespace("peer"));
+			}
+		} finally {
+			releaseCapacity.countDown();
+			repository.shutDown();
+		}
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				assertEquals(expected, readAllStatements(reader));
+				assertEquals("urn:replayed:", reader.getNamespace("replayed"));
+				assertEquals(commitPeer ? "urn:peer:" : null, reader.getNamespace("peer"));
+			}
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	private enum QueuedExit {
+		DEADLINE,
+		INTERRUPT,
+		COMPLETED_ATTEMPT
+	}
+
+	@ParameterizedTest
+	@EnumSource(QueuedExit.class)
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void queuedPublisherFailureDoesNotAcquireOrLeakAuthority(QueuedExit exit, @TempDir Path directory)
+			throws Exception {
+		LmdbStore store = new LmdbStore(directory.toFile(), smallMapConfig());
+		store.init();
+		LmdbSailStore backing = store.getBackingStore();
+		Object owner = new Object();
+		Object peer = new Object();
+		AtomicReference<Thread> peerThread = new AtomicReference<>();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> false;
+		try (var attempt = backing.registerReadAttempt(peer, observer);
+				var publication = backing.getExplicitSailSource().beginPublication(owner);
+				ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			Future<?> queued = executor.submit(() -> {
+				try (QueryExecutionDeadline deadline = exit == QueuedExit.DEADLINE
+						? QueryExecutionDeadline.start(1_000)
+						: null;
+						QueryExecutionDeadline.Scope ignored = deadline == null ? null : deadline.enter()) {
+					peerThread.set(Thread.currentThread());
+					try (var unexpected = backing.getExplicitSailSource().beginPublication(peer)) {
+						throw new AssertionError("the queued publisher acquired the still-held owner's authority");
+					}
+				}
+			});
+			awaitQueuedPublisher(peerThread);
+			assertNull(backing.getExplicitSailSource().tryBeginPublication(peer),
+					"nonblocking admission cannot acquire a foreign held lease");
+			if (exit == QueuedExit.INTERRUPT) {
+				peerThread.get().interrupt();
+			} else if (exit == QueuedExit.COMPLETED_ATTEMPT) {
+				attempt.completeTransaction();
+			}
+			ExecutionException failure = assertThrows(ExecutionException.class, () -> queued.get(3, TimeUnit.SECONDS));
+			Class<? extends Throwable> expectedFailure = switch (exit) {
+			case DEADLINE -> QueryInterruptedException.class;
+			case INTERRUPT -> InterruptedSailException.class;
+			case COMPLETED_ATTEMPT -> SailConflictException.class;
+			};
+			assertNotNull(causeOfType(failure, expectedFailure));
+			// The current owner's same-owner nested lease remains valid after every queued cancellation.
+			try (var nested = backing.getExplicitSailSource().beginPreparedWrite(owner)) {
+				assertNotNull(nested);
+				assertNull(backing.getExplicitSailSource().tryBeginPublication(new Object()));
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 10, unit = TimeUnit.SECONDS)
+	void shutdownWakesQueuedPublisherBeforeHeldPublicationCloses(@TempDir Path directory) throws Exception {
+		LmdbSailStore backing = new LmdbSailStore(directory.toFile(), new StoreProperties(), smallMapConfig(), false,
+				ValueStore::new, TripleStore::new);
+		Object owner = new Object();
+		var publication = backing.getExplicitSailSource().beginPublication(owner);
+		AtomicReference<Thread> peerThread = new AtomicReference<>();
+		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			Future<?> queued = executor.submit(() -> {
+				peerThread.set(Thread.currentThread());
+				try (var unexpected = backing.getExplicitSailSource().beginPublication(new Object())) {
+					throw new AssertionError("a queued publisher acquired authority during shutdown");
+				}
+			});
+			awaitQueuedPublisher(peerThread);
+			Future<?> shutdown = executor.submit(backing::close);
+			try {
+				ExecutionException failure = assertThrows(ExecutionException.class,
+						() -> queued.get(3, TimeUnit.SECONDS));
+				assertNotNull(causeOfType(failure, SailException.class));
+				assertFalse(shutdown.isDone(), "shutdown must still join the owner's held publication");
+				assertThrows(SailException.class,
+						() -> backing.getExplicitSailSource().beginPreparedWrite(owner),
+						"an admitted publication without a native transaction cannot gain new authority during shutdown");
+			} finally {
+				publication.close();
+				shutdown.get(3, TimeUnit.SECONDS);
+			}
+		} finally {
+			publication.close();
+			backing.close();
+		}
+	}
+
+	private static void awaitQueuedPublisher(AtomicReference<Thread> peerThread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (System.nanoTime() < deadline) {
+			Thread thread = peerThread.get();
+			ThreadInfo info = thread == null ? null
+					: ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), 40);
+			if (info != null && (info.getThreadState() == Thread.State.WAITING
+					|| info.getThreadState() == Thread.State.TIMED_WAITING)) {
+				for (StackTraceElement frame : info.getStackTrace()) {
+					if (frame.getClassName().equals(LmdbSailStore.class.getName())
+							&& frame.getMethodName().equals("acquireWriterLease")) {
+						return;
+					}
+				}
+			}
+			Thread.onSpinWait();
+		}
+		Thread thread = peerThread.get();
+		ThreadInfo info = thread == null ? null
+				: ManagementFactory.getThreadMXBean().getThreadInfo(thread.threadId(), 80);
+		throw new AssertionError(
+				"the peer must register and wait for the current owner's exclusive writer lease: " + info);
+	}
+
+	private void assertRetainedReplayPreservesBufferedPeer(Path directory, boolean managed, boolean commitPeer)
+			throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(2);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> rows = replayStatements(2);
+		Set<Statement> expected = commitPeer ? Set.copyOf(rows) : Set.of(rows.getFirst());
+		try {
+			repository.init();
+			store.probe.reset();
+			try (SailRepositoryConnection writer = repository.getConnection();
+					SailRepositoryConnection peer = repository.getConnection()) {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				peer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(rows.getFirst());
+				writer.setNamespace("replayed", "urn:replayed:");
+				peer.add(rows.getLast());
+				peer.setNamespace("peer", "urn:peer:");
+				store.probe.nativeCommitCapacityFailureBudget.set(1);
+				try (LmdbSailStore.MapGrowthAttempt warning = managed
+						? store.getBackingStore().beginMapGrowthWarning(writer.getSailConnection())
+						: null) {
+					writer.commit();
+				}
+				if (commitPeer) {
+					peer.commit();
+				} else {
+					peer.rollback();
+				}
+			}
+			assertEquals(1, store.probe.nativeCommitCapacityFailures.get(), "the real consumed commit must fail once");
+			assertEquals(0, store.probe.journalAllocations.get(), "covered branches remain journal-free");
+			try (RepositoryConnection reader = repository.getConnection()) {
+				assertEquals(expected, readAllStatements(reader));
+				assertEquals("urn:replayed:", reader.getNamespace("replayed"));
+				assertEquals(commitPeer ? "urn:peer:" : null, reader.getNamespace("peer"));
+			}
+		} finally {
+			repository.shutDown();
+		}
+		SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+		try {
+			reopened.init();
+			try (RepositoryConnection reader = reopened.getConnection()) {
+				assertEquals(expected, readAllStatements(reader));
+				assertEquals("urn:replayed:", reader.getNamespace("replayed"));
+				assertEquals(commitPeer ? "urn:peer:" : null, reader.getNamespace("peer"));
+			}
+		} finally {
+			reopened.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void retainedReplayRejectsPendingWriterSnapshot(boolean managed, @TempDir Path directory) throws Exception {
+		assertRetainedReplayRejectsWritingView(directory, managed, true);
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void retainedReplayRejectsPinnedWriterSnapshot(boolean managed, @TempDir Path directory) throws Exception {
+		assertRetainedReplayRejectsWritingView(directory, managed, false);
+	}
+
+	private void assertRetainedReplayRejectsWritingView(Path directory, boolean managed, boolean pending)
+			throws Exception {
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), smallMapConfig().setBulkOperationSize(2));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		LmdbSailStore backing = store.getBackingStore();
+		Object foreignOwner = new Object();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> false;
+		CountDownLatch readEntered = new CountDownLatch(1);
+		CountDownLatch releaseRead = new CountDownLatch(pending ? 1 : 0);
+		AtomicReference<LmdbSailStore.ReadView> view = new AtomicReference<>();
+		try (LmdbSailStore.ReadAttemptLease foreign = backing.registerReadAttempt(foreignOwner, observer);
+				var intent = backing.getExplicitSailSource().beginWriteIntent(foreignOwner);
+				SailRepositoryConnection writer = repository.getConnection();
+				ExecutorService readerExecutor = Executors.newSingleThreadExecutor()) {
+			foreign.markWriteIntent();
+			writer.begin(IsolationLevels.SNAPSHOT_READ);
+			writer.add(SUBJECT, PREDICATE, OBJECT);
+			store.probe.beforeSnapshotReservation.set(() -> {
+				readEntered.countDown();
+				awaitTestGate(releaseRead, "pending writer snapshot");
+			});
+			Future<?> opening = readerExecutor
+					.submit(() -> view.set(backing.createTransactionReadView(observer, foreign)));
+			try {
+				assertTrue(readEntered.await(5, TimeUnit.SECONDS),
+						"the real paired acquisition must enter its reservation");
+				if (!pending) {
+					opening.get(5, TimeUnit.SECONDS);
+					assertNotNull(view.get());
+				}
+				long before = store.probe.tripleStore.get().mapSizeBytes();
+				store.probe.nativeCommitCapacityFailureBudget.set(1);
+				try (LmdbSailStore.MapGrowthAttempt warning = managed
+						? backing.beginMapGrowthWarning(writer.getSailConnection())
+						: null) {
+					RepositoryException failure = assertThrows(RepositoryException.class,
+							writer::commit);
+					assertNotNull(causeOfType(failure, LmdbTransactionRetryException.class));
+				}
+				assertEquals(1, store.probe.nativeCommitCapacityFailures.get());
+				assertEquals(before, store.probe.tripleStore.get().mapSizeBytes(),
+						"a pending or pinned writing snapshot forbids resizing");
+			} finally {
+				releaseRead.countDown();
+				try {
+					opening.get(5, TimeUnit.SECONDS);
+					if (view.get() != null) {
+						view.get().ensureNativeSnapshotsValid();
+						view.get().close();
+					}
+				} finally {
+					foreign.completeTransaction();
+					intent.close();
+				}
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void emergencyReplayFreezesBufferedNativeAndSnapshotAdmission(boolean managed, @TempDir Path directory)
+			throws Exception {
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), smallMapConfig().setBulkOperationSize(2));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		LmdbSailStore backing = store.getBackingStore();
+		Object foreignOwner = new Object();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> false;
+		CountDownLatch resizeEntered = new CountDownLatch(1);
+		CountDownLatch releaseResize = new CountDownLatch(1);
+		try (LmdbSailStore.ReadAttemptLease foreign = backing.registerReadAttempt(foreignOwner, observer);
+				var intent = backing.getExplicitSailSource().beginWriteIntent(foreignOwner);
+				SailRepositoryConnection writer = repository.getConnection();
+				ExecutorService executor = Executors.newFixedThreadPool(2)) {
+			foreign.markWriteIntent();
+			writer.begin(IsolationLevels.SNAPSHOT_READ);
+			writer.add(SUBJECT, PREDICATE, OBJECT);
+			store.probe.nativeCommitCapacityFailureBudget.set(1);
+			store.probe.beforeTripleResize.set(() -> {
+				resizeEntered.countDown();
+				awaitTestGate(releaseResize, "emergency native resize");
+			});
+			try (LmdbSailStore.MapGrowthAttempt warning = managed
+					? backing.beginMapGrowthWarning(writer.getSailConnection())
+					: null) {
+				Future<?> commit = executor.submit(writer::commit);
+				try {
+					assertTrue(resizeEntered.await(5, TimeUnit.SECONDS),
+							"a native-free buffered peer permits real recovery");
+					assertNull(backing.getExplicitSailSource().tryBeginPublication(foreignOwner),
+							"nonblocking native admission must respect the emergency freeze");
+					for (boolean nativeWriter : new boolean[] { true, false }) {
+						try (QueryExecutionDeadline deadline = QueryExecutionDeadline.start(1_000)) {
+							Future<?> admission = executor.submit(() -> {
+								try (QueryExecutionDeadline.Scope ignored = deadline.enter()) {
+									if (nativeWriter) {
+										try (var publication = backing.getExplicitSailSource()
+												.beginPublication(foreignOwner)) {
+											throw new AssertionError(
+													"foreign native authority entered the frozen resize");
+										}
+									} else {
+										try (var snapshot = backing.createTransactionReadView(observer, foreign)) {
+											throw new AssertionError(
+													"foreign writing snapshot entered the frozen resize");
+										}
+									}
+								}
+							});
+							awaitAdmissionWaiter(backing);
+							var failure = assertThrows(ExecutionException.class,
+									() -> admission.get(3, TimeUnit.SECONDS));
+							assertNotNull(causeOfType(failure, QueryInterruptedException.class));
+						}
+					}
+					Future<?> cancelled = executor.submit(() -> {
+						try (var publication = backing.getExplicitSailSource().beginPublication(foreignOwner)) {
+							throw new AssertionError("completed buffered attempt gained native authority");
+						}
+					});
+					awaitAdmissionWaiter(backing);
+					foreign.completeTransaction();
+					var failure = assertThrows(ExecutionException.class,
+							() -> cancelled.get(3, TimeUnit.SECONDS));
+					assertNotNull(causeOfType(failure, SailConflictException.class));
+				} finally {
+					releaseResize.countDown();
+					foreign.completeTransaction();
+					intent.close();
+					commit.get(5, TimeUnit.SECONDS);
+				}
+			}
+		} finally {
+			releaseResize.countDown();
+			repository.shutDown();
+		}
+	}
+
+	private static void awaitTestGate(CountDownLatch release, String name) {
+		try {
+			assertTrue(release.await(10, TimeUnit.SECONDS), "test did not release " + name);
+		} catch (InterruptedException interrupted) {
+			Thread.currentThread().interrupt();
+			throw new AssertionError("interrupted at " + name, interrupted);
+		}
+	}
+
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void emergencyReplayRejectsReadOnlySnapshotUpgrade(boolean managed, @TempDir Path directory) throws Exception {
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(),
+				smallMapConfig().setBulkOperationSize(2).setMapGrowthReadDrainTimeoutMillis(100));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		LmdbSailStore backing = store.getBackingStore();
+		AtomicReference<LmdbSailStore.ReadAttemptLease> readerAttempt = new AtomicReference<>();
+		AtomicReference<LmdbSailStore.ReadView> readerView = new AtomicReference<>();
+		AtomicReference<Throwable> upgradeFailure = new AtomicReference<>();
+		AtomicInteger upgrades = new AtomicInteger();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> {
+			upgrades.incrementAndGet();
+			try {
+				readerAttempt.get().markWriteIntent();
+			} catch (SailConflictException rejected) {
+				upgradeFailure.set(rejected);
+			} finally {
+				LmdbSailStore.ReadView view = readerView.getAndSet(null);
+				if (view != null) {
+					view.close();
+				}
+			}
+			return false;
+		};
+		try (var foreign = backing.registerReadAttempt(new Object(), observer);
+				SailRepositoryConnection writer = repository.getConnection()) {
+			readerAttempt.set(foreign);
+			readerView.set(backing.createTransactionReadView(observer, foreign));
+			try {
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(SUBJECT, PREDICATE, OBJECT);
+				store.probe.nativeCommitCapacityFailureBudget.set(1);
+				try (var warning = managed ? backing.beginMapGrowthWarning(writer.getSailConnection()) : null) {
+					writer.commit();
+				}
+				assertEquals(1, upgrades.get(), "the real pinned reader must classify the emergency resize");
+				assertTrue(upgradeFailure.get() instanceof SailConflictException,
+						"an emergency resize must freeze read-only snapshot upgrades before native retirement");
+			} finally {
+				LmdbSailStore.ReadView view = readerView.getAndSet(null);
+				if (view != null) {
+					view.close();
+				}
+				foreign.completeTransaction();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void projectedGrowthRechecksLateWriterBeforeClosingAdmission(@TempDir Path directory) throws Exception {
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), smallMapConfig().setBulkOperationSize(2));
+		SailRepository repository = new SailRepository(store);
+		repository.init();
+		LmdbSailStore backing = store.getBackingStore();
+		LmdbSailStore.MapGrowthObserver observer = (kind, token, deadline, attempts, views) -> false;
+		try (var foreign = backing.registerReadAttempt(new Object(), observer);
+				SailRepositoryConnection writer = repository.getConnection()) {
+			try {
+				long initialMap = store.probe.valueStore.get().mapSizeBytes();
+				Statement row = SimpleValueFactory.getInstance()
+						.createStatement(SUBJECT, PREDICATE,
+								SimpleValueFactory.getInstance()
+										.createLiteral("x".repeat(Math.toIntExact(initialMap) + 1_024)));
+				writer.begin(IsolationLevels.SNAPSHOT_READ);
+				writer.add(row);
+				SailSource.WritePreflight estimate = new SailSource.WritePreflight(List.of(row), List.of(), Set.of(),
+						Set.of(), false, false);
+				try (var forecast = backing.getExplicitSailSource()
+						.beginWritePreflight(estimate,
+								writer.getSailConnection())) {
+					store.probe.firstValueWriterMap.set(-1L);
+					store.probe.recordValueWriterMap.set(true);
+					store.probe.beforeProjectedResizeCheck.set(foreign::markWriteIntent);
+					writer.commit();
+				}
+				assertNull(store.probe.beforeProjectedResizeCheck.get(),
+						"the late writer must appear at the real post-sole-participant capacity check");
+				assertEquals(initialMap, store.probe.firstValueWriterMap.get(),
+						"a newly writing peer makes projected growth fall back before the first native attempt");
+				assertTrue(backing.growthMetricsSnapshot().statementReplays() > 0,
+						"the actual oversized row must instead recover through its retained statement authority");
+			} finally {
+				foreign.completeTransaction();
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	private static void awaitAdmissionWaiter(LmdbSailStore backing) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+		while (backing.growthMetricsSnapshot().currentAdmissionWaiters() == 0 && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertTrue(backing.growthMetricsSnapshot().currentAdmissionWaiters() > 0,
+				"the buffered owner must wait at coordinator admission before acquiring native authority");
 	}
 
 	@Test
@@ -2166,22 +2731,33 @@ class LmdbFrozenReplayTest {
 		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(bulkSize);
 		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config);
 		SailRepository repository = new SailRepository(store);
-		// The native worker exits after its first injected failure. More than 1,024 remaining operations must
-		// exhaust its queue and surface that failure during input production, regardless of thread scheduling.
-		int count = multiThreading && kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE
-				? (bulkSize == 0 ? 1_027 : 2_052)
-				: 5;
-		List<Statement> statements = replayStatements(count);
+		// Observe the native owner's actual failure publication instead of inferring it from queue capacity.
+		// A large fresh import legitimately reserves dictionary space before it reaches the injected triple fault.
+		List<Statement> statements = replayStatements(5);
 		Set<Statement> expected = Set.copyOf(statements);
 		AtomicInteger notifications = new AtomicInteger();
+		CountDownLatch nativeFailurePublished = new CountDownLatch(1);
+		AtomicInteger nativeFailures = new AtomicInteger();
+		AtomicReference<Throwable> publishedFailure = new AtomicReference<>();
+		AtomicReference<Thread> failureThread = new AtomicReference<>();
+		Thread caller = Thread.currentThread();
 		try (FailureLogCapture logging = new FailureLogCapture()) {
 			try {
 				repository.init();
 				store.getBackingStore().enableMultiThreading = multiThreading;
 				store.probe.reset();
+				if (multiThreading && kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE) {
+					store.probe.requireNativeFailurePublication.set(nativeFailurePublished);
+				}
 				long tripleMapBefore = store.probe.tripleStore.get().mapSizeBytes();
 				long valueMapBefore = store.probe.valueStore.get().mapSizeBytes();
 				store.addSailChangedListener(event -> notifications.incrementAndGet());
+				store.getBackingStore().afterAsyncFailureForTest = failure -> {
+					nativeFailures.incrementAndGet();
+					publishedFailure.compareAndSet(null, failure);
+					failureThread.compareAndSet(null, Thread.currentThread());
+					nativeFailurePublished.countDown();
+				};
 				if (kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE) {
 					store.probe.failAfterAlignedPrefix.set(true);
 				} else {
@@ -2203,6 +2779,16 @@ class LmdbFrozenReplayTest {
 				assertEquals(0, store.probe.journalAllocations.get(), "Frozen retries remain journal-free");
 				if (kind == LmdbSailStore.MapResizeKind.TRIPLE_STORE) {
 					assertEquals(1, store.probe.alignedCapacityFailures.get());
+					assertTrue(store.probe.alignedPrefixRows.get() > 0, "The fault follows a real native prefix");
+					if (multiThreading) {
+						assertEquals(0L, nativeFailurePublished.getCount(),
+								"The native owner must publish its failed attempt before commit returns");
+						assertEquals(1, nativeFailures.get(), "Only the failed native attempt publishes a fault");
+						assertNotSame(caller, failureThread.get(), "The fault must execute on the native owner");
+						assertTrue(causeChainContainsIdentity(publishedFailure.get(),
+								store.probe.injectedCapacityFailure.get()),
+								"The published fault must be the injected fault");
+					}
 					assertTrue(tripleMapAfter > tripleMapBefore);
 					assertEquals(valueMapBefore, valueMapAfter);
 				} else {
@@ -2211,6 +2797,7 @@ class LmdbFrozenReplayTest {
 					assertEquals(tripleMapBefore, tripleMapAfter);
 				}
 			} finally {
+				store.getBackingStore().afterAsyncFailureForTest = null;
 				repository.shutDown();
 			}
 			SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
@@ -2224,6 +2811,134 @@ class LmdbFrozenReplayTest {
 				reopened.shutDown();
 			}
 			assertEquals(List.of(), logging.errors(), "Recovered capacity is expected publication control flow");
+		}
+	}
+
+	@ParameterizedTest(name = "producer async capacity failure, bulk={0}")
+	@ValueSource(ints = { 0, 2 })
+	@Timeout(value = 30, unit = TimeUnit.SECONDS)
+	void asyncProducerReportsFrozenFailureWithoutPrematureErrors(int bulkSize, @TempDir Path directory)
+			throws Exception {
+		LmdbStoreConfig config = smallMapConfig().setBulkOperationSize(bulkSize);
+		CountingLmdbStore store = new CountingLmdbStore(directory.toFile(), config, 1);
+		SailRepository repository = new SailRepository(store);
+		List<Statement> statements = replayStatements(5);
+		Statement seed = SimpleValueFactory.getInstance()
+				.createStatement(
+						SimpleValueFactory.getInstance().createIRI("urn:producer:seed"),
+						SimpleValueFactory.getInstance().createIRI("urn:producer:p"),
+						SimpleValueFactory.getInstance().createLiteral("existing row"));
+		Set<Statement> expected = new HashSet<>(statements);
+		expected.add(seed);
+		CountDownLatch workerEntered = new CountDownLatch(1);
+		CountDownLatch releaseWorker = new CountDownLatch(1);
+		CountDownLatch producerFinished = new CountDownLatch(1);
+		AtomicBoolean gateFirstOperation = new AtomicBoolean(true);
+		AtomicInteger nativeFailures = new AtomicInteger();
+		AtomicInteger notifications = new AtomicInteger();
+		AtomicReference<Throwable> producerFailure = new AtomicReference<>();
+		AtomicReference<Throwable> nativeFailure = new AtomicReference<>();
+		AtomicReference<Thread> nativeOwner = new AtomicReference<>();
+		Thread producer = new Thread(() -> {
+			try (RepositoryConnection writer = repository.getConnection()) {
+				writer.begin(IsolationLevels.READ_COMMITTED);
+				addStatements(writer, statements);
+				writer.setNamespace("producer", "urn:producer:");
+				writer.commit();
+			} catch (Throwable failure) {
+				producerFailure.set(failure);
+			} finally {
+				producerFinished.countDown();
+			}
+		}, "frozen-input-producer");
+		try (FailureLogCapture logging = new FailureLogCapture()) {
+			try {
+				repository.init();
+				try (RepositoryConnection initial = repository.getConnection()) {
+					initial.add(seed);
+				}
+				store.getBackingStore().enableMultiThreading = true;
+				store.probe.reset();
+				long tripleMapBefore = store.probe.tripleStore.get().mapSizeBytes();
+				long valueMapBefore = store.probe.valueStore.get().mapSizeBytes();
+				store.addSailChangedListener(event -> notifications.incrementAndGet());
+				store.probe.failAfterAlignedPrefix.set(true);
+				store.getBackingStore().beforeAsyncOperationForTest = () -> {
+					if (gateFirstOperation.compareAndSet(true, false)) {
+						nativeOwner.set(Thread.currentThread());
+						workerEntered.countDown();
+						try {
+							assertTrue(releaseWorker.await(15, TimeUnit.SECONDS));
+						} catch (InterruptedException failure) {
+							Thread.currentThread().interrupt();
+							throw new AssertionError(failure);
+						}
+					}
+				};
+				store.getBackingStore().afterAsyncFailureForTest = failure -> {
+					nativeFailures.incrementAndGet();
+					nativeFailure.set(failure);
+				};
+				producer.start();
+				assertTrue(workerEntered.await(10, TimeUnit.SECONDS));
+				String ingestionMethod = bulkSize == 0 ? "approveAll" : "approveAllBulk";
+				boolean producerBackpressured = false;
+				long limit = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+				while (!producerBackpressured && producerFinished.getCount() != 0 && System.nanoTime() < limit) {
+					boolean enqueue = false;
+					boolean awaitingCapacity = false;
+					boolean ingestion = false;
+					for (StackTraceElement frame : producer.getStackTrace()) {
+						enqueue |= frame.getMethodName().equals("enqueueAsync");
+						awaitingCapacity |= frame.getMethodName().equals("awaitAsyncProgress");
+						ingestion |= frame.getMethodName().equals(ingestionMethod);
+					}
+					producerBackpressured = enqueue && awaitingCapacity && ingestion;
+					Thread.onSpinWait();
+				}
+				assertTrue(producerBackpressured,
+						"The real producer must exhaust capacity inside " + ingestionMethod
+								+ " before the native fault");
+				assertEquals(0, nativeFailures.get());
+				releaseWorker.countDown();
+				assertTrue(producerFinished.await(10, TimeUnit.SECONDS));
+				assertNull(producerFailure.get());
+				assertNotSame(producer, nativeOwner.get());
+				assertEquals(1, nativeFailures.get());
+				assertTrue(causeChainContainsIdentity(nativeFailure.get(), store.probe.injectedCapacityFailure.get()));
+				assertEquals(2, store.probe.transactionStarts.get(),
+						"One producer-observed fault requires one full retry");
+				assertEquals(1, store.probe.alignedCapacityFailures.get());
+				assertTrue(store.probe.alignedPrefixRows.get() > 0, "The fault follows real native writes");
+				assertEquals(1, notifications.get());
+				assertEquals(0, store.probe.journalAllocations.get());
+				assertTrue(store.probe.tripleStore.get().mapSizeBytes() > tripleMapBefore);
+				assertEquals(valueMapBefore, store.probe.valueStore.get().mapSizeBytes());
+				try (RepositoryConnection reader = repository.getConnection()) {
+					assertExactStatementRows(expected, readAllStatementRows(reader, false), "producer retry view");
+					assertEquals("urn:producer:", reader.getNamespace("producer"));
+				}
+			} finally {
+				releaseWorker.countDown();
+				producer.interrupt();
+				producer.join(10_000);
+				assertFalse(producer.isAlive());
+				store.getBackingStore().beforeAsyncOperationForTest = null;
+				store.getBackingStore().afterAsyncFailureForTest = null;
+				repository.shutDown();
+			}
+			SailRepository reopened = new SailRepository(new LmdbStore(directory.toFile(), config));
+			try {
+				reopened.init();
+				try (RepositoryConnection reader = reopened.getConnection()) {
+					assertExactStatementRows(expected, readAllStatementRows(reader, false),
+							"reopened producer retry view");
+					assertEquals("urn:producer:", reader.getNamespace("producer"));
+				}
+			} finally {
+				reopened.shutDown();
+			}
+			assertEquals(List.of(), logging.errors(), "Recovered producer ingestion must not log an error");
 		}
 	}
 
@@ -2427,33 +3142,34 @@ class LmdbFrozenReplayTest {
 						seed.getSubject(), seed.getPredicate(), seed.getObject(), false)) {
 					assertTrue(result.hasNext(), "the protected writer must read a real committed row");
 					assertEquals(seed, result.next(), "the protected writer must consume its pinned seed");
-				}
-				protectedWriter.add(pending);
+					// Keep this actual borrower alive: an exhausted and closed cursor no longer pins an idle root.
+					protectedWriter.add(pending);
 
-				retryWriter.begin(IsolationLevels.SNAPSHOT_READ);
-				addStatements(retryWriter, retryInput);
-				retryWriter.setNamespace("m3-retry", "urn:m3:retry:");
-				store.probe.failAfterAlignedPrefix.set(true);
-				try (FailureLogCapture logging = new FailureLogCapture()) {
-					try {
-						retryWriter.commit();
-					} catch (RepositoryException failure) {
-						capacityFailure = failure;
+					retryWriter.begin(IsolationLevels.SNAPSHOT_READ);
+					addStatements(retryWriter, retryInput);
+					retryWriter.setNamespace("m3-retry", "urn:m3:retry:");
+					store.probe.failAfterAlignedPrefix.set(true);
+					try (FailureLogCapture logging = new FailureLogCapture()) {
+						try {
+							retryWriter.commit();
+						} catch (RepositoryException failure) {
+							capacityFailure = failure;
+						}
+						logging.assertTerminalFailure(capacityFailure);
 					}
-					logging.assertTerminalFailure(capacityFailure);
-				}
 
-				tripleMapAfterFailure = tripleStore.mapSizeBytes();
-				valueMapAfterFailure = valueStore.mapSizeBytes();
-				MapGrowthMetrics.Snapshot metricsAfter = store.getBackingStore().growthMetricsSnapshot();
-				tripleResizesAfter = metricsAfter.tripleStoreResizes();
-				valueResizesAfter = metricsAfter.valueStoreResizes();
-				protectedSnapshotRetained = protectedWriter.hasStatement(
-						seed.getSubject(), seed.getPredicate(), seed.getObject(), false)
-						&& !protectedWriter.hasStatement(retryInput.get(0), false);
-				pendingWriteRetained = protectedWriter.hasStatement(pending, false);
-				failedInputStayedInvisible = !observer.hasStatement(retryInput.get(0), false)
-						&& observer.getNamespace("m3-retry") == null;
+					tripleMapAfterFailure = tripleStore.mapSizeBytes();
+					valueMapAfterFailure = valueStore.mapSizeBytes();
+					MapGrowthMetrics.Snapshot metricsAfter = store.getBackingStore().growthMetricsSnapshot();
+					tripleResizesAfter = metricsAfter.tripleStoreResizes();
+					valueResizesAfter = metricsAfter.valueStoreResizes();
+					protectedSnapshotRetained = protectedWriter.hasStatement(
+							seed.getSubject(), seed.getPredicate(), seed.getObject(), false)
+							&& !protectedWriter.hasStatement(retryInput.get(0), false);
+					pendingWriteRetained = protectedWriter.hasStatement(pending, false);
+					failedInputStayedInvisible = !observer.hasStatement(retryInput.get(0), false)
+							&& observer.getNamespace("m3-retry") == null;
+				}
 
 				protectedWriter.rollback();
 				try (RepositoryConnection laterWriter = repository.getConnection()) {
@@ -4294,14 +5010,28 @@ class LmdbFrozenReplayTest {
 
 	private static final class CountingLmdbStore extends LmdbStore {
 		private final RetryProbe probe = new RetryProbe();
+		private final Integer asyncQueueCapacity;
 
 		private CountingLmdbStore(File directory, LmdbStoreConfig config) {
+			this(directory, config, null);
+		}
+
+		private CountingLmdbStore(File directory, LmdbStoreConfig config, Integer asyncQueueCapacity) {
 			super(directory, config);
+			this.asyncQueueCapacity = asyncQueueCapacity;
 		}
 
 		@Override
 		LmdbSailStore createBackingStore(File directory, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
+			if (asyncQueueCapacity != null) {
+				return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
+						(valueDirectory, valueProperties, valueConfig) -> new CountingValueStore(valueDirectory,
+								valueProperties, valueConfig, probe),
+						(tripleDirectory, tripleProperties, tripleConfig, valueStore) -> new CountingTripleStore(
+								tripleDirectory, tripleProperties, tripleConfig, valueStore, probe),
+						asyncQueueCapacity);
+			}
 			return new LmdbSailStore(directory, properties, config, sketchBasedJoinEstimatorEnabled,
 					(valueDirectory, valueProperties, valueConfig) -> new CountingValueStore(valueDirectory,
 							valueProperties,
@@ -4319,6 +5049,37 @@ class LmdbFrozenReplayTest {
 			super(directory, properties, config);
 			this.probe = probe;
 			probe.valueStore.set(this);
+		}
+
+		@Override
+		boolean requiresResizeForEstimatedWrite(long estimatedWriteBytes) throws IOException {
+			Runnable before = probe == null ? null : probe.beforeProjectedResizeCheck.get();
+			if (before != null && StackWalker.getInstance()
+					.walk(frames -> frames.anyMatch(frame -> frame
+							.getClassName()
+							.equals(LmdbSailStore.class.getName())
+							&& frame.getMethodName().equals("growForProjectedWrite")))
+					&& probe.beforeProjectedResizeCheck.compareAndSet(before, null)) {
+				before.run();
+			}
+			return super.requiresResizeForEstimatedWrite(estimatedWriteBytes);
+		}
+
+		@Override
+		public void startTransaction(boolean resize) throws IOException {
+			if (probe != null && probe.recordValueWriterMap.get()) {
+				probe.firstValueWriterMap.compareAndSet(-1L, mapSizeBytes());
+			}
+			super.startTransaction(resize);
+		}
+
+		@Override
+		ReadSnapshotReservation reserveReadSnapshot() throws IOException {
+			Runnable before = probe == null ? null : probe.beforeSnapshotReservation.get();
+			if (before != null) {
+				before.run();
+			}
+			return super.reserveReadSnapshot();
 		}
 
 		@Override
@@ -4351,6 +5112,10 @@ class LmdbFrozenReplayTest {
 			int remainingFailures = probe.valueCommitCapacityFailureBudget
 					.getAndUpdate(value -> value > 0 ? value - 1 : 0);
 			if (remainingFailures > 0) {
+				Runnable before = probe.beforeCapacityCommitFailure.getAndSet(null);
+				if (before != null) {
+					before.run();
+				}
 				probe.valueCommitCapacityFailures.incrementAndGet();
 				probe.valueMapAtCommitFailure.set(mapSizeBytes());
 				CountingTripleStore tripleStore = probe.tripleStore.get();
@@ -4375,6 +5140,13 @@ class LmdbFrozenReplayTest {
 	}
 
 	private static final class RetryProbe {
+		private final AtomicReference<Runnable> beforeProjectedResizeCheck = new AtomicReference<>();
+		private final AtomicBoolean recordValueWriterMap = new AtomicBoolean();
+		private final AtomicLong firstValueWriterMap = new AtomicLong(-1L);
+		private final AtomicReference<Runnable> beforeSnapshotReservation = new AtomicReference<>();
+		private final AtomicReference<Runnable> beforeTripleResize = new AtomicReference<>();
+		private final AtomicReference<Runnable> beforeCapacityCommitFailure = new AtomicReference<>();
+		private final AtomicReference<CountDownLatch> requireNativeFailurePublication = new AtomicReference<>();
 		private final AtomicBoolean failAfterValueAllocation = new AtomicBoolean();
 		private final AtomicInteger valueAllocationCapacityFailures = new AtomicInteger();
 		private final AtomicInteger journalAllocations = new AtomicInteger();
@@ -4448,6 +5220,13 @@ class LmdbFrozenReplayTest {
 		private final AtomicBoolean failRollbackAfterSuccessfulAbort = new AtomicBoolean();
 
 		private void reset() {
+			beforeProjectedResizeCheck.set(null);
+			recordValueWriterMap.set(false);
+			firstValueWriterMap.set(-1L);
+			beforeSnapshotReservation.set(null);
+			beforeTripleResize.set(null);
+			beforeCapacityCommitFailure.set(null);
+			requireNativeFailurePublication.set(null);
 			failAfterValueAllocation.set(false);
 			valueAllocationCapacityFailures.set(0);
 			journalAllocations.set(0);
@@ -4650,6 +5429,13 @@ class LmdbFrozenReplayTest {
 
 		@Override
 		void startTransaction(TxnReplayPolicy.Decision decision) throws IOException {
+			if (probe != null && probe.transactionStarts.get() > 0) {
+				CountDownLatch published = probe.requireNativeFailurePublication.get();
+				if (published != null) {
+					assertEquals(0L, published.getCount(),
+							"The prior native owner must finish rollback and publish its fault before retry admission");
+				}
+			}
 			super.startTransaction(decision);
 			RetryProbe currentProbe = probe;
 			if (currentProbe != null) {
@@ -4684,6 +5470,10 @@ class LmdbFrozenReplayTest {
 					: currentProbe.nativeCommitCapacityFailureBudget
 							.getAndUpdate(value -> value > 0 ? value - 1 : 0);
 			if (remainingFailures > 0) {
+				Runnable before = currentProbe.beforeCapacityCommitFailure.getAndSet(null);
+				if (before != null) {
+					before.run();
+				}
 				int failure = currentProbe.nativeCommitCapacityFailures.getAndIncrement();
 				currentProbe.injectedCommitFailures.incrementAndGet();
 				currentProbe.tripleMapAtNativeCommitFailure.set(mapSizeBytes());
@@ -4735,6 +5525,47 @@ class LmdbFrozenReplayTest {
 				applyingAligned = wasApplyingAligned;
 			}
 			afterNativeApplication(count, explicit);
+		}
+
+		@Override
+		void storeTriplesAligned(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer) throws IOException {
+			beforeNativeApplication(explicit);
+			boolean wasApplyingAligned = applyingAligned;
+			applyingAligned = true;
+			try {
+				super.storeTriplesAligned(subjects, predicates, objects, contexts, count, explicit, mayHaveInferred,
+						addedIndexConsumer);
+			} finally {
+				applyingAligned = wasApplyingAligned;
+			}
+			afterNativeApplication(count, explicit);
+		}
+
+		@Override
+		void storePreparedTriples(long[] subjects, long[] predicates, long[] objects, long[] contexts, int count,
+				boolean explicit, boolean mayHaveInferred, IntConsumer addedIndexConsumer,
+				EncodedIndexKeys preparedMainIndex, PreparedSecondaryIndexesSupplier preparedSecondaryIndexesSupplier)
+				throws IOException {
+			beforeNativeApplication(explicit);
+			boolean wasApplyingAligned = applyingAligned;
+			applyingAligned = true;
+			try {
+				super.storePreparedTriples(subjects, predicates, objects, contexts, count, explicit, mayHaveInferred,
+						addedIndexConsumer, preparedMainIndex, preparedSecondaryIndexesSupplier);
+			} finally {
+				applyingAligned = wasApplyingAligned;
+			}
+			afterNativeApplication(count, explicit);
+		}
+
+		@Override
+		int storeGloballyOrderedFreshTriples(int[] quads, long[] valueIds, int count,
+				GlobalPreparedIndexOrdersTask orders, ExecutorService executor) throws IOException {
+			beforeNativeApplication(true);
+			int added = super.storeGloballyOrderedFreshTriples(quads, valueIds, count, orders, executor);
+			afterNativeApplication(added, true);
+			return added;
 		}
 
 		private void beforeNativeApplication(boolean explicit) throws IOException {
@@ -4816,6 +5647,10 @@ class LmdbFrozenReplayTest {
 		@Override
 		boolean growMapForEstimatedWrite(long estimatedWriteBytes, LmdbSailStore.MapGrowthAttempt growthAttempt)
 				throws IOException {
+			Runnable before = probe.beforeTripleResize.get();
+			if (before != null) {
+				before.run();
+			}
 			boolean grew = super.growMapForEstimatedWrite(estimatedWriteBytes, growthAttempt);
 			if (grew && growthAttempt != null && probe.nativeCommitCapacityFailures.get() > 0) {
 				probe.tripleGrowthToken.compareAndSet(null, growthAttempt.token());

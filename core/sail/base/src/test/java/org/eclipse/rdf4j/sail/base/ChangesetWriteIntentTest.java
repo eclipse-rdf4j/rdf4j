@@ -38,7 +38,7 @@ class ChangesetWriteIntentTest {
 			assertDoesNotThrow(() -> changeset.approve(statement));
 			assertEquals(1L, changeset.getBufferedWriteOperations(), "one statement operation is buffered");
 			assertDoesNotThrow(() -> changeset.deprecate(statement));
-			assertDoesNotThrow(() -> changeset.approveAll(Set.of(statement), null));
+			assertDoesNotThrow(() -> changeset.approveAll(Set.of(statement), (Set<Resource>) null));
 			assertDoesNotThrow(() -> changeset.deprecateAll(Set.of(statement)));
 			assertEquals(4L, changeset.getBufferedWriteOperations(),
 					"every statement operation counts once, without sizing any value");

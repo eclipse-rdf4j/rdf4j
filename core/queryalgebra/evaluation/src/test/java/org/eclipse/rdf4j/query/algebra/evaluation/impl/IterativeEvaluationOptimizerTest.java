@@ -63,6 +63,24 @@ import org.junit.jupiter.api.Test;
 public class IterativeEvaluationOptimizerTest extends QueryOptimizerTest {
 
 	@Test
+	public void doesNotFactorNonRepeatableCommonPrefixOutOfUnion() {
+		TupleExpr leftPrefix = volatilePrefix();
+		TupleExpr rightPrefix = leftPrefix.clone();
+		Join left = new Join(leftPrefix, pattern("left"));
+		Join right = new Join(rightPrefix, pattern("right"));
+		Union union = new Union(left, right);
+		QueryRoot root = new QueryRoot(union);
+
+		getOptimizer().optimize(root, null, EmptyBindingSet.getInstance());
+
+		assertThat(root.getArg()).isSameAs(union);
+		assertThat(union.getLeftArg()).isSameAs(left);
+		assertThat(union.getRightArg()).isSameAs(right);
+		assertThat(left.getLeftArg()).isSameAs(leftPrefix);
+		assertThat(right.getLeftArg()).isSameAs(rightPrefix);
+	}
+
+	@Test
 	public void factoringCommonUnionJoinPreservesDuplicateRows() throws Exception {
 		String query = "SELECT ?common ?branch WHERE { "
 				+ "{ VALUES ?common { <urn:c> <urn:c> } VALUES ?branch { <urn:left> } } UNION "
@@ -315,6 +333,15 @@ public class IterativeEvaluationOptimizerTest extends QueryOptimizerTest {
 	@Override
 	public IterativeEvaluationOptimizer getOptimizer() {
 		return new IterativeEvaluationOptimizer();
+	}
+
+	private static Extension volatilePrefix() {
+		return new Extension(pattern("prefix"),
+				new ExtensionElem(new FunctionCall("urn:test:volatile:iterative-prefix"), "generated"));
+	}
+
+	private static StatementPattern pattern(String suffix) {
+		return new StatementPattern(Var.of("s" + suffix), Var.of("p" + suffix), Var.of("o" + suffix));
 	}
 
 }

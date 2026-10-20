@@ -15,6 +15,7 @@ import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.Service;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -63,9 +64,21 @@ public class BindingSetAssignmentInlinerOptimizer implements QueryOptimizer {
 			}
 			Value replacementValue = input.fixedValues().get(var.getName());
 			if (replacementValue != null) {
-				var.replaceWith(Var.of(var.getName(), replacementValue, var.isAnonymous(), var.isConstant()));
+				Var replacement = Var.of(var.getName(), replacementValue, var.isAnonymous(), var.isConstant(),
+						var.isBNode());
+				replacement.setGraphContextDepth(var.getGraphContextDepth());
+				replacement.setVariableScopeChange(var.isVariableScopeChange());
+				var.replaceWith(replacement);
 				bindingAnalysis.invalidate(root);
 			}
+		}
+
+		@Override
+		public void meet(Projection projection) {
+			if (projection.getProjectionContext() != null) {
+				projection.getProjectionContext().visit(this);
+			}
+			super.meet(projection);
 		}
 	}
 }

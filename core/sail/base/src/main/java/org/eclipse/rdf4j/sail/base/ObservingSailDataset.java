@@ -13,6 +13,7 @@
 package org.eclipse.rdf4j.sail.base;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
+import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Resource;
@@ -43,6 +44,11 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	public ObservingSailDataset(SailDataset delegate, SailSink observer) {
 		super(delegate);
 		this.observer = observer;
+	}
+
+	@Override
+	boolean isStatementAccessTransparent() {
+		return false;
 	}
 
 	@Override
@@ -101,6 +107,19 @@ class ObservingSailDataset extends DelegatingSailDataset {
 	public long getStatementCount(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
 		observer.observe(subj, pred, obj, contexts);
 		return super.getStatementCount(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.hasStatements(subj, pred, obj, contexts);
+	}
+
+	@Override
+	public CloseableIteration<? extends Statement> getStatements(StatementOrder statementOrder, Resource subj, IRI pred,
+			Value obj, Resource... contexts) throws SailException {
+		observer.observe(subj, pred, obj, contexts);
+		return super.getStatements(statementOrder, subj, pred, obj, contexts);
 	}
 
 }

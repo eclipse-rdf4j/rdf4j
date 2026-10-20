@@ -67,6 +67,36 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 class LmdbValueResolutionScopeTest {
 
+	@ParameterizedTest
+	@ValueSource(booleans = { false, true })
+	void scopedLookupsPreserveEveryPositionBank(boolean reverse, @TempDir File dataDir) throws Exception {
+		try (HookValueStore store = new HookValueStore(dataDir)) {
+			long id = commitValue(store, SimpleValueFactory.getInstance().createBNode("all-position-banks"));
+			try (ValueResolutionScope scope = store.openValueResolutionScope();
+					SailClosable activation = scope.activate()) {
+				int[] masks = { ValuePosition.NONE, ValuePosition.SUBJECT | ValuePosition.OBJECT,
+						ValuePosition.PREDICATE, ValuePosition.OBJECT, ValuePosition.CONTEXT };
+				for (int index = 0; index < masks.length; index++) {
+					int mask = masks[reverse ? masks.length - 1 - index : index];
+					LmdbValue value = store.getLazyValue(id, mask);
+					assertFalse(value.isInitialized());
+					ValueStoreRevision.Lazy epoch = (ValueStoreRevision.Lazy) value.getValueStoreRevision();
+					for (int requested = 0; requested <= ValuePosition.ALL; requested++) {
+						var positioned = new ValueStoreRevision.Lazy(epoch, requested);
+						var scoped = scope.revision(positioned);
+						assertEquals(requested, scoped.getPositionMask());
+						assertSame(scoped, scope.revision(positioned));
+					}
+					assertEquals(mask, value.getValueStoreRevision().getPositionMask(),
+							"logical scope admission must preserve the materializer's RDF role");
+					value.init();
+					assertEquals("all-position-banks", value.stringValue());
+					assertSame(value, store.cachedValue(id, mask));
+				}
+			}
+		}
+	}
+
 	@Test
 	void committedPendingParentCannotServeReleasedPredecessorChildren(@TempDir File dataDir) throws Exception {
 		SimpleValueFactory vf = SimpleValueFactory.getInstance();
@@ -422,7 +452,9 @@ class LmdbValueResolutionScopeTest {
 						((LmdbValue) ((TripleTerm) parent).getObject()).getValueStoreRevision());
 			}
 			assertSame(parent, lazyLookup ? store.getLazyValue(id) : store.getValue(id),
-					"cold escape must preserve the already initialized canonical composite");
+					"cold escape must preserve the already initialized canonical composite; lazyLookup=" + lazyLookup
+							+ ", version=" + parent.getSemanticVersion()
+							+ ", lexicalLength=" + parent.retainedLexicalLength());
 			store.close();
 			assertEquals(expected, parent,
 					"all descendants of a naked cached composite must remain usable after store shutdown");
@@ -479,7 +511,9 @@ class LmdbValueResolutionScopeTest {
 				insideNative.countDown();
 				await(releaseNative);
 			};
-			Future<?> getter = workers.submit(held::init);
+			Future<?> getter = workers.submit(() -> {
+				held.init();
+			});
 			Future<?> writer = null;
 			try {
 				assertTrue(insideNative.await(10, TimeUnit.SECONDS), "the reserved short fallback must enter decode");
@@ -542,7 +576,9 @@ class LmdbValueResolutionScopeTest {
 			};
 			List<Future<?>> getters = new ArrayList<>();
 			for (LmdbValue value : values) {
-				getters.add(workers.submit(value::init));
+				getters.add(workers.submit(() -> {
+					value.init();
+				}));
 			}
 			assertTrue(insideNative.await(10, TimeUnit.SECONDS));
 			Future<?> admission = workers.submit(() -> {
@@ -635,7 +671,9 @@ class LmdbValueResolutionScopeTest {
 			};
 			List<Future<?>> getters = new ArrayList<>();
 			for (LmdbValue value : values) {
-				getters.add(workers.submit(value::init));
+				getters.add(workers.submit(() -> {
+					value.init();
+				}));
 			}
 			Future<?> reservation = null;
 			try {
@@ -1021,7 +1059,9 @@ class LmdbValueResolutionScopeTest {
 					await(releaseNative);
 				}
 			};
-			Future<?> getter = workers.submit(admitted::init);
+			Future<?> getter = workers.submit(() -> {
+				admitted.init();
+			});
 			assertTrue(insideNative.await(10, TimeUnit.SECONDS));
 			Future<?> close = workers.submit(scope::close);
 			try {
@@ -1205,6 +1245,10 @@ class LmdbValueResolutionScopeTest {
 			super(directory, new LmdbStoreConfig().setInlineLiterals(false));
 		}
 
+		private HookValueStore(File directory, StoreProperties properties, LmdbStoreConfig config) throws IOException {
+			super(directory, properties, config);
+		}
+
 		@Override
 		ValueResolutionScope openValueResolutionScope() {
 			if (failScopeOpen) {
@@ -1282,7 +1326,8 @@ class LmdbValueResolutionScopeTest {
 		LmdbSailStore createBackingStore(File dataDir, StoreProperties properties, LmdbStoreConfig config,
 				boolean sketchBasedJoinEstimatorEnabled) throws IOException, SailException {
 			return new LmdbSailStore(dataDir, properties, config, sketchBasedJoinEstimatorEnabled,
-					(valueDir, valueProperties, valueConfig) -> values = new HookValueStore(valueDir),
+					(valueDir, valueProperties, valueConfig) -> values = new HookValueStore(valueDir, valueProperties,
+							valueConfig),
 					TripleStore::new);
 		}
 	}

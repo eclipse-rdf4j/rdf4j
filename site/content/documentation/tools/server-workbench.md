@@ -453,6 +453,16 @@ Also nested inside the `<web-app>` element are definitions of security roles. Th
 </security-role>
 ```
 
+### LMDB execution strategy selection
+
+Server and Workbench do not expose JVM system-property administration. Configure LMDB properties through the JVM
+startup configuration and use repository configuration to enable the native query engine.
+
+`GET /repositories/{id}/lmdb/strategies` lists native execution strategies for the selected repository, using its normal
+repository routing and access rules. It returns an empty list when native execution is unavailable or disabled.
+Workbench shows the per-query strategy selector only after the selected repository advertises available strategies.
+The empty choice leaves strategy selection to the engine. A forced strategy must still be eligible for the query.
+
 ### User accounts
 
 Tomcat has a number of ways to manage user accounts. The different techniques are called 'realms' and the default one is called 'UserDatabaseRealm'. This is the simplest one to manage, but also the least secure, because usernames and passwords are stored in plain text.

@@ -20,6 +20,7 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
 import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Graph;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
@@ -94,6 +95,14 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 			}
 		}
 
+		@Override
+		public void meet(Projection projection) {
+			if (projection.getProjectionContext() != null) {
+				projection.getProjectionContext().visit(this);
+			}
+			super.meet(projection);
+		}
+
 		private void apply() {
 			// Prove every occurrence against the unchanged tree, so context/output caches survive the traversal.
 			// Each admitted read already has this guaranteed API value, independent of earlier replacements.
@@ -109,8 +118,11 @@ public class BindingAssignerOptimizer implements QueryOptimizer {
 						break;
 					}
 				}
-				var.replaceWith(
-						Var.of(var.getName(), replacement.value(), var.isAnonymous(), substitutedTerm, var.isBNode()));
+				Var assigned = Var.of(var.getName(), replacement.value(), var.isAnonymous(), substitutedTerm,
+						var.isBNode()).withApiInputOrigin();
+				assigned.setGraphContextDepth(var.getGraphContextDepth());
+				assigned.setVariableScopeChange(var.isVariableScopeChange());
+				var.replaceWith(assigned);
 			}
 		}
 

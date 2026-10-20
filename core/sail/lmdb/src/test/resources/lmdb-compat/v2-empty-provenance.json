@@ -1,0 +1,473 @@
+{
+  "producer_revision": "46a2d41ab16fead609884ee655e26e6baa1ce325",
+  "artifact_manifest": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/artifact-manifest.json",
+  "artifacts": [
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/at/yawk/lz4/lz4-java/1.11.1/lz4-java-1.11.1.jar",
+      "sha256": "e5e31b195fcc7e9c5da4b191af3b0082ee616c13f61cbd79409ffa65e4dd5c47",
+      "size_bytes": 896992
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/fasterxml/jackson/core/jackson-annotations/2.22/jackson-annotations-2.22.jar",
+      "sha256": "21ddb598807d3a51a876704eb979d9296e1c6a6f47ab1826ff88c6d6a127a2d0",
+      "size_bytes": 84211
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/github/jsonld-java/jsonld-java/0.13.6/jsonld-java-0.13.6.jar",
+      "sha256": "ac158c23504fa76dc1a5f43436df2cb34b4b435b79b38c9b941d1c75e2efbe90",
+      "size_bytes": 3336943
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar",
+      "sha256": "dd0ce1b55a3ed2080cb70f9c655850cda86c206862310009dcb5e5c95265a5e0",
+      "size_bytes": 289901
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar",
+      "sha256": "a56e782b5b50811ac204073a355a21d915a2107fce13ec711331ad036f660fcc",
+      "size_bytes": 20389
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar",
+      "sha256": "cbfc3906b19b8f55dd7cfd6dfe0aa4532e834250d7f080bd8d211a3e246b59cb",
+      "size_bytes": 10763
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar",
+      "sha256": "dc573e1fca4fd5454f4a5fd3d7da2df03002876a4175bafc14a95980dd7713b3",
+      "size_bytes": 3064793
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar",
+      "sha256": "b372a037d4230aa57fbeffdef30fd6123f9c0c2db85d0aced00c91b974f33f99",
+      "size_bytes": 2199
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar",
+      "sha256": "d164fe79f262c32d9b18a0b5b2d317d1c27653d5e98fd2b998c24bf901c72ce4",
+      "size_bytes": 420480
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-io/commons-io/2.22.0/commons-io-2.22.0.jar",
+      "sha256": "2b9a7b1f726fb86216dbd2c8321eabe0221dbd5b1be81c18e1cb53811b104758",
+      "size_bytes": 609182
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/no/hasmac/hasmac-json-ld/0.10.2/hasmac-json-ld-0.10.2.jar",
+      "sha256": "8f348e8de3f1a3c9ea94bf43f02f170925644a095cc3395ca0f4dfd9c3abbef3",
+      "size_bytes": 316789
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar",
+      "sha256": "69e5c9fa35da7a51a5fd2099dfe56a2d8d32cf233e2f6d770e796146440263f4",
+      "size_bytes": 713862
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar",
+      "sha256": "1e56d7b058d28b65abd256b8458e3885b674c1d588fa43cd7d1cbb9c7ef2b308",
+      "size_bytes": 2213560
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-text/1.15.0/commons-text-1.15.0.jar",
+      "sha256": "58d2da30f058512a1e7f914e39241deca4dff5c27a085b4ed2faa9e7208067f6",
+      "size_bytes": 264873
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/datasketches/datasketches-java/9.0.0/datasketches-java-9.0.0.jar",
+      "sha256": "da5ad11655341a90e6464bca40e5995e24441d446d6706ffe0d152251e2dff2d",
+      "size_bytes": 1072765
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/client5/httpclient5/5.6.3/httpclient5-5.6.3.jar",
+      "sha256": "80712ff129210d7c73d9fcc1195cbee5c3c34744965c7a05ea107b3648922f18",
+      "size_bytes": 1056844
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5/5.4.3/httpcore5-5.4.3.jar",
+      "sha256": "18bfbbabb478dfb67f31aeaf428c387f3c3df654582e1309f708ee1f3086830a",
+      "size_bytes": 955121
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5-h2/5.4.3/httpcore5-h2-5.4.3.jar",
+      "sha256": "c7db7026b8e2dea39132b04a6069f6671e2858309b20a146ec5c7dd6ed73a0b6",
+      "size_bytes": 263675
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections/10.4.0/eclipse-collections-10.4.0.jar",
+      "sha256": "55d69834e1d2ab4712bcbb2093f18d7cc796f70ee366680491dad63d22a6b584",
+      "size_bytes": 10330135
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-api/10.4.0/eclipse-collections-api-10.4.0.jar",
+      "sha256": "29f93ff3d246f0bcdd5b7e5029c3bd8d2cb7752f5b83b5a701545a0499693491",
+      "size_bytes": 1413775
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-forkjoin/10.4.0/eclipse-collections-forkjoin-10.4.0.jar",
+      "sha256": "668c8d9b7cd8bda7abcf1ecdc0c96b83340b49566d8279e1c8adafaecc4fbc28",
+      "size_bytes": 41663
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-api/6.1.0/rdf4j-collection-factory-api-6.1.0.jar",
+      "sha256": "20d1a7716bf3473477aff009b7826ae6d20f1062e72f805dc820da257307d14a",
+      "size_bytes": 10639
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-mapdb3/6.1.0/rdf4j-collection-factory-mapdb3-6.1.0.jar",
+      "sha256": "03fef8cee673e1fcae452d8e897b49b95b16c3794b8d40f576f036851d1abdfd",
+      "size_bytes": 32635
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-annotation/6.1.0/rdf4j-common-annotation-6.1.0.jar",
+      "sha256": "1287cdb92879b1fb67c08c80907c545ec401882fdf778089770110fbfc0a9f31",
+      "size_bytes": 3238
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-exception/6.1.0/rdf4j-common-exception-6.1.0.jar",
+      "sha256": "f053a9829d239f359acf786677c08333c18687ea319b4093ce0e17f45ad93df3",
+      "size_bytes": 4296
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-io/6.1.0/rdf4j-common-io-6.1.0.jar",
+      "sha256": "7d9316e82d50000f7bf8c8b730f1bcdff1831dcd0e1e06b0077cc8c92318f2fd",
+      "size_bytes": 44559
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-iterator/6.1.0/rdf4j-common-iterator-6.1.0.jar",
+      "sha256": "d2cf2bfe4179333325b264c7306ba03bfa4c1da1b119878633b33779a8b17f8e",
+      "size_bytes": 51489
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-order/6.1.0/rdf4j-common-order-6.1.0.jar",
+      "sha256": "235765391662e15cde0e25c0aedfbdc36b3ff4f09d92a1e2ec2ed3cb6ec05ded",
+      "size_bytes": 4479
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-text/6.1.0/rdf4j-common-text-6.1.0.jar",
+      "sha256": "48761ad34ca18daeba6e485d23438dbb4aa284ad60b4e5bdb03b7dcdd9771913",
+      "size_bytes": 4685
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-transaction/6.1.0/rdf4j-common-transaction-6.1.0.jar",
+      "sha256": "3aa0e355d46b2a59417b890c0ad69ce65b95da5923c10b7fe722cbac23ae2554",
+      "size_bytes": 11007
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-xml/6.1.0/rdf4j-common-xml-6.1.0.jar",
+      "sha256": "76913d3b272114f6e36ff98cbebcfc0f698ab84a1414abc8e923611ad75808da",
+      "size_bytes": 21364
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client/6.1.0/rdf4j-http-client-6.1.0.jar",
+      "sha256": "f696207d020a9140b32b31ef1bad86a687414d53fcb0354387c477bf48b4dae9",
+      "size_bytes": 91730
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-apache5/6.1.0/rdf4j-http-client-apache5-6.1.0.jar",
+      "sha256": "57ae629171fa29127a7d20066c677a8978aed14ccc2f01aa5c3e86fe7d849210",
+      "size_bytes": 13265
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-api/6.1.0/rdf4j-http-client-api-6.1.0.jar",
+      "sha256": "0bee0be944208f6e28b95d8b00388b2cb3dc5160741b56a78335e658f9e69c46",
+      "size_bytes": 25669
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-jdk/6.1.0/rdf4j-http-client-jdk-6.1.0.jar",
+      "sha256": "18d5c27d0f6a258d970bee53dadb45be8a4aa064d0fc26e31ed29a3381f4813c",
+      "size_bytes": 10969
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-protocol/6.1.0/rdf4j-http-protocol-6.1.0.jar",
+      "sha256": "753239a3b6473202eb55fe158e30d38c5b7717ff147a4fc6de5339c00e60fb13",
+      "size_bytes": 34677
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model/6.1.0/rdf4j-model-6.1.0.jar",
+      "sha256": "e4256eda1126e48f10f68568f6116ee2396b1f9de49c495fae034b5cd2d3a2f2",
+      "size_bytes": 193817
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-api/6.1.0/rdf4j-model-api-6.1.0.jar",
+      "sha256": "22168d26808199ee23b959838ab6757b730c4d4a7fb659141dafd75cef26300c",
+      "size_bytes": 64506
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-vocabulary/6.1.0/rdf4j-model-vocabulary-6.1.0.jar",
+      "sha256": "a2eee4c9181eb3af91a0f9da7514902ac1386ef5671ab9d69ef7fdc19524bb8b",
+      "size_bytes": 104281
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-query/6.1.0/rdf4j-query-6.1.0.jar",
+      "sha256": "88d04dbdb0d5a7355b6ecb203ee76b3c01796dccf273eefa9d783a403fa2fc01",
+      "size_bytes": 94352
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-evaluation/6.1.0/rdf4j-queryalgebra-evaluation-6.1.0.jar",
+      "sha256": "e11a815af1cd2719781c0f7d945d9b99a1befc6f372791749927ea8a8779d679",
+      "size_bytes": 1018964
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-model/6.1.0/rdf4j-queryalgebra-model-6.1.0.jar",
+      "sha256": "9cc2cfc663b963adf4a05b42f837a4b5924e18440d0ec8d5998b3086eab41a35",
+      "size_bytes": 231211
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-api/6.1.0/rdf4j-queryparser-api-6.1.0.jar",
+      "sha256": "48daaf88c971f654419547c14c207ca68d983aaded7f39878fdb717e88819ab9",
+      "size_bytes": 25557
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-sparql/6.1.0/rdf4j-queryparser-sparql-6.1.0.jar",
+      "sha256": "8f8c6037dbfbef21b9282e3eeb11ce7c5b0872b957ace6878170a8a330627947",
+      "size_bytes": 355883
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryrender/6.1.0/rdf4j-queryrender-6.1.0.jar",
+      "sha256": "3b1f6d2c20a7f5d6bf34174dbd1fccc60c15bb10637cda51f3fe70811405b9c1",
+      "size_bytes": 357269
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-api/6.1.0/rdf4j-queryresultio-api-6.1.0.jar",
+      "sha256": "29ef729bf3d3136b5541da1a0a7244192644fb3bfe0949e356d06c075ea06985",
+      "size_bytes": 36744
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-binary/6.1.0/rdf4j-queryresultio-binary-6.1.0.jar",
+      "sha256": "53a7f237effbbaad3c6637382fe2b561e33c2c4c934cb4415804291150cb65fd",
+      "size_bytes": 16609
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-sparqlxml/6.1.0/rdf4j-queryresultio-sparqlxml-6.1.0.jar",
+      "sha256": "fa2482c5107d68b0139e69762128fb368ca4c478a74eacf7e3c8d2555a616d0b",
+      "size_bytes": 28940
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-api/6.1.0/rdf4j-repository-api-6.1.0.jar",
+      "sha256": "ea8a9baf337de5e46be80cfce1d5e3bb40337ae0c3e682cfe2b28de84623ab99",
+      "size_bytes": 88330
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sail/6.1.0/rdf4j-repository-sail-6.1.0.jar",
+      "sha256": "0801944ec197a5af47fc9f86587ab409abd77af2a6e7f326ac11104cd0052452",
+      "size_bytes": 61188
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sparql/6.1.0/rdf4j-repository-sparql-6.1.0.jar",
+      "sha256": "0409b0879c11c07b3b21c741224a86dcbe2bdbc6a9a5ae65d7229ac17fde8f56",
+      "size_bytes": 64447
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-api/6.1.0/rdf4j-rio-api-6.1.0.jar",
+      "sha256": "f34e903a9cc875e97482d3ddab979d6f836a216d1f26c9e354843709c651cb26",
+      "size_bytes": 117159
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-datatypes/6.1.0/rdf4j-rio-datatypes-6.1.0.jar",
+      "sha256": "800c1cd2e106639660aeeeb4c88515444830b44f316716c7ecd1029c265e226b",
+      "size_bytes": 9408
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-languages/6.1.0/rdf4j-rio-languages-6.1.0.jar",
+      "sha256": "9d90243dca614f628db8483a5f8b2707fcb0f7d1f5de93ebba67a41392acb744",
+      "size_bytes": 5588
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-ntriples/6.1.0/rdf4j-rio-ntriples-6.1.0.jar",
+      "sha256": "abcdbd4d1c7242491ecc5ffa4e1609630d997da216084700be7e2c134a65da45",
+      "size_bytes": 15880
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-trig/6.1.0/rdf4j-rio-trig-6.1.0.jar",
+      "sha256": "cbf8cb23ae917760ce5d655e3aa21f64143954489988f3752e2d47494b2d5553",
+      "size_bytes": 9393
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-turtle/6.1.0/rdf4j-rio-turtle-6.1.0.jar",
+      "sha256": "6510b9abfce59d2cf4a3592302890e3b398d4cd44b6606016dbada3c2a72b83c",
+      "size_bytes": 37589
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-api/6.1.0/rdf4j-sail-api-6.1.0.jar",
+      "sha256": "67c1e364ed964bf6399c3242e5a48619d86dda41d38d8cda8fe9c7dfc028391c",
+      "size_bytes": 129815
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-base/6.1.0/rdf4j-sail-base-6.1.0.jar",
+      "sha256": "34e0b846887f7b1a2af14df3b8149cbac104bfcf2ab45fc4a6685ec27c459c38",
+      "size_bytes": 106364
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-lmdb/6.1.0/rdf4j-sail-lmdb-6.1.0.jar",
+      "sha256": "df3e1e5a33663515b9db93df4b6e95cf534a5a64f58650bb8bd05935f0c3ad3d",
+      "size_bytes": 577190
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-memory/6.1.0/rdf4j-sail-memory-6.1.0.jar",
+      "sha256": "1a140415e9521d47ca0e274ae91a85d31d3c7c1d5fdc5e3cb37f3b1abd3d0667",
+      "size_bytes": 92998
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar",
+      "sha256": "2037be378980d3ba9333e97955f3b2cde392aa124d04ca73ce2eee6657199297",
+      "size_bytes": 31170
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar",
+      "sha256": "f9cdcdbff1f5de85380ae526977e683726c2aa42db1ed6e6e50ae89e496e95fd",
+      "size_bytes": 1718956
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar",
+      "sha256": "1fad6e6be7557781e4d33729d49ae1cdc8fdda6fe477bb0cc68ce351eafdfbab",
+      "size_bytes": 3819
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-arm64.jar",
+      "sha256": "07643ee5e95635b710715b41900c2a05c3f08c74be9309ba0763e31431bfad3b",
+      "size_bytes": 117172
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-ppc64le.jar",
+      "sha256": "8c4fc27c9fe96855d023b3fad7ea8ef3217c073734b2858ed142219849438122",
+      "size_bytes": 127195
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux.jar",
+      "sha256": "2f0e65d6985d602c0e5e5aab6576db113a9a378a36f8144ec93b77a4fde5876c",
+      "size_bytes": 121299
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos-arm64.jar",
+      "sha256": "e68652629a28f0262ca99a2132d370e3fbc70d9f10e11717afa3f2dbe85b64fc",
+      "size_bytes": 50369
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos.jar",
+      "sha256": "a818cba530f8a541ef30e2cc2b731c8de2d081d25e9901959ff2bcdbf2344e0f",
+      "size_bytes": 75211
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows-arm64.jar",
+      "sha256": "17c8b4fc3ded615acf6097120cc31eefe9b93082878d8851f6903a6304ae5562",
+      "size_bytes": 140009
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows.jar",
+      "sha256": "a8d8edda34718bf70f68d14de1295b5bfc0f477a9607a3a9705d9e2d88538a8c",
+      "size_bytes": 168988
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6.jar",
+      "sha256": "b00e2781b74cc829db9d39fb68746b25bb7b94ce61d46293457dbccddabd999c",
+      "size_bytes": 823245
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-arm64.jar",
+      "sha256": "e9ae2b3b8448bfc84a192ed3a123e04f76216b1999716e4bd3a4891e8102a9d4",
+      "size_bytes": 53313
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar",
+      "sha256": "38922392fae6ce06e20ebc5613f1a213d2fe3521f259a12df69792c4f028ef78",
+      "size_bytes": 63371
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux.jar",
+      "sha256": "82ae4f0e143f66db80b90194e38b5cb421dfce65f4f3289223669950e5d4e235",
+      "size_bytes": 50895
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos-arm64.jar",
+      "sha256": "d8d1df2424435ed5291ab00d5363a54239e2a5608f48b6a0aebf1bc016eaaf41",
+      "size_bytes": 46849
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos.jar",
+      "sha256": "c314ddbd7bcb7ad42b0930d2458a6ec72a3676fb4fb8f2f76b5a6d1708d94c56",
+      "size_bytes": 51298
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows-arm64.jar",
+      "sha256": "1386714d56d20799430802b117a0603c38406424d69701fc00d82c91ae41a2a3",
+      "size_bytes": 103371
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows.jar",
+      "sha256": "8475a1f035d8f955637ddc98ef00708e17529f1db37681ea63b6c17866335492",
+      "size_bytes": 115192
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6.jar",
+      "sha256": "e8cd76aaaaa2dba28e0080888dda59c4e832f37a6a6372e7ad979a7203ae58db",
+      "size_bytes": 37976
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5.jar",
+      "sha256": "c84f01440b506ae1ce69ee4f69d887ce2009b9e86b696be1c50774ca1f2b359a",
+      "size_bytes": 119259
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/mapdb/3.1.0/mapdb-3.1.0.jar",
+      "sha256": "fc9c8193e3f49467593e3d5ac2b2e2394d11747212c04bf3da4c66f3ba7c93f0",
+      "size_bytes": 667431
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar",
+      "sha256": "7b751d952061954d5abfed7181c1f645d336091b679891591d63329c622eb832",
+      "size_bytes": 69908
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-core/3.2.1/jackson-core-3.2.1.jar",
+      "sha256": "2688aaa60b207403287e16a71fb5644bf2f9cfc464cc601ae95c6c86a5af1f94",
+      "size_bytes": 604776
+    },
+    {
+      "path": "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-databind/3.2.1/jackson-databind-3.2.1.jar",
+      "sha256": "8d005c5626b1839e2eea6bd33a437287e7a24d54e1bb3746b8f861193262b519",
+      "size_bytes": 1973737
+    }
+  ],
+  "producer_source_sha256": "3e6c6ee72f369a8058057108a7c0134f032e00af7b283a87a6ad895858e69770",
+  "commands": [
+    [
+      "javac",
+      "-cp",
+      "/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/at/yawk/lz4/lz4-java/1.11.1/lz4-java-1.11.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/fasterxml/jackson/core/jackson-annotations/2.22/jackson-annotations-2.22.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/github/jsonld-java/jsonld-java/0.13.6/jsonld-java-0.13.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-io/commons-io/2.22.0/commons-io-2.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/no/hasmac/hasmac-json-ld/0.10.2/hasmac-json-ld-0.10.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-text/1.15.0/commons-text-1.15.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/datasketches/datasketches-java/9.0.0/datasketches-java-9.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/client5/httpclient5/5.6.3/httpclient5-5.6.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5/5.4.3/httpcore5-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5-h2/5.4.3/httpcore5-h2-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections/10.4.0/eclipse-collections-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-api/10.4.0/eclipse-collections-api-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-forkjoin/10.4.0/eclipse-collections-forkjoin-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-api/6.1.0/rdf4j-collection-factory-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-mapdb3/6.1.0/rdf4j-collection-factory-mapdb3-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-annotation/6.1.0/rdf4j-common-annotation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-exception/6.1.0/rdf4j-common-exception-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-io/6.1.0/rdf4j-common-io-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-iterator/6.1.0/rdf4j-common-iterator-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-order/6.1.0/rdf4j-common-order-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-text/6.1.0/rdf4j-common-text-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-transaction/6.1.0/rdf4j-common-transaction-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-xml/6.1.0/rdf4j-common-xml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client/6.1.0/rdf4j-http-client-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-apache5/6.1.0/rdf4j-http-client-apache5-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-api/6.1.0/rdf4j-http-client-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-jdk/6.1.0/rdf4j-http-client-jdk-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-protocol/6.1.0/rdf4j-http-protocol-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model/6.1.0/rdf4j-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-api/6.1.0/rdf4j-model-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-vocabulary/6.1.0/rdf4j-model-vocabulary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-query/6.1.0/rdf4j-query-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-evaluation/6.1.0/rdf4j-queryalgebra-evaluation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-model/6.1.0/rdf4j-queryalgebra-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-api/6.1.0/rdf4j-queryparser-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-sparql/6.1.0/rdf4j-queryparser-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryrender/6.1.0/rdf4j-queryrender-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-api/6.1.0/rdf4j-queryresultio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-binary/6.1.0/rdf4j-queryresultio-binary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-sparqlxml/6.1.0/rdf4j-queryresultio-sparqlxml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-api/6.1.0/rdf4j-repository-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sail/6.1.0/rdf4j-repository-sail-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sparql/6.1.0/rdf4j-repository-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-api/6.1.0/rdf4j-rio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-datatypes/6.1.0/rdf4j-rio-datatypes-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-languages/6.1.0/rdf4j-rio-languages-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-ntriples/6.1.0/rdf4j-rio-ntriples-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-trig/6.1.0/rdf4j-rio-trig-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-turtle/6.1.0/rdf4j-rio-turtle-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-api/6.1.0/rdf4j-sail-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-base/6.1.0/rdf4j-sail-base-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-lmdb/6.1.0/rdf4j-sail-lmdb-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-memory/6.1.0/rdf4j-sail-memory-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/mapdb/3.1.0/mapdb-3.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-core/3.2.1/jackson-core-3.2.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-databind/3.2.1/jackson-databind-3.2.1.jar",
+      "-d",
+      "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/classes",
+      "logs/lmdb-implementation/LmdbLegacyEmptyFixtureProducer.java"
+    ],
+    [
+      "java",
+      "-ea",
+      "-cp",
+      "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/classes:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/at/yawk/lz4/lz4-java/1.11.1/lz4-java-1.11.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/fasterxml/jackson/core/jackson-annotations/2.22/jackson-annotations-2.22.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/github/jsonld-java/jsonld-java/0.13.6/jsonld-java-0.13.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-io/commons-io/2.22.0/commons-io-2.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/no/hasmac/hasmac-json-ld/0.10.2/hasmac-json-ld-0.10.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-text/1.15.0/commons-text-1.15.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/datasketches/datasketches-java/9.0.0/datasketches-java-9.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/client5/httpclient5/5.6.3/httpclient5-5.6.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5/5.4.3/httpcore5-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5-h2/5.4.3/httpcore5-h2-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections/10.4.0/eclipse-collections-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-api/10.4.0/eclipse-collections-api-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-forkjoin/10.4.0/eclipse-collections-forkjoin-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-api/6.1.0/rdf4j-collection-factory-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-mapdb3/6.1.0/rdf4j-collection-factory-mapdb3-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-annotation/6.1.0/rdf4j-common-annotation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-exception/6.1.0/rdf4j-common-exception-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-io/6.1.0/rdf4j-common-io-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-iterator/6.1.0/rdf4j-common-iterator-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-order/6.1.0/rdf4j-common-order-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-text/6.1.0/rdf4j-common-text-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-transaction/6.1.0/rdf4j-common-transaction-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-xml/6.1.0/rdf4j-common-xml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client/6.1.0/rdf4j-http-client-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-apache5/6.1.0/rdf4j-http-client-apache5-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-api/6.1.0/rdf4j-http-client-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-jdk/6.1.0/rdf4j-http-client-jdk-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-protocol/6.1.0/rdf4j-http-protocol-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model/6.1.0/rdf4j-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-api/6.1.0/rdf4j-model-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-vocabulary/6.1.0/rdf4j-model-vocabulary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-query/6.1.0/rdf4j-query-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-evaluation/6.1.0/rdf4j-queryalgebra-evaluation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-model/6.1.0/rdf4j-queryalgebra-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-api/6.1.0/rdf4j-queryparser-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-sparql/6.1.0/rdf4j-queryparser-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryrender/6.1.0/rdf4j-queryrender-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-api/6.1.0/rdf4j-queryresultio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-binary/6.1.0/rdf4j-queryresultio-binary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-sparqlxml/6.1.0/rdf4j-queryresultio-sparqlxml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-api/6.1.0/rdf4j-repository-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sail/6.1.0/rdf4j-repository-sail-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sparql/6.1.0/rdf4j-repository-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-api/6.1.0/rdf4j-rio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-datatypes/6.1.0/rdf4j-rio-datatypes-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-languages/6.1.0/rdf4j-rio-languages-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-ntriples/6.1.0/rdf4j-rio-ntriples-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-trig/6.1.0/rdf4j-rio-trig-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-turtle/6.1.0/rdf4j-rio-turtle-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-api/6.1.0/rdf4j-sail-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-base/6.1.0/rdf4j-sail-base-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-lmdb/6.1.0/rdf4j-sail-lmdb-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-memory/6.1.0/rdf4j-sail-memory-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/mapdb/3.1.0/mapdb-3.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-core/3.2.1/jackson-core-3.2.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-databind/3.2.1/jackson-databind-3.2.1.jar",
+      "org.eclipse.rdf4j.sail.lmdb.LmdbLegacyEmptyFixtureProducer",
+      "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/v2-inline-false",
+      "false"
+    ],
+    [
+      "java",
+      "-ea",
+      "-cp",
+      "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/classes:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/at/yawk/lz4/lz4-java/1.11.1/lz4-java-1.11.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/fasterxml/jackson/core/jackson-annotations/2.22/jackson-annotations-2.22.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/github/jsonld-java/jsonld-java/0.13.6/jsonld-java-0.13.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/code/gson/gson/2.13.2/gson-2.13.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/errorprone/error_prone_annotations/2.41.0/error_prone_annotations-2.41.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/failureaccess/1.0.3/failureaccess-1.0.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/guava/33.6.0-jre/guava-33.6.0-jre.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/com/google/guava/listenablefuture/9999.0-empty-to-avoid-conflict-with-guava/listenablefuture-9999.0-empty-to-avoid-conflict-with-guava.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-codec/commons-codec/1.22.0/commons-codec-1.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/commons-io/commons-io/2.22.0/commons-io-2.22.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/no/hasmac/hasmac-json-ld/0.10.2/hasmac-json-ld-0.10.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-lang3/3.20.0/commons-lang3-3.20.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-math3/3.6.1/commons-math3-3.6.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/commons/commons-text/1.15.0/commons-text-1.15.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/datasketches/datasketches-java/9.0.0/datasketches-java-9.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/client5/httpclient5/5.6.3/httpclient5-5.6.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5/5.4.3/httpcore5-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/apache/httpcomponents/core5/httpcore5-h2/5.4.3/httpcore5-h2-5.4.3.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections/10.4.0/eclipse-collections-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-api/10.4.0/eclipse-collections-api-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/collections/eclipse-collections-forkjoin/10.4.0/eclipse-collections-forkjoin-10.4.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-api/6.1.0/rdf4j-collection-factory-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-collection-factory-mapdb3/6.1.0/rdf4j-collection-factory-mapdb3-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-annotation/6.1.0/rdf4j-common-annotation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-exception/6.1.0/rdf4j-common-exception-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-io/6.1.0/rdf4j-common-io-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-iterator/6.1.0/rdf4j-common-iterator-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-order/6.1.0/rdf4j-common-order-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-text/6.1.0/rdf4j-common-text-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-transaction/6.1.0/rdf4j-common-transaction-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-common-xml/6.1.0/rdf4j-common-xml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client/6.1.0/rdf4j-http-client-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-apache5/6.1.0/rdf4j-http-client-apache5-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-api/6.1.0/rdf4j-http-client-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-client-jdk/6.1.0/rdf4j-http-client-jdk-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-http-protocol/6.1.0/rdf4j-http-protocol-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model/6.1.0/rdf4j-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-api/6.1.0/rdf4j-model-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-model-vocabulary/6.1.0/rdf4j-model-vocabulary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-query/6.1.0/rdf4j-query-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-evaluation/6.1.0/rdf4j-queryalgebra-evaluation-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryalgebra-model/6.1.0/rdf4j-queryalgebra-model-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-api/6.1.0/rdf4j-queryparser-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryparser-sparql/6.1.0/rdf4j-queryparser-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryrender/6.1.0/rdf4j-queryrender-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-api/6.1.0/rdf4j-queryresultio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-binary/6.1.0/rdf4j-queryresultio-binary-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-queryresultio-sparqlxml/6.1.0/rdf4j-queryresultio-sparqlxml-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-api/6.1.0/rdf4j-repository-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sail/6.1.0/rdf4j-repository-sail-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-repository-sparql/6.1.0/rdf4j-repository-sparql-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-api/6.1.0/rdf4j-rio-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-datatypes/6.1.0/rdf4j-rio-datatypes-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-languages/6.1.0/rdf4j-rio-languages-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-ntriples/6.1.0/rdf4j-rio-ntriples-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-trig/6.1.0/rdf4j-rio-trig-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-rio-turtle/6.1.0/rdf4j-rio-turtle-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-api/6.1.0/rdf4j-sail-api-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-base/6.1.0/rdf4j-sail-base-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-lmdb/6.1.0/rdf4j-sail-lmdb-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/eclipse/rdf4j/rdf4j-sail-memory/6.1.0/rdf4j-sail-memory-6.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/annotations/26.0.2/annotations-26.0.2.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jetbrains/kotlin/kotlin-stdlib/1.9.25/kotlin-stdlib-1.9.25.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/jspecify/jspecify/1.0.0/jspecify-1.0.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl/3.3.6/lwjgl-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux-ppc64le.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-linux.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-macos.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows-arm64.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6-natives-windows.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/lwjgl/lwjgl-lmdb/3.3.6/lwjgl-lmdb-3.3.6.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/elsa/3.0.0-M5/elsa-3.0.0-M5.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/mapdb/mapdb/3.1.0/mapdb-3.1.0.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/org/slf4j/slf4j-api/2.0.17/slf4j-api-2.0.17.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-core/3.2.1/jackson-core-3.2.1.jar:/Users/havardottestad/Documents/Programming/rdf4j/logs/lmdb-version-roundtrip/20261004T094044Z/runtimes/release/runtime/lib/tools/jackson/core/jackson-databind/3.2.1/jackson-databind-3.2.1.jar",
+      "org.eclipse.rdf4j.sail.lmdb.LmdbLegacyEmptyFixtureProducer",
+      "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/v2-inline-true",
+      "true"
+    ]
+  ],
+  "assets": [
+    {
+      "path": "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/v2-empty-inline-false.zip",
+      "sha256": "7e2ced62c34dd8ee87fc75f77ce71ce624a855fbe89e2ae0332890d3baf9403e",
+      "properties": null
+    },
+    {
+      "path": "logs/lmdb-implementation/v2-empty-frozen-producer-20261004T163000Z/v2-empty-inline-true.zip",
+      "sha256": "b5a7ad930fd468e43e4d7e3b64486565e77b215249e9e2481ae726b6c8bc3591",
+      "properties": null
+    }
+  ],
+  "native_edits": "none; empty store created and committed by immutable released6.1.0 public API only"
+}

@@ -51,18 +51,36 @@ class BenchmarkJoinEstimatorSupportLowHeapTest {
 		command.add(LowHeapBenchmarkWaitProbe.class.getName());
 		command.add(dataDir.getAbsolutePath());
 
-		File outputFile = new File(dataDir, "low-heap-benchmark-wait-output.log");
+		Path outputFile = Files.createTempFile("rdf4j-lmdb-low-heap-benchmark-", ".log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
-				.redirectOutput(outputFile)
+				.redirectOutput(outputFile.toFile())
 				.start();
-		boolean finished = process.waitFor(30, TimeUnit.SECONDS);
-		byte[] output = Files.readAllBytes(outputFile.toPath());
-		if (!finished) {
-			process.destroyForcibly();
-			fail("Low-heap benchmark wait probe timed out:\n" + new String(output, StandardCharsets.UTF_8));
+		try {
+			boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+			if (!finished) {
+				process.destroyForcibly();
+				process.waitFor();
+				fail("Low-heap benchmark wait probe timed out (" + outputFile + "):\n"
+						+ Files.readString(outputFile, StandardCharsets.UTF_8));
+			}
+			return new ProcessResult(process.exitValue(), Files.readString(outputFile, StandardCharsets.UTF_8));
+		} finally {
+			boolean interrupted = false;
+			if (process.isAlive()) {
+				process.destroyForcibly();
+				while (process.isAlive()) {
+					try {
+						process.waitFor();
+					} catch (InterruptedException failure) {
+						interrupted = true;
+					}
+				}
+			}
+			if (interrupted) {
+				Thread.currentThread().interrupt();
+			}
 		}
-		return new ProcessResult(process.exitValue(), new String(output, StandardCharsets.UTF_8));
 	}
 
 	public static final class LowHeapBenchmarkWaitProbe {

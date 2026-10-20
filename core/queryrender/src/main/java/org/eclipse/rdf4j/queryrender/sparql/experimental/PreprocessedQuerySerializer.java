@@ -1107,10 +1107,40 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 		}
 
 		if (currentQueryProfile == null || !isCurrentMainProjection) {
+			Var caller = node.getProjectionContext();
+			boolean renderGraph = caller != null && !inheritsEnclosingGraph(node);
+			if (renderGraph) {
+				builder.append("GRAPH ");
+				node.getVisibleProjectionContext().visit(this);
+				builder.append(" { ");
+			}
 			builder.append("{ ");
 			this.processTupleQuery(this.queriesByProjection.get(node));
 			builder.append(" } ");
+			if (renderGraph) {
+				builder.append(" } ");
+			}
 		}
+	}
+
+	private static boolean inheritsEnclosingGraph(Projection projection) {
+		for (QueryModelNode node = projection.getParentNode(); node != null; node = node.getParentNode()) {
+			if (node instanceof Projection enclosing && enclosing.isInheritedGraphContext(
+					projection.getParentNode(), projection.getProjectionContext())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	static Var surfaceContext(QueryModelNode owner, Var context) {
+		for (QueryModelNode node = owner == null ? null : owner.getParentNode(); node != null; node = node
+				.getParentNode()) {
+			if (node instanceof Projection projection && projection.isInheritedGraphContext(owner, context)) {
+				return null;
+			}
+		}
+		return context;
 	}
 
 	@Override
@@ -1163,7 +1193,7 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	@Override
 	public void meet(Reduced node) throws RuntimeException {
-		builder.append("REDUCED ");
+		// The query profile owns this SELECT modifier, just as it owns DISTINCT.
 		super.meet(node);
 
 	}
@@ -1221,11 +1251,12 @@ class PreprocessedQuerySerializer extends AbstractQueryModelVisitor<RuntimeExcep
 
 	@Override
 	public void meet(StatementPattern node) throws RuntimeException {
-		boolean isInContext = node.getContextVar() != null;
+		Var context = surfaceContext(node, node.getContextVar());
+		boolean isInContext = context != null;
 
 		if (isInContext) {
 			builder.append("GRAPH ");
-			node.getContextVar().visit(this);
+			context.visit(this);
 			builder.append(" { ");
 		}
 		builder.append("\t");

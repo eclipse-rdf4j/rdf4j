@@ -134,7 +134,7 @@ class ChangesetTripleTermValidationTest {
 			switch (this) {
 			case APPROVE -> Arrays.stream(statements).forEach(changeset::approve);
 			case DEPRECATE -> Arrays.stream(statements).forEach(changeset::deprecate);
-			case APPROVE_ALL -> changeset.approveAll(orderedStatements(statements), null);
+			case APPROVE_ALL -> changeset.approveAll(orderedStatements(statements), (Set<Resource>) null);
 			case DEPRECATE_ALL -> changeset.deprecateAll(orderedStatements(statements));
 			}
 		}

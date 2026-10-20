@@ -20,6 +20,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
@@ -31,6 +34,8 @@ import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
+import org.eclipse.rdf4j.model.base.AbstractBNode;
+import org.eclipse.rdf4j.model.base.AbstractTripleTerm;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -40,6 +45,7 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryRoot;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.Service;
@@ -49,6 +55,8 @@ import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.BindingAssignerOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.SameTermFilterOptimizer;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.LocalBNodeReferences;
 import org.eclipse.rdf4j.query.impl.BlankNodeAllocationScope;
@@ -63,6 +71,176 @@ import org.junit.jupiter.params.provider.ValueSource;
 class BlankNodeReferenceBindingOriginTest {
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
 	private static final IRI PREDICATE = VF.createIRI("urn:p");
+
+	@Test
+	void apiAssignedNestedTripleRemainsUninspectedAcrossOptimizationCloneAndArrayLayout() throws Exception {
+		BNode nestedNode = VF.createBNode("runtime-nested-node");
+		CountingTripleTerm nested = new CountingTripleTerm(VF.createIRI("urn:nested-subject"), PREDICATE,
+				nestedNode);
+		CountingTripleTerm supplied = new CountingTripleTerm(VF.createIRI("urn:runtime-subject"), PREDICATE, nested);
+		var bindings = new MapBindingSet();
+		bindings.addBinding("s", supplied);
+		var parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { ?s <urn:p> ?o }", null);
+		var scope = new BlankNodeAllocationScope("query-runtime-triple-", null);
+		try (var activation = scope.activate()) {
+			var source = new EmptyTripleSource(VF) {
+				@Override
+				public Function<Value, Value> getValuePreparer() {
+					return Function.identity();
+				}
+			};
+			var strategy = new DefaultEvaluationStrategy(source, null);
+			TupleExpr optimized = strategy.optimize(parsed.getTupleExpr(), null, bindings);
+			Var assigned = inlinedSubject(optimized);
+			assertSame(supplied, assigned.getValue());
+			assertFalse(assigned.isConstant(), "API input must remain a runtime assignment");
+			assertTrue(assigned.hasApiInputOrigin(), "the assigned occurrence must retain caller provenance");
+			assertUninspected(supplied, nested);
+			LocalBNodeReferences.Analysis optimizedReferences = LocalBNodeReferences.analyze(optimized);
+			assertTrue(optimizedReferences.runtimeValues().stream().anyMatch(value -> value == supplied),
+					"opaque API roots must be queued for lazy reservation");
+			assertUninspected(supplied, nested);
+
+			TupleExpr arrayLayout = new QueryRoot(optimized.clone());
+			ArrayBindingBasedQueryEvaluationContext.findAllVariablesUsedInQuery((QueryRoot) arrayLayout);
+			assertTrue(inlinedSubject(arrayLayout).hasApiInputOrigin(),
+					"array-layout renaming must retain caller provenance on the copied occurrence");
+			assertUninspected(supplied, nested);
+
+			strategy.precompile(optimized);
+			assertUninspected(supplied, nested);
+
+			TupleExpr wrappedClone = new QueryRoot(optimized.clone());
+			assertTrue(inlinedSubject(wrappedClone).hasApiInputOrigin(),
+					"algebra clones must retain caller provenance on valued occurrences");
+			strategy.precompile(wrappedClone);
+			assertUninspected(supplied, nested);
+		}
+	}
+
+	@Test
+	void apiAssignedScalarBNodeRemainsOpaqueDuringReferenceAnalysis() {
+		CountingBNode supplied = new CountingBNode("runtime-scalar-bnode");
+		var bindings = new MapBindingSet();
+		bindings.addBinding("s", supplied);
+		TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { ?s <urn:p> ?o }", null).getTupleExpr();
+
+		new BindingAssignerOptimizer().optimize(expression, null, bindings);
+
+		Var assigned = inlinedSubject(expression);
+		assertSame(supplied, assigned.getValue());
+		assertTrue(assigned.hasApiInputOrigin());
+		LocalBNodeReferences.Analysis analysis = LocalBNodeReferences.analyze(expression);
+		assertTrue(analysis.runtimeValues().stream().anyMatch(value -> value == supplied));
+		assertTrue(analysis.ids().isEmpty(), "an API value is not a fixed local reference");
+		assertTrue(analysis.knownIds().isEmpty(), "a cold API BNode has no captured identifier state");
+		assertEquals(0, supplied.idReads.get(), "reference analysis must not inspect a cold scalar API BNode");
+	}
+
+	@Test
+	void analysisRetainsItsTwoArgumentConstructor() {
+		LocalBNodeReferences.Analysis analysis = new LocalBNodeReferences.Analysis(Set.of("fixed-id"), List.of());
+
+		assertEquals(Set.of("fixed-id"), analysis.ids());
+		assertTrue(analysis.runtimeValues().isEmpty());
+	}
+
+	@Test
+	void apiAssignedIriAndLiteralRemainRuntimeRootsWithoutFixedReferences() {
+		for (Value supplied : List.of(VF.createIRI("urn:runtime-scalar"), VF.createLiteral("runtime scalar"))) {
+			var bindings = new MapBindingSet();
+			bindings.addBinding("s", supplied);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+					"SELECT ?s WHERE { ?s <urn:p> ?o }", null).getTupleExpr();
+
+			new BindingAssignerOptimizer().optimize(expression, null, bindings);
+
+			LocalBNodeReferences.Analysis analysis = LocalBNodeReferences.analyze(expression);
+			assertTrue(analysis.runtimeValues().stream().anyMatch(value -> value == supplied));
+			assertTrue(analysis.ids().isEmpty(), "a scalar runtime input cannot introduce local BNode references");
+		}
+	}
+
+	@Test
+	void fixedNestedTripleReferencesRemainVisibleWhenRuntimeOccurrenceSharesTheValue() {
+		BNode fixedNode = VF.createBNode("shared-fixed-nested-node");
+		CountingTripleTerm nested = new CountingTripleTerm(VF.createIRI("urn:nested-subject"), PREDICATE,
+				fixedNode);
+		CountingTripleTerm shared = new CountingTripleTerm(VF.createIRI("urn:shared-subject"), PREDICATE, nested);
+		TupleExpr parsed = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL,
+				"SELECT ?s WHERE { ?s <urn:p> ?o }", null).getTupleExpr();
+		if (parsed instanceof QueryRoot queryRoot) {
+			parsed = queryRoot.getArg();
+		}
+		TupleExpr expression = new Join(parsed,
+				new Extension(new SingletonSet(), new ExtensionElem(new ValueConstant(shared), "fixed")));
+		var bindings = new MapBindingSet();
+		bindings.addBinding("s", shared);
+
+		new BindingAssignerOptimizer().optimize(expression, null, bindings);
+
+		Var assigned = inlinedSubject(expression);
+		assertSame(shared, assigned.getValue(), "the runtime occurrence must come from the actual API binding");
+		assertFalse(assigned.isConstant(), "the API occurrence must retain runtime assignment semantics");
+		assertTrue(assigned.hasApiInputOrigin());
+
+		LocalBNodeReferences.Analysis analysis = LocalBNodeReferences.analyze(expression);
+		assertTrue(analysis.runtimeValues().stream().anyMatch(value -> value == shared),
+				"the API occurrence must remain opaque while its fixed sibling is inspected");
+
+		assertTrue(analysis.ids().contains(fixedNode.getID()),
+				"a fixed occurrence must keep its nested reference even when the same object is runtime input elsewhere");
+	}
+
+	@Test
+	void sameTermInliningCarriesOnlyTheRuntimeOperandOrigin() {
+		BNode nestedNode = VF.createBNode("same-term-nested-node");
+		CountingTripleTerm nested = new CountingTripleTerm(VF.createIRI("urn:nested-subject"), PREDICATE,
+				nestedNode);
+		CountingTripleTerm shared = new CountingTripleTerm(VF.createIRI("urn:shared-subject"), PREDICATE, nested);
+
+		Var apiInput = Var.of("input", shared).withApiInputOrigin();
+		Filter runtimeFilter = new Filter(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("target")),
+				new SameTerm(apiInput, Var.of("target")));
+		new SameTermFilterOptimizer().optimize(runtimeFilter, null, EmptyBindingSet.getInstance());
+		Var runtimeTarget = valuedVar(runtimeFilter, "target");
+		assertTrue(runtimeTarget.hasApiInputOrigin(), "a value copied from an API Var remains runtime input");
+		assertTrue(LocalBNodeReferences.analyze(runtimeFilter)
+				.runtimeValues()
+				.stream()
+				.anyMatch(value -> value == shared));
+		assertUninspected(shared, nested);
+
+		Filter fixedFilter = new Filter(
+				new StatementPattern(Var.of("s"), Var.of("p"), Var.of("fixedTarget")),
+				new SameTerm(new ValueConstant(shared), Var.of("fixedTarget")));
+		new SameTermFilterOptimizer().optimize(fixedFilter, null, EmptyBindingSet.getInstance());
+		Var fixedTarget = valuedVar(fixedFilter, "fixedTarget");
+		assertFalse(fixedTarget.hasApiInputOrigin(), "a value copied from a query constant remains fixed");
+		LocalBNodeReferences.Analysis fixedAnalysis = LocalBNodeReferences.analyze(fixedFilter);
+		assertTrue(fixedAnalysis.runtimeValues().isEmpty());
+		assertTrue(fixedAnalysis.ids().contains(nestedNode.getID()));
+	}
+
+	@Test
+	void fixedNestedTripleReferenceAnalysisTracksMutableChildren() {
+		CountingTripleTerm nested = new CountingTripleTerm(VF.createIRI("urn:nested-subject"), PREDICATE,
+				VF.createBNode("fixed-before-mutation"));
+		CountingTripleTerm fixed = new CountingTripleTerm(VF.createIRI("urn:fixed-subject"), PREDICATE, nested);
+		Var fixedReference = Var.of("fixed", fixed, false, true);
+
+		LocalBNodeReferences.Analysis beforeMutation = LocalBNodeReferences.analyze(fixedReference);
+		nested.setObject(VF.createBNode("fixed-after-mutation"));
+		LocalBNodeReferences.Analysis afterMutation = LocalBNodeReferences.analyze(fixedReference);
+
+		assertTrue(beforeMutation.ids().contains("fixed-before-mutation"));
+		assertFalse(beforeMutation.ids().contains("fixed-after-mutation"));
+		assertTrue(afterMutation.ids().contains("fixed-after-mutation"));
+		assertFalse(afterMutation.ids().contains("fixed-before-mutation"));
+	}
 
 	@Test
 	void optimizerInlinedExternalBNodeDoesNotBecomeAFixedReference() throws Exception {
@@ -349,6 +527,41 @@ class BlankNodeReferenceBindingOriginTest {
 		return inlined[0];
 	}
 
+	private static Var inlinedSubject(TupleExpr expression) {
+		Var[] inlined = { null };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(StatementPattern pattern) {
+				if (pattern.getSubjectVar().hasValue()) {
+					inlined[0] = pattern.getSubjectVar();
+				}
+				super.meet(pattern);
+			}
+		});
+		return assertInstanceOf(Var.class, inlined[0], "the optimizer must inline the API subject binding");
+	}
+
+	private static Var valuedVar(TupleExpr expression, String name) {
+		Var[] found = { null };
+		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Var variable) {
+				if (name.equals(variable.getName()) && variable.hasValue()) {
+					found[0] = variable;
+				}
+			}
+		});
+		return assertInstanceOf(Var.class, found[0], "expected a valued Var named " + name);
+	}
+
+	private static void assertUninspected(CountingTripleTerm... values) {
+		for (CountingTripleTerm value : values) {
+			assertEquals(0, value.subjectReads.get(), "runtime triple subject must remain lazy");
+			assertEquals(0, value.predicateReads.get(), "runtime triple predicate must remain lazy");
+			assertEquals(0, value.objectReads.get(), "runtime triple object must remain lazy");
+		}
+	}
+
 	private static BindingSetAssignment valuesAssignment(TupleExpr expression) {
 		BindingSetAssignment[] assignments = { null };
 		expression.visit(new AbstractSimpleQueryModelVisitor<RuntimeException>() {
@@ -374,6 +587,62 @@ class BlankNodeReferenceBindingOriginTest {
 		@Override
 		public BNode createBNode() {
 			return createBNode(firstId);
+		}
+	}
+
+	private static final class CountingBNode extends AbstractBNode {
+		private static final long serialVersionUID = 1L;
+
+		private final String id;
+		private final AtomicInteger idReads = new AtomicInteger();
+
+		private CountingBNode(String id) {
+			this.id = id;
+		}
+
+		@Override
+		public String getID() {
+			idReads.incrementAndGet();
+			return id;
+		}
+	}
+
+	private static final class CountingTripleTerm extends AbstractTripleTerm {
+		private static final long serialVersionUID = 1L;
+
+		private final Resource subject;
+		private final IRI predicate;
+		private Value object;
+		private final AtomicInteger subjectReads = new AtomicInteger();
+		private final AtomicInteger predicateReads = new AtomicInteger();
+		private final AtomicInteger objectReads = new AtomicInteger();
+
+		private CountingTripleTerm(Resource subject, IRI predicate, Value object) {
+			this.subject = subject;
+			this.predicate = predicate;
+			this.object = object;
+		}
+
+		private void setObject(Value object) {
+			this.object = object;
+		}
+
+		@Override
+		public Resource getSubject() {
+			subjectReads.incrementAndGet();
+			return subject;
+		}
+
+		@Override
+		public IRI getPredicate() {
+			predicateReads.incrementAndGet();
+			return predicate;
+		}
+
+		@Override
+		public Value getObject() {
+			objectReads.incrementAndGet();
+			return object;
 		}
 	}
 

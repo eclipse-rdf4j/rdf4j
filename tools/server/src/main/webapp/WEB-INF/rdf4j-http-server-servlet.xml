@@ -86,6 +86,7 @@
 			<props>
 				<prop key="/repositories/*/namespaces/*">rdf4jRepositoryNamespaceController</prop>
 				<prop key="/repositories/*/namespaces">rdf4jRepositoryNamespacesController</prop>
+				<prop key="/repositories/*/lmdb/strategies">rdf4jRepositoryLmdbStrategiesController</prop>
 				<prop key="/repositories/*/config">rdf4jRepositoryConfigController</prop>
 				<prop key="/repositories/*/contexts">rdf4jRepositoryContextsController</prop>
 				<prop key="/repositories/*/statements">rdf4jRepositoryStatementsController</prop>
@@ -146,4 +147,5 @@
 	<bean id="rdf4jRepositoryTransactionStartController" class="org.eclipse.rdf4j.http.server.repository.transaction.TransactionStartController">
 		<property name="externalUrl" value="${rdf4j.externalurl:#{null}}" />
 	</bean>
+	<bean id="rdf4jRepositoryLmdbStrategiesController" class="org.eclipse.rdf4j.common.webapp.system.LmdbForceableStrategiesController" />
 </beans>

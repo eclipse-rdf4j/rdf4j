@@ -150,7 +150,12 @@ class LmdbQueryExecutionDeadlineTest {
 				assertThat(mapSize(tripleStore) > initialMapSize)
 						.as("the write must grow the TripleStore map before replay completes")
 						.isTrue();
-				assertThat(serviceGate.awaitSecondRequest()).isTrue();
+				if (!serviceGate.awaitSecondRequest()) {
+					if (query.isDone()) {
+						query.get();
+					}
+					throw new AssertionError("the replay must make a second SERVICE request");
+				}
 				serviceGate.releaseAllRequests();
 
 				assertThat(query.get(15, TimeUnit.SECONDS)).containsExactlyInAnyOrder("before", "after");
@@ -423,7 +428,12 @@ class LmdbQueryExecutionDeadlineTest {
 					String growthNamespace = writer.get(20, TimeUnit.SECONDS);
 					awaitTripleStoreGrowth(repository, backingStore, tripleStore, initialTripleMapSize,
 							growthNamespace);
-					assertThat(serviceGate.awaitSecondRequest()).isTrue();
+					if (!serviceGate.awaitSecondRequest()) {
+						if (query.isDone()) {
+							query.get();
+						}
+						throw new AssertionError("the replay must make a second SERVICE request");
+					}
 					assertThat(System.nanoTime() - evaluationStartedAt.get())
 							.isLessThan(TimeUnit.SECONDS.toNanos(timeoutSeconds));
 				}

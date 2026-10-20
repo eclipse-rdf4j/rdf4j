@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.queryrender;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.annotation.InternalUseOnly;
 import org.eclipse.rdf4j.model.BNode;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
@@ -21,6 +22,15 @@ import org.eclipse.rdf4j.model.TripleTerm;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.util.Literals;
 import org.eclipse.rdf4j.query.QueryParseOptions;
+import org.eclipse.rdf4j.query.algebra.DescribeOperator;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.UnaryTupleOperator;
 import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.query.impl.RemoteBNode;
 
@@ -35,6 +45,17 @@ public final class RenderUtils {
 	 * No instances
 	 */
 	private RenderUtils() {
+	}
+
+	/** Returns the projection owned by a query's form and modifier chain, or {@code null} for a graph pattern. */
+	@InternalUseOnly
+	public static Projection getQueryProjection(TupleExpr expression) {
+		while (expression instanceof QueryRoot || expression instanceof DescribeOperator
+				|| expression instanceof Slice || expression instanceof Distinct
+				|| expression instanceof Reduced || expression instanceof Order) {
+			expression = ((UnaryTupleOperator) expression).getArg();
+		}
+		return expression instanceof Projection projection ? projection : null;
 	}
 
 	/**

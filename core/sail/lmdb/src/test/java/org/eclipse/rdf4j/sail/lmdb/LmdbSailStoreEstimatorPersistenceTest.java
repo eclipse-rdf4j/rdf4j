@@ -43,7 +43,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -56,6 +55,7 @@ import org.eclipse.rdf4j.sail.NotifyingSailConnection;
 import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -747,7 +747,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			estimator.discardAndMarkForRebuild();
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.READ_COMMITTED);
@@ -770,7 +770,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			}
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 		} finally {
 			repository.shutDown();
 		}
@@ -835,6 +835,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
+		LmdbStore initialized = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		initialized.init();
+		initialized.shutDown();
 		writeLegacySnapshot(dataDir.toPath().resolve(SNAPSHOT_FILE));
 
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
@@ -863,7 +866,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
+		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)

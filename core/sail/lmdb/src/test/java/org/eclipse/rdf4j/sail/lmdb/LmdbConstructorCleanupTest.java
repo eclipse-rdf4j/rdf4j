@@ -91,8 +91,13 @@ class LmdbConstructorCleanupTest {
 			return created;
 		};
 
+		LmdbStore initialized = new LmdbStore(storeDirectory.toFile(), config());
+		initialized.init();
+		initialized.shutDown();
+		StoreProperties properties = new StoreProperties(storeDirectory.toFile());
+		assertTrue(properties.load(), "owning initialization publishes coherent format capabilities");
 		try (LmdbSailStore backing = new LmdbSailStore(storeDirectory.toFile(),
-				new StoreProperties(storeDirectory.toFile()), config(), false, ValueStore::new, TripleStore::new,
+				properties, config(), false, ValueStore::new, TripleStore::new,
 				factory, LmdbFilterSelectivityStats::new)) {
 			assertNull(factoryReference.get(),
 					"the optional factory must remain unopened before a writer mutates data");
@@ -114,6 +119,7 @@ class LmdbConstructorCleanupTest {
 							"temporary set environment must be removed for set " + failedSet));
 		}
 
+		properties.save(); // Direct backing-store construction does not publish the owning store sidecar.
 		LmdbStore reopened = new LmdbStore(storeDirectory.toFile(), config());
 		reopened.init();
 		try (SailConnection connection = reopened.getConnection();
@@ -159,8 +165,11 @@ class LmdbConstructorCleanupTest {
 			throw injectedFailure;
 		};
 
+		LmdbStoreConfig estimatorConfig = config();
+		estimatorConfig.setExperimentalQueryOptimizations(true);
 		IOException failure = assertThrows(IOException.class,
-				() -> new LmdbSailStore(storeDirectory.toFile(), new StoreProperties(storeDirectory.toFile()), config(),
+				() -> new LmdbSailStore(storeDirectory.toFile(), new StoreProperties(storeDirectory.toFile()),
+						estimatorConfig,
 						true, valueStoreFactory, tripleStoreFactory, setFactoryFactory, statsFactory));
 
 		assertAll(

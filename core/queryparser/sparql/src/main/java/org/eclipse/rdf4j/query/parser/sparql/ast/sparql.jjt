@@ -34,9 +34,11 @@ import org.eclipse.rdf4j.query.impl.BlankNodeReferences;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
 import org.eclipse.rdf4j.model.vocabulary.XSD;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.LmdbIndexOrder;
 import org.eclipse.rdf4j.query.algebra.MathExpr.MathOp;
 
 public class SyntaxTreeBuilder {
+	private boolean allowStableIndexKeyword;
     private String rawSource;
     private int[] rawLineStarts;
     private final List<String> turtleDirectives = new ArrayList<String>();
@@ -105,6 +107,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(query, 1) );
+		stb.allowStableIndexKeyword = true;
         stb.setRawSource(query);
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
@@ -127,6 +130,7 @@ public class SyntaxTreeBuilder {
 		throws TokenMgrError, ParseException
 	{
 		SyntaxTreeBuilder stb = new SyntaxTreeBuilder( new UnicodeEscapeStream(sequence, 1) );
+		stb.allowStableIndexKeyword = false;
         stb.setRawSource(sequence);
 
 		// Set size of tab to 1 to force tokenmanager to report correct column
@@ -456,6 +460,11 @@ TOKEN:
 TOKEN : {
     <#UCHAR: "\\" ("u" <HEX> <HEX> <HEX> <HEX> | "U" <HEX> <HEX> <HEX> <HEX> <HEX> <HEX> <HEX> <HEX>)>
 |   <BNODE_REF: <Q_IRI_REF>>
+}
+
+TOKEN [IGNORE_CASE] :
+{
+	<STABLE_INDEX: "stable_index">
 }
 
 //
@@ -928,7 +937,8 @@ void Constraint() :
 void FunctionCall() :
 {}
 {
-    IRIref() (<LPAREN> [ <DISTINCT> {jjtThis.setDistinct(true);} ] Expression() ( <COMMA> Expression() )* <RPAREN> | <NIL>)
+    ( IRIref() | StableIndexFunctionIRI() )
+    (<LPAREN> [ <DISTINCT> {jjtThis.setDistinct(true);} ] Expression() ( <COMMA> Expression() )* <RPAREN> | <NIL>)
 }
 
 void ArgList() #void :
@@ -1373,8 +1383,8 @@ void PrimaryExpression() #void :
 {}
 {
     BNodeRef()
-|
-	BrackettedExpression()
+|	LabeledTripleTerm()
+|	BrackettedExpression()
 |	BuiltInCall()
 |	LOOKAHEAD(2) FunctionCall()
 |	IRIref()
@@ -2054,6 +2064,18 @@ void IRI() :
 { Token t; }
 {
 	t = <Q_IRI_REF> {jjtThis.setValue(_trimString(t.image, 1));}
+}
+
+void StableIndexFunctionIRI() #IRI :
+{ }
+{
+	<STABLE_INDEX>
+	{
+		if (!allowStableIndexKeyword) {
+			throw new ParseException("STABLE_INDEX(...) is only available in query expressions");
+		}
+		jjtThis.setValue(LmdbIndexOrder.FUNCTION_URI);
+	}
 }
 
 /// SPARQL 1.1 Update productions

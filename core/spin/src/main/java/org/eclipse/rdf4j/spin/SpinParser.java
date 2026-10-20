@@ -126,6 +126,7 @@ import org.eclipse.rdf4j.query.algebra.UpdateExpr;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.VariableScopeChange;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.TripleSource;
 import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
@@ -611,7 +612,7 @@ public class SpinParser {
 			return new ParsedGraphQuery(tupleExpr);
 		} else if (SP.SELECT_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store, queryResource);
-			visitor.visitSelect(queryResource);
+			visitor.visitSelect(queryResource, false);
 			return new ParsedTupleQuery(makeQueryRootIfNeeded(visitor.getTupleExpr()));
 		} else if (SP.ASK_CLASS.equals(queryType)) {
 			SpinVisitor visitor = new SpinVisitor(store, queryResource);
@@ -922,7 +923,7 @@ public class SpinParser {
 			addSourceExpressions(projection, projElems.values());
 		}
 
-		public void visitSelect(Resource select) throws RDF4JException {
+		public void visitSelect(Resource select, boolean subquery) throws RDF4JException {
 			Value resultVars = TripleSources.singleValue(select, SP.RESULT_VARIABLES_PROPERTY, store);
 			if (!(resultVars instanceof Resource)) {
 				throw new MalformedSpinException(
@@ -932,6 +933,7 @@ public class SpinParser {
 			Map<String, ProjectionElem> oldProjElems = projElems;
 			projElems = new LinkedHashMap<>();
 			Projection projection = visitResultVariables((Resource) resultVars, oldProjElems);
+			projection.setSubquery(subquery);
 			TupleExpr whereExpr = visitWhere(select);
 			projection.setArg(whereExpr);
 
@@ -1327,6 +1329,10 @@ public class SpinParser {
 		}
 
 		public TupleExpr visitGroupGraphPattern(Resource group) throws RDF4JException {
+			return visitGroupGraphPattern(group, false);
+		}
+
+		private TupleExpr visitGroupGraphPattern(Resource group, boolean scopeChange) throws RDF4JException {
 			tupleNode = new SingletonSet();
 			QueryRoot groupRoot = new QueryRoot(tupleNode);
 
@@ -1373,6 +1379,9 @@ public class SpinParser {
 			}
 
 			TupleExpr groupExpr = groupRoot.getArg();
+			if (scopeChange) {
+				((VariableScopeChange) groupExpr).setVariableScopeChange(true);
+			}
 			groupExpr.setParentNode(null);
 			return groupExpr;
 		}
@@ -1431,9 +1440,10 @@ public class SpinParser {
 					TupleExpr prev = null;
 					while (iter.hasNext()) {
 						Resource entry = iter.next();
-						TupleExpr groupExpr = visitGroupGraphPattern(entry);
+						TupleExpr groupExpr = visitGroupGraphPattern(entry, true);
 						if (prev != null) {
 							groupExpr = new Union(prev, groupExpr);
+							((Union) groupExpr).setVariableScopeChange(true);
 							tupleNode = groupExpr;
 						}
 						prev = groupExpr;
@@ -1457,7 +1467,7 @@ public class SpinParser {
 						throw new MalformedSpinException(
 								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
-					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
+					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements, true);
 					Difference difference = new Difference();
 					currentGroupExpr.replaceWith(difference);
 					difference.setLeftArg(currentGroupExpr);
@@ -1467,8 +1477,9 @@ public class SpinParser {
 				} else if (types.contains(SP.SUB_QUERY_CLASS)) {
 					Value q = TripleSources.singleValue(r, SP.QUERY_PROPERTY, store);
 					TupleExpr oldRoot = tupleRoot;
-					visitSelect((Resource) q);
+					visitSelect((Resource) q, true);
 					tupleNode = tupleRoot;
+					((VariableScopeChange) tupleNode).setVariableScopeChange(true);
 					tupleRoot = oldRoot;
 				} else if (types.contains(SP.VALUES_CLASS)) {
 					BindingSetAssignment bsa = new BindingSetAssignment();
@@ -1505,7 +1516,7 @@ public class SpinParser {
 					bsa.setBindingSets(bindingSets);
 					tupleNode = bsa;
 				} else if (types.contains(RDF.LIST) || (TripleSources.singleValue(r, RDF.FIRST, store) != null)) {
-					tupleNode = visitGroupGraphPattern(r);
+					tupleNode = visitGroupGraphPattern(r, true);
 				} else if (types.contains(SP.TRIPLE_PATH_CLASS)) {
 					Value subj = TripleSources.singleValue(r, SP.SUBJECT_PROPERTY, store);
 					Value obj = TripleSources.singleValue(r, SP.OBJECT_PROPERTY, store);
@@ -1521,7 +1532,8 @@ public class SpinParser {
 						Var subjVar = getVar(subj);
 						Var objVar = getVar(obj);
 						tupleNode = new ArbitraryLengthPath(subjVar,
-								new StatementPattern(subjVar, getVar(subPath), objVar), objVar, minPath.longValue());
+								new StatementPattern(subjVar.clone(), getVar(subPath), objVar.clone()), objVar,
+								minPath.longValue());
 					} else {
 						throw new UnsupportedOperationException(types.toString());
 					}
@@ -1533,7 +1545,7 @@ public class SpinParser {
 						throw new MalformedSpinException(
 								String.format("Value of %s is not a resource", SP.ELEMENTS_PROPERTY));
 					}
-					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements);
+					TupleExpr groupExpr = visitGroupGraphPattern((Resource) elements, true);
 
 					boolean isSilent = TripleSources.booleanValue(r, SP.SILENT_PROPERTY, store);
 					String exprString;

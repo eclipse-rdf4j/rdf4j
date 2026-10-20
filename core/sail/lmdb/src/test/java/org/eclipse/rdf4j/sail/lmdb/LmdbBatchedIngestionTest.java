@@ -52,6 +52,7 @@ import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.lwjgl.system.MemoryStack;
 import org.lwjgl.util.lmdb.MDBEnvInfo;
@@ -110,6 +111,7 @@ class LmdbBatchedIngestionTest {
 				}
 				assertEquals(1, store.values.failures,
 						"the fault reaches a real partial dictionary batch exactly once");
+				assertTrue(store.values.failedBatchSize > 1, "the injected transaction must contain an aligned batch");
 				verifyRepositoryRows(connection, expected);
 			}
 		} finally {
@@ -123,6 +125,53 @@ class LmdbBatchedIngestionTest {
 			}
 		} finally {
 			reopened.shutDown();
+		}
+	}
+
+	@ParameterizedTest
+	@CsvSource({ "io,1", "io,2", "runtime,1", "runtime,2", "fatal,1", "fatal,2", "fatalCapacity,1", "fatalCapacity,2" })
+	void terminalReplayOperationFailureRetainsItsIdentity(String kind, int capacityFailures,
+			@TempDir Path directory) throws Exception {
+		LmdbStoreConfig config = new LmdbStoreConfig("spoc,posc").setBulkOperationSize(2)
+				.setValueDBSize(32L << 20)
+				.setTripleDBSize(32L << 20);
+		FailingBatchLmdbStore store = new FailingBatchLmdbStore(directory.toFile(), config, false);
+		SailRepository repository = new SailRepository(store);
+		Throwable terminal = switch (kind) {
+		case "io" -> new IOException("terminal replay operation IO");
+		case "runtime" -> new IllegalArgumentException("terminal replay operation runtime");
+		case "fatalCapacity" -> new AssertionError("fatal operation with a capacity cause",
+				new LmdbNativeChunkFullException(LmdbSailStore.MapResizeKind.VALUE_STORE, null));
+		default -> new AssertionError("terminal replay operation fatal");
+		};
+		Model expected = new LinkedHashModel();
+		for (int i = 0; i < 5; i++) {
+			expected.add(Values.iri("urn:terminal:subject:" + i), RDF.TYPE, Values.literal("row " + i));
+		}
+		try {
+			repository.init();
+			try (RepositoryConnection connection = repository.getConnection()) {
+				connection.begin(IsolationLevels.NONE);
+				store.values.injectedFailure = terminal;
+				store.values.capacityFailuresRemaining = capacityFailures;
+				store.values.arm();
+				Throwable observed = assertThrows(Throwable.class, () -> connection.add(expected));
+				Throwable cause = observed;
+				while (cause != terminal && cause.getCause() != null) {
+					cause = cause.getCause();
+				}
+				assertSame(terminal, cause, "a terminal operation failure must not become capacity recovery history");
+				assertTrue(terminal.getSuppressed().length > 0, "prior capacity recovery remains diagnostic history");
+				assertEquals(capacityFailures + 1, store.values.failures, "terminal work is never replayed again");
+				connection.rollback();
+				assertEquals(0, connection.size());
+				connection.begin(IsolationLevels.NONE);
+				connection.add(expected);
+				connection.commit();
+				verifyRepositoryRows(connection, expected);
+			}
+		} finally {
+			repository.shutDown();
 		}
 	}
 
@@ -159,8 +208,10 @@ class LmdbBatchedIngestionTest {
 
 	private static final class FailingBatchValueStore extends ValueStore {
 		private final boolean capacityFailure;
-		private final IOException injectedFailure = new IOException("injected dictionary batch failure");
-		private int writesBeforeFailure;
+		private Throwable injectedFailure = new IOException("injected dictionary batch failure");
+		private boolean armed;
+		private int capacityFailuresRemaining;
+		private int failedBatchSize;
 		private int failures;
 
 		private FailingBatchValueStore(File directory, StoreProperties properties, LmdbStoreConfig config,
@@ -170,25 +221,31 @@ class LmdbBatchedIngestionTest {
 		}
 
 		private void arm() {
-			writesBeforeFailure = 19;
+			armed = true;
 		}
 
 		@Override
-		<T> T writeTransaction(LmdbUtil.Transaction<T> transaction) throws IOException {
-			return super.writeTransaction((stack, txn) -> {
-				T result = transaction.exec(stack, txn);
-				if (writesBeforeFailure > 0 && StackWalker.getInstance()
-						.walk(frames -> frames.anyMatch(frame -> frame.getClassName().equals(ValueStore.class.getName())
-								&& frame.getMethodName().equals("findIds")))
-						&& --writesBeforeFailure == 0) {
-					failures++;
-					if (capacityFailure) {
-						LmdbUtil.E(MDB_MAP_FULL);
-					}
-					throw injectedFailure;
+		void storeValues(Value[] values, long[] ids, int count) throws IOException {
+			super.storeValues(values, ids, count);
+			if (armed && count > 1) {
+				failedBatchSize = count;
+				failures++;
+				if (capacityFailuresRemaining > 0) {
+					capacityFailuresRemaining--;
+					LmdbUtil.E(MDB_MAP_FULL);
 				}
-				return result;
-			});
+				armed = false;
+				if (capacityFailure) {
+					LmdbUtil.E(MDB_MAP_FULL);
+				}
+				if (injectedFailure instanceof IOException io) {
+					throw io;
+				}
+				if (injectedFailure instanceof RuntimeException runtime) {
+					throw runtime;
+				}
+				throw (Error) injectedFailure;
+			}
 		}
 	}
 

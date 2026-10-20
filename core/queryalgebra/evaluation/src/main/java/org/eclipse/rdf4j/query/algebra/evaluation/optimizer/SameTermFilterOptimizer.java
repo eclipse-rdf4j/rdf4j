@@ -29,6 +29,7 @@ import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.Graph;
 import org.eclipse.rdf4j.query.algebra.NAryValueOperator;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.ProjectionElem;
 import org.eclipse.rdf4j.query.algebra.SameTerm;
 import org.eclipse.rdf4j.query.algebra.SubQueryValueOperator;
@@ -39,6 +40,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryOptimizer;
+import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractSimpleQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
 
@@ -95,9 +97,12 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			// not itself export that name.
 			if (isProvenUnbound(leftArg, argumentFacts, context) || isProvenUnbound(rightArg, argumentFacts, context)) {
 				// One or both var(s) are unbound, this expression will never
-				// return any results
-				QueryModelNormalizerOptimizer.replacePreservingScope(filter, new EmptySet());
-				bindingAnalysis.invalidate();
+				// return any results; the argument may only be discarded unevaluated when it cannot raise an
+				// observable query-fatal error
+				if (QueryEvaluationUtility.canDiscardWithoutEvaluation(filterArg)) {
+					QueryModelNormalizerOptimizer.replacePreservingScope(filter, new EmptySet());
+					bindingAnalysis.invalidate();
+				}
 				return;
 			}
 
@@ -166,9 +171,9 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 			if (leftValue != null && rightValue != null) {
 				// ConstantOptimizer should have taken care of this
 			} else if (leftValue != null && rightArg instanceof Var) {
-				bindVar((Var) rightArg, leftValue, filter);
+				bindVar((Var) rightArg, leftValue, hasApiInputOrigin(leftArg), filter);
 			} else if (rightValue != null && leftArg instanceof Var) {
-				bindVar((Var) leftArg, rightValue, filter);
+				bindVar((Var) leftArg, rightValue, hasApiInputOrigin(rightArg), filter);
 			} else if (leftArg instanceof Var && rightArg instanceof Var) {
 				// Two unbound variables, rename rightArg to leftArg
 				renameVar((Var) rightArg, (Var) leftArg, filter);
@@ -218,6 +223,11 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 		}
 
 		private void renameVar(Var oldVar, Var newVar, Filter filter) {
+			if (oldVar.equals(newVar)) {
+				QueryModelNormalizerOptimizer.replacePreservingScope(filter, filter.getArg());
+				bindingAnalysis.invalidate();
+				return;
+			}
 			boolean[] graphOutput = { false };
 			filter.getArg().visit(new AbstractSimpleQueryModelVisitor<RuntimeException>(false) {
 				@Override
@@ -231,20 +241,30 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 				// constraint.
 				return;
 			}
-			filter.getArg().visit(new VarRenamer(oldVar, newVar));
+			TupleExpr renamedArgument = filter.getArg().clone();
+			renamedArgument.visit(new VarRenamer(oldVar, newVar));
+			if (renamedArgument.getBindingNames().contains(oldVar.getName())) {
+				// Scope boundaries and output producers can keep exporting the original name. An Extension
+				// would overwrite that unconstrained value and fabricate equality, so retain the original tree.
+				return;
+			}
 
 			// TODO: skip this step if old variable name is not used
 			// Replace SameTerm-filter with an Extension, the old variable name
 			// might still be relevant to nodes higher in the tree
-			Extension extension = new Extension(filter.getArg());
+			Extension extension = new Extension(renamedArgument);
 			extension.addElement(new ExtensionElem(Var.of(newVar.getName()), oldVar.getName()));
 			QueryModelNormalizerOptimizer.replacePreservingScope(filter, extension);
 			bindingAnalysis.invalidate();
 		}
 
-		private void bindVar(Var var, Value value, Filter filter) {
+		private boolean hasApiInputOrigin(ValueExpr source) {
+			return source instanceof Var variable && variable.hasApiInputOrigin();
+		}
+
+		private void bindVar(Var var, Value value, boolean apiInputOrigin, Filter filter) {
 			// Set the value on all occurences of the variable
-			filter.getArg().visit(new VarBinder(var.getName(), value));
+			filter.getArg().visit(new VarBinder(var, value, apiInputOrigin));
 			bindingAnalysis.invalidate();
 		}
 	}
@@ -256,6 +276,17 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 		public StopAtScopeChange(boolean meetStatementPatternChildren) {
 			super(meetStatementPatternChildren);
+		}
+
+		@Override
+		public void meet(Projection projection) {
+			if (projection.getProjectionContext() != null) {
+				// This selector belongs to the caller, even when traversal stops at the SELECT's local scope.
+				projection.getProjectionContext().visit(this);
+			}
+			if (!projection.isSubquery()) {
+				super.meet(projection);
+			}
 		}
 
 		@Override
@@ -353,20 +384,30 @@ public class SameTermFilterOptimizer implements QueryOptimizer {
 
 	private static class VarBinder extends StopAtScopeChange {
 
-		private final String varName;
+		private final Var variable;
 
 		private final Value value;
 
-		public VarBinder(String varName, Value value) {
+		private final boolean apiInputOrigin;
+
+		public VarBinder(Var variable, Value value, boolean apiInputOrigin) {
 			super(true);
-			this.varName = varName;
+			this.variable = variable;
 			this.value = value;
+			this.apiInputOrigin = apiInputOrigin;
 		}
 
 		@Override
 		public void meet(Var var) {
-			if (var.getName().equals(varName)) {
-				var.replaceWith(Var.of(varName, value, var.isAnonymous(), var.isConstant()));
+			if (var.getName().equals(variable.getName())
+					&& var.getGraphContextDepth() == variable.getGraphContextDepth()) {
+				Var replacement = Var.of(var.getName(), value, var.isAnonymous(), var.isConstant(), var.isBNode());
+				if (apiInputOrigin) {
+					replacement = replacement.withApiInputOrigin();
+				}
+				replacement.setGraphContextDepth(var.getGraphContextDepth());
+				replacement.setVariableScopeChange(var.isVariableScopeChange());
+				var.replaceWith(replacement);
 			}
 		}
 	}

@@ -93,6 +93,19 @@ public class ServiceJoinIterator extends JoinExecutorBase<BindingSet> {
 			if (!(serviceRef.getValue() instanceof IRI)) {
 				throw new QueryEvaluationException("SERVICE endpoint must be an IRI bound at evaluation time");
 			}
+			if (!leftIter.hasNext()) {
+				// Preserve the fixed non-silent invocation's error effect even with no left solutions. Use the
+				// prepared scalar route so identity validation, allocation ownership and request telemetry agree.
+				fallbackEvaluation = true;
+				incrementLongMetric(service, TelemetryMetricNames.REMOTE_EVALUATE_REQUEST_COUNT_ACTUAL);
+				try (var active = allocation.activate();
+						CloseableIteration<BindingSet> invocation = scalarRight.evaluate(bindings)) {
+					while (invocation.hasNext()) {
+						invocation.next();
+					}
+				}
+				return;
+			}
 			FederatedService fs = strategy.getService(serviceRef.getValue().stringValue());
 			if (!fs.preservesBNodeResultProvenance()) {
 				addScalarResults();

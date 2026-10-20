@@ -1,0 +1,2 @@
+PREFIX : <urn:query-boundary:> PREFIX xsd: <http://www.w3.org/2001/XMLSchema#>
+SELECT (COUNT(*) AS ?n) WHERE { ?s :p ?k . BIND(NOW() AS ?t1) SERVICE <urn:query-boundary:remote> { ?k :q ?v } BIND(NOW() AS ?t2) FILTER(?t1 = ?t2) }

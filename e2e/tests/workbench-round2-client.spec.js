@@ -23,7 +23,7 @@ const {
 	uniqueRepositoryId,
 	waitForRoute
 } = require('./workbench-test-helpers.js');
-const { ageStoredResults, forgetLastCleanup, largeQuery, plantAbandonedStore, storedResults, waitForStoredQueryRows }
+const { ageStoredResults, forgetLastCleanup, largeQuery, plantAbandonedStore, storedResults, waitForStoredResult }
 	= require('../row-store-helpers.js');
 
 // Round-2 review of GH-6071: client regressions that the first review fixes introduced, checked in real browsers.
@@ -722,10 +722,12 @@ test('cleanup in another tab keeps the stored results of a live page, however ol
 	await page.locator('#exec').click();
 	await expect(page.locator('#query-results .query-result-status')).toHaveText(/^12,000 rows · complete/,
 		{ timeout: 30000 });
-	const persisted = await waitForStoredQueryRows(page, before, 12000);
+	const readyStore = await waitForStoredResult(page, before, 12000);
+	expect(readyStore.metadataCount).toBe(12000);
+	expect(readyStore.physicalRowCount).toBe(12000);
 	const liveIds = (await storedResults(page)).databases;
 	expect(liveIds, 'a result of 12,000 rows is stored in a database of its own').toHaveLength(1);
-	expect(liveIds).toContain(persisted.id);
+	expect(liveIds).toContain(readyStore.id);
 	const fourDaysAgo = Date.now() - 4 * 24 * 60 * 60 * 1000;
 	const abandoned = 'rows-' + fourDaysAgo.toString(36) + '-abandoned';
 	await plantAbandonedStore(page, abandoned, fourDaysAgo);

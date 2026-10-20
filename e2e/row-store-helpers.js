@@ -14,7 +14,6 @@
 // Stored query results, as the Workbench keeps them (queryStream.ts): a result past 10,000 rows moves to an IndexedDB
 // database of its own, named DATABASE_PREFIX + its id and listed in a localStorage registry; smaller results stay in
 // the page's memory.
-
 const { expect } = require('@playwright/test');
 
 const DATABASE_PREFIX = 'rdf4j-workbench-row-store:';
@@ -45,106 +44,163 @@ async function storedResults(page) {
 	}, { databasePrefix: DATABASE_PREFIX, registryPrefix: REGISTRY_PREFIX });
 }
 
-/** Waits for a new query's own database to contain its complete metadata and physical row records. */
+/** Waits for one newly registered result to persist its metadata and all of its physical rows. */
 async function waitForStoredQueryRows(page, before, expectedCount) {
 	const beforeIds = [...new Set([...before.databases, ...Object.keys(before.registry)])];
-	let result;
+	let persisted;
 	await expect.poll(async () => {
-		result = await page.evaluate(async ({ databasePrefix, registryPrefix, beforeIds, expectedCount }) => {
+		persisted = await page.evaluate(async ({ databasePrefix, registryPrefix, beforeIds, expectedCount }) => {
 			if (typeof indexedDB === 'undefined' || typeof indexedDB.databases !== 'function') {
 				throw new Error('IndexedDB database enumeration is unavailable.');
 			}
-			const existingIds = new Set(beforeIds);
-			const databases = await indexedDB.databases();
-			const newDatabaseIds = databases
+			const previousIds = new Set(beforeIds);
+			const newDatabaseIds = (await indexedDB.databases())
 				.filter(database => database.version > 0 && database.name && database.name.startsWith(databasePrefix))
 				.map(database => database.name.substring(databasePrefix.length))
-				.filter(id => !existingIds.has(id));
-			const newRegistryIds = [];
+				.filter(id => !previousIds.has(id));
+			const registryIds = [];
 			for (let index = 0; index < localStorage.length; index++) {
 				const key = localStorage.key(index);
 				if (key && key.startsWith(registryPrefix)) {
 					const id = key.substring(registryPrefix.length);
-					if (!existingIds.has(id)) {
-						newRegistryIds.push(id);
+					if (!previousIds.has(id)) {
+						registryIds.push(id);
 					}
 				}
 			}
-			if (newRegistryIds.length > 1 || newDatabaseIds.length > 1) {
-				throw new Error(`Expected one new query store, found ${newRegistryIds.length} registry entries and `
+			if (registryIds.length > 1 || newDatabaseIds.length > 1) {
+				throw new Error(`Expected one new query store, found ${registryIds.length} registry entries and `
 					+ `${newDatabaseIds.length} databases.`);
 			}
-			if (newRegistryIds.length !== 1 || newDatabaseIds.length !== 1) {
-				return null;
+			if (registryIds.length !== 1 || newDatabaseIds.length !== 1) {
+				return false;
 			}
-			const id = newRegistryIds[0];
+
+			// Exclude every pre-existing result before opening a database. Other tabs may hold their write transactions.
+			const id = registryIds[0];
+			if (previousIds.has(id)) {
+				throw new Error(`Stored result ${id} was present before this query.`);
+			}
 			if (newDatabaseIds[0] !== id) {
 				throw new Error(`The new query database ${newDatabaseIds[0]} does not match registry entry ${id}.`);
 			}
-			const database = await new Promise(resolve => {
-				const request = indexedDB.open(databasePrefix + id);
-				let settled = false;
-				const finish = result => {
-					if (settled) {
-						result?.close();
+			const databaseName = databasePrefix + id;
+
+			const persisted = await new Promise((resolve, reject) => {
+				const request = indexedDB.open(databaseName);
+				let disappearedSinceEnumeration = false;
+				let openWasBlocked = false;
+				request.onupgradeneeded = (event) => {
+					if (event.oldVersion === 0) {
+						// The result was deleted since enumeration. Abort instead of recreating an empty database.
+						disappearedSinceEnumeration = true;
+						request.transaction.abort();
+					} else {
+						request.transaction.abort();
+						reject(new Error(`Stored result ${id} changed versions while being inspected.`));
+					}
+				};
+				request.onerror = () => {
+					if (disappearedSinceEnumeration) {
+						resolve(null);
+					} else {
+						reject(request.error || new Error(`Unable to open stored result ${id}.`));
+					}
+				};
+				request.onblocked = () => {
+					openWasBlocked = true;
+					reject(new Error(`Opening stored result ${id} was blocked.`));
+				};
+				request.onsuccess = () => {
+					const database = request.result;
+					if (openWasBlocked) {
+						database.close();
 						return;
 					}
-					settled = true;
-					resolve(result);
-				};
-				// If the database disappeared after enumeration, do not recreate it while inspecting the result.
-				request.onupgradeneeded = () => request.transaction.abort();
-				request.onsuccess = () => finish(request.result);
-				request.onerror = request.onblocked = () => finish(null);
-			});
-			if (!database) {
-				return null;
-			}
-			database.onversionchange = () => database.close();
-			try {
-				if (!database.objectStoreNames.contains('stores') || !database.objectStoreNames.contains('rows')) {
-					return null;
-				}
-				const counts = await new Promise((resolve, reject) => {
-					const transaction = database.transaction(['stores', 'rows'], 'readonly');
-					const metadata = transaction.objectStore('stores').get(id);
-					const records = transaction.objectStore('rows')
-						.getAll(IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]));
-					transaction.oncomplete = () => resolve({ metadata: metadata.result, records: records.result });
-					transaction.onerror = transaction.onabort = () => reject(transaction.error
-						|| new Error('Unable to inspect query result rows.'));
-				});
-				if (!counts.metadata) {
-					return null;
-				}
-				if (counts.metadata.format !== 'blocks-v2') {
-					throw new Error(`Unsupported persisted row format ${counts.metadata.format}.`);
-				}
-				let logicalRowCount = 0;
-				for (const record of counts.records) {
-					const lines = typeof record.text === 'string' ? record.text.split('\n') : [];
-					if (record.storeId !== id || record.index !== logicalRowCount || !Number.isSafeInteger(record.count)
-						|| record.count <= 0 || lines.length !== record.count || lines.some(line => !line)) {
-						throw new Error(`Invalid persisted row block at logical row ${logicalRowCount}.`);
+					database.onversionchange = () => database.close();
+					if (!database.objectStoreNames.contains('stores') || !database.objectStoreNames.contains('rows')) {
+						database.close();
+						reject(new Error(`Stored result ${id} has an unexpected database schema.`));
+						return;
 					}
-					logicalRowCount += record.count;
-				}
-				if (counts.metadata.count !== expectedCount || logicalRowCount !== expectedCount
-					|| counts.records.length <= 0) {
-					return null;
-				}
-				return { id, metadataCount: counts.metadata.count, physicalRecordCount: counts.records.length,
-					logicalRowCount };
-			} finally {
-				database.close();
+					let transaction;
+					try {
+						transaction = database.transaction(['stores', 'rows'], 'readonly');
+					} catch (error) {
+						database.close();
+						reject(error);
+						return;
+					}
+					let metadata;
+					let malformedRowBlock = false;
+					let physicalBlockCount = 0;
+					let physicalRowCount = 0;
+					const storeRequest = transaction.objectStore('stores').get(id);
+					storeRequest.onsuccess = () => { metadata = storeRequest.result; };
+					const rows = transaction.objectStore('rows');
+					const cursorRequest = rows.openCursor(IDBKeyRange.bound([id, 0], [id, Number.MAX_SAFE_INTEGER]));
+					cursorRequest.onsuccess = () => {
+						const cursor = cursorRequest.result;
+						if (!cursor) {
+							return;
+						}
+						const record = cursor.value;
+						const blockRows = record && record.count;
+						const lines = typeof record?.text === 'string' ? record.text.split('\n') : [];
+						if (record?.storeId !== id || record.index !== physicalRowCount
+							|| !Array.isArray(cursor.key) || cursor.key[0] !== id || cursor.key[1] !== physicalRowCount
+							|| !Number.isSafeInteger(blockRows) || blockRows <= 0
+							|| lines.length !== blockRows || lines.some(line => !line)) {
+							malformedRowBlock = true;
+							transaction.abort();
+							return;
+						}
+						physicalBlockCount++;
+						physicalRowCount += blockRows;
+						cursor.continue();
+					};
+					transaction.oncomplete = () => {
+						database.close();
+						resolve({ id, metadataId: metadata && metadata.id, metadataFormat: metadata && metadata.format,
+							metadataCount: metadata && metadata.count, physicalBlockCount, physicalRowCount,
+							physicalRecordCount: physicalBlockCount, logicalRowCount: physicalRowCount });
+					};
+					transaction.onerror = transaction.onabort = () => {
+						database.close();
+						reject(transaction.error || new Error(malformedRowBlock
+							? `Stored result ${id} has a malformed physical row block.`
+							: `Unable to inspect stored result ${id}.`));
+					};
+				};
+			});
+			if (!persisted) {
+				return false;
 			}
+			if (persisted.metadataId !== undefined && persisted.metadataId !== id) {
+				throw new Error(`Stored result ${id} has mismatched metadata identity ${persisted.metadataId}.`);
+			}
+			if (persisted.metadataFormat !== undefined && persisted.metadataFormat !== 'blocks-v2') {
+				throw new Error(`Unsupported persisted row format ${persisted.metadataFormat}.`);
+			}
+			if (persisted.metadataCount !== undefined
+				&& (!Number.isSafeInteger(persisted.metadataCount) || persisted.metadataCount < 0)) {
+				throw new Error(`Stored result ${id} has an invalid metadata row count.`);
+			}
+			if (persisted.metadataCount > expectedCount) {
+				throw new Error(
+					`Stored result ${id} contains ${persisted.metadataCount} metadata rows; expected ${expectedCount}.`);
+			}
+			if (persisted.physicalRowCount > expectedCount) {
+				throw new Error(
+					`Stored result ${id} contains ${persisted.physicalRowCount} physical rows; expected ${expectedCount}.`);
+			}
+			return persisted.metadataId === id && persisted.metadataFormat === 'blocks-v2'
+				&& persisted.metadataCount === expectedCount && persisted.physicalBlockCount > 0 && persisted.physicalRowCount === expectedCount
+				? persisted : false;
 		}, { databasePrefix: DATABASE_PREFIX, registryPrefix: REGISTRY_PREFIX, beforeIds, expectedCount });
-		return result;
-	}, { timeout: 30000, intervals: [250], message: 'the result persists as a complete row-store database' })
-		.toMatchObject({ id: expect.any(String), metadataCount: expectedCount, physicalRecordCount: expect.any(Number),
-			logicalRowCount: expectedCount });
-	expect(result.physicalRecordCount).toBeGreaterThan(0);
-	return result;
+		return Boolean(persisted);
+	}, { timeout: 30000, message: `stored result reaches ${expectedCount} persisted rows` }).toBe(true);
+	return persisted;
 }
 
 /** Makes the registry say the stores were created and last used at time. */
@@ -188,4 +244,4 @@ async function forgetLastCleanup(page) {
 }
 
 module.exports = { DATABASE_PREFIX, REGISTRY_PREFIX, largeQuery, storedResults, ageStoredResults, plantAbandonedStore,
-	waitForStoredQueryRows, forgetLastCleanup };
+	forgetLastCleanup, waitForStoredQueryRows, waitForStoredResult: waitForStoredQueryRows };

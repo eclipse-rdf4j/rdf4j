@@ -301,6 +301,63 @@ public class SparqlComprehensiveStreamingValidTest {
 	// TEST FACTORIES (VALID ONLY)
 	// =========================
 
+	/**
+	 * One deterministic query emitted by the comprehensive corpus. The full text is retained separately from the
+	 * category so downstream test fixtures do not have to recover a truncated query from a JUnit display name.
+	 */
+	public static final class GeneratedQuery {
+		private final String category;
+		private final String sparql;
+
+		private GeneratedQuery(String category, String sparql) {
+			this.category = category;
+			this.sparql = sparql;
+		}
+
+		public String category() {
+			return category;
+		}
+
+		public String sparql() {
+			return sparql;
+		}
+	}
+
+	/**
+	 * All enabled query streams used by this class's renderer tests, in their stable test-factory order.
+	 *
+	 * The returned stream is lazy. Adding or changing a category below changes both renderer and downstream test-JAR
+	 * consumers, which keeps the corpus a single source of truth.
+	 */
+	public static Stream<GeneratedQuery> generatedQueries() {
+		return Stream.of(
+				generated("SELECT+PATH", selectWithPropertyPathsQueries()),
+				generated("GroupAlgebra", groupAlgebraQueries()),
+				generated("FilterBindValues", filterBindValuesQueries()),
+				generated("Aggregates", aggregateQueries()),
+				generated("Subqueries", subqueryQueries()),
+				generated("DatasetGraphService", datasetGraphServiceQueries()),
+				generated("ConstructAskDescribe", constructAskDescribeQueries()),
+				generated("OrderBy+Modifiers", orderByModifierQueries()),
+				generated("DescribeForms", describeFormQueries()),
+				generated("Service+Values", nestedServiceValuesQueries()),
+				generated("Builtins", builtinQueries()),
+				generated("Prologue+Lexical", prologueLexicalQueries()),
+				generated("GraphScoping", graphScopingQueries()),
+				generated("Grouping2", groupingComplexQueries()),
+				generated("Subselect2", subselectModifierQueries()),
+				generated("ConstructTplBNodes", constructTemplateBnodeQueries()),
+				generated("DeepNest50", deepNestingQueries()))
+				.flatMap(Function.identity());
+	}
+
+	private static Stream<GeneratedQuery> generated(String category, Stream<String> queries) {
+		Set<String> seen = new LinkedHashSet<>();
+		return queries
+				.filter(distinctLimited(seen, Integer.MAX_VALUE))
+				.map(query -> new GeneratedQuery(category, query));
+	}
+
 	private static String wrapPrologue(String body) {
 		return SPARQL_PREFIX + body;
 	}
@@ -389,6 +446,10 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> select_with_property_paths_valid() {
+		return toDynamicTests("SELECT+PATH", selectWithPropertyPathsQueries());
+	}
+
+	private static Stream<String> selectWithPropertyPathsQueries() {
 		final int variantsPerPath = 3; // skeletons per path
 		int neededPaths = Math.max(1, MAX_SELECT_PATH_CASES / variantsPerPath);
 
@@ -408,12 +469,16 @@ public class SparqlComprehensiveStreamingValidTest {
 						"}")
 		)).limit(MAX_SELECT_PATH_CASES);
 
-		return toDynamicTests("SELECT+PATH", queries);
+		return queries;
 	}
 
 	@TestFactory
 	@Disabled
 	Stream<DynamicTest> triple_surface_syntax_valid() {
+		return toDynamicTests("TripleSyntax", tripleSurfaceSyntaxQueries());
+	}
+
+	private static Stream<String> tripleSurfaceSyntaxQueries() {
 		Stream<String> baseTriples = Stream.of(
 				// predicate/object lists; object lists; dangling semicolon legal
 				"SELECT ?s ?o WHERE { ?s a " + CLASSES.get(0) + " ; " +
@@ -436,13 +501,17 @@ public class SparqlComprehensiveStreamingValidTest {
 						"}"
 		);
 
-		return toDynamicTests("TripleSyntax", baseTriples
+		return baseTriples
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
-				.limit(MAX_TRIPLE_SYNTAX_CASES));
+				.limit(MAX_TRIPLE_SYNTAX_CASES);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> group_algebra_valid() {
+		return toDynamicTests("GroupAlgebra", groupAlgebraQueries());
+	}
+
+	private static Stream<String> groupAlgebraQueries() {
 		Stream<String> groups = Stream.of(
 				// OPTIONAL with internal FILTER
 				"SELECT ?s ?o WHERE {\n" +
@@ -464,9 +533,9 @@ public class SparqlComprehensiveStreamingValidTest {
 						"}"
 		);
 
-		return toDynamicTests("GroupAlgebra", groups
+		return groups
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
-				.limit(MAX_GROUP_ALGEBRA_CASES));
+				.limit(MAX_GROUP_ALGEBRA_CASES);
 	}
 
 	// =========================================================================================
@@ -475,6 +544,10 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> filter_bind_values_valid() {
+		return toDynamicTests("FilterBindValues", filterBindValuesQueries());
+	}
+
+	private static Stream<String> filterBindValuesQueries() {
 		Stream<String> queries = Stream.of(
 				// regex + lang + logical
 				"SELECT ?s ?name WHERE {\n" +
@@ -504,13 +577,17 @@ public class SparqlComprehensiveStreamingValidTest {
 						"}"
 		);
 
-		return toDynamicTests("FilterBindValues", queries
+		return queries
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
-				.limit(MAX_FILTER_BIND_VALUES_CASES));
+				.limit(MAX_FILTER_BIND_VALUES_CASES);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> aggregates_groupby_having_valid() {
+		return toDynamicTests("Aggregates", aggregateQueries());
+	}
+
+	private static Stream<String> aggregateQueries() {
 		Stream<String> queries = Stream.of(
 				// Count + group + having
 				"SELECT ?s (COUNT(?o) AS ?c) WHERE {\n" +
@@ -528,13 +605,17 @@ public class SparqlComprehensiveStreamingValidTest {
 						"} GROUP BY ?s"
 		);
 
-		return toDynamicTests("Aggregates", queries
+		return queries
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
-				.limit(MAX_AGGREGATE_CASES));
+				.limit(MAX_AGGREGATE_CASES);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> subqueries_valid() {
+		return toDynamicTests("Subqueries", subqueryQueries());
+	}
+
+	private static Stream<String> subqueryQueries() {
 		Stream<String> queries = Stream.of(
 				"SELECT ?s ?c WHERE {\n" +
 						"  { SELECT ?s (COUNT(?o) AS ?c) WHERE { ?s " + PREDICATES.get(0) + " ?o . } GROUP BY ?s }\n" +
@@ -542,9 +623,9 @@ public class SparqlComprehensiveStreamingValidTest {
 						"}"
 		);
 
-		return toDynamicTests("Subqueries", queries
+		return queries
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
-				.limit(MAX_SUBQUERY_CASES));
+				.limit(MAX_SUBQUERY_CASES);
 	}
 
 	// =========================================================================================
@@ -553,15 +634,18 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> datasets_graph_service_valid() {
+		return toDynamicTests("DatasetGraphService", datasetGraphServiceQueries());
+	}
 
+	private static Stream<String> datasetGraphServiceQueries() {
 		Stream<String> datasetClauses = cartesian(DATASET_FROM.stream(), DATASET_NAMED.stream())
 				.limit(2)
 				.map(pair -> "FROM " + pair.getLeft() + "\nFROM NAMED " + pair.getRight() + "\n");
 
 		Stream<String> queries = Stream.concat(
 				datasetClauses.map(
-						ds -> ds + "SELECT ?s WHERE { GRAPH " + GRAPH_IRIS.get(0) + " { ?s " + PREDICATES.get(0)
-								+ " ?o } }"
+						ds -> SPARQL_PREFIX + "SELECT ?s\n" + ds + "WHERE { GRAPH " + GRAPH_IRIS.get(0)
+								+ " { ?s " + PREDICATES.get(0) + " ?o } }"
 				),
 				Stream.of(
 						// SERVICE with constant IRI
@@ -577,11 +661,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				)
 		);
 
-		return toDynamicTests("DatasetGraphService", queries.limit(MAX_DATASET_GRAPH_SERVICE));
+		return queries.limit(MAX_DATASET_GRAPH_SERVICE);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> construct_ask_describe_valid() {
+		return toDynamicTests("ConstructAskDescribe", constructAskDescribeQueries());
+	}
+
+	private static Stream<String> constructAskDescribeQueries() {
 		Stream<String> queries = Stream.of(
 				// Explicit template (no property paths in template)
 				"CONSTRUCT {\n" +
@@ -598,11 +686,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				"DESCRIBE ?s <http://example.org/resource/X> WHERE { ?s a " + CLASSES.get(1) + " . }"
 		).map(SparqlComprehensiveStreamingValidTest::wrapPrologue);
 
-		return toDynamicTests("ConstructAskDescribe", queries.limit(MAX_CONSTRUCT_CASES + MAX_ASK_DESCRIBE_CASES));
+		return queries.limit(MAX_CONSTRUCT_CASES + MAX_ASK_DESCRIBE_CASES);
 	}
 
 	@TestFactory
 	Stream<DynamicTest> order_by_and_modifiers_valid() {
+		return toDynamicTests("OrderBy+Modifiers", orderByModifierQueries());
+	}
+
+	private static Stream<String> orderByModifierQueries() {
 		final int keysNeeded = 80; // enough to mix into MAX_ORDER_BY_CASES
 		Set<String> seenKeys = new LinkedHashSet<>(keysNeeded * 2);
 
@@ -647,11 +739,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				ExprStreams.indexPairs(keys.size()).map(buildDirect)
 		).limit(MAX_ORDER_BY_CASES);
 
-		return toDynamicTests("OrderBy+Modifiers", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> describe_forms_valid() {
+		return toDynamicTests("DescribeForms", describeFormQueries());
+	}
+
+	private static Stream<String> describeFormQueries() {
 		List<String> simpleDescribeTargets = Arrays.asList(
 				"DESCRIBE <http://example.org/resource/A> <http://example.org/resource/B>",
 				"DESCRIBE <http://example.org/resource/C>"
@@ -668,7 +764,7 @@ public class SparqlComprehensiveStreamingValidTest {
 		Stream<String> queries = Stream.concat(noWhere, withWhere)
 				.limit(MAX_DESCRIBE_CASES);
 
-		return toDynamicTests("DescribeForms", queries);
+		return queries;
 	}
 
 	// =========================================================================================
@@ -677,6 +773,10 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> nested_service_and_values_joins_valid() {
+		return toDynamicTests("Service+Values", nestedServiceValuesQueries());
+	}
+
+	private static Stream<String> nestedServiceValuesQueries() {
 		Stream<String> serviceQueries = Stream.of(
 				SPARQL_PREFIX +
 						"SELECT ?s ?o WHERE {\n" +
@@ -716,7 +816,7 @@ public class SparqlComprehensiveStreamingValidTest {
 		Stream<String> queries = Stream.concat(serviceQueries, valuesHeavy)
 				.limit(MAX_SERVICE_VALUES_CASES);
 
-		return toDynamicTests("Service+Values", queries);
+		return queries;
 	}
 
 	/** Precedence: ALT < SEQ < PREFIX (!,^) < POSTFIX (*,+,?) < ATOM/GROUP. */
@@ -1331,6 +1431,10 @@ public class SparqlComprehensiveStreamingValidTest {
 
 	@TestFactory
 	Stream<DynamicTest> builtins_and_functions_valid() {
+		return toDynamicTests("Builtins", builtinQueries());
+	}
+
+	private static Stream<String> builtinQueries() {
 		Stream<String> queries = Stream.of(
 				// String & case funcs, regex with flags
 				"SELECT ?s ?ok WHERE {\n" +
@@ -1380,11 +1484,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_BUILTINS_CASES);
 
-		return toDynamicTests("Builtins", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> prologue_and_lexical_valid() {
+		return toDynamicTests("Prologue+Lexical", prologueLexicalQueries());
+	}
+
+	private static Stream<String> prologueLexicalQueries() {
 		Stream<String> queries = Stream.of(
 				// Lower/mixed-case keywords; empty group
 				"select * where { }",
@@ -1404,11 +1512,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_PROLOGUE_LEXICAL_CASES);
 
-		return toDynamicTests("Prologue+Lexical", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> graph_scoping_nested_valid() {
+		return toDynamicTests("GraphScoping", graphScopingQueries());
+	}
+
+	private static Stream<String> graphScopingQueries() {
 		Stream<String> queries = Stream.of(
 				// Constant + variable GRAPH
 				"SELECT ?s WHERE {\n" +
@@ -1425,11 +1537,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_GRAPH_NEST_CASES);
 
-		return toDynamicTests("GraphScoping", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> grouping_complex_valid() {
+		return toDynamicTests("Grouping2", groupingComplexQueries());
+	}
+
+	private static Stream<String> groupingComplexQueries() {
 		Stream<String> queries = Stream.of(
 				// COUNT(*) + HAVING + ORDER BY alias
 				"SELECT ?s (COUNT(*) AS ?c) (SUM(?v) AS ?sum) WHERE {\n" +
@@ -1449,11 +1565,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_GROUPING2_CASES);
 
-		return toDynamicTests("Grouping2", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> subselect_with_modifiers_valid() {
+		return toDynamicTests("Subselect2", subselectModifierQueries());
+	}
+
+	private static Stream<String> subselectModifierQueries() {
 		Stream<String> queries = Stream.of(
 				// ORDER BY + LIMIT inside subselect
 				"SELECT ?s WHERE {\n" +
@@ -1469,11 +1589,15 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_SUBSELECT2_CASES);
 
-		return toDynamicTests("Subselect2", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> construct_template_bnodes_valid() {
+		return toDynamicTests("ConstructTplBNodes", constructTemplateBnodeQueries());
+	}
+
+	private static Stream<String> constructTemplateBnodeQueries() {
 		Stream<String> queries = Stream.of(
 				// Template uses simple IRIs/'a' only; includes bnode property list
 				"CONSTRUCT {\n" +
@@ -1484,11 +1608,16 @@ public class SparqlComprehensiveStreamingValidTest {
 				.map(SparqlComprehensiveStreamingValidTest::wrapPrologue)
 				.limit(MAX_CONSTRUCT_TPL_CASES);
 
-		return toDynamicTests("ConstructTplBNodes", queries);
+		return queries;
 	}
 
 	@TestFactory
 	Stream<DynamicTest> deep_nesting_torture_valid() {
+		return toDynamicTests("DeepNest50", deepNestingQueries(),
+				SparqlComprehensiveStreamingValidTest::assertRenderFixedPoint);
+	}
+
+	private static Stream<String> deepNestingQueries() {
 		// Sample a modest pool of property paths (list-backed, safe to reuse)
 		List<String> pathPool = samplePathsForNesting(NEST_PATH_POOL_SIZE);
 
@@ -1500,7 +1629,7 @@ public class SparqlComprehensiveStreamingValidTest {
 				NEST_SEED
 		);
 
-		return toDynamicTests("DeepNest50", queries, SparqlComprehensiveStreamingValidTest::assertRenderFixedPoint);
+		return queries;
 	}
 
 	/** Collect a small, diverse set of property paths to use inside deep nests. */

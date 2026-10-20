@@ -492,7 +492,7 @@ class LmdbPageMappingLifecycleTest {
 	@ValueSource(booleans = { false, true })
 	void sameThreadCloseRejectsAnActiveReadView(boolean managed) throws Exception {
 		String scenario = managed ? "active-managed-read-view" : "active-read-view";
-		ProcessResult result = runSameThreadCloseProbe(directory, scenario);
+		ProcessResult result = runCloseProbe(directory, scenario);
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("ACTIVE_READ_VIEW_CLOSE_REJECTED"), result.output);
@@ -500,7 +500,7 @@ class LmdbPageMappingLifecycleTest {
 		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
 	}
 
-	private static ProcessResult runSameThreadCloseProbe(Path dataDir, String scenario)
+	private static ProcessResult runCloseProbe(Path dataDir, String scenario)
 			throws IOException, InterruptedException {
 		String javaBinary = Path.of(System.getProperty("java.home"), "bin", "java").toString();
 		List<String> command = new ArrayList<>();
@@ -508,11 +508,11 @@ class LmdbPageMappingLifecycleTest {
 		command.add("-ea");
 		command.add("-cp");
 		command.add(System.getProperty("java.class.path"));
-		command.add(SameThreadCloseProbe.class.getName());
+		command.add(EstimatorCloseProbe.class.getName());
 		command.add(scenario);
 		command.add(dataDir.toAbsolutePath().toString());
 
-		Path outputPath = dataDir.resolve("same-thread-close-probe-" + scenario + ".log");
+		Path outputPath = dataDir.resolve("close-probe-" + scenario + ".log");
 		Process process = new ProcessBuilder(command)
 				.redirectErrorStream(true)
 				.redirectOutput(outputPath.toFile())
@@ -583,6 +583,99 @@ class LmdbPageMappingLifecycleTest {
 		System.out.println("ACTIVE_READ_VIEW_PROBE_OK");
 	}
 
+	private static void runEntryRanksCloseScenario(Path dataDir, String scenario) throws Exception {
+		try (Environment env = new Environment(dataDir, 0)) {
+			if (!"entry-ranks-empty-database".equals(scenario)) {
+				env.put(0, 32);
+			}
+			try (ReadTxn txn = env.read();
+					LmdbPageCardinalityEstimator estimator = new LmdbPageCardinalityEstimator(env.dataPath.toFile(),
+							env.handle, env.mainDbi)) {
+				if ("entry-ranks-nested-view".equals(scenario)) {
+					try (var outer = estimator.readTransaction(txn.handle())) {
+						assertEquals(32, outer.totalEntries("statements"));
+						assertValidEntryRanks(estimator, txn.id());
+						assertValidEntryRanks(estimator, txn.id());
+					}
+				} else if ("entry-ranks-exception".equals(scenario)) {
+					for (int attempt = 0; attempt < 2; attempt++) {
+						assertThrows(NullPointerException.class,
+								() -> estimator.estimateEntryRanks(txn.id(), "statements",
+										new byte[][] { key(0), null }));
+					}
+				} else {
+					String dbName = "entry-ranks-unknown-database".equals(scenario) ? "missing" : "statements";
+					for (int attempt = 0; attempt < 2; attempt++) {
+						if ("entry-ranks-empty-keys".equals(scenario)) {
+							assertEquals(0, estimator.estimateEntryRanks(txn.id(), dbName, new byte[0][]).length);
+						} else if ("entry-ranks-empty-database".equals(scenario)
+								|| "entry-ranks-unknown-database".equals(scenario)) {
+							long[] ranks = estimator.estimateEntryRanks(txn.id(), dbName,
+									new byte[][] { key(0), key(10), key(20) });
+							assertEquals(3, ranks.length);
+							for (long rank : ranks) {
+								assertEquals(0, rank);
+							}
+						} else {
+							assertValidEntryRanks(estimator, txn.id());
+						}
+					}
+				}
+				closeEstimatorOnAnotherThread(estimator, scenario);
+			}
+		}
+		System.out.println("ENTRY_RANKS_CLOSE_OK " + scenario);
+	}
+
+	private static void assertValidEntryRanks(LmdbPageCardinalityEstimator estimator, long txnId) throws IOException {
+		long[] ranks = estimator.estimateEntryRanks(txnId, "statements",
+				new byte[][] { key(0), key(10), key(20) });
+		assertEquals(3, ranks.length);
+		assertTrue(ranks[0] <= ranks[1], "Entry ranks should be non-decreasing");
+		assertTrue(ranks[1] <= ranks[2], "Entry ranks should be non-decreasing");
+		assertTrue(ranks[2] > 0, "A key after the first entries should have a positive rank");
+		assertTrue(ranks[2] <= 32, "Entry ranks should not exceed the database entry count");
+	}
+
+	private static void closeEstimatorOnAnotherThread(LmdbPageCardinalityEstimator estimator, String scenario)
+			throws Exception {
+		CompletableFuture<Void> closed = new CompletableFuture<>();
+		Thread closer = new Thread(() -> {
+			try {
+				estimator.close();
+				closed.complete(null);
+			} catch (Throwable failure) {
+				closed.completeExceptionally(failure);
+			}
+		});
+		closer.start();
+		while (closer.isAlive() && !closed.isDone() && !waitingForEstimatorCloseLock(closer)) {
+			Thread.onSpinWait();
+		}
+		if (waitingForEstimatorCloseLock(closer)) {
+			System.out.println("ENTRY_RANKS_CLOSE_BLOCKED " + scenario);
+			System.out.flush();
+			Runtime.getRuntime().halt(2);
+		}
+		closed.get();
+		closer.join();
+	}
+
+	private static boolean waitingForEstimatorCloseLock(Thread thread) {
+		Thread.State state = thread.getState();
+		if (state != Thread.State.WAITING && state != Thread.State.TIMED_WAITING
+				&& state != Thread.State.BLOCKED) {
+			return false;
+		}
+		for (StackTraceElement frame : thread.getStackTrace()) {
+			if (frame.getClassName().equals("java.util.concurrent.locks.ReentrantReadWriteLock$WriteLock")
+					&& (frame.getMethodName().equals("lock") || frame.getMethodName().equals("tryLock"))) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void runNestedReadViewsScenario(Path dataDir) throws Exception {
 		try (Environment env = new Environment(dataDir, 0)) {
 			env.put(0, 32);
@@ -638,12 +731,14 @@ class LmdbPageMappingLifecycleTest {
 		System.out.println("REENTRANT_CALLBACK_PROBE_OK");
 	}
 
-	public static final class SameThreadCloseProbe {
+	public static final class EstimatorCloseProbe {
 
 		public static void main(String[] args) throws Exception {
 			String scenario = args[0];
 			Path dataDir = Path.of(args[1]);
 			switch (scenario) {
+			case "entry-ranks-close", "entry-ranks-empty-database", "entry-ranks-unknown-database", "entry-ranks-empty-keys", "entry-ranks-exception", "entry-ranks-nested-view" -> runEntryRanksCloseScenario(
+					dataDir, scenario);
 			case "active-read-view" -> runActiveReadViewScenario(dataDir, false);
 			case "active-managed-read-view" -> runActiveReadViewScenario(dataDir, true);
 			case "nested-read-views" -> runNestedReadViewsScenario(dataDir);
@@ -659,7 +754,7 @@ class LmdbPageMappingLifecycleTest {
 
 	@Test
 	void sameThreadCloseRejectsNestedReadViewsAndLeavesEstimatorUsable() throws Exception {
-		ProcessResult result = runSameThreadCloseProbe(directory, "nested-read-views");
+		ProcessResult result = runCloseProbe(directory, "nested-read-views");
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("NESTED_READ_VIEWS_PROBE_OK"), result.output);
@@ -668,10 +763,35 @@ class LmdbPageMappingLifecycleTest {
 
 	@Test
 	void sameThreadCloseRejectsReentrantEstimatorCloseFromBothReadPaths() throws Exception {
-		ProcessResult result = runSameThreadCloseProbe(directory, "reentrant-callback");
+		ProcessResult result = runCloseProbe(directory, "reentrant-callback");
 
 		assertEquals(0, result.exitCode, result.output);
 		assertTrue(result.output.contains("REENTRANT_CALLBACK_PROBE_OK"), result.output);
+		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
+	}
+
+	@Test
+	void predicateRankEstimateReleasesSnapshotBeforeCrossThreadClose() throws Exception {
+		ProcessResult result = runCloseProbe(directory, "entry-ranks-close");
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("ENTRY_RANKS_CLOSE_OK"), result.output);
+		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
+	}
+
+	@ParameterizedTest
+	@ValueSource(strings = {
+			"entry-ranks-empty-database",
+			"entry-ranks-unknown-database",
+			"entry-ranks-empty-keys",
+			"entry-ranks-exception",
+			"entry-ranks-nested-view"
+	})
+	void rankVariantsReleaseSnapshotBeforeCrossThreadClose(String scenario) throws Exception {
+		ProcessResult result = runCloseProbe(directory, scenario);
+
+		assertEquals(0, result.exitCode, result.output);
+		assertTrue(result.output.contains("ENTRY_RANKS_CLOSE_OK " + scenario), result.output);
 		assertTrue(result.output.contains("CLOSE_PROBE_OK"), result.output);
 	}
 

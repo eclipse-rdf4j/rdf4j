@@ -160,9 +160,13 @@ class LmdbStartupNamespaceGrowthTest {
 
 	private static StoreMapSizes createLegacyNativeStore(Path dataDir, LmdbStoreConfig config) throws Exception {
 		Files.createDirectories(dataDir);
-		ValueStore valueStore = new ValueStore(dataDir.resolve("values").toFile(), config);
+		StoreProperties properties = new StoreProperties(dataDir.toFile()).setVersion("2");
+		LmdbStoreFormat format = LmdbStoreFormat.fromProperties(properties, config);
+		ValueStore valueStore = new ValueStore(dataDir.resolve("values").toFile(), properties, config,
+				false, null, format, false);
 		try {
-			try (TripleStore tripleStore = new TripleStore(dataDir.resolve("triples").toFile(), config, valueStore)) {
+			try (TripleStore tripleStore = new TripleStore(dataDir.resolve("triples").toFile(), properties, config,
+					valueStore)) {
 				assertNull(tripleStore.readNamespaceSnapshot(),
 						"the legacy fixture must have no authoritative namespace snapshot marker");
 				return new StoreMapSizes(tripleStore.mapSizeBytes(), valueStore.mapSizeBytes());

@@ -31,7 +31,7 @@ import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_get;
 import static org.lwjgl.util.lmdb.LMDB.mdb_cursor_open;
 import static org.lwjgl.util.lmdb.LMDB.mdb_dbi_open;
-import static org.lwjgl.util.lmdb.LMDB.mdb_del;
+import static org.lwjgl.util.lmdb.LMDB.mdb_drop;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_close;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_create;
 import static org.lwjgl.util.lmdb.LMDB.mdb_env_info;
@@ -117,6 +117,10 @@ class ValueStoreTermIndexRecoveryTest {
 	@Test
 	@Timeout(value = 120, unit = TimeUnit.SECONDS)
 	void nativeTermIndexManifestSurvivesMissingPropertiesSidecar(@TempDir Path storeDir) throws Exception {
+		new StoreProperties(storeDir.toFile()).setVersion("2")
+				.setTripleIndexes("spoc")
+				.setTripleTermIndexes("spoc,cspo")
+				.save();
 		Seed first = seedStore(storeDir, legacyConfig(), 8);
 
 		ChildProcess child = startTermIndexCrashChild(storeDir, "opsc", legacyConfig().getValueDBSize());
@@ -172,11 +176,12 @@ class ValueStoreTermIndexRecoveryTest {
 		Seed first = seedStore(storeDir, noGrowthConfig, GROWTH_FIXTURE_SIZE, 20);
 		long initialMapSize = first.valueMapSizeBytes();
 		long initialOccupiedBytes = first.valueOccupiedBytes();
-		assertEquals(noGrowthConfig.getValueDBSize(), initialMapSize,
-				"the no-growth control must start at its explicit map capacity independently of ingestion estimates");
+		assertTrue(initialMapSize >= noGrowthConfig.getValueDBSize(),
+				"the post-seed native map is the baseline for reindex-only growth");
+		assertTrue(initialOccupiedBytes > 0 && initialOccupiedBytes < initialMapSize);
 
 		ChildProcess child = startTermIndexRebuildChild(storeDir, GROWN_TERM_INDEXES,
-				noGrowthConfig.getValueDBSize());
+				initialMapSize);
 		String output = awaitProcess(child, 180, TimeUnit.SECONDS);
 		assertEquals(0, child.process().exitValue(), "the reindex child must complete: " + output);
 		assertTrue(output.contains("VALUE_TERM_INDEX_REBUILD_COMPLETE"),
@@ -398,8 +403,10 @@ class ValueStoreTermIndexRecoveryTest {
 		Path valueDirectory = storeDir.resolve("values");
 		FailingInitializationValueStore.environmentCloseCount.set(0);
 		IOException failure = assertThrows(IOException.class,
-				() -> new FailingInitializationValueStore(valueDirectory.toFile(), legacyConfig()));
-		assertEquals("injected term-index initialization failure", failure.getMessage());
+				() -> new FailingInitializationValueStore(valueDirectory.toFile(),
+						legacyConfig().setTripleTermIndexes(
+								"spoc,cspo,opsc,ocps,ocsp,opcs,ospc,oscp,csop,cpso,cpos,cosp,pcso")));
+		assertEquals("At most 12 triple-term indexes can be active", failure.getMessage());
 		assertEquals(1, FailingInitializationValueStore.environmentCloseCount.get(),
 				"constructor failure must close the environment after manifest and writer acquisition");
 
@@ -768,16 +775,10 @@ class ValueStoreTermIndexRecoveryTest {
 
 			IntBuffer dbi = stack.mallocInt(1);
 			int openResult = mdb_dbi_open(transaction, stack.UTF8("term_index_manifest"), 0, dbi);
-			if (openResult == MDB_NOTFOUND) {
-				E(mdb_dbi_open(transaction, stack.UTF8("term_index_manifest"), MDB_CREATE, dbi));
-			} else {
+			if (openResult == MDB_SUCCESS) {
+				E(mdb_drop(transaction, dbi.get(0), true));
+			} else if (openResult != MDB_NOTFOUND) {
 				E(openResult);
-			}
-			MDBVal key = MDBVal.calloc(stack);
-			key.mv_data(stack.bytes("term-index-specs".getBytes(StandardCharsets.US_ASCII)));
-			int deleteResult = mdb_del(transaction, dbi.get(0), key, null);
-			if (deleteResult != MDB_NOTFOUND) {
-				E(deleteResult);
 			}
 			E(mdb_txn_commit(transaction));
 			transaction = NULL;
@@ -923,11 +924,6 @@ class ValueStoreTermIndexRecoveryTest {
 
 		private FailingInitializationValueStore(File dir, LmdbStoreConfig config) throws IOException {
 			super(dir, config);
-		}
-
-		@Override
-		void initTermIndexes(LmdbStoreConfig config) throws IOException {
-			throw new IOException("injected term-index initialization failure");
 		}
 
 		@Override

@@ -28,7 +28,11 @@ final class ValueResolutionScope implements SailClosable {
 	private final ValueStore store;
 	private final Object lifetime = new Object();
 	private final ConcurrentHashMap<Thread, ReaderLease> readers = new ConcurrentHashMap<>();
-	private final ConcurrentHashMap<ValueStoreRevision.Lazy, ValueStoreRevision.Lazy> revisions = new ConcurrentHashMap<>();
+
+	private record RevisionKey(ValueStoreRevision.Lazy epoch, int positionMask) {
+	}
+
+	private final ConcurrentHashMap<RevisionKey, ValueStoreRevision.Lazy> revisions = new ConcurrentHashMap<>();
 	private volatile ValueStore.ValueEpoch anchor;
 	private ValueStore.EpochReservation epochReservation;
 	private volatile boolean closed;
@@ -72,7 +76,8 @@ final class ValueResolutionScope implements SailClosable {
 			// Already the unique scoped wrapper of its epoch in this scope; skip the keyed lookup.
 			return epoch;
 		}
-		ValueStoreRevision.Lazy cached = revisions.get(epoch.epoch());
+		RevisionKey key = new RevisionKey(epoch.epoch(), epoch.getPositionMask());
+		ValueStoreRevision.Lazy cached = revisions.get(key);
 		if (cached != null || closed) {
 			return closed ? epoch : cached;
 		}
@@ -90,7 +95,7 @@ final class ValueResolutionScope implements SailClosable {
 				epochReservation = earlier;
 				previous.close();
 			}
-			return revisions.computeIfAbsent(raw, ignored -> new ValueStoreRevision.Lazy(raw, this));
+			return revisions.computeIfAbsent(key, ignored -> new ValueStoreRevision.Lazy(epoch, this));
 		}
 	}
 

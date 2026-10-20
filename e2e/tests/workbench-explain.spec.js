@@ -18,38 +18,50 @@ const EVIDENCE_DIRECTORY = process.env.WORKBENCH_EXPLAIN_EVIDENCE || '';
 // server's REST API.
 const REPOSITORY_ID = uniqueRepositoryId('workbench-explain');
 const QUERY_URL = repositoryPageUrl(REPOSITORY_ID, 'query');
+// A second LMDB repository with the native query engine opted in, so Executed explanations show the native plan.
+const NATIVE_REPOSITORY_ID = uniqueRepositoryId('workbench-explain-native');
+const NATIVE_QUERY_URL = repositoryPageUrl(NATIVE_REPOSITORY_ID, 'query');
 const JOIN_QUERY = `select ?b where {
   ?a ?b ?c.
   ?c ?d ?f.
 }`;
 
-test.beforeAll(async ({ request }) => {
-    const repositoryUrl = `${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}`;
-    const created = await request.put(repositoryUrl, {
-        headers: { 'Content-Type': 'text/turtle' },
-        data: `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
-@prefix config: <tag:rdf4j.org,2023:config/>.
-@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#>.
-[] a config:Repository ; config:rep.id "${REPOSITORY_ID}" ; rdfs:label "Workbench explain LMDB fixture" ;
-   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
-      config:sail.impl [ config:sail.type "rdf4j:LmdbStore" ; lmdb:tripleIndexes "spoc,posc,ospc" ] ].`
-    });
-    expect([200, 201, 204]).toContain(created.status());
-    const loaded = await request.post(`${repositoryUrl}/statements`, {
-        headers: { 'Content-Type': 'application/n-triples' },
-        data: `<urn:a1> <urn:b1> <urn:c1> .
+const CHAIN_DATA = `<urn:a1> <urn:b1> <urn:c1> .
 <urn:c1> <urn:d1> <urn:f1> .
 <urn:a2> <urn:b2> <urn:c2> .
 <urn:c2> <urn:d2> <urn:f2> .
 <urn:a3> <urn:b3> <urn:c3> .
 <urn:c3> <urn:d3> <urn:f3> .
-`
+`;
+
+async function createChainRepository(request, repositoryId, label, nativeEvaluationEnabled) {
+    const repositoryUrl = `${serverBaseUrl()}/repositories/${encodeURIComponent(repositoryId)}`;
+    const created = await request.put(repositoryUrl, {
+        headers: { 'Content-Type': 'text/turtle' },
+        data: `@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#>.
+@prefix config: <tag:rdf4j.org,2023:config/>.
+@prefix lmdb: <http://rdf4j.org/config/sail/lmdb#>.
+[] a config:Repository ; config:rep.id "${repositoryId}" ; rdfs:label "${label}" ;
+   config:rep.impl [ config:rep.type "openrdf:SailRepository" ;
+      config:sail.impl [ config:sail.type "rdf4j:LmdbStore" ; lmdb:tripleIndexes "spoc,posc,ospc" ;
+         lmdb:nativeEvaluationEnabled ${nativeEvaluationEnabled ? 'true' : 'false'} ] ].`
+    });
+    expect([200, 201, 204]).toContain(created.status());
+    const loaded = await request.post(`${repositoryUrl}/statements`, {
+        headers: { 'Content-Type': 'application/n-triples' },
+        data: CHAIN_DATA
     });
     expect([200, 204]).toContain(loaded.status());
+}
+
+test.beforeAll(async ({ request }) => {
+    await createChainRepository(request, REPOSITORY_ID, 'Workbench explain LMDB fixture', false);
+    await createChainRepository(request, NATIVE_REPOSITORY_ID, 'Workbench explain LMDB native fixture', true);
 });
 
 test.afterAll(async ({ request }) => {
     await deleteRepository(request, serverBaseUrl(), REPOSITORY_ID);
+    await deleteRepository(request, serverBaseUrl(), NATIVE_REPOSITORY_ID);
 });
 
 test.beforeEach(async ({ page }) => {
@@ -91,6 +103,33 @@ test('Executed explanation hides telemetry stability stats for LMDB queries', as
     const explanation = await page.locator('#query-explanation').textContent();
 
     await expect(explanation).toContain('StatementPattern [index: spoc]');
+    await expect(explanation).not.toContain('sampleCountActual=');
+    await expect(explanation).not.toContain('varianceActual=');
+    await expect(explanation).not.toContain('stddevActual=');
+    await expect(explanation).not.toContain('confidenceScoreActual=');
+});
+
+test('Executed explanation shows the LMDB native physical plan when native evaluation is enabled', async ({ page }) => {
+    await page.goto(NATIVE_QUERY_URL);
+    await page.waitForSelector('.CodeMirror');
+    await setPrimaryQuery(page, JOIN_QUERY);
+
+    await page.locator('#explain-trigger').click();
+    await waitForExplanation(page);
+    const initialExplanation = await page.locator('#query-explanation').textContent();
+
+    await page.locator('#explain-level').selectOption('Executed');
+    await page.locator('#explain-trigger').click();
+    await page.waitForFunction(previousExplanation => {
+        const explanation = document.getElementById('query-explanation');
+        const text = explanation && explanation.textContent.trim();
+        return text && text.length > 0 && text !== previousExplanation;
+    }, initialExplanation && initialExplanation.trim());
+
+    const explanation = await page.locator('#query-explanation').textContent();
+
+    await expect(explanation).toContain('LMDB native physical plan (planned)');
+    await expect(explanation).toContain('plannedExecutionEngine=lmdb-native');
     await expect(explanation).not.toContain('sampleCountActual=');
     await expect(explanation).not.toContain('varianceActual=');
     await expect(explanation).not.toContain('stddevActual=');
