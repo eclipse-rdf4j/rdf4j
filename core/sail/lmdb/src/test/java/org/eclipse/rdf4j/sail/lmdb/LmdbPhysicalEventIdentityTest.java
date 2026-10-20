@@ -358,6 +358,9 @@ class LmdbPhysicalEventIdentityTest {
 		assertEquals(1L, posterior.exactEvidenceCount());
 		assertEquals(0.0d, posterior.mean(), 0.0d);
 		assertEquals(0, feedback.physicalInventory().independentCells());
+		LmdbPhysicalSidecarTestSupport.Inventory inventory = LmdbPhysicalSidecarTestSupport.read(estimator);
+		assertEquals(24, inventory.schema());
+		assertEquals(0, inventory.independentCells(), "the genuine v24 fixture has no independent physical cell");
 		assertArrayEquals(fixture.raw, Files.readAllBytes(sidecar), "readback cannot rewrite the genuine fixture");
 	}
 

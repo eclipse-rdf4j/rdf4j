@@ -12,6 +12,7 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Path;
@@ -20,6 +21,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
@@ -29,8 +31,24 @@ import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BinaryTupleOperator;
+import org.eclipse.rdf4j.query.algebra.Distinct;
+import org.eclipse.rdf4j.query.algebra.EmptySet;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Extension;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Group;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.Order;
+import org.eclipse.rdf4j.query.algebra.Projection;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.QueryRoot;
+import org.eclipse.rdf4j.query.algebra.Reduced;
+import org.eclipse.rdf4j.query.algebra.Slice;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackDescriptor;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
@@ -300,17 +318,60 @@ class LmdbFrontierThemeCoverageIT {
 		int failureCount = coverageFailures.size();
 		FrontierClassification classification = classify(expression, coverageFailures,
 				theme.name() + " q" + queryIndex);
-		if (classification.supported == 0 && classification.degraded == 0) {
+		if (classification.supported == 0 && classification.degraded == 0 && classification.notApplicable == 0) {
 			coverageFailures.add(theme + " q" + queryIndex
-					+ " published neither theorem-safe Frontier evidence nor an explicit fallback\n" + expression);
+					+ " published neither theorem-safe Frontier evidence nor an explicit fallback\n"
+					+ coverageDiagnostics(expression));
 		} else if (coverageFailures.size() != failureCount) {
-			coverageFailures.add(theme + " q" + queryIndex + " optimized plan:\n" + expression);
+			coverageFailures.add(
+					theme + " q" + queryIndex + " optimized authority inventory:\n" + coverageDiagnostics(expression));
 		}
+	}
+
+	/** Read the actual owned annotations; the algebra debug printer omits this optimizer/status family. */
+	private static String coverageDiagnostics(TupleExpr expression) {
+		List<String> rows = new ArrayList<>();
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr tuple) {
+					StringBuilder row = new StringBuilder(node.getClass().getSimpleName());
+					QueryModelNode parent = node.getParentNode();
+					row.append(" parent=").append(parent == null ? "none" : parent.getClass().getSimpleName());
+					for (String key : List.of("plannedEstimateSource", "plannedFrontierStatus",
+							"plannedFrontierDisposition", "plannedFrontierFallbackReason", "plannedFrontierGuarantee",
+							"optimizer.frontierSessionFallbackDisposition", "optimizer.frontierSessionFallbackReason",
+							"optimizer.frontierMappedSessionDisposition",
+							"optimizer.frontierMappedSessionRefusalReason",
+							"optimizer.frontierSemanticPopulation", "optimizer.frontierSemanticPopulationReason",
+							"optimizer.cascadesApplied", "optimizer.cascadesFallback",
+							"optimizer.cascadesFallbackReason",
+							"optimizer.cascadesMode", "optimizer.cascadesCompleteness", "optimizer.cascadesLimitCauses",
+							"optimizer.connectedEnumeration", "optimizer.datasetRestricted",
+							"plannedFeedbackPublication")) {
+						row.append(' ').append(key).append('=').append(node.getStringMetricPlanned(key));
+					}
+					for (String key : List.of("plannedFrontierStateId", "plannedFrontierGenerationId",
+							"optimizer.frontierMappedSessionGenerationId")) {
+						row.append(' ').append(key).append('=').append(node.getDoubleMetricPlanned(key));
+					}
+					RuntimeFeedbackContract contract = tuple.getRuntimeFeedbackContract();
+					row.append(" feedback=")
+							.append(contract == null ? "none" : contract.descriptor().getClass().getName())
+							.append(" admissionFlags=")
+							.append(contract == null ? "none" : contract.admissionFlags());
+					rows.add(row.toString());
+				}
+				node.visitChildren(this);
+			}
+		});
+		return String.join("\n", rows);
 	}
 
 	private static FrontierClassification classify(TupleExpr expression, List<String> coverageFailures,
 			String queryKey) {
 		FrontierClassification classification = new FrontierClassification();
+		int failuresBefore = coverageFailures.size();
 		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
 			@Override
 			protected void meetNode(QueryModelNode node) {
@@ -320,12 +381,83 @@ class LmdbFrontierThemeCoverageIT {
 				node.visitChildren(this);
 			}
 		});
+		if (classification.supported == 0 && classification.degraded == 0
+				&& coverageFailures.size() == failuresBefore && isCanonicalStorageFreeEmptyPlan(expression)) {
+			classification.notApplicable = 1;
+		}
 		return classification;
+	}
+
+	/** Only a known unary algebra chain ending in EmptySet has no native estimation opportunity. */
+	private static boolean isCanonicalStorageFreeEmptyPlan(TupleExpr expression) {
+		Set<Class<?>> allowed = Set.of(QueryRoot.class, Projection.class, Extension.class, Group.class,
+				Filter.class, Order.class, Slice.class, Distinct.class, Reduced.class, EmptySet.class);
+		boolean[] empty = { false };
+		boolean[] known = { true };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr) {
+					known[0] &= allowed.contains(node.getClass());
+					empty[0] |= node instanceof EmptySet;
+				}
+				node.visitChildren(this);
+			}
+		});
+		return known[0] && empty[0];
+	}
+
+	@Test
+	void canonicalEmptyPlanHasNoNativeOpportunityButStorageAndInvalidAuthorityStillFail() {
+		List<String> failures = new ArrayList<>();
+		FrontierClassification empty = classify(new QueryRoot(new Group(new EmptySet())), failures, "empty control");
+		assertEquals(1, empty.notApplicable);
+		assertEquals(0, empty.supported);
+		assertEquals(0, empty.degraded);
+		assertTrue(failures.isEmpty());
+		StatementPattern storage = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		assertEquals(0, classify(storage, failures, "unclassified storage control").notApplicable);
+		assertEquals(0,
+				classify(new Join(new EmptySet(), storage), failures, "storage descendant control").notApplicable);
+		assertEquals(0, classify(new Filter(new EmptySet(), new Exists(storage.clone())), failures,
+				"scalar subquery storage control").notApplicable);
+		assertEquals(0, classify(new EmptySet() {
+		}, failures, "unknown subclass control").notApplicable);
+		EmptySet invalid = new EmptySet();
+		invalid.setStringMetricPlanned("plannedFrontierStatus", "unrecognized");
+		assertEquals(0, classify(invalid, failures, "invalid authority on empty control").notApplicable);
+		assertFalse(failures.isEmpty());
 	}
 
 	private static void classifyNode(QueryModelNode node, FrontierClassification classification,
 			List<String> coverageFailures, String queryKey) {
 		String status = node.getStringMetricPlanned("plannedFrontierStatus");
+		String mappedDisposition = node.getStringMetricPlanned("optimizer.frontierMappedSessionDisposition");
+		if (mappedDisposition != null) {
+			RuntimeFeedbackContract contract = node instanceof TupleExpr tuple ? tuple.getRuntimeFeedbackContract()
+					: null;
+			double generation = node.getDoubleMetricPlanned("optimizer.frontierMappedSessionGenerationId");
+			int nonPopulationFlags = RuntimeFeedbackContract.ADMIT_PHYSICAL | RuntimeFeedbackContract.ORIGIN_CERTIFIED;
+			boolean refused = "population-refused".equals(mappedDisposition)
+					&& "logical_population_not_admitted"
+							.equals(node.getStringMetricPlanned("optimizer.frontierMappedSessionRefusalReason"))
+					&& Double.isFinite(generation) && generation > 0.0d
+					&& "unavailable".equals(node.getStringMetricPlanned("optimizer.frontierSemanticPopulation"))
+					&& node.getStringMetricPlanned("optimizer.frontierLogicalGroupKey") == null
+					&& contract != null && (contract.admissionFlags() & ~nonPopulationFlags) == 0;
+			if (!refused) {
+				coverageFailures.add(queryKey + " has an invalid owned mapped-population refusal");
+			} else if (status == null) {
+				classification.degraded++;
+			}
+		}
+		if ("scalar-session".equals(node.getStringMetricPlanned("optimizer.frontierSessionFallbackDisposition"))) {
+			classification.degraded++;
+			String reason = node.getStringMetricPlanned("optimizer.frontierSessionFallbackReason");
+			if (reason == null || reason.isBlank() || "none".equals(reason)) {
+				coverageFailures.add(queryKey + " scalar session has no stable refusal reason");
+			}
+		}
 		if (status == null) {
 			return;
 		}
@@ -339,6 +471,29 @@ class LmdbFrontierThemeCoverageIT {
 				+ childStateSummary(node) + "]";
 		switch (status) {
 		case "ready":
+			if ("mapped_statistics".equals(node.getStringMetricPlanned("plannedFrontierDisposition"))
+					&& node.getDoubleMetricPlanned("plannedFrontierStateId") <= 0.0d) {
+				classification.degraded++;
+				RuntimeFeedbackContract contract = node instanceof TupleExpr expression
+						? expression.getRuntimeFeedbackContract()
+						: null;
+				boolean mappedRefusal = "scalar_fallback"
+						.equals(node.getStringMetricPlanned("plannedFrontierGuarantee"))
+						&& "unavailable".equals(node.getStringMetricPlanned("optimizer.frontierSemanticPopulation"))
+						&& node.getDoubleMetricPlanned("plannedFrontierGenerationId") > 0.0d
+						&& "none".equals(node.getStringMetricPlanned("plannedFrontierFallbackReason"))
+						&& contract != null
+						&& node.getStringMetricPlanned("plannedEstimateSource") != null
+						&& node.getStringMetricPlanned("plannedEstimateSource").startsWith("frontier-v2-")
+						&& node.getStringMetricPlanned("optimizer.frontierLogicalGroupKey") == null
+						&& !contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL)
+						&& !contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE);
+				if (!mappedRefusal) {
+					coverageFailures.add(nodeKey
+							+ " has neither a population state nor an explicit typed mapped-statistics refusal");
+				}
+				break;
+			}
 			classification.supported++;
 			String guarantee = node.getStringMetricPlanned("plannedFrontierGuarantee");
 			if (guarantee == null || guarantee.isBlank() || "unresolved".equals(guarantee)) {
@@ -386,10 +541,133 @@ class LmdbFrontierThemeCoverageIT {
 				+ binary.getRightArg().getDoubleMetricPlanned("plannedFrontierStateId");
 	}
 
+	@Test
+	void classifierSeparatesMappedStatisticsFromPopulationAuthority() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		pattern.setStringMetricPlanned("plannedFrontierStatus", "ready");
+		pattern.setStringMetricPlanned("plannedFrontierDisposition", "mapped_statistics");
+		pattern.setStringMetricPlanned("plannedEstimateSource", "frontier-v2-omni");
+		pattern.setStringMetricPlanned("plannedFrontierGuarantee", "scalar_fallback");
+		pattern.setStringMetricPlanned("optimizer.frontierSemanticPopulation", "unavailable");
+		pattern.setStringMetricPlanned("plannedFrontierFallbackReason", "none");
+		pattern.setDoubleMetricPlanned("plannedFrontierGenerationId", 1.0d);
+		pattern.setRuntimeFeedbackContract(classifierContract(RuntimeFeedbackContract.ADMIT_PHYSICAL));
+		List<String> failures = new ArrayList<>();
+		FrontierClassification classification = classify(pattern, failures, "physical-only control");
+		assertTrue(failures.isEmpty(), () -> String.join("\n", failures));
+		assertEquals(0, classification.supported);
+		assertEquals(1, classification.degraded);
+		pattern.setRuntimeFeedbackContract(classifierContract(0));
+		failures.clear();
+		assertEquals(1, classify(pattern, failures, "telemetry-only refusal control").degraded);
+		assertTrue(failures.isEmpty(), "Unknown resource axes can remain telemetry-only after population refusal");
+
+		pattern.setRuntimeFeedbackContract(classifierContract(RuntimeFeedbackContract.ADMIT_PHYSICAL
+				| RuntimeFeedbackContract.ADMIT_LOGICAL));
+		failures.clear();
+		classify(pattern, failures, "invalid population authority control");
+		assertFalse(failures.isEmpty(), "An unavailable population cannot acquire logical authority");
+	}
+
+	@Test
+	void classifierRequiresPopulationStateOrExplicitSessionRefusal() {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		pattern.setStringMetricPlanned("plannedFrontierStatus", "ready");
+		pattern.setStringMetricPlanned("plannedFrontierGuarantee", "database_exact");
+		pattern.setDoubleMetricPlanned("plannedFrontierStateId", 1.0d);
+		List<String> failures = new ArrayList<>();
+		assertEquals(1, classify(pattern, failures, "owned state control").supported);
+		assertTrue(failures.isEmpty());
+		pattern.setDoubleMetricPlanned("plannedFrontierStateId", 0.0d);
+		classify(pattern, failures, "missing state control");
+		assertFalse(failures.isEmpty(), "A ready population estimate still needs its own retained state");
+
+		StatementPattern scalar = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		scalar.setStringMetricPlanned("optimizer.frontierSessionFallbackDisposition", "scalar-session");
+		scalar.setStringMetricPlanned("optimizer.frontierSessionFallbackReason", "unsupported_query_shape");
+		failures.clear();
+		assertEquals(1, classify(scalar, failures, "explicit refusal control").degraded);
+		assertTrue(failures.isEmpty());
+		scalar.setStringMetricPlanned("optimizer.frontierSessionFallbackReason", "none");
+		classify(scalar, failures, "unclassified refusal control");
+		assertFalse(failures.isEmpty(), "A scalar session cannot conceal why authoritative evidence was refused");
+	}
+
+	@Test
+	void classifierRequiresAnOwnedMappedPopulationRefusalAndRejectsAuthorityContradictions() {
+		for (int flags : List.of(0, RuntimeFeedbackContract.ADMIT_PHYSICAL, RuntimeFeedbackContract.ORIGIN_CERTIFIED,
+				RuntimeFeedbackContract.ADMIT_PHYSICAL | RuntimeFeedbackContract.ORIGIN_CERTIFIED)) {
+			StatementPattern refused = mappedPopulationRefusalControl(flags);
+			List<String> failures = new ArrayList<>();
+			FrontierClassification classification = classify(refused, failures, "owned mapped refusal control");
+			assertEquals(0, classification.supported);
+			assertEquals(1, classification.degraded);
+			assertEquals(0, classification.notApplicable);
+			assertTrue(failures.isEmpty(), () -> String.join("\n", failures));
+		}
+		List<String> failures = new ArrayList<>();
+		StatementPattern missing = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		missing.setStringMetricPlanned("optimizer.frontierSemanticPopulation", "unavailable");
+		missing.setRuntimeFeedbackContract(classifierContract(0));
+		FrontierClassification unclassified = classify(missing, failures, "absence is not refusal control");
+		assertEquals(0, unclassified.supported + unclassified.degraded + unclassified.notApplicable);
+		for (int forbidden : List.of(RuntimeFeedbackContract.ADMIT_LOGICAL, RuntimeFeedbackContract.ADMIT_FILTER,
+				RuntimeFeedbackContract.ADMIT_SEMI_ANTI, RuntimeFeedbackContract.ADMIT_LIFECYCLE,
+				RuntimeFeedbackContract.DATABASE_EXACT, RuntimeFeedbackContract.EXACT_FACT_ELIGIBLE,
+				Integer.MIN_VALUE)) {
+			failures.clear();
+			classify(mappedPopulationRefusalControl(forbidden), failures, "contradictory authority control");
+			assertFalse(failures.isEmpty());
+		}
+		for (String invalid : List.of("generation", "nonfinite-generation", "disposition", "reason", "population",
+				"logical-key", "contract", "status")) {
+			StatementPattern refused = mappedPopulationRefusalControl(0);
+			switch (invalid) {
+			case "generation" -> refused.setDoubleMetricPlanned("optimizer.frontierMappedSessionGenerationId", 0.0d);
+			case "nonfinite-generation" -> refused.setDoubleMetricPlanned("optimizer.frontierMappedSessionGenerationId",
+					Double.NaN);
+			case "disposition" -> refused.setStringMetricPlanned("optimizer.frontierMappedSessionDisposition",
+					"unrecognized");
+			case "reason" -> refused.setStringMetricPlanned("optimizer.frontierMappedSessionRefusalReason", "none");
+			case "population" -> refused.setStringMetricPlanned("optimizer.frontierSemanticPopulation", "qualified");
+			case "logical-key" -> refused.setStringMetricPlanned("optimizer.frontierLogicalGroupKey", "forged");
+			case "contract" -> refused.setRuntimeFeedbackContract(null);
+			case "status" -> refused.setStringMetricPlanned("plannedFrontierStatus", "unrecognized");
+			}
+			failures.clear();
+			classify(refused, failures, "invalid mapped refusal " + invalid);
+			assertFalse(failures.isEmpty());
+		}
+	}
+
+	private static StatementPattern mappedPopulationRefusalControl(int flags) {
+		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		pattern.setStringMetricPlanned("optimizer.frontierMappedSessionDisposition", "population-refused");
+		pattern.setStringMetricPlanned("optimizer.frontierMappedSessionRefusalReason",
+				"logical_population_not_admitted");
+		pattern.setDoubleMetricPlanned("optimizer.frontierMappedSessionGenerationId", 17.0d);
+		pattern.setStringMetricPlanned("optimizer.frontierSemanticPopulation", "unavailable");
+		pattern.setRuntimeFeedbackContract(classifierContract(flags));
+		return pattern;
+	}
+
+	private static RuntimeFeedbackContract classifierContract(int flags) {
+		return new RuntimeFeedbackContract(ClassifierDescriptor.INSTANCE,
+				RuntimeFeedbackContract.PredictionVector.UNKNOWN, RuntimeFeedbackContract.PredictionVector.UNKNOWN,
+				1.0d, 1.0d, 1.0d, Double.POSITIVE_INFINITY, RuntimeFeedbackContract.SemanticKind.ORDINARY,
+				RuntimeFeedbackContract.Algorithm.SCAN, RuntimeFeedbackContract.Access.PREFIX_SCAN,
+				0, 1L, 1L, 1L, flags);
+	}
+
+	private enum ClassifierDescriptor implements RuntimeFeedbackDescriptor {
+		INSTANCE
+	}
+
 	private static final class FrontierClassification {
 
 		private int supported;
 		private int degraded;
+		private int notApplicable;
 	}
 
 	private record ResultBag(Map<ResultRow, Long> rows) {

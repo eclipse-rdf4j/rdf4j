@@ -20,6 +20,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockingDetails;
@@ -110,9 +111,70 @@ class LmdbPackedCostModelV2SessionTest {
 			}
 			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
 					.openSession(call.query())) {
-				assertEquals("ScalarPackedCostSession", session.getClass().getSimpleName());
+				assertFalse(session.supportsPhysicalJoinRefinement(),
+						"graph-domain refusal must retain the conventional scalar session contract");
+				PackedCostEstimate declined = new PackedCostEstimate();
+				session.estimateLeaf(call.inputRelationId(), call.emptyContext(), declined);
+				assertEquals("scalar-session",
+						declined.plannedStringMetric("optimizer.frontierSessionFallbackDisposition"));
+				assertEquals("unsupported_query_shape",
+						declined.plannedStringMetric("optimizer.frontierSessionFallbackReason"));
+				assertEquals(0, declined.evidenceStateId(), "a refusal must not manufacture a population state");
 			}
 			verify(statistics, never()).openCurrentView();
+		}
+	}
+
+	@Test
+	void mappedPopulationRefusalKeepsOwnedSessionProvenanceWithoutMintingAuthority() {
+		for (boolean ready : List.of(false, true)) {
+			for (long generation : List.of(0L, 17L)) {
+				LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+				FrontierStatisticsView view = mock(FrontierStatisticsView.class);
+				when(view.ready()).thenReturn(ready);
+				when(view.generationId()).thenReturn(generation);
+				StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+				PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
+						new Filter(pattern, new ValueConstant(VF.createLiteral(true))));
+				PackedCostSession delegate = new PackedCostSession() {
+					@Override
+					public void estimateLeaf(int relation, PackedCostContext context, PackedCostEstimate output) {
+						output.setComponentRows(7.0d, 11.0d);
+					}
+
+					@Override
+					public void appendFactor(int relation, PackedCostContext context, PackedCostEstimate output) {
+					}
+
+					@Override
+					public void refineOperator(int relation, PackedCostContext context, PackedCostEstimate output) {
+					}
+				};
+				try (PackedCostSession session = new LmdbFrontierStatisticsCostSession(delegate,
+						mock(LmdbPackedCostModel.class), view, call.query(), runtime, true)) {
+					PackedCostEstimate output = new PackedCostEstimate();
+					session.estimateLeaf(call.inputRelationId(), call.emptyContext(), output);
+					assertEquals(7.0d, output.outputRows());
+					assertEquals(11.0d, output.workRows());
+					assertEquals("unavailable", output.plannedStringMetric("optimizer.frontierSemanticPopulation"));
+					assertNotNull(output.runtimeFeedbackContract());
+					assertEquals(0, output.runtimeFeedbackContract().admissionFlags()
+							& ~(RuntimeFeedbackContract.ADMIT_PHYSICAL | RuntimeFeedbackContract.ORIGIN_CERTIFIED));
+					assertEquals(0,
+							session.detachEvidence(new int[] { output.evidenceStateId() }).requestedStateOrdinal(0));
+					if (ready && generation > 0L) {
+						assertEquals("population-refused",
+								output.plannedStringMetric("optimizer.frontierMappedSessionDisposition"));
+						assertEquals("logical_population_not_admitted",
+								output.plannedStringMetric("optimizer.frontierMappedSessionRefusalReason"));
+						assertEquals((double) generation,
+								output.plannedDoubleMetric("optimizer.frontierMappedSessionGenerationId", -1.0d), 0.0d);
+					} else {
+						assertEquals(null, output.plannedStringMetric("optimizer.frontierMappedSessionDisposition"));
+					}
+				}
+				verify(view).close();
+			}
 		}
 	}
 
@@ -203,6 +265,10 @@ class LmdbPackedCostModelV2SessionTest {
 					"a query-ready V2 estimate must remain observable by the learned estimator");
 			assertTrue(leaf.runtimeFeedbackContract().descriptor() instanceof LmdbRuntimeFeedbackDescriptor,
 					"mapped estimates must publish the same typed contract as legacy Frontier estimates");
+			assertTrue(leaf.runtimeFeedbackContract().admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+			assertEquals("qualified", leaf.plannedStringMetric("optimizer.frontierSemanticPopulation"));
+			assertEquals(null, leaf.plannedStringMetric("optimizer.frontierMappedSessionDisposition"),
+					"a qualified population must not retain a refusal from another event");
 			assertEquals(LmdbFrontierStatisticsCostSession.class, session.getClass(),
 					"typed feedback must not reopen the legacy payload/query-index session");
 		}
@@ -1108,7 +1174,85 @@ class LmdbPackedCostModelV2SessionTest {
 	}
 
 	@Test
+	void offAndShadowKeepScalarCostsWithoutOpeningStatisticsViews() {
+		for (FrontierEstimatorMode mode : List.of(FrontierEstimatorMode.OFF, FrontierEstimatorMode.SHADOW)) {
+			LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+			LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
+			when(runtime.statisticsService()).thenReturn(statistics);
+			when(runtime.frontierSettings()).thenReturn(LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+					.setFrontierEstimatorMode(mode)));
+			PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
+					new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+							new ValueConstant(VF.createLiteral(true))));
+			try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
+					.openSession(call.query())) {
+				assertEquals("ScalarPackedCostSession", session.getClass().getSimpleName());
+				PackedCostEstimate retained = new PackedCostEstimate();
+				retained.setRows(3.0d, 7.0d);
+				session.refineIntermediateJoin(call.emptyContext(), retained);
+				assertEquals(3.0d, retained.outputRows(), 0.0d);
+				assertEquals(7.0d, retained.workRows(), 0.0d);
+				assertFalse(retained.hasExplicitPhysicalCost());
+				assertEquals(0, retained.evidenceStateId());
+			}
+			verify(statistics, never()).status();
+			verify(statistics, never()).openCurrentView();
+			verify(statistics, never()).openView(anyLong());
+		}
+	}
+
+	@Test
+	void scalarSessionRetainsTheStatusThatActuallyCausedItsRefusal() {
+		assertCapturedScalarRefusal(FrontierStatisticsAvailability.NO_GENERATION, FrontierFallbackReason.NO_GENERATION,
+				"no_generation");
+		assertCapturedScalarRefusal(FrontierStatisticsAvailability.CLOSED, FrontierFallbackReason.NONE,
+				"availability_closed");
+	}
+
+	private static void assertCapturedScalarRefusal(FrontierStatisticsAvailability availability,
+			FrontierFallbackReason fallback, String expectedReason) {
+		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
+		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
+		FrontierStatisticsStatus unavailable = mock(FrontierStatisticsStatus.class);
+		FrontierStatisticsStatus publishedLater = mock(FrontierStatisticsStatus.class);
+		when(runtime.statisticsService()).thenReturn(statistics);
+		when(runtime.frontierSettings()).thenReturn(LmdbFrontierPlannerSettings.from(new LmdbStoreConfig()
+				.setFrontierEstimatorMode(FrontierEstimatorMode.AUTHORITATIVE)));
+		when(unavailable.availability()).thenReturn(availability);
+		when(unavailable.fallbackReason()).thenReturn(fallback);
+		when(publishedLater.availability()).thenReturn(FrontierStatisticsAvailability.READY);
+		when(publishedLater.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
+		when(statistics.status()).thenReturn(unavailable, publishedLater);
+		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
+				new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+						new ValueConstant(VF.createLiteral(true))));
+		try (PackedCostSession session = new LmdbPackedCostModel(runtime, OptionalLong.empty(), true)
+				.openSession(call.query())) {
+			PackedCostEstimate retained = new PackedCostEstimate();
+			retained.setRows(3.0d, 7.0d);
+			session.refineIntermediateJoin(call.emptyContext(), retained);
+			assertEquals("scalar-session",
+					retained.plannedStringMetric("optimizer.frontierSessionFallbackDisposition"));
+			assertEquals(expectedReason,
+					retained.plannedStringMetric("optimizer.frontierSessionFallbackReason"),
+					"later READY publication cannot rewrite the captured refusal into NONE");
+			assertEquals(3.0d, retained.outputRows(), 0.0d);
+			assertEquals(7.0d, retained.workRows(), 0.0d);
+			assertFalse(retained.hasExplicitPhysicalCost());
+			assertEquals(0, retained.evidenceStateId());
+		}
+		verify(statistics, times(1)).status();
+		verify(statistics, never()).openCurrentView();
+		verify(statistics, never()).openView(anyLong());
+	}
+
+	@Test
 	void mappedV2FallsBackToScalarWhenReadyViewAcquisitionLosesTheGeneration() {
+		assertUnavailableViewRefusal(FrontierFallbackReason.NO_GENERATION, "no_generation");
+		assertUnavailableViewRefusal(FrontierFallbackReason.NONE, "view_not_ready");
+	}
+
+	private static void assertUnavailableViewRefusal(FrontierFallbackReason viewReason, String expectedReason) {
 		LmdbEstimatorRuntime runtime = mock(LmdbEstimatorRuntime.class);
 		LmdbStatisticsService statistics = mock(LmdbStatisticsService.class);
 		FrontierStatisticsStatus status = mock(FrontierStatisticsStatus.class);
@@ -1122,6 +1266,7 @@ class LmdbPackedCostModelV2SessionTest {
 		when(status.fallbackReason()).thenReturn(FrontierFallbackReason.NONE);
 		when(statistics.openCurrentView()).thenReturn(view);
 		when(view.ready()).thenReturn(false);
+		when(view.fallbackReason()).thenReturn(viewReason);
 		StatementPattern pattern = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
 		PackedCostTestSupport.UnaryCostCall call = PackedCostTestSupport.unaryOperator(defaultGraph(),
 				new Filter(pattern,
@@ -1131,6 +1276,16 @@ class LmdbPackedCostModelV2SessionTest {
 				.openSession(call.query())) {
 			assertFalse(session instanceof LmdbFrontierStatisticsCostSession,
 					"an unavailable view must degrade to the conventional scalar estimator");
+			PackedCostEstimate retained = new PackedCostEstimate();
+			retained.setRows(3.0d, 7.0d);
+			session.refineIntermediateJoin(call.emptyContext(), retained);
+			assertEquals("scalar-session",
+					retained.plannedStringMetric("optimizer.frontierSessionFallbackDisposition"));
+			assertEquals(expectedReason,
+					retained.plannedStringMetric("optimizer.frontierSessionFallbackReason"));
+			assertEquals(3.0d, retained.outputRows(), 0.0d);
+			assertEquals(7.0d, retained.workRows(), 0.0d);
+			assertFalse(retained.hasExplicitPhysicalCost(), "classification cannot mint physical axes");
 		}
 
 		verify(view).close();

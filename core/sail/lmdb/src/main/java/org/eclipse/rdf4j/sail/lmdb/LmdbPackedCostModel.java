@@ -21,6 +21,7 @@ import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
@@ -86,6 +87,7 @@ import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierJoinProgram;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafEstimate;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierLeafProbe;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsAvailability;
+import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsStatus;
 import org.eclipse.rdf4j.sail.lmdb.frontier.FrontierStatisticsView;
 import org.eclipse.rdf4j.sail.lmdb.frontier.LmdbStatisticsService;
 
@@ -168,17 +170,26 @@ final class LmdbPackedCostModel
 	public PackedCostSession openSession(PackedQueryView query) {
 		if (!frontierPlanningAllowed || !allNativeGraphDomains(query)
 				|| runtime.frontierSettings().mode() == FrontierEstimatorMode.OFF) {
-			/* Preserve the established scalar planning observation footprint for ineligible transactions. */
-			return PackedCostSession.scalar(this, query);
+			PackedCostSession scalar = PackedCostSession.scalar(this, query);
+			return runtime.frontierSettings().mode() == FrontierEstimatorMode.AUTHORITATIVE
+					? new LmdbFrontierScalarCostSession(scalar, FrontierFallbackReason.UNSUPPORTED_QUERY_SHAPE)
+					: scalar;
 		}
-		if (mappedStatisticsReady()) {
-			LmdbStatisticsService statistics = runtime.statisticsService();
+		LmdbStatisticsService statistics = runtime.statisticsService();
+		// Eligibility and refusal share this immutable observation; a later publication cannot rewrite the decision.
+		FrontierStatisticsStatus decisionStatus = runtime.frontierSettings()
+				.mode() == FrontierEstimatorMode.AUTHORITATIVE
+				&& statistics != null ? statistics.status() : null;
+		if (decisionStatus != null && mappedStatisticsReady(decisionStatus)) {
 			FrontierStatisticsView view = executionSnapshotEpoch.isPresent()
 					? statistics.openView(executionSnapshotEpoch.getAsLong())
 					: statistics.openCurrentView();
 			if (!view.ready()) {
+				FrontierFallbackReason refusal = view.fallbackReason();
+				String reason = refusal == FrontierFallbackReason.NONE ? "view_not_ready"
+						: refusal.name().toLowerCase(Locale.ROOT);
 				view.close();
-				return PackedCostSession.scalar(this, query);
+				return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(this, query), reason);
 			}
 			LmdbPackedCostModel scoped = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 					datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
@@ -190,7 +201,14 @@ final class LmdbPackedCostModel
 		LmdbPackedCostModel conventional = new LmdbPackedCostModel(runtime, executionSnapshotEpoch,
 				datasetUsesStoreDefaults, frontierStatementSource, evaluationStrategy, frontierPlanningAllowed,
 				null, false, query);
-		return PackedCostSession.scalar(conventional, query);
+		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE) {
+			return PackedCostSession.scalar(conventional, query);
+		}
+		String reason = decisionStatus == null ? FrontierFallbackReason.NO_GENERATION.name().toLowerCase(Locale.ROOT)
+				: decisionStatus.fallbackReason() != FrontierFallbackReason.NONE
+						? decisionStatus.fallbackReason().name().toLowerCase(Locale.ROOT)
+						: "availability_" + decisionStatus.availability().name().toLowerCase(Locale.ROOT);
+		return new LmdbFrontierScalarCostSession(PackedCostSession.scalar(conventional, query), reason);
 	}
 
 	private static boolean allNativeGraphDomains(PackedQueryView query) {
@@ -437,6 +455,33 @@ final class LmdbPackedCostModel
 				? FINITE_LOOKUP_SOURCE
 				: transitionRows ? TRANSITION_SOURCE : CARDINALITY_SOURCE;
 		runtime.describePackedAccessPath(accessLookupMask, accessRows, invocations, accessSource, output);
+		if (hasUnboundRepeatedComponents(query, relationId, accessLookupMask)) {
+			int nativePrefixMask = output.lookupComponentMask();
+			int missingMask = output.missingLookupComponentMask();
+			int prefixLength = output.indexPrefixLength();
+			String indexName = output.indexName();
+			String accessMode = output.accessMode();
+			boolean componentRows = output.hasComponentOutputRows();
+			boolean scopedRows = output.hasContextualOutputRows();
+			double nativeRows = nativeStatementAccessRows(query, relationId, context, nativePrefixMask);
+			// Every produced solution must first occur in the scanned native population.
+			accessRows = finiteNonNegative(nativeRows) ? Math.max(accessRows, nativeRows) : Double.NaN;
+			if (!finiteNonNegative(accessRows)) {
+				// A copied event cannot retain old physical axes or an old price when this access is unavailable.
+				output.clear();
+				if (componentRows) {
+					output.setComponentRows(rows, Double.NaN);
+				} else if (scopedRows) {
+					output.setContextualRows(rows, Double.NaN);
+				} else {
+					output.setRows(rows, Double.NaN);
+				}
+			}
+			output.setAccess(nativePrefixMask, missingMask, prefixLength, accessRows, invocations, indexName,
+					accessSource, accessMode);
+			output.putPlannedStringMetric("optimizer.nativeAccessPopulation",
+					finiteNonNegative(accessRows) ? "native-prefix-before-equality" : "unavailable");
+		}
 		setStatementAccessPhysicalCost(output);
 		if (mappedLeaf != null && !transitionRows) {
 			output.setEstimateProvenance(mappedLeaf.source(), "frontier_v2_mapped_leaf");
@@ -506,7 +551,10 @@ final class LmdbPackedCostModel
 		if (runtime.frontierSettings().mode() != FrontierEstimatorMode.AUTHORITATIVE || statistics == null) {
 			return false;
 		}
-		var status = statistics.status();
+		return mappedStatisticsReady(statistics.status());
+	}
+
+	private static boolean mappedStatisticsReady(FrontierStatisticsStatus status) {
 		return status.availability() == FrontierStatisticsAvailability.READY
 				&& status.fallbackReason() == FrontierFallbackReason.NONE;
 	}
@@ -3945,6 +3993,12 @@ final class LmdbPackedCostModel
 
 	private FiniteLookupEstimate finiteLookupEstimate(PackedQueryView query, int relationId,
 			PackedCostContext context) {
+		return finiteLookupEstimate(query, relationId, context, -1);
+	}
+
+	/** A nonnegative native prefix mask requests pre-residual access rows instead of semantic statement rows. */
+	private FiniteLookupEstimate finiteLookupEstimate(PackedQueryView query, int relationId,
+			PackedCostContext context, int nativePrefixMask) {
 		int[] assignmentIds = new int[4];
 		int assignmentCount = 0;
 		int boundComponents = 0;
@@ -3955,6 +4009,9 @@ final class LmdbPackedCostModel
 				continue;
 			}
 			int potentialComponents = potentiallyBoundStatementComponents(query, assignmentId, relationId);
+			if (nativePrefixMask >= 0) {
+				potentialComponents &= nativePrefixMask;
+			}
 			if (potentialComponents == 0) {
 				continue;
 			}
@@ -3998,10 +4055,12 @@ final class LmdbPackedCostModel
 			Value predicate = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 1);
 			Value object = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 2);
 			Value graph = combinedValue(query, assignmentIds, rowOrdinals, assignmentCount, relationId, 3);
-			FiniteLookupKey probe = new FiniteLookupKey(subject, predicate, object, graph);
+			FiniteLookupKey values = new FiniteLookupKey(subject, predicate, object, graph);
+			FiniteLookupKey probe = nativePrefixMask < 0 ? values : nativePrefix(values, nativePrefixMask);
 			LmdbPlanningCardinality estimate = distinctProbes.get(probe);
 			if (estimate == null) {
-				estimate = finiteProbeRows(probe, repeatedComponentPairMask(query, relationId));
+				estimate = nativePrefixMask < 0 ? finiteProbeRows(probe, repeatedComponentPairMask(query, relationId))
+						: nativePrefixRows(probe);
 				if (estimate == null) {
 					return null;
 				}
@@ -4088,6 +4147,122 @@ final class LmdbPackedCostModel
 		for (int ordinal = 0; ordinal < count; ordinal++) {
 			if (relationIds[ordinal] == relationId) {
 				return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * Native statement iterators receive concrete components, then the evaluation step checks equal unbound variables.
+	 * Price that prefix population independently of the equality-filtered logical rows. A mapped session must use its
+	 * owned generation, never an unpinned service observation or a query-snapshot enumeration.
+	 */
+	private double nativeStatementAccessRows(PackedQueryView query, int relationId, PackedCostContext context,
+			int nativePrefixMask) {
+		if (query.statementPatternValue(relationId, 0) != null
+				&& !(query.statementPatternValue(relationId, 0) instanceof Resource)
+				|| query.statementPatternValue(relationId, 1) != null
+						&& !(query.statementPatternValue(relationId, 1) instanceof IRI)
+				|| query.statementPatternValue(relationId, 3) != null
+						&& !(query.statementPatternValue(relationId, 3) instanceof Resource)) {
+			return 0.0d;
+		}
+		if (!datasetUsesStoreDefaults) {
+			return Double.NaN;
+		}
+		FiniteLookupEstimate finite = context.prefixRelationsDescribeRows()
+				? finiteLookupEstimate(query, relationId, context, nativePrefixMask)
+				: null;
+		if (finite != null) {
+			return finite.rows() / Math.max(1.0d, finite.invocations());
+		}
+		FiniteLookupKey prefix = nativePrefix(new FiniteLookupKey(query.statementPatternValue(relationId, 0),
+				query.statementPatternValue(relationId, 1), query.statementPatternValue(relationId, 2),
+				query.statementPatternValue(relationId, 3)), nativePrefixMask);
+		LmdbPlanningCardinality estimate = nativePrefixRows(prefix);
+		if (estimate == null || !finiteNonNegative(estimate.rows())) {
+			return Double.NaN;
+		}
+		double rows = estimate.rows();
+		int unknownBoundComponents = nativePrefixMask & ~constantLookupMask(query, relationId);
+		if (rows == 0.0d || unknownBoundComponents == 0) {
+			return rows;
+		}
+		if (statisticsView == null) {
+			return Double.NaN;
+		}
+		FrontierLeafProbe probe = nativePrefixProbe(prefix);
+		if (probe == null) {
+			return Double.NaN;
+		}
+		// Use the existing mapped projected-distinct conditioning rule in this same native-prefix population.
+		for (int component = 0; component < 4; component++) {
+			if ((unknownBoundComponents & 1 << component) == 0) {
+				continue;
+			}
+			double distinct = mappedProjectedDistinct(probe, component);
+			if (!(distinct > 0.0d) || !Double.isFinite(distinct)) {
+				return Double.NaN;
+			}
+			rows = Math.min(rows, estimate.rows() / distinct);
+		}
+		return rows;
+	}
+
+	private LmdbPlanningCardinality nativePrefixRows(FiniteLookupKey prefix) {
+		if (prefix.subject() != null && !(prefix.subject() instanceof Resource)
+				|| prefix.predicate() != null && !(prefix.predicate() instanceof IRI)
+				|| prefix.graph() != null && !(prefix.graph() instanceof Resource)) {
+			return LmdbPlanningCardinality.exact(0.0d, 0L);
+		}
+		if (statisticsView == null) {
+			return runtime.packedStatementPatternRowsQualified((Resource) prefix.subject(), (IRI) prefix.predicate(),
+					prefix.object(), (Resource) prefix.graph(), 0);
+		}
+		FrontierLeafProbe probe = nativePrefixProbe(prefix);
+		if (probe == null) {
+			return null;
+		}
+		MappedRowsEstimate estimate;
+		if (mappedStatisticsCache != null && mappedStatisticsCache.boundLeafEstimateResolved(probe)) {
+			estimate = mappedStatisticsCache.boundLeafEstimate(probe);
+		} else {
+			FrontierLeafEstimate leaf = statisticsView.estimateLeaf(probe);
+			estimate = leaf.fallbackReason() == FrontierFallbackReason.NONE
+					? new MappedRowsEstimate(leaf.pointRows(), leaf.lowerRows(), leaf.upperRows(),
+							leaf.confidence(), leaf.source())
+					: null;
+			if (mappedStatisticsCache != null) {
+				mappedStatisticsCache.storeBoundLeafEstimate(probe, estimate);
+			}
+		}
+		return estimate == null || !finiteNonNegative(estimate.pointRows()) ? null
+				: LmdbPlanningCardinality.calibrated(estimate.pointRows(), estimate.lowerRows(), estimate.upperRows());
+	}
+
+	private FrontierLeafProbe nativePrefixProbe(FiniteLookupKey prefix) {
+		// Context-less native requests range over all contexts; named-only and variable equality are residual tests.
+		return LmdbFrontierProbeFactory.probe(runtime.valueStore(), prefix.subject(), prefix.predicate(),
+				prefix.object(), prefix.graph(), FrontierLeafProbe.BOTH_PLANES, 0);
+	}
+
+	private static FiniteLookupKey nativePrefix(FiniteLookupKey values, int mask) {
+		return new FiniteLookupKey((mask & 1) == 0 ? null : values.subject(),
+				(mask & 2) == 0 ? null : values.predicate(), (mask & 4) == 0 ? null : values.object(),
+				(mask & 8) == 0 ? null : values.graph());
+	}
+
+	private static boolean hasUnboundRepeatedComponents(PackedQueryView query, int relationId, int lookupMask) {
+		for (int left = 0; left < 4; left++) {
+			String name = repeatedName(query, relationId, left);
+			if (name == null) {
+				continue;
+			}
+			for (int right = left + 1; right < 4; right++) {
+				int pair = 1 << left | 1 << right;
+				if (name.equals(repeatedName(query, relationId, right)) && (lookupMask & pair) != pair) {
+					return true;
+				}
 			}
 		}
 		return false;

@@ -58,47 +58,53 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 	@Test
 	@Timeout(120)
 	void pharmaQ7ExactCascadesPlanKeepsArmBindingBeforeComparatorUnion() throws Exception {
-		RunQueryPlanState state = new RunQueryPlanState();
-		state.themeName = THEME.name();
-		state.z_queryIndex = 7;
-		state.sketchEstimatorEnabled = true;
-
-		state.setup();
+		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "exact");
 		try {
-			OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
-			String plan = snapshot.plan();
-			String diagnostics = snapshot.diagnostics();
+			RunQueryPlanState state = new RunQueryPlanState();
+			state.themeName = THEME.name();
+			state.z_queryIndex = 7;
+			state.sketchEstimatorEnabled = true;
 
-			assertBefore(plan,
-					"value=http://example.com/theme/pharma/hasArm",
-					"value=http://example.com/theme/pharma/armComparator",
-					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the comparator "
-							+ "union\n" + plan);
-			assertBefore(plan,
-					"value=http://example.com/theme/pharma/hasArm",
-					"value=http://example.com/theme/pharma/armDrug",
-					"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the drug union\n"
-							+ plan);
-			assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
-					"PHARMA q7 should be planned by the packed Cascades route\n" + diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
-					"PHARMA q7 should produce an exact Cascades plan without needing the standard fallback\n"
-							+ diagnostics);
-			assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
-					"PHARMA q7 should retain a complete Cascades search\n" + diagnostics);
-			assertTrue(plan.contains("plannerId=lmdb-packed-cascades")
-					&& plan.contains("optimizer.costEventDigest=")
-					&& plan.contains("optimizer.costEventPhase="),
-					"PHARMA q7 should retain packed-cascades and originating-event provenance\n" + plan);
-			assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
+			state.setup();
+			try {
+				OptimizedPlanSnapshot snapshot = state.optimizedPlanSnapshot();
+				String plan = snapshot.plan();
+				String diagnostics = snapshot.diagnostics();
+
+				assertBefore(plan,
+						"value=http://example.com/theme/pharma/hasArm",
+						"value=http://example.com/theme/pharma/armComparator",
+						"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the comparator "
+								+ "union\n" + plan);
+				assertBefore(plan,
+						"value=http://example.com/theme/pharma/hasArm",
+						"value=http://example.com/theme/pharma/armDrug",
+						"PHARMA q7 runQuery plan should bind ?arm from trial/hasArm before applying the drug union\n"
+								+ plan);
+				assertTrue(diagnostics.contains("optimizer.cascadesApplied=true"),
+						"PHARMA q7 should be planned by the packed Cascades route\n" + diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesApproximate=false"),
+						"PHARMA q7 should produce an exact Cascades plan without needing the standard fallback\n"
+								+ diagnostics);
+				assertTrue(diagnostics.contains("optimizer.cascadesCompleteness=COMPLETE"),
+						"PHARMA q7 should retain a complete Cascades search\n" + diagnostics);
+				assertTrue(plan.contains("plannerId=lmdb-packed-cascades")
+						&& plan.contains("optimizer.costEventDigest=")
+						&& plan.contains("optimizer.costEventPhase="),
+						"PHARMA q7 should retain packed-cascades and originating-event provenance\n" + plan);
+				assertStatementPatternSeesBoundSubject(plan, "http://example.com/theme/pharma/name");
+			} finally {
+				state.tearDown();
+			}
 		} finally {
-			state.tearDown();
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
 		}
 	}
 
 	@Test
 	@Timeout(120)
 	void pharmaQ7CascadesPlanUsesInputBoundNameLookup() throws Exception {
+		String previousMode = System.setProperty("rdf4j.optimizer.lmdb.cascades.mode", "exact");
 		String previousPolicy = System.setProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", "off");
 		RunQueryPlanState state = new RunQueryPlanState();
 		state.themeName = THEME.name();
@@ -122,6 +128,7 @@ class LmdbPharmaOptimizedQueryRegressionIT {
 			}
 		} finally {
 			restoreProperty("rdf4j.optimizer.lmdb.cascades.standardPlanPolicy", previousPolicy);
+			restoreProperty("rdf4j.optimizer.lmdb.cascades.mode", previousMode);
 		}
 	}
 

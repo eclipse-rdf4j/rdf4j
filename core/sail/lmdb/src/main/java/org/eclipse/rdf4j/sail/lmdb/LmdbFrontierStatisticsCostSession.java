@@ -47,11 +47,17 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 	private static final long MAPPED_EVIDENCE_ARENA_BYTES = 4L * 1024L * 1024L;
 	private static final int MAPPED_EVIDENCE_SEED_VERSION = 2;
 	private static final int[] EMPTY_RELATIONS = new int[0];
+	private static final Set<String> MAPPED_SESSION_REFUSAL_METRICS = Set.of(
+			"optimizer.frontierMappedSessionDisposition", "optimizer.frontierMappedSessionRefusalReason",
+			"optimizer.frontierMappedSessionGenerationId");
+	private static final int NON_POPULATION_ADMISSION_FLAGS = RuntimeFeedbackContract.ADMIT_PHYSICAL
+			| RuntimeFeedbackContract.ORIGIN_CERTIFIED;
 
 	private final PackedCostSession delegate;
 	private final LmdbPackedCostModel mappedCostModel;
 	private final LmdbEstimatorRuntime runtime;
 	private final FrontierStatisticsView statistics;
+	private final long mappedGenerationId;
 	private final PackedQueryView query;
 	private final LmdbMappedFrontierLearningSession learning;
 	private final LmdbPhysicalEventOrigins physicalOrigins;
@@ -68,6 +74,7 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 		this.delegate = Objects.requireNonNull(delegate, "delegate");
 		this.mappedCostModel = Objects.requireNonNull(mappedCostModel, "mappedCostModel");
 		this.statistics = Objects.requireNonNull(statistics, "statistics");
+		this.mappedGenerationId = statistics.ready() ? statistics.generationId() : 0L;
 		this.query = Objects.requireNonNull(query, "query");
 		this.runtime = Objects.requireNonNull(runtime, "runtime");
 		this.physicalOrigins = new LmdbPhysicalEventOrigins(query, datasetUsesStoreDefaults);
@@ -94,6 +101,24 @@ final class LmdbFrontierStatisticsCostSession implements PackedCostSession {
 				authenticatedRetainedCandidate);
 		learning.applyIndependentPhysical(relation, origin, context, output);
 		learning.ensureTelemetry(output);
+		annotateMappedPopulationRefusal(output);
+	}
+
+	/** Report this owned session's actual population admission decision without granting a statistical state. */
+	private void annotateMappedPopulationRefusal(PackedCostEstimate output) {
+		output.removePlannedMetrics(MAPPED_SESSION_REFUSAL_METRICS);
+		RuntimeFeedbackContract contract = output.runtimeFeedbackContract();
+		if (mappedGenerationId <= 0L || contract == null
+				|| !"unavailable"
+						.equals(output.plannedStringMetric(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS))
+				|| output.plannedStringMetric("optimizer.frontierLogicalGroupKey") != null
+				|| (contract.admissionFlags() & ~NON_POPULATION_ADMISSION_FLAGS) != 0) {
+			return;
+		}
+		output.putPlannedStringMetric("optimizer.frontierMappedSessionDisposition", "population-refused");
+		output.putPlannedStringMetric("optimizer.frontierMappedSessionRefusalReason",
+				"logical_population_not_admitted");
+		output.putPlannedDoubleMetric("optimizer.frontierMappedSessionGenerationId", mappedGenerationId);
 	}
 
 	@Override

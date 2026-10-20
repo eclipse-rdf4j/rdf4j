@@ -12,12 +12,27 @@
 package org.eclipse.rdf4j.benchmark.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.LeftJoin;
+import org.eclipse.rdf4j.query.algebra.Projection;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Union;
+import org.eclipse.rdf4j.query.algebra.ValueExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
+import org.eclipse.rdf4j.query.parser.sparql.SPARQLParser;
 import org.junit.jupiter.api.Test;
 
 class ThemeQueryCatalogOptimizerGapTest {
@@ -47,10 +62,166 @@ class ThemeQueryCatalogOptimizerGapTest {
 				boolean hasUnionHeavyDenormalizedShape = countOccurrences(normalized, UNION_MARKER) >= 1
 						&& countOccurrences(normalized, OPTIONAL_MARKER) >= 6
 						&& countOccurrences(normalized, OPTIONAL_VARIABLE_MARKER) >= 6;
-				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape || hasUnionHeavyDenormalizedShape,
+				assertTrue(hasGapMarker || hasLargeOptionalDenormalizedShape || hasUnionHeavyDenormalizedShape
+						|| hasUnionWithCorrelatedExistence(query),
 						"Theme " + theme + " query " + index + " lacks optimizer-gap markers: " + query);
 			}
 		}
+	}
+
+	@Test
+	void unionExistenceMarkerUsesParsedScopeAndSharedBindings() {
+		String union = "{ ?s <urn:p> ?o } UNION { ?s <urn:q> ?o }";
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER NOT EXISTS { ?s <urn:excluded> ?reason } }"));
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { ?s <urn:included> ?reason } }"));
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { " + union
+				+ " FILTER(!EXISTS { ?s <urn:excluded> ?reason }) } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER NOT EXISTS { ?other <urn:excluded> ?reason } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { ?s <urn:p> ?o . "
+				+ "# UNION is only a comment\n FILTER NOT EXISTS { ?s <urn:excluded> ?reason } }"));
+	}
+
+	@Test
+	void unionExistenceMarkerRespectsProjectionScopeBarriers() {
+		String union = "{ ?s <urn:p> ?o } UNION { ?s <urn:q> ?o }";
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { ?other <urn:p> ?x FILTER(?x = ?s) } }"),
+				"An inherited name read only by an inner FILTER is still correlated");
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER NOT EXISTS { ?other <urn:p> ?x FILTER(?x = ?s) } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER NOT EXISTS { { SELECT ?s WHERE { ?s <urn:local> ?value . "
+				+ "FILTER(?s != <urn:none>) } } } }"),
+				"A same-spelling local subquery binding is not an inherited existential read");
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { { SELECT (?other AS ?s) WHERE { ?other <urn:local> ?value } } } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { { SELECT ?s WHERE { " + union
+				+ " } } FILTER NOT EXISTS { ?s <urn:excluded> ?reason } }"),
+				"A UNION behind a projection barrier does not establish the containing same-scope marker");
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { { SELECT ?s WHERE { " + union
+				+ " FILTER NOT EXISTS { ?s <urn:excluded> ?reason } } } }"),
+				"A complete UNION/existence marker inside its own subquery remains recognized");
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { { SELECT ?local WHERE { ?local <urn:local> ?s } } "
+				+ "?s <urn:correlated> ?reason } }"),
+				"An unrelated local subquery must not hide a genuine inherited read outside that barrier");
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { ?s <urn:p> ?o . "
+				+ "BIND(\"UNION\" AS ?text) FILTER EXISTS { ?s <urn:included> ?reason } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { ?s <urn:p> ?o . "
+				+ "FILTER EXISTS { { ?local <urn:x> ?v } UNION { ?local <urn:y> ?v } } "
+				+ "FILTER EXISTS { ?s <urn:included> ?reason } }"),
+				"A UNION only in a separate existential scope is not a containing-row UNION");
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { VALUES ?s { UNDEF } } }"),
+				"An all-UNDEF column does not constrain an inherited row value");
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " FILTER EXISTS { VALUES ?s { <urn:included> } } }"));
+	}
+
+	@Test
+	void unionExistenceMarkerHandlesOptionalConditionOwners() {
+		String union = "{ ?s <urn:p> ?o } UNION { ?s <urn:q> ?o }";
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { " + union
+				+ " FILTER EXISTS { ?s <urn:included> ?reason } } }"));
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { OPTIONAL { " + union
+				+ " FILTER NOT EXISTS { ?s <urn:excluded> ?reason } } } }"));
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { " + union
+				+ " FILTER EXISTS { ?other <urn:p> ?x FILTER(?x = ?s) } } }"));
+		assertTrue(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { " + union
+				+ " OPTIONAL { ?s <urn:label> ?label FILTER EXISTS { ?s <urn:included> ?reason } } }"),
+				"An OPTIONAL condition can read its matched left operand as well as its right operand");
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { " + union
+				+ " FILTER NOT EXISTS { ?other <urn:excluded> ?reason } } }"));
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { " + union
+				+ " FILTER EXISTS { { SELECT ?s WHERE { ?s <urn:local> ?value } } } } }"),
+				"OPTIONAL lowering must not turn a same-spelling subselect local into correlation");
+		assertFalse(hasUnionWithCorrelatedExistence("SELECT ?s WHERE { OPTIONAL { { SELECT ?s WHERE { " + union
+				+ " } } FILTER EXISTS { ?s <urn:included> ?reason } } }"),
+				"A UNION behind a projection remains outside the containing OPTIONAL condition's marker");
+	}
+
+	/**
+	 * Workload marker for a same-scope UNION and an existential body that reads an inherited row binding. Projection
+	 * subqueries can contain markers of their own; their local names and UNIONs do not establish the containing marker.
+	 */
+	private static boolean hasUnionWithCorrelatedExistence(String query) {
+		TupleExpr parsed = new SPARQLParser().parseQuery(query, null).getTupleExpr();
+		QueryAlgebraBindingAnalysis analysis = QueryAlgebraBindingAnalysis.withBindingValues(parsed,
+				EmptyBindingSet.getInstance());
+		boolean[] matched = { false };
+		parsed.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Filter filter) {
+				matched[0] |= containsSameScopeUnion(filter.getArg())
+						&& hasCorrelatedExistence(filter.getCondition(), analysis);
+				super.meet(filter);
+			}
+
+			@Override
+			public void meet(LeftJoin optional) {
+				// The parser lowers an OPTIONAL's FILTER constraints into this matched-row condition.
+				matched[0] |= (containsSameScopeUnion(optional.getLeftArg())
+						|| containsSameScopeUnion(optional.getRightArg()))
+						&& hasCorrelatedExistence(optional.getCondition(), analysis);
+				super.meet(optional);
+			}
+		});
+		return matched[0];
+	}
+
+	private static boolean hasCorrelatedExistence(ValueExpr condition, QueryAlgebraBindingAnalysis analysis) {
+		if (condition == null) {
+			return false;
+		}
+		boolean[] matched = { false };
+		condition.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Exists exists) {
+				Set<String> inherited = analysis.contextAt(exists).maybeBoundNames();
+				analysis.visitScoped(exists.getSubQuery(), analysis.contextAt(exists.getSubQuery()), (node, input) -> {
+					if (node instanceof Projection projection && projection.isSubquery()) {
+						return false;
+					}
+					if (node instanceof Var var && !var.hasValue() && !var.isConstant()) {
+						matched[0] |= inherited.contains(var.getName())
+								&& input.maybeBoundNames().contains(var.getName());
+					} else if (node instanceof BindingSetAssignment assignment) {
+						matched[0] |= analysis.outputFacts(assignment, input)
+								.possibleOutputs()
+								.stream()
+								.anyMatch(name -> inherited.contains(name) && input.maybeBoundNames().contains(name));
+					}
+					return true;
+				});
+			}
+		});
+		return matched[0];
+	}
+
+	private static boolean containsSameScopeUnion(TupleExpr expression) {
+		boolean[] union = { false };
+		expression.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(Projection projection) {
+				if (!projection.isSubquery()) {
+					super.meet(projection);
+				}
+			}
+
+			@Override
+			public void meet(Exists exists) {
+				// A UNION inside an existential scope does not establish its containing row's marker.
+			}
+
+			@Override
+			public void meet(Union node) {
+				union[0] = true;
+			}
+		});
+		return union[0];
 	}
 
 	private static int countOccurrences(String input, String token) {

@@ -39,6 +39,7 @@ import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.QueryModelNode;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.explanation.Explanation;
 import org.eclipse.rdf4j.queryrender.sparql.TupleExprIRRenderer;
@@ -773,9 +774,20 @@ class LmdbMedicalOptimizedQueryRegressionIT {
 				() -> assertTrue(codePattern.getDoubleMetricPlanned("plannedAccessRows") <= 1.0d,
 						"The scalar alternative is cheaper only while code access remains at most one row per condition\n"
 								+ plan),
-				() -> assertTrue(estimateSource != null && estimateSource.startsWith("frontier-v2-omni-"),
-						"The retained scalar lookup must still be selected using mapped Omni evidence, but was "
+				() -> assertTrue(estimateSource != null && estimateSource.startsWith("frontier-v2-omni-")
+						|| hasPhysicalOnlyLookupContract(codePattern),
+						"The retained scalar lookup must retain mapped evidence or its own physical-only contract, but was "
 								+ estimateSource + "\n" + plan));
+	}
+
+	private static boolean hasPhysicalOnlyLookupContract(StatementPattern pattern) {
+		RuntimeFeedbackContract contract = pattern.getRuntimeFeedbackContract();
+		return contract != null && contract.admits(RuntimeFeedbackContract.ADMIT_PHYSICAL)
+				&& !contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL)
+				&& !contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE)
+				&& "unavailable".equals(pattern.getStringMetricPlanned("optimizer.frontierSemanticPopulation"))
+				&& pattern.getStringMetricPlanned("optimizer.frontierLogicalGroupKey") == null
+				&& pattern.getStringMetricPlanned("optimizer.physicalResidualKeyDigest") != null;
 	}
 
 	private static void assertFiniteCodeLookupJoin(TupleExpr optimized, String plan, String variable, int valueCount) {

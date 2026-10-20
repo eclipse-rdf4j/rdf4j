@@ -470,20 +470,34 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 			original.replaceWith(replacement);
 			return replacement;
 		}
-		copyPlannedMetrics(replacement, original);
 		if (original instanceof QueryRoot originalRoot) {
-			originalRoot.setArg(replacement instanceof QueryRoot replacementRoot
-					? replacementRoot.getArg()
-					: replacement);
+			clearMappedPopulationRecord(originalRoot);
+			if (replacement instanceof QueryRoot replacementRoot) {
+				// QueryRoot is an identity placeholder: its selected local event has no other operator state.
+				copyPlannedMetrics(replacementRoot, originalRoot);
+				originalRoot.setResultSizeEstimate(replacementRoot.getResultSizeEstimate());
+				originalRoot.setCostEstimate(replacementRoot.getCostEstimate());
+				originalRoot.setRuntimeFeedbackContract(replacementRoot.getRuntimeFeedbackContract());
+				originalRoot.setCostFeedbackExpectedRows(replacementRoot.getCostFeedbackExpectedRows());
+				originalRoot.setCostFeedbackExpectedWorkRows(replacementRoot.getCostFeedbackExpectedWorkRows());
+				originalRoot.setCostFeedbackTrackingEnabled(replacementRoot.isCostFeedbackTrackingEnabled());
+				originalRoot.setArg(replacementRoot.getArg());
+			} else {
+				// This retained placeholder was not costed by the winner. Its child's event stays on the child.
+				invalidateUnprovedLocalFeedback(originalRoot);
+				originalRoot.setArg(replacement);
+			}
 			return original;
 		}
 		if (original.getClass() == replacement.getClass() && original instanceof UnaryTupleOperator originalUnary
 				&& replacement instanceof UnaryTupleOperator replacementUnary) {
+			copyPlannedMetrics(replacement, original);
 			originalUnary.setArg(replacementUnary.getArg());
 			return original;
 		}
 		if (original.getClass() == replacement.getClass() && original instanceof BinaryTupleOperator originalBinary
 				&& replacement instanceof BinaryTupleOperator replacementBinary) {
+			copyPlannedMetrics(replacement, original);
 			originalBinary.setLeftArg(replacementBinary.getLeftArg());
 			originalBinary.setRightArg(replacementBinary.getRightArg());
 			return original;
@@ -492,8 +506,36 @@ final class LmdbCascadesOptimizer implements QueryOptimizer {
 				+ " into detached root " + original.getClass().getName());
 	}
 
+	private static void clearMappedPopulationRecord(TupleExpr node) {
+		// These fields are one local population declaration, separate from pipeline/entry annotations.
+		node.removeStringMetricsPlannedIf(metric -> "optimizer.frontierMappedSessionDisposition".equals(metric)
+				|| "optimizer.frontierMappedSessionRefusalReason".equals(metric)
+				|| LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS.equals(metric)
+				|| "optimizer.frontierLogicalGroupKey".equals(metric));
+		String generation = "optimizer.frontierMappedSessionGenerationId";
+		if (node.getDoubleMetricsPlanned().containsKey(generation)) {
+			node.getDoubleMetricsPlanned().remove(generation);
+		}
+	}
+
+	private static void invalidateUnprovedLocalFeedback(TupleExpr node) {
+		clearMappedPopulationRecord(node);
+		node.setResultSizeEstimate(-1.0d);
+		node.setCostEstimate(-1.0d);
+		node.setRuntimeFeedbackContract(null);
+		node.setCostFeedbackExpectedRows(-1.0d);
+		node.setCostFeedbackExpectedWorkRows(-1.0d);
+		node.setCostFeedbackTrackingEnabled(false);
+		// Invalidation of a modern event must not revive unmarked legacy admission (FactorCostCacheKey policy).
+		node.setStringMetricPlanned(LmdbRuntimeFeedbackDescriptor.SEMANTIC_POPULATION_STATUS, "unavailable");
+	}
+
 	private static void copyPlannedMetrics(TupleExpr source, TupleExpr target) {
 		source.copyPlannedMetricsTo(target);
+		if (!(source instanceof QueryRoot && target instanceof QueryRoot)) {
+			// Replacing only arguments does not establish the identity of this retained local operator's event.
+			invalidateUnprovedLocalFeedback(target);
+		}
 	}
 
 	private void annotatePlanningMetrics(TupleExpr root, Mode mode, CascadesPlan plan) {

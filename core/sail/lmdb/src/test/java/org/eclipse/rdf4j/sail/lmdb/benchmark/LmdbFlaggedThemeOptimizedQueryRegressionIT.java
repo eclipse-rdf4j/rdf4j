@@ -14,7 +14,9 @@ package org.eclipse.rdf4j.sail.lmdb.benchmark;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -24,9 +26,12 @@ import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
+import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
@@ -111,7 +116,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 				OptimizerSnapshot snapshot = explainOptimized(repository, expectation(Theme.HIGHLY_CONNECTED, 10));
 				String plan = snapshot.plan();
 				String renderedQuery = snapshot.renderedQuery();
-				String finiteAnchor = finiteThresholdWeightAnchor(renderedQuery);
+				String finiteAnchor = finiteThresholdWeightAnchor(snapshot);
 				Assertions.assertTrue(renderedQuery.contains(
 						"?node <http://example.com/theme/connected/connectsTo> ?node"),
 						"Highly connected q10 must retain its self-loop exclusion whether the safe MINUS is "
@@ -169,14 +174,35 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		}
 	}
 
-	private static String finiteThresholdWeightAnchor(String renderedQuery) {
-		if (renderedQuery.contains("VALUES (?threshold ?w)")) {
-			return "VALUES (?threshold ?w)";
+	private static String finiteThresholdWeightAnchor(OptimizerSnapshot snapshot) {
+		List<BindingSetAssignment> assignments = new ArrayList<>();
+		snapshot.optimized().visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			public void meet(BindingSetAssignment node) {
+				if (node.getBindingNames().contains("w")) {
+					assignments.add(node);
+				}
+			}
+		});
+		if (assignments.isEmpty()) {
+			return null;
 		}
-		if (renderedQuery.contains("VALUES (?w ?threshold)")) {
-			return "VALUES (?w ?threshold)";
+		Assertions.assertEquals(1, assignments.size(), "Expected one finite weight binding relation");
+		Set<Value> weights = new LinkedHashSet<>();
+		int rows = 0;
+		for (BindingSet row : assignments.getFirst().getBindingSets()) {
+			Assertions.assertTrue(row.hasBinding("w"), "A finite weight anchor cannot contain UNDEF");
+			weights.add(row.getValue("w"));
+			rows++;
 		}
-		return null;
+		ValueFactory values = SimpleValueFactory.getInstance();
+		Assertions.assertEquals(Set.of(values.createLiteral(1), values.createLiteral(2), values.createLiteral(3),
+				values.createLiteral(4)), weights, "The fixture's exact weight support must be preserved");
+		Assertions.assertEquals(weights.size(), rows, "The finite relation must not introduce duplicate weight rows");
+		Matcher header = Pattern.compile("VALUES\\s+(?:\\?w\\b|\\([^)]*\\?w\\b[^)]*\\))")
+				.matcher(snapshot.renderedQuery());
+		Assertions.assertTrue(header.find(), "The finite algebra relation must remain visible in rendered SPARQL");
+		return header.group();
 	}
 
 	private static void assertBenchmarkStoreRegressionsPass(Path dataDir, List<Theme> themes) throws Exception {
@@ -416,7 +442,7 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 			TupleExpr optimized = (TupleExpr) explanation.tupleExpr();
 			return new OptimizerSnapshot(
 					explanation + semiAntiEventDiagnostics(optimized),
-					new TupleExprIRRenderer().render(optimized));
+					new TupleExprIRRenderer().render(optimized), optimized);
 		}
 	}
 
@@ -695,6 +721,6 @@ class LmdbFlaggedThemeOptimizedQueryRegressionIT {
 		}
 	}
 
-	private record OptimizerSnapshot(String plan, String renderedQuery) {
+	private record OptimizerSnapshot(String plan, String renderedQuery, TupleExpr optimized) {
 	}
 }

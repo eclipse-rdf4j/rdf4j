@@ -13,11 +13,14 @@
 package org.eclipse.rdf4j.sail.lmdb.benchmark;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,7 +35,19 @@ import java.util.regex.Pattern;
 
 import org.eclipse.rdf4j.benchmark.common.ThemeQueryCatalog;
 import org.eclipse.rdf4j.benchmark.rio.util.ThemeDataSetGenerator.Theme;
+import org.eclipse.rdf4j.query.algebra.Exists;
+import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Not;
+import org.eclipse.rdf4j.query.algebra.QueryModelNode;
+import org.eclipse.rdf4j.query.algebra.StatementPattern;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.leo.LeoRolloutProfile;
+import org.eclipse.rdf4j.query.algebra.feedback.RuntimeFeedbackContract;
+import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryModelTreeToGenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPhysicalSidecarTestSupport;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -95,7 +110,8 @@ class LmdbMedicalQ9PlanStabilityIT {
 					elapsedNanos[run] = System.nanoTime() - started;
 					executionNanos[run] = timing.consumptionNanos();
 					assertEquals(expectedCount, count, "run " + run);
-					String plan = benchmark.explainOptimizedPlan(query);
+					TupleExpr optimized = benchmark.explainOptimizedTupleExpr();
+					String plan = optimizedPlanText(optimized);
 					writePlan(run, plan);
 					List<Double> outerRows = correlationOuterRows(plan);
 					report.append(String.format(Locale.ROOT,
@@ -112,10 +128,7 @@ class LmdbMedicalQ9PlanStabilityIT {
 								() -> "A learned run re-planned the MINUS probe with crushed outer rows (" + rows
 										+ ") — the q9 poison shape: \n" + report + "\n" + plan);
 					}
-					List<String> lifecycleStates = lifecycleStates(plan);
-					assertTrue(!lifecycleStates.isEmpty() && lifecycleStates.stream().allMatch("monitoring"::equals),
-							() -> "The default rollout must expose Monitoring-only lifecycle decisions, but found "
-									+ lifecycleStates + ":\n" + plan);
+					assertLearningLifecycle(optimized);
 				}
 				writeReport(report.toString());
 				System.out.println(report);
@@ -166,9 +179,9 @@ class LmdbMedicalQ9PlanStabilityIT {
 
 				assertEquals(q10Count, benchmark.executeCountQuery(q10, q10Count, MAX_EXECUTION_TIME_SECONDS));
 				assertEquals(q9Count, benchmark.executeCountQuery(q9, q9Count, MAX_EXECUTION_TIME_SECONDS));
-				String q9AfterQ10 = benchmark.explainOptimizedPlan(q9);
+				TupleExpr q9AfterQ10 = benchmark.explainOptimizedTupleExpr();
 				assertSafeQ9Plan(q9AfterQ10);
-				assertTrue(learningIdentities(q9AfterQ10).stream().anyMatch(q9Identities::contains),
+				assertTrue(learningIdentities(optimizedPlanText(q9AfterQ10)).stream().anyMatch(q9Identities::contains),
 						"Interleaving q10 must not orphan q9's exact logical identity");
 			} finally {
 				benchmark.tearDown();
@@ -201,18 +214,23 @@ class LmdbMedicalQ9PlanStabilityIT {
 
 			Path sidecar = learnedSidecar("join-estimator.rjes.operators");
 			assertTrue(Files.isRegularFile(sidecar), "Store shutdown must persist the learned-feedback sidecar");
-			assertEquals(24, ByteBuffer.wrap(Files.readAllBytes(sidecar)).getInt(),
-					"Restart acceptance requires the statement-stamped v24 sidecar");
+			LmdbPhysicalSidecarTestSupport.Inventory inventory = LmdbPhysicalSidecarTestSupport.read(
+					benchmarkStoreDirectory().resolve("join-estimator.rjes"));
+			assertTrue(inventory.independentCells() > 0,
+					"The actual q9 workload must persist its independent physical-event learning cells");
+			assertEquals(25, inventory.schema(),
+					"Independent physical-event cells require the tagged v25 sidecar");
 
 			ThemeQueryBenchmark restarted = newBenchmark();
 			restarted.setup();
 			try {
-				String restartedPlan = restarted.explainOptimizedPlan(query);
+				TupleExpr restartedOptimized = restarted.explainOptimizedTupleExpr();
+				String restartedPlan = optimizedPlanText(restartedOptimized);
 				Set<LearningIdentity> restoredIdentities = learnedLogicalIdentities(restartedPlan);
 				assertTrue(restoredIdentities.stream().anyMatch(trainedIdentities::contains),
 						() -> "Restart must restore q9's exact logical evidence: " + trainedIdentities + " versus "
 								+ restoredIdentities + "\n" + restartedPlan);
-				assertSafeQ9Plan(restartedPlan);
+				assertSafeQ9Plan(restartedOptimized);
 				assertEquals(expectedCount,
 						restarted.executeCountQuery(query, expectedCount, MAX_EXECUTION_TIME_SECONDS));
 			} finally {
@@ -285,13 +303,6 @@ class LmdbMedicalQ9PlanStabilityIT {
 		return values;
 	}
 
-	private static List<String> lifecycleStates(String plan) {
-		return plan.lines()
-				.filter(line -> line.contains("optimizer.semiAntiAlgorithm="))
-				.map(line -> metric(LIFECYCLE_STATE, line))
-				.toList();
-	}
-
 	private static Set<LearningIdentity> learningIdentities(String plan) {
 		Set<LearningIdentity> identities = new LinkedHashSet<>();
 		plan.lines().forEach(line -> {
@@ -321,7 +332,57 @@ class LmdbMedicalQ9PlanStabilityIT {
 		return identities;
 	}
 
-	private static void assertSafeQ9Plan(String plan) {
+	/** Preserve optimizer metadata from this same captured tree, using the public explanation representation. */
+	private static String optimizedPlanText(TupleExpr optimized) {
+		return new QueryModelTreeToGenericPlanNode(optimized, Set.of(), Explanation.Level.Optimized)
+				.getGenericPlanNode()
+				.toString();
+	}
+
+	@Test
+	void explanationSnapshotPreservesExactLearningIdentityAndAntiJoinMetadata() {
+		Filter anti = metricFixture(600.0d, "applicability-a");
+		String display = optimizedPlanText(anti);
+		Set<LearningIdentity> expected = Set.of(new LearningIdentity("logical-a", "applicability-a"));
+		assertEquals(expected, learnedLogicalIdentities(display));
+		assertEquals(List.of(600.0d), correlationOuterRows(display));
+		assertEquals(List.of("streaming-correlated"), semiAntiAlgorithms(display));
+		assertSafeQ9Shape(anti);
+		assertFalse(anti.toString().contains("optimizer.logicalLearningKeyDigest="),
+				"The algebra debug printer deliberately omits the optimizer identity family");
+	}
+
+	@Test
+	void snapshotInspectionStillRejectsMissingEvidencePoisonAndIncompatibleIdentity() {
+		Filter poison = metricFixture(2.0d, "applicability-a");
+		assertThrows(AssertionError.class, () -> assertSafeQ9Shape(poison));
+		Filter incompatible = metricFixture(600.0d, "applicability-b");
+		assertFalse(learnedLogicalIdentities(optimizedPlanText(incompatible))
+				.contains(new LearningIdentity("logical-a", "applicability-a")));
+		StatementPattern missing = new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o"));
+		assertTrue(learnedLogicalIdentities(optimizedPlanText(missing)).isEmpty());
+		assertThrows(AssertionError.class, () -> assertSafeQ9Shape(missing));
+	}
+
+	private static Filter metricFixture(double outerRows, String applicability) {
+		Filter anti = new Filter(new StatementPattern(Var.of("s"), Var.of("p"), Var.of("o")),
+				new Not(new Exists(new StatementPattern(Var.of("s"), Var.of("q"), Var.of("other")))));
+		anti.setStringMetricPlanned("optimizer.semiAntiKind", "minus-assured-shared");
+		anti.setStringMetricPlanned("optimizer.semiAntiAlgorithm", "streaming-correlated");
+		anti.setDoubleMetricPlanned("plannedCorrelationOuterRows", outerRows);
+		anti.setStringMetricPlanned("optimizer.logicalLearningKeyDigest", "logical-a");
+		anti.setStringMetricPlanned("optimizer.learningApplicabilityDigest", applicability);
+		anti.setDoubleMetricPlanned("optimizer.frontierLeo.output_rows.exactEvidence", 32.0d);
+		return anti;
+	}
+
+	private static void assertSafeQ9Plan(TupleExpr optimized) {
+		assertSafeQ9Shape(optimized);
+		assertLearningLifecycle(optimized);
+	}
+
+	private static void assertSafeQ9Shape(TupleExpr optimized) {
+		String plan = optimizedPlanText(optimized);
 		List<Double> outerRows = correlationOuterRows(plan);
 		List<String> algorithms = semiAntiAlgorithms(plan);
 		boolean materializedWinner = algorithms.stream().anyMatch(algorithm -> algorithm.startsWith("materialized"));
@@ -332,9 +393,39 @@ class LmdbMedicalQ9PlanStabilityIT {
 						+ "estimate after learning:\n" + plan);
 		assertTrue(outerRows.stream().allMatch(rows -> rows >= MIN_CORRELATION_OUTER_ROWS),
 				() -> "q9 must never use a crushed correlated outer estimate after learning:\n" + plan);
-		List<String> lifecycleStates = lifecycleStates(plan);
-		assertTrue(!lifecycleStates.isEmpty() && lifecycleStates.stream().allMatch("monitoring"::equals),
-				() -> "The default rollout must remain Monitoring-only, but found " + lifecycleStates + ":\n" + plan);
+	}
+
+	private static void assertLearningLifecycle(TupleExpr optimized) {
+		List<TupleExpr> antiJoins = new ArrayList<>();
+		optimized.visit(new AbstractQueryModelVisitor<RuntimeException>() {
+			@Override
+			protected void meetNode(QueryModelNode node) {
+				if (node instanceof TupleExpr expression
+						&& node.getStringMetricPlanned("optimizer.semiAntiAlgorithm") != null) {
+					antiJoins.add(expression);
+				}
+				node.visitChildren(this);
+			}
+		});
+		assertFalse(antiJoins.isEmpty(), "q9 must retain its typed anti-join");
+		for (TupleExpr antiJoin : antiJoins) {
+			RuntimeFeedbackContract contract = antiJoin.getRuntimeFeedbackContract();
+			assertNotNull(contract, () -> "Each anti-join must retain its own typed feedback contract\n" + antiJoin);
+			if (contract.admits(RuntimeFeedbackContract.ADMIT_LIFECYCLE)) {
+				assertEquals("qualified", antiJoin.getStringMetricPlanned("optimizer.frontierSemanticPopulation"));
+				assertEquals("monitoring", antiJoin.getStringMetricPlanned("optimizer.lifecycleState"),
+						"The safe-cardinality profile must only monitor qualified lifecycle decisions");
+				assertEquals(0.0d, antiJoin.getDoubleMetricPlanned("optimizer.lifecycleEnforced"), 0.0d);
+			} else {
+				assertEquals("unavailable", antiJoin.getStringMetricPlanned("optimizer.frontierSemanticPopulation"),
+						"Missing lifecycle metadata requires an explicit population refusal");
+				assertFalse(contract.admits(RuntimeFeedbackContract.ADMIT_LOGICAL));
+				assertNull(antiJoin.getStringMetricPlanned("optimizer.frontierLogicalGroupKey"));
+				assertNull(antiJoin.getStringMetricPlanned("optimizer.lifecycleState"));
+				assertFalse(antiJoin.getDoubleMetricsPlanned().containsKey("optimizer.lifecycleEnforced"));
+				assertFalse(antiJoin.getDoubleMetricsPlanned().containsKey("optimizer.lifecycleComparisonCost"));
+			}
+		}
 	}
 
 	private static List<String> semiAntiAlgorithms(String plan) {
