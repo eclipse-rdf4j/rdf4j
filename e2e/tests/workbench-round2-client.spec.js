@@ -13,6 +13,8 @@
 
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const http = require('node:http');
+const https = require('node:https');
 const {
 	createSeededRepository,
 	deleteRepository,
@@ -398,6 +400,93 @@ function workbenchBaseUrlForSpec() {
 	return require('./workbench-test-helpers.js').workbenchBaseUrl();
 }
 
+/** A same-origin receiver that holds an explanation and records the browser's real keepalive cancellation request. */
+async function startQueryCancellationProxy(repositoryId) {
+	const upstream = new URL(workbenchBaseUrlForSpec());
+	const upstreamTransport = upstream.protocol === 'https:' ? https : http;
+	const workbenchPath = upstream.pathname.replace(/\/+$/, '');
+	const queryPath = `${workbenchPath}/repositories/${encodeURIComponent(repositoryId)}/query`;
+	const explanations = [];
+	const cancellations = [];
+	const heldExplanations = new Map();
+	const server = http.createServer((incoming, outgoing) => {
+		const chunks = [];
+		incoming.on('data', chunk => chunks.push(chunk));
+		incoming.on('end', () => {
+			const body = Buffer.concat(chunks);
+			const url = new URL(incoming.url || '/', upstream.origin);
+			if (incoming.method === 'POST' && url.pathname === queryPath) {
+				const parameters = new URLSearchParams(body.toString('utf8'));
+				const action = parameters.get('action');
+				const id = parameters.get('explain-request-id');
+				if (action === 'explain') {
+					explanations.push({ id });
+					heldExplanations.set(id, outgoing);
+					return;
+				}
+				if (action === 'cancel-explain') {
+					cancellations.push({ id, path: url.pathname, body: body.toString('utf8') });
+					outgoing.writeHead(204).end();
+					const explanation = heldExplanations.get(id);
+					if (explanation && !explanation.destroyed) {
+						explanation.writeHead(200, { 'Content-Type': 'application/json' });
+						explanation.end('{}');
+					}
+					heldExplanations.delete(id);
+					return;
+				}
+			}
+
+			const headers = Object.assign({}, incoming.headers, { host: upstream.host });
+			const forwarded = upstreamTransport.request(new URL(incoming.url || '/', upstream.origin), {
+				method: incoming.method,
+				headers
+			}, answer => {
+				outgoing.writeHead(answer.statusCode || 502, answer.headers);
+				answer.pipe(outgoing);
+			});
+			forwarded.on('error', error => {
+				if (!outgoing.headersSent) {
+					outgoing.writeHead(502, { 'Content-Type': 'text/plain' });
+				}
+				if (!outgoing.destroyed) {
+					outgoing.end(error.message);
+				}
+			});
+			if (body.length) {
+				forwarded.end(body);
+			} else {
+				forwarded.end();
+			}
+		});
+	});
+	await new Promise((resolve, reject) => {
+		server.once('error', reject);
+		server.listen(0, '127.0.0.1', resolve);
+	});
+	const address = server.address();
+	if (!address || typeof address === 'string') {
+		throw new Error('The query cancellation proxy did not bind a TCP port.');
+	}
+	return {
+		baseUrl: `http://127.0.0.1:${address.port}${workbenchPath}`,
+		queryPath,
+		explanations,
+		cancellations,
+		close: async () => {
+			for (const explanation of heldExplanations.values()) {
+				if (!explanation.destroyed) {
+					explanation.destroy();
+				}
+			}
+			server.closeAllConnections();
+			await new Promise((resolve, reject) => {
+				server.close(error => error ? reject(error) : resolve());
+			});
+		}
+	};
+}
+
 /** Serves the Info answers without their menu rows, as a server answers a user it does not authorize. */
 async function infoWithoutMenu(page) {
 	await page.route(/\/repositories\/[^/]+\/info(\?.*)?$/, async (route) => {
@@ -476,32 +565,60 @@ test('the Explore truncation notice follows the limit of the request, not an ear
 // XHR that retries does not outlive the page. pagehide runs before the document is hidden, so the page must not wait
 // for visibilityState to tell it that it is being unloaded.
 test('unloading the Query page during an explanation cancels it with a keepalive request', async ({ page }) => {
-	await openQueryPage(page, REPOSITORY_ID, { viewport: { width: 1280, height: 900 } });
-	const queryUrl = new RegExp(`/repositories/${REPOSITORY_ID}/query$`);
-	let explainId = null;
-	const cancels = [];
-	await page.route(queryUrl, async (route) => {
-		const sent = route.request();
-		const parameters = new URLSearchParams(sent.postData() || '');
-		if (sent.method() === 'POST' && parameters.get('action') === 'explain') {
-			explainId = parameters.get('explain-request-id');
-			return; // held: the explanation keeps running until the page goes
-		}
-		if (sent.method() === 'POST' && parameters.get('action') === 'cancel-explain') {
-			cancels.push({ id: parameters.get('explain-request-id'), type: sent.resourceType() });
-			return route.fulfill({ status: 204, body: '' });
-		}
-		return route.fallback();
-	});
-	await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 5');
-	await page.locator('#explain-trigger').click();
-	await expect.poll(() => explainId).not.toBeNull();
+	const proxy = await startQueryCancellationProxy(REPOSITORY_ID);
+	const captureKey = `__rdf4j_query_cancel_${REPOSITORY_ID}`;
+	try {
+		await page.addInitScript(({ key, queryPath }) => {
+			const read = () => JSON.parse(sessionStorage.getItem(key) || '{"pagehide":[],"keepalive":[]}');
+			const write = state => sessionStorage.setItem(key, JSON.stringify(state));
+			window.addEventListener('pagehide', event => {
+				const state = read();
+				state.pagehide.push({ path: location.pathname, persisted: event.persisted });
+				write(state);
+			});
+			const originalFetch = window.fetch;
+			window.fetch = function (input, init) {
+				const url = new URL(typeof input === 'string' ? input : input.url, location.href);
+				if (init && init.keepalive === true && url.pathname === queryPath) {
+					const state = read();
+					state.keepalive.push({ url: url.href, method: init.method, body: init.body });
+					write(state);
+				}
+				return originalFetch.apply(this, arguments);
+			};
+		}, { key: captureKey, queryPath: proxy.queryPath });
+		await page.setViewportSize({ width: 1280, height: 900 });
+		await page.goto(`${proxy.baseUrl}/repositories/${REPOSITORY_ID}/query`, { waitUntil: 'domcontentloaded' });
+		await page.locator('#query-form').waitFor({ state: 'visible', timeout: 15000 });
+		await page.locator('.CodeMirror').first().waitFor({ state: 'visible' });
+		await setQueryEditor(page, 'SELECT ?s WHERE { ?s ?p ?o } LIMIT 5');
+		await page.locator('#explain-trigger').click();
+		await expect.poll(() => proxy.explanations.length).toBe(1);
+		const explainId = proxy.explanations[0].id;
+		expect(explainId).toMatch(/\S/);
 
-	await page.goto('about:blank');
-	await expect.poll(() => cancels.length).toBeGreaterThan(0);
-	expect(cancels[0]).toEqual({ id: explainId, type: 'fetch' });
-	await new Promise((resolve) => setTimeout(resolve, 300));
-	expect(cancels, 'one cancellation').toHaveLength(1);
+		// A same-origin document navigation guarantees a destructive pagehide and keeps the captured call readable.
+		await page.goto(`${proxy.baseUrl}/repositories/${REPOSITORY_ID}/information`, { waitUntil: 'domcontentloaded' });
+		await expect(page.locator('#workbench-app')).toBeVisible();
+		await expect.poll(() => proxy.cancellations.length).toBe(1);
+		expect(proxy.cancellations[0]).toEqual({
+			id: explainId,
+			path: proxy.queryPath,
+			body: `action=cancel-explain&explain-request-id=${explainId}`
+		});
+		const captured = await page.evaluate(key => JSON.parse(sessionStorage.getItem(key)
+			|| '{"pagehide":[],"keepalive":[]}'), captureKey);
+		expect(captured.pagehide.filter(event => event.path === proxy.queryPath)).toEqual([
+			{ path: proxy.queryPath, persisted: false }
+		]);
+		expect(captured.keepalive).toEqual([{
+			url: `${new URL(proxy.baseUrl).origin}${proxy.queryPath}`,
+			method: 'POST',
+			body: `action=cancel-explain&explain-request-id=${explainId}`
+		}]);
+	} finally {
+		await proxy.close();
+	}
 });
 
 // R12: a page shown from a form's answer (Saved queries Edit posts to the Query page) that fails to open must stay,
