@@ -1,5 +1,6 @@
 // @ts-check
 const { defineConfig, devices } = require('@playwright/test');
+const webkitHeadless = process.platform !== 'linux';
 
 /**
  * Read environment variables from file.
@@ -34,17 +35,18 @@ module.exports = defineConfig({
   projects: [
     {
       name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
+      use: { ...devices['Desktop Chrome'], headless: true },
     },
 
     {
       name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
+      use: { ...devices['Desktop Firefox'], headless: true },
     },
 
     {
       name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
+      // Linux CI uses a real X11 surface for WebKit motion and native scrolling assertions.
+      use: { ...devices['Desktop Safari'], headless: webkitHeadless },
     },
 
     /* Test against mobile viewports. */
