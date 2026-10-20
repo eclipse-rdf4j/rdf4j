@@ -20,13 +20,13 @@ const path = require('node:path');
 // elsewhere with WORKBENCH_SCRIPT_DIR.
 const { compiledScriptsDir, workbenchScriptPath } = require('./workbench-scripts.js');
 
-const repoRoot = path.resolve(__dirname, '..', '..');
+const workbenchRoot = path.resolve(__dirname, '..', '..', '..', '..');
 
 test('compiled scripts default to the npm build output under tools/workbench/target', () => {
     const previous = process.env.WORKBENCH_SCRIPT_DIR;
     delete process.env.WORKBENCH_SCRIPT_DIR;
     try {
-        assert.equal(compiledScriptsDir(), path.join(repoRoot, 'tools', 'workbench', 'target', 'frontend', 'scripts'));
+        assert.equal(compiledScriptsDir(), path.join(workbenchRoot, 'target', 'frontend', 'scripts'));
     } finally {
         if (previous !== undefined) {
             process.env.WORKBENCH_SCRIPT_DIR = previous;
@@ -52,11 +52,10 @@ test('WORKBENCH_SCRIPT_DIR overrides where compiled scripts are read from', () =
     }
 });
 
-test('hand-written and vendored scripts still come from src/main/webapp/scripts', () => {
-    const expected = path.join(repoRoot, 'tools', 'workbench', 'src', 'main', 'webapp', 'scripts', 'workbench-theme.js');
-    assert.equal(workbenchScriptPath('workbench-theme.js'), expected);
-    assert.equal(workbenchScriptPath('tools/workbench/src/main/webapp/scripts/diff.min.js'),
-        path.join(repoRoot, 'tools', 'workbench', 'src', 'main', 'webapp', 'scripts', 'diff.min.js'));
+test('hand-written and vendored scripts still come from src/main/frontend/static/scripts', () => {
+    const staticScripts = path.join(workbenchRoot, 'src', 'main', 'frontend', 'static', 'scripts');
+    assert.equal(workbenchScriptPath('workbench-theme.js'), path.join(staticScripts, 'workbench-theme.js'));
+    assert.equal(workbenchScriptPath('scripts/diff.min.js'), path.join(staticScripts, 'diff.min.js'));
 });
 
 test('a missing compiled script names the npm build that produces it', () => {

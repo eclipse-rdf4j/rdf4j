@@ -13,5 +13,6 @@
     "skipLibCheck": true,
     "types": ["vite/client"]
   },
-  "include": ["src/main/frontend/**/*.ts", "src/main/frontend/**/*.tsx"]
+  "include": ["src/main/frontend/**/*.ts", "src/main/frontend/**/*.tsx"],
+  "exclude": ["src/main/frontend/classic"]
 }

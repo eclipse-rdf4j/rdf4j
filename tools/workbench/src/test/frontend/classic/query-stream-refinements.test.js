@@ -9,9 +9,9 @@ const { classicCompilerOptions } = require('./workbench-scripts.js');
 const { FakeDocument } = require('./browser-fakes.js');
 
 const streamSource = path.resolve(__dirname,
-    '../../tools/workbench/src/main/webapp/scripts/ts/queryStream.ts');
+    '../../../main/frontend/classic/queryStream.ts');
 const disclosureSource = path.resolve(__dirname,
-    '../../tools/workbench/src/main/webapp/scripts/ts/template.ts');
+    '../../../main/frontend/classic/template.ts');
 
 function loadQueryStreamApi(workbench = {}) {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-stream-refinements-'));

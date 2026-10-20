@@ -5,12 +5,13 @@ The Workbench (`rdf4j-http-workbench`) is the browser UI for RDF4J Server. This 
 | Path | What it is |
 | --- | --- |
 | `src/main/java` | Servlets that render pages and proxy requests to RDF4J Server |
-| `src/main/webapp/scripts/ts/*.ts` | TypeScript sources of the classic (lit-html) pages |
+| `src/main/webapp/` | `WEB-INF` (deployment descriptors), images and favicons |
+| `src/main/frontend/classic/*.ts` | TypeScript sources of the classic (lit-html) pages |
 | `src/main/frontend/graph-explorer/` | The React graph explorer island (TypeScript/TSX), bundled by Vite |
-| `src/main/webapp/scripts/` | Hand-written or vendored JavaScript only (see below); compiled output is **not** committed |
-| `src/main/webapp/styles/*.css` | Plain CSS, served as is |
-| `package.json`, `tsconfig.classic.json`, `tsconfig.json`, `vite.config.ts` | The npm project that builds both front ends into `target/frontend/` |
-| `src/test/frontend/` | Node unit tests of the graph explorer (`npm test`) |
+| `src/main/frontend/static/scripts/` | Hand-written or vendored JavaScript only (see below), served as is |
+| `src/main/frontend/static/styles/` | Plain CSS, served as is |
+| `src/test/frontend/` | All Node front-end tests (`npm test`): `classic/`, `graph-explorer/`, and pure-Node layout `benchmarks/` |
+| `package.json`, `tsconfig.classic.json`, `tsconfig.json`, `vite.config.ts` | The npm project that builds and tests both front ends |
 
 All commands below run from the **repository root** unless stated otherwise.
 
@@ -20,11 +21,13 @@ All commands below run from the **repository root** unless stated otherwise.
 `frontend-maven-plugin`, which downloads a private Node into `target/node`, runs `npm ci` (only when `node_modules`
 is missing) and `npm run build`, and writes the result to `target/frontend/`. The WAR plugin adds that directory as a
 web resource, so the WAR, the Spring Boot runner (which unpacks the WAR) and the Docker images always carry freshly
-compiled scripts. Nothing compiled is committed any more.
+compiled scripts. Nothing compiled is committed any more. Before that, in the `initialize` phase, Maven copies
+`src/main/frontend/static/` and the classic `.ts` sources (to `scripts/ts/`, where the source maps look for them) into
+`target/frontend/`, so the URL of every served file is its path below `static/`.
 
 `npm run build` does two things, in this order:
 
-1. `build:classic`: `tsc -p tsconfig.classic.json` compiles `src/main/webapp/scripts/ts/*.ts` to
+1. `build:classic`: `tsc -p tsconfig.classic.json` compiles `src/main/frontend/classic/*.ts` to
    `target/frontend/scripts/*.js` (+ `.js.map`) with exactly the flags the old `compileTypescript.sh` used
    (`--noImplicitAny --sourcemap --sourceRoot /rdf4j-workbench/scripts/ts`, default target and no module system).
    The files share the global `workbench` namespace, reference each other with `/// <reference path="..." />`, and
@@ -33,8 +36,8 @@ compiled scripts. Nothing compiled is committed any more.
    `target/frontend/scripts/graph-explorer/graph-explorer.mjs` (an ES module, plus hashed chunks and workers under
    `scripts/graph-explorer/`) and `target/frontend/styles/graph-explorer.css`.
 
-Java-only loops can pass `-DskipFrontend=true`; the WAR then lacks the compiled scripts, so do not use it for anything
-that serves the Workbench.
+Java-only loops can pass `-DskipFrontend=true`; the WAR then lacks the compiled scripts (it still has the static
+scripts and styles), so do not use it for anything that serves the Workbench.
 
 ## Prerequisites
 
@@ -144,9 +147,11 @@ cd tools/workbench && npm ci && npm run build && cd ../..
 - `npm run dev`: Vite dev server on `http://localhost:5173/dev/index.html?repository=<id>` that mounts the graph
   explorer standalone and proxies `/rdf4j-workbench` and `/rdf4j-server` to a server-boot running on port 8080.
 - `npm run typecheck`: type-checks the explorer sources without emitting.
-- `npm test`: Node unit tests of the explorer under `src/test/frontend/`.
+- `npm test`: all Node unit tests under `src/test/frontend/` (`npm run test:classic` and `npm run test:explorer` run
+  one half each; see [Front-end unit tests](#front-end-unit-tests-node-no-server)).
 
-Files in `src/main/webapp/scripts/` are hand-written or vendored, so edit them directly (or not at all, for vendored code):
+Files in `src/main/frontend/static/scripts/` are hand-written or vendored, so edit them directly (or not at all, for
+vendored code):
 
 - `workbench-theme.js`, `workbench-lit-html.mjs`, `cookies.html` (hand-written)
 - `yasqe*`, `diff.min.js`, `svg-pan-zoom.min.js`, and the versioned `vendor/` directories
@@ -198,15 +203,15 @@ cd scripts && ./checkCopyrightPresent.sh && cd ..
 
 The Graph page (`/repositories/<id>/graph`) is a React application under `src/main/frontend/graph-explorer/`,
 mounted into the lit-html outlet by `main.tsx` (`window.workbench.graphExplorer.mount(outlet, ctx)`, registered in
-`scripts/ts/workbenchRoutes.ts`). It talks only to the Workbench: `transport.ts` posts one SPARQL query per request
+`classic/workbenchRoutes.ts`). It talks only to the Workbench: `transport.ts` posts one SPARQL query per request
 to `GraphServlet` (`/repositories/<id>/graph`) and receives SPARQL Results JSON (`CONSTRUCT` and `DESCRIBE` results
 arrive as `?source ?predicate ?target` rows), so the Workbench session carries the server credentials and the
 deployment policy (`query-execution`, `menu.item.graph.visible`) applies.
 
 - `npm run dev` in `tools/workbench` serves `src/main/frontend/dev/index.html?repository=<id>` against a server-boot on
   port 8080 (`/rdf4j-workbench` and `/rdf4j-server` are proxied), with hot reload of the island.
-- `npm test` runs the explorer's unit tests (`src/test/frontend/graph-explorer/`), including `css-inventory.test.mjs`
-  (every rule scoped under `.graph-explorer`, tokens aliased to the Workbench's) and
+- `npm run test:explorer` runs the explorer's unit tests (`src/test/frontend/graph-explorer/`), including
+  `css-inventory.test.mjs` (every rule scoped under `.graph-explorer`, tokens aliased to the Workbench's) and
   `query-fixtures-current.test.mjs` (the generated SPARQL under `src/test/resources/graph-explorer-queries` is what the
   generators produce; refresh it with `npm run fixtures:queries`). `GraphExplorerQueryTest` runs those queries on a
   MemoryStore from Maven.
@@ -220,7 +225,7 @@ deployment policy (`query-execution`, `menu.item.graph.visible`) applies.
   `workspace.ts` validates like the plain form; a record that cannot be read is kept aside under
   `<scope>:unreadable`.
 - "Add to graph" on the other pages goes through a `localStorage` queue
-  (`rdf4j-workbench-graph-additions:<basePath>|<repositoryId>`): `scripts/ts/graphAdditions.ts` writes it,
+  (`rdf4j-workbench-graph-additions:<basePath>|<repositoryId>`): `classic/graphAdditions.ts` writes it,
   `graph-additions.ts` takes it when the Graph page mounts and on `storage` events from other tabs.
 - `link-counts.ts` and `linkCountQuery` give the "+N" badges (links in the repository minus loaded ones); Expand
   passes the loaded statements to `expandQuery`, which leaves them out with `MINUS { VALUES … }`.
@@ -274,7 +279,7 @@ TSX or CSS, either:
 
 - rebuild and restart: `mvn -B -ntp -T 1C -o -Dmaven.repo.local=.m2_repo -pl tools/server-boot -am -Pquick install`, or
 - for quick iteration, run `npm run build` in `tools/workbench` and copy the changed files from `target/frontend/`
-  (or `src/main/webapp/styles/`) into that extracted directory of the running server and reload the page, or
+  (or `src/main/frontend/static/`) into that extracted directory of the running server and reload the page, or
 - for the graph explorer only, use `npm run dev` against the running server-boot.
 
 ### Jetty Maven plugin
@@ -317,7 +322,8 @@ ordinary result transport does not carry the provenance needed to establish that
 
 Focused coverage for this feature is in `ValueDecoderBlankNodeReferenceTest`,
 `ExploreServletPageDataTest#fixedBlankNodeResourcesKeepTheirExactIdentityInRowsAndMetadata`,
-`e2e/tests-unit/workbench-blank-node-references.test.js` and `e2e/tests/workbench-blank-node-references.spec.js`.
+`src/test/frontend/classic/workbench-blank-node-references.test.js` and
+`e2e/tests/workbench-blank-node-references.spec.js`.
 
 ### Java unit tests
 
@@ -341,23 +347,27 @@ Never combine `-am` with a test run, and do not use `-q` when running tests. Rep
 ### Front-end unit tests (Node, no server)
 
 ```bash
-cd e2e && npm run test:unit && cd ..
+cd tools/workbench && npm test && cd ../..
 ```
 
-This runs `node --test tests-unit/*.test.js`. Most tests load the compiled `scripts/*.js` files into a fake browser
-harness. They read them from `tools/workbench/target/frontend/scripts` (override with `WORKBENCH_SCRIPT_DIR`), so run
-`npm run build` in `tools/workbench` (or a Maven build) first, or they fail with a message naming that command;
-hand-written files such as `workbench-theme.js` still come from `src/main/webapp/scripts`. A few tests compile
-individual `.ts` files to a temporary directory with the `tsc` from `e2e/node_modules/.bin`, which `npm run` puts on
-`PATH`.
+`npm test` runs both halves; each also has its own script:
 
-Coverage of every script compiled from `scripts/ts` (Node 22+):
+- `npm run test:classic` runs `node --test "src/test/frontend/classic/*.test.js"`, the tests of the classic pages.
+  Most load the compiled `scripts/*.js` files into a fake browser harness. They read them from
+  `tools/workbench/target/frontend/scripts` (override with `WORKBENCH_SCRIPT_DIR`), so run `npm run build` (or a Maven
+  build) first, or they fail with a message naming that command; hand-written files such as `workbench-theme.js` come
+  from `src/main/frontend/static/scripts`. Tests name a script by its served path (`scripts/template.js`) and
+  `workbench-scripts.js` resolves it. A few tests compile individual `.ts` files to a temporary directory with the
+  `tsc` from `node_modules/.bin`, which `npm run` puts on `PATH`.
+- `npm run test:explorer` runs the graph explorer tests, `src/test/frontend/**/*.test.mjs`.
+
+Coverage of every script compiled from `src/main/frontend/classic` (Node 22+):
 
 ```bash
-cd e2e && npm run test:unit:coverage && cd ..
+cd tools/workbench && npm run test:classic:coverage && cd ../..
 ```
 
-It runs the same unit tests and prints a per-script coverage table. It fails when the total falls below floors set a
+It runs the classic unit tests and prints a per-script coverage table. It fails when the total falls below floors set a
 little under what the suite reaches today (55 % lines, 70 % branches, 60 % functions; override with
 `WORKBENCH_COVERAGE_LINES`, `WORKBENCH_COVERAGE_BRANCHES` and `WORKBENCH_COVERAGE_FUNCTIONS`). It is not a 100 % gate:
 only scripts that a test loads under their file path are counted, so scripts that tests evaluate under a relative name
@@ -399,8 +409,8 @@ Use `npx playwright test --ui` for the interactive runner. Reports go to `e2e/pl
 
 - `formatting-and-quick-compile`: `mvn -Pformatting spotless:check` and a quick compile.
 - `build`: `install -Pquick`, then all Java unit tests.
-- `frontend-unit-tests`: `npm ci && npm run build` in `tools/workbench`, then `npm ci` and `npm run test:unit` in
-  `e2e/`, on Node 22.
+- `frontend-unit-tests`: `npm ci && npm run build` and `npm run test:classic` in `tools/workbench`, then `npm ci` and
+  `npm run test:unit` in `e2e/` (a unit test of a Playwright helper), on Node 22.
 - `e2e`: `e2e/run.sh` for {Spring Boot, Docker Tomcat} × {chromium, firefox, webkit} on Ubuntu with Node 22.
 - `copyright-check`: `scripts/checkCopyrightPresent.sh`.
 
@@ -408,9 +418,9 @@ Every Maven job compiles the front end as part of `install -Pquick`.
 
 ## Checklist for a front-end change
 
-1. Edit `src/main/webapp/scripts/ts/*.ts`, `src/main/frontend/**`, the CSS or the hand-written JS.
+1. Edit files under `src/main/frontend/` (classic TypeScript, the explorer, the CSS or the hand-written JS).
 2. Run `npm run build` in `tools/workbench` (or a Maven build) and fix any compiler errors.
-3. Run `npm run test:unit` in `e2e/` (and `npm test` in `tools/workbench` for explorer changes).
+3. Run `npm test` in `tools/workbench`.
 4. Rebuild server-boot (or copy the files into the running server) and check the page in a browser.
 5. Run the relevant Playwright specs.
 6. Commit the sources only; never commit `target/` or `node_modules/`.

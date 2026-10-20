@@ -8,7 +8,7 @@ const { createScriptHarness } = require('./script-harness.js');
 
 function createHighlighterHarness() {
     const harness = createScriptHarness();
-    harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
+    harness.runScript('scripts/queryExplanationHighlighter.js');
     return {
         harness,
         highlighter: harness.context.workbench.queryExplanationHighlighter
@@ -413,7 +413,7 @@ test('matches the Java formatter for every shared plan fixture', () => {
     const parsePlanJson = parserHarness.context.workbench.query.testing.parsePlanJson;
     const fixtureDirectory = path.resolve(
         __dirname,
-        '../../tools/workbench/src/test/resources/query-explanation-highlighter'
+        '../../../test/resources/query-explanation-highlighter'
     );
     const fixtureFiles = fs.readdirSync(fixtureDirectory)
         .filter((fileName) => fileName.endsWith('.json'))

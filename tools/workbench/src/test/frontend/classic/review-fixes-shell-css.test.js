@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const styles = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/styles');
+const styles = path.resolve(__dirname, '../../../main/frontend/static/styles');
 const css = (name) => fs.readFileSync(path.join(styles, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 
 /** Top-level rules (selector list and body) of a stylesheet, or of the blocks of one at-rule. */
@@ -105,7 +105,7 @@ test('A36: the diff modal shows added and removed lines and their changed words 
 
 test('A37: the navigation list has no whitespace of its own, so an empty menu matches :empty', () => {
     const views = fs.readFileSync(path.resolve(__dirname,
-        '../../tools/workbench/src/main/webapp/scripts/ts/workbenchViews.ts'), 'utf8');
+        '../../../main/frontend/classic/workbenchViews.ts'), 'utf8');
     assert.match(views, /<div id="navigation" class="workbench-nav"><ul class="maingroup">\$\{\s*navigation\([^}]*\)\}<\/ul>/,
         'nothing but the navigation items between <ul class="maingroup"> and </ul>');
 });

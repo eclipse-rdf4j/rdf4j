@@ -8,14 +8,13 @@ if (major < 22) {
     process.exit(1);
 }
 
-const e2eDir = path.resolve(__dirname, '..');
-const repoRoot = path.resolve(e2eDir, '..');
-const scriptsDir = path.resolve(repoRoot, 'tools/workbench/src/main/webapp/scripts');
-const compiledDir = require('./workbench-scripts.js').compiledScriptsDir();
-// Every script compiled from scripts/ts (declaration files produce none), so the list cannot name a deleted script or
-// miss a new one. Only scripts a test loads under their absolute path are attributed; tests that evaluate a script
-// under a relative vm filename are not counted, so these totals understate what the tests exercise.
-const workbenchScripts = fs.readdirSync(path.join(scriptsDir, 'ts'))
+const { workbenchRoot, compiledScriptsDir } = require('./workbench-scripts.js');
+const classicDir = path.join(workbenchRoot, 'src/main/frontend/classic');
+const compiledDir = compiledScriptsDir();
+// Every script compiled from src/main/frontend/classic (declaration files produce none), so the list cannot name a
+// deleted script or miss a new one. Only scripts a test loads under their absolute path are attributed; tests that
+// evaluate a script under a relative vm filename are not counted, so these totals understate what the tests exercise.
+const workbenchScripts = fs.readdirSync(classicDir)
     .filter((fileName) => fileName.endsWith('.ts') && !fileName.endsWith('.d.ts'))
     .sort()
     .map((fileName) => path.join(compiledDir, fileName.replace(/\.ts$/, '.js')));
@@ -45,7 +44,7 @@ workbenchScripts.forEach((scriptPath) => {
 args.push(...testFiles);
 
 const result = spawnSync(process.execPath, args, {
-    cwd: e2eDir,
+    cwd: workbenchRoot,
     stdio: 'inherit'
 });
 

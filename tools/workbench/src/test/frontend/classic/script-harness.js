@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { workbenchScriptPath } = require('./workbench-scripts.js');
+const { workbenchRoot, workbenchScriptPath } = require('./workbench-scripts.js');
 const vm = require('node:vm');
 
 const { FakeDocument, FakeElement, FakeTimerQueue, FakeWindow, createJQuery } = require('./browser-fakes.js');
@@ -361,9 +361,9 @@ function createScriptHarness(options = {}) {
     context.window.btoa = context.window.btoa || context.btoa;
 
     function runScript(relativePath) {
-        const absolutePath = relativePath.startsWith('tools/workbench/src/main/webapp/scripts/')
+        const absolutePath = relativePath.startsWith('scripts/')
             ? workbenchScriptPath(relativePath)
-            : path.resolve(__dirname, '..', '..', relativePath);
+            : path.resolve(workbenchRoot, relativePath);
         const source = fs.readFileSync(absolutePath, 'utf8');
         vm.runInContext(source, context, { filename: absolutePath });
     }

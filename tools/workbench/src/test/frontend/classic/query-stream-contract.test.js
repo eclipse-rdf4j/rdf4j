@@ -9,9 +9,9 @@ const { classicCompilerOptions } = require('./workbench-scripts.js');
 const { FakeDocument } = require('./browser-fakes.js');
 
 const disclosureSource = path.resolve(__dirname,
-	'../../tools/workbench/src/main/webapp/scripts/ts/template.ts');
+	'../../../main/frontend/classic/template.ts');
 const streamSource = path.resolve(__dirname,
-    '../../tools/workbench/src/main/webapp/scripts/ts/queryStream.ts');
+    '../../../main/frontend/classic/queryStream.ts');
 
 class InMemoryWorker {
     constructor() {

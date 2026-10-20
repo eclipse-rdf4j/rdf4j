@@ -21,7 +21,7 @@ installDetailDisclosureTemplateRuntime(context.workbench);
 vm.runInContext(fs.readFileSync(path.join(scripts, 'workbenchViews.js'), 'utf8'), context);
 const vocabulary = context.workbench.configurationVocabulary;
 const config = 'tag:rdf4j.org,2023:config/';
-const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../../tools/workbench/src/test/resources/'
+const fixtures = JSON.parse(fs.readFileSync(path.join(__dirname, '../../../test/resources/'
     + 'org/eclipse/rdf4j/workbench/commands/config-reference-prefix-cases.json'), 'utf8'));
 
 for (const fixture of fixtures) {

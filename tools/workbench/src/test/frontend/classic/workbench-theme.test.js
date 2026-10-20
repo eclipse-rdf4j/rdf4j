@@ -5,7 +5,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const scriptPath = path.resolve(__dirname,
-    '../../tools/workbench/src/main/webapp/scripts/workbench-theme.js');
+    '../../../main/frontend/static/scripts/workbench-theme.js');
 
 function loadTheme(defaultTheme, storedTheme) {
     const source = fs.readFileSync(scriptPath, 'utf8');

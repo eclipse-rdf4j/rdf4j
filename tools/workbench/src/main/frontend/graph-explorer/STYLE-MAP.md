@@ -1,7 +1,7 @@
 # Graph explorer style map
 
 How the explorer's stylesheet (`graph-explorer.css`, built to `styles/graph-explorer.css`) relates to the Workbench
-design system (`src/main/webapp/styles/workbench-refresh.css`). `scripts/css-inventory.mjs --print` lists the
+design system (`src/main/frontend/static/styles/workbench-refresh.css`). `scripts/css-inventory.mjs --print` lists the
 current class inventory; `src/test/frontend/graph-explorer/css-inventory.test.mjs` enforces the rules below.
 
 ## Rules

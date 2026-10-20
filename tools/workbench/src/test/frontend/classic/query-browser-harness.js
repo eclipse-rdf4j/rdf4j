@@ -563,18 +563,18 @@ function createQueryBrowserHarness(options = {}) {
     });
 
     if (!context.Diff) {
-        harness.runScript('tools/workbench/src/main/webapp/scripts/diff.min.js');
+        harness.runScript('scripts/diff.min.js');
     }
     const injectedQueryPage = options.workbench && options.workbench.queryPage
         ? Object.assign({}, options.workbench.queryPage) : null;
-    harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
-    harness.runScript('tools/workbench/src/main/webapp/scripts/queryStream.js');
+    harness.runScript('scripts/template.js');
+    harness.runScript('scripts/queryStream.js');
     if (injectedQueryPage) {
         context.workbench.queryPage = injectedQueryPage;
     }
-    harness.runScript('tools/workbench/src/main/webapp/scripts/queryCancelPolicy.js');
-    harness.runScript('tools/workbench/src/main/webapp/scripts/queryExplanationHighlighter.js');
-    harness.runScript(options.queryScriptPath || 'tools/workbench/src/main/webapp/scripts/query.js');
+    harness.runScript('scripts/queryCancelPolicy.js');
+    harness.runScript('scripts/queryExplanationHighlighter.js');
+    harness.runScript(options.queryScriptPath || 'scripts/query.js');
 
     explainTrigger.onclick = () => context.workbench.query.runExplain(null, 'explain-trigger');
     explainTriggerCancel.onclick = () => context.workbench.query.cancelExplain();

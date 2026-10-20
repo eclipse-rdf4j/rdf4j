@@ -5,7 +5,7 @@ const path = require('node:path');
 
 test('query diff rows size to the full horizontal diff width', () => {
     const css = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'tools/workbench/src/main/webapp/styles/query-compare.css'),
+        path.resolve(__dirname, '..', '..', '..', 'main/frontend/static/styles/query-compare.css'),
         'utf8'
     );
 
@@ -17,7 +17,7 @@ test('query diff rows size to the full horizontal diff width', () => {
 
 test('query editor matching tags use the Workbench selected surface', () => {
     const css = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'tools/workbench/src/main/webapp/styles/workbench-refresh.css'),
+        path.resolve(__dirname, '..', '..', '..', 'main/frontend/static/styles/workbench-refresh.css'),
         'utf8'
     );
 
@@ -39,7 +39,7 @@ function percentageValue(value) {
 
 test('the loading bar loops without a jump: it moves linearly and starts and ends outside its box', () => {
     const css = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'tools/workbench/src/main/webapp/styles/workbench-refresh.css'),
+        path.resolve(__dirname, '..', '..', '..', 'main/frontend/static/styles/workbench-refresh.css'),
         'utf8'
     );
     const keyframes = css.match(/@keyframes workbench-route-progress\s*\{\s*from\s*\{\s*background-position:\s*(\S+(?: \/ \S+\))?)\s+0;\s*\}\s*to\s*\{\s*background-position:\s*(\S+(?: \/ \S+\))?)\s+0;\s*\}\s*\}/);
@@ -70,7 +70,7 @@ test('the loading bar loops without a jump: it moves linearly and starts and end
 
 test('the explanation times sit in the panel top padding, above the toolbar', () => {
     const css = fs.readFileSync(
-        path.resolve(__dirname, '..', '..', 'tools/workbench/src/main/webapp/styles/query-explanation.css'),
+        path.resolve(__dirname, '..', '..', '..', 'main/frontend/static/styles/query-explanation.css'),
         'utf8'
     );
     const rule = css.match(/\n\.query-explanation-timings\s*\{([^}]*)\}/);

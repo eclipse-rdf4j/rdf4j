@@ -52,7 +52,7 @@ function recordMotions(element) {
 function paneHarness() {
     const harness = createScriptHarness();
     harness.document.documentElement = { clientWidth: 1000 };
-    harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
+    harness.runScript('scripts/template.js');
     const element = (tagName, options, parent) => {
         const created = harness.registerElement(tagName, options || {});
         (parent || harness.document.body).appendChild(created);
@@ -194,7 +194,7 @@ test('reversing a collapse that still shows its borders keeps them while the pan
 
 test('an expanding row gains its borders only after it has grown, like a pane', () => {
     const harness = createScriptHarness();
-    harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
+    harness.runScript('scripts/template.js');
     const row = harness.registerElement('div', { style: Object.assign({ display: 'none' }, BOX) });
     harness.document.body.appendChild(row);
     row.getBoundingClientRect = () => rect(0, 0, 300, row.style.display === 'none' ? 0 : PANE_HEIGHT);

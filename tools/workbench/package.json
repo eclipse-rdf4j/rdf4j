@@ -2,7 +2,7 @@
   "name": "rdf4j-workbench-frontend",
   "version": "0.0.0",
   "private": true,
-  "description": "Front end of the RDF4J Workbench: the classic lit-html pages (scripts/ts) and the React graph explorer (src/main/frontend).",
+  "description": "Front end of the RDF4J Workbench: the classic lit-html pages (src/main/frontend/classic), the React graph explorer (src/main/frontend/graph-explorer) and the static scripts and styles (src/main/frontend/static).",
   "license": "BSD-3-Clause",
   "engines": {
     "node": ">=22.12.0"
@@ -13,7 +13,10 @@
     "build:explorer": "vite build",
     "dev": "vite",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node --experimental-strip-types --test \"src/test/frontend/**/*.test.mjs\"",
+    "test": "npm run test:classic && npm run test:explorer",
+    "test:classic": "node --test \"src/test/frontend/classic/*.test.js\"",
+    "test:classic:coverage": "node src/test/frontend/classic/run-workbench-unit-coverage.js",
+    "test:explorer": "node --experimental-strip-types --test \"src/test/frontend/**/*.test.mjs\"",
     "fixtures:queries": "node --experimental-strip-types scripts/export-query-fixtures.mjs"
   },
   "dependencies": {

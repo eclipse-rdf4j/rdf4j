@@ -15,7 +15,7 @@ import type { GuideSection } from "./explorer-help.ts";
 
 /**
  * A "?" button that opens a small panel with the details most readers can skip, like the Workbench's own help buttons
- * (helpTip in scripts/ts/workbenchViews.ts). A press elsewhere closes it; Escape closes it and returns to the button
+ * (helpTip in classic/workbenchViews.ts). A press elsewhere closes it; Escape closes it and returns to the button
  * before the explorer's own Escape (details card, selection) gets a turn.
  *
  * `align` picks the button edge a floating panel lines up with: "end" for a button near the right edge of the explorer.

@@ -20,7 +20,7 @@ const { spawnSync } = require('node:child_process');
 const { classicCompilerOptions } = require('./workbench-scripts.js');
 
 const appSource = path.resolve(__dirname,
-    '../../tools/workbench/src/main/webapp/scripts/ts/workbenchApp.ts');
+    '../../../main/frontend/classic/workbenchApp.ts');
 
 function loadWorkbenchWithFailedEarlyThemeScript() {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-workbench-script-retry-'));

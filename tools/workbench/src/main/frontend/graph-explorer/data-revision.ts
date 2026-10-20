@@ -13,7 +13,7 @@ import { repositoryScope } from "./repository-identity.ts";
 
 /**
  * Every write the Workbench makes to a repository (Add RDF, Remove, Clear, SPARQL Update, configuration, creating or
- * deleting it) puts a new value under this key (scripts/ts/graphAdditions.ts, dataChanged). The Graph page keys its
+ * deleting it) puts a new value under this key (classic/graphAdditions.ts, dataChanged). The Graph page keys its
  * cached Filters values by that value, so a write in this tab or another one makes it load them again.
  */
 const DATA_REVISION_PREFIX = "rdf4j-workbench-data-revision:";

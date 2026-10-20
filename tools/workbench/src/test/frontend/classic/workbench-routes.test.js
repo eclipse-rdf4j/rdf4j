@@ -232,7 +232,7 @@ test('the default mount marks a failure to bind the row windows as a row-store f
 
 const { createScriptHarness } = require('./script-harness.js');
 
-const routeScriptsDir = 'tools/workbench/src/main/webapp/scripts/';
+const routeScriptsDir = 'scripts/';
 
 /** A document with a #workbench-outlet and the route scripts loaded, as the router sees it. */
 function routeHarness(href) {

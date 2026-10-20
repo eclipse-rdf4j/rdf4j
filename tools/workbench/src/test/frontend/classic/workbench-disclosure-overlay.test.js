@@ -31,7 +31,7 @@ const rect = (left, top, width, height) => ({ left, top, width, height, right: l
 function paneHarness(options = {}) {
     const harness = createScriptHarness({ window: options.window });
     harness.document.documentElement = { clientWidth: options.viewport || 1000 };
-    harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
+    harness.runScript('scripts/template.js');
     const element = (tagName, elementOptions, parent) => {
         const created = harness.registerElement(tagName, elementOptions || {});
         (parent || harness.document.body).appendChild(created);

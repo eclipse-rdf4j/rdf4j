@@ -13,9 +13,9 @@ function createFormBrowserHarness(options = {}) {
 
     return Object.assign({}, harness, {
         loadScripts(scriptNames) {
-            harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
+            harness.runScript('scripts/template.js');
             scriptNames.forEach((scriptName) => {
-                harness.runScript(`tools/workbench/src/main/webapp/scripts/${scriptName}`);
+                harness.runScript(`scripts/${scriptName}`);
             });
         }
     });

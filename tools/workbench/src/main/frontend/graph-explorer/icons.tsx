@@ -14,7 +14,7 @@
  * Stroke icons in the Workbench's style: 24px paths drawn with currentColor at 1.75px (the workbench-action-icon
  * rule in styles/workbench-refresh.css sizes and strokes them). Where the Workbench has an icon for the same meaning
  * (query, chevron, close, search, settings, explore, copy, execute, help) the path is the Workbench's own
- * (actionIconCatalog in scripts/ts/workbenchViews.ts).
+ * (actionIconCatalog in classic/workbenchViews.ts).
  */
 const ICON_PATHS = {
   query: "m5 7 5 5-5 5M13 17h6",

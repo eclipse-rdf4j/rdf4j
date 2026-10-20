@@ -21,7 +21,7 @@ const { FakeDocument } = require('./browser-fakes.js');
 
 const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-query-load-more-'));
 const outputPath = path.join(outputDirectory, 'queryStream.js');
-const sourceRoot = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/scripts/ts');
+const sourceRoot = path.resolve(__dirname, '../../../main/frontend/classic');
 const compilation = spawnSync('tsc', [
     ...classicCompilerOptions(),
     '--target', 'ES2017', '--lib', 'ES2017,DOM', '--skipLibCheck', '--outFile', outputPath,

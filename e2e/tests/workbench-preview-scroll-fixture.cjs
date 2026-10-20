@@ -16,7 +16,11 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-const webRoot = path.resolve(__dirname, '../../tools/workbench/src/main/webapp');
+// Scripts and styles live in the front-end tree, images in the web application directory.
+const webRoots = [
+    path.resolve(__dirname, '../../tools/workbench/src/main/frontend/static'),
+    path.resolve(__dirname, '../../tools/workbench/src/main/webapp')
+];
 const basePath = '/rdf4j-workbench';
 const statement = [
     { kind: 'iri', value: 'urn:subject:' + 's'.repeat(180) },
@@ -126,11 +130,12 @@ function createServer() {
         if (url.pathname.startsWith(`${basePath}/scripts/`) || url.pathname.startsWith(`${basePath}/styles/`)
                 || url.pathname.startsWith(`${basePath}/images/`)) {
             const relativePath = decodeURIComponent(url.pathname.slice(basePath.length + 1));
-            const file = path.resolve(webRoot, relativePath);
-            if (!file.startsWith(webRoot + path.sep)) {
+            const candidates = webRoots.map(root => ({ root, file: path.resolve(root, relativePath) }));
+            if (candidates.some(({ root, file }) => !file.startsWith(root + path.sep))) {
                 response.writeHead(403).end();
                 return;
             }
+            const file = (candidates.find(({ file }) => fs.existsSync(file)) || candidates[0]).file;
             const extension = path.extname(file);
             const contentType = extension === '.js' || extension === '.mjs' ? 'text/javascript' : extension === '.css' ? 'text/css'
                 : extension === '.map' ? 'application/json' : 'application/octet-stream';

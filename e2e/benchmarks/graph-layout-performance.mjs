@@ -68,6 +68,7 @@ const requests = [];
 const requestStats = new Map();
 const server = await startServer({
   compiled: compiledRoot,
+  staticRoot: path.resolve(args.static || path.join(repo, 'tools/workbench/src/main/frontend/static')),
   webapp: path.resolve(args.webapp || path.join(repo, 'tools/workbench/src/main/webapp')),
   identity, inputResults, labelResults, typeResults, emptyResults, theme, showValues, diagnose, requests, requestStats,
 });
@@ -323,7 +324,7 @@ function installLayoutObserver({diagnose}) {
   };
 }
 
-async function startServer({ compiled, webapp, identity, inputResults, labelResults, typeResults, emptyResults, theme, showValues, diagnose, requests, requestStats }) {
+async function startServer({ compiled, staticRoot, webapp, identity, inputResults, labelResults, typeResults, emptyResults, theme, showValues, diagnose, requests, requestStats }) {
   const events = [], waiters = new Map();
   const script = '(' + installLayoutObserver.toString() + ')(' + JSON.stringify({diagnose}) + ');';
   const mime = { '.js':'application/javascript','.mjs':'application/javascript','.css':'text/css','.svg':'image/svg+xml','.json':'application/json','.wasm':'application/wasm','.woff2':'font/woff2','.woff':'font/woff','.map':'application/json' };
@@ -379,7 +380,7 @@ async function startServer({ compiled, webapp, identity, inputResults, labelResu
     }
     if (url.pathname.startsWith('/workbench/')) {
       const relative = decodeURIComponent(url.pathname.slice('/workbench/'.length));
-      for (const root of [compiled, webapp]) {
+      for (const root of [compiled, staticRoot, webapp]) {
         const file = path.resolve(root, relative);
         if (file.startsWith(root + path.sep) && existsSync(file)) {
           res.setHeader('Content-Type', mime[path.extname(file)] || 'application/octet-stream');

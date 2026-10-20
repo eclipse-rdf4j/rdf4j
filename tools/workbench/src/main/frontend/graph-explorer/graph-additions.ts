@@ -14,7 +14,7 @@ import { repositoryScope } from "./repository-identity.ts";
 import { parseFixedBlankNodeReference, sparqlNodeId, sparqlFacetValueToken } from "./rdf-terms.ts";
 
 /**
- * "Add to graph" on the other Workbench pages (scripts/ts/graphAdditions.ts) queues resources, statements and
+ * "Add to graph" on the other Workbench pages (classic/graphAdditions.ts) queues resources, statements and
  * queries in localStorage under this prefix plus a versioned server/repository tuple; the Graph page takes them when it opens
  * and whenever another tab changes the queue. Terms are N-Triples terms.
  */

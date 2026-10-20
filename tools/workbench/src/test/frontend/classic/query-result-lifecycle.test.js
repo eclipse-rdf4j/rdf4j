@@ -13,7 +13,7 @@ function compileQuerySource() {
     const outputPath = path.join(outputDirectory, 'query.js');
     const sharedTypePath = path.join(outputDirectory, 'query-stream-fullscreen.d.ts');
     const sourcePath = path.resolve(__dirname,
-        '../../tools/workbench/src/main/webapp/scripts/ts/query.ts');
+        '../../../main/frontend/classic/query.ts');
     fs.writeFileSync(sharedTypePath, `declare namespace workbench {
     namespace resultFullscreen {
         function currentTarget(): HTMLElement;

@@ -13,7 +13,7 @@ function compilePagingSource() {
     const outputDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'rdf4j-paging-source-contract-'));
     const outputPath = path.join(outputDirectory, 'paging.js');
     const sourcePath = path.resolve(__dirname,
-        '../../tools/workbench/src/main/webapp/scripts/ts/paging.ts');
+        '../../../main/frontend/classic/paging.ts');
     const compilation = spawnSync('tsc', [
         ...classicCompilerOptions(),
         '--target', 'ES2017',

@@ -10,8 +10,8 @@
     "sourceMap": true,
     "sourceRoot": "/rdf4j-workbench/scripts/ts",
     "outDir": "target/frontend/scripts",
-    "rootDir": "src/main/webapp/scripts/ts",
+    "rootDir": "src/main/frontend/classic",
     "types": []
   },
-  "include": ["src/main/webapp/scripts/ts/*.ts"]
+  "include": ["src/main/frontend/classic/*.ts"]
 }

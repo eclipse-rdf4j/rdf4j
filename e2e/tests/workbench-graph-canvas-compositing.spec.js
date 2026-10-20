@@ -89,7 +89,7 @@ test.beforeAll(async () => {
 		}
 		const css = url.pathname === '/graph-explorer.css' ? path.join(SOURCE, 'graph-explorer.css')
 			: url.pathname === '/workbench-refresh.css'
-				? path.join(ROOT, 'tools/workbench/src/main/webapp/styles/workbench-refresh.css') : null;
+				? path.join(ROOT, 'tools/workbench/src/main/frontend/static/styles/workbench-refresh.css') : null;
 		if (css) {
 			response.setHeader('Content-Type', 'text/css');
 			return response.end(fs.readFileSync(css));

@@ -17,7 +17,7 @@ const path = require('node:path');
 
 // The classic pages are compiled by `npm run build:classic` in tools/workbench with the same compiler flags the
 // retired compileTypescript.sh used, so the emitted global scripts keep their names and shape.
-const workbench = path.resolve(__dirname, '../../tools/workbench');
+const workbench = path.resolve(__dirname, '../../../..');
 
 test('the classic TypeScript build explicitly keeps the historical global-script contract and output location', () => {
     const config = JSON.parse(fs.readFileSync(path.join(workbench, 'tsconfig.classic.json'), 'utf8'));
@@ -28,7 +28,7 @@ test('the classic TypeScript build explicitly keeps the historical global-script
     assert.equal(config.compilerOptions.module, 'none', 'classic pages are global scripts, not modules');
     assert.equal(config.compilerOptions.target, 'ES5', 'preserve the historical emitted language despite new defaults');
     assert.equal(config.compilerOptions.strict, false, 'new compiler defaults must not silently change the build');
-    assert.deepEqual(config.include, ['src/main/webapp/scripts/ts/*.ts']);
+    assert.deepEqual(config.include, ['src/main/frontend/classic/*.ts']);
 });
 
 test('the npm build runs the classic compiler before the explorer bundle', () => {
@@ -39,10 +39,12 @@ test('the npm build runs the classic compiler before the explorer bundle', () =>
 });
 
 test('compiled scripts are not committed next to their sources', () => {
-    const sources = fs.readdirSync(path.join(workbench, 'src/main/webapp/scripts/ts'))
+    const sources = fs.readdirSync(path.join(workbench, 'src/main/frontend/classic'))
         .filter((name) => name.endsWith('.ts') && !name.endsWith('.d.ts'));
     const committed = sources
         .map((name) => name.replace(/\.ts$/, '.js'))
-        .filter((name) => fs.existsSync(path.join(workbench, 'src/main/webapp/scripts', name)));
+        .flatMap((name) => ['src/main/frontend/classic', 'src/main/frontend/static/scripts']
+            .map((dir) => path.join(dir, name))
+            .filter((file) => fs.existsSync(path.join(workbench, file))));
     assert.deepEqual(committed, [], 'compiled output must come from target/frontend/scripts');
 });

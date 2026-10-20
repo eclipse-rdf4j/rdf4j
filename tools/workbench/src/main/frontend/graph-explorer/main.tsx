@@ -16,7 +16,7 @@ import "./graph-explorer.css";
 
 /**
  * The route context the Workbench passes to a route script's mount function (see scriptMount in
- * scripts/ts/workbenchRoutes.ts). Only the members the island uses are typed here.
+ * classic/workbenchRoutes.ts). Only the members the island uses are typed here.
  */
 export type GraphRouteContext = {
   context: { basePath: string; repositoryId: string | null; serverIdentity?: string | null };
@@ -88,7 +88,7 @@ export function mount(outlet: HTMLElement, ctx?: GraphRouteContext): GraphExplor
   }
   const root = createRoot(container);
   const controller = new AbortController();
-  // The Graph servlet's limits, from the page data on the mount (scripts/ts/workbenchViews.ts, graphPage).
+  // The Graph servlet's limits, from the page data on the mount (classic/workbenchViews.ts, graphPage).
   const limit = (name: string) => {
     const value = Number(host.dataset[name]);
     return Number.isInteger(value) && value > 0 ? value : undefined;

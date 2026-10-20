@@ -16,7 +16,7 @@ import {createHash} from 'node:crypto';
 import {existsSync, readFileSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {performance} from 'node:perf_hooks';
-import {segmentHitsBox} from '../../tools/workbench/src/main/frontend/graph-explorer/graph-layout-stress.ts';
+import {segmentHitsBox} from '../../../main/frontend/graph-explorer/graph-layout-stress.ts';
 import {fileURLToPath, pathToFileURL} from 'node:url';
 
 const args = Object.fromEntries(process.argv.slice(2).reduce((pairs, arg, i, argv) => {

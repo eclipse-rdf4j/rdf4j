@@ -24,10 +24,10 @@ function createListBrowserHarness(options = {}) {
 
     return Object.assign({}, harness, {
         loadPagingScripts(scriptNames) {
-            harness.runScript('tools/workbench/src/main/webapp/scripts/template.js');
-            harness.runScript('tools/workbench/src/main/webapp/scripts/paging.js');
+            harness.runScript('scripts/template.js');
+            harness.runScript('scripts/paging.js');
             scriptNames.forEach((scriptName) => {
-                harness.runScript(`tools/workbench/src/main/webapp/scripts/${scriptName}`);
+                harness.runScript(`scripts/${scriptName}`);
             });
         }
     });

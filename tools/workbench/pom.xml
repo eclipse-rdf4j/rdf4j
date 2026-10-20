@@ -173,12 +173,14 @@
 	<build>
 		<plugins>
 			<plugin>
-				<!-- Guarantees target/frontend exists (the WAR lists it as a web resource) even when -DskipFrontend=true. -->
+				<!-- Fills target/frontend (the WAR lists it as a web resource) with the files served as they are, also when
+				     -DskipFrontend=true: src/main/frontend/static (hand-written and vendored scripts, styles) and the classic
+				     TypeScript sources, which the compiled scripts' source maps load from /scripts/ts/. -->
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-resources-plugin</artifactId>
 				<executions>
 					<execution>
-						<id>create-frontend-output-directory</id>
+						<id>copy-frontend-static</id>
 						<goals>
 							<goal>copy-resources</goal>
 						</goals>
@@ -187,9 +189,13 @@
 							<outputDirectory>${project.build.directory}/frontend</outputDirectory>
 							<resources>
 								<resource>
-									<directory>${project.basedir}/src/main/frontend</directory>
+									<directory>${project.basedir}/src/main/frontend/static</directory>
+								</resource>
+								<resource>
+									<directory>${project.basedir}/src/main/frontend/classic</directory>
+									<targetPath>scripts/ts</targetPath>
 									<includes>
-										<include>**/*.frontend-output-placeholder</include>
+										<include>*.ts</include>
 									</includes>
 								</resource>
 							</resources>
@@ -251,7 +257,8 @@
 					<attachClasses>true</attachClasses>
 					<webResources>
 						<resource>
-							<!-- compiled classic scripts and the graph explorer bundle, produced by npm run build -->
+							<!-- static scripts and styles, classic TypeScript sources, and the compiled classic scripts and graph
+							     explorer bundle produced by npm run build -->
 							<directory>${project.build.directory}/frontend</directory>
 						</resource>
 					</webResources>

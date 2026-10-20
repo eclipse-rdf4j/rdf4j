@@ -209,10 +209,13 @@ jobs:
       - name: Build the Workbench front end
         working-directory: ./tools/workbench
         run: npm ci && npm run build
-      - name: Install dependencies
+      - name: Run Workbench front-end unit tests
+        working-directory: ./tools/workbench
+        run: npm run test:classic
+      - name: Install e2e dependencies
         working-directory: ./e2e
         run: npm ci
-      - name: Run frontend unit tests
+      - name: Run e2e helper unit tests
         working-directory: ./e2e
         run: npm run test:unit
 

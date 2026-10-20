@@ -107,7 +107,7 @@ test('the hide-datatypes style only applies to Explore results', () => {
     const fs = require('node:fs');
     const path = require('node:path');
     const css = fs.readFileSync(path.resolve(__dirname,
-        '../../tools/workbench/src/main/webapp/styles/workbench-refresh.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+        '../../../main/frontend/static/styles/workbench-refresh.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     const rules = css.split('}').filter((rule) => rule.includes('workbench-hide-datatypes'));
     assert.ok(rules.length > 0);
     for (const rule of rules) {

@@ -36,7 +36,10 @@ public final class WorkbenchHtmlShell {
 	private static final String WORKBENCH_BASE_PATH = "workbenchBasePath";
 	private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 	private static final String APPLICATION_TITLE = "RDF4J Workbench";
-	/** Short page names for the document title; keep in sync with shortTitles in scripts/ts/workbenchViews.ts. */
+	/**
+	 * Short page names for the document title; keep in sync with shortTitles in
+	 * src/main/frontend/classic/workbenchViews.ts.
+	 */
 	private static final Map<String, String> SHORT_TITLES = Map.ofEntries(
 			Map.entry("summary", "Summary"), Map.entry("information", "Information"),
 			Map.entry("repositories", "Repositories"), Map.entry("create", "Create repository"),

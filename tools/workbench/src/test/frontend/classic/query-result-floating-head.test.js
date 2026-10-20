@@ -21,7 +21,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { loadApi } = require('./query-load-more-harness.js');
 
-const STYLES = path.resolve(__dirname, '../../tools/workbench/src/main/webapp/styles');
+const STYLES = path.resolve(__dirname, '../../../main/frontend/static/styles');
 
 function memoryStore() {
     let rows = [];
