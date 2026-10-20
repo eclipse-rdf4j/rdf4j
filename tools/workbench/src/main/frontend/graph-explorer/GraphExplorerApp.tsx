@@ -28,6 +28,7 @@ import { formatRangeValue, generatedFacetQuery } from "./facet-queries.ts";
 import { facetModel, NO_MATCH_VALUE, TYPE_FACET_ID, valuesInRange, type Facet } from "./graph-facets.ts";
 import { nodeDetails } from "./node-details.ts";
 import { useStoredWorkspace } from "./use-stored-workspace.ts";
+import { UnreadableWorkspaceNotice } from "./workspace-notice.tsx";
 import { useUndoHistory } from "./use-undo-history.ts";
 import { additionsKey, parseNTriplesTerm, returnAdditions, statementBinding, statementsQuery, takeAdditions, type GraphAddition } from "./graph-additions.ts";
 import { LargeGraphCanvas } from "./large-graph-canvas.tsx";
@@ -724,7 +725,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     setInspectorOpen(Boolean(saved.focusedNodeId));
     setGraphScope(saved.scope ?? "default");
   };
-  const { restored: workspaceRestored, checkForNewer } = useStoredWorkspace({
+  const {
+    restored: workspaceRestored, checkForNewer, unreadable: unreadableWorkspace, recoverUnreadable, discardUnreadable,
+  } = useStoredWorkspace({
     scope: workspaceScope,
     snapshot: (): WorkspacePayload => ({
       graph: graphRef.current,
@@ -744,15 +747,14 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     restore: (saved) => {
       if (!graphRef.current.nodes.length) showStored(saved);
     },
-    replace: (saved) => {
+    replace: (saved, message) => {
       invalidateAsyncRequests();
       dismissContextMenu(true);
       pushHistory();
       showStored(saved);
-      setStatus("Updated to the graph saved in another tab.");
+      setStatus(message);
     },
-    onSaveFailed: () =>
-      setStatus("This browser cannot save the graph (its storage is blocked or full), so it is lost when you leave the page."),
+    notify: setStatus,
   });
 
   const endpoint = useMemo(() => graphEndpoint(basePath, repositoryId), [basePath, repositoryId]);
@@ -3528,6 +3530,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
         </QueryDrawer>
 
         <section ref={graphPanelRef} className={`graph-panel${isFullscreen ? " is-fullscreen" : ""}`} data-view={viewMode} aria-label="Interactive graph">
+          <UnreadableWorkspaceNotice state={unreadableWorkspace} onRecover={recoverUnreadable} onDiscard={discardUnreadable} />
           <LabelGuidanceNotice reasons={labelGuidanceReasons}
             onConfigure={()=>{finishTransientAction();setQueryPanelOpen(true);setLabelPreferencesRequest(value=>value+1);}}
             onDismiss={()=>dismissLabelGuidance(labelGuidanceReasons.map(reason=>reason.id))} />
