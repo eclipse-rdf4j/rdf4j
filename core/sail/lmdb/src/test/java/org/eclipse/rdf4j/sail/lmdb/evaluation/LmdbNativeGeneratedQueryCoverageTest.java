@@ -965,19 +965,6 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		resetMetricsOnly();
 		List<String> actual = nativeRowsUntilClassified(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true);
 		Set<StrategyDecline> declines = declineReasons(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY);
-		long planned = plannedKernels();
-		long opened = openedKernels();
-		long declined = declinedKernels();
-		long compilations = LmdbNativeJaninoCodegen.COMPILATIONS.get();
-		long pendingCompiles = LmdbNativeJaninoCodegen.PENDING_COMPILES.get();
-		long compileFailures = LmdbNativeJaninoCodegen.COMPILE_FAILURES.get();
-		assertThat(planned).as(() -> "OPTIONAL UNION query must be recognized by a Janino kernel"
-				+ "; planned=" + planned + " opened=" + opened + " declined=" + declined
-				+ " compilations=" + compilations + " pendingCompiles=" + pendingCompiles
-				+ " compileFailures=" + compileFailures + " declines=" + declines
-				+ "\nTelemetry after the failed assertion's diagnostic explain (which performs a fresh evaluation):\n"
-				+ explain(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY))
-				.isPositive();
 		assertThat(openedKernels() > 0L || serialDeclinesAreNonCapability(declines))
 				.as("stateful OPTIONAL must open a specialized kernel or explicitly remain semantic native; reasons=%s",
 						declines)
@@ -991,6 +978,17 @@ class LmdbNativeGeneratedQueryCoverageTest {
 		assertThat(actual)
 				.as("an independent UNION arm must be evaluated once for every OPTIONAL left row")
 				.containsExactlyElementsOf(expected);
+
+		// A losing proposal deliberately does not lower a kernel. Keep adaptive semantics above independent
+		// of the chosen strategy, then request the IR executor to verify its lowering and execution contracts.
+		resetMetricsOnly();
+		assertThat(rows(OPTIONAL_WITH_INDEPENDENT_UNION_BRANCH_QUERY, true,
+				LmdbNativeAttemptMetrics.PATH_IR_KERNEL_INTERPRETED))
+						.containsExactlyElementsOf(expected);
+		assertThat(plannedKernels()).as("the requested OPTIONAL UNION kernel must be planned").isPositive();
+		assertThat(openedKernels()).as("the requested OPTIONAL UNION kernel must execute").isPositive();
+		assertThat(LmdbNativeAggregateCompiler.HOSTED_GENERIC.get() - hostedBefore).isZero();
+		assertThat(LmdbNativeAggregateCompiler.ISLANDS_COMPILED.get() - islandsBefore).isZero();
 	}
 
 	@Test
