@@ -46,6 +46,7 @@ import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import org.eclipse.rdf4j.common.platform.PlatformFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
@@ -353,7 +354,10 @@ class AddServletTest {
 			AddServlet servlet = new RecordingAddServlet();
 			servlet.setRepositoryManager(mock(RepositoryManager.class));
 			servlet.init(TestServletConfig.withParams("add"));
-			Path importDirectory = temporaryDirectory.resolve("Workbench/imports");
+			// The platform names the application directory: "Workbench" on macOS and Windows, "workbench" on Linux.
+			Path importDirectory = temporaryDirectory
+					.resolve(PlatformFactory.getPlatform().getRelativeApplicationDataDir("Workbench"))
+					.resolve("imports");
 
 			assertThat(Files.isDirectory(importDirectory)).isTrue();
 			if (Files.getFileStore(importDirectory).supportsFileAttributeView("posix")) {
@@ -397,9 +401,11 @@ class AddServletTest {
 		try {
 			System.setProperty("org.eclipse.rdf4j.appdata.basedir", temporaryDirectory.toString());
 			System.clearProperty(FILE_DIRECTORY_PROPERTY);
-			// The default directory cannot be made: a file has its name.
-			Files.createDirectories(temporaryDirectory.resolve("Workbench"));
-			Files.writeString(temporaryDirectory.resolve("Workbench/imports"), "not a directory");
+			// The default directory cannot be made: a file has its name (under the platform's application directory).
+			Path applicationDirectory = temporaryDirectory
+					.resolve(PlatformFactory.getPlatform().getRelativeApplicationDataDir("Workbench"));
+			Files.createDirectories(applicationDirectory);
+			Files.writeString(applicationDirectory.resolve("imports"), "not a directory");
 			AddServlet servlet = new RecordingAddServlet();
 			servlet.setRepositoryManager(mock(RepositoryManager.class));
 			servlet.init(TestServletConfig.withParams("add"));

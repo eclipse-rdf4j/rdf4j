@@ -753,6 +753,14 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
 		clip-path: inset(50%);
 		white-space: nowrap;
 	}
+
+	/* Four controls on a 390px phone: Add to graph and Full screen as icons, Download and Display with their names.
+	 * Beside a classic 15px scrollbar (Linux, Windows) they fit one row only with the two names' start insets drawn
+	 * in; the names, the gaps between the controls and the chevrons' 12px from the edge (with the border) stay. */
+	:is(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar
+			button.query-disclosure__toggle.workbench-action {
+		padding-inline: 6px 11px;
+	}
 }
 
 /* An open Download or Display pane hangs over the rows and the pinned header row (M14.3). */
