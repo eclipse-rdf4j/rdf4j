@@ -37,5 +37,8 @@
         "indexName": "spoc"
       }
     }
-  ]
+  ],
+  "stringMetricsPlanned": {
+    "plannedEstimateUsage": "join_order_candidate"
+  }
 }

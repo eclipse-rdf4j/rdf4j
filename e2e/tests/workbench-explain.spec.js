@@ -1,5 +1,8 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const {
     deleteRepository,
     evidencePath,
@@ -22,6 +25,11 @@ const JOIN_QUERY = `select ?b where {
   ?a ?b ?c.
   ?c ?d ?f.
 }`;
+const PLANNED_METRIC_FIXTURE = path.join(
+    __dirname,
+    '../../tools/workbench/src/test/resources/query-explanation-highlighter',
+    'Optimized-planned-metric-order-visibility'
+);
 
 test.beforeAll(async ({ request }) => {
     const repositoryUrl = `${serverBaseUrl()}/repositories/${encodeURIComponent(REPOSITORY_ID)}`;
@@ -97,7 +105,7 @@ test('Executed explanation hides telemetry stability stats for LMDB queries', as
     await expect(explanation).not.toContain('confidenceScoreActual=');
 });
 
-test('Text explanation highlighting preserves server plaintext and toggles without refetching', async ({ page }) => {
+test('Text explanation renders a live plan and toggles without refetching', async ({ page }) => {
     const explainRequests = [];
     const consoleErrors = [];
     page.on('console', message => {
@@ -146,7 +154,9 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         });
         return response.json();
     }, JOIN_QUERY);
-    expect(highlightedText).toBe(plainResponse.content);
+    expect(plainResponse.format).toBe('text');
+    expect(plainResponse.content).toContain('StatementPattern');
+    expect(highlightedText).toContain('StatementPattern');
 
     const requestCountBeforeToggle = explainRequests.length;
     const settingsPanel = page.locator('#explanation-settings-panel');
@@ -205,6 +215,59 @@ test('Text explanation highlighting preserves server plaintext and toggles witho
         await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'query-explanation-narrow.png'), fullPage: true });
     }
     expect(consoleErrors).toEqual([]);
+});
+
+test('Text explanation matches Java output for the same JSON payload', async ({ page }) => {
+    const jsonPath = `${PLANNED_METRIC_FIXTURE}.json`;
+    const textPath = `${PLANNED_METRIC_FIXTURE}.txt`;
+    const jsonPayload = fs.readFileSync(jsonPath, 'utf8');
+    const expectedText = fs.readFileSync(textPath, 'utf8')
+        .replace(/\r\n/g, '\n')
+        .replace(/\n/g, os.EOL);
+    const explainFormats = [];
+    const consoleErrors = [];
+    page.on('console', message => {
+        if (message.type() === 'error') {
+            consoleErrors.push(message.text());
+        }
+    });
+    await page.route(QUERY_URL, async route => {
+        const request = route.request();
+        const parameters = new URLSearchParams(request.postData() || '');
+        if (request.method() === 'POST' && parameters.get('action') === 'explain') {
+            explainFormats.push(parameters.get('explain-format'));
+            await route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({
+                    format: 'json',
+                    content: jsonPayload,
+                    lineSeparator: os.EOL,
+                    timedOut: false
+                })
+            });
+            return;
+        }
+        await route.continue();
+    });
+
+    await page.goto(QUERY_URL);
+    await page.waitForSelector('.CodeMirror');
+    await setPrimaryQuery(page, JOIN_QUERY);
+    await page.locator('#explain-trigger').click();
+    await page.locator('#query-explanation .query-explanation-token--node-type').first().waitFor();
+
+    await expect(page).toHaveURL(/\/query(?:\?.*)?$/);
+    await expect.poll(() => explainFormats.length).toBe(1);
+    expect(explainFormats[0]).toBe('json');
+    expect(await page.locator('#query-explanation').textContent()).toBe(expectedText);
+    await expect(page.locator('#query-explanation .query-explanation-token--node-type').first()).toBeVisible();
+    await expect(page.locator('#query-explanation')).not.toContainText('nested-hidden');
+    await expect(page.locator('#query-explanation')).not.toContainText('hidden-learning-key');
+    expect(consoleErrors).toEqual([]);
+    if (evidenceScreenshots()) {
+        await page.screenshot({ path: evidencePath(EVIDENCE_DIRECTORY, 'same-payload-text-fixture.png'), fullPage: true });
+    }
 });
 
 test('Closing comparison cancels stale work and preserves the primary result', async ({ page }) => {

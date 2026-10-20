@@ -30,6 +30,10 @@ var workbench;
         });
         var SPOC = ['s', 'p', 'o', 'c'];
         var PREFERRED_PLANNED_STRINGS = [
+            'plannedEstimateUsage',
+            'plannedEstimateDecisionId',
+            'plannedCardinalityShape',
+            'plannedCostShape',
             'plannedIndexName',
             'plannedIndexAccessMode',
             'plannedLookupComponents',
@@ -39,6 +43,18 @@ var workbench;
             'plannerAlgorithm',
             'plannerPath'
         ];
+        var PLANNER_ESTIMATE_METRICS = [
+            'plannedEstimateSource', 'plannedEstimateUsage', 'plannedEstimateDecisionId', 'plannedWorkRows',
+            'plannedAccessWorkRows', 'plannedAccessRows', 'plannedAccessRowsAfterFilter', 'plannedUncertaintyRows',
+            'filterSelectivitySource', 'optimizerEstimateSource', 'optimizerRuntimeFeedback',
+            'optimizerRuntimeFeedbackConfidence'
+        ];
+        var PLANNER_ESTIMATE_METRIC_PREFIXES = [
+            'plannedEstimate', 'plannedCardinality', 'plannedCost', 'plannedObjective', 'plannedFilter',
+            'plannedOperatorFeedback', 'plannedBridge', 'plannedBase', 'plannedPrefix', 'plannedLookupDomain',
+            'plannedRepeated', 'plannedDistinctLookup', 'plannedDistinct'
+        ];
+        var FRONTIER_LEARNING_KEY = 'optimizer.frontierLearningKey';
         var PREFERRED_ACTUAL_STRINGS = [
             'bindingState',
             'joinType',
@@ -583,25 +599,54 @@ var workbench;
                 }
             }
         }
+        function hasPlannerEstimateUsage(stringMetrics) {
+            var usage = stringMetrics.plannedEstimateUsage;
+            return !!usage && usage !== 'explain_recomputed';
+        }
+        function isPlannerEstimateMetric(metricName) {
+            if (contains(PLANNER_ESTIMATE_METRICS, metricName)) {
+                return true;
+            }
+            for (var i = 0; i < PLANNER_ESTIMATE_METRIC_PREFIXES.length; i++) {
+                if (metricName.indexOf(PLANNER_ESTIMATE_METRIC_PREFIXES[i]) === 0) {
+                    return true;
+                }
+            }
+            return false;
+        }
+        function displayPlannedMetric(metricName, stringMetrics) {
+            return hasPlannerEstimateUsage(stringMetrics) || !isPlannerEstimateMetric(metricName);
+        }
+        function addPreferredPlannedStrings(entries, seen, source) {
+            for (var i = 0; i < PREFERRED_PLANNED_STRINGS.length; i++) {
+                var preferredName = PREFERRED_PLANNED_STRINGS[i];
+                if (source && Object.prototype.hasOwnProperty.call(source, preferredName)
+                    && source[preferredName] && displayPlannedMetric(preferredName, source)) {
+                    addMetric(entries, seen, preferredName, source[preferredName]);
+                }
+            }
+        }
         function addPlannedMetrics(node, entries, seen) {
             var name;
+            var stringMetrics = node.stringMetricsPlanned || {};
             var longMetrics = node.longMetricsPlanned || {};
             for (name in longMetrics) {
                 if (Object.prototype.hasOwnProperty.call(longMetrics, name)
-                    && nonNegativeLong(longMetrics[name])) {
+                    && nonNegativeLong(longMetrics[name]) && displayPlannedMetric(name, stringMetrics)) {
                     addMetric(entries, seen, name, readableLong(longMetrics[name]));
                 }
             }
             var doubleMetrics = node.doubleMetricsPlanned || {};
             for (name in doubleMetrics) {
-                if (Object.prototype.hasOwnProperty.call(doubleMetrics, name) && doubleMetrics[name] >= 0) {
+                if (Object.prototype.hasOwnProperty.call(doubleMetrics, name) && doubleMetrics[name] >= 0
+                    && displayPlannedMetric(name, stringMetrics)) {
                     addMetric(entries, seen, name, readableDouble(doubleMetrics[name]));
                 }
             }
-            var stringMetrics = node.stringMetricsPlanned || {};
-            addPreferredStrings(entries, seen, stringMetrics, PREFERRED_PLANNED_STRINGS);
+            addPreferredPlannedStrings(entries, seen, stringMetrics);
             for (name in stringMetrics) {
-                if (Object.prototype.hasOwnProperty.call(stringMetrics, name) && stringMetrics[name]) {
+                if (Object.prototype.hasOwnProperty.call(stringMetrics, name) && stringMetrics[name]
+                    && name !== FRONTIER_LEARNING_KEY && displayPlannedMetric(name, stringMetrics)) {
                     addMetric(entries, seen, name, stringMetrics[name]);
                 }
             }
