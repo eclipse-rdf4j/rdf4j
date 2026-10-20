@@ -284,6 +284,24 @@ class GraphServletEvaluationTest {
 	}
 
 	@Test
+	void aFailedEvaluationStillRemembersTheRequestOptionsInCookies() throws Exception {
+		servlet();
+		GraphQueryResult result = failingStatements(0, new QueryEvaluationException("store unavailable"));
+		when(graphQuery.evaluate()).thenReturn(result);
+		MockHttpServletRequest request = post(CONSTRUCT);
+		request.addParameter("query-timeout", "9");
+		request.addParameter("infer", "false");
+
+		MockHttpServletResponse response = run(request);
+
+		assertThat(response.getStatus()).isEqualTo(500);
+		assertThat(response.getContentAsString()).isEqualTo("Query evaluation failed: store unavailable");
+		assertThat(response.getCookie("query-timeout")).as("the option cookie survives the failure").isNotNull();
+		assertThat(response.getCookie("query-timeout").getValue()).isEqualTo("9");
+		assertThat(response.getCookie("infer").getValue()).isEqualTo("false");
+	}
+
+	@Test
 	void anEvaluationFailureBeforeTheFirstStatementAnswersServerErrorWithItsMessage() throws Exception {
 		servlet();
 		GraphQueryResult result = failingStatements(0, new QueryEvaluationException("store unavailable"));

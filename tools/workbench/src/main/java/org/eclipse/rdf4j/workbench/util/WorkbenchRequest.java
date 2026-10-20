@@ -19,6 +19,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -30,6 +31,7 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.repository.Repository;
 import org.eclipse.rdf4j.repository.RepositoryException;
 import org.eclipse.rdf4j.workbench.exceptions.BadRequestException;
+import org.eclipse.rdf4j.workbench.exceptions.UploadSizeLimitException;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.Cookie;
@@ -49,6 +51,21 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 	private InputStream content;
 
 	private String contentFileName;
+
+	/**
+	 * The most bytes a multipart form field other than the uploaded content may hold. Fields name graphs, base IRIs and
+	 * options; the data goes through the streamed {@code content} part, bounded by {@link #MAX_UPLOAD_BYTES}.
+	 */
+	public static final int MAX_FORM_FIELD_BYTES = 1 << 20;
+
+	/** The most bytes one uploaded file may hold: 10 GiB, enough for a large compressed N-Quads dump. */
+	public static final long MAX_UPLOAD_BYTES = 10L << 30;
+
+	/** The whole upload request: the file, its form fields and the multipart framing. */
+	public static final long MAX_UPLOAD_REQUEST_BYTES = MAX_UPLOAD_BYTES + (16L << 20);
+
+	/** A part larger than this spools to the container's temporary directory instead of staying in the heap. */
+	public static final int UPLOAD_SPOOL_THRESHOLD_BYTES = 64 << 20;
 
 	private final ValueDecoder decoder;
 
@@ -290,20 +307,51 @@ public class WorkbenchRequest extends HttpServletRequestWrapper {
 		} catch (IllegalArgumentException e) {
 			throw new BadRequestException("Unsupported multipart character encoding", e);
 		}
-		for (Part part : getParts()) {
+		Collection<Part> parts;
+		try {
+			parts = getParts();
+		} catch (IllegalStateException e) {
+			// The container parses the whole multipart body here and reports a part over its limit this way.
+			String limit = "Uploads are limited to " + (MAX_UPLOAD_BYTES >> 30) + " GiB a file";
+			if (uploadTooLarge(e)) {
+				throw new UploadSizeLimitException("The upload exceeds the limit: " + e.getMessage() + ". " + limit
+						+ ".", e);
+			}
+			throw new BadRequestException("The upload could not be read: " + e.getMessage() + ". " + limit + ".", e);
+		}
+		for (Part part : parts) {
 			String name = part.getName();
 			if ("content".equals(name)) {
+				// The upload itself is never read here: the parser streams it, whatever its size.
 				content = part.getInputStream();
 				contentFileName = part.getSubmittedFileName();
 			} else {
-				String value;
+				byte[] bytes;
 				try (InputStream input = part.getInputStream()) {
-					value = new String(input.readAllBytes(), charset);
+					bytes = input.readNBytes(MAX_FORM_FIELD_BYTES + 1);
 				}
-				parameters.put(name, value);
+				if (bytes.length > MAX_FORM_FIELD_BYTES) {
+					throw new BadRequestException("The form field '" + name + "' exceeds " + MAX_FORM_FIELD_BYTES
+							+ " bytes; upload data as the file or text content instead");
+				}
+				parameters.put(name, new String(bytes, charset));
 			}
 		}
 		return parameters;
+	}
+
+	/** Whether a failure of {@code getParts()} is the container's size limit (Tomcat and Jetty word it differently). */
+	private static boolean uploadTooLarge(Throwable failure) {
+		for (Throwable cause = failure; cause != null; cause = cause.getCause()) {
+			String type = cause.getClass().getSimpleName();
+			String message = cause.getMessage() == null ? "" : cause.getMessage().toLowerCase(Locale.ENGLISH);
+			if (type.contains("SizeLimitExceeded") || type.contains("SizeException") || message.contains("exceed")
+					|| message.contains("too large") || message.contains("max filesize")
+					|| message.contains("size limit")) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	private Map<String, String> getUrlParameterMap(String url) {

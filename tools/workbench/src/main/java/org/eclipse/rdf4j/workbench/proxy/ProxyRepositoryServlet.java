@@ -16,6 +16,7 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
+import org.eclipse.rdf4j.repository.manager.RepositoryInfo;
 import org.eclipse.rdf4j.workbench.RepositoryServlet;
 import org.eclipse.rdf4j.workbench.base.AbstractRepositoryServlet;
 import org.eclipse.rdf4j.workbench.base.WorkbenchViewRegistry;
@@ -75,6 +76,15 @@ public class ProxyRepositoryServlet extends AbstractRepositoryServlet {
 	public void destroy() {
 		for (RepositoryServlet servlet : servlets.values()) {
 			servlet.destroy();
+		}
+	}
+
+	/** The repository's current info, for this servlet and the page servlets it created at init. */
+	@Override
+	public void setRepositoryInfo(RepositoryInfo info) {
+		super.setRepositoryInfo(info);
+		for (RepositoryServlet servlet : servlets.values()) {
+			servlet.setRepositoryInfo(info);
 		}
 	}
 

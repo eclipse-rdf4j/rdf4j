@@ -103,6 +103,78 @@ class WorkbenchRequestTest {
 	}
 
 	@Test
+	void anUploadedContentPartIsHandedOverAsAStreamWithoutBeingRead() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		Part content = mock(Part.class);
+		Part baseURI = mock(Part.class);
+		when(request.getMethod()).thenReturn("POST");
+		when(request.getContentType()).thenReturn("multipart/form-data; boundary=test");
+		when(request.getRequestURL()).thenReturn(new StringBuffer("http://localhost/add"));
+		when(request.getParts()).thenReturn(java.util.List.of(content, baseURI));
+		when(request.getParameterMap()).thenReturn(Collections.emptyMap());
+		when(content.getName()).thenReturn("content");
+		when(content.getSubmittedFileName()).thenReturn("huge.nq.gz");
+		java.util.concurrent.atomic.AtomicLong read = new java.util.concurrent.atomic.AtomicLong();
+		java.io.InputStream upload = new java.io.InputStream() {
+			@Override
+			public int read() {
+				// An upload must reach the parser as a stream: nothing may buffer it on the way.
+				read.incrementAndGet();
+				throw new IllegalStateException("the upload was read before the parser got it");
+			}
+		};
+		when(content.getInputStream()).thenReturn(upload);
+		when(baseURI.getName()).thenReturn("baseURI");
+		when(baseURI.getInputStream())
+				.thenReturn(new ByteArrayInputStream("urn:base".getBytes(StandardCharsets.UTF_8)));
+
+		WorkbenchRequest wrapped = new WorkbenchRequest(null, request, Map.of());
+
+		assertThat(read.get()).as("the request wrapper reads no upload bytes").isZero();
+		assertThat(wrapped.getContentParameter()).isSameAs(upload);
+		assertThat(wrapped.getContentFileName()).isEqualTo("huge.nq.gz");
+		assertThat(wrapped.getParameter("baseURI")).isEqualTo("urn:base");
+	}
+
+	@Test
+	void anUploadTheContainerRefusesAsTooLargeIsABadRequestNamingTheLimit() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getMethod()).thenReturn("POST");
+		when(request.getContentType()).thenReturn("multipart/form-data; boundary=test");
+		when(request.getRequestURL()).thenReturn(new StringBuffer("http://localhost/add"));
+		// Tomcat reports a part over the multipart limit this way; Jetty's wording differs but is also an
+		// IllegalStateException from getParts().
+		IllegalStateException refused = new IllegalStateException(
+				"The field content exceeds its maximum permitted size of 10737418240 bytes.");
+		when(request.getParts()).thenThrow(refused);
+
+		assertThatThrownBy(() -> new WorkbenchRequest(null, request, Map.of()))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("10 GiB")
+				.hasCause(refused);
+	}
+
+	@Test
+	void anOversizedFormFieldPartIsRejectedInsteadOfBeingBuffered() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		Part field = mock(Part.class);
+		when(request.getMethod()).thenReturn("POST");
+		when(request.getContentType()).thenReturn("multipart/form-data; boundary=test");
+		when(request.getRequestURL()).thenReturn(new StringBuffer("http://localhost/add"));
+		when(request.getParts()).thenReturn(java.util.List.of(field));
+		when(request.getParameterMap()).thenReturn(Collections.emptyMap());
+		when(field.getName()).thenReturn("baseURI");
+		// One mebibyte is far more than any Add, Remove or Update form field; uploads go through "content" instead.
+		byte[] oversized = new byte[(1 << 20) + 1];
+		java.util.Arrays.fill(oversized, (byte) 'a');
+		when(field.getInputStream()).thenReturn(new ByteArrayInputStream(oversized));
+
+		assertThatThrownBy(() -> new WorkbenchRequest(null, request, Map.of()))
+				.isInstanceOf(BadRequestException.class)
+				.hasMessageContaining("baseURI");
+	}
+
+	@Test
 	void multipartFieldsPreserveCompleteUtf8NamesAndFieldsAfterContent() throws Exception {
 		HttpServletRequest request = mock(HttpServletRequest.class);
 		Part selectedFile = mock(Part.class);

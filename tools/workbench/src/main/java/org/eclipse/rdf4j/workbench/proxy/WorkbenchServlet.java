@@ -92,6 +92,7 @@ public class WorkbenchServlet extends AbstractServlet {
 	private WorkbenchPolicy policy;
 
 	private final ConcurrentMap<String, RepositoryServletSlot> repositories = new ConcurrentHashMap<>();
+	private final ConcurrentMap<String, ProxyRepositoryServlet> metadataServlets = new ConcurrentHashMap<>();
 	private final Map<RepositoryOperation, OperationOwner> activeOperations = new HashMap<>();
 
 	void setServerCredentials(ServerCredentials.Credentials credentials) {
@@ -125,6 +126,8 @@ public class WorkbenchServlet extends AbstractServlet {
 	public void destroy() {
 		repositories.values().forEach(RepositoryServletSlot::retire);
 		repositories.clear();
+		metadataServlets.values().forEach(ProxyRepositoryServlet::destroy);
+		metadataServlets.clear();
 		if (manager != null) {
 			manager.shutDown();
 			manager = null;
@@ -139,6 +142,7 @@ public class WorkbenchServlet extends AbstractServlet {
 				entry.servlet.resetCache();
 			}
 		}
+		metadataServlets.values().forEach(ProxyRepositoryServlet::resetCache);
 	}
 
 	@Override
@@ -433,18 +437,13 @@ public class WorkbenchServlet extends AbstractServlet {
 		String noId = config.getInitParameter(NO_REPOSITORY);
 		if (("/config".equals(pathInfo) || "/info".equals(pathInfo)) && !repoID.equals(noId)) {
 			// A broken configuration must remain repairable. Neither its editor nor its linked shell metadata needs
-			// to initialize the repository, and these short-lived servlets never retain an obsolete repository object.
+			// to initialize the repository, and their servlets hold no repository object that could go stale.
 			RepositoryInfo repositoryInfo = manager.getRepositoryInfo(repoID);
 			if (repositoryInfo == null) {
 				writeRepositoryNotFound(repoID, req, resp);
 				return;
 			}
-			ProxyRepositoryServlet metadata = createProxyRepositoryServlet(null, repositoryInfo, repoID, true);
-			try {
-				metadata.service(http, resp);
-			} finally {
-				metadata.destroy();
-			}
+			metadataServlet(repoID, repositoryInfo).service(http, resp);
 			return;
 		}
 		QueryServlet.RequestOperation operation = "/query".equals(pathInfo)
@@ -510,6 +509,26 @@ public class WorkbenchServlet extends AbstractServlet {
 			}
 			entry.release();
 		}
+	}
+
+	/**
+	 * The metadata-only servlet tree of a repository (its Info and Configuration pages), built once and kept: it holds
+	 * no repository object, so it never goes stale, and each request hands it the repository's current info.
+	 */
+	private ProxyRepositoryServlet metadataServlet(String repositoryId, RepositoryInfo repositoryInfo)
+			throws ServletException {
+		ProxyRepositoryServlet servlet = metadataServlets.get(repositoryId);
+		if (servlet == null) {
+			synchronized (metadataServlets) {
+				servlet = metadataServlets.get(repositoryId);
+				if (servlet == null) {
+					servlet = createProxyRepositoryServlet(null, repositoryInfo, repositoryId, true);
+					metadataServlets.put(repositoryId, servlet);
+				}
+			}
+		}
+		servlet.setRepositoryInfo(repositoryInfo);
+		return servlet;
 	}
 
 	private ProxyRepositoryServlet createProxyRepositoryServlet(Repository repository, RepositoryInfo repositoryInfo,

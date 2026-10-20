@@ -597,6 +597,18 @@ test('highlight radios use native selection and hide outside Text format', () =>
     assert.equal(harness.getProperty('explanation-highlight-mode', 'visible'), false);
 });
 
+test('a legacy ref=hash query reference leaves the editor empty instead of showing the hash', () => {
+    const harness = createQueryBrowserHarness({
+        href: 'http://localhost:8080/rdf4j-workbench/repositories/test/query?query=-1234567&ref=hash',
+        query: ''
+    });
+
+    harness.runPageLoad();
+
+    assert.equal(harness.context.workbench.query.getQueryValue(), '');
+    assert.equal(harness.getJSONRequests.length, 0, 'nothing is asked of the server for a hash reference');
+});
+
 test('large primary query edits expire existing hash-backed cookie state', () => {
     const longQuery = 'x'.repeat(3000);
     const harness = createQueryBrowserHarness({

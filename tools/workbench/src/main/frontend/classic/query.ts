@@ -5004,6 +5004,11 @@ namespace workbench {
             clearWorkbenchCookie('query');
             clearWorkbenchCookie('ref');
             var query = getParameterFromUrl('query');
+            if (query && getParameterFromUrl('ref') == 'hash') {
+                // Older releases referenced a long query by a hash the server kept in memory; that reference names
+                // no query any more, so the page opens as it does without one (this tab's draft, if any).
+                query = '';
+            }
             if (query) {
                 var ref = getParameterFromUrl('ref');
                 if (ref == 'id') {

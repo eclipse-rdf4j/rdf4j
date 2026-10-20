@@ -72,6 +72,25 @@ class BNodeOriginsTest {
 	}
 
 	@Test
+	void theLookupCacheIsBoundedSoAStreamedResultDoesNotRetainEveryBlankNodeId() {
+		var factory = new Factory();
+		var origins = new BNodeOrigins(factory);
+		// The most recent lookups a result keeps: enough for any page of results, bounded for a streamed export.
+		int bound = 65_536;
+		assertThat(origins.isReference(factory.createBNode("first"))).isTrue();
+		for (int index = 0; index < bound; index++) {
+			origins.isReference(factory.createBNode("node-" + index));
+		}
+		assertThat(factory.lookups).isEqualTo(bound + 1);
+		// The oldest entry left the cache: asking for it again asks the store again.
+		assertThat(origins.isReference(factory.createBNode("first"))).isTrue();
+		assertThat(factory.lookups).isEqualTo(bound + 2);
+		// A recently asked node is still cached.
+		assertThat(origins.isReference(factory.createBNode("node-" + (bound - 1)))).isTrue();
+		assertThat(factory.lookups).isEqualTo(bound + 2);
+	}
+
+	@Test
 	void queryGeneratedAndNegotiatedProvenanceSurvivesTrustedCopiesAndPrivateSpills() throws Exception {
 		var factory = SimpleValueFactory.getInstance();
 		BNode generated = new BlankNodeAllocationScope("issued-", ignored -> false).createBNode(factory);

@@ -99,6 +99,36 @@ public class TupleQueryResultViewTest {
 	}
 
 	@Test
+	public void optedInBinaryResultsWithoutAnOriginAuthorityAreNotNegotiated() throws Exception {
+		// No connection and no value factory in the model: nobody can say which blank nodes are stored, so the
+		// response must not claim to, rather than call every stored node transient.
+		var request = new MockHttpServletRequest();
+		request.addHeader("X-RDF4J-BNode-Origin", "1");
+		var response = new MockHttpServletResponse();
+		var row = new MapBindingSet();
+		row.addBinding("node", SimpleValueFactory.getInstance().createBNode("stored"));
+		TupleQueryResult result = mock(TupleQueryResult.class);
+		when(result.getBindingNames()).thenReturn(List.of("node"));
+		when(result.hasNext()).thenReturn(true, false);
+		when(result.next()).thenReturn(row);
+		Map<String, Object> model = new HashMap<>();
+		model.put(TupleQueryResultView.FACTORY_KEY, new BinaryQueryResultWriterFactory());
+		model.put(TupleQueryResultView.QUERY_RESULT_KEY, result);
+		view.render(model, request, response);
+		assertThat(response.getHeader("X-RDF4J-BNode-Origin")).isNull();
+		AtomicReference<String> id = new AtomicReference<>();
+		var parser = new BinaryQueryResultParser();
+		parser.setQueryResultHandler(new AbstractTupleQueryResultHandler() {
+			@Override
+			public void handleSolution(BindingSet solution) {
+				id.set(((BNode) solution.getValue("node")).getID());
+			}
+		});
+		parser.parseQueryResult(new ByteArrayInputStream(response.getContentAsByteArray()));
+		assertThat(id.get()).isEqualTo("stored");
+	}
+
+	@Test
 	public void testRender_QueryEvaluationError1() throws Exception {
 		var request = new MockHttpServletRequest();
 		var response = new MockHttpServletResponse();

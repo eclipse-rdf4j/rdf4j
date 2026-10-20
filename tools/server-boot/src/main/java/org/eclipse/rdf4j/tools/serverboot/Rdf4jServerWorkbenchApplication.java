@@ -33,6 +33,7 @@ import org.eclipse.rdf4j.workbench.proxy.RedirectFilter;
 import org.eclipse.rdf4j.workbench.proxy.WorkbenchGateway;
 import org.eclipse.rdf4j.workbench.proxy.config.WorkbenchPolicy;
 import org.eclipse.rdf4j.workbench.security.WorkbenchSessionCookieInitializer;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.InitializingBean;
@@ -211,7 +212,9 @@ public class Rdf4jServerWorkbenchApplication {
 		registration.setLoadOnStartup(2);
 		registration.setAsyncSupported(true);
 		registration.setInitParameters(workbenchInitParameters(contextPath));
-		registration.setMultipartConfig(new MultipartConfigElement(""));
+		// The same upload limits as the Workbench WAR's gateway: 10 GiB a file, spooled to disk above 64 MiB.
+		registration.setMultipartConfig(new MultipartConfigElement("", WorkbenchRequest.MAX_UPLOAD_BYTES,
+				WorkbenchRequest.MAX_UPLOAD_REQUEST_BYTES, WorkbenchRequest.UPLOAD_SPOOL_THRESHOLD_BYTES));
 		return registration;
 	}
 

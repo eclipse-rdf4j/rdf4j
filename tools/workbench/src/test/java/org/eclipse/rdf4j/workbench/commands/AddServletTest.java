@@ -113,6 +113,38 @@ class AddServletTest {
 	}
 
 	@Test
+	void aBlankOrMalformedAllowlistEntryDoesNotHideALaterMatchingOrigin() throws Exception {
+		byte[] body = "<urn:s> <urn:p> <urn:o> .\n".getBytes(StandardCharsets.UTF_8);
+		URL source = new URL(null, "http://example.test/data.ttl", httpSource(body));
+		SailRepository repository = new SailRepository(new MemoryStore());
+		repository.init();
+		String previousOrigins = System.getProperty(ORIGINS_PROPERTY);
+		try {
+			System.clearProperty(ORIGINS_PROPERTY);
+			AddServlet servlet = new RecordingAddServlet();
+			servlet.setRepository(repository);
+			servlet.setRepositoryManager(mock(RepositoryManager.class));
+			servlet.init(TestServletConfig.withParams("add", "add-url-allowed-origins",
+					"https://other.test, , not an origin ,http://example.test,"));
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("Content-Type")).thenReturn("text/turtle");
+			when(request.isParameterPresent("url")).thenReturn(true);
+			when(request.getUrl("url")).thenReturn(source);
+			MockHttpServletResponse response = new MockHttpServletResponse();
+
+			servlet.doPost(request, response);
+
+			assertThat(response.getContentAsString()).doesNotContain("URL imports require an allowed origin");
+			try (RepositoryConnection connection = repository.getConnection()) {
+				assertThat(connection.size()).isEqualTo(1);
+			}
+		} finally {
+			restoreProperty(ORIGINS_PROPERTY, previousOrigins);
+			repository.shutDown();
+		}
+	}
+
+	@Test
 	void deniedUrlExplainsOriginConfiguration() throws Exception {
 		String previous = System.getProperty(ORIGINS_PROPERTY);
 		String previousDirectory = System.getProperty(FILE_DIRECTORY_PROPERTY);

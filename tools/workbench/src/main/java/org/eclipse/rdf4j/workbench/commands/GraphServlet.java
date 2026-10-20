@@ -215,7 +215,8 @@ public class GraphServlet extends TransformationServlet {
 		if (resp.isCommitted()) {
 			throw e;
 		}
-		resp.reset();
+		// Only the body is discarded: the option cookies written before the query ran stay with the answer.
+		resp.resetBuffer();
 		reject(resp, status, message);
 	}
 

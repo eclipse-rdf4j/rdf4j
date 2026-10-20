@@ -84,15 +84,6 @@ class WorkbenchGatewayTest {
 	}
 
 	@Test
-	void multipartUploadsHaveAFiniteRequestAndFileLimit() {
-		jakarta.servlet.annotation.MultipartConfig multipart = WorkbenchGateway.class
-				.getAnnotation(jakarta.servlet.annotation.MultipartConfig.class);
-		assertThat(multipart).isNotNull();
-		assertThat(multipart.maxFileSize()).isBetween(1L, 32L * 1024 * 1024);
-		assertThat(multipart.maxRequestSize()).isBetween(multipart.maxFileSize(), 36L * 1024 * 1024);
-	}
-
-	@Test
 	void gatewayAssignsDifferentWorkspaceScopesToDifferentBrowserSessions() throws Exception {
 		TestWorkbenchGateway gateway = new TestWorkbenchGateway(new TestCookieHandler("10"),
 				mock(ServerValidator.class));

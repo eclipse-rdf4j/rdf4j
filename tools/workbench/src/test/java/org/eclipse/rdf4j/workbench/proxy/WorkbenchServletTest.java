@@ -272,6 +272,35 @@ public class WorkbenchServletTest {
 	}
 
 	@Test
+	void repositoryMetadataServletsAreReusedAcrossRequestsWithCurrentInfo() throws Exception {
+		RepositoryManager manager = mock(RepositoryManager.class);
+		when(manager.hasRepositoryConfig("repo")).thenReturn(true);
+		RepositoryInfo first = new RepositoryInfo();
+		first.setId("repo");
+		first.setDescription("first title");
+		RepositoryInfo renamed = new RepositoryInfo();
+		renamed.setId("repo");
+		renamed.setDescription("renamed");
+		when(manager.getRepositoryInfo("repo")).thenReturn(first, renamed);
+		TestWorkbenchServlet servlet = initServlet(manager);
+		RecordingProxyRepositoryServlet metadata = new RecordingProxyRepositoryServlet();
+		// Only one metadata servlet may be created: a second creation would take a servlet that is not there.
+		servlet.createdServlets.add(metadata);
+		try {
+			servlet.service(request("/workbench/repo/info", "/repo/info"), new CapturedResponse());
+			servlet.service(request("/workbench/repo/config", "/repo/config"), new CapturedResponse());
+
+			assertThat(metadata.initCount).isEqualTo(1);
+			assertThat(metadata.serviceCount).isEqualTo(2);
+			assertThat(metadata.destroyCount).isZero();
+			assertThat(metadata.assignedInfo).as("each request sees the repository's current info").isSameAs(renamed);
+		} finally {
+			servlet.destroy();
+		}
+		assertThat(metadata.destroyCount).isEqualTo(1);
+	}
+
+	@Test
 	void initValidatesParametersAndManagerCreation(@TempDir File tempDir) throws Exception {
 		TestWorkbenchServlet missingDefault = new TestWorkbenchServlet();
 		assertThatThrownBy(

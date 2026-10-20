@@ -42,6 +42,7 @@ import org.eclipse.rdf4j.workbench.util.ServerCredentials;
 import org.eclipse.rdf4j.workbench.util.TupleResultBuilder;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageProtocol;
 import org.eclipse.rdf4j.workbench.util.WorkbenchPageResultWriter;
+import org.eclipse.rdf4j.workbench.util.WorkbenchRequest;
 
 import jakarta.servlet.ServletConfig;
 import jakarta.servlet.ServletException;
@@ -54,7 +55,9 @@ import jakarta.servlet.http.HttpSession;
 /**
  * All requests are serviced by this Servlet, though it usually delegates to other Servlets.
  */
-@MultipartConfig(fileSizeThreshold = 1_048_576, maxFileSize = 33_554_432, maxRequestSize = 37_748_736)
+// An upload of up to 10 GiB a file: a part over the threshold spools to disk and the parser reads it as a stream, so
+// a multi-gigabyte .nq or .nq.gz file costs no heap. Form fields are bounded by WorkbenchRequest as well.
+@MultipartConfig(fileSizeThreshold = WorkbenchRequest.UPLOAD_SPOOL_THRESHOLD_BYTES, maxFileSize = WorkbenchRequest.MAX_UPLOAD_BYTES, maxRequestSize = WorkbenchRequest.MAX_UPLOAD_REQUEST_BYTES)
 public class WorkbenchGateway extends AbstractServlet {
 
 	private static final String DEFAULT_SERVER = "default-server";

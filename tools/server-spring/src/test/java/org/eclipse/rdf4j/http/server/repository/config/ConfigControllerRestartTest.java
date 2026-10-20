@@ -22,6 +22,7 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.http.server.ClientHTTPException;
@@ -82,11 +83,13 @@ class ConfigControllerRestartTest {
 	}
 
 	@Test
-	void failedShutdownReportsThatTheConfigWasSavedAndDoesNotInitializeAReplacement() throws Exception {
+	void failedShutdownReportsThatTheConfigWasSavedAndDropsTheBrokenInstance() throws Exception {
 		AtomicBoolean failShutdown = new AtomicBoolean(true);
+		AtomicInteger created = new AtomicInteger();
 		LocalRepositoryManager manager = new LocalRepositoryManager(directory.toFile()) {
 			@Override
 			protected Repository createRepository(String id) {
+				created.incrementAndGet();
 				SailRepository repository = new SailRepository(new MemoryStore()) {
 					@Override
 					protected void shutDownInternal() {
@@ -114,7 +117,13 @@ class ConfigControllerRestartTest {
 					.hasMessageContaining("shut down");
 
 			assertThat(manager.getRepositoryConfig("target").getTitle()).isEqualTo("After");
-			assertThat(manager.getRepository("target")).isSameAs(previous);
+			// The update itself initializes nothing after the failure, but the instance that could not shut down is
+			// out of the cache: it must not keep serving the old configuration. The next request opens the saved one.
+			assertThat(created).hasValue(1);
+			Repository replacement = manager.getRepository("target");
+			assertThat(replacement).isNotSameAs(previous);
+			assertThat(replacement.isInitialized()).isTrue();
+			assertThat(created).hasValue(2);
 		} finally {
 			failShutdown.set(false);
 			manager.shutDown();

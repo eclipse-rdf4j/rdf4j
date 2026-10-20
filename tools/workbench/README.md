@@ -122,7 +122,11 @@ to approve exact, comma-separated HTTP(S) origins. A source URL must match one o
 explicitly empty origins property disables URL imports. Set `-Dorg.eclipse.rdf4j.workbench.add-url-max-bytes=<bytes>`
 to adjust the 32 MiB URL source limit (1 byte to 256 MiB). Each Java system property overrides the corresponding
 `add-url-allowed-origins`, `add-url-max-bytes`, `add-file-directory`, or `add-file-max-bytes` servlet init parameter.
-Multipart uploads are limited to 32 MiB per file and 36 MiB per request.
+A blank or malformed entry in the origins list is ignored and logged; the other entries still apply.
+Browser uploads may be up to 10 GiB a file: the servlet container spools a part larger than 64 MiB to its temporary
+directory and the parser reads it as a stream, so a multi-gigabyte `.nq` or `.nq.gz` upload needs disk space there,
+not heap. An upload over the limit is answered with HTTP 413 and the limit. Form fields other than the upload are
+limited to 1 MiB each.
 
 Graph requests are capped at 5,000 result rows and 60 seconds by default, including when callers omit or disable
 their own limits. The `graph-max-result-rows`, `graph-max-query-timeout`, and `graph-max-query-length` servlet init

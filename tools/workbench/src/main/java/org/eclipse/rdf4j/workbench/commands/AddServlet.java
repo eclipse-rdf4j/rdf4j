@@ -412,10 +412,19 @@ public class AddServlet extends TransformationServlet {
 		if (allowed == null || allowed.isBlank()) {
 			throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE);
 		}
+		String origin;
 		try {
-			URI source = url.toURI();
-			String origin = origin(source);
-			for (String entry : allowed.split(",")) {
+			origin = origin(url.toURI());
+		} catch (URISyntaxException | IllegalArgumentException exc) {
+			throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE, exc);
+		}
+		for (String entry : allowed.split(",")) {
+			// Each entry stands on its own: a blank or malformed one (a trailing comma, a typo) is skipped, so it
+			// cannot hide an origin listed after it.
+			if (entry.isBlank()) {
+				continue;
+			}
+			try {
 				URI configured = new URI(entry.trim());
 				if (configured.getRawUserInfo() == null && configured.getRawQuery() == null
 						&& configured.getRawFragment() == null
@@ -424,9 +433,9 @@ public class AddServlet extends TransformationServlet {
 						&& origin.equals(origin(configured))) {
 					return;
 				}
+			} catch (URISyntaxException | IllegalArgumentException exc) {
+				logger.warn("Ignoring the allowed URL import origin '{}': {}", entry.trim(), exc.getMessage());
 			}
-		} catch (URISyntaxException | IllegalArgumentException exc) {
-			throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE, exc);
 		}
 		throw new BadRequestException(URL_ORIGIN_REQUIRED_MESSAGE);
 	}

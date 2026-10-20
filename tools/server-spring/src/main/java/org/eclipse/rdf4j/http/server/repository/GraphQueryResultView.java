@@ -26,7 +26,6 @@ import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryResults;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.eclipse.rdf4j.rio.RDFFormat;
 import org.eclipse.rdf4j.rio.RDFHandlerException;
 import org.eclipse.rdf4j.rio.RDFWriter;
@@ -68,8 +67,7 @@ public class GraphQueryResultView extends QueryResultView {
 			throws IOException {
 		RDFWriterFactory rdfWriterFactory = (RDFWriterFactory) model.get(FACTORY_KEY);
 		RDFFormat rdfFormat = rdfWriterFactory.getRDFFormat();
-		UnaryOperator<Value> origin = bNodeOriginMapper((RepositoryConnection) model.get(CONNECTION_KEY), request,
-				response, rdfFormat);
+		UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, rdfFormat);
 
 		response.setStatus(SC_OK);
 		setContentType(response, rdfFormat);

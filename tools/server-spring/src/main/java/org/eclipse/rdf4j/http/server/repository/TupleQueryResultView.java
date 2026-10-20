@@ -35,7 +35,6 @@ import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.TupleQueryResultWriterFactory;
 import org.eclipse.rdf4j.query.resultio.binary.BinaryQueryResultWriter;
 import org.eclipse.rdf4j.query.resultio.binary.QueryErrorType;
-import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -76,8 +75,7 @@ public class TupleQueryResultView extends QueryResultView {
 			throws IOException {
 		TupleQueryResultWriterFactory qrWriterFactory = (TupleQueryResultWriterFactory) model.get(FACTORY_KEY);
 		TupleQueryResultFormat qrFormat = qrWriterFactory.getTupleQueryResultFormat();
-		UnaryOperator<Value> origin = bNodeOriginMapper((RepositoryConnection) model.get(CONNECTION_KEY), request,
-				response, qrFormat);
+		UnaryOperator<Value> origin = bNodeOriginMapper(model, request, response, qrFormat);
 
 		response.setStatus(SC_OK);
 		setContentType(response, qrFormat);
