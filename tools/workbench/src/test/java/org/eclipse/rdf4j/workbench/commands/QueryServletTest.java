@@ -131,6 +131,12 @@ public class QueryServletTest {
 	}
 
 	@Test
+	public void forcedExecutionStrategyIsNeverACookiePreference() {
+		// A forced LMDB strategy applies to the page it was chosen on; a refreshed query page starts unforced.
+		assertThat(servlet.getCookieNames()).doesNotContain("lmdb-forced-strategy");
+	}
+
+	@Test
 	public void queryTextAndReferencesAreNeverCookiePreferences() {
 		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);
 		assertThat(servlet.getCookieNames()).doesNotContain(QueryServlet.QUERY, QueryServlet.REF);

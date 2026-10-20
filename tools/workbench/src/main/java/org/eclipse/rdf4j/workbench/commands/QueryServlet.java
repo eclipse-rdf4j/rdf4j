@@ -123,9 +123,6 @@ public class QueryServlet extends TransformationServlet {
 	private static final String ACTION_CANCEL_EXPLAIN = "cancel-explain";
 	private static final String ACTION_LMDB_STRATEGIES = "lmdb-strategies";
 
-	/** Per-query request parameter pinning one named LMDB execution strategy; see {@code Protocol}. */
-	private static final String LMDB_FORCED_STRATEGY = "lmdb-forced-strategy";
-
 	private static final String ACTION_CANCEL_QUERY = "cancel-query";
 
 	private static final String EXPLAIN = "explain";
@@ -181,8 +178,9 @@ public class QueryServlet extends TransformationServlet {
 	 */
 	@Override
 	public String[] getCookieNames() {
-		return new String[] { "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, LMDB_FORCED_STRATEGY,
-				"total_result_count", "show-datatypes" };
+		// A forced LMDB strategy is not a preference: it applies to the page it was chosen on.
+		return new String[] { "owner", LIMIT, QUERY_LN, INFER, QUERY_TIMEOUT, "total_result_count",
+				"show-datatypes" };
 	}
 
 	@Override

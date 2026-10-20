@@ -40,6 +40,7 @@ function setup() {
     harness.$.each = (values, callback) => values.forEach((value, index) => callback(index, value));
     field.appendChild(select);
     harness.document.body.appendChild(field);
+    // An earlier Workbench remembered the forced strategy in this cookie; a browser may still send it.
     harness.document.cookie = 'lmdb-forced-strategy=irKernel';
     harness.runScript('scripts/query.js');
     return { harness, query: harness.workbench.query, requests, field, select };
@@ -56,6 +57,22 @@ test('strategy selector stays empty and disabled until an available repository c
     requests[0].resolve(available);
     assert.equal(field.hidden, false);
     assert.equal(select.disabled, false);
+});
+
+test('a loaded or refreshed query page starts without a forced strategy, whatever an old cookie says', () => {
+    const { query, requests, select } = setup();
+    query.initializeLmdbForcedStrategy();
+    requests[0].resolve(available);
+    assert.equal(select.value, '');
+});
+
+test('a strategy chosen on the page survives a catalogue reload on that page', () => {
+    const { query, requests, select } = setup();
+    query.initializeLmdbForcedStrategy();
+    requests[0].resolve(available);
+    select.value = 'irKernel';
+    query.loadLmdbForceableStrategies();
+    requests[1].resolve(available);
     assert.equal(select.value, 'irKernel');
 });
 

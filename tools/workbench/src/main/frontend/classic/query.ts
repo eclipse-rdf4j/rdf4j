@@ -4827,7 +4827,7 @@ namespace workbench {
             var element = select.get(0);
             var endpoint = queryEndpoint();
             var generation = ++lmdbStrategyGeneration;
-            var preferred = <string>select.data('preferred-value') || <string>select.val() || '';
+            var preferred = <string>select.val() || '';
             if (lmdbStrategyRequest) {
                 lmdbStrategyRequest.abort();
                 lmdbStrategyRequest = null;
@@ -4870,14 +4870,10 @@ namespace workbench {
             });
         }
 
+        /** A loaded or refreshed page starts unforced; only a choice made on this page forces its queries. */
         export function initializeLmdbForcedStrategy() {
-            var select = $('#lmdb-forced-strategy');
-            if (select.length === 0) {
+            if ($('#lmdb-forced-strategy').length === 0) {
                 return;
-            }
-            var remembered = workbench.getCookie('lmdb-forced-strategy');
-            if (remembered) {
-                select.data('preferred-value', remembered);
             }
             loadLmdbForceableStrategies();
         }
