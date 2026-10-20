@@ -722,7 +722,7 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
 }
 
 /* On phones the query actions fill each row they wrap onto, so no row is left ragged; the result toolbar keeps its
- * controls at their own widths on one row, with Full screen as an icon named by its aria-label. */
+ * controls at their own widths on one row, with Add to graph and Full screen as icons named by their aria-labels. */
 @media (max-width: 600px) {
 	:where(body.workbench-body) .query-actions-toolbar :is(.workbench-action-toolbar__primary, .workbench-action-toolbar__group,
 			.workbench-action-toolbar__primary > .workbench-action, .query-actions-compare > .workbench-action,
@@ -735,13 +735,15 @@ body.workbench-body .query-results:not([data-fullscreen="true"]) .query-result-t
 		flex-wrap: wrap;
 	}
 
-	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen {
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar
+			:is(.query-results__fullscreen, .query-result-add-to-graph) {
 		justify-content: center;
 		min-width: var(--workbench-touch-height);
 		padding-inline: 0;
 	}
 
-	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar .query-results__fullscreen-label {
+	:where(body.workbench-body, body.query-result-embedded-body) .query-result-toolbar
+			:is(.query-results__fullscreen-label, .query-result-add-to-graph__label) {
 		position: absolute;
 		width: 1px;
 		height: 1px;

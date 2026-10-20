@@ -35,6 +35,8 @@ Some specs serve an endpoint of their own to the server, such as a SPARQL endpoi
 
 Some specs also stand in for RDF4J Servers of their own (`tests/server-stand-in.js`: one that refuses the user, one without repositories) and point the Workbench at them. The Workbench connects only to servers its accepted-server-prefixes allow, so `run.sh` starts it with `-Dorg.eclipse.rdf4j.workbench.accepted-server-prefixes="/rdf4j-server http://<RDF4J_E2E_HOST_FROM_SERVER>:"`. Start a server of your own the same way to run those specs against it.
 
+The Workbench imports RDF only from approved URL origins. Some specs add from a missing file on the server itself and from `RDF4J_E2E_REFUSED_URL_ORIGIN` (default `http://127.0.0.1:9`, where nothing listens), so `run.sh` starts the Workbench with `-Dorg.eclipse.rdf4j.workbench.add-url-allowed-origins=http://127.0.0.1:8080,<that origin>`. `run.sh` also exports `RDF4J_SERVER_BASE_URL` and `RDF4J_WORKBENCH_BASE_URL`; specs that change repository configuration run only when both are set, so set them yourself, together with the properties above, when you run the specs against a server you started.
+
 To run the tests interactively use `npx playwright test --ui`
 
 ## HTTP compression

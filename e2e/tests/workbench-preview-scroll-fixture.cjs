@@ -16,8 +16,11 @@ const fs = require('node:fs');
 const http = require('node:http');
 const path = require('node:path');
 
-// Scripts and styles live in the front-end tree, images in the web application directory.
+// The files the Workbench serves: the scripts compiled by npm run build (and, after a Maven build, everything else of the
+// front end) in target/frontend, the hand-written scripts and styles in the front-end tree, images in the web
+// application directory.
 const webRoots = [
+    path.resolve(__dirname, '../../tools/workbench/target/frontend'),
     path.resolve(__dirname, '../../tools/workbench/src/main/frontend/static'),
     path.resolve(__dirname, '../../tools/workbench/src/main/webapp')
 ];
@@ -135,13 +138,16 @@ function createServer() {
                 response.writeHead(403).end();
                 return;
             }
-            const file = (candidates.find(({ file }) => fs.existsSync(file)) || candidates[0]).file;
-            const extension = path.extname(file);
+            const found = candidates.find(({ file }) => fs.existsSync(file) && fs.statSync(file).isFile());
+            if (!found) {
+                response.writeHead(404).end();
+                return;
+            }
+            const extension = path.extname(found.file);
             const contentType = extension === '.js' || extension === '.mjs' ? 'text/javascript' : extension === '.css' ? 'text/css'
                 : extension === '.map' ? 'application/json' : 'application/octet-stream';
-            fs.createReadStream(file).on('error', () => response.writeHead(404).end()).pipe(response.writeHead(200, {
-                'content-type': contentType
-            }));
+            response.writeHead(200, { 'content-type': contentType });
+            fs.createReadStream(found.file).pipe(response);
             return;
         }
         if (url.pathname.startsWith(`${basePath}/repositories/a/`)) {

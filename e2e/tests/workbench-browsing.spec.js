@@ -77,7 +77,8 @@ test('Types are sorted by instance count and filtered from the card header', asy
 	expect(counts.length).toBeGreaterThan(2);
 	expect(counts).toEqual([...counts].sort((left, right) => right - left));
 	await expect(card.locator('thead th').nth(1)).toHaveAttribute('aria-sort', 'descending');
-	await expect(rows.first().locator('td').first()).toHaveText(/^[\w-]+:[\w-]+$/);
+	// The type cell holds the type's link and its Add to graph button; the link shows the prefixed name.
+	await expect(rows.first().locator('td').first().locator('a')).toHaveText(/^[\w-]+:[\w-]+$/);
 
 	await card.locator('#types-filter').fill('PRODUCTTYPE');
 	await card.locator('#types-filter').press('Enter');
@@ -192,7 +193,7 @@ test('Repository rows open their summary, list access as text and offer actions'
 	await row.getByRole('button', { name: `Actions for ${REPOSITORY_ID}` }).click();
 	const menu = row.locator('.workbench-row-menu__panel');
 	await expect(menu).toBeVisible();
-	await expect(menu.getByRole('link')).toHaveText(['Query', 'Explore', 'Summary', 'Delete…']);
+	await expect(menu.getByRole('link')).toHaveText(['Query', 'Explore', 'Graph', 'Summary', 'Delete…']);
 	await expect(menu.getByRole('link', { name: 'Delete…' }))
 		.toHaveAttribute('href', new RegExp(`/repositories/NONE/delete\\?id=${REPOSITORY_ID}$`));
 	await page.keyboard.press('Escape');

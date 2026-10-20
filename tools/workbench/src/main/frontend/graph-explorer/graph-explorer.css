@@ -3414,6 +3414,12 @@ html[data-theme="dark"] .graph-explorer #graph-explorer-app .map-shell iframe {
   height: 14px;
 }
 
+/* The repository search waits while a query runs. */
+.graph-explorer #graph-explorer-app .graph-find-results li[aria-disabled="true"] {
+  color: var(--muted);
+  cursor: default;
+}
+
 /* The statement card takes the keyboard focus when it opens from a node's card. */
 .graph-explorer #graph-explorer-app .statement-details:focus {
   outline: none;

@@ -196,6 +196,36 @@ test('Find shows a loaded node, and its last choice searches the repository and 
     await expect(explorer.locator('.node-details h3')).toHaveText('Acme');
 });
 
+// A repository search chosen while a query runs is not dropped: the choice stays offered, unavailable, until the query
+// is done, and then runs.
+test('the repository search waits for a running query instead of dropping the choice', async ({ page }) => {
+    const explorer = await openGraphPage(page);
+    let releaseQueries;
+    const queriesHeld = new Promise((resolve) => { releaseQueries = resolve; });
+    let holding = true;
+    await page.route(new RegExp(`/repositories/${REPOSITORY_ID}/graph$`), async (route) => {
+        if (holding && route.request().method() === 'POST') {
+            await queriesHeld;
+        }
+        return route.fallback();
+    });
+    const find = explorer.getByRole('combobox', { name: /Find a node/ });
+    await find.fill('Acme');
+    await find.press('Enter');
+    await find.fill('bo');
+    const search = explorer.getByRole('option', { name: /Search the repository for “bo”/ });
+    await expect(search, 'unavailable while the Acme search runs').toHaveAttribute('aria-disabled', 'true');
+    await search.click({ force: true });
+    await expect(search, 'the choice is kept, not dropped').toBeVisible();
+
+    holding = false;
+    releaseQueries();
+    await expect(node(explorer, 'Acme')).toBeAttached({ timeout: 30000 });
+    await expect(search).not.toHaveAttribute('aria-disabled', 'true');
+    await search.click();
+    await expect(node(explorer, 'Bob')).toBeAttached({ timeout: 30000 });
+});
+
 test('Tools downloads the loaded statements as Turtle and the drawn graph as SVG and PNG', async ({ page }) => {
     const open = await addAliceFromExplore(page);
     await open.click();

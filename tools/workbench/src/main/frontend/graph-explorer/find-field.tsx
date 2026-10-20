@@ -59,7 +59,9 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository 
   const choose = (option: Option | undefined) => {
     if (!option) return;
     if (option.kind === "node") onReveal(option.node.id);
-    else if (!busy && term.trim()) onSearchRepository(term.trim());
+    // While a query runs the repository search is unavailable: the choice stays offered instead of being dropped.
+    else if (busy || !term.trim()) return;
+    else onSearchRepository(term.trim());
     setOpen(false);
   };
 
@@ -117,6 +119,8 @@ export function FindField({ nodes, busy, inputRef, onReveal, onSearchRepository 
               id={`${listId}-${index}`}
               role="option"
               aria-selected={index === current}
+              aria-disabled={option.kind === "repository" && busy ? true : undefined}
+              title={option.kind === "repository" && busy ? "Available when the current query is done" : undefined}
               className={optionClass(option, index === current)}
               onMouseDown={(event) => event.preventDefault()}
               onMouseEnter={() => setActive(index)}

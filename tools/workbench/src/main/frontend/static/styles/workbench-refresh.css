@@ -617,10 +617,11 @@ body.query-result-embedded-body .workbench-disclosure__actions {
 	}
 }
 
+/* The editor's scroll area keeps CodeMirror's own content-box sizing: it hides the native scrollbars behind a padding
+ * that a negative margin takes back, so with border-box sizing the editor would end above its scroll area. */
 body.workbench-body #update-editor,
 body.workbench-body #update-editor .yasqe,
 body.workbench-body #update-editor .CodeMirror,
-body.workbench-body #update-editor .CodeMirror-scroll,
 body.workbench-body #update-editor textarea {
 	box-sizing: border-box;
 	width: 100% !important;
@@ -4998,6 +4999,11 @@ body.workbench-body .saved-query-row > .yasqe {
 		grid-template-columns: repeat(2, minmax(0, 1fr));
 	}
 
+	/* Two rows of two: only the control's four outer corners are rounded. */
+	body.workbench-body .workbench-source-tabs label:nth-of-type(1) {
+		border-bottom-left-radius: 0;
+	}
+
 	body.workbench-body .workbench-source-tabs label:nth-of-type(2) {
 		border-top-right-radius: var(--workbench-control-radius);
 	}
@@ -5010,6 +5016,7 @@ body.workbench-body .saved-query-row > .yasqe {
 
 	body.workbench-body .workbench-source-tabs label:nth-of-type(4) {
 		border-top-width: 0;
+		border-top-right-radius: 0;
 	}
 
 	body.workbench-body :is(.workbench-source-tabs, .workbench-segmented) {

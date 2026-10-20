@@ -3561,9 +3561,13 @@ namespace workbench {
                 toolbar.appendChild(header);
                 var actions = createElement(this.document, 'div',
                     'workbench-action-toolbar__actions query-result-toolbar__actions');
-                this.addToGraphButton = this.createButton('Add to graph', () => this.addResultsToGraph());
+                this.addToGraphButton = this.createButton('', () => this.addResultsToGraph());
                 this.addToGraphButton.className = 'query-result-add-to-graph workbench-action workbench-action--secondary';
                 this.addToGraphButton.setAttribute('title', 'Run this query on the Graph page and add its statements');
+                // Its label, like Full screen's, gives way to the icon on phones (the button keeps its aria-label).
+                var addToGraphLabel = createElement(this.document, 'span', 'query-result-add-to-graph__label');
+                addToGraphLabel.textContent = 'Add to graph';
+                this.addToGraphButton.appendChild(addToGraphLabel);
                 decorateWithWorkbenchIcon(this.addToGraphButton, 'graph', 'Add the results to the graph');
                 this.addToGraphButton.hidden = true;
                 actions.appendChild(this.addToGraphButton);

@@ -171,13 +171,18 @@ test('the update editor fills its frame', async ({ page }) => {
 	for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
 		await page.setViewportSize(viewport);
 		await page.goto(repositoryPageUrl(REPOSITORY_ID, 'update'), { waitUntil: 'networkidle' });
-		const heights = await page.locator('#update-editor').evaluate(element => ({
-			editor: element.querySelector('.CodeMirror').getBoundingClientRect().height,
-			gutters: element.querySelector('.CodeMirror-gutters').getBoundingClientRect().height,
-			scroll: element.querySelector('.CodeMirror-scroll').getBoundingClientRect().height
-		}));
-		expect(Math.abs(heights.editor - heights.gutters), JSON.stringify(heights)).toBeLessThanOrEqual(2);
-		expect(heights.scroll, JSON.stringify(heights)).toBeGreaterThanOrEqual(140);
+		const boxes = await page.locator('#update-editor').evaluate(element => {
+			const box = selector => {
+				const rect = element.querySelector(selector).getBoundingClientRect();
+				return { top: rect.top, bottom: rect.bottom, height: rect.height };
+			};
+			return { editor: box('.CodeMirror'), gutters: box('.CodeMirror-gutters'), scroll: box('.CodeMirror-scroll') };
+		});
+		// At least six lines, like the Query editor; CodeMirror's scroll area and gutters run on under the edge it
+		// clips (where it hides the native scrollbars), so they reach the editor's bottom.
+		expect(boxes.editor.height, JSON.stringify(boxes)).toBeGreaterThanOrEqual(140);
+		expect(boxes.scroll.bottom, JSON.stringify(boxes)).toBeGreaterThanOrEqual(boxes.editor.bottom - 1);
+		expect(boxes.gutters.bottom, JSON.stringify(boxes)).toBeGreaterThanOrEqual(boxes.editor.bottom - 1);
 	}
 });
 
