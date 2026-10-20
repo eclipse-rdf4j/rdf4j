@@ -24,6 +24,7 @@ import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.SimpleDataset;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
 import org.junit.jupiter.api.Test;
@@ -101,9 +102,68 @@ class LmdbSPARQL11ComplianceRegressionTest {
 					throw failure;
 				}
 
-				assertEquals(1, Collections.frequency(targets, a));
+				assertEquals(1, Collections.frequency(targets, a), () -> explainOptimized(connection, query));
 				assertEquals(2, Collections.frequency(targets, b));
 				assertEquals(3, targets.size());
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void insertWhereConsumesAllBindingsFromNativeQueryRoot(@TempDir File dataDir) {
+		IRI subject = VF.createIRI("http://example.org/s");
+		IRI predicate = VF.createIRI("http://example.org/p");
+
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
+		try {
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, predicate, VF.createLiteral("o"));
+				connection.begin();
+				var update = connection.prepareUpdate("""
+						PREFIX : <http://example.org/>
+						INSERT { ?s ?p "q" }
+						WHERE { ?s ?p ?o }
+						""");
+				SimpleDataset dataset = new SimpleDataset();
+				dataset.addDefaultGraph(null);
+				dataset.addDefaultRemoveGraph(null);
+				dataset.setDefaultInsertGraph(null);
+				update.setDataset(dataset);
+				update.execute();
+				connection.commit();
+
+				assertEquals(true, connection.hasStatement(subject, predicate, VF.createLiteral("q"), false));
+			}
+		} finally {
+			repository.shutDown();
+		}
+	}
+
+	@Test
+	void minusRightOnlyOuterBindingDoesNotSuppressMatchingRhs(@TempDir File dataDir) {
+		IRI leftPredicate = VF.createIRI("urn:minus:left");
+		IRI rightPredicate = VF.createIRI("urn:minus:right");
+		IRI subject = VF.createIRI("urn:minus:subject");
+
+		SailRepository repository = new SailRepository(new LmdbStore(dataDir, new LmdbStoreConfig("spoc")));
+		try {
+			try (var connection = repository.getConnection()) {
+				connection.add(subject, leftPredicate, VF.createIRI("urn:minus:left-value"));
+				connection.add(subject, rightPredicate, VF.createIRI("urn:minus:right-value"));
+
+				String query = """
+						PREFIX : <urn:minus:>
+						SELECT * WHERE {
+						  VALUES ?outer { :outer-a }
+						  { ?subject :left ?left
+						    MINUS { ?subject :right ?outer } }
+						}
+						""";
+				try (TupleQueryResult result = connection.prepareTupleQuery(query).evaluate()) {
+					assertEquals(false, result.hasNext(), () -> explainOptimized(connection, query));
+				}
 			}
 		} finally {
 			repository.shutDown();

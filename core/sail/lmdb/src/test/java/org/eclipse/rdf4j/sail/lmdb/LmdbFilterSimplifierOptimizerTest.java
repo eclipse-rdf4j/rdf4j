@@ -29,9 +29,11 @@ import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Bound;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Compare.CompareOp;
+import org.eclipse.rdf4j.query.algebra.Exists;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
@@ -47,12 +49,39 @@ import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.FilterPlacementAnalyzer;
+import org.eclipse.rdf4j.query.algebra.helpers.QueryAlgebraBindingAnalysis;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.junit.jupiter.api.Test;
 
 class LmdbFilterSimplifierOptimizerTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void generatedLiteralAnchorsPreserveEnclosingCorrelatedNotExistsRepeatability() {
+		StatementPattern input = statementPatternWithPredicate("entity", "http://example.com/type", "type");
+		Filter nameCondition = new Filter(
+				statementPatternWithPredicate("entity", "http://example.com/theme/grid/name", "name"),
+				listMember("name", "A", "A", "B"));
+		Filter outer = new Filter(new Join(input, statementPattern("entity", "tail", "item")),
+				new Not(new Exists(nameCondition)));
+		QueryRoot root = new QueryRoot(outer);
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null,
+				EmptyBindingSet.getInstance());
+		Exists exists = assertInstanceOf(Exists.class, ((Not) outer.getCondition()).getArg());
+		Join anchored = assertInstanceOf(Join.class, exists.getSubQuery());
+		BindingSetAssignment generated = assertInstanceOf(BindingSetAssignment.class, anchored.getLeftArg());
+		assertIterableEquals(Set.of("name"), generated.getDeclaredBindingNames());
+		assertIterableEquals(List.of(VF.createLiteral("A"), VF.createLiteral("B")), bindingValues(generated, "name"));
+		FilterPlacementAnalyzer.Envelope envelope = new FilterPlacementAnalyzer(root,
+				QueryAlgebraBindingAnalysis.withBindingValues(root, EmptyBindingSet.getInstance())).analyze(outer);
+		assertTrue(envelope.repeatable(), "optimizer-owned finite VALUES inside NOT EXISTS must remain repeatable");
+		assertTrue(envelope.singletonAlternatives()
+				.stream()
+				.anyMatch(alternative -> alternative.cut().getFirst().argument() == input));
+	}
 
 	@Test
 	void mergesAdjacentFiltersWithoutRelocatingThem() {
@@ -68,6 +97,35 @@ class LmdbFilterSimplifierOptimizerTest {
 		Join mergedJoin = assertInstanceOf(Join.class, merged.getArg());
 		assertFalse(containsFilter(mergedJoin.getLeftArg()));
 		assertFalse(containsFilter(mergedJoin.getRightArg()));
+	}
+
+	@Test
+	void keepsUnmarkedFunctionAtItsOriginalNestedFilterBoundary() {
+		Join join = new Join(statementPattern("s1", "p1", "o1"), statementPattern("s2", "p2", "o2"));
+		Filter inner = new Filter(join,
+				new FunctionCall("urn:rdf4j:test:unmarked-nested-function", new Var("o2")));
+		Filter outer = new Filter(inner, compare("o2", CompareOp.LT, 10));
+		QueryRoot root = new QueryRoot(outer);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedOuter = assertInstanceOf(Filter.class, root.getArg());
+		Filter retainedInner = assertInstanceOf(Filter.class, retainedOuter.getArg());
+		assertInstanceOf(Join.class, retainedInner.getArg());
+	}
+
+	@Test
+	void doesNotAnchorAnotherConjunctAcrossUnmarkedFunctionBoundary() {
+		FunctionCall unmarked = new FunctionCall("urn:rdf4j:test:unmarked-anchor-function", new Var("o"));
+		Filter filter = new Filter(statementPatternWithPredicate("s", "http://example.com/theme/library/name", "o"),
+				new And(unmarked, listMember("o", "A", "B")));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new FixedFilterPassStatistics(0.50d)).optimize(root, null, null);
+
+		Filter retained = assertInstanceOf(Filter.class, root.getArg());
+		assertInstanceOf(StatementPattern.class, retained.getArg());
+		assertFalse(containsBindingSetAssignment(retained.getArg()));
 	}
 
 	@Test
@@ -314,6 +372,23 @@ class LmdbFilterSimplifierOptimizerTest {
 	}
 
 	@Test
+	void keepsLiteralAnchorOutsideVolatileOptionalRightArg() {
+		StatementPattern required = statementPattern("s", "type", "type");
+		Filter volatileOptional = new Filter(
+				statementPatternWithPredicate("s", "http://example.com/theme/social/name", "optName"),
+				new FunctionCall("urn:rdf4j:test:unmarked-optional-right", new Var("optName")));
+		Filter filter = new Filter(new LeftJoin(required, volatileOptional), listMember("optName", "A", "B"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		LeftJoin retainedOptional = assertInstanceOf(LeftJoin.class, retainedFilter.getArg());
+		assertInstanceOf(Filter.class, retainedOptional.getRightArg());
+		assertFalse(containsBindingSetAssignment(retainedFilter.getArg()));
+	}
+
+	@Test
 	void rewritesUnboundRejectingOptionalFilterToMandatoryLiteralAnchor() {
 		StatementPattern required = statementPattern("s", "type", "type");
 		StatementPattern optional = statementPatternWithPredicate("s", "http://example.com/theme/social/name",
@@ -401,6 +476,28 @@ class LmdbFilterSimplifierOptimizerTest {
 		assertTrue(containsUnion(topJoin.getRightArg()));
 		assertTrue(containsBindingSetAssignmentFor(topJoin.getLeftArg(), "optName"));
 		assertFalse(containsBindingSetAssignmentFor(topJoin.getRightArg(), "optName"));
+	}
+
+	@Test
+	void doesNotHoistMandatoryOptionalAnchorAheadOfVolatileUnionFanout() {
+		BindingSetAssignment users = values("u", "user7", "user8");
+		Filter volatileBranch = new Filter(statementPattern("u", "follows", "v"),
+				new FunctionCall("urn:rdf4j:test:unmarked-union-fanout", new Var("v")));
+		TupleExpr activityUnion = new Union(volatileBranch, statementPattern("post", "authored", "u"));
+		TupleExpr required = new Join(users, activityUnion);
+		StatementPattern optional = statementPatternWithPredicate("u", "http://example.com/theme/social/name",
+				"optName");
+		Filter filter = new Filter(new LeftJoin(required, optional), listMember("optName", "user7", "user8"));
+		QueryRoot root = new QueryRoot(filter);
+
+		new LmdbFilterSimplifierOptimizer(new EvaluationStatistics()).optimize(root, null, null);
+
+		Filter retainedFilter = assertInstanceOf(Filter.class, root.getArg());
+		Join mandatoryJoin = assertInstanceOf(Join.class, retainedFilter.getArg());
+		assertTrue(containsUnion(mandatoryJoin.getLeftArg()),
+				"the volatile union must remain before the former OPTIONAL right side");
+		assertFalse(containsUnion(mandatoryJoin.getRightArg()),
+				"the anchor and former OPTIONAL right side must not move ahead of volatile fanout");
 	}
 
 	private static StatementPattern statementPattern(String subjectName, String predicateName, String objectName) {

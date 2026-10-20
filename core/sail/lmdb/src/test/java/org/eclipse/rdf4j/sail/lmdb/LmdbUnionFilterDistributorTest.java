@@ -14,6 +14,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayDeque;
@@ -28,12 +29,14 @@ import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Extension;
 import org.eclipse.rdf4j.query.algebra.ExtensionElem;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.FunctionCall;
 import org.eclipse.rdf4j.query.algebra.Join;
 import org.eclipse.rdf4j.query.algebra.LeftJoin;
 import org.eclipse.rdf4j.query.algebra.ListMemberOperator;
 import org.eclipse.rdf4j.query.algebra.Or;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
+import org.eclipse.rdf4j.query.algebra.TupleFunctionCall;
 import org.eclipse.rdf4j.query.algebra.Union;
 import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.ValueExpr;
@@ -45,6 +48,57 @@ import org.junit.jupiter.api.Test;
 class LmdbUnionFilterDistributorTest {
 
 	private static final SimpleValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void treatsUnknownFunctionFilteredValuesAsJoinOrderSeparator() {
+		Filter volatileValues = volatileFilter(values("u", "user7", "user8"), "u", "filtered-values");
+
+		assertTrue(LmdbJoinPlanSupport.isJoinOrderSeparator(volatileValues));
+		assertTrue(LmdbJoinPlanSupport.positionableBindingSetAssignmentNames(volatileValues).isEmpty());
+	}
+
+	@Test
+	void doesNotDistributeUnknownFunctionFilteredValuesAcrossUnion() {
+		Filter volatileValues = volatileFilter(values("u", "user7", "user8"), "u", "finite-prefix");
+		Union union = new Union(statementPattern("u", "http://example.com/left", "left"),
+				statementPattern("u", "http://example.com/right", "right"));
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(List.of(volatileValues, union), List.of(),
+				Set.of(), (tupleExpr, ignored) -> tupleExpr, Join::new, (root, ignored, placement) -> root);
+
+		assertNull(distributed, "a volatile finite prefix must not be cloned into both union branches");
+	}
+
+	@Test
+	void doesNotDistributeVolatileDependentPrefixFactorAcrossUnion() {
+		Filter volatileDependentFactor = volatileFilter(
+				statementPattern("u", "http://example.com/name", "name"), "name", "dependent-prefix");
+		Union union = new Union(statementPattern("u", "http://example.com/left", "left"),
+				statementPattern("u", "http://example.com/right", "right"));
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(
+				List.of(values("u", "user7", "user8"), volatileDependentFactor, union), List.of(), Set.of(),
+				(tupleExpr, ignored) -> tupleExpr, Join::new, (root, ignored, placement) -> root);
+
+		assertNull(distributed, "a volatile dependent factor must remain at its original row boundary");
+	}
+
+	@Test
+	void doesNotDistributeFinitePrefixAcrossTupleFunctionBranch() {
+		TupleFunctionCall tupleFunction = new TupleFunctionCall();
+		tupleFunction.setURI("urn:rdf4j:test:volatile-tuple-function");
+		tupleFunction.addArg(new Var("u"));
+		tupleFunction.addResultVar(new Var("leftValue"));
+		Union union = new Union(tupleFunction,
+				statementPattern("u", "http://example.com/right", "rightValue"));
+
+		TupleExpr distributed = LmdbUnionFilterDistributor.tryDistribute(
+				List.of(values("u", "user7", "user8"), union), List.of(), Set.of(),
+				(tupleExpr, ignored) -> tupleExpr, Join::new, (root, ignored, placement) -> root);
+
+		assertNull(distributed,
+				"an arbitrary tuple-function branch must not be cloned across a distributed finite prefix");
+	}
 
 	@Test
 	void distributesFinitePrefixOverExtensionUnionWithoutDeferredFilters() {
@@ -379,6 +433,11 @@ class LmdbUnionFilterDistributorTest {
 		Filter filter = new Filter(arg, condition);
 		filter.setVariableScopeChange(true);
 		return filter;
+	}
+
+	private static Filter volatileFilter(TupleExpr arg, String bindingName, String suffix) {
+		return new Filter(arg,
+				new FunctionCall("urn:rdf4j:test:unmarked-union-" + suffix, new Var(bindingName)));
 	}
 
 	private static BindingSetAssignment values(String bindingName, String... values) {

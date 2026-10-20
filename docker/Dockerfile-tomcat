@@ -1,14 +1,24 @@
 # Temp to reduce image size
 FROM ubuntu:noble AS temp
 
-RUN  apt-get clean && apt-get update && apt-get install -y unzip
+ARG OTEL_JAVAAGENT_VERSION=2.14.0
+ARG OTEL_JAVAAGENT_SHA256=16f8e28fa1ddcd56ed85bf633bd1d1fbc78ea7c4cc50e8c5726b2a319f5058c8
 
+RUN  apt-get clean && apt-get update && apt-get install -y unzip curl
 
 COPY ignore/rdf4j.zip /tmp/rdf4j.zip
 
 WORKDIR /tmp
 
 RUN unzip -q /tmp/rdf4j.zip
+
+# bundle the OpenTelemetry Java agent so it is available offline at container startup;
+# activated conditionally by entrypoint-tomcat.sh, see there. The checksum is pinned to guard
+# against a corrupted/tampered download; update it together with OTEL_JAVAAGENT_VERSION, e.g.:
+#   curl -fsSL "https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/<version>/opentelemetry-javaagent-<version>.jar.sha256"
+RUN curl -fsSL -o /tmp/opentelemetry-javaagent.jar \
+	"https://repo1.maven.org/maven2/io/opentelemetry/javaagent/opentelemetry-javaagent/${OTEL_JAVAAGENT_VERSION}/opentelemetry-javaagent-${OTEL_JAVAAGENT_VERSION}.jar" && \
+	echo "${OTEL_JAVAAGENT_SHA256}  /tmp/opentelemetry-javaagent.jar" | sha256sum -c -
 
 # Final workbench
 FROM tomcat:11.0-jdk25-temurin-noble
@@ -27,12 +37,18 @@ RUN	rm -rf /usr/local/tomcat/webapps/* && \
 	chmod a+x /usr/local/tomcat /usr/local/tomcat/bin /usr/local/tomcat/bin/catalina.sh
 
 COPY --from=temp /tmp/eclipse-rdf4j*/war/*.war /usr/local/tomcat/webapps/
+COPY --from=temp /tmp/opentelemetry-javaagent.jar /opt/otel/opentelemetry-javaagent.jar
 
 COPY tomcat/web.xml /usr/local/tomcat/conf/web.xml
+COPY entrypoint-tomcat.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
 
 USER tomcat
 
 WORKDIR /usr/local/tomcat/
 
 EXPOSE 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["catalina.sh", "run"]
 

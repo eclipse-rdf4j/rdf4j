@@ -29,23 +29,65 @@ import java.util.NoSuchElementException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryPressureState;
+import org.eclipse.rdf4j.http.protocol.LmdbForceableStrategy;
+import org.eclipse.rdf4j.model.Namespace;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
+import org.eclipse.rdf4j.query.GraphQuery;
+import org.eclipse.rdf4j.query.GraphQueryResult;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.TupleQuery;
 import org.eclipse.rdf4j.query.TupleQueryResult;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.GenericPlanNode;
+import org.eclipse.rdf4j.query.explanation.StrategyDecision;
 import org.eclipse.rdf4j.query.impl.IteratingTupleQueryResult;
 import org.eclipse.rdf4j.query.impl.MapBindingSet;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
+import org.eclipse.rdf4j.repository.RepositoryException;
+import org.eclipse.rdf4j.repository.RepositoryResult;
+import org.eclipse.rdf4j.repository.http.HTTPRepository;
+import org.eclipse.rdf4j.repository.http.HTTPTupleQuery;
+import org.eclipse.rdf4j.repository.sail.SailRepository;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.memory.MemoryStore;
 import org.junit.jupiter.api.Test;
 
 import jakarta.servlet.http.HttpServletResponse;
 
 class QueryEvaluatorTest {
+
+	@Test
+	void returnsReportsFromTheSameExplanationForEveryFormat() throws Exception {
+		var report = new StrategyDecision("row/join dispatch", 123L, "normal", "batch", null, "current costs",
+				List.of(new StrategyDecision.Candidate("batch", 1, true, "Would select now", null, null)));
+		for (String format : List.of("text", "json", "dot")) {
+			RepositoryConnection connection = mock(RepositoryConnection.class);
+			TupleQuery query = mock(TupleQuery.class);
+			Explanation explanation = mock(Explanation.class);
+			WorkbenchRequest request = mock(WorkbenchRequest.class);
+			when(request.getParameter("queryLn")).thenReturn("SPARQL");
+			when(request.getParameter("explain")).thenReturn("Optimized");
+			when(request.getParameter("explain-format")).thenReturn(format);
+			when(connection.prepareQuery(QueryLanguage.SPARQL, "SELECT * WHERE {?s ?p ?o}")).thenReturn(query);
+			when(query.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+			GenericPlanNode plan = new GenericPlanNode("Projection");
+			plan.setStrategyDecisions(List.of(report));
+			when(explanation.toGenericPlanNode()).thenReturn(plan);
+			when(explanation.toString()).thenReturn("text");
+			when(explanation.toJson()).thenReturn("{}");
+			when(explanation.toDot()).thenReturn("digraph {}");
+			var response = QueryEvaluator.INSTANCE.explain(connection, "SELECT * WHERE {?s ?p ?o}", request);
+			assertThat(response.getStrategyDecisions()).containsExactly(report);
+			verify(query).explain(Explanation.Level.Optimized);
+			verify(query, never()).evaluate();
+		}
+	}
 
 	private static final String BREAKER_ENABLED = "rdf4j.query.breaker.enabled";
 	private static final String BREAKER_WARN_FREE_MB = "rdf4j.query.breaker.warn.free.mb";
@@ -55,7 +97,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldUseExplainInsteadOfEvaluateWhenExplainParameterIsPresent() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -73,21 +114,77 @@ class QueryEvaluatorTest {
 		when(explanation.toString()).thenReturn("optimized plan");
 		when(tupleQuery.evaluate()).thenThrow(new AssertionError("evaluate() should not run when explain is selected"));
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(tupleQuery).explain(Explanation.Level.Optimized);
 		verify(tupleQuery, never()).evaluate();
-		verify(builder).transform(xslPath, "query.xsl");
-		verify(builder).start("explanation", "explanation-format", "explanation-level");
-		verify(builder).result("optimized plan", "text", "Optimized");
+		verify(builder).start("explanation", "explanation-format", "explanation-level", "strategy-decisions");
+		verify(builder).link(List.of("info", "_internal/namespaces"));
+		verify(builder).result("optimized plan", "text", "Optimized", "[]");
 		verify(builder).end();
+	}
+
+	@Test
+	void unsupportedRepositoryIgnoresRememberedForcedStrategy() throws Exception {
+		String text = "SELECT * WHERE {?s ?p ?o}";
+		RepositoryConnection connection = mock(RepositoryConnection.class);
+		when(connection.getRepository()).thenReturn(new SailRepository(new MemoryStore()));
+		SailTupleQuery query = mock(SailTupleQuery.class);
+		when(connection.prepareQuery(QueryLanguage.SPARQL, text)).thenReturn(query);
+		Explanation explanation = mock(Explanation.class);
+		when(query.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("plan");
+		WorkbenchRequest request = mock(WorkbenchRequest.class);
+		when(request.getParameter("queryLn")).thenReturn("SPARQL");
+		when(request.getParameter("explain")).thenReturn("Optimized");
+		when(request.getParameter("explain-format")).thenReturn("text");
+		when(request.getParameter("lmdb-forced-strategy")).thenReturn("irKernel");
+		QueryEvaluator.INSTANCE.explain(connection, text, request);
+		verify(query, never()).setForcedLmdbExecutionStrategy("irKernel");
+	}
+
+	@Test
+	void forcedStrategyDiscoveryFailurePropagatesInsteadOfChangingExecution() {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		RepositoryException failure = new RepositoryException("Strategy discovery failed");
+		when(repository.getLmdbForceableStrategies()).thenThrow(failure);
+		HTTPTupleQuery query = mock(HTTPTupleQuery.class);
+		assertThat(assertThrows(RepositoryException.class,
+				() -> explainWithForcedStrategy(query, "irKernel", repository))).isSameAs(failure);
+		verify(query, never()).explain(Explanation.Level.Optimized);
+	}
+
+	@Test
+	void blankForcedStrategyDoesNotDiscoverRemoteCapabilities() throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		explainWithForcedStrategy(mock(HTTPTupleQuery.class), "", repository);
+		verify(repository, never()).getLmdbForceableStrategies();
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToLocalSailExplanation() throws Exception {
+		SailTupleQuery tupleQuery = mock(SailTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "nestedLoop");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("nestedLoop");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
+	}
+
+	@Test
+	void shouldApplyForcedLmdbStrategyToRemoteHttpExplanation() throws Exception {
+		HTTPTupleQuery tupleQuery = mock(HTTPTupleQuery.class);
+
+		explainWithForcedStrategy(tupleQuery, "irKernel");
+
+		verify(tupleQuery).setForcedLmdbExecutionStrategy("irKernel");
+		verify(tupleQuery).explain(Explanation.Level.Optimized);
 	}
 
 	@Test
 	void shouldUseDotExplanationWhenExplainFormatIsDot() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -105,17 +202,16 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toDot()).thenReturn("digraph Explanation {}");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("digraph Explanation {}", "dot", "Optimized");
+		verify(builder).result("digraph Explanation {}", "dot", "Optimized", "[]");
 		verify(explanation).toDot();
 	}
 
 	@Test
 	void shouldUseJsonExplanationWhenExplainFormatIsJson() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -132,17 +228,16 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toJson()).thenReturn("{\"plan\":\"value\"}");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
-		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized");
+		verify(builder).result("{\"plan\":\"value\"}", "json", "Optimized", "[]");
 		verify(explanation).toJson();
 	}
 
 	@Test
 	void shouldApplyQueryTimeoutWhenTimeoutParameterIsProvided() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -160,7 +255,7 @@ class QueryEvaluatorTest {
 		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
 		when(explanation.toString()).thenReturn("optimized plan");
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(tupleQuery).setMaxExecutionTime(12);
@@ -169,7 +264,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldRejectTupleQueryWhenCircuitBreakerIsHighPressure() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -187,6 +281,7 @@ class QueryEvaluatorTest {
 		when(req.getInt("offset")).thenReturn(0);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 		when(tupleQueryResult.getBindingNames()).thenReturn(List.of("s"));
 		when(tupleQueryResult.hasNext()).thenReturn(false);
@@ -194,7 +289,7 @@ class QueryEvaluatorTest {
 		withBreakerProperties(() -> {
 			QueryInterruptedException exception = assertThrows(QueryInterruptedException.class,
 					() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(),
-							xslPath, con, queryText, req, cookies, null));
+							con, queryText, req, cookies, null));
 			assertThat(exception).hasMessageContaining("circuit breaker");
 		});
 
@@ -204,7 +299,6 @@ class QueryEvaluatorTest {
 	@Test
 	void shouldAbortTupleMaterializationWhenBreakerTurnsCriticalMidStream() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -227,12 +321,13 @@ class QueryEvaluatorTest {
 		when(req.getInt("offset")).thenReturn(0);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
 		withBreakerProperties("0", "0", "0", () -> {
 			QueryInterruptedException exception = assertThrows(QueryInterruptedException.class,
 					() -> QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(),
-							xslPath, con, queryText, req, cookies, null));
+							con, queryText, req, cookies, null));
 			assertThat(exception).hasMessageContaining("circuit breaker");
 		});
 
@@ -244,7 +339,6 @@ class QueryEvaluatorTest {
 	void shouldReapplyInferAndTimeoutWhenPagingUsesKnownTotalResultCount() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
 		String pagedQueryText = queryText + "\nlimit 10\noffset 20";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -263,13 +357,14 @@ class QueryEvaluatorTest {
 		when(req.getInt("know_total")).thenReturn(25);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(initialQuery);
 		when(con.prepareQuery(QueryLanguage.SPARQL, pagedQueryText)).thenReturn(pagedQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(pagedQuery.evaluate()).thenReturn(tupleQueryResult);
 		when(tupleQueryResult.getBindingNames()).thenReturn(List.of("s"));
 		when(tupleQueryResult.hasNext()).thenReturn(false);
 		when(tupleQueryResult.iterator()).thenReturn(List.<BindingSet>of().iterator());
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
-				queryText, req, cookies, null);
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, queryText);
 
 		verify(initialQuery).setIncludeInferred(true);
 		verify(initialQuery).setMaxExecutionTime(12);
@@ -277,12 +372,12 @@ class QueryEvaluatorTest {
 		verify(pagedQuery).setMaxExecutionTime(12);
 		verify(pagedQuery).evaluate();
 		verify(cookies).addTotalResultCountCookie(req, resp, 25);
+		verify(builder).metadata("total-result-count", 25);
 	}
 
 	@Test
 	void shouldUseDedicatedDownloadLimitWhenDownloadingTupleResults() throws Exception {
 		String queryText = "select * where { ?s ?p ?o }";
-		String xslPath = "/xsl";
 		TupleResultBuilder builder = mock(TupleResultBuilder.class);
 		WorkbenchRequest req = mock(WorkbenchRequest.class);
 		HttpServletResponse resp = mock(HttpServletResponse.class);
@@ -302,19 +397,216 @@ class QueryEvaluatorTest {
 		when(req.getInt("download_limit")).thenReturn(2);
 		when(req.getInt("know_total")).thenReturn(0);
 		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
 		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
 
-		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), xslPath, con,
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
 				queryText, req, cookies, null);
 
 		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
 		verify(cookies).addTotalResultCountCookie(req, resp, 3);
 	}
 
+	@Test
+	void shouldDownloadAllResultsFromTheBeginningWhenNoDownloadLimitIsSelected() throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(false);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(2);
+		when(req.getInt("limit_query")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(3)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 3);
+	}
+
+	@Test
+	void shouldApplyConfiguredDefaultDownloadCapWithoutChangingAuthoredLimitOrOffset() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 2 offset 1";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"),
+				List.of(binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(false);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(20);
+		when(req.getInt("limit_query")).thenReturn(100);
+		when(req.getInt("download_limit")).thenReturn(1);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null, "workbench-test", null, 1);
+
+		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
+		verify(builder, times(1)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+		verify(cookies).addTotalResultCountCookie(req, resp, 2);
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapWithoutRewritingAuthoredLimitAndOffset() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("offset")).thenReturn(2);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(con).prepareQuery(QueryLanguage.SPARQL, queryText);
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapToRdfGraphSerialization() throws Exception {
+		String queryText = "construct { ?s ?p ?o } where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		GraphQuery graphQuery = mock(GraphQuery.class);
+		GraphQueryResult graphQueryResult = mock(GraphQueryResult.class);
+		SimpleValueFactory valueFactory = SimpleValueFactory.getInstance();
+		Statement first = valueFactory.createStatement(valueFactory.createIRI("urn:s1"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("first"));
+		Statement second = valueFactory.createStatement(valueFactory.createIRI("urn:s2"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("second"));
+		Statement third = valueFactory.createStatement(valueFactory.createIRI("urn:s3"),
+				valueFactory.createIRI("urn:p"), valueFactory.createLiteral("third"));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("application/n-triples");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(0);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(graphQuery);
+		when(graphQuery.evaluate()).thenReturn(graphQueryResult);
+		when(graphQueryResult.getNamespaces()).thenReturn(Map.of());
+		when(graphQueryResult.hasNext()).thenReturn(true, true, true, false);
+		when(graphQueryResult.next()).thenReturn(first, second, third);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(graphQueryResult, times(2)).next();
+	}
+
+	@Test
+	void shouldApplyAnExplicitDownloadCapWhenKnownTotalAndAuthoredLimitArePresent() throws Exception {
+		String queryText = "select * where { ?s ?p ?o } limit 3 offset 1";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		TupleQuery tupleQuery = mock(TupleQuery.class);
+		TupleQueryResult tupleQueryResult = new IteratingTupleQueryResult(List.of("s"), List.of(binding("first"),
+				binding("second"), binding("third")));
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("Accept")).thenReturn(true);
+		when(req.isParameterPresent("download_limit")).thenReturn(true);
+		when(req.getParameter("Accept")).thenReturn("text/csv");
+		when(req.getInt("query-timeout")).thenReturn(0);
+		when(req.getInt("download_limit")).thenReturn(2);
+		when(req.getInt("know_total")).thenReturn(3);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(con.getNamespaces()).thenReturn(emptyNamespaces());
+		when(tupleQuery.evaluate()).thenReturn(tupleQueryResult);
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+
+		verify(builder, times(2)).result(org.mockito.ArgumentMatchers.any(Object[].class));
+	}
+
 	private static BindingSet binding(String value) {
 		MapBindingSet bindingSet = new MapBindingSet();
 		bindingSet.addBinding("s", SimpleValueFactory.getInstance().createLiteral(value));
 		return bindingSet;
+	}
+
+	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy) throws Exception {
+		HTTPRepository repository = mock(HTTPRepository.class);
+		when(repository.getLmdbForceableStrategies()).thenReturn(List.of(
+				new LmdbForceableStrategy("irKernel", "Compiled kernel")));
+		explainWithForcedStrategy(tupleQuery, strategy, repository);
+	}
+
+	private static void explainWithForcedStrategy(TupleQuery tupleQuery, String strategy, HTTPRepository repository)
+			throws Exception {
+		String queryText = "select * where { ?s ?p ?o }";
+		TupleResultBuilder builder = mock(TupleResultBuilder.class);
+		WorkbenchRequest req = mock(WorkbenchRequest.class);
+		HttpServletResponse resp = mock(HttpServletResponse.class);
+		RepositoryConnection con = mock(RepositoryConnection.class);
+		CookieHandler cookies = mock(CookieHandler.class);
+		Explanation explanation = mock(Explanation.class);
+
+		when(req.getParameter("queryLn")).thenReturn("SPARQL");
+		when(req.isParameterPresent("explain")).thenReturn(true);
+		when(req.getParameter("explain")).thenReturn("Optimized");
+		when(req.getParameter("explain-format")).thenReturn("text");
+		when(req.getParameter("lmdb-forced-strategy")).thenReturn(strategy);
+		when(con.getRepository()).thenReturn(repository);
+		when(con.prepareQuery(QueryLanguage.SPARQL, queryText)).thenReturn(tupleQuery);
+		when(tupleQuery.explain(Explanation.Level.Optimized)).thenReturn(explanation);
+		when(explanation.toString()).thenReturn("optimized plan");
+
+		QueryEvaluator.INSTANCE.extractQueryAndEvaluate(builder, resp, new ByteArrayOutputStream(), con,
+				queryText, req, cookies, null);
+	}
+
+	private static RepositoryResult<Namespace> emptyNamespaces() {
+		return new RepositoryResult<>(new CloseableIteratorIteration<>(List.<Namespace>of().iterator()));
 	}
 
 	private void withBreakerProperties(ThrowingRunnable action) throws Exception {

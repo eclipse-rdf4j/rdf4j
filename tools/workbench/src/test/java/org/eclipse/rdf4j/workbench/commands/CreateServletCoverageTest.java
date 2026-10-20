@@ -48,9 +48,9 @@ class CreateServletCoverageTest {
 		RepositoryManager manager = mock(RepositoryManager.class);
 
 		servlet.setRepositoryManager(manager);
-		servlet.init(TestServletConfig.withParams("create", "transformations", "/transform"));
+		servlet.init(TestServletConfig.withParams("create", "default-Content-Type", "text/turtle"));
 
-		assertThat(servlet.getServletConfig().getInitParameter("transformations")).isEqualTo("/transform");
+		assertThat(servlet.getServletConfig().getInitParameter("default-Content-Type")).isEqualTo("text/turtle");
 	}
 
 	@Test
@@ -69,10 +69,10 @@ class CreateServletCoverageTest {
 		when(request.getTypeParameter()).thenReturn("federate");
 		when(response.getOutputStream()).thenReturn(outputStream);
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
 		assertThat(outputStream.asString())
-				.contains("create-federate.xsl")
+				.doesNotContain("create-federate.xsl", "<?xml-stylesheet")
 				.contains("alpha")
 				.contains("Alpha repo")
 				.contains("http://example.com/alpha")
@@ -97,7 +97,7 @@ class CreateServletCoverageTest {
 		when(request.getTypeParameter()).thenReturn("memory");
 		values.forEach((name, value) -> when(request.getParameter(name)).thenReturn(value));
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		ArgumentCaptor<RepositoryConfig> configCaptor = ArgumentCaptor.forClass(RepositoryConfig.class);
 		verify(manager).addRepositoryConfig(configCaptor.capture());
@@ -119,7 +119,7 @@ class CreateServletCoverageTest {
 		when(request.getParameter("Repository title")).thenReturn("Federation Coverage");
 		when(request.getParameterValues("memberID")).thenReturn(new String[] { "alpha", "beta" });
 
-		servlet.doPost(request, response, "/transform");
+		servlet.doPost(request, response);
 
 		verify(manager).addRepositoryConfig(any(RepositoryConfig.class));
 		verify(response).sendRedirect("../fed-coverage/summary");
@@ -133,7 +133,7 @@ class CreateServletCoverageTest {
 
 		when(request.getTypeParameter()).thenReturn("definitely-missing-template");
 
-		assertThatThrownBy(() -> servlet.doPost(request, response, "/transform"))
+		assertThatThrownBy(() -> servlet.doPost(request, response))
 				.isInstanceOf(ServletException.class)
 				.hasCauseInstanceOf(IOException.class)
 				.hasMessageContaining("Could not load config template");

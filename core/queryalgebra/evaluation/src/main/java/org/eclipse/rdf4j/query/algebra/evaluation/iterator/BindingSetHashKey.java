@@ -51,6 +51,39 @@ public class BindingSetHashKey implements Serializable {
 		this.values = values;
 	}
 
+	/**
+	 * @return bit {@code i} is set when key position {@code i} holds a value; only the first 64 positions are
+	 *         represented
+	 */
+	long boundMask() {
+		long mask = 0L;
+		int size = Math.min(values.length, Long.SIZE);
+		for (int i = 0; i < size; i++) {
+			if (values[i] != null) {
+				mask |= 1L << i;
+			}
+		}
+		return mask;
+	}
+
+	/**
+	 * @return a key of the same length that keeps only the positions in {@code mask} and leaves every other position
+	 *         unbound
+	 */
+	BindingSetHashKey project(long mask) {
+		if ((boundMask() & ~mask) == 0L) {
+			return this;
+		}
+		Value[] projected = new Value[values.length];
+		int size = Math.min(values.length, Long.SIZE);
+		for (int i = 0; i < size; i++) {
+			if ((mask & (1L << i)) != 0L) {
+				projected[i] = values[i];
+			}
+		}
+		return new BindingSetHashKey(projected);
+	}
+
 	@Override
 	public boolean equals(Object o) {
 		if (o == this) {

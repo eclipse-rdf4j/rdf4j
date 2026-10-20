@@ -140,9 +140,8 @@ class ExploreServletCoverageTest {
 		when(repository.getConnection()).thenReturn(connection);
 		when(connection.getNamespaces()).thenReturn(emptyNamespaces());
 
-		servlet.service(request, response, "/transform");
+		servlet.service(request, response);
 
-		verify(errorBuilder).transform("/transform", "explore.xsl");
 		verify(errorBuilder).start("error-message");
 		verify(errorBuilder).link(List.of("info"));
 		verify(errorBuilder).result("broken resource");
@@ -224,7 +223,6 @@ class ExploreServletCoverageTest {
 
 		servlet.service(new MockHttpServletRequest("GET", "/explore"), new MockHttpServletResponse());
 
-		verify(builder).transform("/transform", "explore.xsl");
 		verify(builder).start("subject", "predicate", "object", "context");
 		verify(builder).link(List.of("info"));
 		verify(builder).end();

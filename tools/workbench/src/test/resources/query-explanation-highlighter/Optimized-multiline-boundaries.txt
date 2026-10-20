@@ -1,0 +1,9 @@
+Join
+
+╠══ Parent [left]
+║  
+║     StatementPattern (hash
+║     join) (indexName=idx
+║     next)
+║        s: Var (name=s)
+╚══ Filter [right]

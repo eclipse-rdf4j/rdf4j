@@ -12,13 +12,20 @@
 package org.eclipse.rdf4j.query.algebra.evaluation.impl;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
+import java.util.NoSuchElementException;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
+import org.eclipse.rdf4j.common.iteration.AbstractCloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.CloseableIteratorIteration;
+import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.BooleanLiteral;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF;
@@ -34,6 +41,7 @@ import org.eclipse.rdf4j.query.algebra.ValueConstant;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryValueEvaluationStep;
+import org.eclipse.rdf4j.query.algebra.evaluation.function.TupleFunction;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.FilterIterator;
 import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.junit.jupiter.api.AfterEach;
@@ -60,6 +68,95 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 
 		assertThat(prepared.isConstant()).isTrue();
 		assertThat(prepared.evaluate(EmptyBindingSet.getInstance()).stringValue()).isEqualTo("3");
+	}
+
+	@Test
+	void closesTupleFunctionResultWhenReplayCheckpointFiresBeforeWrapperOwnership() {
+		ClosingTupleIteration result = new ClosingTupleIteration();
+		TupleFunction tupleFunction = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return "urn:test:tuple-function";
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(
+					org.eclipse.rdf4j.model.ValueFactory valueFactory, Value... args) {
+				return result;
+			}
+		};
+
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			throw new IllegalStateException("simulate replay after tuple function returned");
+		})) {
+			assertThatThrownBy(() -> DefaultEvaluationStrategy.evaluate(tupleFunction, List.of(Var.of("result")),
+					EmptyBindingSet.getInstance(), SimpleValueFactory.getInstance()))
+							.isInstanceOf(QueryExecutionContext.ReplaySafepointException.class);
+		}
+
+		assertThat(result.closed.get()).as("unwrapped tuple-function resources must close on replay unwind").isTrue();
+	}
+
+	@Test
+	void closesTupleFunctionResultOnlyOnceWhenLazyReplayCheckpointFails() {
+		AtomicInteger closeCount = new AtomicInteger();
+		AtomicInteger checkpointCount = new AtomicInteger();
+		CloseableIteration<List<? extends Value>> result = new CloseableIteration<>() {
+			private boolean returned;
+
+			@Override
+			public boolean hasNext() {
+				return !returned;
+			}
+
+			@Override
+			public List<? extends Value> next() {
+				if (returned) {
+					throw new NoSuchElementException();
+				}
+				returned = true;
+				return List.of(SimpleValueFactory.getInstance().createLiteral("result"));
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+
+			@Override
+			public void close() {
+				closeCount.incrementAndGet();
+			}
+		};
+		TupleFunction tupleFunction = new TupleFunction() {
+			@Override
+			public String getURI() {
+				return "urn:test:tuple-function";
+			}
+
+			@Override
+			public CloseableIteration<? extends List<? extends Value>> evaluate(
+					org.eclipse.rdf4j.model.ValueFactory valueFactory, Value... args) {
+				return result;
+			}
+		};
+
+		try (QueryExecutionContext.Activation ignored = QueryExecutionContext.activateReplaySafepoint(() -> {
+			if (checkpointCount.incrementAndGet() == 2) {
+				throw new IllegalStateException("simulate replay while tuple-function result is active");
+			}
+		})) {
+			CloseableIteration<BindingSet> evaluation = DefaultEvaluationStrategy.evaluate(tupleFunction,
+					List.of(Var.of("result")), EmptyBindingSet.getInstance(), SimpleValueFactory.getInstance());
+			try {
+				assertThatThrownBy(evaluation::hasNext)
+						.isInstanceOf(QueryExecutionContext.ReplaySafepointException.class);
+			} finally {
+				evaluation.close();
+			}
+		}
+
+		assertThat(closeCount).hasValue(1);
 	}
 
 	@Test
@@ -234,6 +331,25 @@ class DefaultEvaluationStrategyTelemetryRegressionTest {
 			return evictionCheckInterval.getInt(null);
 		} catch (ReflectiveOperationException e) {
 			throw new AssertionError("Unable to inspect runtime telemetry eviction check interval", e);
+		}
+	}
+
+	private static final class ClosingTupleIteration extends AbstractCloseableIteration<List<? extends Value>> {
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		@Override
+		public boolean hasNext() {
+			return false;
+		}
+
+		@Override
+		public List<? extends Value> next() {
+			throw new NoSuchElementException();
+		}
+
+		@Override
+		protected void handleClose() {
+			closed.set(true);
 		}
 	}
 

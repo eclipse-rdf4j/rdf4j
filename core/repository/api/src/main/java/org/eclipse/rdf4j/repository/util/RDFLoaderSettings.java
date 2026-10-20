@@ -40,6 +40,10 @@ public final class RDFLoaderSettings {
 	public static final LongRioSetting MAX_ZIP_ENTRIES = new LongRioSetting(
 			"org.eclipse.rdf4j.rio.loader.max_zip_entries", "Maximum aggregate RDF input ZIP entries", 50_000L);
 
+	/** Maximum aggregate number of ZIP and TAR entries encountered during one load. */
+	public static final LongRioSetting MAX_ARCHIVE_ENTRIES = new LongRioSetting(
+			"org.eclipse.rdf4j.rio.loader.max_archive_entries", "Maximum aggregate RDF input archive entries", 50_000L);
+
 	private RDFLoaderSettings() {
 	}
 }

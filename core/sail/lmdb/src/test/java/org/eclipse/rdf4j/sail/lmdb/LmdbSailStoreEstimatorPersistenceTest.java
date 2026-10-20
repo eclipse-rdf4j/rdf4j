@@ -35,6 +35,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReferenceArray;
 
+import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Statement;
@@ -42,7 +43,6 @@ import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.algebra.Filter;
 import org.eclipse.rdf4j.query.algebra.StatementPattern;
-import org.eclipse.rdf4j.query.algebra.evaluation.impl.DefaultEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.StrictEvaluationStrategyFactory;
 import org.eclipse.rdf4j.query.algebra.evaluation.sketch.SketchBasedJoinEstimator;
@@ -52,8 +52,10 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.sail.NotifyingSailConnection;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailSink;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategyFactory;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -574,7 +576,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:rollback:p");
 		var o = vf.createIRI("urn:rollback:o");
 
-		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc").setBulkOperationSize(1));
 		store.init();
 		try {
 			LmdbSailStore backingStore = store.getBackingStore();
@@ -601,12 +603,59 @@ class LmdbSailStoreEstimatorPersistenceTest {
 
 			assertFalse(estimator.isReadyNonBlocking(),
 					"Rollback must discard eager non-isolated estimator state");
-			assertEquals(0.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
-					0.0d,
-					"Rolled-back statement must not remain visible to estimator sketches");
+			assertEquals(1L, estimator.rebuild(), "an explicit rebuild must scan only the committed seed row");
+			assertTrue(estimator.isReadyNonBlocking(), "the explicit rebuild must restore estimator readiness");
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+					0.0d, "the rebuilt estimator must retain only the committed seed row");
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertFalse(conn.hasStatement(s, p, o, false),
 						"Rolled-back statement must not remain visible in the store");
+			}
+		} finally {
+			store.shutDown();
+		}
+	}
+
+	@Test
+	void noneIsolationRollbackKeepsReadyEstimatorWhenPendingRowNeverPublishes(@TempDir File dataDir) throws Exception {
+		var vf = SimpleValueFactory.getInstance();
+		var seed = vf.createIRI("urn:pending-rollback:seed");
+		var s = vf.createIRI("urn:pending-rollback:s");
+		var p = vf.createIRI("urn:pending-rollback:p");
+		var o = vf.createIRI("urn:pending-rollback:o");
+
+		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
+		store.init();
+		try {
+			LmdbSailStore backingStore = store.getBackingStore();
+			backingStore.enableMultiThreading = false;
+			SketchBasedJoinEstimator estimator = backingStore.getSketchBasedJoinEstimator();
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(seed, p, vf.createIRI("urn:pending-rollback:seed-o"));
+				conn.commit();
+			}
+			estimator.stop();
+			estimator.rebuild();
+			estimator.setRebuildAllowedSupplier(() -> false);
+			assertTrue(estimator.isReadyNonBlocking());
+			long checkpointsBefore = backingStore.noneIngestionMetrics().checkpoints();
+
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				conn.begin(IsolationLevels.NONE);
+				conn.addStatement(s, p, o);
+				assertEquals(checkpointsBefore, backingStore.noneIngestionMetrics().checkpoints(),
+						"a single default-bulk row must stay in the pending batch");
+				conn.rollback();
+			}
+
+			assertTrue(estimator.isReadyNonBlocking(),
+					"discarding an unpublished pending row must not invalidate the ready estimator");
+			assertEquals(1.0d, estimator.cardinalitySingle(SketchBasedJoinEstimator.Component.P, p.stringValue()),
+					0.0d, "the ready estimator must contain only the committed seed row");
+			try (NotifyingSailConnection conn = store.getConnection()) {
+				assertFalse(conn.hasStatement(s, p, o, false),
+						"the rolled-back pending row must not become visible in the store");
 			}
 		} finally {
 			store.shutDown();
@@ -666,6 +715,12 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			} finally {
 				commitSink.close();
 			}
+			try (SailDataset dataset = backingStore.getExplicitSailSource().dataset(IsolationLevels.NONE);
+					CloseableIteration<? extends Statement> statements = dataset.getStatements(committedAfterRollback,
+							p, o)) {
+				assertTrue(statements.hasNext(),
+						"a native LMDB read must see the post-rollback direct sink commit: " + store.getLmdbStats());
+			}
 			try (NotifyingSailConnection conn = store.getConnection()) {
 				assertTrue(conn.hasStatement(committedAfterRollback, p, o, false),
 						"Rollback must leave LMDB able to start and commit the next transaction");
@@ -692,7 +747,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			estimator.discardAndMarkForRebuild();
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 
 			try (SailRepositoryConnection connection = repository.getConnection()) {
 				connection.begin(IsolationLevels.READ_COMMITTED);
@@ -715,7 +770,7 @@ class LmdbSailStoreEstimatorPersistenceTest {
 			}
 
 			assertFalse(estimator.isReadyNonBlocking());
-			assertInstanceOf(DefaultEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
+			assertInstanceOf(LmdbNativeEvaluationStrategyFactory.class, store.getEvaluationStrategyFactory());
 		} finally {
 			repository.shutDown();
 		}
@@ -780,6 +835,9 @@ class LmdbSailStoreEstimatorPersistenceTest {
 		var p = vf.createIRI("urn:p");
 		var o = vf.createIRI("urn:o");
 
+		LmdbStore initialized = new LmdbStore(dataDir, new LmdbStoreConfig("spoc"));
+		initialized.init();
+		initialized.shutDown();
 		writeLegacySnapshot(dataDir.toPath().resolve(SNAPSHOT_FILE));
 
 		LmdbStore store = new LmdbStore(dataDir, sketchEnabledConfig("spoc"));
@@ -808,7 +866,11 @@ class LmdbSailStoreEstimatorPersistenceTest {
 	}
 
 	private static LmdbStoreConfig sketchEnabledConfig(String tripleIndexes) {
-		return new LmdbStoreConfig(tripleIndexes).setSketchEstimatorEnabled(true);
+		LmdbStoreConfig config = new LmdbStoreConfig(tripleIndexes)
+				.setNativeEvaluationEnabled(true)
+				.setSketchEstimatorEnabled(true);
+		config.setExperimentalQueryOptimizations(true);
+		return config;
 	}
 
 	private static Object invokeConfig(LmdbStoreConfig config, String methodName, Class<?> parameterType, Object value)

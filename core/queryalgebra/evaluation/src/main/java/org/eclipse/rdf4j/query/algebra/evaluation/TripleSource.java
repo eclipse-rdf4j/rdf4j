@@ -12,11 +12,14 @@
 package org.eclipse.rdf4j.query.algebra.evaluation;
 
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.Set;
+import java.util.function.Function;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.common.iteration.EmptyIteration;
+import org.eclipse.rdf4j.common.iteration.LookAheadIteration;
 import org.eclipse.rdf4j.common.order.AvailableStatementOrder;
 import org.eclipse.rdf4j.common.order.StatementOrder;
 import org.eclipse.rdf4j.model.IRI;
@@ -50,6 +53,46 @@ public interface TripleSource extends AvailableStatementOrder {
 	CloseableIteration<? extends Statement> getStatements(Resource subj, IRI pred,
 			Value obj, Resource... contexts) throws QueryEvaluationException;
 
+	/** Returns each non-null named storage context once, from the same read view as statement retrieval. */
+	default CloseableIteration<? extends Resource> getContextIDs() throws QueryEvaluationException {
+		Function<Value, Value> capturer = getValueCapturer();
+		CloseableIteration<? extends Statement> statements = getStatements(null, null, null);
+		return new LookAheadIteration<Resource>() {
+			private final Set<Resource> seen = new HashSet<>();
+
+			@Override
+			protected Resource getNextElement() {
+				try {
+					while (statements.hasNext()) {
+						Resource graph = statements.next().getContext();
+						if (graph != null) {
+							Resource capturedGraph = capturer == null ? graph : (Resource) capturer.apply(graph);
+							if (capturedGraph != null && seen.add(capturedGraph)) {
+								return capturedGraph;
+							}
+						}
+					}
+					return null;
+				} catch (RuntimeException | Error failure) {
+					try {
+						close();
+					} catch (RuntimeException | Error closeFailure) {
+						if (failure != closeFailure) {
+							failure.addSuppressed(closeFailure);
+						}
+					}
+					throw failure;
+				}
+			}
+
+			@Override
+			protected void handleClose() {
+				seen.clear();
+				statements.close();
+			}
+		};
+	}
+
 	/**
 	 * Counts statements matching the supplied pattern without requiring callers to materialize converted bindings.
 	 *
@@ -71,6 +114,18 @@ public interface TripleSource extends AvailableStatementOrder {
 			}
 		}
 		return count;
+	}
+
+	/**
+	 * Checks whether at least one statement matches the supplied pattern without requiring callers to materialize
+	 * converted bindings. Implementations with native indexes should override this to stop at the first record.
+	 */
+	@Experimental
+	default boolean hasStatements(Resource subj, IRI pred, Value obj, Resource... contexts)
+			throws QueryEvaluationException {
+		try (CloseableIteration<? extends Statement> statements = getStatements(subj, pred, obj, contexts)) {
+			return statements.hasNext();
+		}
 	}
 
 	/**
@@ -143,4 +198,26 @@ public interface TripleSource extends AvailableStatementOrder {
 	 * @return a ValueFactory object for this TripleSource.
 	 */
 	ValueFactory getValueFactory();
+
+	/**
+	 * Returns an optional preparer for query-owned statement-pattern inputs. A preparer may replace a value with an
+	 * equal store-native value and retain a lookup result for the current read view, including a missing identifier. It
+	 * must not mutate caller values or retain the closed read view through returned values. A null preparer leaves
+	 * ordinary values and factory conversion unchanged. When a capturer is also supplied, both functions belong to this
+	 * same captured read view and must accept one another's owned representations.
+	 */
+	default Function<Value, Value> getValuePreparer() {
+		return null;
+	}
+
+	/**
+	 * Returns optional capture of values produced inside a query into owned representations. Capture must not perform
+	 * dictionary lookup: a later statement-pattern preparation resolves any identifier that is actually needed. It must
+	 * preserve lexical equality without retaining mutable caller payloads or a closed native read view. It belongs to
+	 * the same captured read view as {@link #getValuePreparer()}, rather than the connection's later current
+	 * transaction.
+	 */
+	default Function<Value, Value> getValueCapturer() {
+		return null;
+	}
 }

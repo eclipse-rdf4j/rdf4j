@@ -1,0 +1,26 @@
+{
+  "archiveSha256": "0e6cf4206f039c47fec36347e3cd44dd5121f217ae39bf1276f131c8740f8f19",
+  "config": "new LmdbStoreConfig(\"spoc,posc\")",
+  "members": [
+    {
+      "bytes": 4,
+      "path": "namespaces.dat",
+      "sha256": "43ecf474b481946bc08588acc6ae6578810392498ee200dd17aacd85dadb56f8"
+    },
+    {
+      "bytes": 163840,
+      "path": "triples/data.mdb",
+      "sha256": "3805b4c7406de6ca8d9fe1a772b78399adf5d1d47c1a983f6d182d97f10824f5"
+    },
+    {
+      "bytes": 147456,
+      "path": "values/data.mdb",
+      "sha256": "d64db84165114c18da95b39a2dc202b750e04b93c966384e3410dc5628eb9115"
+    }
+  ],
+  "operations": "The released 6.0.1 LmdbStore initialized a cold store, committed one RDF statement, shut down, then reopened and verified the statement.",
+  "producerCommit": "c8faa0b118b0c4389640484d556e83ca8fc26a9e",
+  "producerTag": "6.0.1",
+  "producerTest": "Legacy601BaselineCompatibilityTest#producesMinimalFormatTwoFixture",
+  "storeProperties": "The released writer emitted no store.properties; this is retained as produced."
+}

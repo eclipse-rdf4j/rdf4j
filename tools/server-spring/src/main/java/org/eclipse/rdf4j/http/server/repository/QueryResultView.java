@@ -18,9 +18,12 @@ import java.nio.charset.Charset;
 import java.util.Map;
 
 import org.eclipse.rdf4j.common.lang.FileFormat;
+import org.eclipse.rdf4j.http.client.CancellableOperationCoordinator;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreaker;
 import org.eclipse.rdf4j.http.client.QueryCircuitBreakerHandle;
 import org.eclipse.rdf4j.http.client.QueryExecutionContext;
+import org.eclipse.rdf4j.http.client.QueryRequestContext;
+import org.eclipse.rdf4j.http.client.QueryResponseHeartbeat;
 import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.repository.RepositoryConnection;
 import org.slf4j.Logger;
@@ -71,40 +74,148 @@ public abstract class QueryResultView implements View {
 
 	public static final String BREAKER_HANDLE_KEY = "breakerHandle";
 
+	public static final String CANCELLATION_COORDINATOR_KEY = "cancellationCoordinator";
+
+	public static final String CANCELLATION_HANDLE_KEY = "cancellationHandle";
+
+	/** The heartbeat that owns the response stream while the query is being rendered. */
+	public static final String RESPONSE_HEARTBEAT_KEY = "responseHeartbeat";
+
+	/** The writer constructed over {@link #RESPONSE_HEARTBEAT_KEY}'s stream before query evaluation starts. */
+	public static final String RESPONSE_WRITER_KEY = "responseWriter";
+
 	@SuppressWarnings("rawtypes")
 	@Override
 	public final void render(Map model, HttpServletRequest request, HttpServletResponse response) throws IOException {
 		RepositoryConnection conn = (RepositoryConnection) model.get(CONNECTION_KEY);
 		QueryCircuitBreakerHandle breakerHandle = (QueryCircuitBreakerHandle) model.get(BREAKER_HANDLE_KEY);
+		CancellableOperationCoordinator cancellationCoordinator = (CancellableOperationCoordinator) model
+				.get(CANCELLATION_COORDINATOR_KEY);
+		CancellableOperationCoordinator.Handle cancellationHandle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
+		QueryResponseHeartbeat responseHeartbeat = (QueryResponseHeartbeat) model.get(RESPONSE_HEARTBEAT_KEY);
 		QueryExecutionContext.Activation activation = null;
+		boolean renderingCompleted = false;
+		Throwable renderingFailure = null;
 		try {
 			if (breakerHandle != null) {
 				breakerHandle.attachCurrentThread(conn);
 				activation = QueryExecutionContext.activate(breakerHandle);
 			}
-			renderInternal(model, request, response);
+			if (cancellationCoordinator == null || cancellationHandle == null) {
+				renderInternal(model, request, response);
+			} else {
+				cancellationCoordinator.execute(cancellationHandle, conn,
+						currentHandle -> QueryRequestContext.activate(currentHandle.getRequestId())::close,
+						() -> {
+							renderInternal(model, request, response);
+							return null;
+						});
+			}
+			renderingCompleted = true;
+		} catch (IOException | RuntimeException e) {
+			renderingFailure = e;
+			if (responseHeartbeat != null) {
+				responseHeartbeat.abort();
+			}
+			if (!isExplicitlyCancelled(model)) {
+				throw e;
+			}
+		} catch (Error e) {
+			renderingFailure = e;
+			if (responseHeartbeat != null) {
+				responseHeartbeat.abort();
+			}
+			throw e;
 		} finally {
 			try {
-				if (activation != null) {
-					activation.close();
+				if (responseHeartbeat != null) {
+					try {
+						cleanupResponseHeartbeat(responseHeartbeat, renderingCompleted);
+					} catch (IOException e) {
+						if (renderingFailure != null) {
+							renderingFailure.addSuppressed(e);
+						} else {
+							throw e;
+						}
+					}
 				}
 			} finally {
 				try {
-					if (conn != null) {
-						conn.close();
+					if (activation != null) {
+						activation.close();
 					}
 				} finally {
-					if (breakerHandle != null) {
-						QueryCircuitBreaker.getInstance().complete(breakerHandle);
+					try {
+						if (conn != null) {
+							conn.close();
+						}
+					} finally {
+						try {
+							if (breakerHandle != null) {
+								QueryCircuitBreaker.getInstance().complete(breakerHandle);
+							}
+						} finally {
+							if (cancellationCoordinator != null && cancellationHandle != null) {
+								cancellationCoordinator.complete(cancellationHandle);
+							}
+						}
 					}
 				}
 			}
 		}
 	}
 
+	private void cleanupResponseHeartbeat(QueryResponseHeartbeat heartbeat, boolean renderingCompleted)
+			throws IOException {
+		heartbeat.stop();
+		if (renderingCompleted || heartbeat.hasProbed() || heartbeat.hasPayload()) {
+			heartbeat.close();
+		}
+	}
+
 	@SuppressWarnings("rawtypes")
 	protected abstract void renderInternal(Map model, HttpServletRequest request, HttpServletResponse response)
 			throws IOException;
+
+	@SuppressWarnings("rawtypes")
+	protected boolean isExplicitlyCancelled(Map model) {
+		CancellableOperationCoordinator.Handle handle = (CancellableOperationCoordinator.Handle) model
+				.get(CANCELLATION_HANDLE_KEY);
+		return handle != null && !handle.isActive();
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected QueryResponseHeartbeat getResponseHeartbeat(Map model) {
+		return (QueryResponseHeartbeat) model.get(RESPONSE_HEARTBEAT_KEY);
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected boolean responseWasCommitted(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		return heartbeat != null && heartbeat.hasProbed();
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected boolean responseWasCommitted(Map model, HttpServletResponse response) {
+		return response.isCommitted() || responseWasCommitted(model);
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected void stopResponseHeartbeat(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		if (heartbeat != null) {
+			heartbeat.stop();
+		}
+	}
+
+	@SuppressWarnings("rawtypes")
+	protected void abortResponseHeartbeat(Map model) {
+		QueryResponseHeartbeat heartbeat = getResponseHeartbeat(model);
+		if (heartbeat != null) {
+			heartbeat.abort();
+		}
+	}
 
 	protected void setContentType(HttpServletResponse response, FileFormat fileFormat) throws IOException {
 		String mimeType = fileFormat.getDefaultMIMEType();

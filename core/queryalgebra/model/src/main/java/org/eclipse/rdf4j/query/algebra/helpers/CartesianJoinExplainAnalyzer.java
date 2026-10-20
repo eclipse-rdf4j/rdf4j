@@ -630,7 +630,11 @@ final class CartesianJoinExplainAnalyzer {
 			atoms.addAll(((Extension) node).getElements());
 		}
 		if (node instanceof Projection && !((Projection) node).isSubquery()) {
-			atoms.add(((Projection) node).getProjectionElemList());
+			for (ProjectionElem element : ((Projection) node).getProjectionElemList().getElements()) {
+				if (element.getProjectionAlias().filter(alias -> !alias.equals(element.getName())).isPresent()) {
+					atoms.add(element);
+				}
+			}
 		}
 		if (isMandatoryJoinNode(node) || isTransparentRegionWrapper(node)) {
 			for (TupleExpr child : tupleChildren(node)) {

@@ -12,7 +12,6 @@
 package org.eclipse.rdf4j.model.util;
 
 import static org.eclipse.rdf4j.model.util.Values.bnode;
-import static org.eclipse.rdf4j.model.util.Values.tripleTerm;
 
 import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;

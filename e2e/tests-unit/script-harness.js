@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-const { FakeDocument, FakeElement, FakeTimerQueue, createJQuery } = require('./browser-fakes.js');
+const { FakeDocument, FakeElement, FakeTimerQueue, FakeWindow, createJQuery } = require('./browser-fakes.js');
 
 function parseRequestData(data) {
     if (typeof data === 'string') {
@@ -24,19 +24,35 @@ function createAjaxRequest(options) {
         aborted: false,
         completed: false,
         data: options.data,
+        failed: false,
+        failureArgs: null,
         options,
-        params
+        params,
+        failureHandlers: []
     };
 
     request.jqXHR = {
+        fail(handler) {
+            if (typeof handler === 'function') {
+                if (request.failed) {
+                    handler.apply(null, request.failureArgs);
+                } else {
+                    request.failureHandlers.push(handler);
+                }
+            }
+            return request.jqXHR;
+        },
         abort() {
             if (request.completed || request.aborted) {
                 return;
             }
             request.aborted = true;
+            request.failed = true;
+            request.failureArgs = [request.jqXHR, 'abort'];
             if (typeof options.error === 'function') {
                 options.error(request.jqXHR, 'abort');
             }
+            request.failureHandlers.slice().forEach((handler) => handler.apply(null, request.failureArgs));
             if (typeof options.complete === 'function') {
                 options.complete(request.jqXHR, 'abort');
             }
@@ -61,9 +77,12 @@ function createAjaxRequest(options) {
             return;
         }
         request.completed = true;
+        request.failed = true;
+        request.failureArgs = [request.jqXHR, textStatus, errorThrown];
         if (typeof options.error === 'function') {
             options.error(request.jqXHR, textStatus, errorThrown);
         }
+        request.failureHandlers.slice().forEach((handler) => handler.apply(null, request.failureArgs));
         if (typeof options.complete === 'function') {
             options.complete(request.jqXHR, textStatus);
         }
@@ -93,6 +112,8 @@ function createScriptHarness(options = {}) {
     const ajaxRequests = [];
     const alerts = [];
     const confirms = [];
+    const openedWindows = [];
+    const windowEventHandlers = new Map();
     const confirmResponses = Array.from(options.confirmResponses || []);
     const generatedRequestIds = Array.from(options.serverRequestIds || []);
     let generatedRequestIndex = 0;
@@ -108,6 +129,34 @@ function createScriptHarness(options = {}) {
         return confirmResponses.shift();
     }
 
+    // With confirmResponses, confirmation dialogs (workbench.confirmDialog, M6.2) are answered like
+    // window.confirm(): their text is recorded in confirms and the next response clicks confirm or Cancel.
+    if (options.confirmResponses) {
+        const createElement = document.createElement.bind(document);
+        document.createElement = (tagName) => {
+            const element = createElement(tagName);
+            if (String(tagName).toLowerCase() === 'dialog') {
+                const showModal = element.showModal.bind(element);
+                element.showModal = () => {
+                    showModal();
+                    confirms.push(element.textContent);
+                    const answer = getNextConfirmResponse();
+                    Promise.resolve().then(() => {
+                        const typed = element.querySelectorAll('input').filter((input) =>
+                            input.getAttribute('data-workbench-confirm-text') !== null)[0];
+                        if (answer && typed) {
+                            typed.value = typed.getAttribute('data-workbench-confirm-text');
+                            typed.trigger('input');
+                        }
+                        const buttons = element.querySelectorAll('button');
+                        (answer ? buttons[buttons.length - 1] : buttons[0]).click();
+                    });
+                };
+            }
+            return element;
+        };
+    }
+
     function defaultAjaxHandler(ajaxOptions) {
         const request = createAjaxRequest(ajaxOptions);
         ajaxRequests.push(request);
@@ -120,12 +169,6 @@ function createScriptHarness(options = {}) {
     const workbench = Object.assign({
         addLoad(callback) {
             loadCallbacks.push(callback);
-        },
-        addParam(sb, id) {
-            sb[sb.length] = id + '=';
-            const tag = document.getElementById(id);
-            sb[sb.length] = tag.type === 'checkbox' ? String(tag.checked) : encodeURIComponent(tag.value);
-            sb[sb.length] = '&';
         },
         getCookie(name) {
             const cookies = document.cookie.split(';');
@@ -150,7 +193,7 @@ function createScriptHarness(options = {}) {
         }
     }, options.workbench || {});
 
-    const window = Object.assign({
+    const defaultWindow = {
         clearTimeout: (id) => timers.clearTimeout(id),
         confirm(message) {
             confirms.push(message);
@@ -173,6 +216,14 @@ function createScriptHarness(options = {}) {
                 return `request-${generatedRequestIndex}`;
             }
         },
+        getComputedStyle(element) {
+            const style = element && element.style ? element.style : {};
+            return Object.assign({
+                opacity: style.opacity || '1',
+                transform: style.transform || 'none',
+                direction: style.direction || 'ltr'
+            }, style);
+        },
         document,
         location: document.location,
         localStorage: {
@@ -185,12 +236,74 @@ function createScriptHarness(options = {}) {
         },
         scrollBy() {
         },
+        stop() {
+        },
         sessionStorage: {
             removeItem() {
             }
         },
         setTimeout: (callback, delay) => timers.setTimeout(callback, delay)
-    }, options.window || {});
+    };
+    defaultWindow.addEventListener = (type, handler) => {
+        if (!windowEventHandlers.has(type)) {
+            windowEventHandlers.set(type, []);
+        }
+        windowEventHandlers.get(type).push(handler);
+    };
+    defaultWindow.removeEventListener = (type, handler) => {
+        if (!windowEventHandlers.has(type)) {
+            return;
+        }
+        if (!handler) {
+            windowEventHandlers.delete(type);
+            return;
+        }
+        windowEventHandlers.set(type, windowEventHandlers.get(type).filter((candidate) => candidate !== handler));
+    };
+    defaultWindow.listenerCount = (type) => (windowEventHandlers.get(type) || []).length;
+    defaultWindow.listenerCounts = () => {
+        const counts = {};
+        windowEventHandlers.forEach((handlers, type) => {
+            if (handlers.length) {
+                counts[type] = handlers.length;
+            }
+        });
+        return counts;
+    };
+    defaultWindow.dispatchEvent = (event) => {
+        const normalizedEvent = typeof event === 'string'
+            ? { type: event }
+            : Object.assign({}, event);
+        const handlers = windowEventHandlers.get(normalizedEvent.type) || [];
+        handlers.slice().forEach((handler) => handler.call(window, normalizedEvent));
+        const propertyHandler = window['on' + normalizedEvent.type];
+        if (typeof propertyHandler === 'function') {
+            propertyHandler.call(window, normalizedEvent);
+        }
+        return true;
+    };
+    defaultWindow.trigger = (type, event = {}) => defaultWindow.dispatchEvent(Object.assign({ type }, event));
+    defaultWindow.open = (url, name) => {
+        const resultWindow = new FakeWindow(name, url || 'about:blank');
+        openedWindows.push(resultWindow);
+        return resultWindow;
+    };
+    const window = Object.assign(defaultWindow, options.window || {});
+    if (typeof window.addEventListener !== 'function') {
+        window.addEventListener = defaultWindow.addEventListener;
+    }
+    if (typeof window.removeEventListener !== 'function') {
+        window.removeEventListener = defaultWindow.removeEventListener;
+    }
+    if (typeof window.dispatchEvent !== 'function') {
+        window.dispatchEvent = defaultWindow.dispatchEvent;
+    }
+    if (typeof window.trigger !== 'function') {
+        window.trigger = defaultWindow.trigger;
+    }
+    if (typeof window.open !== 'function') {
+        window.open = defaultWindow.open;
+    }
     window.window = window;
 
     const context = vm.createContext(Object.assign({
@@ -268,7 +381,7 @@ function createScriptHarness(options = {}) {
     }
 
     return {
-        $, ajaxRequests, alerts, confirms, context, document, registerElement, runScript, runLoadHandlers, timers, window, workbench,
+        $, ajaxRequests, alerts, confirms, context, document, openedWindows, registerElement, runScript, runLoadHandlers, timers, window, workbench,
         advanceTimers(ms) {
             timers.advance(ms);
         },
@@ -299,6 +412,14 @@ function createScriptHarness(options = {}) {
             const element = requireElement(id);
             element.value = value;
             element.trigger('change');
+        },
+        emitResultMessage(resultWindow, data, origin) {
+            window.dispatchEvent({
+                type: 'message',
+                source: resultWindow,
+                origin: origin || document.location.origin,
+                data
+            });
         }
     };
 }

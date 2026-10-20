@@ -18,7 +18,9 @@ import static org.mockserver.model.HttpResponse.response;
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
+import java.util.List;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.http.client.spi.RDF4JHttpClient;
@@ -66,6 +68,18 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		additionalHeaders.put(testHeader, testValue);
 		session.setAdditionalHttpHeaders(additionalHeaders);
 		return session;
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void strategiesUseSelectedRepositoryEndpoint(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		String path = "/rdf4j-server/repositories/test/lmdb/strategies";
+		client.when(request().withMethod("GET").withPath(path))
+				.respond(response().withStatusCode(200).withContentType(MediaType.APPLICATION_JSON).withBody("[]"));
+		assertThat(getRDF4JSession().getLmdbForceableStrategies()).isEmpty();
+		client.verify(request().withMethod("GET").withPath(path).withHeader(testHeader, testValue));
 	}
 
 	@ParameterizedTest(name = "[{0}]")
@@ -336,13 +350,22 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 				Times.once())
 				.respond(
 						response()
-								.withBody("{\"type\":\"Projection\"}")
+								.withBody("""
+										{"type":"Projection","strategyDecisions":[{
+										"decisionPoint":"row/join dispatch","capturedAtMillis":123,
+										"mode":"normal","wouldSelect":"batch","reason":"current costs",
+										"candidates":[{"strategy":"batch","priority":1,"canAttempt":true,
+										"decision":"Would select now"}]}]}
+										""")
 								.withContentType(MediaType.APPLICATION_JSON)
 				);
 
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions()).hasSize(1);
+		assertThat(explanation.toGenericPlanNode().getStrategyDecisions().get(0).wouldSelect()).isEqualTo("batch");
+		assertThat(explanation.toString()).contains("Would select now");
 
 		client.verify(
 				request()
@@ -546,6 +569,98 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 
 	@ParameterizedTest(name = "[{0}]")
 	@MethodSource("httpClientFactories")
+	public void testRegularQueryIncludesQueryRequestId(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("query-request-id", "query-123"),
+				Times.once())
+				.respond(response()
+						.withBody("<?xml version=\"1.0\"?><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+								+ "<head/><boolean>true</boolean></sparql>")
+						.withContentType(MediaType.parse("application/sparql-results+xml")));
+
+		try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("query-123")) {
+			assertThat(getRDF4JSession().sendBooleanQuery(QueryLanguage.SPARQL,
+					"ASK { ?s ?p ?o }", null, null, true, 0)).isTrue();
+		}
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("query-request-id", "query-123")
+						.withHeader(testHeader, testValue));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testRegularQueryOmitsQueryRequestIdInsideTransaction(String factoryName, MockServerClient client)
+			throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		String transactionStartUrl = Protocol.getTransactionsLocation(getRDF4JSession().getRepositoryURL());
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test/transactions"),
+				Times.once())
+				.respond(response().withStatusCode(201).withHeader("Location", transactionStartUrl + "/1"));
+		client.when(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("action", "QUERY"),
+				Times.once())
+				.respond(response()
+						.withBody("<?xml version=\"1.0\"?><sparql xmlns=\"http://www.w3.org/2005/sparql-results#\">"
+								+ "<head/><boolean>true</boolean></sparql>")
+						.withContentType(MediaType.parse("application/sparql-results+xml")));
+
+		getRDF4JSession().beginTransaction(IsolationLevels.SERIALIZABLE);
+		try (QueryRequestContext.Activation ignored = QueryRequestContext.activate("query-123")) {
+			assertThat(getRDF4JSession().sendBooleanQuery(QueryLanguage.SPARQL,
+					"ASK { ?s ?p ?o }", null, null, true, 0)).isTrue();
+		}
+
+		client.verify(
+				request()
+						.withMethod("PUT")
+						.withPath("/rdf4j-server/repositories/test/transactions/1")
+						.withQueryStringParameter("query-request-id", "query-123"),
+				VerificationTimes.exactly(0));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testCancelRegularQuery(String factoryName, MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-query", "true")
+						.withQueryStringParameter("query-request-id", "query-456"),
+				Times.once())
+				.respond(response().withStatusCode(204));
+
+		getRDF4JSession().cancelQuery(" query-456 ");
+
+		client.verify(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("cancel-query", "true")
+						.withQueryStringParameter("query-request-id", "query-456")
+						.withHeader(testHeader, testValue));
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
 	public void testSendQueryExplanationAcceptsSelfTimeActualField(String factoryName, MockServerClient client)
 			throws Exception {
 		this.factoryName = factoryName;
@@ -565,6 +680,32 @@ public class RDF4JProtocolSessionTest extends SPARQLProtocolSessionTest {
 		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
 				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 0, Explanation.Level.Optimized);
 		assertThat(explanation.toGenericPlanNode().getType()).isEqualTo("Projection");
+	}
+
+	@ParameterizedTest(name = "[{0}]")
+	@MethodSource("httpClientFactories")
+	public void testSendQueryExplanationWaitsForPartialPlanAfterMaxQueryTime(String factoryName,
+			MockServerClient client) throws Exception {
+		this.factoryName = factoryName;
+		this.sparqlSession = createProtocolSession();
+		// The server runs the query for the whole max query time, then writes the plan it collected so far.
+		client.when(
+				request()
+						.withMethod("POST")
+						.withPath("/rdf4j-server/repositories/test")
+						.withQueryStringParameter("explain", "Executed"),
+				Times.once())
+				.respond(
+						response()
+								.withBody("{\"type\":\"Projection\",\"timedOut\":true}")
+								.withContentType(MediaType.APPLICATION_JSON)
+								.withDelay(TimeUnit.MILLISECONDS, 1500)
+				);
+
+		Explanation explanation = getRDF4JSession().sendQueryExplanation(QueryLanguage.SPARQL,
+				"SELECT * WHERE { ?s ?p ?o }", null, null, true, 1, Explanation.Level.Executed);
+
+		assertThat(explanation.toGenericPlanNode().getTimedOut()).isTrue();
 	}
 
 	@ParameterizedTest(name = "[{0}]")

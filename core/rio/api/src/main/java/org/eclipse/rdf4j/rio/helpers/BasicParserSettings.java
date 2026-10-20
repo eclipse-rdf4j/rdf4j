@@ -232,11 +232,12 @@ public class BasicParserSettings {
 			"Converts RDF 1.2 triples encoded as RDF-compatible IRIs back to triple values", Boolean.TRUE);
 
 	static {
-		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(5);
+		List<DatatypeHandler> defaultDatatypeHandlers = new ArrayList<>(6);
 		try {
 			DatatypeHandlerRegistry registry = DatatypeHandlerRegistry.getInstance();
 			for (String nextDatatype : Arrays.asList(DatatypeHandler.XMLSCHEMA, DatatypeHandler.RDFDATATYPES,
-					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL)) {
+					DatatypeHandler.DBPEDIA, DatatypeHandler.VIRTUOSOGEOMETRY, DatatypeHandler.GEOSPARQL,
+					DatatypeHandler.I18N)) {
 				Optional<DatatypeHandler> nextDatatypeHandler = registry.get(nextDatatype);
 				if (nextDatatypeHandler.isPresent()) {
 					defaultDatatypeHandlers.add(nextDatatypeHandler.get());

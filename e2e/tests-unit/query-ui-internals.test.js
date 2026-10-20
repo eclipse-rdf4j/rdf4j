@@ -40,7 +40,7 @@ function pageState(primaryPane, comparePane, layout = { mode: 'single' }) {
     };
 }
 
-test('query ui helpers cover editors, cookies, buttons, spinners, and dot rendering', async () => {
+test('query ui helpers cover editors, cookies, buttons, wait states, and dot rendering', async () => {
     const harness = createQueryBrowserHarness();
     const testing = harness.context.workbench.query.testing;
 
@@ -146,9 +146,9 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
     testing.showExplainCancelButton('rerun-explanation');
     assert.equal(harness.hasClass('rerun-explanation-cancel', 'query-explain-cancel--visible'), true);
     testing.showExplainSpinner('explain-trigger');
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), true);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), true);
     testing.hideExplainSpinners();
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), false);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), false);
 
     const signature = {
         requestId: 7,
@@ -161,27 +161,30 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
     };
     testing.beginExplainRequest('explain-trigger', signature);
     harness.advanceTimers(1000);
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), true);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), true);
     testing.finishExplainRequest(7);
     harness.advanceTimers(1000);
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), false);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), false);
 
     testing.setInternalState({ activeComparePendingRequests: 1, activeCompareRequestId: 4 });
     testing.beginComparePrimaryExplainWaitState('explain-trigger');
     harness.advanceTimers(1000);
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), true);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), true);
     testing.finishComparePrimaryExplainWaitState(4);
     harness.advanceTimers(1000);
-    assert.equal(harness.hasClass('explain-trigger-spinner', 'query-explain-spinner--visible'), false);
+    assert.equal(harness.hasClass('explain-trigger-cancel', 'query-explain-cancel--visible'), false);
 
     testing.showCompareExplainSpinner();
-    assert.equal(harness.hasClass('explain-compare-trigger', 'query-compare-action--spinning'), true);
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), true,
+        'a compare explanation shows the Cancel beside Config');
     testing.hideCompareExplainSpinner();
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), false);
     testing.showCompareExplainCancelButton();
-    assert.equal(harness.hasClass('explain-compare-cancel', 'query-explain-cancel--visible'), true);
+    assert.equal(harness.hasClass('explanation-cancel', 'query-explain-cancel--visible'), true);
     testing.hideCompareExplainCancelButton();
+    assert.equal(harness.getAttribute('explanation-cancel', 'aria-hidden'), 'true');
     testing.setCompareExplainButtonsDisabled(true);
-    assert.equal(harness.getProperty('explain-compare-trigger', 'disabled'), true);
+    assert.equal(harness.getProperty('explain-trigger', 'disabled'), true);
 
     const explainButton = harness.document.getElementById('explain-trigger');
     explainButton.getBoundingClientRect = () => ({ top: 10 });
@@ -239,4 +242,59 @@ test('query ui helpers cover editors, cookies, buttons, spinners, and dot render
     testing.refreshVisibleQueryEditors();
     assert.equal(primaryEditor.refreshCount > 0, true);
     assert.equal(compareEditor.refreshCount > 0, true);
+});
+
+// Plan task M11.1: the graph renderer is loaded on the first DOT explanation, not with the Query page.
+test('a DOT explanation loads the graph renderer first and then draws the graph', async () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const testing = harness.context.workbench.query.testing;
+    const svg = harness.registerElement('svg', {});
+    const loads = [];
+    let finishLoad;
+    harness.context.workbench.app = {
+        loadScripts(names) {
+            loads.push(names);
+            return new Promise((resolve) => { finishLoad = resolve; });
+        }
+    };
+    testing.setInternalState({
+        queryPageState: pageState(
+            readyState(explanation({ responseFormat: 'dot', requestedFormat: 'dot', view: 'dotRendering', rawContent: 'digraph{}' })),
+            { kind: 'empty' }
+        )
+    });
+
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    assert.deepEqual(JSON.parse(JSON.stringify(loads)), [['viz/viz.js', 'viz/full.render.js', 'svg-pan-zoom.min.js']]);
+    assert.match(harness.getHtml('query-explanation-dot-view'), /Loading graph renderer…/);
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    assert.equal(loads.length, 1, 'a second request for the same graph waits for the same load');
+    harness.context.svgPanZoom = () => ({ destroy() {} });
+    harness.context.Viz = function Viz() {
+        this.renderSVGElement = () => Promise.resolve(svg);
+    };
+    finishLoad();
+    await new Promise((resolve) => setImmediate(resolve));
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(harness.document.getElementById('query-explanation-dot-view').children[0], svg);
+});
+
+test('a graph renderer that cannot be loaded is reported in the explanation', async () => {
+    const harness = createQueryBrowserHarness();
+    harness.runPageLoad();
+    const testing = harness.context.workbench.query.testing;
+    harness.context.workbench.app = { loadScripts: () => Promise.reject(new Error('offline')) };
+    testing.setInternalState({
+        queryPageState: pageState(
+            readyState(explanation({ responseFormat: 'dot', requestedFormat: 'dot', view: 'dotRendering', rawContent: 'digraph{}' })),
+            { kind: 'empty' }
+        )
+    });
+
+    testing.renderDotView('primary', 'digraph{}', 'dot');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.match(harness.getHtml('query-explanation-dot-view'), /Graphviz visualizer script not loaded/);
 });

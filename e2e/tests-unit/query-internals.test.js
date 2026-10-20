@@ -137,7 +137,17 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     const form = harness.document.querySelectorAll('form[action="query"]')[0];
 
     form.formControls = [];
-    assert.match(testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'), /action=explain/);
+    const explainData = new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'json', 'server-1'));
+    assert.equal(explainData.get('action'), 'explain');
+    assert.equal(explainData.get('explain'), 'Optimized');
+    assert.equal(explainData.get('explain-format'), 'json');
+    assert.equal(explainData.get('infer'), 'false',
+        'Explain must preserve the explicit no-inference selection when unchecked controls are omitted');
+    assert.equal(explainData.get('query'), 'ASK {}');
+    assert.equal(explainData.get('explain-request-id'), 'server-1');
+    assert.equal(new URLSearchParams(
+        testing.serializeExplainFormData('ASK {}', 'Optimized', 'text', 'server-2')).get('explain-format'), 'json');
     assert.equal(testing.serializeCancelExplainFormData('server-1'), 'action=cancel-explain&explain-request-id=server-1');
 
     assert.equal(testing.getExplanationDownloadMimeType('dot'), 'text/vnd.graphviz');
@@ -149,8 +159,156 @@ test('query testing helpers cover serialization, explanation parsing, diff rende
     assert.equal(testing.getExplainErrorMessage({}, '', 'Broken'), 'Explain request failed: Broken');
     assert.equal(testing.getExplainErrorMessage({}, '', ''), 'Explain request failed.');
 
-    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '{bad', format: 'json', error: '' }, 'json').view, 'text');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: '[]', format: 'json', error: '' }, 'json').view, 'text');
+    assert.equal(testing.createStableExplanationFromResponse(createSignature({ format: 'json' }), { content: '{bad', format: 'json', error: '' }, 'json').view, 'jsonRawFallback');
     assert.equal(testing.createStableExplanationFromResponse(createSignature(), { content: 'digraph{}', format: 'dot', error: '' }, 'dot').view, 'dotRendering');
+    const crlfExplanation = testing.createStableExplanationFromResponse(createSignature(), {
+        content: JSON.stringify({ type: 'StatementPattern' }),
+        format: 'json',
+        error: '',
+        lineSeparator: '\r\n'
+    }, 'json');
+    assert.equal(crlfExplanation.lineSeparator, '\r\n');
+    assert.equal(crlfExplanation.displayContent, 'StatementPattern\r\n');
+
+    const largeLongExplanation = testing.createStableExplanationFromResponse(
+        createSignature({ level: 'Telemetry' }),
+        {
+            content: '{"type":"Join","resultSizeActual":9007199254799999,"longMetricsActual":{"customRows":9007199254799999}}',
+            format: 'json',
+            error: ''
+        },
+        'json'
+    );
+    assert.equal(largeLongExplanation.plan.resultSizeActual, '9007199254799999');
+    assert.equal(largeLongExplanation.plan.longMetricsActual.customRows, '9007199254799999');
+    assert.match(largeLongExplanation.displayContent, /resultSizeActual=9\.0071992547E9M/);
+    assert.match(largeLongExplanation.displayContent, /customRows=9\.0071992547E9M/);
+
+    const derivedLongExplanation = testing.createStableExplanationFromResponse(
+        createSignature({ level: 'Telemetry' }),
+        {
+            content: '{"type":"Distinct","resultSizeActual":9007199254799998,"plans":[{"type":"StatementPattern","resultSizeActual":9007199254799999}]}',
+            format: 'json',
+            error: ''
+        },
+        'json'
+    );
+    assert.match(derivedLongExplanation.displayContent, /rowsDroppedActual=1/);
+    assert.match(derivedLongExplanation.displayContent, /duplicatesRemovedActual=1/);
+
+    const hydratedPlan = testing.parsePlanJson(
+        '{"type":"Join","costEstimate":1e30,"longMetricsActual":{"safe":42,"unsafe":9007199254799999},"stringMetricsActual":{"text":"9007199254799999"}}'
+    );
+    assert.equal(hydratedPlan.costEstimate, 1e30);
+    assert.equal(hydratedPlan.longMetricsActual.safe, 42);
+    assert.equal(hydratedPlan.longMetricsActual.unsafe, '9007199254799999');
+    assert.equal(hydratedPlan.stringMetricsActual.text, '9007199254799999');
+
+    const longFieldNames = [
+        'resultSizeActual',
+        'hasNextCallCountActual',
+        'hasNextTrueCountActual',
+        'hasNextTimeNanosActual',
+        'nextCallCountActual',
+        'nextTimeNanosActual',
+        'joinRightIteratorsCreatedActual',
+        'joinLeftBindingsConsumedActual',
+        'joinRightBindingsConsumedActual',
+        'sourceRowsScannedActual',
+        'sourceRowsMatchedActual',
+        'sourceRowsFilteredActual'
+    ];
+    const allLongFields = testing.parsePlanJson(
+        '{"type":"Join",'
+            + longFieldNames.map(name => `"${name}":9007199254740993`).join(',')
+            + ',"longMetricsActual":{"costEstimate":9007199254740993,"totalTimeActual":9007199254740993}'
+            + ',"longMetricsPlanned":{"resultSizeActual":9007199254740993}}'
+    );
+    for (const fieldName of longFieldNames) {
+        assert.equal(allLongFields[fieldName], '9007199254740993', fieldName);
+    }
+    assert.equal(allLongFields.longMetricsActual.costEstimate, '9007199254740993');
+    assert.equal(allLongFields.longMetricsActual.totalTimeActual, '9007199254740993');
+    assert.equal(allLongFields.longMetricsPlanned.resultSizeActual, '9007199254740993');
+
+    const contextSpecificMaps = testing.parsePlanJson(
+        '{"type":"Join","costEstimate":1.0e3,'
+            + '"doubleMetricsActual":{"resultSizeActual":9007199254740993},'
+            + '"doubleMetricsPlanned":{"costEstimate":9007199254740993},'
+            + '"stringMetricsActual":{"totalTimeActual":"Infinity"}}'
+    );
+    assert.equal(contextSpecificMaps.costEstimate, 1000);
+    assert.equal(contextSpecificMaps.doubleMetricsActual.resultSizeActual, 9007199254740992);
+    assert.equal(contextSpecificMaps.doubleMetricsPlanned.costEstimate, 9007199254740992);
+    assert.equal(contextSpecificMaps.stringMetricsActual.totalTimeActual, 'Infinity');
+
+    const noNumericTokens = testing.parsePlanJson(
+        '{"type":"Join","costEstimate":"Infinity","resultSizeEstimate":"-Infinity",'
+            + '"totalTimeActual":"NaN",'
+            + '"doubleMetricsActual":{"positive":"Infinity","negative":"-Infinity",'
+            + '"notANumber":"NaN"},'
+            + '"stringMetricsActual":{"totalTimeActual":"Infinity","text":"NaN"}}'
+    );
+    assert.equal(noNumericTokens.costEstimate, Infinity);
+    assert.equal(noNumericTokens.resultSizeEstimate, -Infinity);
+    assert.ok(Number.isNaN(noNumericTokens.totalTimeActual));
+    assert.equal(noNumericTokens.doubleMetricsActual.positive, Infinity);
+    assert.equal(noNumericTokens.doubleMetricsActual.negative, -Infinity);
+    assert.ok(Number.isNaN(noNumericTokens.doubleMetricsActual.notANumber));
+    assert.equal(noNumericTokens.stringMetricsActual.totalTimeActual, 'Infinity');
+    assert.equal(noNumericTokens.stringMetricsActual.text, 'NaN');
+
+    const parserEdgeCases = testing.parsePlanJson(
+        '{"ty\\u0070e":"Jo\\u0069n",'
+            + '"resultSizeActual":0,"resultSizeActual":9007199254799999,'
+            + '"\\u0063ostEstimate":1.000e3,'
+            + '"longMetricsActual":{"minimum":-9223372036854775808,"maximum":9223372036854775807,'
+            + '"zero":0,"missing":null},'
+            + '"stringMetricsActual":{"\\u006eame":"\\u005f\\u005frdf4j_json_number__0",'
+            + '"escaped":"line\\nvalue"},'
+            + '"doubleMetricsActual":{"zero":0,"missing":null}}'
+    );
+    assert.equal(parserEdgeCases.type, 'Join');
+    assert.equal(parserEdgeCases.resultSizeActual, '9007199254799999');
+    assert.equal(parserEdgeCases.costEstimate, 1000);
+    assert.equal(parserEdgeCases.longMetricsActual.minimum, '-9223372036854775808');
+    assert.equal(parserEdgeCases.longMetricsActual.maximum, '9223372036854775807');
+    assert.equal(parserEdgeCases.longMetricsActual.zero, 0);
+    assert.equal(parserEdgeCases.longMetricsActual.missing, null);
+    assert.equal(parserEdgeCases.stringMetricsActual.name, '__rdf4j_json_number__0');
+    assert.equal(parserEdgeCases.stringMetricsActual.escaped, 'line\nvalue');
+    assert.equal(parserEdgeCases.doubleMetricsActual.zero, 0);
+    assert.equal(parserEdgeCases.doubleMetricsActual.missing, null);
+
+    const integralExponentValues = testing.parsePlanJson(
+        '{"type":"Join","resultSizeActual":9007199254799999e0,'
+            + '"hasNextCallCountActual":1.000e3,'
+            + '"longMetricsActual":{"minimum":-9223372036854775808e0,'
+            + '"maximum":9223372036854775807e0}}'
+    );
+    assert.equal(integralExponentValues.resultSizeActual, '9007199254799999');
+    assert.equal(integralExponentValues.hasNextCallCountActual, 1000);
+    assert.equal(integralExponentValues.longMetricsActual.minimum, '-9223372036854775808');
+    assert.equal(integralExponentValues.longMetricsActual.maximum, '9223372036854775807');
+
+    const escapedMarkerText = testing.parsePlanJson(
+        '{"type":"Join","costEstimate":1,'
+            + '"stringMetricsActual":{"double":"\\u005f\\u005frdf4j_json_number__0",'
+            + '"single":"\\u005frdf4j_json_number__0"}}'
+    ).stringMetricsActual;
+    assert.equal(escapedMarkerText.double, '__rdf4j_json_number__0');
+    assert.equal(escapedMarkerText.single, '_rdf4j_json_number__0');
+
+    const hugeLongExponent = '1e1000000000';
+    assert.doesNotThrow(() => testing.parsePlanJson(
+        `{"type":"Join","resultSizeActual":${hugeLongExponent}}`
+    ));
+    assert.equal(
+        testing.parsePlanJson(`{"type":"Join","resultSizeActual":${hugeLongExponent}}`).resultSizeActual,
+        Infinity
+    );
 
     assert.deepEqual(Array.from(testing.splitDiffLines('a\r\nb')), ['a', 'b']);
     assert.deepEqual(
@@ -304,7 +462,7 @@ test('query diff view renders nested spans for changed words', () => {
     assert.equal(diffRows[1].children[1].children[1].classList.contains('query-diff-row__segment--changed'), true);
 });
 
-test('query testing helpers cover save error and overwrite branches', () => {
+test('query testing helpers cover save error and overwrite branches', async () => {
     const harness = createQueryBrowserHarness({
         confirmResponses: [true, false]
     });
@@ -322,11 +480,16 @@ test('query testing helpers cover save error and overwrite branches', () => {
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: false });
     assert.equal(harness.getText('save-feedback'), 'Repository was not accessible (check your permissions).');
 
+    // An existing name asks in a confirmation dialog (plan task M6.2); confirming saves again with overwrite.
     testing.ajaxSave(false);
+    const requestsBeforeOverwrite = harness.ajaxRequests.length;
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: false, existed: true });
-    assert.equal(harness.ajaxRequests.length >= 4, true);
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(harness.ajaxRequests.length, requestsBeforeOverwrite + 1);
+    assert.match(harness.confirms[0], /Replace saved query\?/);
 
     testing.ajaxSave(false);
     harness.ajaxRequests[harness.ajaxRequests.length - 1].resolve({ accessible: true, written: false, existed: true });
+    await new Promise((resolve) => setImmediate(resolve));
     assert.equal(harness.getText('save-feedback'), 'Cancelled overwriting existing query.');
 });

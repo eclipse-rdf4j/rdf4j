@@ -1,0 +1,4 @@
+CustomJoin
+╠══ Projection [left]
+║     StatementPattern
+╚══ StatementPattern [right]

@@ -12,10 +12,12 @@
 
 package org.eclipse.rdf4j.query.algebra.evaluation.sketch;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.ValueFactory;
@@ -24,6 +26,9 @@ import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.algebra.BindingSetAssignment;
 import org.eclipse.rdf4j.query.algebra.Compare;
 import org.eclipse.rdf4j.query.algebra.Filter;
+import org.eclipse.rdf4j.query.algebra.Join;
+import org.eclipse.rdf4j.query.algebra.SingletonSet;
+import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.Var;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.junit.jupiter.api.Test;
@@ -31,6 +36,30 @@ import org.junit.jupiter.api.Test;
 class SketchBasedJoinEstimatorFiniteRelationTest {
 
 	private static final ValueFactory VF = SimpleValueFactory.getInstance();
+
+	@Test
+	void estimatesAndDiagnosticsDoNotInspectUnknownBindingSources() {
+		for (String operation : List.of("estimate", "filter", "join", "describe")) {
+			AtomicInteger calls = new AtomicInteger();
+			BindingSetAssignment assignment = new BindingSetAssignment();
+			assignment.setDeclaredBindingNames(Set.of("a", "b"));
+			assignment.setBindingSets(() -> {
+				calls.incrementAndGet();
+				return List.<BindingSet>of(row("a", "urn:one", "b", "urn:two")).iterator();
+			});
+			SketchBasedJoinEstimator estimator = new SketchBasedJoinEstimator(new StubSketchStatementSource(),
+					SketchBasedJoinEstimator.Config.defaults());
+			if (operation.equals("describe")) {
+				SketchJoinOrderPlanner.describeTupleExpr(assignment);
+			} else {
+				TupleExpr expression = operation.equals("filter")
+						? new Filter(assignment, new Compare(Var.of("a"), Var.of("b"), Compare.CompareOp.NE))
+						: operation.equals("join") ? new Join(assignment, new SingletonSet()) : assignment;
+				estimator.planEstimateForJoinOrdering(expression, Set.of());
+			}
+			assertThat(calls).as(operation).hasValue(0);
+		}
+	}
 
 	@Test
 	void finiteBindingSetInequalityFilterUsesExactTupleRows() {

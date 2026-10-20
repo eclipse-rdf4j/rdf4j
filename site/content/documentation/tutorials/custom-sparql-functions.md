@@ -177,6 +177,34 @@ Apart from this configuration file, your JAR file should of course also contain 
 
 Once you have a proper JAR file, you need to add it the runtime classpath of your RDF4J project (or if you're aiming to use this in an RDF4J Server, add it to the RDF4J Server webapp classpath and restart). After that, you’re done: RDF4J should automatically pick up your new custom function, you can from now on use it in your SPARQL queries.
 
+## Declaring determinism
+
+The query optimizer decides how a function call may be planned based on the determinism the implementation declares
+through `Function.getDeterminism()`. The default value is `Determinism.UNSPECIFIED`, and how such a function is treated
+depends on the repository's query execution policy:
+
+- With the default policy (`experimentalQueryOptimizations` off), a function of unspecified determinism is planned like
+  a built-in function: joins around it keep cost-based ordering, a join operand containing it is evaluated per input
+  solution (a bind join), and calls with constant arguments are folded once per query. This is the long-standing
+  behaviour for custom functions.
+- With `experimentalQueryOptimizations` enabled, the optimizer only trusts explicit declarations. A function of
+  unspecified determinism is then treated as volatile: calls are never merged, moved across joins or constant-folded,
+  and a join operand containing one is evaluated exactly once and replayed.
+
+Declare `Determinism.DETERMINISTIC` when equal arguments always produce an equal result (or an equivalent error),
+independent of the query, transaction, clock and store contents; the optimizer may then fold, merge and re-evaluate the
+call under both policies. Declare `Determinism.VOLATILE` when that is not the case (for example a random or time-based
+value): the function is then a barrier under both policies. A function that must return a different value on every
+invocation, such as `UUID()`, should additionally return `true` from `mustReturnDifferentResult()`; that guarantee
+dominates any declaration.
+
+```java
+@Override
+public Function.Determinism getDeterminism() {
+    return Function.Determinism.DETERMINISTIC;
+}
+```
+
 ## Further reading
 
 * [Introduction to the Service Provider Interface](http://docs.oracle.com/javase/tutorial/sound/SPI-intro.html) - Oracle Java documentation.
