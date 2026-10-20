@@ -640,7 +640,8 @@ public final class PackedCascadesPlanner {
 					logger.debug("Packed checkpoint could not be rehydrated; restarting ordinary search",
 							corruptCheckpoint);
 					memo.close();
-					memo = newQueryLocalMemo(query, budget, costSession, relationCount, dominatedSamplesPerStratum >= 0);
+					memo = newQueryLocalMemo(query, budget, costSession, relationCount,
+							dominatedSamplesPerStratum >= 0);
 					restored = null;
 				}
 			}

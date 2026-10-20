@@ -47,9 +47,10 @@ class LmdbLanguageBindingCompositionTest {
 	private static final String PROJECT = "SELECT ?s ?o (LANG(?o) AS ?language) WHERE { ";
 
 	static Stream<Arguments> requestEntries() {
-		return Stream.of("lmdb", "memory").flatMap(store -> Stream.of(false, true)
-				.flatMap(direct -> Stream.of("plain", "subquery", "graph", "values-only")
-						.map(shape -> Arguments.of(store, direct, shape))));
+		return Stream.of("lmdb", "memory")
+				.flatMap(store -> Stream.of(false, true)
+						.flatMap(direct -> Stream.of("plain", "subquery", "graph", "values-only")
+								.map(shape -> Arguments.of(store, direct, shape))));
 	}
 
 	@ParameterizedTest(name = "store={0}, directSail={1}, shape={2}")
@@ -93,7 +94,8 @@ class LmdbLanguageBindingCompositionTest {
 	}
 
 	@ParameterizedTest
-	@ValueSource(strings = { "subquery", "graph", "nested-minus", "nested-not-exists", "nested-alias", "nested-optional" })
+	@ValueSource(strings = { "subquery", "graph", "nested-minus", "nested-not-exists", "nested-alias",
+			"nested-optional" })
 	void composedProducedBindingsRetainStoredTerms(String shape, @TempDir Path directory) {
 		try (Fixture fixture = new Fixture("lmdb", directory, shape.equals("graph"))) {
 			String body = switch (shape) {

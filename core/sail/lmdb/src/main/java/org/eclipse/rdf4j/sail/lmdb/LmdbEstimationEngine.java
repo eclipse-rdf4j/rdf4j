@@ -385,7 +385,7 @@ final class LmdbEstimationEngine {
 		private BagEstimate extend(Extension extension, EstimateContext context) {
 			BagEstimate result = estimate(extension.getArg(), context);
 			for (var element : extension.getElements()) {
-				if (element.getExpr() instanceof Var variable) {
+				if (element.getExpr()instanceof Var variable) {
 					result = EstimateMath.extendAlias(result, variable.getName(), element.getName());
 				} else if (element.getExpr() instanceof ValueConstant) {
 					result = EstimateMath.extendConstant(result, element.getName());

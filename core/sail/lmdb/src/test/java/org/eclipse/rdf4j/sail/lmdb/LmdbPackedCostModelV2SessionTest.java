@@ -436,9 +436,9 @@ class LmdbPackedCostModelV2SessionTest {
 				.thenReturn(100.0d);
 		when(costModel.mappedSemiAntiEstimate(eq(query), any(int[].class), eq(blocker), any(String[].class),
 				anyDouble(), anyDouble(), anyDouble()))
-				.thenReturn(new LmdbPackedCostModel.MappedSemiAntiEstimate(
-						0.9d, 0.0d, 1.0d, 0.86d,
-						"mapped-omni-correlated-semi-join", "frontier-v2-omni-center-subgraph"));
+						.thenReturn(new LmdbPackedCostModel.MappedSemiAntiEstimate(
+								0.9d, 0.0d, 1.0d, 0.86d,
+								"mapped-omni-correlated-semi-join", "frontier-v2-omni-center-subgraph"));
 		PackedCostContext context = mock(PackedCostContext.class);
 		when(context.leftInputRows()).thenReturn(100.0d);
 		when(context.rightInputRows()).thenReturn(Double.NaN);
@@ -729,17 +729,17 @@ class LmdbPackedCostModelV2SessionTest {
 		when(costModel.refineMappedIntermediateJoin(
 				eq(call.query()), any(int[].class), any(int[].class), any(EvidenceStateSummary.class),
 				any(int[].class), any(EvidenceStateSummary.class), anyBoolean(), any(PackedCostEstimate.class)))
-				.thenAnswer(invocation -> {
-					PackedCostEstimate estimate = invocation.getArgument(7);
-					double rows = logicalRefinements.incrementAndGet() == 1 ? 25.0d : 40.0d;
-					estimate.setContextualRows(rows, rows);
-					estimate.setEstimateProvenance("frontier-v2-omni-subgraph", "frontier_v2_mapped_join");
-					estimate.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
-					estimate.putPlannedDoubleMetric("plannedFrontierLowerRows", rows * 0.8d);
-					estimate.putPlannedDoubleMetric("plannedFrontierUpperRows", rows * 1.2d);
-					estimate.putPlannedDoubleMetric("plannedFrontierConfidence", 0.95d);
-					return true;
-				});
+						.thenAnswer(invocation -> {
+							PackedCostEstimate estimate = invocation.getArgument(7);
+							double rows = logicalRefinements.incrementAndGet() == 1 ? 25.0d : 40.0d;
+							estimate.setContextualRows(rows, rows);
+							estimate.setEstimateProvenance("frontier-v2-omni-subgraph", "frontier_v2_mapped_join");
+							estimate.setEvidenceGuarantee(EvidenceGuarantee.MEASURE_UNBIASED);
+							estimate.putPlannedDoubleMetric("plannedFrontierLowerRows", rows * 0.8d);
+							estimate.putPlannedDoubleMetric("plannedFrontierUpperRows", rows * 1.2d);
+							estimate.putPlannedDoubleMetric("plannedFrontierConfidence", 0.95d);
+							return true;
+						});
 
 		try (PackedCostSession session = new LmdbFrontierStatisticsCostSession(
 				delegate, costModel, view, call.query(), runtime, true)) {

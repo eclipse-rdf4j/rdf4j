@@ -691,5 +691,4 @@ final class LmdbStorageEstimatorEvidence implements LmdbEstimatorEvidenceSource 
 		return Double.isFinite(rows) && rows >= 0.0d;
 	}
 
-
 }

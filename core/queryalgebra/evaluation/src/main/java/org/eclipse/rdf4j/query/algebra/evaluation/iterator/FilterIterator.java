@@ -191,10 +191,10 @@ public class FilterIterator extends FilterIteration<BindingSet>
 	 * distinct lexical RDF terms.
 	 */
 	private static Function<BindingSet, BindingSet> resourceEqualityArgumentBindings(Filter filter) {
-		if (!(filter.getCondition() instanceof Compare compare)
+		if (!(filter.getCondition()instanceof Compare compare)
 				|| compare.getOperator() != Compare.CompareOp.EQ
-				|| !(compare.getLeftArg() instanceof Var left)
-				|| !(compare.getRightArg() instanceof Var right)
+				|| !(compare.getLeftArg()instanceof Var left)
+				|| !(compare.getRightArg()instanceof Var right)
 				|| left.hasValue()
 				|| right.hasValue()
 				|| left.getName() == null
@@ -213,11 +213,11 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		}
 		return bindings -> {
 			if (leftAssured && !bindings.hasBinding(leftName)
-					&& bindings.getValue(rightName) instanceof Resource resource) {
+					&& bindings.getValue(rightName)instanceof Resource resource) {
 				return withBinding(bindings, leftName, resource);
 			}
 			if (rightAssured && !bindings.hasBinding(rightName)
-					&& bindings.getValue(leftName) instanceof Resource resource) {
+					&& bindings.getValue(leftName)instanceof Resource resource) {
 				return withBinding(bindings, rightName, resource);
 			}
 			return bindings;
@@ -261,8 +261,8 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (isPartOfSubQuery(filter)) {
 			return declineMaterializedExists(filter, algorithmHint, "nested-subquery-scope");
 		}
-		boolean negated = filter.getCondition() instanceof Not not && not.getArg() instanceof Exists;
-		Exists exists = filter.getCondition() instanceof Exists direct
+		boolean negated = filter.getCondition()instanceof Not not && not.getArg() instanceof Exists;
+		Exists exists = filter.getCondition()instanceof Exists direct
 				? direct
 				: negated ? (Exists) ((Not) filter.getCondition()).getArg() : null;
 		if (exists == null) {
@@ -345,7 +345,7 @@ public class FilterIterator extends FilterIteration<BindingSet>
 		if (!MINUS_ASSURED_SHARED.equals(filter.getStringMetricPlanned(OPTIMIZER_SEMI_ANTI_KIND))) {
 			return null;
 		}
-		if (!(filter.getCondition() instanceof Not not) || !(not.getArg() instanceof Exists exists)
+		if (!(filter.getCondition()instanceof Not not) || !(not.getArg()instanceof Exists exists)
 				|| exists.getSubQuery() == null) {
 			// not the NOT EXISTS shape the rewrite produces: evaluated as the filter it is
 			return null;
@@ -659,9 +659,9 @@ public class FilterIterator extends FilterIteration<BindingSet>
 				|| strategy.isTrackResultSize()
 				|| strategy.isTrackTime()
 				|| isPartOfSubQuery(filter)
-				|| !(filter.getArg() instanceof Join join)
+				|| !(filter.getArg()instanceof Join join)
 				|| join.isRuntimeTelemetryEnabled()
-				|| !(join.getRightArg() instanceof BindingSetAssignment assignment)
+				|| !(join.getRightArg()instanceof BindingSetAssignment assignment)
 				|| !assignment.hasRepeatableBindingSets()
 				|| assignment.isRuntimeTelemetryEnabled()) {
 			return null;

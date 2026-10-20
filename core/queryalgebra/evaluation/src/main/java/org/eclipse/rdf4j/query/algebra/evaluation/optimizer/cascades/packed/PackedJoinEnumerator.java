@@ -2513,9 +2513,7 @@ final class PackedJoinEnumerator {
 			return false;
 		}
 		return switch (query.relOperator(relationId)) {
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER,
-				PackedRelOp.MATERIALIZE ->
-			true;
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE -> true;
 		default -> false;
 		};
 	}
@@ -2545,9 +2543,7 @@ final class PackedJoinEnumerator {
 			return false;
 		}
 		return switch (query.relOperator(relationId)) {
-		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET,
-				PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH ->
-			true;
+		case PackedRelOp.STATEMENT_PATTERN, PackedRelOp.BINDING_SET_ASSIGNMENT, PackedRelOp.SINGLETON_SET, PackedRelOp.EMPTY_SET, PackedRelOp.ZERO_LENGTH_PATH, PackedRelOp.ARBITRARY_LENGTH_PATH -> true;
 		case PackedRelOp.JOIN -> recursivelySafeContextualProbe(query.relChild(relationId, 0))
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
 		case PackedRelOp.LEFT_JOIN -> contextualPositiveLeftJoin(relationId)
@@ -2555,11 +2551,9 @@ final class PackedJoinEnumerator {
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
 		case PackedRelOp.UNION -> recursivelySafeContextualProbe(query.relChild(relationId, 0))
 				&& recursivelySafeContextualProbe(query.relChild(relationId, 1));
-		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER,
-				PackedRelOp.MATERIALIZE ->
-			!query
-					.relationHasObservableEvaluationEffects(relationId)
-					&& recursivelySafeContextualProbe(query.relChild(relationId, 0));
+		case PackedRelOp.QUERY_ROOT, PackedRelOp.PROJECTION, PackedRelOp.EXTENSION, PackedRelOp.ORDER, PackedRelOp.MATERIALIZE -> !query
+				.relationHasObservableEvaluationEffects(relationId)
+				&& recursivelySafeContextualProbe(query.relChild(relationId, 0));
 		case PackedRelOp.FILTER -> {
 			int conditionId = query.relPayload(relationId);
 			int inputRelationId = query.relChild(relationId, 0);

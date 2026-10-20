@@ -1464,9 +1464,9 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 	 * A materialized anchor may replace its condition only when a VALUES term join has exactly the condition's truth
 	 * set. That holds for value equality over guarantee-only constants (the anchor is the value-equal family) and for
 	 * term identity over representation-stable safe values (IRIs and plain strings). Language literals require their
-	 * actual stored representatives before becoming drivers. Term identity over
-	 * numeric / boolean / calendar constants is the remaining case: the anchor is a value-equality superset, so the
-	 * {@code sameTerm} condition must be retained.
+	 * actual stored representatives before becoming drivers. Term identity over numeric / boolean / calendar constants
+	 * is the remaining case: the anchor is a value-equality superset, so the {@code sameTerm} condition must be
+	 * retained.
 	 */
 	private static boolean requiresTermIdentityFilter(ValueExpr condition, BindingSetAssignment anchor) {
 		if (anchor == null || !LmdbJoinPlanSupport.containsSameTerm(condition)) {
@@ -1482,7 +1482,7 @@ final class LmdbFilterSimplifierOptimizer implements QueryOptimizer {
 			return false;
 		}
 		for (BindingSet bindingSet : anchor.getBindingSets()) {
-			if (bindingSet.getValue(bindingName) instanceof Literal literal && literal.getLanguage().isPresent()) {
+			if (bindingSet.getValue(bindingName)instanceof Literal literal && literal.getLanguage().isPresent()) {
 				return true;
 			}
 		}

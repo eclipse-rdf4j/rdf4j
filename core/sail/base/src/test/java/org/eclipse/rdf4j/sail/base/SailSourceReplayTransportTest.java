@@ -76,7 +76,7 @@ class SailSourceReplayTransportTest {
 		try (SailSourceConnection connection = fixture.connection()) {
 			assertSame(failure, assertThrows(SailException.class,
 					() -> connection.evaluateInternal(new SingletonSet(), null, EmptyBindingSet.getInstance(), false))
-					.getCause());
+							.getCause());
 		}
 	}
 

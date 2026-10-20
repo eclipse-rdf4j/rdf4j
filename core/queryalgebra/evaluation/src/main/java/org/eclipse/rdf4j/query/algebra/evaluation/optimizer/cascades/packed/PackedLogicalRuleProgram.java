@@ -3631,10 +3631,10 @@ final class PackedLogicalRuleProgram {
 	/**
 	 * A finite-values anchor joins by term identity while the filter it replaces compares by value equality. The two
 	 * only agree when every constant's value-equality class has a representation-stable producer: IRIs, blank nodes,
-	 * and plain string literals. A language tag's case remains observable even when RDF equality ignores it.
-	 * Numeric, boolean, and temporal constants can value-equal differently-represented stored
-	 * terms (e.g. {@code 1} parses as {@code "1"^^xsd:integer} but the store may hold {@code "1"^^xsd:int}), so those
-	 * are left to the predicate-range anchor rule, which expands constants to the proven stored representations.
+	 * and plain string literals. A language tag's case remains observable even when RDF equality ignores it. Numeric,
+	 * boolean, and temporal constants can value-equal differently-represented stored terms (e.g. {@code 1} parses as
+	 * {@code "1"^^xsd:integer} but the store may hold {@code "1"^^xsd:int}), so those are left to the predicate-range
+	 * anchor rule, which expands constants to the proven stored representations.
 	 */
 	private boolean finiteDomainTermIdentitySafe() {
 		for (int ordinal = 0; ordinal < finiteValueCount; ordinal++) {
@@ -3651,9 +3651,9 @@ final class PackedLogicalRuleProgram {
 
 	/**
 	 * Whether a constant's SPARQL value equality agrees with RDF term equality for membership: IRIs, blank nodes,
-	 * xsd:string and language-tagged literals. Language-tag case is ignored by both comparisons, but remains
-	 * observable in a produced value. The finite-filter driver therefore also requires
-	 * {@link #finiteDomainTermIdentitySafe()}; the finite code/type membership check retains its existing domain.
+	 * xsd:string and language-tagged literals. Language-tag case is ignored by both comparisons, but remains observable
+	 * in a produced value. The finite-filter driver therefore also requires {@link #finiteDomainTermIdentitySafe()};
+	 * the finite code/type membership check retains its existing domain.
 	 */
 	private static boolean termIdentitySafe(Object constant) {
 		if (!(constant instanceof Value value)) {

@@ -75,11 +75,13 @@ class MemoryOptimizedInitialBindingScopeTest {
 				new Example("group parameter stays unbound", "SELECT ?group (COUNT(?o) AS ?count) WHERE { "
 						+ "?s :p ?o } GROUP BY ?group ORDER BY ?group LIMIT 1 OFFSET 0",
 						Map.of("group", VF.createLiteral("key")),
-						List.of(Map.of("count", VF.createLiteral("2", VF.createIRI("http://www.w3.org/2001/XMLSchema#integer"))))),
+						List.of(Map.of("count",
+								VF.createLiteral("2", VF.createIRI("http://www.w3.org/2001/XMLSchema#integer"))))),
 				new Example("optional output", "SELECT ?s ?o WHERE { ?s :p ?v OPTIONAL { ?s :q ?o } "
 						+ "FILTER(?o = :c) }", Map.of("o", VF.createIRI("urn:initial-scope:c")),
 						List.of(Map.of("s", VF.createIRI("urn:initial-scope:s1")),
-								Map.of("s", VF.createIRI("urn:initial-scope:s2"), "o", VF.createIRI("urn:initial-scope:c")))),
+								Map.of("s", VF.createIRI("urn:initial-scope:s2"), "o",
+										VF.createIRI("urn:initial-scope:c")))),
 				new Example("minus parameter", "SELECT ?s WHERE { ?s :p ?v MINUS { ?s :q ?o } }",
 						Map.of("o", VF.createIRI("urn:initial-scope:c")),
 						List.of(Map.of("s", VF.createIRI("urn:initial-scope:s1")))),
@@ -89,8 +91,9 @@ class MemoryOptimizedInitialBindingScopeTest {
 				new Example("not exists parameter", "SELECT ?s WHERE { ?s :p ?v FILTER NOT EXISTS { ?s :q ?o } }",
 						Map.of("o", VF.createIRI("urn:initial-scope:c")),
 						List.of(Map.of("s", VF.createIRI("urn:initial-scope:s1")))));
-		return cases.stream().flatMap(example -> Stream.of(false, true)
-				.map(direct -> Arguments.of(example.name(), direct, example)));
+		return cases.stream()
+				.flatMap(example -> Stream.of(false, true)
+						.map(direct -> Arguments.of(example.name(), direct, example)));
 	}
 
 	@ParameterizedTest(name = "{0}, directSail={1}")

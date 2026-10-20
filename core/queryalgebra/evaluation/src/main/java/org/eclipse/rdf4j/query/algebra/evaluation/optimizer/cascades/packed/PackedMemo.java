@@ -998,16 +998,18 @@ final class PackedMemo implements AutoCloseable {
 				: physicalMetadata.peakMemoryRows(physicalMetadataId);
 		int retainedAuditable = auditableIncumbentForIncompleteReplacement(groupId, requiredPropertyId,
 				semanticRowGoalId, inputContextId, costPolicyId, physicalMetadataId);
-		int winnerId = retainedAuditable != 0 ? retainedAuditable : lifecycleExcluded
-				? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
-						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
-						startupCost, totalCost, lifecycleComparisonCost,
-						peakMemoryRows, robustComparisonPrimary, childWinnerIds,
-						childOffset, childCount)
-				: winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-						lifecycleComparisonCost, peakMemoryRows,
-						robustComparisonPrimary, childWinnerIds, childOffset, childCount);
+		int winnerId = retainedAuditable != 0 ? retainedAuditable
+				: lifecycleExcluded
+						? winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+								inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
+								startupCost, totalCost, lifecycleComparisonCost,
+								peakMemoryRows, robustComparisonPrimary, childWinnerIds,
+								childOffset, childCount)
+						: winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+								costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+								totalCost,
+								lifecycleComparisonCost, peakMemoryRows,
+								robustComparisonPrimary, childWinnerIds, childOffset, childCount);
 		int comparisonTier = lifecycleExcluded
 				? PackedWinnerTable.EXECUTABLE_FALLBACK
 				: PackedWinnerTable.COSTED;
@@ -1097,15 +1099,19 @@ final class PackedMemo implements AutoCloseable {
 				: physicalMetadata.peakMemoryRows(physicalMetadataId);
 		int retainedAuditable = auditableIncumbentForIncompleteReplacement(groupId, requiredPropertyId,
 				semanticRowGoalId, inputContextId, costPolicyId, physicalMetadataId);
-		int winnerId = retainedAuditable != 0 ? retainedAuditable : verifiedLastGood
-				? winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
-						costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost, totalCost,
-						lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds, childOffset,
-						childCount)
-				: winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
-						inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
-						startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary,
-						childWinnerIds, childOffset, childCount);
+		int winnerId = retainedAuditable != 0 ? retainedAuditable
+				: verifiedLastGood
+						? winners.offerWithMetadata(groupId, requiredPropertyId, semanticRowGoalId, inputContextId,
+								costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank, startupCost,
+								totalCost,
+								lifecycleComparisonCost, peakMemoryRows, robustComparisonPrimary, childWinnerIds,
+								childOffset,
+								childCount)
+						: winners.offerExecutableFallbackWithMetadata(groupId, requiredPropertyId, semanticRowGoalId,
+								inputContextId, costPolicyId, physicalExpressionId, physicalMetadataId, tieBreakRank,
+								startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows,
+								robustComparisonPrimary,
+								childWinnerIds, childOffset, childCount);
 		int comparisonTier = verifiedLastGood ? PackedWinnerTable.COSTED : PackedWinnerTable.EXECUTABLE_FALLBACK;
 		boolean scalarAccepted = winners.matchesCandidate(winnerId, comparisonTier, physicalExpressionId,
 				physicalMetadataId, tieBreakRank, startupCost, totalCost, lifecycleComparisonCost, peakMemoryRows,
