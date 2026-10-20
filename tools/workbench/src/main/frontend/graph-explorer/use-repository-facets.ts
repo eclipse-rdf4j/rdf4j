@@ -48,6 +48,8 @@ function hasIndexedDb() {
  * the IRIs among them (facet-value-labels.ts). One store per repository, graph scope, inference setting and data
  * revision: a write through the Workbench, here or in another tab, starts a new one. Loading starts once the graph has
  * stayed still for half a second, focused nodes first, and runs in the background after the explorer's own queries.
+ * `predicates` lists the predicates loaded so far, for the explorer to learn label predicates from; the labels are asked
+ * for with the explorer's (`lookupProperties`), and a new list of them starts new labels.
  */
 export function useRepositoryFacets(input: {
   basePath: string;
@@ -60,7 +62,9 @@ export function useRepositoryFacets(input: {
   maxRows?: number;
   maxQueryLength?: number;
   languages: string[];
+  /** The preferred label predicates, in order, and every label predicate the canvas asks with (RdfExplorer). */
   labelProperties: readonly string[];
+  lookupProperties: readonly string[];
   /** The queryable nodes the Filters panel filters, and those to load first (selected, focused). */
   nodeIds: readonly string[];
   focusIds: readonly string[];
@@ -115,14 +119,15 @@ export function useRepositoryFacets(input: {
       new FacetValueLabels({
         execute: (query, signal) => execute(endpoint, query, signal),
         scope,
-        namespace: JSON.stringify([namespace, input.languages, input.labelProperties]),
+        namespace: JSON.stringify([namespace, input.languages, input.labelProperties, [...input.lookupProperties].sort()]),
         languages: input.languages,
         properties: input.labelProperties,
+        lookupProperties: input.lookupProperties,
         backend: hasIndexedDb() ? indexedDbFacetBackend<StoredLabel>(LABELS) : memoryFacetBackend<StoredLabel>(),
         foreground: { idle: () => foregroundRef.current.idle() },
         known: (iri) => knownLabelRef.current(iri),
       }),
-    [endpoint, execute, scope, namespace, input.languages, input.labelProperties],
+    [endpoint, execute, scope, namespace, input.languages, input.labelProperties, input.lookupProperties],
   );
   useEffect(() => () => labels.dispose(), [labels]);
 
@@ -186,8 +191,9 @@ export function useRepositoryFacets(input: {
     (iris: readonly string[], priority: "shown" | "background") => labels.want(iris, priority),
     [labels],
   );
-  // The status changes with each published version.
+  // The status and the predicates change with each published version.
   const status = useMemo(() => store.status(), [store, version]);
+  const predicates = useMemo(() => store.predicates(), [store, version]);
 
-  return { store, labels, version, status, refresh, confirm, valuesOf, labelOf, wantLabels };
+  return { store, labels, version, status, predicates, refresh, confirm, valuesOf, labelOf, wantLabels };
 }

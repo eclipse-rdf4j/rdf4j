@@ -152,6 +152,9 @@ export class RepositoryFacetStore {
   private batchSize: number;
 
   private entries = new Map<string, RepositoryEntry>();
+  /** The predicates of the entries, and as a list (predicates()) until a new one arrives. */
+  private predicateSet = new Set<string>();
+  private predicateList: readonly string[] | null = null;
   private wanted = new Map<string, number>();
   /** Nodes waiting for a statements request, by priority. */
   private queued = new Map<string, number>();
@@ -228,7 +231,7 @@ export class RepositoryFacetStore {
         for (const id of fresh) {
           const entry = stored.get(id);
           if (entry) {
-            this.entries.set(id, fromStoredEntry(entry));
+            this.setEntry(id, fromStoredEntry(entry));
             found++;
           } else this.queued.set(id, Math.min(rank, this.wanted.get(id) ?? rank));
         }
@@ -239,6 +242,20 @@ export class RepositoryFacetStore {
 
   get(nodeId: string): RepositoryEntry | undefined {
     return this.entries.get(nodeId);
+  }
+
+  /** Every predicate of the loaded nodes: the explorer learns label predicates from them (RdfExplorer.learnPredicates). */
+  predicates(): readonly string[] {
+    return (this.predicateList ??= [...this.predicateSet]);
+  }
+
+  private setEntry(id: string, entry: RepositoryEntry) {
+    this.entries.set(id, entry);
+    entry.predicates.forEach((_, predicate) => {
+      if (this.predicateSet.has(predicate)) return;
+      this.predicateSet.add(predicate);
+      this.predicateList = null;
+    });
   }
 
   status(): RepositoryFacetStatus {
@@ -270,6 +287,8 @@ export class RepositoryFacetStore {
   clear() {
     this.generation++;
     this.entries.clear();
+    this.predicateSet.clear();
+    this.predicateList = null;
     this.failed.clear();
     this.retries.clear();
     this.budgetUsed = 0;
@@ -391,7 +410,7 @@ export class RepositoryFacetStore {
       }
       const stored = new Map<string, StoredEntry>();
       result.entries.forEach((entry, id) => {
-        this.entries.set(id, entry);
+        this.setEntry(id, entry);
         this.retries.delete(id);
         stored.set(id, toStoredEntry(entry));
         entry.predicates.forEach((cell) => (this.budgetUsed += cell.values.length));

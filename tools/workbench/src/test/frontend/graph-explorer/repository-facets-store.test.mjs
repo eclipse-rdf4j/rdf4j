@@ -288,3 +288,22 @@ test("listeners hear about new values and the version moves", async () => {
   stop();
   store.dispose();
 });
+
+test("the store lists the predicates it has loaded, stored ones too, for the explorer to learn label predicates from", async () => {
+  const LABEL = "terminusdb:///schema/star-wars#label", CHARACTER = "terminusdb:///schema/star-wars#character";
+  const repository = fakeRepository({ [`${EX}film`]: [[LABEL, literal("A New Hope")], [CHARACTER, uri(`${EX}luke`)]] });
+  const stored = new Map([[`${EX}planet`, { checkedAt: 0, predicatesComplete: true, predicates: [[`${EX}climate`, [], true]] }]]);
+  const persistence = { read: async (ids) => new Map(ids.filter((id) => stored.has(id)).map((id) => [id, stored.get(id)])),
+    write: async () => undefined, clear: async () => undefined };
+  const store = new RepositoryFacetStore({ execute: repository.execute, scope: "default", persistence });
+  try {
+    assert.deepEqual(store.predicates(), []);
+    store.want([`${EX}film`, `${EX}planet`], "focus");
+    await settled(store);
+    const predicates = store.predicates();
+    assert.deepEqual([...predicates].sort(), [`${EX}climate`, CHARACTER, LABEL].sort());
+    assert.equal(store.predicates(), predicates, "the same list until a new predicate arrives");
+  } finally {
+    store.dispose();
+  }
+});

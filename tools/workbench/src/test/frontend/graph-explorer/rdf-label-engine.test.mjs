@@ -321,3 +321,52 @@ test("unlabelled IRIs read as words: camelCase properties in lower case, PascalC
   assert.equal(humanizeIri("http://example.org/NewYork"), "New York");
   assert.equal(humanizeIri("http://example.org/has_part-of"), "has part of");
 });
+test("label predicates among the repository's predicates become label properties, and checked labels are asked again", async () => {
+  // The Filters panel loads every predicate of the drawn nodes (repository-facets.ts), not only the loaded links'.
+  const NAMED = "terminusdb:///schema/star-wars#label", DECLARED = "urn:ex:captionCode";
+  const CHARACTER = "terminusdb:///schema/star-wars#character", film = "terminusdb:///data/Film/1";
+  const engine = new RdfExplorer("https://learned-labels.example/sparql", ["en"], async (query) => {
+    if (query.includes("SELECT DISTINCT ?property"))
+      return { results: { bindings: query.includes(`<${DECLARED}>`) ? [{ property: iri(DECLARED) }] : [] } };
+    return { results: { bindings: query.includes(`<${NAMED}>`)
+      ? [{ resource: iri(film), label: literal("A New Hope"), labelProperty: iri(NAMED) }] : [] } };
+  });
+  let notified = 0;
+  const stop = engine.subscribeLabelProperties(() => notified++);
+  try {
+    await engine.resolve([film]);
+    assert.equal(engine.label(film), "1");
+    const before = engine.labelProperties();
+    assert.equal(engine.labelProperties(), before, "the same list until a label property is added");
+    assert.equal(await engine.learnPredicates([NAMED, CHARACTER, DECLARED]), true);
+    const after = engine.labelProperties();
+    assert.ok(after.includes(NAMED), "a predicate named like a label");
+    assert.ok(after.includes(DECLARED), "a predicate the schema makes a label");
+    assert.ok(!after.includes(CHARACTER));
+    assert.notEqual(after, before);
+    assert.ok(notified > 0, "those using the label properties hear of new ones");
+    assert.deepEqual(engine.unresolved([film]), [film], "a label checked before is asked for again");
+    await engine.resolve([film]);
+    assert.equal(engine.label(film), "A New Hope");
+    assert.equal(await engine.learnPredicates([NAMED, CHARACTER, DECLARED]), false, "nothing new the second time");
+  } finally {
+    stop();
+    engine.dispose();
+  }
+});
+test("label predicates of the loaded links are among the label properties others ask with", () => {
+  const engine = new RdfExplorer("https://observed-labels.example/sparql", ["en"], async () => ({ results: { bindings: [] } }));
+  let notified = 0;
+  const stop = engine.subscribeLabelProperties(() => notified++);
+  try {
+    engine.observe({ revision: 1, nodes: [
+      { id: "urn:ex:film", kind: "iri", label: "film" },
+      { id: '"A New Hope"', kind: "literal", label: "A New Hope", termValue: "A New Hope" },
+    ], edges: [{ id: "e", source: "urn:ex:film", target: '"A New Hope"', predicate: "urn:ex:displayName", label: "display name" }] });
+    assert.ok(engine.labelProperties().includes("urn:ex:displayName"));
+    assert.equal(notified, 1);
+  } finally {
+    stop();
+    engine.dispose();
+  }
+});

@@ -74,6 +74,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type CSSProperties,
 } from "react";
 import {
@@ -770,6 +771,10 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     void metadataEpoch;
     return new RdfExplorer(endpoint,languages,(queryToRun,signal)=>queryRepository(endpoint,queryToRun,signal),graphScope,wikidataEndpoint,true,workspaceScope,labelProperties);
   }, [endpoint,languages,graphScope,wikidataEndpoint,workspaceScope,labelProperties,metadataEpoch]);
+  // The explorer's label predicates, a new list when it learns one: the canvas asks again for the labels checked without
+  // it (the label effect), and the Filters panel asks for its values' labels with them and leaves them out as filters.
+  const subscribeLabelProperties = useCallback((listener: () => void) => explorer.subscribeLabelProperties(listener), [explorer]);
+  const explorerLabelProperties = useSyncExternalStore(subscribeLabelProperties, () => explorer.labelProperties());
   const labelGuidanceReasons = useMemo(() => labelGuidance(labelPolicy,
     labelEvidence.explorer === explorer ? labelEvidence.evidence : EMPTY_LABEL_EVIDENCE, dismissedLabelGuidance),
     [labelPolicy, labelEvidence, explorer, dismissedLabelGuidance]);
@@ -844,9 +849,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     return due.length ? JSON.stringify(due) : "";
   }, [labelRetries, labelRetryTick]);
   const hiddenFilterPredicates = useMemo(
-    () => new Set([RDF_TYPE, ...explorer.properties]),
-    // The explorer's label properties grow as vocabularies are discovered and preferences change.
-    [explorer, metadataEpoch],
+    () => new Set([RDF_TYPE, ...explorerLabelProperties]),
+    [explorerLabelProperties],
   );
   const clearManualSelection = useCallback(() => setManualSelectedNodeIds((current) => (current.size ? new Set() : current)), []);
   // Every value the repository has for the filtered nodes, loaded into the graph or not (use-repository-facets.ts).
@@ -870,12 +874,22 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
     maxQueryLength: limits?.maxQueryLength,
     languages,
     labelProperties,
+    lookupProperties: explorerLabelProperties,
     nodeIds: filterResourceIds,
     focusIds: focusResourceIds,
     candidates: () => new Set(graphRef.current.edges.map((edge) => edge.predicate)),
     knownLabel: loadedLabel,
     foreground,
   });
+  // The explorer learns the label predicates among the drawn nodes' predicates in the repository, not only the loaded
+  // links': a repository's own (TerminusDB's schema#label, say) then names the canvas's nodes and the Filters' values.
+  const repositoryPredicates = repositoryFacets.predicates;
+  useEffect(() => {
+    if (!repositoryPredicates.length) return;
+    const controller = new AbortController();
+    void explorer.learnPredicates(repositoryPredicates, controller.signal).catch(() => {});
+    return () => controller.abort();
+  }, [explorer, repositoryPredicates]);
   const facetRepository = useMemo(
     () => ({
       valuesOf: repositoryFacets.valuesOf,
@@ -1492,7 +1506,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, limit
       setLabelEvidence({ explorer, evidence: { ...evidence, complete: successful && evidence.complete } });
     });
     return ()=>controller.abort();
-  }, [explorer,graph.revision,labelRetries]);
+    // A label predicate learned since (explorerLabelProperties) asks again for the labels checked without it.
+  }, [explorer,graph.revision,labelRetries,explorerLabelProperties]);
 
   useEffect(() => {
     if (isLayoutComputing || isLayoutAnimating || draggingNodeId || isLargeGraphDragging) return;

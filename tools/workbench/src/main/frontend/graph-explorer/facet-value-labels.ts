@@ -15,6 +15,8 @@
  * persistent cache and re-label the whole graph after every batch. Labels the canvas already knows are used as they
  * are; the others are asked for in batches, values the panel shows first, one request at a time, after the explorer's
  * own queries. Found labels are kept six hours (in memory and IndexedDB), checked IRIs without a label ten minutes.
+ * They are asked for with the canvas's label predicates (`lookupProperties`: RdfExplorer.labelProperties, which grow as
+ * the explorer learns label predicates) and chosen as the canvas chooses them (`properties`: the preferred order).
  */
 import type { FacetBackend } from "./facet-store-persistence.ts";
 import { isQueryableResource, isSparqlTerm, sparqlNodeId, type SparqlTerm } from "./rdf-terms.ts";
@@ -44,7 +46,10 @@ export class FacetValueLabels {
     scope: GraphScope;
     namespace: string;
     languages: string[];
+    /** The preferred label predicates, in order: they choose among a value's labels. */
     properties?: readonly string[];
+    /** Every label predicate to ask for; the preferred ones are asked for too. */
+    lookupProperties?: readonly string[];
     backend?: FacetBackend<StoredLabel>;
     now?: () => number;
     foreground?: { idle(): Promise<void> };
@@ -156,6 +161,11 @@ export class FacetValueLabels {
     this.queued.clear();
   }
 
+  private lookupProperties() {
+    const preferred = this.options.properties ?? DEFAULT_LABEL_PROPERTIES;
+    return this.options.lookupProperties ? [...new Set([...preferred, ...this.options.lookupProperties])] : preferred;
+  }
+
   private notify() {
     this.version++;
     this.listeners.forEach((listener) => listener());
@@ -196,7 +206,7 @@ export class FacetValueLabels {
     try {
       await this.options.foreground?.idle();
       const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(TIMEOUT_MS)]);
-      const query = valueLabelQuery(batch, this.options.properties ?? DEFAULT_LABEL_PROPERTIES, this.options.scope);
+      const query = valueLabelQuery(batch, this.lookupProperties(), this.options.scope);
       rows = (await this.options.execute(query, signal)).results?.bindings ?? [];
     } catch {
       // A failed batch leaves its values unlabelled for this visit; they show a readable form of the IRI.

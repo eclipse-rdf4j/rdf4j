@@ -24,7 +24,9 @@ function fakeLabels(labels, { saturateAbove = Infinity } = {}) {
   const execute = async (query) => {
     queries.push(query);
     const ids = [...new Set([...(query.match(/VALUES \?resource \{([^}]*)\}/)?.[1] ?? "").matchAll(/<([^>]+)>/g)].map((m) => m[1]))];
-    const bindings = ids.flatMap((id) => (labels[id] ?? []).map(([value, language, property]) => ({
+    // Only labels whose predicate the query asks for, as the repository would.
+    const bindings = ids.flatMap((id) => (labels[id] ?? []).filter(([, , property]) => query.includes(`<${property ?? RDFS_LABEL}>`))
+      .map(([value, language, property]) => ({
       resource: { type: "uri", value: id },
       labelProperty: { type: "uri", value: property ?? RDFS_LABEL },
       label: { type: "literal", value, ...(language ? { "xml:lang": language } : {}) },
@@ -111,4 +113,22 @@ test("a reply at the label query's row limit is asked for again in halves", asyn
   labels.want(Object.keys(data), "background");
   await settled(labels);
   assert.deepEqual(Object.keys(data).map((iri) => labels.label(iri)), Object.keys(data).map((_, index) => `V${index}`));
+});
+
+test("values are asked for with every label predicate the canvas knows; the preferred ones choose among the labels", async () => {
+  // TerminusDB names its things with a predicate of its own, which the canvas learns (rdf-explorer.ts).
+  const STAR_WARS_LABEL = "terminusdb:///schema/star-wars#label";
+  const luke = "terminusdb:///data/People/1", obiWan = "terminusdb:///data/People/10";
+  const repository = fakeLabels({
+    [luke]: [["Luke Skywalker", "", STAR_WARS_LABEL]],
+    [obiWan]: [["Obi-Wan Kenobi", "", STAR_WARS_LABEL], ["Ben Kenobi", "", RDFS_LABEL]],
+  });
+  const labels = new FacetValueLabels({
+    execute: repository.execute, scope: "default", namespace: "n", languages: ["en"],
+    properties: [RDFS_LABEL], lookupProperties: [RDFS_LABEL, STAR_WARS_LABEL],
+  });
+  labels.want([luke, obiWan], "shown");
+  await settled(labels);
+  assert.equal(labels.label(luke), "Luke Skywalker");
+  assert.equal(labels.label(obiWan), "Ben Kenobi", "rdfs:label is preferred, as on the canvas");
 });

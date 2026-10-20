@@ -107,6 +107,9 @@ export function clearMetadataCache() {
 // Fixed blank references remain within this explorer's server/repository namespace, just like cached IRI metadata.
 export class RdfExplorer {
   readonly properties = new Set<string>(DEFAULT_LABEL_PROPERTIES);
+  /** `properties` as a list, the same one until a label property is added (labelProperties). */
+  private propertyList: readonly string[] | null = null;
+  private propertyListeners = new Set<() => void>();
   readonly preferredProperties: readonly string[];
   private compareLabels: (a: LabelCandidate, b: LabelCandidate) => number;
   private observedProperties = new Set<string>();
@@ -213,6 +216,43 @@ export class RdfExplorer {
     )
       return;
     this.properties.add(property);
+    this.labelPropertiesAdded();
+  }
+  /**
+   * The label predicates labels are asked for with: the preferences', the common ones and those learned from the loaded
+   * links (observe), the schema (discoverVocabulary) and the repository's predicates (learnPredicates). The Filters
+   * panel asks for its values' labels with them too (facet-value-labels.ts). The same list until one is added.
+   */
+  labelProperties(): readonly string[] {
+    return (this.propertyList ??= [...this.properties]);
+  }
+  /** Calls `listener` when a label property is added. */
+  subscribeLabelProperties(listener: () => void) {
+    this.propertyListeners.add(listener);
+    return () => {
+      this.propertyListeners.delete(listener);
+    };
+  }
+  /**
+   * Learns the label predicates among predicates met outside the loaded links, such as those of the drawn nodes the
+   * Filters panel loads (repository-facets.ts): those named like a label, as observe() takes them from the loaded
+   * links, and those the schema makes labels (discoverVocabulary). Labels checked before are asked for again. Says
+   * whether a label property was added.
+   */
+  async learnPredicates(predicates: Iterable<string>, signal?: AbortSignal) {
+    const fresh = [...new Set(predicates)].filter((property) => isSafeSparqlIri(property) && !this.properties.has(property));
+    let named = false;
+    for (const property of fresh) {
+      if (!looksLikeLabelProperty(property) || this.properties.size >= 96) continue;
+      this.properties.add(property);
+      named = true;
+    }
+    if (named) this.labelPropertiesAdded();
+    const declared = await this.discoverVocabulary(fresh.filter((property) => !this.properties.has(property)), signal);
+    return named || Boolean(declared);
+  }
+  /** After label properties are added: labels checked without them are asked for again. */
+  private labelPropertiesAdded() {
     this.labelVersion += 1;
     this.labelMemo.clear();
     this.schemaVersion++;
@@ -226,6 +266,11 @@ export class RdfExplorer {
       if (key.startsWith(this.namespace + "\n"))
         metadata.set(key, { ...value, checked: false }, expires - Date.now());
     persist();
+    this.labelPropertiesChanged();
+  }
+  private labelPropertiesChanged() {
+    this.propertyList = null;
+    this.propertyListeners.forEach((listener) => listener());
   }
   private key(id: string) {
     return this.namespace + "\n" + id;
@@ -304,12 +349,17 @@ export class RdfExplorer {
     };
     // A graph has many statements and few predicates: each predicate's name is tested once.
     const labelLike = new Map<string, boolean>();
+    let added = false;
     for (const edge of graph.edges) {
       this.observedIds.add(edge.predicate);
       let looksLike = labelLike.get(edge.predicate);
-      if (looksLike === undefined) labelLike.set(edge.predicate, (looksLike = looksLikeLabelProperty(edge.predicate)));
-      if (looksLike)
-        this.properties.add(edge.predicate);
+      if (looksLike === undefined) {
+        labelLike.set(edge.predicate, (looksLike = looksLikeLabelProperty(edge.predicate)));
+        if (looksLike && !this.properties.has(edge.predicate)) {
+          this.properties.add(edge.predicate);
+          added = true;
+        }
+      }
       const target = nodes.get(edge.target);
       if (target?.kind === "literal" && this.properties.has(edge.predicate))
         collect(edge.source, [
@@ -385,6 +435,8 @@ export class RdfExplorer {
         ]);
     }
     for (const [id, candidates] of pending) this.add(id, candidates);
+    // Their labels come with the loaded links: nothing to ask again, but the Filters panel asks with them too.
+    if (added) this.labelPropertiesChanged();
   }
   label(id: string, supplied?: string) {
     const memoKey = supplied === undefined ? id : `${id}\u0000${supplied}`;
@@ -501,19 +553,7 @@ export class RdfExplorer {
         }
       batch.forEach((p) => this.schemaSeen.add(p));
     }
-    if (changed) {
-      this.schemaVersion++;
-      for (const [id, value, expires] of this.liveLabels.snapshot())
-        this.liveLabels.set(
-          id,
-          { ...value, checked: false },
-          expires - Date.now(),
-        );
-      for (const [key, value, expires] of metadata.snapshot())
-        if (key.startsWith(this.namespace + "\n"))
-          metadata.set(key, { ...value, checked: false }, expires - Date.now());
-      persist();
-    }
+    if (changed) this.labelPropertiesAdded();
     return changed;
   }
   async operation(
@@ -677,6 +717,7 @@ export class RdfExplorer {
   }
   dispose() {
     this.stopped = true;
+    this.propertyListeners.clear();
     this.labels.dispose();
     for (const loader of this.operations.values()) loader.dispose();
     this.operations.clear();
