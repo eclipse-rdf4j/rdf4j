@@ -701,7 +701,7 @@ class LmdbSketchJoinOptimizerTest {
 
 	private static boolean containsNotExistsFilter(TupleExpr tupleExpr) {
 		if (tupleExpr instanceof Filter filter) {
-			if (filter.getCondition()instanceof Not not && not.getArg() instanceof Exists) {
+			if (filter.getCondition() instanceof Not not && not.getArg() instanceof Exists) {
 				return true;
 			}
 			return containsNotExistsFilter(filter.getArg());

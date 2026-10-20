@@ -524,7 +524,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr rewriteNullRejectingOptionalFilterAfterDelayableExtension(Filter filter, LeftJoin leftJoin) {
-			if (!(leftJoin.getLeftArg()instanceof Extension extension)) {
+			if (!(leftJoin.getLeftArg() instanceof Extension extension)) {
 				return null;
 			}
 			if (!canDelayExtensionAcrossOptionalJoin(extension, leftJoin.getRightArg(), filter.getCondition())) {
@@ -1004,7 +1004,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr rewriteVacuousPatternMinusFilter(Difference difference) {
-			if (!(difference.getRightArg()instanceof Filter rightFilter)) {
+			if (!(difference.getRightArg() instanceof Filter rightFilter)) {
 				return null;
 			}
 			if (!(rightFilter.getArg() instanceof StatementPattern)) {
@@ -1026,11 +1026,11 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 		}
 
 		private TupleExpr rewriteRedundantPatternMinusFilter(Difference difference) {
-			if (!(difference.getRightArg()instanceof Filter rightFilter)) {
+			if (!(difference.getRightArg() instanceof Filter rightFilter)) {
 				return null;
 			}
 
-			if (!(rightFilter.getArg()instanceof StatementPattern rightPattern)) {
+			if (!(rightFilter.getArg() instanceof StatementPattern rightPattern)) {
 				return null;
 			}
 
@@ -1569,50 +1569,50 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				return Double.NaN;
 			}
 			switch (tupleExpr) {
-				case BindingSetAssignment assignment -> {
-					Set<String> bindingNames = plannerBindingNames(assignment.getBindingNames());
-					return bindingNames.containsAll(requiredNames)
-							? distinctAssignmentProjectionRows(assignment, requiredNames)
-							: Double.NaN;
+			case BindingSetAssignment assignment -> {
+				Set<String> bindingNames = plannerBindingNames(assignment.getBindingNames());
+				return bindingNames.containsAll(requiredNames)
+						? distinctAssignmentProjectionRows(assignment, requiredNames)
+						: Double.NaN;
+			}
+			case StatementPattern statementPattern -> {
+				Set<String> bindingNames = plannerBindingNames(statementPattern.getBindingNames());
+				return bindingNames.containsAll(requiredNames)
+						? localOutputRows(statementPattern)
+						: Double.NaN;
+			}
+			case Filter filter -> {
+				return distinctBindingUpperBound(filter.getArg(), requiredNames);
+			}
+			case Extension extension -> {
+				return distinctExtensionBindingUpperBound(extension, requiredNames);
+			}
+			case Difference difference -> {
+				return distinctBindingUpperBound(difference.getLeftArg(), requiredNames);
+			}
+			case Join join -> {
+				return distinctJoinBindingUpperBound(join.getLeftArg(), join.getRightArg(), requiredNames);
+			}
+			case LeftJoin leftJoin -> {
+				return distinctJoinBindingUpperBound(leftJoin.getLeftArg(), leftJoin.getRightArg(), requiredNames);
+			}
+			case Union union -> {
+				double rows = 0.0d;
+				double leftRows = distinctBindingUpperBound(union.getLeftArg(), requiredNames);
+				if (LmdbJoinPlanSupport.isFiniteNonNegative(leftRows)) {
+					rows += leftRows;
 				}
-				case StatementPattern statementPattern -> {
-					Set<String> bindingNames = plannerBindingNames(statementPattern.getBindingNames());
-					return bindingNames.containsAll(requiredNames)
-							? localOutputRows(statementPattern)
-							: Double.NaN;
+				double rightRows = distinctBindingUpperBound(union.getRightArg(), requiredNames);
+				if (LmdbJoinPlanSupport.isFiniteNonNegative(rightRows)) {
+					rows += rightRows;
 				}
-				case Filter filter -> {
-					return distinctBindingUpperBound(filter.getArg(), requiredNames);
-				}
-				case Extension extension -> {
-					return distinctExtensionBindingUpperBound(extension, requiredNames);
-				}
-				case Difference difference -> {
-					return distinctBindingUpperBound(difference.getLeftArg(), requiredNames);
-				}
-				case Join join -> {
-					return distinctJoinBindingUpperBound(join.getLeftArg(), join.getRightArg(), requiredNames);
-				}
-				case LeftJoin leftJoin -> {
-					return distinctJoinBindingUpperBound(leftJoin.getLeftArg(), leftJoin.getRightArg(), requiredNames);
-				}
-				case Union union -> {
-					double rows = 0.0d;
-					double leftRows = distinctBindingUpperBound(union.getLeftArg(), requiredNames);
-					if (LmdbJoinPlanSupport.isFiniteNonNegative(leftRows)) {
-						rows += leftRows;
-					}
-					double rightRows = distinctBindingUpperBound(union.getRightArg(), requiredNames);
-					if (LmdbJoinPlanSupport.isFiniteNonNegative(rightRows)) {
-						rows += rightRows;
-					}
-					return rows > 0.0d && LmdbJoinPlanSupport.isFiniteNonNegative(rows) ? rows : Double.NaN;
-				}
-				case UnaryTupleOperator unary when !TupleExprs.isVariableScopeChange(unary) -> {
-					return distinctBindingUpperBound(unary.getArg(), requiredNames);
-				}
-				default -> {
-				}
+				return rows > 0.0d && LmdbJoinPlanSupport.isFiniteNonNegative(rows) ? rows : Double.NaN;
+			}
+			case UnaryTupleOperator unary when !TupleExprs.isVariableScopeChange(unary) -> {
+				return distinctBindingUpperBound(unary.getArg(), requiredNames);
+			}
+			default -> {
+			}
 			}
 			return Double.NaN;
 		}
@@ -1623,7 +1623,7 @@ final class LmdbSketchJoinOptimizer implements QueryOptimizer {
 				if (!translatedNames.remove(element.getName())) {
 					continue;
 				}
-				if (element.getExpr()instanceof Var var && !var.hasValue()) {
+				if (element.getExpr() instanceof Var var && !var.hasValue()) {
 					translatedNames.add(var.getName());
 				} else {
 					return Double.NaN;
